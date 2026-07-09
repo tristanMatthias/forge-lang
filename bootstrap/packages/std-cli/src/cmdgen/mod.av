@@ -1,73 +1,71 @@
-// WHY: the @comptime macro that expands a `command <inst> { fn run(...)
-// { ... } }` component instance into a per-instance `type Command_<inst>`
-// plus a `Runnable` trait impl, so a cli's `List<dyn Runnable>` dispatch
-// can call it. This is the load-bearing per-instance trait-impl
-// generation the whole Components V2 declarative layer is built on.
+// WHY: the @comptime macros that expand `command <inst> { … }` / `cli
+// <inst> { … }` component instances into the Components V2 runtime shape:
 //
-// Built by DIRECT AST construction, NOT the design's §4.2 quote-splice
-// form: repeating statement-splice (`~body`) and computed-value splice
-// both hit F4006, and calling two sequential list-building @comptime
-// helpers hits F4005 (the comptime-foundation gaps, rmzs). Direct
-// construction (the derive_walker pattern — Stmt.Function/Impl/TypeDecl
-// + synth_stmt_ids) plus reading the instance in a SINGLE body-walk
-// sidestep all three. `Stmt.Impl` encodes a trait impl as the
-// "Trait:Type" name form the parser uses.
+//   type Command_<inst> = { marker: int }          // a behaviour marker
+//   impl Runnable for Command_<inst> { fn run(self, args: CliResult) -> int { … } }
 //
-// SCOPE: generates `type Command_<inst>` + `impl Runnable for
-// Command_<inst>` with name()/run() plus the schema accessors
-// flag_names()/arg_names()/option_names()/description() (so App.run can
-// parse raw argv against the command through its dyn box). The run body
-// is the accessor bindings — the command's own `flag x {}` / `arg y {}` /
-// `option z {}` children plus the parent cli's global flags (a `flag x {}`
-// → `let x = @std::cli::result_has_flag(args, "x")`, an `arg y {}` → `let
-// y = @std::cli::result_get_arg(args, "y")`, an `option z {}` → `let z =
-// @std::cli::result_get_option(args, "z")`, callees emitted fully
-// qualified so they resolve without the consumer importing them) —
-// followed by the user's run body verbatim. Leaf children need no
-// `component flag/arg/option` declaration (they parse as nested blocks
-// regardless; `component option {}` in particular MUST be omitted — it
-// would generate `type Option`, colliding with the built-in `Option<T>`).
-// These macros ship as exported @comptime fns;
-// consumers / tests attach them via `@expand` themselves rather than the
-// lib pre-registering `@expand(expand_command) component command`,
-// because packages/cli/src/main.av still declares `component command`
-// inline and a lib registration would double-register (that migration is
-// its own follow-up). Config fields (`description` on the generated type,
-// from the block's `config` pairs) are the remaining gap to full design
-// §4.2 parity.
+// and, for a cli, a top-level `let <inst> = App { …, commands:
+// [Subcommand { meta: CommandSpec{…}, body: Command_<c>{…} }, …] }`.
+//
+// The DATA/BEHAVIOUR split: a command's identity + parse schema live in a
+// `CommandSpec` (plain data), paired with its `dyn Runnable` behaviour in a
+// `Subcommand`. App.run reads the schema by DIRECT field access (`c.meta.
+// flags`) — the trait is behaviour-only (one method, `run`), so no accessor
+// methods, no baked name-lists. The schema is constructed at expansion into
+// real `@std::cli::CommandSpec` / `FlagDef` / … struct literals (the schema
+// types are exported; a macro can construct them qualified).
+//
+// Built by DIRECT AST construction, NOT the design's §4.2 quote-splice form
+// (repeating/computed splice → F4006). A command's children are walked EXACTLY
+// ONCE, in `build_command_gen`, which returns BOTH the behaviour decls and the
+// schema `Subcommand` literal: a second walk (a `match`-on-Stmt inside a `for`,
+// nested in a deeper eval frame than the first) overruns the comptime evaluator
+// (rmzs — surfaces as "no eval_expr handler"), so the cli assembles from what
+// that one walk returns rather than re-scanning. `Stmt.Impl` encodes a trait
+// impl as the "Trait:Type" name form the parser uses.
+//
+// Leaf children (`flag x {}` / `arg y {}` / `option z {}`) need no
+// `component` declaration (they parse as nested blocks regardless; `option`
+// in particular MUST NOT be declared — it would generate `type Option`,
+// colliding with the built-in `Option<T>`). These ship as exported @comptime
+// fns; consumers attach them via `@expand` themselves (a lib registration
+// would double-register with main.av's inline `component command`).
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
 
 use @std.avrac.core.{Stmt, Expr, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
 
+// ── small single-value construction helpers ──
+
+/// A string-literal expr (carrying its delimiting quotes — the parser's
+/// `Expr.String` convention), as an ExprId ready to splice into a field
+/// init.
+@comptime
+fn str_lit(s: string) -> ExprId {
+    synth_expr_id(Expr.String("\"" + s + "\""))
+}
+
 /// The `value` expr of the `key` config pair (`description "…"` →
-/// key="description"), re-emitted as an ExprId ready to splice into a
-/// field init; an empty-string literal when the key is absent. Config
-/// pairs live in `ComponentBlock.config`; a pair's value is a parser-form
-/// Expr that round-trips intact through the macro boundary.
+/// key="description"), re-emitted as an ExprId; an empty-string literal when
+/// the key is absent.
 @comptime
 fn config_value_or_empty(config: List<CompConfigPair>, key: string) -> ExprId {
     for pair in config {
         if pair.key == key { return synth_expr_id(pair.value) }
     }
-    synth_expr_id(Expr.String("\"\""))
+    str_lit("")
 }
 
-/// One accessor binding: `let <name>: <vtype> = <callee_fqn>(args,
-/// "<name>")`. Shared by flags (result_has_flag / bool), args
-/// (result_get_arg / string), and inherited global flags. The callee is
-/// fully qualified so the generated run body resolves in ANY consumer's
-/// scope — a library macro must not require the consumer to import
-/// std-cli's internal helpers. The string literal carries its delimiting
-/// quotes (the parser's Expr.String convention). The binding is
-/// intentionally NOT hygienically renamed — the user run body references
-/// it by its declared name.
+/// One accessor binding in a run body: `let <name>: <vtype> =
+/// <callee_fqn>(args, "<name>")`. The callee is fully qualified so the
+/// generated body resolves in ANY consumer's scope. Not hygienically
+/// renamed — the user's run body references it by its declared name.
 @comptime
 fn accessor_binding(name: string, callee_fqn: string, vtype: ValueType) -> Stmt {
     let callee = synth_expr_id(Expr.QualifiedIdent(callee_fqn))
     let a_arg = synth_expr_id(Expr.Ident("args"))
-    let a_name = synth_expr_id(Expr.String("\"" + name + "\""))
+    let a_name = str_lit(name)
     let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
     Stmt.Let(name, vtype, call)
 }
@@ -81,38 +79,116 @@ fn name_in(names: List<string>, name: string) -> bool {
     false
 }
 
-/// A `return [<names as string literals>]` statement — the body of a
-/// generated `flag_names()` / `arg_names()` accessor. Each name becomes
-/// an `Expr.String` (carrying its delimiting quotes, the parser's
-/// convention) inside an `Expr.ListLit`, so the schema `App.run` parses
-/// against is baked from the declared children at expansion time.
+/// True iff an inherited global flag `gname` is SHADOWED by one of the
+/// command's own flags / args / options of the same name — then the
+/// command-local binding wins and the global must not be inherited (else the
+/// run body gets two `let <name>` of conflicting types, and the schema and
+/// bindings disagree). One predicate so the run-body bindings and the
+/// CommandSpec's flag list can't drift. Returns a `bool`, so it stays clear
+/// of the sequential-list-helper evaluator path (rmzs gap-3).
 @comptime
-fn string_list_return(names: List<string>) -> Stmt {
-    mut elems: List<ExprId> = []
-    for n in names {
-        elems.push(synth_expr_id(Expr.String("\"" + n + "\"")))
-    }
-    Stmt.Return(synth_expr_id(Expr.ListLit(elems)))
+fn global_shadowed(gname: string, flag_names: List<string>, arg_names: List<string>, option_names: List<string>) -> bool {
+    name_in(flag_names, gname) || name_in(arg_names, gname) || name_in(option_names, gname)
 }
 
-/// Core command-decl generation, shared by expand_command (standalone)
-/// and expand_cli. `extra_flags` are inherited global-flag names (the
-/// parent cli's flags — design §4.2 parent_chain_flags); each is bound
-/// in the run body too, UNLESS it collides with one of the command's own
-/// flag/arg names (then the command-local binding wins, no duplicate
-/// `let`). Single body-walk (calling several list-returning @comptime
-/// helpers in sequence trips the evaluator — rmzs gap 3 — so the
-/// traversal is inlined rather than reusing comp_children).
+/// A `@std::cli::FlagDef { name: "--<n>", short: "", description: "" }`
+/// literal (name dashed so the classifier matches `--<n>` on argv). Shorts
+/// are a follow-up (5az8) — read from the leaf's config then.
 @comptime
-fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
+fn flagdef_lit(name: string) -> ExprId {
+    let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
+    let sh = FieldInit { name: "short", value_id: str_lit("") }
+    let d = FieldInit { name: "description", value_id: str_lit("") }
+    synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [n, sh, d]))
+}
+
+/// A `@std::cli::ArgDef { name: "<n>", description: "", required: false }`
+/// literal (positionals aren't dashed).
+@comptime
+fn argdef_lit(name: string) -> ExprId {
+    let n = FieldInit { name: "name", value_id: str_lit(name) }
+    let d = FieldInit { name: "description", value_id: str_lit("") }
+    let req = FieldInit { name: "required", value_id: synth_expr_id(Expr.Bool("false")) }
+    synth_expr_id(Expr.StructLit("@std::cli::ArgDef", [n, d, req]))
+}
+
+/// A `@std::cli::OptionDef { name: "--<n>", short: "", description: "",
+/// default_val: "" }` literal. Defaults are a follow-up (5az8).
+@comptime
+fn optiondef_lit(name: string) -> ExprId {
+    let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
+    let sh = FieldInit { name: "short", value_id: str_lit("") }
+    let d = FieldInit { name: "description", value_id: str_lit("") }
+    let dv = FieldInit { name: "default_val", value_id: str_lit("") }
+    synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [n, sh, d, dv]))
+}
+
+/// A `@std::cli::CommandSpec { name, description, flags, args, options }`
+/// literal — the command's identity + parse schema as DATA. `flag_names` are
+/// already the deduped own+inherited set (see command_flag_names). The def
+/// lists are built inline (loops of single-ExprId `*def_lit` calls) so no
+/// list-returning helper is invoked.
+@comptime
+fn command_spec_lit(name: string, desc: ExprId, flag_names: List<string>, arg_names: List<string>, option_names: List<string>) -> ExprId {
+    mut flag_elems: List<ExprId> = []
+    for f in flag_names { flag_elems.push(flagdef_lit(f)) }
+    mut arg_elems: List<ExprId> = []
+    for a in arg_names { arg_elems.push(argdef_lit(a)) }
+    mut opt_elems: List<ExprId> = []
+    for o in option_names { opt_elems.push(optiondef_lit(o)) }
+    let f_name = FieldInit { name: "name", value_id: str_lit(name) }
+    let f_desc = FieldInit { name: "description", value_id: desc }
+    let f_flags = FieldInit { name: "flags", value_id: synth_expr_id(Expr.ListLit(flag_elems)) }
+    let f_args = FieldInit { name: "args", value_id: synth_expr_id(Expr.ListLit(arg_elems)) }
+    let f_opts = FieldInit { name: "options", value_id: synth_expr_id(Expr.ListLit(opt_elems)) }
+    synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [f_name, f_desc, f_flags, f_args, f_opts]))
+}
+
+/// The set of flags a command accepts: its own flags plus inherited global
+/// flags not shadowed by an own flag/arg/option. Order: globals first, then
+/// own — matching the run-body binding order. Built inline; used by BOTH the
+/// run bindings and the CommandSpec flags so they stay in lockstep.
+@comptime
+fn command_flag_names(extra_flags: List<string>, flag_names: List<string>, arg_names: List<string>, option_names: List<string>) -> List<string> {
+    mut out: List<string> = []
+    for g in extra_flags {
+        if !global_shadowed(g, flag_names, arg_names, option_names) { out.push(g) }
+    }
+    for f in flag_names { out.push(f) }
+    out
+}
+
+/// Everything one command generates from a SINGLE body-walk: its behaviour
+/// `decls` (`type Command_<inst>` + the `Runnable` impl) and the `subcommand`
+/// literal (`Subcommand { meta: CommandSpec{…}, body: Command_<inst>{…} }`)
+/// for the App's command list. Returned together so a cli needn't re-walk a
+/// command's children to build its schema (the re-walk also overran the
+/// comptime evaluator — a `match` on the children in a second, deeper frame
+/// trips it; folding both into the one proven walk here sidesteps that).
+type CommandGen = {
+    decls: List<Stmt>,
+    subcommand: ExprId
+}
+
+/// Core per-command generation, shared by expand_command (standalone) and
+/// expand_cli. Emits `type Command_<inst> = { marker: int }` (a behaviour
+/// marker — the command carries no data; its schema lives in the CommandSpec)
+/// + `impl Runnable for Command_<inst> { fn run(self, args) { <accessor
+/// bindings> <user run body> } }`, plus the paired `Subcommand` literal.
+/// `extra_flags` are the parent cli's global flag names, inherited into the
+/// run bindings + schema (deduped). Single body-walk.
+@comptime
+fn build_command_gen(s: Stmt, extra_flags: List<string>) -> CommandGen {
     mut inst = ""
     mut run_body: List<Stmt> = []
     mut flag_names: List<string> = []
     mut arg_names: List<string> = []
     mut option_names: List<string> = []
+    mut desc = str_lit("")
     match s {
-        .ComponentBlock(_, instance, _, body) -> {
+        .ComponentBlock(_, instance, cfg, body) -> {
             inst = instance
+            desc = config_value_or_empty(cfg, "description")
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
@@ -141,23 +217,18 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     let self_ty = ValueType.Struct(tn, empty_vt, 0)
     let cli_ty = ValueType.Struct("CliResult", empty_vt, 0)
     let self_p = ParamEntry { name: "self", vtype: self_ty }
+    let args_p = ParamEntry { name: "args", vtype: cli_ty }
 
-    // fn name(self) -> string { return self.name }
-    let ret_name = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "name")))
-    let name_fn = Stmt.Function("name", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_name]))
+    // The command's full flag set (own + inherited globals, deduped) — used by
+    // BOTH the run bindings and the CommandSpec flags so they stay in lockstep.
+    let all_flags = command_flag_names(extra_flags, flag_names, arg_names, option_names)
 
     // fn run(self, args: CliResult) -> int {
-    //   <inherited global-flag bindings> <flag bindings> <arg bindings>
+    //   <inherited-global + own flag bindings> <arg bindings> <option bindings>
     //   <user run body>
     // }
-    let args_p = ParamEntry { name: "args", vtype: cli_ty }
     mut full_run: List<Stmt> = []
-    for gname in extra_flags {
-        if !name_in(flag_names, gname) && !name_in(arg_names, gname) && !name_in(option_names, gname) {
-            full_run.push(accessor_binding(gname, "@std::cli::result_has_flag", ValueType.Bool))
-        }
-    }
-    for fname in flag_names {
+    for fname in all_flags {
         full_run.push(accessor_binding(fname, "@std::cli::result_has_flag", ValueType.Bool))
     }
     for aname in arg_names {
@@ -169,103 +240,92 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     for st in run_body { full_run.push(st) }
     let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(full_run))
 
-    // Schema accessors so App.run can parse raw argv against this command
-    // through its `dyn Runnable` box: flag_names() = own flags + inherited
-    // globals (deduped, the same set the run bindings use); arg_names() =
-    // positionals in declaration order; option_names() = declared options;
-    // description() reads the stamped field. The name lists are baked as
-    // string literals at expansion.
-    mut all_flag_names: List<string> = []
-    for gname in extra_flags {
-        // A global flag whose name collides with the command's own arg OR
-        // option is shadowed by the command-local binding — don't inherit it
-        // as a flag (else the run body gets two `let <name>` of conflicting
-        // types, and --<name> mis-parses as a flag over the option).
-        if !name_in(flag_names, gname) && !name_in(arg_names, gname) && !name_in(option_names, gname) {
-            all_flag_names.push(gname)
-        }
-    }
-    for fname in flag_names { all_flag_names.push(fname) }
-    let str_list_vt = ValueType.List(ValueType.Str)
-    let flag_names_fn = Stmt.Function("flag_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(all_flag_names)]))
-    let arg_names_fn = Stmt.Function("arg_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(arg_names)]))
-    let option_names_fn = Stmt.Function("option_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(option_names)]))
-    let ret_desc = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "description")))
-    let description_fn = Stmt.Function("description", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_desc]))
+    // impl Runnable for Command_<inst> { run }  ("Trait:Type" form)
+    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([run_fn]))
 
-    // impl Runnable for Command_<inst> { name; run; flag_names; arg_names;
-    // option_names; description }  ("Trait:Type" form)
-    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn, flag_names_fn, arg_names_fn, option_names_fn, description_fn]))
+    // type Command_<inst> = { marker: int } — a distinct behaviour type per
+    // command (each needs its own Runnable impl); the field is an unused
+    // marker so the struct is non-empty (its data lives in the CommandSpec).
+    let marker_field = FieldEntry { name: "marker", resolved: ValueType.Int }
+    let type_decl = Stmt.TypeDecl(tn, empty_tp, [marker_field])
 
-    // type Command_<inst> = { name: string, description: string }
-    // (`description` carries the block's `description "…"` config; the
-    // instance is stamped with the value in expand_cli's builder.)
-    let name_field = FieldEntry { name: "name", resolved: ValueType.Str }
-    let desc_field = FieldEntry { name: "description", resolved: ValueType.Str }
-    let type_decl = Stmt.TypeDecl(tn, empty_tp, [name_field, desc_field])
+    // The Subcommand literal: schema (CommandSpec, from the SAME collected
+    // names) paired with a fresh behaviour instance.
+    let spec_expr = command_spec_lit(inst, desc, all_flags, arg_names, option_names)
+    let subcommand = subcommand_lit(inst, spec_expr)
 
-    return [type_decl, impl_stmt]
+    CommandGen { decls: [type_decl, impl_stmt], subcommand: subcommand }
 }
 
-/// Expand a standalone `command <inst> { flag…/arg… fn run(args:
-/// CliResult) -> int { … } }` instance into `[type Command_<inst>, impl
-/// Runnable for Command_<inst>]` — the `@expand(expand_command)` entry
-/// point. Delegates to build_command_decls with no inherited global
-/// flags; only expand_cli threads a parent cli's globals into a command.
+/// Expand a standalone `command <inst> { … }` into `[type Command_<inst>,
+/// impl Runnable for Command_<inst>]` — the `@expand(expand_command)` entry
+/// point. No inherited globals; only expand_cli threads a parent cli's
+/// globals into a command. The Subcommand half is unused standalone (a lone
+/// command has no App to join).
 @comptime
 export fn expand_command(s: Stmt) -> List<Stmt> {
     let no_globals: List<string> = []
-    return build_command_decls(s, no_globals)
+    return build_command_gen(s, no_globals).decls
+}
+
+/// A `@std::cli::Subcommand { meta: <spec>, body: Command_<inst>{ marker: 0 } }`
+/// literal — the command's schema (data) paired with a fresh behaviour
+/// instance (boxed to `dyn Runnable` at the field, per the struct-dyn-field
+/// codegen path 7io4).
+@comptime
+fn subcommand_lit(inst: string, spec_expr: ExprId) -> ExprId {
+    let marker = FieldInit { name: "marker", value_id: synth_expr_id(Expr.Number("0")) }
+    let body = synth_expr_id(Expr.StructLit("Command_" + inst, [marker]))
+    let f_meta = FieldInit { name: "meta", value_id: spec_expr }
+    let f_body = FieldInit { name: "body", value_id: body }
+    synth_expr_id(Expr.StructLit("@std::cli::Subcommand", [f_meta, f_body]))
 }
 
 /// Expand a `cli <inst> { command <c> { … } … }` instance into the
-/// per-command `type Command_<c>` + `impl Runnable for Command_<c>`
-/// decls (delegating to expand_command per command) plus a top-level
-/// `let <inst> = App { … }` wiring the commands as `dyn Runnable` boxes.
-/// Consumers reference `<inst>` directly, then `.dispatch(parsed)` to run
-/// the matched command — the shape design §4.3 prescribes (`let avra =
-/// Cli { … }` / `avra.dispatch(…)`).
-///
-/// A top-level `let` (design §4.3), not a builder fn: an unannotated
-/// top-level struct let is now inferred at declare time (m8s8) and
-/// initialises before `main` reads it, so a later `<inst>.dispatch(…)`
-/// resolves and dispatches correctly (verified end-to-end). The command
-/// struct literals are spliced inline into the `App`'s `List<dyn
-/// Runnable>` field, boxing to `dyn Runnable` at the field init. A `flag
-/// <g> {}` declared directly in the cli block is a GLOBAL flag, inherited
-/// into every command's run bindings (design §4.2 parent_chain_flags).
-/// Each command's `description "…"` config is stamped onto its instance
-/// (`Command_<c> { name, description }`).
+/// per-command `type Command_<c>` + `impl Runnable` decls plus a top-level
+/// `let <inst> = App { … }`. A `flag <g> {}` declared directly in the cli
+/// block is a GLOBAL flag inherited into every command (design §4.2
+/// parent_chain_flags). Each command's `description "…"` config is stamped
+/// into its CommandSpec; the cli's own `description`/`version` onto the App.
 @comptime
 export fn expand_cli(s: Stmt) -> List<Stmt> {
-    mut inst = ""
     mut out: List<Stmt> = []
-    mut cmd_names: List<string> = []
+    mut inst = ""
+    mut app_desc = str_lit("")
+    mut app_ver = str_lit("")
     mut global_flags: List<string> = []
-    mut cmd_children: List<Stmt> = []
-    mut cmd_descs: List<ExprId> = []
-    mut app_desc = synth_expr_id(Expr.String("\"\""))
-    mut app_ver = synth_expr_id(Expr.String("\"\""))
-    // Pass 1: collect the cli's own description/version config, its global
-    // flags, AND its command children, reading each command's `description`
-    // config alongside its name so the two lists stay index-aligned.
-    // Globals must be known before any command is generated, so command
-    // generation waits for pass 2.
+    mut sub_lits: List<ExprId> = []
+
     match s {
         .ComponentBlock(_, instance, cliconfig, body) -> {
             inst = instance
             app_desc = config_value_or_empty(cliconfig, "description")
             app_ver = config_value_or_empty(cliconfig, "version")
+            // First pass over the cli's direct children: collect global flags
+            // (a `flag <g> {}` in the cli block is inherited into every command,
+            // so every command's schema needs them).
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
-                    .ComponentBlock(cn, cinst, cconfig, _) -> {
-                        if cn == "command" {
-                            cmd_children.push(child)
-                            cmd_names.push(cinst)
-                            cmd_descs.push(config_value_or_empty(cconfig, "description"))
-                        }
+                    .ComponentBlock(cn, cinst, _, _) -> {
                         if cn == "flag" { global_flags.push(cinst) }
+                    }
+                    _ -> {}
+                }
+            }
+            // Second pass: each command generates its behaviour decls + its
+            // Subcommand literal from a SINGLE walk (build_command_gen), so a cli
+            // never re-walks a command's children (the re-walk trips the
+            // evaluator). Globals thread in as inherited flags.
+            for id in body {
+                let child = synth_deref_stmt(id)
+                match child {
+                    .ComponentBlock(cn, _, _, _) -> {
+                        if cn == "command" {
+                            let gen = build_command_gen(child, global_flags)
+                            for d in gen.decls { out.push(d) }
+                            sub_lits.push(gen.subcommand)
+                        }
                     }
                     _ -> {}
                 }
@@ -273,40 +333,17 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
         }
         _ -> {}
     }
-    // Pass 2: generate each command's decls, inheriting the global flags.
-    for child in cmd_children {
-        let decls = build_command_decls(child, global_flags)
-        for d in decls { out.push(d) }
-    }
 
-    // Emit a top-level `let <inst> = App { … }` (design §4.3), not a
-    // builder fn. An unannotated top-level struct let is inferred at
-    // declare time (m8s8) and initialises before `main` reads it, so a
-    // later `<inst>.dispatch(…)` resolves + dispatches (verified). The
-    // command struct literals are spliced INLINE into the `List<dyn
-    // Runnable>` field — each boxes to `dyn Runnable` at the field init.
-    // (This once needed a pre-boxed typed local because a `List<dyn
-    // Trait>` struct field didn't box its inline elements; that codegen
-    // bug, 966j, is now fixed upstream, so the inline form suffices.)
+    // Top-level `let <inst> = App { name, description, version, commands:
+    // [Subcommand{…}, …] }`. The Subcommand literals splice inline into the
+    // `List<Subcommand>` field; each `body` boxes to `dyn Runnable` there.
     let empty_vt: List<ValueType> = []
     let app_vt = ValueType.Struct("App", empty_vt, 0)
-
-    mut elems: List<ExprId> = []
-    mut ci = 0
-    while ci < cmd_names.length {
-        let cn = cmd_names[ci]
-        let tn = "Command_" + cn
-        let name_init = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + cn + "\"")) }
-        let desc_init = FieldInit { name: "description", value_id: cmd_descs[ci] }
-        elems.push(synth_expr_id(Expr.StructLit(tn, [name_init, desc_init])))
-        ci = ci + 1
-    }
-    let f_name = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + inst + "\"")) }
+    let f_name = FieldInit { name: "name", value_id: str_lit(inst) }
     let f_desc = FieldInit { name: "description", value_id: app_desc }
     let f_ver = FieldInit { name: "version", value_id: app_ver }
-    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(elems)) }
-    let app_lit = synth_expr_id(Expr.StructLit("App", [f_name, f_desc, f_ver, f_cmds]))
+    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(sub_lits)) }
+    let app_lit = synth_expr_id(Expr.StructLit("@std::cli::App", [f_name, f_desc, f_ver, f_cmds]))
     out.push(Stmt.Let(inst, app_vt, app_lit))
-
     out
 }

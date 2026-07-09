@@ -4,8 +4,9 @@
 //
 // expand_cli generates one `type Command_<c>` + `impl Runnable for
 // Command_<c>` per command plus a top-level `let toy = App { … }`
-// (design §4.3); dispatch walks the `List<dyn Runnable>` and vtable-calls
-// the command whose name() matches. This asserts:
+// (design §4.3); dispatch walks the `List<Subcommand>`, matches the command
+// whose `meta.name` equals the request, and vtable-calls its dyn `body`.
+// This asserts:
 //   - each dispatched command runs its OWN body (returns its distinct
 //     exit code, prints its distinct marker),
 //   - routing is EXCLUSIVE — dispatching one command does not run the

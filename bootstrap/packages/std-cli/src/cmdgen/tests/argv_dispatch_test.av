@@ -1,11 +1,10 @@
 // vez6.11 argv front-end (jvw7): `App.run_argv(argv)` parses RAW argv
-// against each command's own flag/arg schema — reachable through the
-// `dyn Runnable` boxes via the trait's `flag_names()`/`arg_names()`/
-// `description()` accessors that expand_command generates — then
-// dispatches. This is the piece that makes `avra.run()` real: the design
-// (docs §4.2) `parse_argv(self)` needs per-command schemas the run body's
-// baked accessor calls don't expose, so the command must be
-// self-describing.
+// against each command's own flag/arg schema — read by DIRECT field access
+// off the command's `CommandSpec` (`c.meta.flags` / `.args` / `.options`),
+// the DATA half of the data/behaviour split — then dispatches through the
+// `dyn Runnable` body. expand_cli bakes each command's schema into a
+// `Subcommand { meta: CommandSpec{…}, body: … }` at expansion time, so the
+// command is self-describing without any trait accessor methods.
 //
 // `run_argv` takes a pre-read `List<string>` (the command name + its
 // args, no program name) so the whole parse+dispatch path is testable
@@ -110,7 +109,7 @@ fn ad_run() -> string {
 
 spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispatches" {
     then "a --flag token resolves to the command's flag schema" {
-        // `["build", "--verbose"]`: verbose is in build's flag_names(), so
+        // `["build", "--verbose"]`: verbose is in build's schema flags (c.meta.flags), so
         // the classifier records it, the run body sees `verbose == true`
         // and returns 100 (not the arg-length path).
         let out = ad_run()
@@ -118,7 +117,7 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
     }
     then "a positional resolves to the declared arg by declaration order" {
         // `["build", "hello"]`: no flags, so `hello` maps to positional 0,
-        // named `target` by arg_names(); the run body returns
+        // named `target` by the schema args (c.meta.args); the run body returns
         // `target.length` == 5.
         let out = ad_run()
         out.contains("B=5")
@@ -142,14 +141,14 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
     }
     then "--help prints the app + command descriptions and returns 0" {
         // app_print_help emits the app description and each command's
-        // description() — both baked from the cli/command config.
+        // c.meta.description — both baked from the cli/command config.
         let out = ad_run()
         out.contains("G=0")
             && out.contains("TOYDESC")
             && out.contains("BUILDDESC")
     }
     then "an undeclared --flag is rejected: error reported, exit 1, body not run" {
-        // `["build", "--bogus"]` — `--bogus` isn't in build's flag_names(),
+        // `["build", "--bogus"]` — `--bogus` isn't in build's schema flags,
         // so parse_tokens records `unknown flag: --bogus`; run_argv reports
         // it and returns 1 WITHOUT dispatching (the run body, which would
         // return 100/`target.length`, never runs for this invocation).
@@ -158,20 +157,20 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
     }
     then "an inherited GLOBAL flag is parsed from argv against the command" {
         // `glob` is declared at the cli level (a global), so it's inherited
-        // into build's flag_names() (own flags + globals). `["build",
+        // into build's schema flags (own flags + globals). `["build",
         // "--glob"]` must therefore be accepted — NOT rejected as unknown —
         // and reach the run body's inherited `glob` binding, returning 55.
-        // This exercises the flag_names() own+global union through run_argv,
+        // This exercises the own+global flag-schema union through run_argv,
         // not just a command's own flags.
         let out = ad_run()
         out.contains("I=55")
     }
     then "a --key=value option is parsed against the command's option schema" {
-        // `pack` declares `option outfile {}`; option_names() reports it, so
+        // `pack` declares `option outfile {}`; the schema options (c.meta.options) report it, so
         // `["pack", "--outfile=result"]` sets the `outfile` option and the
         // run body's `outfile` binding (result_get_option) reads "result"
         // (length 6). Unset (`["pack"]`) falls back to "" (length 0). This
-        // exercises the option accessor + `--key=value` classification path.
+        // exercises the option schema + `--key=value` classification path.
         let out = ad_run()
         out.contains("J=6") && out.contains("K=0")
     }
@@ -180,7 +179,7 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         // build's per-command usage (NOT rejected as an unknown flag, NOT
         // the run body): its declared flags (`--verbose`, inherited
         // `--glob`) and its positional arg (`target`), read from the
-        // self-describing accessors. Returns 0. The `--verbose` FLAGS entry
+        // self-describing CommandSpec. Returns 0. The `--verbose` FLAGS entry
         // and `target` ARGS entry appear only in this per-command help.
         let out = ad_run()
         out.contains("M=0")

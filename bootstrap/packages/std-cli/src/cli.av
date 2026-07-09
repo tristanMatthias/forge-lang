@@ -13,16 +13,33 @@ extern fn avra_process_exit(code: int)
 // ── Types ──
 
 /// Boolean flag declaration: `--name` / `-s`. No value — presence
-/// alone toggles it.
-type FlagDef = { name: string, short: string, description: string }
+/// alone toggles it. Exported: a command's schema (CommandSpec) is public
+/// so App.run can parse argv against it and hand-written commands can
+/// describe themselves.
+export type FlagDef = { name: string, short: string, description: string }
 
 /// Option declaration: `--name <value>` or `--name=<value>` /
 /// `-s <value>`. Carries a default for when the user omits it.
-type OptionDef = { name: string, short: string, description: string, default_val: string }
+export type OptionDef = { name: string, short: string, description: string, default_val: string }
 
 /// Positional argument declaration. `required: true` means the
 /// parser fails when the user doesn't supply it.
-type ArgDef = { name: string, description: string, required: bool }
+export type ArgDef = { name: string, description: string, required: bool }
+
+/// A subcommand's full parse schema — its name, one-line description, and
+/// declared flags / positional args / options. This is the DATA half of a
+/// command (its identity + how to parse its argv); the BEHAVIOR half is the
+/// `dyn Runnable` it is paired with in a `Subcommand`. Homogeneous data, so
+/// `App.run` reads its fields DIRECTLY (`c.meta.name`, `c.meta.flags`) — no
+/// vtable, no accessor methods. expand_cli builds one per command; a
+/// hand-written command supplies its own.
+export type CommandSpec = {
+    name: string,
+    description: string,
+    flags: List<FlagDef>,
+    args: List<ArgDef>,
+    options: List<OptionDef>
+}
 
 /// One subcommand declaration: `name`, help text, and its own
 /// per-command flag / option / arg sets. Top-level Cli uses the same
@@ -75,51 +92,49 @@ export type Cli = {
 // FlagDef / OptionDef / ArgDef / CommandDef / Cli / cli_* surface
 // retires and these become the only API.
 //
-// Shape mirrors `docs/2026_05_08_COMPONENTS_V2_DESIGN.md §4.2`:
-//   trait Runnable { fn name(self) -> string; fn run(self, args) -> int }
+// Shape mirrors `docs/2026_05_08_COMPONENTS_V2_DESIGN.md §4.2`, with the
+// data/behaviour split below:
+//   trait Runnable { fn run(self, args: CliResult) -> int }   // behaviour only
+//   type CommandSpec = { name, description, flags, args, options }   // data
+//   type Subcommand  = { meta: CommandSpec, body: dyn Runnable }
 //   @expand(expand_command) component command implements Runnable { ... }
 //   @expand(expand_cli)     component cli                          { ... }
-// The @expand macros generate one `type Command_<inst>` plus
-// `impl Runnable for Command_<inst>` per declared instance, then
-// `cli avra { ... }` becomes a `Cli` struct literal that .run()
-// dispatches across `List<dyn Runnable>` via vtable.
+// The @expand macros generate one `type Command_<inst>` (a behaviour marker)
+// plus `impl Runnable for Command_<inst>` per declared instance, then
+// `cli avra { ... }` becomes a top-level `let avra = App { ..., commands:
+// [Subcommand{…}] }`. `App.run` reads each command's schema by DIRECT field
+// access (`c.meta.name`) and dispatches through the dyn `body` via vtable.
 
-/// Trait every subcommand satisfies. `name()` is checked against
-/// the parsed argv to pick a command; `run()` executes its body
-/// with the resolved flags / args / options bound as locals (the
-/// macro author handles that lowering — see expand_command).
-///
-/// `flag_names` / `arg_names` / `option_names` / `description` make each
-/// command SELF-DESCRIBING so `App.run` can parse raw argv against the
-/// right schema through the `dyn Runnable` boxes — the per-command
-/// flag/arg/option schema is otherwise unreachable at parse time (the
-/// schema lives baked into the run body's accessor calls). `flag_names`
-/// returns the command's own flags plus any inherited global flags
-/// (WITHOUT dashes); `arg_names` returns the positional args in
-/// declaration order (so raw positionals map to names); `option_names`
-/// returns the declared `--key=value` options (without dashes);
-/// `description` is the one-line help text (may be ""). expand_command
-/// generates all four from the declared children; hand-written commands
-/// return `[]`/`""` when they take no flags/args/options.
+/// A command's BEHAVIOUR: run it with the parsed argv, return an exit code.
+/// This is the whole trait — deliberately ONE method. A command's identity
+/// and parse schema live in its `CommandSpec` (data); that data is paired
+/// with this behaviour in a `Subcommand`. Keeping the trait behaviour-only
+/// means the schema is read by direct field access (`c.meta.flags`), never
+/// smuggled through the vtable as accessor methods — the honest split of
+/// homogeneous data from heterogeneous behaviour.
 export trait Runnable {
-    fn name(self) -> string
     fn run(self, args: CliResult) -> int
-    fn flag_names(self) -> List<string>
-    fn arg_names(self) -> List<string>
-    fn option_names(self) -> List<string>
-    fn description(self) -> string
+}
+
+/// One subcommand of an `App`: its `meta` (name + parse schema — DATA, read
+/// directly) paired with its `body` (the `dyn Runnable` behaviour, called
+/// through the vtable). Pairing them here is what lets `App.run` reach a
+/// command's schema without a trait accessor.
+export type Subcommand = {
+    meta: CommandSpec,
+    body: dyn Runnable
 }
 
 /// V2 dispatch container (vez6.11). Parallels the design's `Cli`
 /// (docs §4.2) but named `App` so it can coexist with the legacy
 /// `Cli` builder surface until main.av migrates off it (vez6.12).
-/// Holds the `dyn Runnable` command boxes that expand_cli generates;
-/// `dispatch` runs the vtable-dispatch loop over them.
+/// Holds the `Subcommand` pairs expand_cli generates; `run`/`dispatch`
+/// route argv to the matched command via `meta.name` then `body.run`.
 export type App = {
     name: string,
     description: string,
     version: string,
-    commands: List<dyn Runnable>
+    commands: List<Subcommand>
 }
 
 impl App {
@@ -129,9 +144,9 @@ impl App {
     /// `dyn Runnable` box — each command's generated `run` body
     /// executes with its flag/arg accessors bound.
     fn dispatch(self, parsed: CliResult) -> int {
-        for cmd in self.commands {
-            if cmd.name() == parsed.command {
-                return cmd.run(parsed)
+        for c in self.commands {
+            if c.meta.name == parsed.command {
+                return c.body.run(parsed)
             }
         }
         1
@@ -142,11 +157,8 @@ impl App {
     /// then dispatch. `--help`/`-h` and `--version`/`-V` in the command
     /// slot are handled here (print + return 0). Returns the command's
     /// exit code, or 1 when the slot is empty or no command matches
-    /// (after printing help). The command's `flag_names()`/`arg_names()`
-    /// give the schema the classifier needs, so raw `--flag` tokens and
-    /// positionals resolve to the same names the run body reads via
-    /// `result_has_flag`/`result_get_arg`. Split out from `run` so the
-    /// whole parse+dispatch path is testable with a synthetic argv list.
+    /// (after printing help). Split out from `run` so the whole
+    /// parse+dispatch path is testable with a synthetic argv list.
     fn run_argv(self, argv: List<string>) -> int {
         if argv.length == 0 {
             app_print_help(self)
@@ -161,9 +173,9 @@ impl App {
             println("${self.name} v${self.version}")
             return 0
         }
-        for cmd in self.commands {
-            if cmd.name() == first {
-                return self.run_matched(cmd, argv)
+        for c in self.commands {
+            if c.meta.name == first {
+                return self.run_matched(c, argv)
             }
         }
         app_print_help(self)
@@ -171,11 +183,13 @@ impl App {
     }
 
     /// Parse the args of an already-matched command (`argv` = the command
-    /// name followed by its args) against the command's schema and dispatch.
-    /// `<cmd> --help` short-circuits to the command's own usage; a parse
-    /// error (e.g. an undeclared `--flag`) is reported and stops dispatch —
-    /// a real CLI doesn't silently run a mis-parsed invocation.
-    fn run_matched(self, cmd: dyn Runnable, argv: List<string>) -> int {
+    /// name followed by its args) against its schema and dispatch. `<cmd>
+    /// --help` short-circuits to the command's own usage; a parse error
+    /// (e.g. an undeclared `--flag`) is reported and stops dispatch — a real
+    /// CLI doesn't silently run a mis-parsed invocation. The command's `meta`
+    /// IS the parse schema (FlagDef/OptionDef/ArgDef lists), read DIRECTLY —
+    /// no accessor round-trip, no name→def rebuild.
+    fn run_matched(self, c: Subcommand, argv: List<string>) -> int {
         mut tokens: List<string> = []
         mut i = 1
         while i < argv.length {
@@ -183,17 +197,15 @@ impl App {
             i = i + 1
         }
         if tokens_have_help(tokens) {
-            cmd_print_help(self, cmd)
+            cmd_print_help(self, c.meta)
             return 0
         }
-        let parsed = parse_tokens(cmd.name(), flag_defs_for(cmd.flag_names()),
-                                  option_defs_for(cmd.option_names()),
-                                  arg_defs_for(cmd.arg_names()), tokens)
+        let parsed = parse_tokens(c.meta.name, c.meta.flags, c.meta.options, c.meta.args, tokens)
         if result_has_error(parsed) {
             eprintln(parsed.error)
             return 1
         }
-        cmd.run(parsed)
+        c.body.run(parsed)
     }
 
     /// Read the real process argv (dropping the program name at index 0)
@@ -211,43 +223,9 @@ impl App {
     }
 }
 
-/// Build the classifier's dashed `FlagDef` schema from bare flag names
-/// (`vq` → `--vq`), so `is_flag_match` recognises `--vq` on argv and the
-/// resulting `ParsedFlag` is named `vq` (what `result_has_flag` reads).
-fn flag_defs_for(names: List<string>) -> List<FlagDef> {
-    mut out: List<FlagDef> = []
-    for n in names {
-        out.push(FlagDef { name: "--" + n, short: "", description: "" })
-    }
-    out
-}
-
-/// Build the classifier's positional `ArgDef` schema (in declaration
-/// order) from bare arg names, so positional N resolves to its declared
-/// name (what `result_get_arg` reads).
-fn arg_defs_for(names: List<string>) -> List<ArgDef> {
-    mut out: List<ArgDef> = []
-    for n in names {
-        out.push(ArgDef { name: n, description: "", required: false })
-    }
-    out
-}
-
-/// Build the classifier's dashed `OptionDef` schema from bare option
-/// names (`out` → `--out`), so `--out=<value>` is recognised and the
-/// resulting `ParsedOption` is named `out` (what `result_get_option`
-/// reads). Default value is "" — declared per-option defaults are a
-/// future config-reading enhancement (shared with flag shorts).
-fn option_defs_for(names: List<string>) -> List<OptionDef> {
-    mut out: List<OptionDef> = []
-    for n in names {
-        out.push(OptionDef { name: "--" + n, short: "", description: "", default_val: "" })
-    }
-    out
-}
-
 /// App-level `--help`: name/version, optional description, usage, and
-/// the command list with each command's one-line description.
+/// the command list with each command's one-line description (read
+/// directly from each `Subcommand`'s `meta`).
 fn app_print_help(app: App) {
     println("${app.name} v${app.version}")
     if app.description != "" {
@@ -258,8 +236,8 @@ fn app_print_help(app: App) {
     println("  ${app.name} <command> [options]")
     println("")
     println("COMMANDS:")
-    for cmd in app.commands {
-        println("  ${cmd.name()}  ${cmd.description()}")
+    for c in app.commands {
+        println("  ${c.meta.name}  ${c.meta.description}")
     }
 }
 
@@ -279,26 +257,50 @@ fn tokens_have_help(tokens: List<string>) -> bool {
 }
 
 /// Per-command `--help`: the command's name + description, then its
-/// declared flags, options, and positional args (from the self-describing
-/// Runnable accessors). Only non-empty sections are printed.
-fn cmd_print_help(app: App, cmd: dyn Runnable) {
-    println("${app.name} ${cmd.name()}  ${cmd.description()}")
+/// declared flags, options, and positional args — read straight off the
+/// command's `CommandSpec`. Only non-empty sections are printed.
+fn cmd_print_help(app: App, meta: CommandSpec) {
+    println("${app.name} ${meta.name}  ${meta.description}")
     println("")
     println("USAGE:")
-    println("  ${app.name} ${cmd.name()} [flags] [options] [args]")
-    print_named_section("FLAGS:", "--", cmd.flag_names())
-    print_named_section("OPTIONS:", "--", cmd.option_names())
-    print_named_section("ARGS:", "", cmd.arg_names())
+    println("  ${app.name} ${meta.name} [flags] [options] [args]")
+    print_flag_section(meta.flags)
+    print_option_section(meta.options)
+    print_arg_section(meta.args)
 }
 
-/// Print a `header` followed by one `<prefix><name>` line per name.
-/// Nothing is printed when `names` is empty, so empty sections vanish.
-fn print_named_section(header: string, prefix: string, names: List<string>) {
-    if names.length == 0 { return }
+/// Render the `FLAGS:` block: one `--name[, -short]  description` line per
+/// declared flag. Nothing printed when there are none.
+fn print_flag_section(flags: List<FlagDef>) {
+    if flags.length == 0 { return }
     println("")
-    println(header)
-    for n in names {
-        println("  ${prefix}${n}")
+    println("FLAGS:")
+    for f in flags {
+        let short = if f.short != "" { ", ${f.short}" } else { "" }
+        println("  ${f.name}${short}  ${f.description}")
+    }
+}
+
+/// Render the `OPTIONS:` block: one `--name[, -short]  description` line
+/// per declared option. Nothing printed when there are none.
+fn print_option_section(options: List<OptionDef>) {
+    if options.length == 0 { return }
+    println("")
+    println("OPTIONS:")
+    for o in options {
+        let short = if o.short != "" { ", ${o.short}" } else { "" }
+        println("  ${o.name}${short}  ${o.description}")
+    }
+}
+
+/// Render the `ARGS:` block: one `name  description` line per declared
+/// positional (positionals aren't dashed). Nothing printed when none.
+fn print_arg_section(args: List<ArgDef>) {
+    if args.length == 0 { return }
+    println("")
+    println("ARGS:")
+    for a in args {
+        println("  ${a.name}  ${a.description}")
     }
 }
 
