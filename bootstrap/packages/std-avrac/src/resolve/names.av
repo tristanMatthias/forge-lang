@@ -683,11 +683,18 @@ fn bind_params_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
     mut acc = ctx
     mut i = 0
     while i < params.length {
-        let new_locals = list_push_copy(acc.locals, LocalBinding { name: params[i].name, mutable: false, defined: true, depth: 0 })
-        acc = ctx_with_locals(acc, new_locals)
+        acc = scope_add_local(acc, params[i].name)
         i = i + 1
     }
     acc
+}
+
+/// Push a single name onto the local scope. `list_push_copy` (not a
+/// mutating push) keeps the parent ctx's `locals` untouched, so an
+/// inner scope's bindings never leak back to the enclosing scope —
+/// same reasoning as `bind_params_ctx`.
+fn scope_add_local(ctx: NameCtx, name: string) -> NameCtx {
+    ctx_with_locals(ctx, list_push_copy(ctx.locals, LocalBinding { name, mutable: false, defined: true, depth: 0 }))
 }
 
 /// Bind every binding in a pattern (e.g. `.Some(x, y)` adds `x` and
@@ -697,13 +704,7 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)  // ids resolved in the list walker
-        .TypePattern(_, binding) -> {
-            // list_push_copy avoids mutating the parent ctx's
-            // locals — same leak-prevention reasoning as
-            // bind_params_ctx's docstring.
-            let new_locals = list_push_copy(ctx.locals, LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
-            ctx_with_locals(ctx, new_locals)
-        }
+        .TypePattern(_, binding) -> scope_add_local(ctx, binding)
         _ -> ctx
     }
 }
@@ -1056,9 +1057,43 @@ fn rewrite_stmt_id(ctx: NameCtx, id: StmtId) -> StmtId {
     ctx.nodes.restmt(rewrite_stmt(ctx, ctx.nodes.stmts.get(id)), id)
 }
 
-/// Rewrite a flipped `List<StmtId>` body.
+/// Rewrite a flipped `List<StmtId>` body, threading the locals a
+/// `let`/`mut`/`const`/destructure introduces forward so a later
+/// statement's reference to that local is NOT mis-qualified as a
+/// same-named module sibling or `use` alias. Without this the qualifier
+/// (which checks `scope_has(ctx.locals, name)` first) never saw the
+/// binding, so `let x = f(); g(x)` compiled `x` into a reference to a
+/// module-level `x` — emitting the closure marker where the value
+/// belonged (zo1a). A binding is visible only to the statements that
+/// follow it in THIS sequence; a nested block gets its own extended ctx
+/// and its locals don't leak back out.
 fn rewrite_stmt_ids(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
-    list_map(ids, (id: StmtId) -> rewrite_stmt_id(ctx, id))
+    mut cur = ctx
+    mut out: List<StmtId> = []
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        // Rewrite under the scope as it stands BEFORE this statement's
+        // own binding takes effect (`let x = x` reads the outer `x`).
+        out.push(rewrite_stmt_id(cur, id))
+        cur = bind_stmt_locals(cur, cur.nodes.stmts.get(id))
+        i = i + 1
+    }
+    out
+}
+
+/// Extend `ctx.locals` with whatever binding `stmt` introduces, so the
+/// statements that follow it in the same sequence see it as a local.
+/// Peels `Annotated` wrappers; non-binding statements pass ctx through.
+fn bind_stmt_locals(ctx: NameCtx, stmt: Stmt) -> NameCtx {
+    match stmt {
+        .Let(name, _, _) -> scope_add_local(ctx, name)
+        .Mut(name, _, _) -> scope_add_local(ctx, name)
+        .Const(name, _, _) -> scope_add_local(ctx, name)
+        .LetDestructure(names, _) -> bind_params_ctx(ctx, names)
+        .Annotated(_, inner) -> bind_stmt_locals(ctx, ctx.nodes.stmts.get(inner))
+        _ -> ctx
+    }
 }
 
 /// Rewrite a single statement: qualify type names in declarations,
@@ -1076,8 +1111,11 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             Stmt.If(rewrite_expr_id(ctx, cond), rewrite_stmt_id(ctx, then_b), new_else)
         }
         .While(cond, body) -> .While(rewrite_expr_id(ctx, cond), rewrite_stmt_id(ctx, body))
-        .For(var, start, end, body) -> .For(var, rewrite_expr_id(ctx, start), rewrite_expr_id(ctx, end), rewrite_stmt_id(ctx, body))
-        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr_id(ctx, coll), rewrite_stmt_id(ctx, body))
+        // The loop `var` is bound in the body (not in start/end/coll,
+        // which are evaluated in the enclosing scope) so a body reference
+        // to it isn't mis-qualified as a same-named module sibling.
+        .For(var, start, end, body) -> .For(var, rewrite_expr_id(ctx, start), rewrite_expr_id(ctx, end), rewrite_stmt_id(scope_add_local(ctx, var), body))
+        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr_id(ctx, coll), rewrite_stmt_id(scope_add_local(ctx, var), body))
         .Function(name, tp, params, rvt, body) -> {
             let is_impl_method = is_mangled_method(name)
             // Idempotent qualification: skip if already qualified

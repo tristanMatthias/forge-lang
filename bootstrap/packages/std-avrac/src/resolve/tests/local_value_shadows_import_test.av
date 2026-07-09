@@ -1,0 +1,68 @@
+// zo1a — a local binding whose name matches a `use`-imported (or
+// module-sibling) function MUST shadow that function. The name
+// qualifier used to walk a statement sequence without threading the
+// `let`/`mut`/`const` / loop-variable bindings it passed, so a later
+// reference to the local was rewritten to the imported function's
+// canonical path. Codegen then materialised that path as a function
+// reference — the `[0xDEADBEEF, fn_ptr]` closure array — where the
+// local's value belonged, corrupting the value silently (an unmatched
+// closure-marker tag surfaced far downstream). Here the corruption
+// instead shows up as a *type* error: the shadowed reference takes on
+// the imported function's return type (`ByteSpan`) rather than the
+// local's, so `string(local)` / `local + local` stop type-checking.
+// Fixing the qualifier to track in-body bindings makes the local win.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn compile_capture(source: string) -> string {
+    let path = "/tmp/avra_zo1a_shadow_test.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "zo1a: a local shadows a same-named imported function" {
+    then "a `let` binding shadows the imported `byte_span_none`" {
+        let out = compile_capture(
+            "use @std.avrac.core.{byte_span_none}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let byte_span_none = 42\n" +
+            "    println(string(byte_span_none))\n" +
+            "}\n")
+        // With the bug, `byte_span_none` resolves to the imported fn
+        // (returning `ByteSpan`), so `string(...)` fails with F1003 naming
+        // `ByteSpan`. With the fix, the local int wins and it compiles.
+        !out.contains("ByteSpan") && !out.contains("error[F")
+    }
+
+    then "a `for` loop variable shadows the imported `byte_span_none`" {
+        let out = compile_capture(
+            "use @std.avrac.core.{byte_span_none}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    for byte_span_none in 0..3 {\n" +
+            "        println(string(byte_span_none))\n" +
+            "    }\n" +
+            "}\n")
+        !out.contains("ByteSpan") && !out.contains("error[F")
+    }
+
+    then "a `mut` binding inside a nested block shadows the imported `byte_span_none`" {
+        // Exercises the binding threading across a nested block (the
+        // `while` body) — the exact shape of the seed-baked repro.
+        let out = compile_capture(
+            "use @std.avrac.core.{byte_span_none}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    mut i = 0\n" +
+            "    while i < 2 {\n" +
+            "        mut byte_span_none = 7\n" +
+            "        byte_span_none = byte_span_none + 1\n" +
+            "        println(string(byte_span_none))\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "}\n")
+        !out.contains("ByteSpan") && !out.contains("error[F")
+    }
+}
