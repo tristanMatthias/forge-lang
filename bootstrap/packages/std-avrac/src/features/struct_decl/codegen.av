@@ -5,7 +5,8 @@ use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use codegen.{emit_optional_coerce, emit_trait_boxed_list}
+use codegen.{emit_optional_coerce, emit_trait_boxed_list, trait_decl_has}
+use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 
 /// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
@@ -77,8 +78,25 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
                 let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
                 // Optional box/unbox into the field's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, fld_ty)
-                // Union wrapping: if field type is union and value is a concrete member
-                if needs_union_wrap(r.ty, fld_ty) {
+                // A bare `dyn Trait` field initialised with a concrete value must
+                // box it into a trait object (value + vtable) — the single-field
+                // analog of the `List<dyn Trait>` arm above, mirroring the
+                // arg-passing path (fill_arg_array_boxing). Without this the raw
+                // struct is stored and a later `field.method()` reads a garbage
+                // vtable (966j). A value that is already a trait object (assigning
+                // one `dyn Trait` to another) has an empty concrete name and falls
+                // through unboxed.
+                let field_trait = vtype_trait_name(fld_ty)
+                if field_trait != "" {
+                    let concrete_name = resolve_concrete_type_name(r.ty)
+                    if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
+                        let boxed = box_for_trait(ctx, r.value, field_trait, concrete_name)
+                        ctx.store_field(boxed, gep, fld_ty)
+                    } else {
+                        ctx.store_field(r.value, gep, fld_ty)
+                    }
+                } else if needs_union_wrap(r.ty, fld_ty) {
+                    // Union wrapping: field type is union and value is a concrete member.
                     let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
                     ctx.store_field(wrapped.value, gep, fld_ty)
                 } else {
@@ -113,7 +131,21 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     let fld_ty = ctx.resolve_field_type(lookup.fields, field)
     // Optional box/unbox into the field's slot (no-op when neither applies).
     v = emit_optional_coerce(ctx, v, fld_ty)
-    if needs_union_wrap(v.ty, fld_ty) {
+    // Box a concrete value into a bare `dyn Trait` field — same as the struct
+    // literal path (see fill_struct_fields; 966j). `obj.dynfield = Concrete{…}`
+    // must store a trait object, not the raw struct.
+    let field_trait = vtype_trait_name(fld_ty)
+    if field_trait != "" {
+        let concrete_name = resolve_concrete_type_name(v.ty)
+        if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
+            let boxed = box_for_trait(ctx, v.value, field_trait, concrete_name)
+            ctx.store_field(boxed, gep, fld_ty)
+            ok_emit(boxed, fld_ty)
+        } else {
+            ctx.store_field(v.value, gep, fld_ty)
+            ok_emit(v.value, v.ty)
+        }
+    } else if needs_union_wrap(v.ty, fld_ty) {
         let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
         ctx.store_field(wrapped.value, gep, fld_ty)
         ok_emit(wrapped.value, wrapped.ty)
