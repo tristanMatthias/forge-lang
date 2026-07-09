@@ -8,6 +8,7 @@ use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, qualified_mangle_base, method_mangled_name, method_from_mangled}
+use core.{FORCE_UNWRAP_FN, vtype_strip_optional}
 use list_ops.{list_contains_str}
 
 // ── Registries ──
@@ -700,6 +701,15 @@ fn infer_lit_ty(regs: GenRegs, e: Expr) -> ValueType {
         .Grouping(inner) -> infer_lit_ty(regs, regs.store.exprs.get(inner))
         .ListLit(elements) -> ValueType.List(infer_list_elem_ty(regs, elements))
         .Lambda(params, _) -> ValueType.FnTyped(param_types(params), ValueType.Unknown)
+        // `x!` (force-unwrap) yields the non-optional inner of its arg. Without
+        // this a generic call `id(x!)` reads its arg as Unknown, so `T` never
+        // binds and the mono'd return lowers to a bare `ptr` while the param
+        // took `i64` from the arg — the mismatched signature emits `add ptr`
+        // and llc rejects it. Mirrors typeck's check_expr FORCE_UNWRAP_FN case.
+        .Call(callee, call_args) -> match regs.store.exprs.get(callee) {
+            .Ident(nm) if nm == FORCE_UNWRAP_FN && call_args.length > 0 -> vtype_strip_optional(arg_concrete_ty(regs, call_args[0]))
+            _ -> ValueType.Unknown
+        }
         _ -> ValueType.Unknown
     }
 }

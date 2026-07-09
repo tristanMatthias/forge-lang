@@ -1,0 +1,64 @@
+// A generic call whose argument is a force-unwrap (`id(x!)`) must bind the type
+// parameter to the UNWRAPPED inner type, so the monomorphised function has a
+// consistent signature. Before the fix, mono's arg-type inference didn't
+// recognise the `x!` force-unwrap call, so it read the argument as `Unknown`:
+// `T` never bound, and the monomorphised return lowered to a bare `ptr` while
+// the parameter took `i64` from the argument. The mismatched signature emitted
+// `add ptr, …` in any arithmetic use of the result, which llc rejects
+// ("Integer arithmetic operators only work with integral types!").
+//
+// The fix teaches `infer_lit_ty` the force-unwrap call, mirroring typeck's
+// `check_expr` handling. `id(x!)` now binds `T` to the inner type, so the
+// result is a real scalar and integer arithmetic on it is well-typed.
+
+fn id<T>(v: T) -> T { v }
+fn pick<T>(a: T, b: T) -> T { a }
+
+spec "generic call on a force-unwrapped optional binds the inner type" {
+    then "id(x!) + 1 is integer arithmetic (was an llc-reject add ptr)" {
+        let x: int? = 5
+        id(x!) + 1 == 6
+    }
+    then "id(x!) used directly returns the value" {
+        let x: int? = 41
+        id(x!) == 41
+    }
+    then "arithmetic chains: id(x!) * id(y!)" {
+        let x: int? = 6
+        let y: int? = 7
+        id(x!) * id(y!) == 42
+    }
+    then "float?: id(f!) + 0.5" {
+        let f: float? = 1.0
+        id(f!) + 0.5 == 1.5
+    }
+    then "bool?: id(b!) is the unwrapped bool" {
+        let b: bool? = true
+        id(b!) == true
+    }
+    then "two type params both force-unwrapped: pick(x!, y!)" {
+        let x: int? = 3
+        let y: int? = 9
+        pick(x!, y!) + 1 == 4
+    }
+    then "nested generic calls: id(id(x!)) + 1" {
+        let x: int? = 10
+        id(id(x!)) + 1 == 11
+    }
+    then "non-force-unwrap args still infer (control): id(5) + 1" {
+        id(5) + 1 == 6
+    }
+    then "variable-int arg still infers (control): id(n) + 1" {
+        let n = 4
+        id(n) + 1 == 5
+    }
+}
+
+type Box = { v: int }
+
+spec "force-unwrap of a struct optional into a generic still works" {
+    then "id(s!).v reads the struct field" {
+        let s: Box? = Box { v: 77 }
+        id(s!).v == 77
+    }
+}
