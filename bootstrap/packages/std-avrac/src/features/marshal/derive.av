@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct}
+use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore}
 
 // ── Public entry ──
@@ -186,50 +186,79 @@ fn chain_writes(store: NodeStore, base: Expr, fields: List<FieldEntry>, from_sel
     mut i = 0
     while i < fields.length {
         let e = fields[i]
-        let name = e.name
-        let ty = e.resolved
         let value_expr = if from_self {
-            field_access(store, Expr.Ident("self"), name)
+            field_access(store, Expr.Ident("self"), e.name)
         } else {
-            Expr.Ident(name)
+            Expr.Ident(e.name)
         }
-        // Nested @marshal struct (nce6.1.C): the field's own
-        // to_bytes() returns a `bytes` payload that we embed
-        // length-prefixed via the parent's write_bytes. We
-        // optimistically emit the recursive call without
-        // checking the inner type has @marshal — if it
-        // doesn't, the type-checker will catch the undefined
-        // `to_bytes` later with a clear error.
-        if ty is .Struct {
-            let inner_bytes = method_call(store, value_expr, "to_bytes", [])
-            let args = [store.exprs.add_leaf(inner_bytes)]
-            acc = method_call(store, acc, "write_bytes", args)
-            i = i + 1
-            continue
-        }
-        // List<NestedMarshalStruct>: BytesBuilder doesn't have a
-        // generic write_struct_list (would need a trait-bound
-        // method), so we inline a for-loop in a block-expr that
-        // yields the final builder for the chain to continue.
-        let list_struct = match ty {
-            .List(elem) -> elem is .Struct
-            _ -> false
-        }
-        if list_struct {
-            acc = list_of_struct_block(store, acc, value_expr, name)
-        } else {
-            let writer = writer_for(ty)
-            if writer != "" {
-                // Unsupported field type (writer == "") skips so
-                // the impl still type-checks; round-trip is lossy
-                // until follow-up sub-tickets extend the table.
-                let args = [store.exprs.add_leaf(value_expr)]
-                acc = method_call(store, acc, writer, args)
-            }
-        }
+        acc = write_one(store, acc, value_expr, e.resolved, e.name)
         i = i + 1
     }
     acc
+}
+
+/// Write one value of type `ty` into the builder expr `acc`, returning the new
+/// builder expr. `uniq` seeds block-local variable names so sibling fields
+/// don't collide. This is the single per-value write dispatch shared by struct
+/// fields and enum-variant payloads; `Optional` recurses through it under a
+/// presence flag, so an optional over any inner the table already handles
+/// round-trips instead of being silently dropped.
+fn write_one(store: NodeStore, acc: Expr, value_expr: Expr, ty: ValueType, uniq: string) -> Expr {
+    // Optional (T?): a presence bool, then the inner value only when present.
+    // An unsupported inner falls through to the shared skip below (no presence
+    // byte written) so write/read stay symmetric — same lossy contract as an
+    // unsupported non-optional field.
+    match ty {
+        .Optional(inner) -> {
+            if codec_supported(inner) { return optional_write_block(store, acc, value_expr, inner, uniq) }
+            return acc
+        }
+        _ -> {}
+    }
+    // Nested @marshal struct (nce6.1.C): the field's own to_bytes() returns a
+    // `bytes` payload embedded length-prefixed via write_bytes. Emitted
+    // optimistically — a missing inner to_bytes surfaces as a clear type error.
+    if ty is .Struct {
+        let inner_bytes = method_call(store, value_expr, "to_bytes", [])
+        return method_call(store, acc, "write_bytes", [store.exprs.add_leaf(inner_bytes)])
+    }
+    // List<NestedMarshalStruct>: BytesBuilder has no generic write_struct_list,
+    // so inline a for-loop block-expr that yields the builder for the chain.
+    let list_struct = match ty {
+        .List(elem) -> elem is .Struct
+        _ -> false
+    }
+    if list_struct { return list_of_struct_block(store, acc, value_expr, uniq) }
+    let writer = writer_for(ty)
+    // Unsupported non-optional field type (writer == "") is skipped so the impl
+    // still type-checks; round-trip stays lossy until the codec table extends.
+    // Optional is handled above, so a supported inner is never silently dropped.
+    if writer != "" { return method_call(store, acc, writer, [store.exprs.add_leaf(value_expr)]) }
+    acc
+}
+
+/// `{ mut __ob_<u> = acc.write_bool(v != null); if v != null { __ob_<u> =
+/// <write v! : inner> }; __ob_<u> }` — a presence bool, then (only when present)
+/// the inner value written through the shared `write_one` dispatch. The block
+/// yields the advanced builder so the enclosing chain continues naturally.
+fn optional_write_block(store: NodeStore, acc: Expr, value_expr: Expr, inner: ValueType, uniq: string) -> Expr {
+    let bvar = "__ob_" + uniq
+    // mut __ob = acc.write_bool(v != null)
+    let present_init = Expr.Binary(store.exprs.add_leaf(value_expr), BinOp.Ne, store.exprs.add_leaf(Expr.None))
+    let init_call = method_call(store, acc, "write_bool", [store.exprs.add_leaf(present_init)])
+    let init_stmt = Stmt.Mut(bvar, ValueType.Unknown, store.exprs.add_leaf(init_call))
+    // if v != null { __ob = <write v! : inner> }
+    let forced = mk_call(store, Expr.Ident(FORCE_UNWRAP_FN), [store.exprs.add_leaf(value_expr)])
+    let inner_write = write_one(store, Expr.Ident(bvar), forced, inner, uniq)
+    let assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(bvar, store.exprs.add_leaf(inner_write))))
+    let if_body_stmts: List<StmtId> = [store.stmts.add_leaf(assign)]
+    let if_body = store.stmts.add_leaf(Stmt.Block(if_body_stmts))
+    let present_cond = Expr.Binary(store.exprs.add_leaf(value_expr), BinOp.Ne, store.exprs.add_leaf(Expr.None))
+    let if_stmt = Stmt.If(store.exprs.add_leaf(present_cond), if_body, null)
+    // yield __ob
+    let yield_stmt = Stmt.Expr(store.exprs.add_leaf(Expr.Ident(bvar)))
+    let block_body: List<StmtId> = [store.stmts.add_leaf(init_stmt), store.stmts.add_leaf(if_stmt), store.stmts.add_leaf(yield_stmt)]
+    Expr.Block(block_body)
 }
 
 /// Build a block-expr that returns a BytesBuilder after appending
@@ -313,6 +342,25 @@ fn list_reader_for(elem: ValueType) -> string {
     }
 }
 
+/// True when the codec table can actually round-trip `ty` — i.e. write_one /
+/// read_one emit real work and bind a value for it. Used to gate the Optional
+/// paths so an optional over an UNSUPPORTED inner (e.g. `Map?`, `Tuple?`) falls
+/// back to the same skip-and-default behavior as an unsupported non-optional
+/// field, instead of emitting a presence-guarded read that binds nothing (which
+/// would reference an unbound temp — a raw F3000 leaking a synthesised name).
+/// For a non-optional `ty` this is equivalent to the prior
+/// `reader_for(ty) != "" || ty is .Struct || list_of_struct_elem(ty)` binding
+/// test (writer_for and reader_for share arms), so build_field_inits stays
+/// byte-identical for every already-supported field type.
+fn codec_supported(ty: ValueType) -> bool {
+    match ty {
+        .Optional(inner) -> codec_supported(inner)
+        .Struct(_, _, _) -> true
+        .List(elem) -> (elem is .Struct) || list_writer_for(elem) != ""
+        _ -> writer_for(ty) != ""
+    }
+}
+
 // ── from_bytes synthesis ──
 
 /// Build `fn from_bytes(b: bytes) -> T { let r = bytes_reader(b); let (f1, r) = r.read_*(); … ; T { f1: f1, … } }`.
@@ -362,49 +410,78 @@ fn build_reads_and_ctor(store: NodeStore, type_name: string, fields: List<FieldE
 
 fn build_reads(store: NodeStore, fields: List<FieldEntry>) -> List<StmtId> {
     // Indexed walk produces the per-field read sequences and
-    // concatenates them into a single row list. Each branch returns
-    // its own sub-list for the field — they're appended into
-    // `out` so source order is preserved.
+    // concatenates them into a single row list — source order preserved.
     mut out: List<StmtId> = []
     mut i = 0
     while i < fields.length {
-        let e = fields[i]
-        let name = e.name
-        let ty = e.resolved
-        let empty: List<StmtId> = []
+        out = append_ids(out, read_one(store, fields[i].name, fields[i].resolved))
+        i = i + 1
+    }
+    out
+}
+
+/// Emit the read sequence that binds `name` to a value of type `ty`, threading
+/// the `mut r` cursor. Shared by struct fields and enum-variant payloads;
+/// `Optional` recurses through it under a presence flag. An unsupported
+/// non-optional type emits nothing (lossy) so the impl still compiles.
+fn read_one(store: NodeStore, name: string, ty: ValueType) -> List<StmtId> {
+    let empty: List<StmtId> = []
+    match ty {
+        // Optional (T?): presence bool, then the inner value only when present.
+        // An unsupported inner skips entirely (empty) so it stays symmetric with
+        // the write side, which writes no presence byte for it.
+        .Optional(inner) -> if codec_supported(inner) { optional_read_stmts(store, name, inner) } else { empty }
         // Nested @marshal struct (nce6.1.C): emit three stmts.
         //   let (__nested_<n>, __r_<n>) = r.read_bytes()
         //   r = __r_<n>
         //   let <n> = from_bytes_<InnerT>(__nested_<n>)
-        let per_field = match ty {
-            .Struct(inner_name, _, _) -> {
-                let stmts = read_then_reassign(store, name, "__nested_" + name, "read_bytes")
-                let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
-                    [store.exprs.add_leaf(Expr.Ident("__nested_" + name))])
-                let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
-                let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
-                append_ids(stmts, tail)
-            }
-            .List(elem) -> {
-                if elem is .Struct {
-                    list_of_struct_reads(store, name, elem)
-                } else {
-                    let reader = reader_for(ty)
-                    if reader == "" { empty } else { read_then_reassign(store, name, name, reader) }
-                }
-            }
-            _ -> {
+        .Struct(inner_name, _, _) -> {
+            let stmts = read_then_reassign(store, name, "__nested_" + name, "read_bytes")
+            let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
+                [store.exprs.add_leaf(Expr.Ident("__nested_" + name))])
+            let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
+            let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
+            append_ids(stmts, tail)
+        }
+        .List(elem) -> {
+            if elem is .Struct {
+                list_of_struct_reads(store, name, elem)
+            } else {
                 let reader = reader_for(ty)
-                // Unsupported field type (reader == "") skips the
-                // read so the impl still compiles; round-trip is
-                // lossy until follow-up sub-tickets extend the table.
                 if reader == "" { empty } else { read_then_reassign(store, name, name, reader) }
             }
         }
-        out = append_ids(out, per_field)
-        i = i + 1
+        _ -> {
+            let reader = reader_for(ty)
+            // Unsupported field type (reader == "") skips the read so the impl
+            // still compiles; round-trip is lossy until the codec table extends.
+            if reader == "" { empty } else { read_then_reassign(store, name, name, reader) }
+        }
     }
-    out
+}
+
+/// Read an optional (T?): a presence bool, then the inner value only when
+/// present.
+///   let (__present_<f>, r) = r.read_bool(); r = ...
+///   mut <f>: <inner>? = null
+///   if __present_<f> { <read inner -> __someval_<f>>; <f> = __someval_<f> }
+/// The inner read reuses `read_one`, binding a temp we then assign into the
+/// annotated nullable slot (so widening `inner` -> `inner?` type-checks).
+fn optional_read_stmts(store: NodeStore, field_name: string, inner: ValueType) -> List<StmtId> {
+    let present = "__present_" + field_name
+    let presence = read_then_reassign(store, "present_" + field_name, present, "read_bool")
+    // mut <f>: inner? = null — annotated so the later `= inner` widens cleanly.
+    let init_stmt = Stmt.Mut(field_name, ValueType.Optional(inner), store.exprs.add_leaf(Expr.None))
+    // if __present_<f> { <read inner -> tmp>; <f> = tmp }
+    let tmp = "__someval_" + field_name
+    let inner_read = read_one(store, tmp, inner)
+    let assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(field_name, store.exprs.add_leaf(Expr.Ident(tmp)))))
+    let assign_tail: List<StmtId> = [store.stmts.add_leaf(assign)]
+    let if_body_stmts = append_ids(inner_read, assign_tail)
+    let if_body = store.stmts.add_leaf(Stmt.Block(if_body_stmts))
+    let if_stmt = Stmt.If(store.exprs.add_leaf(Expr.Ident(present)), if_body, null)
+    let trailer: List<StmtId> = [store.stmts.add_leaf(init_stmt), store.stmts.add_leaf(if_stmt)]
+    append_ids(presence, trailer)
 }
 
 /// Emit `let (<value_name>, __r_<n>) = r.<reader>(); r = __r_<n>`
@@ -514,12 +591,11 @@ fn build_field_inits(store: NodeStore, fields: List<FieldEntry>) -> List<FieldIn
         let e = fields[i]
         let name = e.name
         let ty = e.resolved
-        // The field has a local binding by the same name iff
-        // build_reads emitted a read for it — true for any
-        // primitive with a reader, a nested Struct field
-        // (handled by from_bytes_<inner>), or a List<Struct>
-        // field (list_of_struct_reads emits `let <name> = __acc`).
-        let init_expr = if reader_for(ty) != "" || ty is .Struct || list_of_struct_elem(ty) {
+        // The field has a local binding by the same name iff build_reads
+        // emitted a read for it — exactly when the codec supports the type
+        // (primitive, nested Struct, List<T>, or an Optional over any of those).
+        // Unsupported types get no read, so the ctor falls back to a default.
+        let init_expr = if codec_supported(ty) {
             Expr.Ident(name)
         } else {
             // Field type wasn't read; placeholder initializer

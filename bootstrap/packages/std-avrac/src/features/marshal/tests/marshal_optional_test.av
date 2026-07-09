@@ -1,0 +1,121 @@
+// @marshal round-trip for optional (T?) fields. Before this fix an
+// optional field fell through writer_for/reader_for (no arm) → it was never
+// written, never read, and reconstructed as `default_for(Optional)` = none, so
+// a PRESENT value silently round-tripped to null (data loss).
+//
+// The codec now writes a presence bool for every optional, then the inner value
+// only when present, delegating to the shared write_one/read_one dispatch — so
+// an optional over any inner the table already handles (int/bool/str/float,
+// nested @marshal struct, List<T>) round-trips instead of being dropped.
+//
+// Each present case is paired with an absent control so the presence flag is
+// proven load-bearing — not an always-present or always-none artifact.
+
+use @std.process.{bytes_builder, bytes_reader, BytesBuilder, BytesReader}
+
+@marshal
+type OptPrims = { i: int?, b: bool?, f: float?, s: string? }
+
+spec "@marshal optional primitives round-trip" {
+    then "present int? survives" {
+        let v = OptPrims { i: 42, b: null, f: null, s: null }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.i == 42
+    }
+    then "absent int? stays none (presence flag is load-bearing)" {
+        let v = OptPrims { i: null, b: null, f: null, s: null }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.i == null
+    }
+    then "present bool? survives — including false (not confused with absent)" {
+        let v = OptPrims { i: null, b: false, f: null, s: null }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.b == false
+    }
+    then "present float? survives" {
+        let v = OptPrims { i: null, b: null, f: 3.5, s: null }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.f == 3.5
+    }
+    then "present empty string? survives (not confused with absent)" {
+        let v = OptPrims { i: null, b: null, f: null, s: "" }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.s == "" && v2.s != null
+    }
+    then "all four present survive together (no accumulator collision)" {
+        let v = OptPrims { i: 7, b: true, f: 1.25, s: "z" }
+        let v2 = from_bytes_OptPrims(v.to_bytes())
+        v2.i == 7 && v2.b == true && v2.f == 1.25 && v2.s == "z"
+    }
+}
+
+@marshal
+type OInner = { tag: int, label: string }
+
+@marshal
+type OptStruct = { lead: int, maybe: OInner?, trail: bool }
+
+spec "@marshal optional nested struct round-trips" {
+    then "present struct? survives with surrounding fields intact" {
+        let v = OptStruct { lead: 9, maybe: OInner { tag: 3, label: "hi" }, trail: true }
+        let v2 = from_bytes_OptStruct(v.to_bytes())
+        v2.lead == 9 && v2.maybe != null && v2.maybe!.tag == 3 && v2.maybe!.label == "hi" && v2.trail == true
+    }
+    then "absent struct? stays none, surrounding fields intact" {
+        let v = OptStruct { lead: 9, maybe: null, trail: true }
+        let v2 = from_bytes_OptStruct(v.to_bytes())
+        v2.lead == 9 && v2.maybe == null && v2.trail == true
+    }
+}
+
+@marshal
+type OptList = { xs: List<int>?, tail: string }
+
+spec "@marshal optional list round-trips" {
+    then "present List<int>? survives" {
+        let v = OptList { xs: [1, 2, 3], tail: "t" }
+        let v2 = from_bytes_OptList(v.to_bytes())
+        v2.xs != null && v2.xs!.length == 3 && v2.xs![0] == 1 && v2.xs![2] == 3 && v2.tail == "t"
+    }
+    then "absent List<int>? stays none" {
+        let v = OptList { xs: null, tail: "t" }
+        let v2 = from_bytes_OptList(v.to_bytes())
+        v2.xs == null && v2.tail == "t"
+    }
+}
+
+@marshal
+type OptExotic = { keep: int, m: Map<string, int>? }
+
+spec "@marshal optional over an unsupported inner degrades gracefully" {
+    then "an optional Map field compiles (skipped symmetrically) and siblings survive" {
+        // The codec has no Map arm, so this optional falls back to the same
+        // lossy-skip as an unsupported non-optional field — no presence byte,
+        // no read, ctor defaults it. It must NOT emit a raw undefined-variable
+        // error, and the supported sibling field must still round-trip.
+        let e = OptExotic { keep: 5, m: null }
+        let e2 = from_bytes_OptExotic(e.to_bytes())
+        e2.keep == 5
+    }
+}
+
+@marshal
+enum OptEv { Click(x: int?, y: int), Key(name: string?) }
+
+spec "@marshal optional enum-variant payload round-trips" {
+    then "present optional in a variant survives alongside a required field" {
+        let e = OptEv.Click(3, 4)
+        let e2 = from_bytes_OptEv(e.to_bytes())
+        match e2 { .Click(x, y) -> x == 3 && y == 4  .Key(_) -> false }
+    }
+    then "absent optional in a variant stays none" {
+        let e = OptEv.Click(null, 8)
+        let e2 = from_bytes_OptEv(e.to_bytes())
+        match e2 { .Click(x, y) -> x == null && y == 8  .Key(_) -> false }
+    }
+    then "a different variant's optional survives" {
+        let e = OptEv.Key("enter")
+        let e2 = from_bytes_OptEv(e.to_bytes())
+        match e2 { .Click(_, _) -> false  .Key(name) -> name == "enter" }
+    }
+}
