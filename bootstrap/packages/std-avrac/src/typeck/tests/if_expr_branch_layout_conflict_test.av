@@ -1,0 +1,93 @@
+// WHY: tpbn — an `if`-expr whose two branches have memory-incompatible
+// CONTAINER layouts (e.g. `List<int>` — scalar elements — vs `List<Node>` —
+// pointer elements) type-checked SILENTLY (`if_expr_result_type` unions them)
+// instead of erroring, while the identical mismatch as a call arg was already
+// F1000. That gap let the reverted F4d.8 metadata flip ship a resolver SIGSEGV:
+// a fast-path branch returned `List<StmtId>` (scalar ids), the else returned
+// `List<SStmt>` (pointers), and downstream read one layout through the other.
+// The fix applies `generic_args_layout_conflict` (the same nested check the
+// call-arg / binding gates use) to the two branch types.
+//
+// Deliberately NOT gated: a TOP-LEVEL scalar-vs-pointer difference (`int` vs
+// `string`) is a legitimate INFERRED ad-hoc union here — the hazard is a shared
+// container shell whose element layouts disagree, which is what the wild-store
+// class actually corrupts. Match-expr arms were already safe (unify_arm_types
+// rejects differing non-assignable types), pinned below so they stay that way.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ck(tag: string, source: string) -> string {
+    let path = "/tmp/avra_tpbn_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "if-expr branches with conflicting container layouts are F1000 (tpbn)" {
+    then "List<int> vs List<Node> (scalar vs pointer elements) is F1000" {
+        let out = ck("list", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let c = true  let x = if c { ints() } else { nodes() }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "the inverse (List<Node> then, List<int> else) is also F1000" {
+        let out = ck("list_inv", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let c = true  let x = if c { nodes() } else { ints() }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a conflict nested one container deeper (List<List<int>> vs List<List<Node>>) is F1000" {
+        let out = ck("nested", "type Node = { x: int }
+fn a() -> List<List<int>> { [[1]] }
+fn b() -> List<List<Node>> { [[Node { x: 1 }]] }
+fn main() { let c = true  let x = if c { a() } else { b() }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a Map-value layout conflict between branches is F1000" {
+        let out = ck("map", "type Node = { x: int }
+fn a() -> Map<string, int> { {\"k\": 1} }
+fn b() -> Map<string, Node> { {\"k\": Node { x: 1 }} }
+fn main() { let c = true  let x = if c { a() } else { b() }  let _ = x }")
+        out.contains("F1000")
+    }
+}
+
+spec "legitimate if-expr branch differences are NOT over-gated (tpbn)" {
+    then "a top-level int|string difference stays a valid inferred union" {
+        let out = ck("union", "fn main() { let c = true  let _ = if c { 1 } else { \"hi\" }  println(\"ok\") }")
+        !out.contains("F1000")
+    }
+    then "two pointer struct types (a Node|Other union) are not gated" {
+        let out = ck("structs", "type Node = { x: int }
+type Other = { y: int }
+fn n() -> Node { Node { x: 1 } }
+fn o() -> Other { Other { y: 2 } }
+fn main() { let c = true  let _ = if c { n() } else { o() }  println(\"ok\") }")
+        !out.contains("F1000")
+    }
+    then "matching container element types compile" {
+        let out = ck("same", "fn a() -> List<int> { [1] }
+fn b() -> List<int> { [2] }
+fn main() { let c = true  let x = if c { a() } else { b() }  let _ = x }")
+        !out.contains("F1000")
+    }
+}
+
+// Positive controls that run LIVE (a false positive would break this file's
+// own compile), plus the match-expr parity check.
+fn pick_list(b: bool) -> List<int> { if b { [1, 2, 3] } else { [4, 5] } }
+
+spec "valid if-expr branch unification still works (tpbn control)" {
+    then "matching-type branches produce a usable value" {
+        pick_list(true).length == 3 && pick_list(false).length == 2
+    }
+    then "the same List<int> vs List<Node> conflict via a MATCH-expr is already F1000" {
+        let out = ck("match", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let n = 1  let x = match n { 1 -> ints()  _ -> nodes() }  let _ = x }")
+        out.contains("F1000")
+    }
+}
