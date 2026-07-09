@@ -24,14 +24,35 @@ This design replaces the template/data split with a single mechanism — **compo
 
 Three concepts, one new primitive:
 
-| Concept | What it does | Status today |
+| Concept | What it does | Status (as of vez6.11) |
 |---|---|---|
-| **`@comptime fn`** | Function callable at compile time. Returns AST values. | New |
-| **`quote { … }`** | Build AST values via familiar syntax instead of constructor calls. | New |
-| **`@expand(macro_fn)`** | Attribute that registers a `@comptime fn` to rewrite the declaration it's attached to. | New |
-| **`component`** (extended) | Block-syntax registration; declares accepted children + traits implemented. | Exists, extended |
+| **`@comptime fn`** | Function callable at compile time. Returns AST values. | ✅ shipped |
+| **`quote { … }`** | Build AST values via familiar syntax instead of constructor calls. | 🟡 single-value only — repeating/computed splice blocked (rmzs) |
+| **`@expand(macro_fn)`** | Attribute that registers a `@comptime fn` to rewrite the declaration it's attached to. | ✅ shipped |
+| **`component`** (extended) | Block-syntax registration; declares accepted children + traits implemented. | ✅ shipped (children schema + `implements Trait`) |
 
 Every block-syntax DSL Avra ships (cli, test, http routes, sql, html, …) is a `component` whose expansion is implemented by a `@comptime fn` invoked through `@expand`. Core knows about `@comptime` and `component`; it knows nothing about std-cli.
+
+### As shipped (vez6.11, 2026-07)
+
+The declarative cli layer is **implemented and consumer-complete** (`@std.cli` + `@std.cli.cmdgen`; Phase 11 done, merged). Two things diverge from the §4 worked example, which predates the implementation:
+
+- **Runtime shape — data/behaviour split.** The trait is ONE method — `trait Runnable { fn run(self, args: CliResult) -> int }`, not the two-method `name()/run()` of §4.2. A command's identity + parse schema are DATA in a `CommandSpec { name, description, flags, args, options }`, paired with the `dyn Runnable` behaviour in a `Subcommand { meta, body }`. The container is `App` holding `List<Subcommand>` (not `Cli` holding `List<dyn Runnable>`); `App.run` / `run_argv` / `dispatch` read the schema by DIRECT field access (`c.meta.name`) rather than trait accessors. Deliberate improvement — homogeneous schema as data, heterogeneous behaviour behind `dyn`; this is what §4.2/4.3 would show if rewritten.
+- **Macros use direct AST construction, not quote/splice.** `expand_command` / `expand_cli` (`cmdgen/mod.av`) build output via `Expr.StructLit` / `synth_expr_id` / … in a single body-walk, not the elegant `quote decl { … ~bindings ~user_run }` of §4.2. Reason: repeating/computed splice (`~bindings`, `.map(…)`) and a second child-walk in a deeper eval frame trip the comptime evaluator (F4005/F4006 — ticket `rmzs`, owned by the AST-rewrite program ps3t.5). Single-value quote/splice works; the ergonomic story lands when rmzs does.
+
+Feature status against §3:
+
+| §3 feature | Status |
+|---|---|
+| 3.1 `@comptime`, 3.5 `@expand`, 3.6.1 `config` | ✅ shipped |
+| 3.6.2 `children { }` schema + validation ("not a valid child" errors) | ✅ shipped |
+| 3.6.3 `implements Trait` | ✅ shipped (1-method, see above) |
+| 3.3 / 3.4 quote / splice | 🟡 single-value only; repeating/computed → rmzs (ps3t.5) |
+| 3.2 rich inspection (`children_of_type` / `method_body` / `parent_chain_flags`) | ❌ macros walk manually via `comp_children` / `match` |
+| 3.7 hygiene / `@unhygienic` | ❌ not implemented |
+| 3.6.4 `body: TokenStream` | ❌ not implemented |
+
+Beyond §4.2, flag `short` + option `default` config are read into the schema (`-v` dispatches, defaults apply). Proven at scale: a 16-command CLI mirroring `main.av` expands + dispatches correctly. Phase 12 (main.av migration) is the remaining consumer work.
 
 ---
 
@@ -441,13 +462,13 @@ Phased so each phase ships independently and the bootstrap stays green throughou
 - Migrate any remaining template-flavor users to data + macro form.
 - Test: `make test` fully green.
 
-### Phase 11 — std-cli rewrite
-- Rewrite `cli`/`command`/`flag`/`option`/`arg` as data components with macros.
-- Define `Runnable` trait, `Cli::run` dispatcher.
-- Update `packages/std-cli/src/cli.av`.
-- Test: 5-command toy CLI compiles and runs correctly.
+### Phase 11 — std-cli rewrite ✅ DONE (vez6.11)
+- Rewrote `cli`/`command`/`flag`/`option`/`arg` as data components with macros.
+- Shipped the `Runnable` trait (1-method) + `CommandSpec`/`Subcommand`/`App` dispatcher (data/behaviour split — see "As shipped" above), plus flag `short` + option `default` (5az8).
+- `packages/std-cli/src/{cli.av,cmdgen/mod.av}`.
+- Tested: toy CLIs (dispatch, argv parse, help/version, inheritance, shorts/defaults) + a 16-command scale check.
 
-### Phase 12 — main.av (avra CLI) rewrite
+### Phase 12 — main.av (avra CLI) rewrite 🚧 IN PROGRESS (vez6.12)
 - Convert every `if cmd0 == "X" { run_X_command() }` and `match command { … }` into `command X { run() { … } }`.
 - Single `avra.run()` at end; rip out manual dispatch helpers (`run_test_command`, `run_build_command`, `run_docs_command`, etc.).
 - Target line count for `main.av`: ~300 lines (down from 2,652).
