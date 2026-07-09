@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_assignable, vtype_render_full}
+use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot}
 use diagnostics.{DiagCode}
 
@@ -92,19 +92,28 @@ export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, 
     acc
 }
 
-/// F1005: a FULL struct literal `P { … }` must give every declared field a
-/// value — Avra is fully static (spec Axis 1-8), so an omitted field cannot
-/// silently zero-fill (it would read null/0 at runtime). Callers use this ONLY
-/// for full literals; a `with` update is intentionally partial and must never
-/// reach here. Skips unknown structs (empty field list) — name resolution and
-/// `check_struct_lit_fields` handle those.
+/// F1005: a FULL struct literal `P { … }` must give every NON-NULLABLE declared
+/// field a value. A non-nullable field (int, string, List<T>, a struct, …) has
+/// no sensible default, so omitting it silently zero-fills a WRONG value (0, a
+/// null pointer) that reads back as garbage at runtime — the real bug. A
+/// nullable field (`T?`) has a natural default — absence/null — so omitting it
+/// is well-defined and allowed (the value IS present: it is null, of type `T?`).
+/// This also composes with the arena-id dual migration: while a dual field is
+/// `T?` it need not be given, but the moment it becomes non-nullable (the id
+/// becomes canonical) every construct site is forced to supply it. Callers use
+/// this ONLY for full literals; a `with` update is intentionally partial and
+/// must never reach here. Unknown structs (empty field list) are left to name
+/// resolution and `check_struct_lit_fields`.
 export fn check_struct_lit_complete(tc: TC, name: string, inits: List<FieldInit>) -> TC {
     let fields = struct_type_lookup(tc.structs, name)
     if fields.length == 0 { return tc }
     mut missing: List<string> = []
     mut i = 0
     while i < fields.length {
-        if !inits_have_field(inits, fields[i].name) { missing.push(fields[i].name) }
+        let fty = resolve_vtype(tc, fields[i].resolved)
+        if !vtype_is_optional(fty) && !inits_have_field(inits, fields[i].name) {
+            missing.push(fields[i].name)
+        }
         i = i + 1
     }
     if missing.length == 0 { return tc }

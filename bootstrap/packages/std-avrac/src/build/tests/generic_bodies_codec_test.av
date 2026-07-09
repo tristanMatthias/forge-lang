@@ -61,6 +61,7 @@ spec "P3 metadata codec: GenericBodies round-trip" {
             consts: [],
             impls: [],
             generic_bodies: [body_a()],
+            inherent_impls: [],
         }
         let decoded = round_trip(m)
         decoded.generic_bodies.length == 1
@@ -78,6 +79,7 @@ spec "P3 metadata codec: GenericBodies round-trip" {
             consts: [],
             impls: [],
             generic_bodies: [body_a(), body_b()],
+            inherent_impls: [],
         }
         let decoded = round_trip(m)
         decoded.generic_bodies.length == 2
