@@ -2242,7 +2242,13 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
     let head: Value = p[0]
     match v.enum_variant {
         "Number"          -> .Ok(Expr.Number(head.text))
-        "String"          -> .Ok(Expr.String("\"${head.text}\""))
+        // `head.text` already carries the parser-form String value WITH its outer
+        // quotes (the macro-boundary encode preserves it verbatim, exactly as
+        // Number/Bool carry their raw value). Use it directly — uniform with every
+        // sibling leaf below. Re-wrapping it in a second quote pair here made a
+        // macro-carried/constructed "X" round-trip to "\"X\"", which codegen's
+        // strip_quotes reduced to a quote-wrapped "X" at RUNTIME (102g).
+        "String"          -> .Ok(Expr.String(head.text))
         "Bool"            -> .Ok(Expr.Bool(head.text))
         "Ident"           -> .Ok(Expr.Ident(head.text))
         "QualifiedIdent"  -> .Ok(Expr.QualifiedIdent(head.text))
