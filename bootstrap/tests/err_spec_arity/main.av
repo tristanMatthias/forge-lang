@@ -1,0 +1,21 @@
+// Fixture for err_spec_arity_test (qm8l): a wrong-arity call inside spec test
+// bodies (given + then) must be gated as F1001, the same as a call in a fn body.
+// Before the spec/given/then check hooks were wired into their feature
+// registrations, these bodies were never type-checked, so this compiled clean
+// and SIGSEGV'd at runtime with a garbage third argument.
+fn three(a: int, b: string, c: int) -> int { a + c }
+
+spec "arity gating in spec bodies" {
+    given "wrong-arity call in a given body" {
+        three(1, "hi")
+    }
+    then "wrong-arity call in a then cond" {
+        three(1, "hi") == 2
+    }
+}
+
+// A top-level `fn main` marks this file as a fixture, not a discoverable test:
+// discover_tests filters `!has_top_main`, so the runner never bundles/compiles
+// it directly (it MUST NOT — it intentionally fails to compile). It is only ever
+// compiled on demand by err_spec_arity_test.av via `bs2 check`.
+fn main() {}

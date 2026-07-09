@@ -2810,7 +2810,15 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
     while i < limit {
         let fty = resolve_vtype(cur, fields[i].resolved)
         let aty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
-        let skip = vtype_is_unknown(fty) || vtype_is_unknown(aty) || vtype_mentions_typeparam(fty, tp)
+        // A bare `null`/`none` literal (`Expr.None`) is valid for ANY optional
+        // field — it lowers to Option's absent case. With no expected-type
+        // context here, `check_expr` types it `void`, which would otherwise trip
+        // the value-scalar class check below (an `int?` field strips to a scalar
+        // `int`, mismatching non-scalar `void`). A null into a NON-optional field
+        // is still gated (fty not optional -> not skipped), matching struct-literal
+        // field checking (`S { f: null }` is likewise accepted). (gwa0)
+        let null_into_optional = vtype_is_optional(fty) && cur.nodes.exprs.get(args[i]) is .None
+        let skip = vtype_is_unknown(fty) || vtype_is_unknown(aty) || vtype_mentions_typeparam(fty, tp) || null_into_optional
         if !skip {
             // Representation-class check: a value scalar (int/bool/float)
             // stored where a pointer-represented field is declared — or the

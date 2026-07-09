@@ -1,0 +1,16 @@
+// Precision guard for gwa0: a bare `null` into a NON-optional enum-ctor field is
+// still a wild-store error (F1000), even though null into a nullable field is now
+// accepted. If the fix's `vtype_is_optional` condition were dropped, this would
+// silently compile and store a null where a scalar int is expected.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "null into a non-optional enum-ctor field stays gated (gwa0 precision)" {
+    then "F1000 is reported for E.C(null) where the field is non-optional int" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_null_nonoptional_ctor/main.av 2>&1 || true")
+        out.contains("F1000")
+    }
+    then "the diagnostic names the scalar field, not an optional" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_null_nonoptional_ctor/main.av 2>&1 || true")
+        out.contains("expects `int`, got")
+    }
+}

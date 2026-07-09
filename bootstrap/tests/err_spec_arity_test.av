@@ -1,0 +1,17 @@
+// Regression for qm8l: spec/given/then bodies must be type-checked with the same
+// arity gate as fn bodies. The feature registrations previously omitted their
+// check_stmt hooks, so a wrong-arity call inside a test body compiled clean and
+// crashed at runtime instead of being reported as F1001. The fixture
+// (tests/err_spec_arity/main.av) exercises the given + then paths.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "spec/given/then bodies are arity-gated (qm8l)" {
+    then "F1001 is reported for a wrong-arity call inside a spec body" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_spec_arity/main.av 2>&1 || true")
+        out.contains("F1001")
+    }
+    then "the diagnostic names the arity mismatch" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_spec_arity/main.av 2>&1 || true")
+        out.contains("expects 3 arguments, got 2")
+    }
+}
