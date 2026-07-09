@@ -1,0 +1,93 @@
+// End-to-end proof that synth_deref_stmt lets a @comptime macro READ a
+// child out of a node it received — not merely that the shim is an
+// identity (that's synth_deref_shims_test.av). The macro below receives
+// the `fn` it is @expand-ed onto, dereferences the first statement of
+// its body via synth_deref_stmt, MATCHES on that child, and emits a
+// different marker per child kind. If the deref didn't yield a
+// matchable Stmt, the macro could not branch on the child at all.
+//
+// `bs2 expand` echoes the @comptime fn's own source (which mentions
+// BOTH branch markers once each), then appends the expansion of the
+// decorated fn (the winning branch's marker, once more). So the marker
+// the macro actually chose appears exactly ONE more time than the
+// other — that difference is the assertion, robust to the echo.
+//
+// All top-level names are `deref_`/`DEREF_`-prefixed: module-private
+// fns/consts leak cross-module in a bundled shard, so generic names
+// (run_expand, MAIN_HEADER) would collide with sibling expand tests.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
+
+const DEREF_MAIN_HEADER: string = "fn " + "main()"
+const DEREF_RET_MARK: string = "first-child-is-return"
+const DEREF_OTH_MARK: string = "first-child-is-other"
+
+/// Count non-overlapping occurrences of `needle` in `haystack`.
+fn deref_count_substr(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+fn deref_run_expand(source: string) -> string {
+    let path = "/tmp/avra_synth_deref_introspect_test.av"
+    write_fixture(path, source)
+    cached_fixture_expand(path)
+}
+
+// A macro that reads body[0] of the fn it decorates and reports its kind.
+const DEREF_MACRO_SRC: string =
+    "use @std.avrac.core.{Stmt}\n" +
+    "use @std.avrac.features.comptime.{synth_deref_stmt}\n" +
+    "\n" +
+    "@comptime\n" +
+    "fn report_first_child(s: Stmt) -> Stmt {\n" +
+    "    match s {\n" +
+    "        .Function(_, _, _, _, body) -> {\n" +
+    "            match synth_deref_stmt(body[0]) {\n" +
+    "                .Return(_) -> return quote stmt { println(\"" + DEREF_RET_MARK + "\") }\n" +
+    "                _ -> return quote stmt { println(\"" + DEREF_OTH_MARK + "\") }\n" +
+    "            }\n" +
+    "        }\n" +
+    "        _ -> return quote stmt { println(\"target-not-a-function\") }\n" +
+    "    }\n" +
+    "}\n"
+
+fn deref_expand_decorated(body_stmt: string) -> string {
+    deref_run_expand(
+        DEREF_MACRO_SRC +
+        "\n" +
+        "@expand(report_first_child)\n" +
+        "fn decorated() {\n" +
+        "    " + body_stmt + "\n" +
+        "}\n" +
+        "\n" +
+        DEREF_MAIN_HEADER + " {\n" +
+        "}\n")
+}
+
+spec "synth_deref_stmt: a macro reads a received node's child and branches on it" {
+    then "a .Return first child selects the return branch (deref'd + matched)" {
+        // body[0] is `return 5` → .Return. The chosen marker appears
+        // once more than the other (echo=1 each, +1 for the expansion).
+        let out = deref_expand_decorated("return 5")
+        deref_count_substr(out, DEREF_RET_MARK) == deref_count_substr(out, DEREF_OTH_MARK) + 1
+    }
+    then "a non-Return first child selects the other branch" {
+        // body[0] is now a `let` → the `_` arm. The other marker wins.
+        let out = deref_expand_decorated("let x = 5")
+        deref_count_substr(out, DEREF_OTH_MARK) == deref_count_substr(out, DEREF_RET_MARK) + 1
+    }
+}

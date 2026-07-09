@@ -1,0 +1,94 @@
+// vez6.11 / 5az8: a leaf's `short "…"` (flag) and `default "…"` (option)
+// config flow into the generated schema, so shorts dispatch and option
+// defaults apply — the last flag/option DX gap after the data/behaviour
+// split.
+//
+// expand_cli reads each flag leaf's `short` into its FlagDef.short and each
+// option leaf's `default` into its OptionDef.default_val (globals too, whose
+// configs live at the cli level). The parser already accepts either spelling
+// (`flag_canonical_name`) and pre-fills option defaults
+// (`init_option_defaults`) — this pins that the MACRO now populates them, AND
+// that a short-matched flag records under its CANONICAL long name so the run
+// body's `result_has_flag(args, "verbose")` resolves a `-v` invocation.
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
+// cross-package @comptime bodies are available (metadata stub can't carry
+// them — znl0). `sd_`-prefixed to avoid cross-shard clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn sd_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    // A GLOBAL flag with a short — inherited into every command, short and all.
+    "    flag glob { short \"-g\" }\n" +
+    "    command build {\n" +
+    "        flag verbose { short \"-v\" }\n" +
+    "        run() {\n" +
+    "            if glob { return 55 }\n" +
+    "            if verbose { return 100 }\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "    command pack {\n" +
+    "        option outfile { default \"out.txt\" }\n" +
+    "        run() { return outfile.length }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    println(\"V=\" + string(toy.run_argv([\"build\", \"-v\"])))\n" +
+    "    println(\"G=\" + string(toy.run_argv([\"build\", \"-g\"])))\n" +
+    "    println(\"LONG=\" + string(toy.run_argv([\"build\", \"--verbose\"])))\n" +
+    "    println(\"DEF=\" + string(toy.run_argv([\"pack\"])))\n" +
+    "    println(\"SET=\" + string(toy.run_argv([\"pack\", \"--outfile=x\"])))\n" +
+    "}\n"
+}
+
+fn sd_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_shorts_defaults_test.av", sd_src())
+}
+
+spec "vez6.11 / 5az8: flag shorts dispatch and option defaults apply" {
+    then "a command's own flag short (-v) sets its long-named flag" {
+        // `["build", "-v"]`: the `-v` short matches `verbose`'s FlagDef.short,
+        // recorded under the CANONICAL name `verbose`, so the run body's
+        // `result_has_flag(args, "verbose")` is true → 100 (not the 0 path).
+        let out = sd_run()
+        out.contains("V=100")
+    }
+    then "an inherited GLOBAL flag's short (-g) is available on the command" {
+        // `glob` is a cli-level global with `short "-g"`; its FlagDef (short
+        // and all) is threaded into build's schema, so `["build", "-g"]` sets
+        // the inherited `glob` binding → 55. Exercises global-short threading.
+        let out = sd_run()
+        out.contains("G=55")
+    }
+    then "the long spelling still works alongside the short" {
+        // `["build", "--verbose"]` → 100, same flag by its long name.
+        let out = sd_run()
+        out.contains("LONG=100")
+    }
+    then "an option's default applies when the user omits it" {
+        // `pack` declares `option outfile { default "out.txt" }`; with no
+        // `--outfile`, `init_option_defaults` pre-fills "out.txt" (length 7),
+        // so the run body's `outfile.length` == 7.
+        let out = sd_run()
+        out.contains("DEF=7")
+    }
+    then "an explicit option value overrides the default" {
+        // `["pack", "--outfile=x"]` sets outfile="x" (length 1), overriding
+        // the "out.txt" default.
+        let out = sd_run()
+        out.contains("SET=1")
+    }
+}

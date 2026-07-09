@@ -1,0 +1,67 @@
+// Regression: a string literal CARRIED through a macro (read via the
+// synth_deref_* shims, then re-emitted) must round-trip to its exact
+// value — NOT gain an extra quote pair.
+//
+// A @comptime macro reads a function's body statements via
+// synth_deref_stmt and re-emits them verbatim (the identity carry the
+// ytwb read shims enable). One of those statements is a
+// `println("CARRIED_XYZ")`. The parser stores that literal's Expr.String
+// value WITH its outer quotes; the macro-boundary encode preserves the
+// parser-form value in the reflected head.text, so the decode
+// (enum_value_to_expr) must use head.text DIRECTLY — the same as it does
+// for Number/Bool/Ident. It previously re-wrapped head.text in a second
+// quote pair, so a carried `"CARRIED_XYZ"` printed as `"CARRIED_XYZ"`
+// (with quotes). This asserts the corrected, unquoted output.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+/// Count non-overlapping occurrences of `needle` in `haystack`.
+fn sdsr_count(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+spec "synth_deref carry: a re-emitted string literal keeps its exact value" {
+    then "a println string literal carried through a macro prints unquoted" {
+        let out = write_fixture_and_run("/tmp/avra_synth_deref_string_roundtrip_test.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_deref_stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn carry_body(s: Stmt) -> List<Stmt> {\n" +
+            "    mut out: List<Stmt> = []\n" +
+            "    match s {\n" +
+            "        .Function(_, _, _, _, body) -> {\n" +
+            "            for id in body { out.push(synth_deref_stmt(id)) }\n" +
+            "        }\n" +
+            "        _ -> {}\n" +
+            "    }\n" +
+            "    out\n" +
+            "}\n" +
+            "\n" +
+            "@expand(carry_body)\n" +
+            "fn carrier() {\n" +
+            "    println(\"CARRIED_XYZ\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // The carried literal prints exactly `CARRIED_XYZ`; the quoted
+        // form `"CARRIED_XYZ"` must NOT appear in the program output (it
+        // would iff the decoder double-wrapped the string).
+        out.contains("CARRIED_XYZ")
+            && sdsr_count(out, "\"CARRIED_XYZ\"") == 0
+    }
+}

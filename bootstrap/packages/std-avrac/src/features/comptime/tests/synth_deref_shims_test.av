@@ -1,0 +1,105 @@
+// synth_deref_* read shims — the introspection inverse of the
+// synth_* write shims (features/comptime/synth.av).
+//
+// A @comptime macro that RECEIVED a flipped variant (e.g. a
+// `ComponentBlock` whose `body: List<StmtId>` children were
+// materialised into boxed Stmt Values by the arg encoder) needs to
+// `match` those children — but the static type is `StmtId`, not
+// `Stmt`. `synth_deref_stmt(child_id)` re-types `StmtId → Stmt` so the
+// match type-checks, while at eval time the boxed child Value passes
+// through unchanged (identity), exactly like the write shims.
+//
+// What these specs assert (and what reverting the intercept flips):
+//   - a call to each deref shim evaluates to its first argument's
+//     Value, not an error and not the compiled stub's sentinel.
+//   - both callee shapes the resolver can produce — bare Ident and
+//     QualifiedIdent — are intercepted.
+//   - the identity round-trips a node's variant intact, which is the
+//     whole point: the macro can then `match` on it.
+
+use @std.avrac.core.{NodeStore, ExprId, new_node_store, build_line_index, Expr}
+use @std.avrac.features.eval.{Runtime, runtime_new, eval_expr, step_value, step_had_error}
+
+/// Fresh store + runtime per probe. (Uniquely named — top-level fns
+/// leak cross-module in a bundled shard, so this must not collide with
+/// synth_shims_test.av's `fresh_probe_rt`.)
+fn deref_probe_rt() -> Runtime {
+    runtime_new(new_node_store(build_line_index("")))
+}
+
+/// An argument expression that EVALUATES to a boxed Expr Value —
+/// standing in for a materialised `ExprId` child a macro received.
+fn deref_boxed_expr(store: NodeStore) -> Expr {
+    Expr.EnumCtor("@std::avrac::core::Expr", "Number", [store.exprs.add_leaf(Expr.String("\"42\""))])
+}
+
+/// An argument expression that EVALUATES to a boxed Stmt Value —
+/// standing in for a materialised `StmtId` child a macro received.
+fn deref_boxed_stmt(store: NodeStore) -> Expr {
+    let no_args: List<ExprId> = []
+    Expr.EnumCtor("@std::avrac::core::Stmt", "ReturnEmpty", no_args)
+}
+
+spec "synth_deref_stmt is an identity passthrough at eval" {
+    then "a bare-Ident call returns the boxed Stmt Value, variant intact" {
+        let rt = deref_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_deref_stmt")), [rt.nodes.exprs.add_leaf(deref_boxed_stmt(rt.nodes))])
+        let r = eval_expr(rt, call)
+        !step_had_error(r)
+            && step_value(r).kind == "stmt"
+            && step_value(r).enum_variant == "ReturnEmpty"
+    }
+    then "a QualifiedIdent call (post-resolve form) is intercepted too" {
+        let rt = deref_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.QualifiedIdent("@std::avrac::features::comptime::synth_deref_stmt")), [rt.nodes.exprs.add_leaf(deref_boxed_stmt(rt.nodes))])
+        let r = eval_expr(rt, call)
+        !step_had_error(r) && step_value(r).kind == "stmt"
+    }
+}
+
+spec "synth_deref_expr is an identity passthrough at eval" {
+    then "the boxed Expr Value passes through with its variant intact" {
+        let rt = deref_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_deref_expr")), [rt.nodes.exprs.add_leaf(deref_boxed_expr(rt.nodes))])
+        let r = eval_expr(rt, call)
+        !step_had_error(r)
+            && step_value(r).kind == "expr"
+            && step_value(r).enum_variant == "Number"
+    }
+}
+
+spec "synth_deref_stmt_ids is an identity passthrough at eval" {
+    then "a list of boxed Stmt Values passes through unchanged" {
+        let rt = deref_probe_rt()
+        let list_arg = Expr.ListLit([rt.nodes.exprs.add_leaf(deref_boxed_stmt(rt.nodes))])
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_deref_stmt_ids")), [rt.nodes.exprs.add_leaf(list_arg)])
+        let r = eval_expr(rt, call)
+        !step_had_error(r)
+            && step_value(r).kind == "list"
+            && step_value(r).list_payload.length == 1
+            && step_value(r).list_payload[0].kind == "stmt"
+    }
+    then "an empty statement-id list passes through as an empty list Value" {
+        let rt = deref_probe_rt()
+        let no_elems: List<ExprId> = []
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_deref_stmt_ids")), [rt.nodes.exprs.add_leaf(Expr.ListLit(no_elems))])
+        let r = eval_expr(rt, call)
+        !step_had_error(r)
+            && step_value(r).kind == "list"
+            && step_value(r).list_payload.length == 0
+    }
+}
+
+spec "the deref-shim intercept matches exactly, not by substring" {
+    then "an unknown fn whose name merely embeds a deref-shim name still errors" {
+        let rt = deref_probe_rt()
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("my_synth_deref_stmt_helper")), [rt.nodes.exprs.add_leaf(deref_boxed_stmt(rt.nodes))])
+        step_had_error(eval_expr(rt, call))
+    }
+    then "a zero-arg deref-shim call errors instead of fabricating a value" {
+        let rt = deref_probe_rt()
+        let no_args: List<ExprId> = []
+        let call = Expr.Call(rt.nodes.exprs.add_leaf(Expr.Ident("synth_deref_stmt")), no_args)
+        step_had_error(eval_expr(rt, call))
+    }
+}

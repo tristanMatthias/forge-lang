@@ -1,0 +1,91 @@
+// vez6.11 acceptance: a 5-command toy CLI built with the Components V2
+// declarative machinery (`cli … { command … }` + @expand(expand_cli) /
+// @expand(expand_command)) compiles and DISPATCHES correctly.
+//
+// expand_cli generates one `type Command_<c>` + `impl Runnable for
+// Command_<c>` per command plus a top-level `let toy = App { … }`
+// (design §4.3); dispatch walks the `List<Subcommand>`, matches the command
+// whose `meta.name` equals the request, and vtable-calls its dyn `body`.
+// This asserts:
+//   - each dispatched command runs its OWN body (returns its distinct
+//     exit code, prints its distinct marker),
+//   - routing is EXCLUSIVE — dispatching one command does not run the
+//     others (non-dispatched markers never appear),
+//   - an unmatched command name falls through to exit code 1,
+//   - the run bodies' string literals print UNQUOTED (the full CLI path
+//     exercises the macro-carried-string round-trip, 102g).
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so @std.cli.cmdgen's
+// cross-package @comptime bodies are available (metadata stub can't carry
+// them — znl0). `tc_`-prefixed to avoid cross-shard clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+// One command instance: its run body prints a marker (proves it ran)
+// then returns a distinct code (proves routing). Newline-separated —
+// Avra has no semicolons.
+fn tc_cmd(nm: string, code: string) -> string {
+    "    command " + nm + " {\n" +
+    "        fn run(args: CliResult) -> int {\n" +
+    "            println(\"RAN-" + nm + "\")\n" +
+    "            return " + code + "\n" +
+    "        }\n" +
+    "    }\n"
+}
+
+fn tc_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "fn res(cmd: string) -> CliResult {\n" +
+    "    CliResult { command: cmd, flags: [], options: [], args: [], error: \"\" }\n" +
+    "}\n" +
+    "\n" +
+    "cli toy {\n" +
+    tc_cmd("build", "10") +
+    tc_cmd("clean", "20") +
+    tc_cmd("lint", "30") +
+    tc_cmd("fmt", "40") +
+    tc_cmd("docs", "50") +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    println(\"R-build=\" + string(toy.dispatch(res(\"build\"))))\n" +
+    "    println(\"R-fmt=\" + string(toy.dispatch(res(\"fmt\"))))\n" +
+    "    println(\"R-docs=\" + string(toy.dispatch(res(\"docs\"))))\n" +
+    "    println(\"R-none=\" + string(toy.dispatch(res(\"nope\"))))\n" +
+    "}\n"
+}
+
+fn tc_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_toycli_acceptance_test.av", tc_src())
+}
+
+spec "vez6.11 acceptance: a 5-command Components V2 CLI dispatches correctly" {
+    then "each dispatched command runs its own body and returns its exit code" {
+        let out = tc_run()
+        out.contains("RAN-build") && out.contains("R-build=10")
+            && out.contains("RAN-fmt") && out.contains("R-fmt=40")
+            && out.contains("RAN-docs") && out.contains("R-docs=50")
+    }
+    then "dispatch is exclusive — non-dispatched commands never run" {
+        // Only build/fmt/docs are dispatched, so clean/lint must not run.
+        let out = tc_run()
+        !out.contains("RAN-clean") && !out.contains("RAN-lint")
+    }
+    then "an unmatched command name falls through to exit code 1" {
+        let out = tc_run()
+        out.contains("R-none=1")
+    }
+    then "run-body string literals print unquoted through the CLI path (102g)" {
+        // The printed markers must be bare `RAN-build`, never `"RAN-build"`.
+        let out = tc_run()
+        !out.contains("\"RAN-build\"")
+    }
+}

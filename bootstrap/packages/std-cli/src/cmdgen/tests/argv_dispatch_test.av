@@ -1,0 +1,207 @@
+// vez6.11 argv front-end (jvw7): `App.run_argv(argv)` parses RAW argv
+// against each command's own flag/arg schema — read by DIRECT field access
+// off the command's `CommandSpec` (`c.meta.flags` / `.args` / `.options`),
+// the DATA half of the data/behaviour split — then dispatches through the
+// `dyn Runnable` body. expand_cli bakes each command's schema into a
+// `Subcommand { meta: CommandSpec{…}, body: … }` at expansion time, so the
+// command is self-describing without any trait accessor methods.
+//
+// `run_argv` takes a pre-read `List<string>` (the command name + its
+// args, no program name) so the whole parse+dispatch path is testable
+// with synthetic argv — no live process needed. `run()` (untested here)
+// is thin glue that reads the real process argv and calls `run_argv`.
+//
+// This asserts, through the REAL expand_cli/expand_command:
+//   - a `--flag` token resolves to the command's flag (verbose → 100),
+//   - a positional resolves to the declared arg by order (target → len),
+//   - command routing picks the matched command (clean → 9),
+//   - an unknown command name falls through to exit 1,
+//   - `--version` prints `<name> v<version>` and returns 0,
+//   - empty argv returns 1,
+//   - `--help` prints the app + command descriptions and returns 0.
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
+// cross-package @comptime bodies are available (metadata stub can't carry
+// them — znl0). `ad_`-prefixed to avoid cross-shard clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn ad_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "component arg {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    version \"3.2.1\"\n" +
+    "    description \"TOYDESC\"\n" +
+    "    flag glob {}\n" +
+    "    command build {\n" +
+    "        description \"BUILDDESC\"\n" +
+    "        flag verbose {}\n" +
+    "        arg target {}\n" +
+    "        run() {\n" +
+    "            if glob { return 55 }\n" +
+    "            if verbose { return 100 }\n" +
+    "            return target.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "    command clean {\n" +
+    "        run() {\n" +
+    "            return 9\n" +
+    "        }\n" +
+    "    }\n" +
+    // `option outfile {}` needs NO `component option {}` declaration — a
+    // child block parses as a nested component regardless, and declaring
+    // one would generate `type Option`, colliding with the built-in
+    // nullable `Option<T>` (leaf `component flag/arg` decls are likewise
+    // optional; they are declared above only to mirror existing tests).
+    "    command pack {\n" +
+    "        option outfile {}\n" +
+    "        run() {\n" +
+    "            return outfile.length\n" +
+    "        }\n" +
+    "    }\n" +
+    // `conf` declares an OPTION named `glob` — the SAME name as the cli's
+    // global `flag glob`. The command-local option must shadow the inherited
+    // global flag: `glob` binds to the option (result_get_option), not two
+    // conflicting `let glob`s. Pre-fix this generated a duplicate binding
+    // (bool flag + string option) and the command wouldn't compile.
+    "    command conf {\n" +
+    "        option glob {}\n" +
+    "        run() {\n" +
+    "            return glob.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    println(\"A=\" + string(toy.run_argv([\"build\", \"--verbose\"])))\n" +
+    "    println(\"B=\" + string(toy.run_argv([\"build\", \"hello\"])))\n" +
+    "    println(\"C=\" + string(toy.run_argv([\"clean\"])))\n" +
+    "    println(\"D=\" + string(toy.run_argv([\"nope\"])))\n" +
+    "    println(\"E=\" + string(toy.run_argv([\"--version\"])))\n" +
+    "    println(\"F=\" + string(toy.run_argv(ad_empty())))\n" +
+    "    println(\"G=\" + string(toy.run_argv([\"--help\"])))\n" +
+    "    println(\"H=\" + string(toy.run_argv([\"build\", \"--bogus\"])))\n" +
+    "    println(\"I=\" + string(toy.run_argv([\"build\", \"--glob\"])))\n" +
+    "    println(\"J=\" + string(toy.run_argv([\"pack\", \"--outfile=result\"])))\n" +
+    "    println(\"K=\" + string(toy.run_argv([\"pack\"])))\n" +
+    "    println(\"M=\" + string(toy.run_argv([\"build\", \"--help\"])))\n" +
+    "    println(\"N=\" + string(toy.run_argv([\"clean\", \"--help\"])))\n" +
+    "    println(\"P=\" + string(toy.run_argv([\"conf\", \"--glob=abc\"])))\n" +
+    "}\n" +
+    "\n" +
+    "fn ad_empty() -> List<string> {\n" +
+    "    []\n" +
+    "}\n"
+}
+
+fn ad_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_argv_dispatch_test.av", ad_src())
+}
+
+spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispatches" {
+    then "a --flag token resolves to the command's flag schema" {
+        // `["build", "--verbose"]`: verbose is in build's schema flags (c.meta.flags), so
+        // the classifier records it, the run body sees `verbose == true`
+        // and returns 100 (not the arg-length path).
+        let out = ad_run()
+        out.contains("A=100")
+    }
+    then "a positional resolves to the declared arg by declaration order" {
+        // `["build", "hello"]`: no flags, so `hello` maps to positional 0,
+        // named `target` by the schema args (c.meta.args); the run body returns
+        // `target.length` == 5.
+        let out = ad_run()
+        out.contains("B=5")
+    }
+    then "command routing dispatches to the matched command" {
+        // `["clean"]` routes to clean (returns 9), not build.
+        let out = ad_run()
+        out.contains("C=9")
+    }
+    then "an unknown command name falls through to exit 1" {
+        let out = ad_run()
+        out.contains("D=1")
+    }
+    then "--version prints `<name> v<version>` and returns 0" {
+        let out = ad_run()
+        out.contains("E=0") && out.contains("toy v3.2.1")
+    }
+    then "empty argv returns 1" {
+        let out = ad_run()
+        out.contains("F=1")
+    }
+    then "--help prints the app + command descriptions and returns 0" {
+        // app_print_help emits the app description and each command's
+        // c.meta.description — both baked from the cli/command config.
+        let out = ad_run()
+        out.contains("G=0")
+            && out.contains("TOYDESC")
+            && out.contains("BUILDDESC")
+    }
+    then "an undeclared --flag is rejected: error reported, exit 1, body not run" {
+        // `["build", "--bogus"]` — `--bogus` isn't in build's schema flags,
+        // so parse_tokens records `unknown flag: --bogus`; run_argv reports
+        // it and returns 1 WITHOUT dispatching (the run body, which would
+        // return 100/`target.length`, never runs for this invocation).
+        let out = ad_run()
+        out.contains("H=1") && out.contains("unknown flag: --bogus")
+    }
+    then "an inherited GLOBAL flag is parsed from argv against the command" {
+        // `glob` is declared at the cli level (a global), so it's inherited
+        // into build's schema flags (own flags + globals). `["build",
+        // "--glob"]` must therefore be accepted — NOT rejected as unknown —
+        // and reach the run body's inherited `glob` binding, returning 55.
+        // This exercises the own+global flag-schema union through run_argv,
+        // not just a command's own flags.
+        let out = ad_run()
+        out.contains("I=55")
+    }
+    then "a --key=value option is parsed against the command's option schema" {
+        // `pack` declares `option outfile {}`; the schema options (c.meta.options) report it, so
+        // `["pack", "--outfile=result"]` sets the `outfile` option and the
+        // run body's `outfile` binding (result_get_option) reads "result"
+        // (length 6). Unset (`["pack"]`) falls back to "" (length 0). This
+        // exercises the option schema + `--key=value` classification path.
+        let out = ad_run()
+        out.contains("J=6") && out.contains("K=0")
+    }
+    then "`<command> --help` prints that command's usage from its schema, exit 0" {
+        // `["build", "--help"]` — `--help` after a matched command prints
+        // build's per-command usage (NOT rejected as an unknown flag, NOT
+        // the run body): its declared flags (`--verbose`, inherited
+        // `--glob`) and its positional arg (`target`), read from the
+        // self-describing CommandSpec. Returns 0. The `--verbose` FLAGS entry
+        // and `target` ARGS entry appear only in this per-command help.
+        let out = ad_run()
+        out.contains("M=0")
+            && out.contains("--verbose")
+            && out.contains("target")
+    }
+    then "per-command --help for a command with no flags/args/options prints cleanly, exit 0" {
+        // `clean` declares no flags/args/options, so cmd_print_help runs
+        // print_named_section three times, each hitting the empty
+        // short-circuit (no FLAGS/OPTIONS/ARGS block). It must still print
+        // the command header and return 0 — a schema-less command's help is
+        // a clean no-section page, not a crash or a stray empty header.
+        let out = ad_run()
+        out.contains("N=0")
+    }
+    then "a command option shadows an inherited global flag of the same name (no dup binding)" {
+        // `conf` declares `option glob` colliding with the global `flag glob`.
+        // The option must win: `--glob=abc` parses as the option (glob="abc",
+        // length 3), and the command compiles (pre-fix: duplicate `let glob`
+        // of conflicting bool/string types → no output at all). P=3 proves
+        // both — it compiled AND the option, not the flag, was bound.
+        let out = ad_run()
+        out.contains("P=3")
+    }
+}

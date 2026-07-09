@@ -1,6 +1,6 @@
-// WHY: typed id-shim constructors for @comptime macro source — the
-// eval-side mechanism for the B-final arena flip (Stmt payloads
-// become ExprId / StmtId / List<StmtId> arena ids).
+// WHY: typed id-shim constructors AND destructors for @comptime macro
+// source — the eval-side mechanism for the B-final arena flip (Stmt
+// payloads become ExprId / StmtId / List<StmtId> arena ids).
 //
 // Macro bodies run in the tree-walk evaluator's Value space, where
 // every AST node is a boxed Value and arena ids don't exist — a macro
@@ -9,16 +9,32 @@
 // `Stmt.Expr(e)` stops type-checking: `e` is an `Expr` node where the
 // declaration demands an `ExprId` row.
 //
-// These shims close that gap. At the type level each converts a node
-// value to its id form, so a flipped construct reads
-// `Stmt.Expr(synth_expr_id(e))` and type-checks with no leniency. At
-// eval time each is an IDENTITY: features/eval/mod.av intercepts the
-// calls by name (`synth_shim_kind` — same last-segment matching as
-// the ctx_* fns in resolver_ctx.av) and returns the evaluated
-// argument Value unchanged, because Value space keeps the F2-boxed
-// convention — the boxed node IS the payload, and the Value→AST
-// decoder allocates real rows only when the macro's return value is
-// spliced.
+// TWO DIRECTIONS, one identity mechanism:
+//
+//   WRITE (node → id): `synth_expr_id` / `synth_stmt_id` /
+//   `synth_stmt_ids` let a macro CONSTRUCT flipped variants —
+//   `Stmt.Expr(synth_expr_id(e))` type-checks with no leniency.
+//
+//   READ (id → node): `synth_deref_expr` / `synth_deref_stmt` /
+//   `synth_deref_stmt_ids` let a macro INTROSPECT a flipped variant it
+//   received — after `match s { .ComponentBlock(_, _, _, body) }` the
+//   `body: List<StmtId>` children are already boxed, matchable Stmt
+//   Values (the arg encoder `construct_stmt` materialises them
+//   recursively), but the static type is `StmtId`; the deref shim
+//   re-types each `StmtId → Stmt` so the macro can `match` it. This is
+//   the read half of the pair that unblocks library-authored
+//   introspection helpers (children_of_type / method_body). It is the
+//   exact inverse of the write shims and shares their identity
+//   intercept.
+//
+// At the type level each converts between a node value and its id
+// form; at eval time each is an IDENTITY: features/eval/mod.av
+// intercepts the calls by name (`call_is_synth_shim` — same
+// last-segment matching as the ctx_* fns in resolver_ctx.av) and
+// returns the evaluated argument Value unchanged, because Value space
+// keeps the F2-boxed convention — the boxed node IS the payload, and
+// the Value→AST decoder allocates real rows only when the macro's
+// return value is spliced.
 //
 // The compiled bodies below are unreachable by design: every call
 // site lives in @comptime macro code, which only the evaluator
@@ -52,5 +68,33 @@ export fn synth_stmt_id(s: Stmt) -> StmtId {
 /// the real `StmtId` rows when the macro's return value is spliced.
 export fn synth_stmt_ids(body: List<Stmt>) -> List<StmtId> {
     synth_shim_unreachable("synth_stmt_ids")
+    []
+}
+
+// ── Read shims (id → node): introspection inverse of the write shims ──
+// Identity at eval; the received child is already a boxed, matchable
+// node Value, so the shim only re-types it for `match`.
+
+/// Node view of an expression id — comptime-only identity shim.
+/// Lets a macro `match synth_deref_expr(child_id) { ... }` a flipped
+/// `ExprId` child it received.
+export fn synth_deref_expr(id: ExprId) -> Expr {
+    synth_shim_unreachable("synth_deref_expr")
+    Expr.None
+}
+
+/// Node view of a statement id — comptime-only identity shim. Lets a
+/// macro `match synth_deref_stmt(child_id) { ... }` a flipped `StmtId`
+/// child it received (e.g. a `ComponentBlock` body row).
+export fn synth_deref_stmt(id: StmtId) -> Stmt {
+    synth_shim_unreachable("synth_deref_stmt")
+    Stmt.NoOp
+}
+
+/// Node view of a statement-id list — comptime-only identity shim.
+/// The whole-list convenience for iterating a `body: List<StmtId>`:
+/// `for child in synth_deref_stmt_ids(body) { match child { ... } }`.
+export fn synth_deref_stmt_ids(ids: List<StmtId>) -> List<Stmt> {
+    synth_shim_unreachable("synth_deref_stmt_ids")
     []
 }

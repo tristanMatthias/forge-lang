@@ -1,0 +1,282 @@
+// End-to-end test for the expand_command @comptime macro (cmdgen/mod.av):
+// a `command build { fn run(args: CliResult) -> int { … } }` instance,
+// with @expand(expand_command) registered on the command component,
+// expands into `type Command_build` + a `Runnable` impl for it,
+// carrying the user's run body.
+//
+// The macro builds those decls by DIRECT construction. `@expand`
+// CONSUMES the `command build { … }` instance (it is replaced by the
+// expansion, not echoed), so `type Command_build`, `Command_build__run`
+// (the Type__method-mangled run method), `Runnable:Command_build` (the
+// impl target), and the distinctive body value all appear ONLY in the
+// expansion — each a clean, non-vacuous assertion.
+//
+// Why `Runnable:Command_build` and not the pretty `impl Runnable for
+// Command_build`: the generated impl is a `Stmt.Impl("Runnable:" + tn,
+// …)`, and the trait resolves to the qualified `@std::cli::Runnable`, so
+// the packed "Trait:Type" name becomes `@std::cli::Runnable:Command_build`
+// — and render_stmt naively splits on the FIRST ':', mis-rendering it as
+// `impl @std for :cli::Runnable:Command_build` (the stringly-typed
+// Stmt.Impl smell, ticket nlnd). The mangle is cosmetic — the impl
+// typechecks, links, and dispatches through `dyn Runnable` correctly
+// (verified by hand via `make run`: `dyn-run` returns the user body). We
+// assert on the `Runnable:Command_build` substring, which survives the
+// mangle, rather than the broken pretty form.
+//
+// Compiled FROM SOURCE (clean env) so @std.cli.cmdgen's @comptime body is
+// available cross-package (the metadata-stub path can't carry it — znl0).
+// All top-level names are `eg_`-prefixed to avoid cross-shard clashes.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+const EG_MAIN: string = "fn " + "main()"
+
+fn eg_expand(run_body: string) -> string {
+    let path = "/tmp/avra_expand_command_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    fn run(args: CliResult) -> int {\n" +
+        "        " + run_body + "\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+// Expand a command declaring one `flag`/`arg` child, whose run body
+// references both by their declared names.
+fn eg_expand_flags() -> string {
+    let path = "/tmp/avra_expand_command_flags_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "component flag {\n" +
+        "}\n" +
+        "component arg {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    flag xflagq {}\n" +
+        "    arg yargq {}\n" +
+        "    option zoptq {}\n" +
+        "    fn run(args: CliResult) -> int {\n" +
+        "        if xflagq { return 1 }\n" +
+        "        return yargq.length + zoptq.length\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+// Expand a command whose run method uses the `run() { … }` METHOD
+// SHORTHAND (component_decl §4.1) — empty parens + block, no explicit
+// signature — alongside a `flag vq {}` sibling. This is the
+// disambiguation the parser's `peek_after_ident_is_empty_call_block`
+// lookahead performs: `flag vq {}` (ident + `{`, no parens) is a child
+// block; `run() { … }` (ident + `()` + `{`) is the method. Both must be
+// identified for the generated run to carry BOTH the `vq` accessor
+// binding (flag sibling → child) AND the shorthand's body (run() {} →
+// method). A self-contained local macro can't cover this — splicing a
+// multi-child block's body trips the comptime-eval gap (rmzs); only
+// expand_command's wrap-in-generated-fn construction sidesteps it.
+fn eg_expand_shorthand() -> string {
+    let path = "/tmp/avra_expand_command_shorthand_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "component flag {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    flag vq {}\n" +
+        "    run() {\n" +
+        "        if vq { return 24601 }\n" +
+        "        return 5\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+/// Count non-overlapping occurrences of `needle` in `haystack`.
+fn eg_count(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+// Expand a `cli` with one global `flag` and two commands (one of which
+// re-declares a flag by the same name as the global, to exercise dedup).
+fn eg_expand_cli_globals() -> string {
+    let path = "/tmp/avra_expand_cli_globals_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult, App}\n" +
+        "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+        "\n" +
+        "@expand(expand_cli)\n" +
+        "component cli {}\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {}\n" +
+        "component flag {}\n" +
+        "\n" +
+        "cli avra {\n" +
+        "    flag gverbose {}\n" +
+        "    command build {\n" +
+        "        flag gverbose {}\n" +
+        "        fn run(args: CliResult) -> int { if gverbose { return 7 } return 1 }\n" +
+        "    }\n" +
+        "    command clean {\n" +
+        "        fn run(args: CliResult) -> int { return 2 }\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+// Expand a `cli` carrying its own `description`/`version` config plus one
+// command with a `description "…"` config.
+fn eg_expand_cli_config() -> string {
+    let path = "/tmp/avra_expand_cli_config_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult, App}\n" +
+        "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+        "\n" +
+        "@expand(expand_cli)\n" +
+        "component cli {}\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {}\n" +
+        "\n" +
+        "cli avra {\n" +
+        "    description \"APP_DESC_MK\"\n" +
+        "    version \"7.7.7\"\n" +
+        "    command build {\n" +
+        "        description \"DESC_MARKER_Q\"\n" +
+        "        fn run(args: CliResult) -> int { return 1 }\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
+spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {
+    then "command build expands to type Command_build + a Runnable impl for it" {
+        let out = eg_expand("return 42")
+        out.contains("type Command_build")
+            && out.contains("Command_build__run")
+            && out.contains("Runnable:Command_build")
+    }
+    then "the user's run body is carried into the generated run method" {
+        // A distinctive body value that only the generated run can carry
+        // (the source `command build` block is consumed by @expand, so
+        // this value appears solely inside the generated run method).
+        let out = eg_expand("return 31337")
+        out.contains("31337")
+            && out.contains("Command_build__run")
+    }
+    then "declared flag/arg/option children become result_has_flag / result_get_arg / result_get_option bindings in run" {
+        // Each `flag x {}` / `arg y {}` / `option z {}` prepends a
+        // `let x = result_has_flag(args, "x")` / `let y =
+        // result_get_arg(args, "y")` / `let z = result_get_option(args,
+        // "z")` accessor local to the run body, so the user body references
+        // them by name. The exact call substrings appear ONLY in the
+        // generated bindings — the macro source splices the name via `"\""
+        // + name + "\""`, never these literals, and the `command build`
+        // block is consumed by @expand.
+        let out = eg_expand_flags()
+        out.contains("result_has_flag(args, \"xflagq\")")
+            && out.contains("result_get_arg(args, \"yargq\")")
+            && out.contains("result_get_option(args, \"zoptq\")")
+    }
+    then "the run() method shorthand is read as the run method, disambiguated from a flag sibling" {
+        // `command build { flag vq {} run() { … } }` uses the `run() { … }`
+        // METHOD SHORTHAND (no explicit `fn run(args) -> int` signature)
+        // next to a `flag vq {}` child. The parser must route the two
+        // differently: `flag vq {}` → child (→ `result_has_flag(args,
+        // "vq")` binding), `run() { … }` → method (→ the body's `24601`).
+        // Both substrings appear ONLY in the expansion (the macro splices
+        // the flag name via `"\"" + fname + "\""`, never this literal; the
+        // distinctive `24601` lives only in the carried run body; the
+        // source block is consumed by @expand). If `flag vq {}` were
+        // misparsed as a method, no `vq` binding would exist; if `run() {}`
+        // were misparsed as a child, `24601` wouldn't reach the run method.
+        let out = eg_expand_shorthand()
+        out.contains("result_has_flag(args, \"vq\")")
+            && out.contains("24601")
+            && out.contains("Command_build__run")
+    }
+}
+
+spec "expand_cli inherits the cli's global flags into every command (Components V2)" {
+    then "a global flag is bound in each command's run, deduped against a command's own flag" {
+        // cli `avra` has one global `flag gverbose`. Command `build`
+        // ALSO declares `flag gverbose` (collision); command `clean`
+        // declares none. The `result_has_flag(args, "gverbose")` binding
+        // must appear EXACTLY twice: once in `build` (the global +
+        // command flag deduped to a single binding, not two) and once in
+        // `clean` (inherited into a command with no own flags). A count
+        // of 3 would mean dedup failed; 1 would mean `clean` didn't
+        // inherit. The exact call substring appears only in generated
+        // bindings (the macro splices the name, never this literal; the
+        // cli block is consumed by @expand).
+        let out = eg_expand_cli_globals()
+        eg_count(out, "result_has_flag(args, \"gverbose\")") == 2
+    }
+}
+
+spec "expand_cli stamps a command's description config onto its instance (Components V2)" {
+    then "a command's `description` config becomes the description field value in its constructor" {
+        // The command declares `description "DESC_MARKER_Q"`; expand_cli
+        // reads that config pair and stamps it into the generated
+        // instance ctor `Command_build { name: …, description:
+        // "DESC_MARKER_Q" }`. The marker appears only in the generated
+        // ctor — the cli block (with its config) is consumed by @expand.
+        let out = eg_expand_cli_config()
+        out.contains("description: \"DESC_MARKER_Q\"")
+    }
+    then "the cli's own description/version config is stamped onto the App" {
+        // The cli block declares `description "APP_DESC_MK"` / `version
+        // "7.7.7"`; expand_cli reads them and stamps them into the App
+        // builder's `App { … }`. These markers appear only in the
+        // generated App ctor (the cli block is consumed by @expand).
+        let out = eg_expand_cli_config()
+        out.contains("description: \"APP_DESC_MK\"")
+            && out.contains("version: \"7.7.7\"")
+    }
+}

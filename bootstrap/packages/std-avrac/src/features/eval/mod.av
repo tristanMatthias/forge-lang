@@ -1403,8 +1403,9 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
 }
 
 /// Evaluate the FIRST argument of an id-shim call and return it as the
-/// call's value. The synth_* shims (synth_expr_id / synth_stmt_id /
-/// synth_stmt_ids) are node→id converters that are IDENTITIES in Value
+/// call's value. Every synth_* shim — write (node→id: synth_expr_id /
+/// synth_stmt_id / synth_stmt_ids) and read (id→node: synth_deref_expr /
+/// synth_deref_stmt / synth_deref_stmt_ids) — is an IDENTITY in Value
 /// space, so eval passes the inner boxed-node Value straight through.
 fn eval_shim_passthrough(runtime: Runtime, args: List<ExprId>) -> StepResult {
     if args.length == 0 { return error_result(runtime, "id-shim call needs at least one argument") }
@@ -1449,10 +1450,13 @@ fn callee_last_segment(callee: Expr) -> string {
 /// True when the callee names a synth_* id shim
 /// (features/comptime/synth.av). Every shim is an identity
 /// passthrough of its first argument, so only presence matters —
-/// mirror of `call_is_list_concat`.
+/// mirror of `call_is_list_concat`. Covers both directions: the write
+/// shims (node→id, used to construct flipped variants) and the read /
+/// deref shims (id→node, used to introspect a received variant).
 fn call_is_synth_shim(callee: Expr) -> bool {
     let last = callee_last_segment(callee)
     last == "synth_expr_id" || last == "synth_stmt_id" || last == "synth_stmt_ids"
+        || last == "synth_deref_expr" || last == "synth_deref_stmt" || last == "synth_deref_stmt_ids"
 }
 
 fn ctx_kind_from_path(path: string) -> string {

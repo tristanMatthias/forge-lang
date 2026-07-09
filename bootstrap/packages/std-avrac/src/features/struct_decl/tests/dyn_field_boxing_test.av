@@ -1,0 +1,53 @@
+// WHY: a `dyn Trait` STRUCT FIELD initialised with a concrete value must be
+// boxed into a trait object (value + vtable) at construction, so a later
+// `field.method()` dispatches through a real vtable. Before the fix the raw
+// struct pointer was stored into the field and the vtable read was garbage —
+// the list-of-such-structs case surfaced as "index on null list" (the null
+// being the bogus vtable, read out of bounds past the concrete struct). This
+// is the single-field analog of the `List<dyn Trait>` field boxing (966j),
+// covering BOTH write paths: struct-literal init (fill_struct_fields) and
+// field assignment (emit_field_assign).
+
+trait Greeter { fn greet(self) -> string }
+type En = { who: string }
+impl Greeter for En { fn greet(self) -> string { "hello " + self.who } }
+type Es = { who: string }
+impl Greeter for Es { fn greet(self) -> string { "hola " + self.who } }
+
+type Entry = { key: string, g: dyn Greeter }
+
+spec "dyn Trait struct fields box concrete values (966j struct-field analog)" {
+    then "a bare struct with a dyn field dispatches through it" {
+        let e = Entry { key: "x", g: En { who: "z" } }
+        e.g.greet() == "hello z"
+    }
+    then "a LIST of structs each holding a dyn field dispatches per element" {
+        // The failing case pre-fix: `List<Entry>` where Entry has a dyn field
+        // produced a bogus vtable, surfacing as "index on null list".
+        let es: List<Entry> = [
+            Entry { key: "a", g: En { who: "world" } },
+            Entry { key: "b", g: Es { who: "mundo" } }
+        ]
+        es[0].g.greet() == "hello world" && es[1].g.greet() == "hola mundo"
+    }
+    then "the plain field beside the dyn field still reads directly" {
+        // Direct (offset) field access on `key` coexists with vtable dispatch
+        // on `g` — the data/behavior split the CLI design relies on.
+        let es: List<Entry> = [ Entry { key: "k", g: En { who: "q" } } ]
+        es[0].key == "k" && es[0].g.greet() == "hello q"
+    }
+    then "reassigning a dyn field to a new concrete value re-boxes it" {
+        // The emit_field_assign path (`obj.field = Concrete{…}`) boxes too.
+        mut e = Entry { key: "m", g: En { who: "a" } }
+        e.g = Es { who: "b" }
+        e.g.greet() == "hola b"
+    }
+    then "assigning one dyn field from another dyn value passes through unboxed" {
+        // A value that is ALREADY a trait object (dyn -> dyn) must not be
+        // double-boxed: its concrete name is empty, so it falls through.
+        let src: dyn Greeter = En { who: "p" }
+        mut e = Entry { key: "n", g: Es { who: "x" } }
+        e.g = src
+        e.g.greet() == "hello p"
+    }
+}

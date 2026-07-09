@@ -458,7 +458,34 @@ impl Parser {
         false
     }
 
-    // Parse block body: nested blocks + on handlers + fn decls + statements
+    // Peek: does the current identifier head an `ident() {` method
+    // shorthand — empty parens immediately followed by a block? Used to
+    // tell a `run() { … }` component method (spec §4.1) apart from a bare
+    // `run()` call statement (which has no trailing block).
+    fn peek_after_ident_is_empty_call_block(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = self.skip_ws_from(end)
+        if i >= self.source.length || self.source.substring(i, i + 1) != "(" { return false }
+        i = self.skip_ws_from(i + 1)
+        if i >= self.source.length || self.source.substring(i, i + 1) != ")" { return false }
+        i = self.skip_ws_from(i + 1)
+        if i >= self.source.length { return false }
+        self.source.substring(i, i + 1) == "{"
+    }
+
+    /// First non-whitespace source offset at or after `from`.
+    fn skip_ws_from(self, from: int) -> int {
+        mut i = from
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { return i }
+            i = i + 1
+        }
+        i
+    }
+
+    // Parse block body: nested blocks + on handlers + method shorthand +
+    // fn decls + statements
     fn parse_comp_block_body(self) -> Result<StmtListIds, string> {
         mut ids: List<StmtId> = []
         while !self.check(Tk.RightBrace) {
@@ -514,6 +541,26 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
                 let stmt = Stmt.ComponentBlock(comp_name, comp_name, nested_config, nested_body.ids)
                 self.push_body_elem(ids, self.alloc_stmt_leaf(stmt), line, col)
+                continue
+            }
+
+            // `name() { body }` — method shorthand (spec §4.1). Parsed as
+            // a nullary `Function` the `@expand` macro reads; the macro
+            // injects the real signature (e.g. expand_command turns a
+            // `run() { … }` into `fn run(self, args: CliResult) -> int { … }`).
+            // Distinct from a `name()` call statement by the trailing block.
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_empty_call_block() {
+                let mname = self.current_lexeme
+                self.advance()  // consume method name
+                if !self.consume(Tk.LeftParen, "expected `(` in method shorthand") { return .Err("parse error") }
+                if !self.consume(Tk.RightParen, "expected `)` in method shorthand") { return .Err("parse error") }
+                if !self.consume(Tk.LeftBrace, "expected `{` after method header") { return .Err("parse error") }
+                let mbody = self.parse_statement_list_ids(true)?
+                if !self.consume(Tk.RightBrace, "expected `}` after method body") { return .Err("parse error") }
+                let empty_tp: List<TypeParamEntry> = []
+                let empty_p: List<ParamEntry> = []
+                let stmt = Stmt.Function(mname, empty_tp, empty_p, ValueType.Int, mbody.ids)
+                self.push_body_elem(ids, self.alloc_stmt(stmt, byte_span_none(), self.fn_edges(ValueType.Int)), line, col)
                 continue
             }
 
