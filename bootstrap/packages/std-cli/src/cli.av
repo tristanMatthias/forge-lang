@@ -93,6 +93,34 @@ export trait Runnable {
     fn run(self, args: CliResult) -> int
 }
 
+/// V2 dispatch container (vez6.11). Parallels the design's `Cli`
+/// (docs §4.2) but named `App` so it can coexist with the legacy
+/// `Cli` builder surface until main.av migrates off it (vez6.12).
+/// Holds the `dyn Runnable` command boxes that expand_cli generates;
+/// `dispatch` runs the vtable-dispatch loop over them.
+export type App = {
+    name: string,
+    description: string,
+    version: string,
+    commands: List<dyn Runnable>
+}
+
+impl App {
+    /// Run the command whose `name()` matches `parsed.command`;
+    /// returns its exit code. Returns 1 when nothing matches (the
+    /// caller may print help). Dispatch is a vtable call through the
+    /// `dyn Runnable` box — each command's generated `run` body
+    /// executes with its flag/arg accessors bound.
+    fn dispatch(self, parsed: CliResult) -> int {
+        for cmd in self.commands {
+            if cmd.name() == parsed.command {
+                return cmd.run(parsed)
+            }
+        }
+        1
+    }
+}
+
 /// Construct an empty Cli. Use `cli_add_command` / `cli_add_flag`
 /// / `cli_add_option` / `cli_add_arg` to populate, then `cli_parse`
 /// to consume argv.

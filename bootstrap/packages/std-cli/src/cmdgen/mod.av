@@ -29,7 +29,7 @@
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
 
-use @std.avrac.core.{Stmt, Expr, ValueType, ParamEntry, TypeParamEntry, FieldEntry}
+use @std.avrac.core.{Stmt, Expr, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldEntry, FieldInit}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
 
 /// Expand a `command <inst> { flag…/arg… fn run(args: CliResult) -> int
@@ -125,4 +125,84 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
     let type_decl = Stmt.TypeDecl(tn, empty_tp, [name_field])
 
     return [type_decl, impl_stmt]
+}
+
+/// Expand a `cli <inst> { command <c> { … } … }` instance into the
+/// per-command `type Command_<c>` + `impl Runnable for Command_<c>`
+/// decls (delegating to expand_command per command) plus a builder
+/// `fn <inst>() -> App` wiring the commands as `dyn Runnable` boxes.
+/// Consumers call `<inst>()` for the App, then `.dispatch(parsed)` to
+/// run the matched command.
+///
+/// A builder fn (not a top-level `let <inst> = App { … }`) because a
+/// top-level let bound to a struct is mis-typed at a later top-level
+/// method call (design § Non-goals). Inside the builder's function
+/// scope the App dispatches correctly. The command boxes are bound
+/// through a typed local first — `let cmds: List<dyn Runnable> =
+/// [Command_<c> { name: "<c>" }, …]` — because a `List<dyn Trait>`
+/// STRUCT FIELD does not box its inline element literals (bug 966j);
+/// the `List<dyn Runnable>` let-annotation does. Config
+/// (description/version) + global-flag inheritance are the next
+/// increment.
+@comptime
+export fn expand_cli(s: Stmt) -> List<Stmt> {
+    mut inst = ""
+    mut out: List<Stmt> = []
+    mut cmd_names: List<string> = []
+    match s {
+        .ComponentBlock(_, instance, _, body) -> {
+            inst = instance
+            for id in body {
+                let child = synth_deref_stmt(id)
+                match child {
+                    .ComponentBlock(cn, cinst, _, _) -> {
+                        if cn == "command" {
+                            let decls = expand_command(child)
+                            for d in decls { out.push(d) }
+                            cmd_names.push(cinst)
+                        }
+                    }
+                    _ -> {}
+                }
+            }
+        }
+        _ -> {}
+    }
+
+    // Emit a builder FUNCTION `fn <inst>() -> App { … }` rather than a
+    // top-level `let <inst> = App { … }`: a top-level let bound to a
+    // struct is mis-typed at a later top-level method call (design §
+    // "Non-goals" line 14 — top-level template instances aren't values).
+    // Built + returned inside function scope, the App dispatches
+    // correctly (proven). Consumers call `<inst>()` to get the App, then
+    // `.dispatch(parsed)`.
+    let empty_vt: List<ValueType> = []
+    let empty_tp2: List<TypeParamEntry> = []
+    let empty_pe: List<ParamEntry> = []
+    let app_vt = ValueType.Struct("App", empty_vt, 0)
+
+    // Body stmt 1: let cmds: List<dyn Runnable> = [Command_<c> { name:
+    // "<c>" }, …]  (the 966j-workaround typed local that boxes each elem).
+    mut elems: List<ExprId> = []
+    for cn in cmd_names {
+        let tn = "Command_" + cn
+        let name_init = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + cn + "\"")) }
+        elems.push(synth_expr_id(Expr.StructLit(tn, [name_init])))
+    }
+    let dyn_run = ValueType.Trait("Runnable", 0)
+    let cmds_let = Stmt.Let("cmds", ValueType.List(dyn_run), synth_expr_id(Expr.ListLit(elems)))
+
+    // Body stmt 2: return App { name: "<inst>", description: "",
+    //                           version: "", commands: cmds }
+    let f_name = FieldInit { name: "name", value_id: synth_expr_id(Expr.String("\"" + inst + "\"")) }
+    let f_desc = FieldInit { name: "description", value_id: synth_expr_id(Expr.String("\"\"")) }
+    let f_ver = FieldInit { name: "version", value_id: synth_expr_id(Expr.String("\"\"")) }
+    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.Ident("cmds")) }
+    let app_lit = synth_expr_id(Expr.StructLit("App", [f_name, f_desc, f_ver, f_cmds]))
+    let ret = Stmt.Return(app_lit)
+
+    let builder = Stmt.Function(inst, empty_tp2, empty_pe, app_vt, synth_stmt_ids([cmds_let, ret]))
+    out.push(builder)
+
+    out
 }
