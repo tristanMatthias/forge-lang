@@ -169,21 +169,22 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
 
 /// Expand a `cli <inst> { command <c> { … } … }` instance into the
 /// per-command `type Command_<c>` + `impl Runnable for Command_<c>`
-/// decls (delegating to expand_command per command) plus a builder
-/// `fn <inst>() -> App` wiring the commands as `dyn Runnable` boxes.
-/// Consumers call `<inst>()` for the App, then `.dispatch(parsed)` to
-/// run the matched command.
+/// decls (delegating to expand_command per command) plus a top-level
+/// `let <inst> = App { … }` wiring the commands as `dyn Runnable` boxes.
+/// Consumers reference `<inst>` directly, then `.dispatch(parsed)` to run
+/// the matched command — the shape design §4.3 prescribes (`let avra =
+/// Cli { … }` / `avra.dispatch(…)`).
 ///
-/// A builder fn (not a top-level `let <inst> = App { … }`) because a
-/// top-level let bound to a struct is mis-typed at a later top-level
-/// method call (design § Non-goals). Inside the builder's function
-/// scope the App dispatches correctly; the command struct literals are
-/// spliced inline into the `App`'s `List<dyn Runnable>` field, boxing to
-/// `dyn Runnable` at the field init. A `flag <g> {}` declared directly in
-/// the cli block is a GLOBAL flag, inherited into every command's run
-/// bindings (design §4.2 parent_chain_flags). Each command's
-/// `description "…"` config is stamped onto its instance (`Command_<c> {
-/// name, description }`).
+/// A top-level `let` (design §4.3), not a builder fn: an unannotated
+/// top-level struct let is now inferred at declare time (m8s8) and
+/// initialises before `main` reads it, so a later `<inst>.dispatch(…)`
+/// resolves and dispatches correctly (verified end-to-end). The command
+/// struct literals are spliced inline into the `App`'s `List<dyn
+/// Runnable>` field, boxing to `dyn Runnable` at the field init. A `flag
+/// <g> {}` declared directly in the cli block is a GLOBAL flag, inherited
+/// into every command's run bindings (design §4.2 parent_chain_flags).
+/// Each command's `description "…"` config is stamped onto its instance
+/// (`Command_<c> { name, description }`).
 @comptime
 export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut inst = ""
@@ -227,25 +228,18 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
         for d in decls { out.push(d) }
     }
 
-    // Emit a builder FUNCTION `fn <inst>() -> App { … }` rather than a
-    // top-level `let <inst> = App { … }`: a top-level let bound to a
-    // struct is mis-typed at a later top-level method call (design §
-    // "Non-goals" line 14 — top-level template instances aren't values).
-    // Built + returned inside function scope, the App dispatches
-    // correctly (proven). Consumers call `<inst>()` to get the App, then
-    // `.dispatch(parsed)`.
-    let empty_vt: List<ValueType> = []
-    let empty_tp2: List<TypeParamEntry> = []
-    let empty_pe: List<ParamEntry> = []
-    let app_vt = ValueType.Struct("App", empty_vt, 0)
-
-    // Body: return App { name: "<inst>", description: "", version: "",
-    //   commands: [Command_<c> { name: "<c>", description: "…" }, …] }
-    // The command struct literals are spliced INLINE into the `List<dyn
+    // Emit a top-level `let <inst> = App { … }` (design §4.3), not a
+    // builder fn. An unannotated top-level struct let is inferred at
+    // declare time (m8s8) and initialises before `main` reads it, so a
+    // later `<inst>.dispatch(…)` resolves + dispatches (verified). The
+    // command struct literals are spliced INLINE into the `List<dyn
     // Runnable>` field — each boxes to `dyn Runnable` at the field init.
     // (This once needed a pre-boxed typed local because a `List<dyn
     // Trait>` struct field didn't box its inline elements; that codegen
     // bug, 966j, is now fixed upstream, so the inline form suffices.)
+    let empty_vt: List<ValueType> = []
+    let app_vt = ValueType.Struct("App", empty_vt, 0)
+
     mut elems: List<ExprId> = []
     mut ci = 0
     while ci < cmd_names.length {
@@ -261,10 +255,7 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     let f_ver = FieldInit { name: "version", value_id: app_ver }
     let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(elems)) }
     let app_lit = synth_expr_id(Expr.StructLit("App", [f_name, f_desc, f_ver, f_cmds]))
-    let ret = Stmt.Return(app_lit)
-
-    let builder = Stmt.Function(inst, empty_tp2, empty_pe, app_vt, synth_stmt_ids([ret]))
-    out.push(builder)
+    out.push(Stmt.Let(inst, app_vt, app_lit))
 
     out
 }

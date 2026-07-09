@@ -3,9 +3,9 @@
 // @expand(expand_command)) compiles and DISPATCHES correctly.
 //
 // expand_cli generates one `type Command_<c>` + `impl Runnable for
-// Command_<c>` per command plus a builder `fn toy() -> App`; dispatch
-// walks the `List<dyn Runnable>` and vtable-calls the command whose
-// name() matches. This asserts:
+// Command_<c>` per command plus a top-level `let toy = App { … }`
+// (design §4.3); dispatch walks the `List<dyn Runnable>` and vtable-calls
+// the command whose name() matches. This asserts:
 //   - each dispatched command runs its OWN body (returns its distinct
 //     exit code, prints its distinct marker),
 //   - routing is EXCLUSIVE — dispatching one command does not run the
@@ -55,11 +55,10 @@ fn tc_src() -> string {
     "}\n" +
     "\n" +
     "fn main() {\n" +
-    "    let app = toy()\n" +
-    "    println(\"R-build=\" + string(app.dispatch(res(\"build\"))))\n" +
-    "    println(\"R-fmt=\" + string(app.dispatch(res(\"fmt\"))))\n" +
-    "    println(\"R-docs=\" + string(app.dispatch(res(\"docs\"))))\n" +
-    "    println(\"R-none=\" + string(app.dispatch(res(\"nope\"))))\n" +
+    "    println(\"R-build=\" + string(toy.dispatch(res(\"build\"))))\n" +
+    "    println(\"R-fmt=\" + string(toy.dispatch(res(\"fmt\"))))\n" +
+    "    println(\"R-docs=\" + string(toy.dispatch(res(\"docs\"))))\n" +
+    "    println(\"R-none=\" + string(toy.dispatch(res(\"nope\"))))\n" +
     "}\n"
 }
 
