@@ -131,6 +131,30 @@ fn eg_expand_cli_globals() -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
+// Expand a `cli` with one command carrying a `description "…"` config.
+fn eg_expand_cli_config() -> string {
+    let path = "/tmp/avra_expand_cli_config_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult, App}\n" +
+        "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+        "\n" +
+        "@expand(expand_cli)\n" +
+        "component cli {}\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {}\n" +
+        "\n" +
+        "cli avra {\n" +
+        "    command build {\n" +
+        "        description \"DESC_MARKER_Q\"\n" +
+        "        fn run(args: CliResult) -> int { return 1 }\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
 spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {
     then "command build expands to type Command_build + a Runnable impl for it" {
         let out = eg_expand("return 42")
@@ -174,5 +198,17 @@ spec "expand_cli inherits the cli's global flags into every command (Components 
         // cli block is consumed by @expand).
         let out = eg_expand_cli_globals()
         eg_count(out, "result_has_flag(args, \"gverbose\")") == 2
+    }
+}
+
+spec "expand_cli stamps a command's description config onto its instance (Components V2)" {
+    then "a command's `description` config becomes the description field value in its constructor" {
+        // The command declares `description "DESC_MARKER_Q"`; expand_cli
+        // reads that config pair and stamps it into the generated
+        // instance ctor `Command_build { name: …, description:
+        // "DESC_MARKER_Q" }`. The marker appears only in the generated
+        // ctor — the cli block (with its config) is consumed by @expand.
+        let out = eg_expand_cli_config()
+        out.contains("description: \"DESC_MARKER_Q\"")
     }
 }
