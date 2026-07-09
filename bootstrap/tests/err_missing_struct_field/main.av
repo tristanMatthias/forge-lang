@@ -1,0 +1,9 @@
+// Fixture for err_missing_struct_field_test (6y4y): a full struct literal that
+// omits a NON-NULLABLE field must be gated F1005 — no silent zero-fill. The
+// top-level `fn main` marks this as a fixture so structural discovery skips it
+// (it must NOT be bundled — it intentionally fails to compile); it is only
+// compiled on demand via `bs2 check`.
+type Point = { x: int, y: int, z: int }
+
+fn bad() -> Point { Point { x: 1, y: 2 } }
+fn main() { let _ = bad() }

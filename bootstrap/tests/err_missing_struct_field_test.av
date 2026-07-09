@@ -1,0 +1,15 @@
+// Regression for 6y4y: a full struct literal that omits a NON-NULLABLE field is
+// gated F1005 (no silent zero-fill of a wrong value). The fixture
+// (tests/err_missing_struct_field/main.av) omits the non-nullable `z`.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "missing non-nullable struct-literal field is gated F1005 (6y4y)" {
+    then "F1005 is reported for a partial literal omitting a non-nullable field" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_missing_struct_field/main.av 2>&1 || true")
+        out.contains("F1005")
+    }
+    then "the diagnostic names the missing field" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_missing_struct_field/main.av 2>&1 || true")
+        out.contains("missing field(s): z")
+    }
+}

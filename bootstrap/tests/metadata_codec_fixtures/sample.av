@@ -335,7 +335,7 @@ fn main() -> int {
         name: "@test::add",
         type_params: [],
         exported: true,
-        is_extern: false,
+        is_extern: false, is_comptime: false,
         params: add_params,
         ret: ValueType.Int,
     }
@@ -356,6 +356,7 @@ fn main() -> int {
         type_params: [],
         exported: true,
         is_extern: true,
+        is_comptime: false,
         params: [],
         ret: ValueType.Int,
     }
@@ -379,7 +380,7 @@ fn main() -> int {
         name: "@test::process",
         type_params: [],
         exported: false,
-        is_extern: false,
+        is_extern: false, is_comptime: false,
         params: proc_params,
         ret: ValueType.Enum("Result", proc_ret_args, 0),
     }
@@ -418,7 +419,7 @@ fn main() -> int {
         name: "@test::e2e::cell_x",
         type_params: [],
         exported: true,
-        is_extern: false,
+        is_extern: false, is_comptime: false,
         params: [ParamEntry { name: "c", vtype: vtype_struct("@test::e2e::Cell", 0) }],
         ret: ValueType.Int,
     }
@@ -626,7 +627,7 @@ fn main() -> int {
         name: "@unit::greet",
         type_params: [],
         exported: true,
-        is_extern: false,
+        is_extern: false, is_comptime: false,
         params: [ParamEntry { name: "u", vtype: vtype_struct("@unit::User", 0) }],
         ret: ValueType.Str,
     }
@@ -665,6 +666,8 @@ fn main() -> int {
         fns: unit_fns,
         consts: unit_consts,
         impls: unit_impls,
+        generic_bodies: [],
+        inherent_impls: [],
     }
 
     let unit_w = writer_new()
@@ -684,7 +687,7 @@ fn main() -> int {
     let dec_fn_first: FnDeclEntry = if dec_fns.length > 0 {
         dec_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, is_comptime: false, params: [], ret: ValueType.Unknown }
     }
     let dec_const_first: ConstDeclEntry = if dec_consts.length > 0 {
         dec_consts[0]
@@ -756,7 +759,7 @@ fn main() -> int {
     let ex_f0: FnDeclEntry = if ex_fns.length > 0 {
         ex_fns[0]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, is_comptime: false, params: [], ret: ValueType.Unknown }
     }
     let ex_c0: ConstDeclEntry = if ex_consts.length > 0 {
         ex_consts[0]
@@ -771,7 +774,7 @@ fn main() -> int {
     let ex_f1: FnDeclEntry = if ex_fns.length > 1 {
         ex_fns[1]
     } else {
-        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, params: [], ret: ValueType.Unknown }
+        FnDeclEntry { sym_id: 0, name: "", type_params: [], exported: false, is_extern: false, is_comptime: false, params: [], ret: ValueType.Unknown }
     }
     probe("extract_unit_name", extracted.unit_name == "@ext")
     probe("extract_type_qualified", ex_types.length > 0 && ex_t0.name == "@ext::Pt")
@@ -788,7 +791,7 @@ fn main() -> int {
         sym_id: sym_id_for("@gen::id"),
         name: "@gen::id",
         exported: true,
-        is_extern: false,
+        is_extern: false, is_comptime: false,
         type_params: gen_fn_tps,
         params: [ParamEntry { name: "x", vtype: vtype_struct("T", 0) }],
         ret: vtype_struct("T", 0),
@@ -855,6 +858,8 @@ fn main() -> int {
         fns: [],
         consts: [],
         impls: [],
+        generic_bodies: [],
+        inherent_impls: [],
     }
 
     let write_rc = metadata_write(io_path, io_unit)

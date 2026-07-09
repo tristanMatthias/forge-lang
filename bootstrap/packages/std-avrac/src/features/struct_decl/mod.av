@@ -110,7 +110,12 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
             // A generic struct literal carries its inferred type args — pass that
             // instance type as the receiver so generic fields specialise.
             let rty = tc_struct_lit_vtype(tc, name, inits)
-            tc_er(check_struct_lit_fields(tc, rty, name, inits), rty)
+            // Full literal: validate provided fields (names + types), THEN gate
+            // that every declared field is present (F1005 — no silent zero-fill).
+            // The `with`-update path routes through with_expr and is intentionally
+            // partial, so it never runs the completeness gate.
+            let checked = check_struct_lit_fields(tc, rty, name, inits)
+            tc_er(check_struct_lit_complete(checked, name, inits), rty)
         }
         _ -> tc_er(tc, .Unknown)
     }
