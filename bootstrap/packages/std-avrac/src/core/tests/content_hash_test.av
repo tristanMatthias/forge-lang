@@ -7,8 +7,8 @@
 // CONTENT must still collapse to one hash — that is what makes interning dedup
 // structurally-identical subtrees.
 
-use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, Stmt, Pattern, NodeRef,
-                     byte_span, expr_content_hash, stmt_content_hash, pat_content_hash}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, Stmt, Pattern, NodeRef, ValueType,
+                     byte_span, expr_content_hash, stmt_content_hash, pat_content_hash, type_content_hash}
 
 fn ts() -> NodeStore { new_node_store(build_line_index("")) }
 
@@ -105,5 +105,48 @@ spec "content hash: structural, span-free (ps3t.3.5)" {
         let e = store.add_expr(Expr.Ident("_"), byte_span(0, 1), [])
         let p = store.add_pat(Pattern.Wildcard, byte_span(0, 1), [])
         expr_content_hash(store, e) != pat_content_hash(store, p)
+    }
+}
+
+// The TYPE arena (populated by the parser's glue_ingest_type) hashes the same
+// way, via the fully-faithful `render_type_id` — the ps3t.4.3 addition.
+spec "type content hash: structural, span-free, faithful, nominal-by-name (ps3t.4.3)" {
+    then "identical type with DIFFERENT spans hashes equal (span-exclusion)" {
+        let store = ts()
+        let a = store.ingest_type(ValueType.List(ValueType.Int), byte_span(0, 3))
+        let b = store.ingest_type(ValueType.List(ValueType.Int), byte_span(100, 103))
+        type_content_hash(store, a) == type_content_hash(store, b)
+    }
+    then "different element type hashes differently (List<int> vs List<string>)" {
+        let store = ts()
+        let a = store.ingest_type(ValueType.List(ValueType.Int), byte_span(0, 3))
+        let b = store.ingest_type(ValueType.List(ValueType.Str), byte_span(0, 3))
+        type_content_hash(store, a) != type_content_hash(store, b)
+    }
+    then "Fn return type is FAITHFUL — Fn->int vs Fn->string hash apart (vtype_render_full collapses these)" {
+        let store = ts()
+        let a = store.ingest_type(ValueType.Fn(ValueType.Int), byte_span(0, 3))
+        let b = store.ingest_type(ValueType.Fn(ValueType.Str), byte_span(0, 3))
+        type_content_hash(store, a) != type_content_hash(store, b)
+    }
+    then "nominal identity is by NAME — Struct(Foo) hashes the same regardless of stamped id (cycle break)" {
+        let store = ts()
+        let no_args: List<ValueType> = []
+        let a = store.ingest_type(ValueType.Struct("Foo", no_args, 0), byte_span(0, 3))
+        let b = store.ingest_type(ValueType.Struct("Foo", no_args, 999), byte_span(0, 3))
+        type_content_hash(store, a) == type_content_hash(store, b)
+    }
+    then "distinct nominal names hash apart (Struct Foo vs Struct Bar)" {
+        let store = ts()
+        let no_args: List<ValueType> = []
+        let a = store.ingest_type(ValueType.Struct("Foo", no_args, 0), byte_span(0, 3))
+        let b = store.ingest_type(ValueType.Struct("Bar", no_args, 0), byte_span(0, 3))
+        type_content_hash(store, a) != type_content_hash(store, b)
+    }
+    then "cross-kind: ValueType.Int and Expr.Ident(\"int\") both render \"int\" yet hash apart (T: tag)" {
+        let store = ts()
+        let t = store.ingest_type(ValueType.Int, byte_span(0, 3))
+        let e = store.add_expr(Expr.Ident("int"), byte_span(0, 3), [])
+        type_content_hash(store, t) != expr_content_hash(store, e)
     }
 }

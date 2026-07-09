@@ -24,14 +24,14 @@
 // `provenance`) dedup-safe — see the ps3t.3.5 ticket. Nothing calls this yet, so
 // adding it changes no behavior: byte-identical.
 //
-// ARENA COVERAGE. One hash per node arena that a pass actually populates:
-// Expr, Stmt, and Pattern (the pats arena is written by resolve/eval/parse).
-// The fourth arena (§14.1), TypeArena, has NO producer yet — no pass calls
-// `types.add`, so ValueTypes still live inline in Expr/Stmt payloads (and thus
-// already contribute to those nodes' hashes via the render). A standalone
-// `type_content_hash` would fingerprint an arena nothing writes to, so it lands
-// with the type-flattening work that first populates TypeArena — tracked on the
-// ps3t.3.5 ticket, not silently dropped.
+// ARENA COVERAGE. One hash per node arena that a pass populates: Expr, Stmt,
+// Pattern, and now Type. The TypeArena (§14.1, the fourth arena) IS written —
+// the parser's `glue_ingest_type` calls `store.ingest_type` at every type-bearing
+// site (fn params/returns, `let` annotations, struct/newtype/union/extern decls,
+// `channel<T>`, component config), so `type_content_hash` fingerprints a live
+// arena. A ValueType's children are inline (`.List(elem: ValueType)`, not a
+// TypeId), so `render_type_id` (via `vtype_render_decl`) already recurses the full
+// structure — the render form, exactly as for the other three arenas.
 //
 // KIND DISCRIMINATOR. The render alone is NOT a total structural identity across
 // arenas: distinct node kinds can render to the same string — `Expr.Number("5")`
@@ -40,10 +40,10 @@
 // arenas, so this is harmless today — but §15.3's end-state is ONE
 // content-addressed id space where an id IS its content-hash, and there two
 // different kinds MUST hash apart. So each hash tags its render with a one-char
-// arena discriminator (`E:`/`S:`/`P:`) before hashing — cheap now, and correct
-// for the unified space later.
+// arena discriminator (`E:`/`S:`/`P:`/`T:`) before hashing — cheap now, and
+// correct for the unified space later.
 
-use core.{NodeStore, ExprId, StmtId, PatId, render_expr_id, render_stmt_id, render_pat_id}
+use core.{NodeStore, ExprId, StmtId, PatId, TypeId, render_expr_id, render_stmt_id, render_pat_id, render_type_id}
 use core.{content_id_for}
 
 /// Structural content fingerprint of the expression subtree rooted at `id`:
@@ -66,4 +66,12 @@ export fn stmt_content_hash(store: NodeStore, id: StmtId) -> int {
 /// See `expr_content_hash`.
 export fn pat_content_hash(store: NodeStore, id: PatId) -> int {
     content_id_for("P:" + render_pat_id(store, id))
+}
+
+/// Structural content fingerprint of the type subtree rooted at `id`.
+/// The `render_type_id` render is faithful (Fn/Closure return types kept),
+/// span-free, and nominal-by-name (so a recursive type's cycle breaks at the
+/// name). See `expr_content_hash`.
+export fn type_content_hash(store: NodeStore, id: TypeId) -> int {
+    content_id_for("T:" + render_type_id(store, id))
 }
