@@ -69,6 +69,17 @@ fn ad_src() -> string {
     "            return outfile.length\n" +
     "        }\n" +
     "    }\n" +
+    // `conf` declares an OPTION named `glob` — the SAME name as the cli's
+    // global `flag glob`. The command-local option must shadow the inherited
+    // global flag: `glob` binds to the option (result_get_option), not two
+    // conflicting `let glob`s. Pre-fix this generated a duplicate binding
+    // (bool flag + string option) and the command wouldn't compile.
+    "    command conf {\n" +
+    "        option glob {}\n" +
+    "        run() {\n" +
+    "            return glob.length\n" +
+    "        }\n" +
+    "    }\n" +
     "}\n" +
     "\n" +
     "fn main() {\n" +
@@ -85,6 +96,7 @@ fn ad_src() -> string {
     "    println(\"K=\" + string(toy.run_argv([\"pack\"])))\n" +
     "    println(\"M=\" + string(toy.run_argv([\"build\", \"--help\"])))\n" +
     "    println(\"N=\" + string(toy.run_argv([\"clean\", \"--help\"])))\n" +
+    "    println(\"P=\" + string(toy.run_argv([\"conf\", \"--glob=abc\"])))\n" +
     "}\n" +
     "\n" +
     "fn ad_empty() -> List<string> {\n" +
@@ -183,5 +195,14 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         // a clean no-section page, not a crash or a stray empty header.
         let out = ad_run()
         out.contains("N=0")
+    }
+    then "a command option shadows an inherited global flag of the same name (no dup binding)" {
+        // `conf` declares `option glob` colliding with the global `flag glob`.
+        // The option must win: `--glob=abc` parses as the option (glob="abc",
+        // length 3), and the command compiles (pre-fix: duplicate `let glob`
+        // of conflicting bool/string types → no output at all). P=3 proves
+        // both — it compiled AND the option, not the flag, was bound.
+        let out = ad_run()
+        out.contains("P=3")
     }
 }

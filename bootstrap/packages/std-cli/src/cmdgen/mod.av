@@ -153,7 +153,7 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     let args_p = ParamEntry { name: "args", vtype: cli_ty }
     mut full_run: List<Stmt> = []
     for gname in extra_flags {
-        if !name_in(flag_names, gname) && !name_in(arg_names, gname) {
+        if !name_in(flag_names, gname) && !name_in(arg_names, gname) && !name_in(option_names, gname) {
             full_run.push(accessor_binding(gname, "@std::cli::result_has_flag", ValueType.Bool))
         }
     }
@@ -177,7 +177,11 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     // string literals at expansion.
     mut all_flag_names: List<string> = []
     for gname in extra_flags {
-        if !name_in(flag_names, gname) && !name_in(arg_names, gname) {
+        // A global flag whose name collides with the command's own arg OR
+        // option is shadowed by the command-local binding — don't inherit it
+        // as a flag (else the run body gets two `let <name>` of conflicting
+        // types, and --<name> mis-parses as a flag over the option).
+        if !name_in(flag_names, gname) && !name_in(arg_names, gname) && !name_in(option_names, gname) {
             all_flag_names.push(gname)
         }
     }
