@@ -1,0 +1,77 @@
+// WHY: a `name() { body }` line inside a component instance block is a
+// METHOD shorthand (design 2026_05_08_COMPONENTS_V2 §4.1 — `command build
+// { run() { … } }`), not a `name()` call statement followed by an orphan
+// block. The parser (component_decl/parser.av parse_comp_block_body) emits
+// it as a nullary `Stmt.Function` so an @expand macro can read the body
+// and inject the real signature.
+//
+// This exercises the parse end-to-end: a macro reads the `run` method's
+// body via the synth_deref read shims and re-emits it, and the body runs.
+// The marker prints iff `run() { … }` parsed as a readable method.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+const MS_MACRO: string =
+    "use @std.avrac.core.{Stmt, StmtId}\n" +
+    "use @std.avrac.features.comptime.{synth_deref_stmt}\n" +
+    "\n" +
+    "@comptime\n" +
+    "fn ms_take_run(s: Stmt) -> List<Stmt> {\n" +
+    "    mut out: List<Stmt> = []\n" +
+    "    match s {\n" +
+    "        .ComponentBlock(_, _, _, body) -> {\n" +
+    "            for id in body {\n" +
+    "                match synth_deref_stmt(id) {\n" +
+    "                    .Function(fname, _, _, _, fbody) -> {\n" +
+    "                        if fname == \"run\" {\n" +
+    "                            for bid in fbody { out.push(synth_deref_stmt(bid)) }\n" +
+    "                        }\n" +
+    "                    }\n" +
+    "                    _ -> {}\n" +
+    "                }\n" +
+    "            }\n" +
+    "        }\n" +
+    "        _ -> {}\n" +
+    "    }\n" +
+    "    out\n" +
+    "}\n"
+
+spec "component method shorthand: `name() { body }` parses as a readable method" {
+    then "a @comptime macro reads the run() body and it runs" {
+        let out = write_fixture_and_run("/tmp/avra_method_shorthand_test.av",
+            MS_MACRO +
+            "\n" +
+            "@expand(ms_take_run)\n" +
+            "component command {}\n" +
+            "\n" +
+            "command build {\n" +
+            "    run() {\n" +
+            "        println(\"RUN_SHORTHAND_OK\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("RUN_SHORTHAND_OK")
+    }
+    then "a `name()` call statement (no trailing block) is NOT treated as a method" {
+        // The disambiguator keys on the trailing `{`. A bare `noop()`
+        // call inside the block must still parse as a call statement (it
+        // runs at instantiation), leaving the run() method intact.
+        let out = write_fixture_and_run("/tmp/avra_method_shorthand_call_test.av",
+            "fn noop() { println(\"CALL_RAN\") }\n" +
+            MS_MACRO +
+            "\n" +
+            "@expand(ms_take_run)\n" +
+            "component command {}\n" +
+            "\n" +
+            "command build {\n" +
+            "    run() {\n" +
+            "        println(\"METHOD_RAN\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("METHOD_RAN")
+    }
+}
