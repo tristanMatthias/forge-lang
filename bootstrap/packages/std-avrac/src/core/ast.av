@@ -2782,6 +2782,19 @@ export fn render_pat_id(store: NodeStore, id: PatId) -> string {
     render_pattern(store, store.pats.get(id))
 }
 
+/// Render a type arena row (see `render_expr_id`) — the id-resolving sibling for
+/// the fourth node arena (TypeArena, populated by the parser's `glue_ingest_type`).
+/// Uses `vtype_render_decl`, the FULLY FAITHFUL structural render: it recurses
+/// through itself for every compound type (so `Fn`/`Closure` return types and
+/// nested forms like `List<Fn -> int>` — which `vtype_render_full` collapses —
+/// stay distinct), is span-free (ValueTypes carry no spans), deterministic
+/// (a pure function of the structure), and renders nominals by name
+/// (Struct/Enum/Newtype/Trait), which breaks cycles in a recursive type for free.
+/// This is the type analog `type_content_hash` fingerprints.
+export fn render_type_id(store: NodeStore, id: TypeId) -> string {
+    vtype_render_decl(store.types.get(id))
+}
+
 /// Render a flipped `List<StmtId>` body — the id twin of `render_stmt_list`.
 export fn render_stmt_ids(store: NodeStore, ids: List<StmtId>) -> string {
     list_map(ids, (id: StmtId) -> render_stmt(store, store.stmts.get(id))).join("\n")
