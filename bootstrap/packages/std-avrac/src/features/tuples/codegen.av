@@ -9,7 +9,7 @@
 // (critical for match on enum tuple elements).
 
 use core.{Expr, ExprId, ParamEntry, VarBinding, env_extend, ValueType, vtype_tuple_at}
-use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt, emit_optional_coerce}
+use codegen.{Ctx, EmitValue,  ok_emit, err_emit, ok_stmt}
 
 /// Sugar for an i64-typed tuple slot load — wraps `ctx.load_slot`
 /// so tuple-specific call sites read more naturally.
@@ -44,27 +44,6 @@ fn emit_tuple_inner(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>) -> 
     }
     let ty = .Tuple(types_acc)
     ok_emit(ctx.to_i64(buf, "tuple_i64"), ty)
-}
-
-/// Codegen for a tuple literal whose element types are known from context — an
-/// annotated `let t: (int?, string) = (5, "x")`. Boxes each element into its
-/// EXPECTED position via `emit_optional_coerce` (a no-op when the position is
-/// not optional), so an `int` landing in an `int?` slot is stored as the tagged
-/// optional repr — not a raw scalar a later `t.0!` unwrap would read as a box
-/// pointer and segfault. Mirrors `emit_list_lit_expected` for `List<T?>`.
-export fn emit_tuple_expected(ctx: Ctx, env: List<VarBinding>, elements: List<ExprId>, expected: List<ValueType>) -> Result<EmitValue, string> {
-    let count = elements.length
-    let buf = ctx.arena_alloc(ctx.i64(count * 8))
-    mut types_acc: List<ValueType> = []
-    for (i, id) in elements.enumerate() {
-        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
-        // Box into the declared slot when it is optional; identity otherwise.
-        let slot_ty = if i < expected.length { expected[i] } else { r.ty }
-        let coerced = emit_optional_coerce(ctx, r, slot_ty)
-        tuple_store(ctx, buf, i, coerced.value)
-        types_acc.push(coerced.ty)
-    }
-    ok_emit(ctx.to_i64(buf, "tuple_i64"), .Tuple(types_acc))
 }
 
 /// Codegen entry for `t.0`, `t.1`, ... Pattern-matches the AST

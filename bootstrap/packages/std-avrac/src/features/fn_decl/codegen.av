@@ -9,7 +9,7 @@ use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirec
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use core.{avra_variant_hash}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
-use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, emit_optional_is_none}
+use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, emit_optional_is_none, needs_tuple_rebox, emit_tuple_rebox}
 use core.{vtype_strip_optional, vtype_is_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
@@ -172,7 +172,11 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
         // avoid constructing an EmitValue in this hot path.
         mut ret_val = br.value
         mut ret_vty = br.ty
-        if needs_optional_box(br.ty, ret_ty) {
+        if needs_tuple_rebox(br.ty, ret_ty) {
+            // Tuple return into a tuple-of-optionals return type — box elements (ai3u).
+            ret_val = emit_tuple_rebox(body_cg, br.value, br.ty, ret_ty)
+            ret_vty = ret_ty
+        } else if needs_optional_box(br.ty, ret_ty) {
             ret_val = emit_optional_some(body_cg, vtype_strip_optional(ret_ty), br.value)
             ret_vty = ret_ty
         } else if needs_optional_unbox(br.ty, ret_ty) {

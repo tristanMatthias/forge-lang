@@ -2,27 +2,14 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor, vtype_tuple_elems}
+use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.list_lit.{emit_list_lit_expected}
-use features.tuples.{emit_tuple_expected}
 use codegen.{emit_optional_coerce, emit_optional_ctor_value}
 use diagnostics.{DiagCode}
-
-/// True when any element of a tuple's element-type list is `T?` — the tuples
-/// whose literal construction must box element-wise so a later `t.N!` unwrap
-/// sees a real optional, not a raw scalar (ai3u).
-fn tuple_has_optional_elem(elems: List<ValueType>) -> bool {
-    mut i = 0
-    while i < elems.length {
-        if vtype_is_optional(elems[i]) { return true }
-        i = i + 1
-    }
-    false
-}
 
 /// Codegen for `let / mut / const name = init`. Handles four
 /// orthogonal special cases on top of the bare alloca + store:
@@ -54,20 +41,6 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
             match initializer {
                 .ListLit(elements) -> {
                     let boxed = emit_list_lit_expected(ctx, env, elements, vtype_list_elem(decl))?
-                    return ok_stmt(ctx.bind(env, name, boxed.value, decl))
-                }
-                _ -> {}
-            }
-        }
-        // Annotated tuple with a `T?` element: box each element into its declared
-        // position at construction. `emit_tuple`'s generic path stores raw
-        // scalars typed by inference, so `(5, 6)` into `(int?, int?)` would push
-        // unboxed ints that a later `t.0!` reads as a box pointer and segfaults
-        // (ai3u). Same expected-type-directed pattern as the `List<T?>` case.
-        if decl is .Tuple && tuple_has_optional_elem(vtype_tuple_elems(decl)) {
-            match initializer {
-                .Tuple(elements) -> {
-                    let boxed = emit_tuple_expected(ctx, env, elements, vtype_tuple_elems(decl))?
                     return ok_stmt(ctx.bind(env, name, boxed.value, decl))
                 }
                 _ -> {}

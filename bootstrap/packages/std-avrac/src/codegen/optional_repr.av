@@ -20,7 +20,7 @@
 // none-check / unwrap of an optional routes through these primitives so the
 // niche-vs-boxed choice lives in exactly one place (`optional_repr_tagged`).
 
-use core.{ValueType, VarBinding, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq, variant_is_optional_present}
+use core.{ValueType, VarBinding, vtype_strip_optional, vtype_is_optional, vtype_is_unknown, vtype_is_value_scalar, vtype_eq, variant_is_optional_present, vtype_tuple_elems, vtype_tuple_at}
 use codegen.{Ctx, EmitValue, ok_emit}
 
 /// True when `inner` uses the BOXED (tagged) repr — i.e. it is a CONCRETE
@@ -122,6 +122,12 @@ export fn needs_optional_unbox(val_ty: ValueType, slot_ty: ValueType) -> bool {
 /// Pass-through when neither applies (including all niche cases, which need
 /// no transformation). Returns the (possibly re-typed) value.
 export fn emit_optional_coerce(ctx: Ctx, v: EmitValue, slot_ty: ValueType) -> EmitValue {
+    // Tuple whose element optionality differs from the slot's: re-box element-
+    // wise so a scalar bound for a `T?` element is stored tagged, not raw
+    // (ai3u). Checked before the scalar box/unbox, which a tuple never matches.
+    if needs_tuple_rebox(v.ty, slot_ty) {
+        return EmitValue { value: emit_tuple_rebox(ctx, v.value, v.ty, slot_ty), ty: slot_ty }
+    }
     if needs_optional_box(v.ty, slot_ty) {
         let boxed = emit_optional_some(ctx, vtype_strip_optional(slot_ty), v.value)
         EmitValue { value: boxed, ty: slot_ty }
@@ -131,6 +137,53 @@ export fn emit_optional_coerce(ctx: Ctx, v: EmitValue, slot_ty: ValueType) -> Em
     } else {
         v
     }
+}
+
+/// True when a tuple VALUE of type `src_ty` must be re-boxed element-wise to
+/// land in a `slot_ty` slot — both are tuples of equal arity and some element
+/// needs an optional box/unbox (or is itself a tuple that does). A tuple stores
+/// its elements as raw i64 slots, so an `int` element bound for an `int?` slot
+/// must be boxed into the tagged optional repr, not stored raw — otherwise a
+/// later `t.N!` reads the scalar as a box pointer and segfaults (ai3u).
+export fn needs_tuple_rebox(src_ty: ValueType, slot_ty: ValueType) -> bool {
+    match slot_ty {
+        .Tuple(slot_elems) -> match src_ty {
+            .Tuple(src_elems) -> {
+                if src_elems.length != slot_elems.length { return false }
+                mut i = 0
+                while i < slot_elems.length {
+                    let s = src_elems[i]
+                    let d = slot_elems[i]
+                    if needs_optional_box(s, d) || needs_optional_unbox(s, d) || needs_tuple_rebox(s, d) {
+                        return true
+                    }
+                    i = i + 1
+                }
+                false
+            }
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+/// Re-box a tuple `src` (a raw i64/ptr value of type `src_ty`) into `slot_ty`:
+/// allocate a fresh element buffer and coerce each element into its slot
+/// position via `emit_optional_coerce` (recursing for nested tuples). Returns
+/// the new tuple value. Only called when `needs_tuple_rebox` holds.
+export fn emit_tuple_rebox(ctx: Ctx, src: ptr, src_ty: ValueType, slot_ty: ValueType) -> ptr {
+    let src_ptr = ctx.to_ptr(src, "tup_rebox_src")
+    let slot_elems = vtype_tuple_elems(slot_ty)
+    let count = slot_elems.length
+    let buf = ctx.arena_alloc(ctx.i64(count * 8))
+    mut i = 0
+    while i < count {
+        let loaded = ctx.load_slot(src_ptr, i, "trb_elem")
+        let coerced = emit_optional_coerce(ctx, EmitValue { value: loaded, ty: vtype_tuple_at(src_ty, i) }, slot_elems[i])
+        ctx.store_slot(buf, i, coerced.value, .Int)
+        i = i + 1
+    }
+    ctx.to_i64(buf, "tup_rebox")
 }
 
 // ── Optional-aware condition truthiness ──
