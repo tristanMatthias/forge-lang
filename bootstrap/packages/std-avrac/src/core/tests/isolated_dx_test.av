@@ -131,18 +131,21 @@ spec "isolated_run round-trips structured payloads (nce6.B)" {
         }
         let payload = avra_isolated_run(() -> marshal_profile(original))
         let status = avra_bytes_to_int_le(payload, 0)
-        if status != 0 { return false }
-        let len = avra_bytes_to_int_le(payload, 8)
-        let inner = avra_bytes_slice(payload, 16, 16 + len)
-        let p = unmarshal_profile(inner)
-        p.id == 7
-            && p.name == "alice"
-            && p.score > 99.4 && p.score < 99.6
-            && p.admin
-            && p.tags.length == 3
-            && p.tags[0] == "one" && p.tags[2] == "three"
-            && p.flags.length == 4
-            && p.flags[3] == 40
+        if status == 0 {
+            let len = avra_bytes_to_int_le(payload, 8)
+            let inner = avra_bytes_slice(payload, 16, 16 + len)
+            let p = unmarshal_profile(inner)
+            p.id == 7
+                && p.name == "alice"
+                && p.score > 99.4 && p.score < 99.6
+                && p.admin
+                && p.tags.length == 3
+                && p.tags[0] == "one" && p.tags[2] == "three"
+                && p.flags.length == 4
+                && p.flags[3] == 40
+        } else {
+            false
+        }
     }
     then "empty lists round-trip cleanly" {
         let original = Profile {
@@ -151,10 +154,13 @@ spec "isolated_run round-trips structured payloads (nce6.B)" {
         }
         let payload = avra_isolated_run(() -> marshal_profile(original))
         let status = avra_bytes_to_int_le(payload, 0)
-        if status != 0 { return false }
-        let len = avra_bytes_to_int_le(payload, 8)
-        let inner = avra_bytes_slice(payload, 16, 16 + len)
-        let p = unmarshal_profile(inner)
-        p.tags.length == 0 && p.flags.length == 0 && p.score == 0.0
+        if status == 0 {
+            let len = avra_bytes_to_int_le(payload, 8)
+            let inner = avra_bytes_slice(payload, 16, 16 + len)
+            let p = unmarshal_profile(inner)
+            p.tags.length == 0 && p.flags.length == 0 && p.score == 0.0
+        } else {
+            false
+        }
     }
 }

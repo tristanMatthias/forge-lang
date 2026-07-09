@@ -41,8 +41,7 @@ spec "isolated { body } keyword (nce6.D)" {
             abort()
             avra_bytes_empty()
         }
-        if payload.length < 8 { return false }
-        avra_bytes_to_int_le(payload, 0) == 1
+        if payload.length >= 8 { avra_bytes_to_int_le(payload, 0) == 1 } else { false }
     }
     then "parent recovers after a crashed isolated block" {
         let _ = isolated {
