@@ -1,0 +1,91 @@
+// WHY: 4d5r — a `return` inside a spec/given/then block returns out of the
+// synthesized `@deferred_init` unit fn that hosts the WHOLE test file, so this
+// block's own registration AND every later sibling's silently vanish while the
+// shrunken suite still reports green (the trap that once hid a mutation-check
+// failure). The fix rejects an escaping `return` at type-check time with F0901.
+// These specs pin two halves: (1) every escaping form — direct, if-guarded,
+// loop, match-expr arm, and a given/spec SETUP statement — is F0901; (2) a
+// `return` that legitimately belongs to a nested helper fn or a lambda is NOT
+// rejected. Half (2)'s controls run LIVE in this very file: if the gate
+// false-positived on those, this file would fail to compile and none of its
+// specs would run.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// A distinct fixture path per case keeps concurrent compiles from clobbering
+// each other's source, should the test runner ever parallelize within a file.
+fn f0901_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_return_in_then_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "an escaping `return` inside a spec/given/then block is F0901 (4d5r)" {
+    then "a bare `return` directly in a then is F0901" {
+        let out = f0901_out("direct", "spec \"s\" { then \"t\" { return true } }")
+        out.contains("F0901")
+    }
+    then "an if-guarded `return` in a then is F0901" {
+        let out = f0901_out("if_guard", "spec \"s\" { then \"t\" {
+    if 1 == 1 { return true }
+    false
+} }")
+        out.contains("F0901")
+    }
+    then "a `return` inside a for-loop in a then is F0901" {
+        let out = f0901_out("for_loop", "spec \"s\" { then \"t\" {
+    for i in 0..3 { if i == 2 { return false } }
+    true
+} }")
+        out.contains("F0901")
+    }
+    then "a `return` inside a while-loop in a then is F0901" {
+        let out = f0901_out("while_loop", "spec \"s\" { then \"t\" {
+    mut i = 0
+    while i < 3 { if i == 2 { return false }  i = i + 1 }
+    true
+} }")
+        out.contains("F0901")
+    }
+    then "a `return` in a match-expr arm inside a then is F0901" {
+        let out = f0901_out("match_expr", "spec \"s\" { then \"t\" {
+    match 1 { 1 -> { return true }  _ -> false }
+} }")
+        out.contains("F0901")
+    }
+    then "a `return` in a given SETUP statement is F0901 (not just then bodies)" {
+        let out = f0901_out("given_setup", "spec \"s\" { given \"g\" {
+    if 1 == 1 { return }
+    then \"t\" { true }
+} }")
+        out.contains("F0901")
+    }
+    then "a then nested in a given reports the escaping return exactly ONCE" {
+        // The enclosing given/spec walkers skip nested test blocks (each is
+        // covered by its own hook), so a then's `return` is not double-counted.
+        let out = f0901_out("given_then_once", "spec \"s\" { given \"g\" { then \"t\" {
+    if 1 == 1 { return true }
+    false
+} } }")
+        out.contains("F0901") && out.contains("1 error")
+    }
+}
+
+// Positive controls — legitimate returns that belong to a nested fn / lambda,
+// NOT the test unit fn. These run live below; a false positive would break
+// this file's own compile.
+fn early_return_helper(x: int) -> bool {
+    if x == 1 { return true }
+    false
+}
+
+spec "a `return` owned by a helper fn or lambda is NOT rejected (4d5r control)" {
+    then "a helper fn's own early return works" {
+        early_return_helper(1) && !early_return_helper(2)
+    }
+    then "a lambda's own return works" {
+        let f = (n: int) -> { if n > 0 { return true }  false }
+        f(1) && !f(0)
+    }
+}
