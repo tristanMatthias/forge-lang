@@ -1,0 +1,43 @@
+// WHY: a module top-level `let x = SomeStruct { .. }` (or enum ctor) with NO type
+// annotation must materialise with the value's real type, so a later top-level use
+// site (`x.field`, `x.method()`) sees a struct/enum — not `int`. Top-level function
+// bodies are emitted BEFORE the top-level init runs, so `declare_globals` records
+// each global's type up front; an unannotated global defaulted to `int`, and
+// `emit_top_level_init`'s post-emit type landed too late for `main`. `x.field` then
+// failed codegen with "field access on non-struct value (ty=int)" (m8s8). The fix
+// infers the type from the initializer at declare time for the structurally-obvious
+// cases (struct literal, enum ctor); scalars keep the historical `int` default.
+
+type M8Config = { title: string, count: int }
+impl M8Config {
+    fn summary(self) -> string { self.title + ":" + string(self.count) }
+}
+enum M8Opt { Some(v: int), None }
+
+// Unannotated top-level lets bound to compound values (the m8s8 axis).
+let cfg = M8Config { title: "avra", count: 3 }
+let opt = M8Opt.Some(5)
+// Controls: an annotated struct let, and an unannotated scalar (stays int).
+let ann: M8Config = M8Config { title: "ann", count: 7 }
+let num = 42
+
+spec "unannotated top-level struct/enum let materialises with its type (m8s8)" {
+    then "field read at a top-level use site works (was ty=int codegen error)" {
+        cfg.title == "avra" && cfg.count == 3
+    }
+    then "method call on the struct works (the ticket's x.method() case)" {
+        cfg.summary() == "avra:3"
+    }
+    then "unannotated top-level enum let (payload ctor) matches correctly" {
+        match opt {
+            .Some(v) -> v == 5
+            .None -> false
+        }
+    }
+    then "annotated top-level struct let still works (control)" {
+        ann.summary() == "ann:7"
+    }
+    then "unannotated scalar top-level let is unaffected (stays int)" {
+        num + 1 == 43
+    }
+}
