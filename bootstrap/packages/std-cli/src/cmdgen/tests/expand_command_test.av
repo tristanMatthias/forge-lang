@@ -83,6 +83,54 @@ fn eg_expand_flags() -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
+/// Count non-overlapping occurrences of `needle` in `haystack`.
+fn eg_count(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+// Expand a `cli` with one global `flag` and two commands (one of which
+// re-declares a flag by the same name as the global, to exercise dedup).
+fn eg_expand_cli_globals() -> string {
+    let path = "/tmp/avra_expand_cli_globals_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult, App}\n" +
+        "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+        "\n" +
+        "@expand(expand_cli)\n" +
+        "component cli {}\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {}\n" +
+        "component flag {}\n" +
+        "\n" +
+        "cli avra {\n" +
+        "    flag gverbose {}\n" +
+        "    command build {\n" +
+        "        flag gverbose {}\n" +
+        "        fn run(args: CliResult) -> int { if gverbose { return 7 } return 1 }\n" +
+        "    }\n" +
+        "    command clean {\n" +
+        "        fn run(args: CliResult) -> int { return 2 }\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
 spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {
     then "command build expands to type Command_build + a Runnable impl for it" {
         let out = eg_expand("return 42")
@@ -109,5 +157,22 @@ spec "expand_command generates a per-instance type + Runnable impl (Components V
         let out = eg_expand_flags()
         out.contains("result_has_flag(args, \"xflagq\")")
             && out.contains("result_get_arg(args, \"yargq\")")
+    }
+}
+
+spec "expand_cli inherits the cli's global flags into every command (Components V2)" {
+    then "a global flag is bound in each command's run, deduped against a command's own flag" {
+        // cli `avra` has one global `flag gverbose`. Command `build`
+        // ALSO declares `flag gverbose` (collision); command `clean`
+        // declares none. The `result_has_flag(args, "gverbose")` binding
+        // must appear EXACTLY twice: once in `build` (the global +
+        // command flag deduped to a single binding, not two) and once in
+        // `clean` (inherited into a command with no own flags). A count
+        // of 3 would mean dedup failed; 1 would mean `clean` didn't
+        // inherit. The exact call substring appears only in generated
+        // bindings (the macro splices the name, never this literal; the
+        // cli block is consumed by @expand).
+        let out = eg_expand_cli_globals()
+        eg_count(out, "result_has_flag(args, \"gverbose\")") == 2
     }
 }

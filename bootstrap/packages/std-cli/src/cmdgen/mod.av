@@ -40,13 +40,43 @@ use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_i
 /// @std::cli::result_get_arg(args, "<arg>")`) then carries the user's run
 /// body verbatim; `name` returns the instance's `name` field. Emits names
 /// (`Runnable`, `CliResult`) that resolve in the consumer's scope.
+/// One accessor binding: `let <name>: <vtype> = <callee_fqn>(args,
+/// "<name>")`. Shared by flags (result_has_flag / bool), args
+/// (result_get_arg / string), and inherited global flags. The callee is
+/// fully qualified so the generated run body resolves in ANY consumer's
+/// scope — a library macro must not require the consumer to import
+/// std-cli's internal helpers. The string literal carries its delimiting
+/// quotes (the parser's Expr.String convention). The binding is
+/// intentionally NOT hygienically renamed — the user run body references
+/// it by its declared name.
 @comptime
-export fn expand_command(s: Stmt) -> List<Stmt> {
-    // Single body-walk: read the instance name, the declared flag/arg
-    // child names, and the run method body in ONE pass (calling several
-    // list-returning @comptime helpers in sequence trips the evaluator
-    // — rmzs gap 3, so we inline the traversal instead of reusing
-    // comp_children / comp_instance_name).
+fn accessor_binding(name: string, callee_fqn: string, vtype: ValueType) -> Stmt {
+    let callee = synth_expr_id(Expr.QualifiedIdent(callee_fqn))
+    let a_arg = synth_expr_id(Expr.Ident("args"))
+    let a_name = synth_expr_id(Expr.String("\"" + name + "\""))
+    let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
+    Stmt.Let(name, vtype, call)
+}
+
+/// True iff `name` occurs in `names`.
+@comptime
+fn name_in(names: List<string>, name: string) -> bool {
+    for n in names {
+        if n == name { return true }
+    }
+    false
+}
+
+/// Core command-decl generation, shared by expand_command (standalone)
+/// and expand_cli. `extra_flags` are inherited global-flag names (the
+/// parent cli's flags — design §4.2 parent_chain_flags); each is bound
+/// in the run body too, UNLESS it collides with one of the command's own
+/// flag/arg names (then the command-local binding wins, no duplicate
+/// `let`). Single body-walk (calling several list-returning @comptime
+/// helpers in sequence trips the evaluator — rmzs gap 3 — so the
+/// traversal is inlined rather than reusing comp_children).
+@comptime
+fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     mut inst = ""
     mut run_body: List<Stmt> = []
     mut flag_names: List<string> = []
@@ -86,33 +116,22 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
     let ret_name = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "name")))
     let name_fn = Stmt.Function("name", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_name]))
 
-    // fn run(self, args: CliResult) -> int { <flag/arg bindings> <user run body> }
-    //
-    // Prepend one accessor local per declared child (design §4.2): a
-    // `flag x {}` becomes `let x = result_has_flag(args, "x")` (bool),
-    // an `arg y {}` becomes `let y = result_get_arg(args, "y")` (string),
-    // so the user's run body references each by its declared name. String
-    // literals carry their delimiting quotes (the parser's Expr.String
-    // convention). The macro-introduced binding must be visible to the
-    // user body, so it is intentionally NOT hygienically renamed.
-    // The accessor callees are emitted FULLY QUALIFIED so the generated
-    // run body resolves in ANY consumer's scope — a library macro must
-    // not require the consumer to import std-cli's internal helpers.
+    // fn run(self, args: CliResult) -> int {
+    //   <inherited global-flag bindings> <flag bindings> <arg bindings>
+    //   <user run body>
+    // }
     let args_p = ParamEntry { name: "args", vtype: cli_ty }
     mut full_run: List<Stmt> = []
+    for gname in extra_flags {
+        if !name_in(flag_names, gname) && !name_in(arg_names, gname) {
+            full_run.push(accessor_binding(gname, "@std::cli::result_has_flag", ValueType.Bool))
+        }
+    }
     for fname in flag_names {
-        let callee = synth_expr_id(Expr.QualifiedIdent("@std::cli::result_has_flag"))
-        let a_arg = synth_expr_id(Expr.Ident("args"))
-        let a_name = synth_expr_id(Expr.String("\"" + fname + "\""))
-        let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
-        full_run.push(Stmt.Let(fname, ValueType.Bool, call))
+        full_run.push(accessor_binding(fname, "@std::cli::result_has_flag", ValueType.Bool))
     }
     for aname in arg_names {
-        let callee = synth_expr_id(Expr.QualifiedIdent("@std::cli::result_get_arg"))
-        let a_arg = synth_expr_id(Expr.Ident("args"))
-        let a_name = synth_expr_id(Expr.String("\"" + aname + "\""))
-        let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
-        full_run.push(Stmt.Let(aname, ValueType.Str, call))
+        full_run.push(accessor_binding(aname, "@std::cli::result_get_arg", ValueType.Str))
     }
     for st in run_body { full_run.push(st) }
     let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(full_run))
@@ -125,6 +144,12 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
     let type_decl = Stmt.TypeDecl(tn, empty_tp, [name_field])
 
     return [type_decl, impl_stmt]
+}
+
+@comptime
+export fn expand_command(s: Stmt) -> List<Stmt> {
+    let no_globals: List<string> = []
+    return build_command_decls(s, no_globals)
 }
 
 /// Expand a `cli <inst> { command <c> { … } … }` instance into the
@@ -141,14 +166,20 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
 /// through a typed local first — `let cmds: List<dyn Runnable> =
 /// [Command_<c> { name: "<c>" }, …]` — because a `List<dyn Trait>`
 /// STRUCT FIELD does not box its inline element literals (bug 966j);
-/// the `List<dyn Runnable>` let-annotation does. Config
-/// (description/version) + global-flag inheritance are the next
-/// increment.
+/// the `List<dyn Runnable>` let-annotation does. A `flag <g> {}` declared
+/// directly in the cli block is a GLOBAL flag, inherited into every
+/// command's run bindings (design §4.2 parent_chain_flags). Config
+/// (description/version) is the next increment.
 @comptime
 export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut inst = ""
     mut out: List<Stmt> = []
     mut cmd_names: List<string> = []
+    mut global_flags: List<string> = []
+    mut cmd_children: List<Stmt> = []
+    // Pass 1: collect the cli's global flags AND its command children.
+    // Globals must be known before any command is generated, so command
+    // generation waits for pass 2.
     match s {
         .ComponentBlock(_, instance, _, body) -> {
             inst = instance
@@ -157,16 +188,21 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
                 match child {
                     .ComponentBlock(cn, cinst, _, _) -> {
                         if cn == "command" {
-                            let decls = expand_command(child)
-                            for d in decls { out.push(d) }
+                            cmd_children.push(child)
                             cmd_names.push(cinst)
                         }
+                        if cn == "flag" { global_flags.push(cinst) }
                     }
                     _ -> {}
                 }
             }
         }
         _ -> {}
+    }
+    // Pass 2: generate each command's decls, inheriting the global flags.
+    for child in cmd_children {
+        let decls = build_command_decls(child, global_flags)
+        for d in decls { out.push(d) }
     }
 
     // Emit a builder FUNCTION `fn <inst>() -> App { … }` rather than a
