@@ -20,6 +20,16 @@
 use @std.avrac.core.{Stmt}
 use @std.avrac.features.comptime.{synth_deref_stmt}
 
+/// The instance name of a component-block instantiation:
+/// `command build { … }` → `"build"`. Empty string for a non-block.
+@comptime
+export fn comp_instance_name(s: Stmt) -> string {
+    match s {
+        .ComponentBlock(_, inst, _, _) -> inst
+        _ -> ""
+    }
+}
+
 /// Every direct child component-block of `s` whose component name is
 /// `comp_name` — e.g. all `flag …` blocks inside a `command …`. Each
 /// body row is dereferenced through the arena via synth_deref_stmt.
@@ -42,3 +52,4 @@ export fn comp_children(s: Stmt, comp_name: string) -> List<Stmt> {
     }
     out
 }
+

@@ -1,20 +1,23 @@
-// Tests the @comptime introspection helpers (component/mod.av) end to
-// end: a macro imports comp_children and branches on how many `flag`
-// children a `cmd` instance declared. Proves the helper compiles, is
-// callable cross-module from a @comptime macro, and reads the arena-id
-// children correctly.
+// Tests the @comptime introspection helpers (component/mod.av): a macro
+// imports comp_instance_name + comp_children and branches on what they
+// read from a `cmd build { flag a {} flag b {} }` instance —
+// comp_instance_name → "build", comp_children(_, "flag") → 2 flags.
+// Proves each compiles, is callable cross-module from a @comptime
+// macro, and reads the arena-id instance name / children correctly.
 //
-// `bs2 expand` echoes the macro's own source (both branch markers once
-// each), then appends the winning branch once more — so the chosen
-// marker appears exactly one more time than the other. All top-level
-// names are `ch_`/`CH_`-prefixed to avoid cross-shard fn/const clashes.
+// `bs2 expand` echoes the macro's own source (each branch marker once),
+// then appends the winning branch once more — so the chosen marker
+// appears exactly one more time than the others. That difference is the
+// assertion, robust to the echo. All top-level names are `ch_`/`CH_`-
+// prefixed to avoid cross-shard fn/const clashes.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{cached_fixture_expand, write_fixture}
 
 const CH_MAIN: string = "fn " + "main()"
-const CH_TWO: string = "COMP-HELPERS-two-flags"
-const CH_OTHER: string = "COMP-HELPERS-other-count"
+const CH_OK: string = "COMP-HELPERS-build-2-flags"
+const CH_BAD1: string = "COMP-HELPERS-build-other"
+const CH_BAD2: string = "COMP-HELPERS-not-build"
 
 /// Count non-overlapping occurrences of `needle` in `haystack`.
 fn ch_count(haystack: string, needle: string) -> int {
@@ -34,53 +37,66 @@ fn ch_count(haystack: string, needle: string) -> int {
     n
 }
 
-fn ch_expand(flag_lines: string) -> string {
+// The macro reads the instance name (comp_instance_name) and the flag
+// child count (comp_children), and emits CH_OK only when BOTH match —
+// so CH_OK wins iff both helpers read the expected values.
+const CH_MACRO_SRC: string =
+    "use @std.avrac.core.{Stmt}\n" +
+    "use @std.cli.introspect.{comp_instance_name, comp_children}\n" +
+    "\n" +
+    "@comptime\n" +
+    "fn probe_helpers(s: Stmt) -> Stmt {\n" +
+    "    let inst = comp_instance_name(s)\n" +
+    "    let flags = comp_children(s, \"flag\")\n" +
+    "    let n = flags.length\n" +
+    "    match inst {\n" +
+    "        \"build\" -> {\n" +
+    "            match n {\n" +
+    "                2 -> return quote stmt { println(\"" + CH_OK + "\") }\n" +
+    "                _ -> return quote stmt { println(\"" + CH_BAD1 + "\") }\n" +
+    "            }\n" +
+    "        }\n" +
+    "        _ -> return quote stmt { println(\"" + CH_BAD2 + "\") }\n" +
+    "    }\n" +
+    "}\n"
+
+fn ch_expand() -> string {
     let path = "/tmp/avra_comp_helpers_test.av"
     write_fixture(path,
-        "use @std.avrac.core.{Stmt}\n" +
-        "use @std.cli.introspect.{comp_children}\n" +
-        "\n" +
-        "@comptime\n" +
-        "fn count_flags(s: Stmt) -> Stmt {\n" +
-        "    let flags = comp_children(s, \"flag\")\n" +
-        "    match flags.length {\n" +
-        "        2 -> return quote stmt { println(\"" + CH_TWO + "\") }\n" +
-        "        _ -> return quote stmt { println(\"" + CH_OTHER + "\") }\n" +
-        "    }\n" +
-        "}\n" +
+        CH_MACRO_SRC +
         "\n" +
         "component flag {\n" +
         "}\n" +
         "\n" +
-        "@expand(count_flags)\n" +
+        "@expand(probe_helpers)\n" +
         "component cmd {\n" +
         "}\n" +
         "\n" +
         "cmd build {\n" +
-        flag_lines +
+        "    flag a {}\n" +
+        "    flag b {}\n" +
         "}\n" +
         "\n" +
         CH_MAIN + " {\n" +
         "}\n")
-    // Compile the fixture FROM SOURCE: clear the test shard's
-    // metadata-stub env vars so std-cli's @comptime helper *bodies*
-    // are available to the evaluator. Under the shard's default
-    // AVRA_USE_METADATA path std-cli is stubbed to symbols-only, so a
-    // cross-package @comptime call (comp_children) evaluates to null —
-    // the open cross-package-macro gap tracked separately. A real
-    // `avra` compile of this fixture (clean env, as here) resolves the
-    // helper body and expands correctly.
+    // Compile FROM SOURCE: clear the shard's metadata-stub env so
+    // std-cli's @comptime helper *bodies* are available to the
+    // evaluator. Under AVRA_USE_METADATA std-cli is stubbed to
+    // symbols-only and a cross-package @comptime call evaluates to null
+    // (the open cross-package-macro gap, znl0). A real `avra` compile
+    // (clean env, as here) resolves the helper bodies and expands.
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
-// One source-compiled case (each fixture rebuilds std from source —
+// One source-compiled case (~20s: the fixture rebuilds std from source —
 // the only path that carries std-cli's cross-package @comptime bodies
-// today, ~20s). The count assertion is already discriminating: it only
-// holds if comp_children counted exactly the two `flag` children and
-// the macro branched on that, not on a hardcoded result.
-spec "comp_children reads matching child component-blocks (cross-module @comptime helper)" {
-    then "two flag children → the two-flags branch fires" {
-        let out = ch_expand("    flag a {}\n    flag b {}\n")
-        ch_count(out, CH_TWO) == ch_count(out, CH_OTHER) + 1
+// today). CH_OK appears once in the echoed macro source; if both helpers
+// read correctly the expansion adds it once more, so it wins by exactly
+// one over each BAD marker.
+spec "introspection helpers read instance name + children (cross-module @comptime)" {
+    then "instance name build + two flag children → the ok branch fires" {
+        let out = ch_expand()
+        ch_count(out, CH_OK) == ch_count(out, CH_BAD1) + 1
+            && ch_count(out, CH_OK) == ch_count(out, CH_BAD2) + 1
     }
 }
