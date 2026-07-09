@@ -33,14 +33,12 @@ spec "F0 single-store invariant: sibling sub-parses share the entry store" {
             let _ = avra_selfhost_write_file("${dir}/sib.av",
                 "fn make() -> int {\n    let e = quote { 1 + 2 }\n    0\n}\n")
             let r = parse_program_source("let entry_only = 1\n")
-            if r.had_error != 0 { return false }
             let before = r.store.exprs.count()
             let loaded: List<string> = []
             let dir_load = resolve_dir_module_body(dir, loaded, r.store)
-            if dir_load.had_error { return false }
             let grew = r.store.exprs.count() > before
             let quote_visible = store_carries_quote(r.store.exprs.count(), (i: int) -> r.store.exprs.get(ExprId(i)))
-            grew && quote_visible
+            r.had_error == 0 && !dir_load.had_error && grew && quote_visible
         }
         then "the sub-parse records no roots into the shared store" {
             let dir = "build/_f0_shared_roots"
@@ -48,12 +46,10 @@ spec "F0 single-store invariant: sibling sub-parses share the entry store" {
             let _ = avra_selfhost_write_file("${dir}/sib.av",
                 "fn side() -> int { 41 }\nfn other() -> int { 42 }\n")
             let r = parse_program_source("let entry_only = 1\n")
-            if r.had_error != 0 { return false }
             let roots_before = r.store.roots.length
             let loaded: List<string> = []
             let dir_load = resolve_dir_module_body(dir, loaded, r.store)
-            if dir_load.had_error { return false }
-            r.store.roots.length == roots_before
+            r.had_error == 0 && !dir_load.had_error && r.store.roots.length == roots_before
         }
     }
 }

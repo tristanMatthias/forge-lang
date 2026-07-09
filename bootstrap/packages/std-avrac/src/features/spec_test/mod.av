@@ -1,9 +1,10 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + reporter.av auto-load
 // as siblings, surface flat at `features.spec_test.{...}`.
 use features.eval.{error_result, ok_result, value_null}
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, MatchArm, WhenArm, FieldInit}
 use resolve.{resolve_expr, resolve_stmt_ids}
-use typeck.{check_expr, check_stmt}
+use typeck.{check_expr, check_stmt, tc_report_at}
+use diagnostics.{DiagCode}
 
 /// Register the `spec "name" { ... }` BDD-style test block
 /// feature. Spec blocks contain `given` / `then` arms; the
@@ -59,12 +60,145 @@ fn check_stmt_list(tc: TC, body: List<StmtId>) -> TC {
     cur
 }
 
-/// Type-check hook for `SpecBlock`. Walks the body for errors —
-/// spec blocks don't constrain types beyond what their statements
-/// already require.
+// ── 4d5r: reject `return` inside a spec/given/then block ──
+//
+// A whole test file lowers into ONE synthesized `@deferred_init` unit fn, so
+// a `return` anywhere inside a spec/given/then body exits THAT fn — this
+// block's own registration and every LATER sibling's silently vanish, and the
+// shrunken suite still reports green (the trap that hid a mutation-check
+// failure). We walk the block's statement/expression tree, descending through
+// control flow but STOPPING at every fn-like boundary (nested `fn`, `impl`,
+// lambda, `spawn`, `isolated`, `quote`) whose `return` is legitimately its
+// own, and at nested spec/given/then blocks (covered by their own hooks), and
+// report F0901 on each escaping `return`. The idiom for an early exit is a
+// helper fn; a `then`'s final expression already IS its boolean result.
+
+/// Report F0901 at a `return` statement that escapes the test unit fn.
+fn report_escaping_return(tc: TC, id: StmtId) -> TC {
+    let p = tc.nodes.stmt_pos(id)
+    tc_report_at(tc, DiagCode.ReturnInSpecBlock, "`return` is not allowed inside a spec/given/then block", p.line, p.col, 6)
+}
+
+/// Walk a statement list for escaping `return`s.
+fn reject_return_stmts(tc: TC, body: List<StmtId>) -> TC {
+    mut cur = tc
+    for id in body { cur = reject_return_stmt(cur, id) }
+    cur
+}
+
+/// Walk one statement, descending control flow but not fn-like or
+/// nested-test boundaries. A `return` / bare `return` here escapes.
+fn reject_return_stmt(tc: TC, id: StmtId) -> TC {
+    match tc.nodes.stmts.get(id) {
+        .Return(_) -> report_escaping_return(tc, id)
+        .ReturnEmpty -> report_escaping_return(tc, id)
+        .Block(body) -> reject_return_stmts(tc, body)
+        .If(cond, then_branch, else_branch) -> {
+            let after_then = reject_return_stmt(reject_return_expr(tc, cond), then_branch)
+            if else_branch != null { reject_return_stmt(after_then, else_branch!) } else { after_then }
+        }
+        .While(cond, body) -> reject_return_stmt(reject_return_expr(tc, cond), body)
+        .For(_, start, end, body) -> reject_return_stmt(reject_return_expr(reject_return_expr(tc, start), end), body)
+        .ForIn(_, coll, body) -> reject_return_stmt(reject_return_expr(tc, coll), body)
+        .Match(subject, arms) -> reject_return_arms(reject_return_expr(tc, subject), arms)
+        .Annotated(_, inner) -> reject_return_stmt(tc, inner)
+        .Parallel(body) -> reject_return_stmts(tc, body)
+        .Expr(e) -> reject_return_expr(tc, e)
+        .Let(_, _, init) -> reject_return_expr(tc, init)
+        .Mut(_, _, init) -> reject_return_expr(tc, init)
+        .Const(_, _, init) -> reject_return_expr(tc, init)
+        .LetDestructure(_, init) -> reject_return_expr(tc, init)
+        // fn / impl / trait bodies own their returns; nested spec/given/then
+        // report via their own hooks; leaves have no reachable `return`.
+        _ -> tc
+    }
+}
+
+/// Walk one expression for a `return` nested in a block-bearing or wrapper
+/// form. Pure-value leaves have none; fn-like forms (Lambda / Spawn /
+/// Isolated / Quote) are boundaries and are not entered.
+fn reject_return_expr(tc: TC, id: ExprId) -> TC {
+    match tc.nodes.exprs.get(id) {
+        .Block(body) -> reject_return_stmts(tc, body)
+        .IfExpr(cond, then_branch, else_branch) -> reject_return_expr(reject_return_expr(reject_return_expr(tc, cond), then_branch), else_branch)
+        .MatchExpr(subject, arms) -> reject_return_arms(reject_return_expr(tc, subject), arms)
+        .When(arms) -> reject_return_when(tc, arms)
+        .Grouping(e) -> reject_return_expr(tc, e)
+        .Unary(_, right) -> reject_return_expr(tc, right)
+        .Binary(left, _, right) -> reject_return_expr(reject_return_expr(tc, left), right)
+        .Logical(left, _, right) -> reject_return_expr(reject_return_expr(tc, left), right)
+        .Call(callee, args) -> reject_return_exprs(reject_return_expr(tc, callee), args)
+        .GenericCall(callee, _, args) -> reject_return_exprs(reject_return_expr(tc, callee), args)
+        .EnumCtor(_, _, args) -> reject_return_exprs(tc, args)
+        .StructLit(_, inits) -> reject_return_field_inits(tc, inits)
+        .FieldAccess(obj, _) -> reject_return_expr(tc, obj)
+        .Index(obj, idx) -> reject_return_expr(reject_return_expr(tc, obj), idx)
+        .NullCoalesce(left, right) -> reject_return_expr(reject_return_expr(tc, left), right)
+        .OptionalChain(obj, _) -> reject_return_expr(tc, obj)
+        .OptionalMethodCall(obj, _, args) -> reject_return_exprs(reject_return_expr(tc, obj), args)
+        .Try(e) -> reject_return_expr(tc, e)
+        .Tuple(elements) -> reject_return_exprs(tc, elements)
+        .TupleIndex(obj, _) -> reject_return_expr(tc, obj)
+        .With(obj, overrides) -> reject_return_field_inits(reject_return_expr(tc, obj), overrides)
+        .ListLit(elements) -> reject_return_exprs(tc, elements)
+        .MapLit(entries) -> reject_return_exprs(tc, entries)
+        .Slice(obj, start, end) -> reject_return_expr(reject_return_expr(reject_return_expr(tc, obj), start), end)
+        .IsCheck(subject, _) -> reject_return_expr(tc, subject)
+        .InCheck(needle, items) -> reject_return_exprs(reject_return_expr(tc, needle), items)
+        .ListComp(body, _, coll, filter) -> {
+            let after = reject_return_expr(reject_return_expr(tc, body), coll)
+            if filter != null { reject_return_expr(after, filter!) } else { after }
+        }
+        .Assign(_, value) -> reject_return_expr(tc, value)
+        .FieldAssign(obj, _, value) -> reject_return_expr(reject_return_expr(tc, obj), value)
+        .Catch(inner, _, body, _, _) -> reject_return_expr(reject_return_expr(tc, inner), body)
+        // Leaves (Number / String / Bool / None / Ident / …) and fn-like
+        // boundaries (Lambda / Spawn / Isolated / Quote) hold no escaping
+        // `return`. A future block-bearing Expr variant must add an arm here.
+        _ -> tc
+    }
+}
+
+/// Walk a bare expression list for escaping `return`s.
+fn reject_return_exprs(tc: TC, ids: List<ExprId>) -> TC {
+    mut cur = tc
+    for id in ids { cur = reject_return_expr(cur, id) }
+    cur
+}
+
+/// Walk `match` / match-expr arm guards and bodies for escaping `return`s.
+fn reject_return_arms(tc: TC, arms: List<MatchArm>) -> TC {
+    mut cur = tc
+    for arm in arms {
+        if arm.guard_id != null { cur = reject_return_expr(cur, arm.guard_id!) }
+        cur = reject_return_expr(cur, arm.body_id)
+    }
+    cur
+}
+
+/// Walk `when` arm conditions and bodies for escaping `return`s.
+fn reject_return_when(tc: TC, arms: List<WhenArm>) -> TC {
+    mut cur = tc
+    for arm in arms {
+        if arm.cond_id != null { cur = reject_return_expr(cur, arm.cond_id!) }
+        cur = reject_return_expr(cur, arm.body_id)
+    }
+    cur
+}
+
+/// Walk struct-literal / `with`-update field inits for escaping `return`s.
+fn reject_return_field_inits(tc: TC, inits: List<FieldInit>) -> TC {
+    mut cur = tc
+    for fi in inits { cur = reject_return_expr(cur, fi.value_id) }
+    cur
+}
+
+/// Type-check hook for `SpecBlock`. Walks the body for errors — spec blocks
+/// don't constrain types beyond what their statements already require — and
+/// rejects any `return` in a direct setup statement (4d5r).
 fn spec_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .SpecBlock(_, body) -> check_stmt_list(tc, body)
+        .SpecBlock(_, body) -> check_stmt_list(reject_return_stmts(tc, body), body)
         _ -> tc
     }
 }
@@ -73,17 +207,21 @@ fn spec_check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// `spec_check_stmt`.
 fn given_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .GivenBlock(_, body) -> check_stmt_list(tc, body)
+        .GivenBlock(_, body) -> check_stmt_list(reject_return_stmts(tc, body), body)
         _ -> tc
     }
 }
 
 /// Type-check hook for `ThenBlock`. The condition expression is
 /// checked but not constrained to a particular type — the test
-/// runner converts whatever it returns to a boolean at runtime.
+/// runner converts whatever it returns to a boolean at runtime. A
+/// `return` inside it escapes the test unit fn, so it's rejected (4d5r).
 fn then_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .ThenBlock(_, cond) -> check_expr(tc, tc.nodes.exprs.get(cond)).tc
+        .ThenBlock(_, cond) -> {
+            let after = reject_return_expr(tc, cond)
+            check_expr(after, after.nodes.exprs.get(cond)).tc
+        }
         _ -> tc
     }
 }

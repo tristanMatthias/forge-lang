@@ -282,6 +282,14 @@ export enum DiagCode {
     /// assertion's source span so the renderer can show the failing
     /// expression.
     SpecTestFailed
+    /// F0901 — a `return` statement inside a spec/given/then block. The
+    /// whole test file lowers into one synthesized `@deferred_init`
+    /// initializer, so a `return` there exits that initializer — this
+    /// block's own registration AND every later sibling registration
+    /// silently vanish, and the shrunken suite still shows green (the
+    /// 4d5r trap). A `then`'s final expression already IS its boolean
+    /// result; an early exit belongs in a helper fn.
+    ReturnInSpecBlock
     /// F9001 — `match` whose wildcard `_` arm hides more than two
     /// uncovered variants. Style nudge — add explicit arms or
     /// acknowledge with a comment.
@@ -424,6 +432,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
         .DuplicateDecl       -> ErrorDef { code: "F3105", help: "rename one of the duplicates, or remove the redundant declaration" }
         .SpecTestFailed      -> ErrorDef { code: "F0900", help: "the assertion expression evaluated to false — fix the implementation or update the expectation" }
+        .ReturnInSpecBlock   -> ErrorDef { code: "F0901", help: "a `return` here exits the whole test file's initializer and silently drops this and every later test — move the early exit into a helper fn, or let the block's final expression be the result" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
