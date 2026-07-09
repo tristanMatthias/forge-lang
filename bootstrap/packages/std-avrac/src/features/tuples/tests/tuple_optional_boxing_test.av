@@ -1,0 +1,83 @@
+// A tuple stores its elements as raw i64 slots, so a scalar element bound for a
+// `T?` slot must be boxed into the tagged optional repr — otherwise a later
+// `t.N!` reads the raw scalar as a box pointer and segfaults (ai3u). The fix
+// makes the shared optional coercion (`emit_optional_coerce`) tuple-aware, so a
+// tuple crossing into a tuple-of-optionals type re-boxes element-wise at EVERY
+// position it flows through: let/mut binding, reassignment, struct field,
+// function argument, and return value.
+//
+// Each present case is paired with an absent control so the box is proven
+// load-bearing (a present value must survive; an absent one stays null).
+
+fn take(t: (int?, int?)) -> int {
+    if t.0 != null { t.0! } else { 0 - 1 }
+}
+fn make_ret() -> (int?, string) {
+    (7, "hi")
+}
+type Holder = { pair: (int?, int?), tag: int }
+
+spec "tuple-of-optionals boxing at a let binding (ai3u)" {
+    then "present int elements survive (was a SIGSEGV)" {
+        let t: (int?, int?) = (5, 6)
+        t.0! == 5 && t.1! == 6
+    }
+    then "absent elements stay null" {
+        let t: (int?, int?) = (null, null)
+        t.0 == null && t.1 == null
+    }
+    then "mixed present/absent" {
+        let t: (int?, int?) = (5, null)
+        t.0! == 5 && t.1 == null
+    }
+    then "bool? and float? elements survive (incl false / 0.0)" {
+        let t: (bool?, float?) = (false, 0.0)
+        t.0! == false && t.1! == 0.0
+    }
+    then "a niche (string?) element alongside a boxed one round-trips" {
+        let t: (int?, string?) = (5, "x")
+        t.0! == 5 && t.1! == "x"
+    }
+}
+
+spec "tuple-of-optionals boxing at every flow position" {
+    then "mut binding" {
+        mut t: (int?, int?) = (5, 6)
+        t.0! == 5 && t.1! == 6
+    }
+    then "reassignment into an optional-tuple slot" {
+        mut t: (int?, int?) = (0, 0)
+        t = (9, 8)
+        t.0! == 9 && t.1! == 8
+    }
+    then "function argument position (was a SIGSEGV)" {
+        take((5, 6)) == 5
+    }
+    then "function return position (was a SIGSEGV)" {
+        let r = make_ret()
+        r.0! == 7 && r.1 == "hi"
+    }
+    then "struct field position" {
+        let h = Holder { pair: (5, 6), tag: 9 }
+        let p = h.pair
+        p.0! == 5 && p.1! == 6 && h.tag == 9
+    }
+    then "nested tuple ((int?, int?), int?)" {
+        let n: ((int?, int?), int?) = ((1, 2), 3)
+        let inner = n.0
+        inner.0! == 1 && inner.1! == 2 && n.1! == 3
+    }
+}
+
+spec "the tuple boxing does not over-fire" {
+    then "a plain (int, int) tuple is unaffected" {
+        let p: (int, int) = (5, 6)
+        p.0 == 5 && p.1 == 6
+    }
+    then "a tuple of already-optional values passes through" {
+        let a: int? = 5
+        let b: int? = 6
+        let t: (int?, int?) = (a, b)
+        t.0! == 5 && t.1! == 6
+    }
+}
