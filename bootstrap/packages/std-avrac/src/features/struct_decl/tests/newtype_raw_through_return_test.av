@@ -1,0 +1,71 @@
+// WHY: hc66 — a newtype value produced by a FUNCTION RETURN (single trailing
+// ctor, if-expr, early-return) lost its newtype identity by the time `.raw()`
+// dispatched, ICEing at codegen with F9999 'undefined method NrId.raw'. Only a
+// direct `NrId(x).raw()` / `let x = NrId(x); x.raw()` kept working. Root: the
+// `.raw()` unwrap fired only when the receiver's vtype KIND was `Newtype`, but
+// the kind-agnostic identity model (vtype_eq treats Struct("NrId") and
+// Newtype("NrId") of the same FQN as equal) legitimately yields a `Struct` of
+// the same FQN through a fn return. The fix resolves the unwrap via the type
+// registry (by id/name) on the method-dispatch failure path, so `.raw()` works
+// regardless of how the receiver's type was produced — and does NOT shadow a
+// real impl method (which still dispatches normally). The ticket framed this as
+// if-expr-specific; it was actually any fn return, so these pin every shape.
+
+type NrId = int
+fn single(n: int) -> NrId { NrId(n) }
+fn if_expr(b: bool) -> NrId { if b { NrId(7) } else { NrId(3) } }
+fn early(b: bool) -> NrId {
+    if b { return NrId(9) }
+    NrId(0)
+}
+fn nested(x: int) -> NrId {
+    if x > 10 {
+        if x > 20 { NrId(2) } else { NrId(1) }
+    } else {
+        NrId(0)
+    }
+}
+fn via_match(n: int) -> NrId {
+    match n {
+        0 -> NrId(100)
+        _ -> NrId(n)
+    }
+}
+
+spec "hc66: newtype .raw() survives every return body shape" {
+    then "single trailing ctor return" { single(5).raw() == 5 }
+    then "if-expr return (then branch)" { if_expr(true).raw() == 7 }
+    then "if-expr return (else branch)" { if_expr(false).raw() == 3 }
+    then "early-return branch" { early(true).raw() == 9 }
+    then "early-return fallthrough" { early(false).raw() == 0 }
+    then "nested if-expr return" { nested(25).raw() == 2 }
+    then "match-expr return" { via_match(0).raw() == 100 && via_match(4).raw() == 4 }
+    then "through a let binding" {
+        let x = single(42)
+        x.raw() == 42
+    }
+    then "chained directly off the call" { single(8).raw() + 1 == 9 }
+}
+
+// A string-backed newtype exercises the non-int inner path.
+type Tag = string
+fn tag(b: bool) -> Tag { if b { Tag("alpha") } else { Tag("beta") } }
+
+spec "hc66: a string-backed newtype .raw() also survives a fn return" {
+    then "present through if-expr" { tag(true).raw() == "alpha" }
+    then "else branch" { tag(false).raw() == "beta" }
+}
+
+// A newtype that ALSO declares an impl method: the fix must not shadow the real
+// method (it dispatches normally), and `.raw()` must still unwrap — including
+// inside the impl body itself (`doubled` calls `self.raw()`).
+type Meters = int
+impl Meters {
+    fn doubled(self) -> int { self.raw() * 2 }
+}
+fn meters(n: int) -> Meters { Meters(n) }
+
+spec "hc66: a newtype with an impl keeps both its method and .raw()" {
+    then "the real impl method dispatches on a fn-return receiver" { meters(5).doubled() == 10 }
+    then ".raw() still unwraps on the same receiver" { meters(5).raw() == 5 }
+}
