@@ -58,6 +58,17 @@ fn ad_src() -> string {
     "            return 9\n" +
     "        }\n" +
     "    }\n" +
+    // `option outfile {}` needs NO `component option {}` declaration — a
+    // child block parses as a nested component regardless, and declaring
+    // one would generate `type Option`, colliding with the built-in
+    // nullable `Option<T>` (leaf `component flag/arg` decls are likewise
+    // optional; they are declared above only to mirror existing tests).
+    "    command pack {\n" +
+    "        option outfile {}\n" +
+    "        run() {\n" +
+    "            return outfile.length\n" +
+    "        }\n" +
+    "    }\n" +
     "}\n" +
     "\n" +
     "fn main() {\n" +
@@ -70,6 +81,8 @@ fn ad_src() -> string {
     "    println(\"G=\" + string(toy.run_argv([\"--help\"])))\n" +
     "    println(\"H=\" + string(toy.run_argv([\"build\", \"--bogus\"])))\n" +
     "    println(\"I=\" + string(toy.run_argv([\"build\", \"--glob\"])))\n" +
+    "    println(\"J=\" + string(toy.run_argv([\"pack\", \"--outfile=result\"])))\n" +
+    "    println(\"K=\" + string(toy.run_argv([\"pack\"])))\n" +
     "}\n" +
     "\n" +
     "fn ad_empty() -> List<string> {\n" +
@@ -138,5 +151,14 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         // not just a command's own flags.
         let out = ad_run()
         out.contains("I=55")
+    }
+    then "a --key=value option is parsed against the command's option schema" {
+        // `pack` declares `option outfile {}`; option_names() reports it, so
+        // `["pack", "--outfile=result"]` sets the `outfile` option and the
+        // run body's `outfile` binding (result_get_option) reads "result"
+        // (length 6). Unset (`["pack"]`) falls back to "" (length 0). This
+        // exercises the option accessor + `--key=value` classification path.
+        let out = ad_run()
+        out.contains("J=6") && out.contains("K=0")
     }
 }

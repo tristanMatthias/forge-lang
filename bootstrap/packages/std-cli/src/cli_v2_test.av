@@ -17,6 +17,7 @@ impl Runnable for Foo {
     }
     fn flag_names(self) -> List<string> { [] }
     fn arg_names(self) -> List<string> { [] }
+    fn option_names(self) -> List<string> { [] }
     fn description(self) -> string { "" }
 }
 
@@ -30,6 +31,7 @@ impl Runnable for Bar {
     }
     fn flag_names(self) -> List<string> { [] }
     fn arg_names(self) -> List<string> { [] }
+    fn option_names(self) -> List<string> { [] }
     fn description(self) -> string { "" }
 }
 

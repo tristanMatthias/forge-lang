@@ -89,22 +89,24 @@ export type Cli = {
 /// with the resolved flags / args / options bound as locals (the
 /// macro author handles that lowering — see expand_command).
 ///
-/// `flag_names` / `arg_names` / `description` make each command
-/// SELF-DESCRIBING so `App.run` can parse raw argv against the right
-/// schema through the `dyn Runnable` boxes — the per-command flag/arg
-/// schema is otherwise unreachable at parse time (the schema lives
-/// baked into the run body's accessor calls). `flag_names` returns the
-/// command's own flags plus any inherited global flags (WITHOUT
-/// dashes); `arg_names` returns the positional args in declaration
-/// order (so raw positionals map to names); `description` is the
-/// one-line help text (may be ""). expand_command generates all three
-/// from the declared children; hand-written commands return `[]`/`""`
-/// when they take no flags/args.
+/// `flag_names` / `arg_names` / `option_names` / `description` make each
+/// command SELF-DESCRIBING so `App.run` can parse raw argv against the
+/// right schema through the `dyn Runnable` boxes — the per-command
+/// flag/arg/option schema is otherwise unreachable at parse time (the
+/// schema lives baked into the run body's accessor calls). `flag_names`
+/// returns the command's own flags plus any inherited global flags
+/// (WITHOUT dashes); `arg_names` returns the positional args in
+/// declaration order (so raw positionals map to names); `option_names`
+/// returns the declared `--key=value` options (without dashes);
+/// `description` is the one-line help text (may be ""). expand_command
+/// generates all four from the declared children; hand-written commands
+/// return `[]`/`""` when they take no flags/args/options.
 export trait Runnable {
     fn name(self) -> string
     fn run(self, args: CliResult) -> int
     fn flag_names(self) -> List<string>
     fn arg_names(self) -> List<string>
+    fn option_names(self) -> List<string>
     fn description(self) -> string
 }
 
@@ -167,9 +169,9 @@ impl App {
                     tokens.push(argv[i])
                     i = i + 1
                 }
-                let no_options: List<OptionDef> = []
                 let parsed = parse_tokens(first, flag_defs_for(cmd.flag_names()),
-                                          no_options, arg_defs_for(cmd.arg_names()), tokens)
+                                          option_defs_for(cmd.option_names()),
+                                          arg_defs_for(cmd.arg_names()), tokens)
                 // Reject a mis-parsed invocation (e.g. an undeclared
                 // `--flag`) instead of silently dispatching it — a real CLI
                 // reports the error and stops.
@@ -217,6 +219,19 @@ fn arg_defs_for(names: List<string>) -> List<ArgDef> {
     mut out: List<ArgDef> = []
     for n in names {
         out.push(ArgDef { name: n, description: "", required: false })
+    }
+    out
+}
+
+/// Build the classifier's dashed `OptionDef` schema from bare option
+/// names (`out` → `--out`), so `--out=<value>` is recognised and the
+/// resulting `ParsedOption` is named `out` (what `result_get_option`
+/// reads). Default value is "" — declared per-option defaults are a
+/// future config-reading enhancement (shared with flag shorts).
+fn option_defs_for(names: List<string>) -> List<OptionDef> {
+    mut out: List<OptionDef> = []
+    for n in names {
+        out.push(OptionDef { name: "--" + n, short: "", description: "", default_val: "" })
     }
     out
 }

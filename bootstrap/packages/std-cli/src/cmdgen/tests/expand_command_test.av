@@ -72,9 +72,10 @@ fn eg_expand_flags() -> string {
         "command build {\n" +
         "    flag xflagq {}\n" +
         "    arg yargq {}\n" +
+        "    option zoptq {}\n" +
         "    fn run(args: CliResult) -> int {\n" +
         "        if xflagq { return 1 }\n" +
-        "        return yargq.length\n" +
+        "        return yargq.length + zoptq.length\n" +
         "    }\n" +
         "}\n" +
         "\n" +
@@ -209,17 +210,19 @@ spec "expand_command generates a per-instance type + Runnable impl (Components V
         out.contains("31337")
             && out.contains("Command_build__run")
     }
-    then "declared flag/arg children become result_has_flag / result_get_arg bindings in run" {
-        // Each `flag x {}` / `arg y {}` prepends a
+    then "declared flag/arg/option children become result_has_flag / result_get_arg / result_get_option bindings in run" {
+        // Each `flag x {}` / `arg y {}` / `option z {}` prepends a
         // `let x = result_has_flag(args, "x")` / `let y =
-        // result_get_arg(args, "y")` accessor local to the run body, so
-        // the user body references them by name. The exact call
-        // substrings appear ONLY in the generated bindings — the macro
-        // source splices the name via `"\"" + fname + "\""`, never these
-        // literals, and the `command build` block is consumed by @expand.
+        // result_get_arg(args, "y")` / `let z = result_get_option(args,
+        // "z")` accessor local to the run body, so the user body references
+        // them by name. The exact call substrings appear ONLY in the
+        // generated bindings — the macro source splices the name via `"\""
+        // + name + "\""`, never these literals, and the `command build`
+        // block is consumed by @expand.
         let out = eg_expand_flags()
         out.contains("result_has_flag(args, \"xflagq\")")
             && out.contains("result_get_arg(args, \"yargq\")")
+            && out.contains("result_get_option(args, \"zoptq\")")
     }
     then "the run() method shorthand is read as the run method, disambiguated from a flag sibling" {
         // `command build { flag vq {} run() { … } }` uses the `run() { … }`

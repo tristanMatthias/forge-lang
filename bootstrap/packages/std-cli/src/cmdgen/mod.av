@@ -14,13 +14,20 @@
 // "Trait:Type" name form the parser uses.
 //
 // SCOPE: generates `type Command_<inst>` + `impl Runnable for
-// Command_<inst>` with name()/run(). The run body is the accessor
-// bindings — the command's own `flag x {}` / `arg y {}` children plus
-// the parent cli's global flags (a `flag x {}` → `let x =
-// @std::cli::result_has_flag(args, "x")`, an `arg y {}` → `let y =
-// @std::cli::result_get_arg(args, "y")`, callees emitted fully qualified
-// so they resolve without the consumer importing them) — followed by the
-// user's run body verbatim. These macros ship as exported @comptime fns;
+// Command_<inst>` with name()/run() plus the schema accessors
+// flag_names()/arg_names()/option_names()/description() (so App.run can
+// parse raw argv against the command through its dyn box). The run body
+// is the accessor bindings — the command's own `flag x {}` / `arg y {}` /
+// `option z {}` children plus the parent cli's global flags (a `flag x {}`
+// → `let x = @std::cli::result_has_flag(args, "x")`, an `arg y {}` → `let
+// y = @std::cli::result_get_arg(args, "y")`, an `option z {}` → `let z =
+// @std::cli::result_get_option(args, "z")`, callees emitted fully
+// qualified so they resolve without the consumer importing them) —
+// followed by the user's run body verbatim. Leaf children need no
+// `component flag/arg/option` declaration (they parse as nested blocks
+// regardless; `component option {}` in particular MUST be omitted — it
+// would generate `type Option`, colliding with the built-in `Option<T>`).
+// These macros ship as exported @comptime fns;
 // consumers / tests attach them via `@expand` themselves rather than the
 // lib pre-registering `@expand(expand_command) component command`,
 // because packages/cli/src/main.av still declares `component command`
@@ -102,6 +109,7 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     mut run_body: List<Stmt> = []
     mut flag_names: List<string> = []
     mut arg_names: List<string> = []
+    mut option_names: List<string> = []
     match s {
         .ComponentBlock(_, instance, _, body) -> {
             inst = instance
@@ -118,6 +126,7 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
                     .ComponentBlock(cn, cinst, _, _) -> {
                         if cn == "flag" { flag_names.push(cinst) }
                         if cn == "arg" { arg_names.push(cinst) }
+                        if cn == "option" { option_names.push(cinst) }
                     }
                     _ -> {}
                 }
@@ -154,14 +163,18 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     for aname in arg_names {
         full_run.push(accessor_binding(aname, "@std::cli::result_get_arg", ValueType.Str))
     }
+    for oname in option_names {
+        full_run.push(accessor_binding(oname, "@std::cli::result_get_option", ValueType.Str))
+    }
     for st in run_body { full_run.push(st) }
     let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(full_run))
 
     // Schema accessors so App.run can parse raw argv against this command
     // through its `dyn Runnable` box: flag_names() = own flags + inherited
     // globals (deduped, the same set the run bindings use); arg_names() =
-    // positionals in declaration order; description() reads the stamped
-    // field. The name lists are baked as string literals at expansion.
+    // positionals in declaration order; option_names() = declared options;
+    // description() reads the stamped field. The name lists are baked as
+    // string literals at expansion.
     mut all_flag_names: List<string> = []
     for gname in extra_flags {
         if !name_in(flag_names, gname) && !name_in(arg_names, gname) {
@@ -172,12 +185,13 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     let str_list_vt = ValueType.List(ValueType.Str)
     let flag_names_fn = Stmt.Function("flag_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(all_flag_names)]))
     let arg_names_fn = Stmt.Function("arg_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(arg_names)]))
+    let option_names_fn = Stmt.Function("option_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(option_names)]))
     let ret_desc = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "description")))
     let description_fn = Stmt.Function("description", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_desc]))
 
     // impl Runnable for Command_<inst> { name; run; flag_names; arg_names;
-    // description }  ("Trait:Type" form)
-    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn, flag_names_fn, arg_names_fn, description_fn]))
+    // option_names; description }  ("Trait:Type" form)
+    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn, flag_names_fn, arg_names_fn, option_names_fn, description_fn]))
 
     // type Command_<inst> = { name: string, description: string }
     // (`description` carries the block's `description "…"` config; the
