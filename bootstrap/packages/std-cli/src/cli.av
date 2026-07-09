@@ -138,11 +138,12 @@ export type App = {
 }
 
 impl App {
-    /// Run the command whose `name()` matches `parsed.command`;
+    /// Run the command whose `meta.name` matches `parsed.command`;
     /// returns its exit code. Returns 1 when nothing matches (the
-    /// caller may print help). Dispatch is a vtable call through the
-    /// `dyn Runnable` box — each command's generated `run` body
-    /// executes with its flag/arg accessors bound.
+    /// caller may print help). The name is read by DIRECT field access
+    /// off the command's `CommandSpec` (data); dispatch is then a vtable
+    /// call through the `dyn Runnable` `body` (behaviour) — each command's
+    /// generated `run` body executes with its flag/arg accessors bound.
     fn dispatch(self, parsed: CliResult) -> int {
         for c in self.commands {
             if c.meta.name == parsed.command {
