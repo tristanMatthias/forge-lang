@@ -417,3 +417,46 @@ spec "F3b: arg_tys round-trips an inferred type via arg_ty_of" {
         stored_int && unset_unknown
     }
 }
+
+// APPEND-ONLY INVARIANT (ps3t.3.5 / spine §14.4). The node arenas are
+// append-only: the ONLY node writes are `add`/`add_leaf` (push a new row) — there
+// is deliberately NO `set_node`/`replace`, so a live node can never be mutated in
+// place. Every rewriting pass (resolver, desugar, mono, comptime) rebuilds via
+// `reexpr`/`restmt`, which ALLOCATE A FRESH row inheriting the source's
+// span/pos/provenance and leave the original untouched.
+//
+// This immutability is the load-bearing precondition for content-hash interning
+// (hash-consing): sharing ONE row for structurally-identical subtrees is only
+// safe because no pass can mutate a shared node — an in-place edit would silently
+// corrupt every reference to it. These specs pin the observable guarantee, so a
+// future regression that mutated a node in place (foreclosing interning) fails
+// loudly HERE rather than surfacing as corruption once interning lands. They also
+// pin that a rebuilt occurrence keeps its OWN span — which is why interning is a
+// PARSE-time concern (post-parse rebuilds each carry a distinct span row).
+spec "ps3t.3.5: node arenas are append-only — reexpr/restmt rebuild, never mutate in place" {
+    then "reexpr allocates a FRESH expr id and leaves the source node unchanged" {
+        let store = ts()
+        let a = store.exprs.add_leaf(Expr.Number("1"))
+        let b = store.reexpr(Expr.Number("2"), a)
+        // Distinct ids (append, not overwrite/alias); the source still reads "1";
+        // the rewritten row reads "2".
+        let src_intact = match store.exprs.get(a) { .Number(v) -> v == "1"  _ -> false }
+        let new_rewritten = match store.exprs.get(b) { .Number(v) -> v == "2"  _ -> false }
+        a != b && src_intact && new_rewritten
+    }
+    then "restmt allocates a FRESH stmt id and leaves the source node unchanged" {
+        let store = ts()
+        let a = store.stmts.add_leaf(Stmt.Break)
+        let b = store.restmt(Stmt.Continue, a)
+        let src_intact = match store.stmts.get(a) { .Break -> true  _ -> false }
+        let new_rewritten = match store.stmts.get(b) { .Continue -> true  _ -> false }
+        a != b && src_intact && new_rewritten
+    }
+    then "reexpr inherits the source span onto the new id (a rebuilt occurrence keeps its own span)" {
+        let store = ts()
+        let a = store.ingest_expr(Expr.Number("1"), byte_span(10, 13))
+        let b = store.reexpr(Expr.Number("2"), a)
+        let bs = store.exprs.span_of(b)
+        bs.lo == 10 && bs.hi == 13
+    }
+}

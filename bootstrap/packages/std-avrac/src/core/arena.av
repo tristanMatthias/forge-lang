@@ -206,6 +206,15 @@ fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: Lis
 /// a child-list or a span is a lookup, never a field on the node — and the
 /// dense-column bookkeeping is the shared DenseTable, not hand-rolled parallel
 /// arrays.
+///
+/// APPEND-ONLY, BY DESIGN. The only node writes are `add`/`add_leaf` — there is
+/// deliberately no `set_node`/`replace`, so a live node is never mutated in
+/// place; rewriting passes rebuild via `NodeStore.reexpr` (allocate a fresh row).
+/// This immutability is the precondition for content-hash interning (ps3t.3.5,
+/// §14.4): sharing one row for structurally-identical subtrees is only safe
+/// because no pass can mutate a shared node. Do NOT add an in-place node setter —
+/// it would foreclose interning. Guarded by the append-only specs in
+/// core/tests/arena_test.av.
 export type ExprArena = { nodes: List<Expr>, edges: DenseTable<ExprId, NodeEdges>, spans: DenseTable<ExprId, ByteSpan> }
 impl ExprArena {
     /// Append `node` with its (already-ingested) cross-type child `edges` and
