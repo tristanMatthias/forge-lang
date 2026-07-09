@@ -61,6 +61,7 @@ Concatenated, little-endian, no header:
 | nested `@marshal` struct    | 8 length-prefix + inner `to_bytes()` payload           |
 | `List<NestedMarshalStruct>` | 8 count + count × (8 length-prefix + inner payload)    |
 | `@marshal` enum             | 8 tag (source-order variant index) + payload-as-above  |
+| optional `T?`               | 8 presence bool + (when present) the inner `T` as-above |
 
 Enum tag ordering matches source declaration order; adding a variant
 at the end stays backwards-compatible, inserting in the middle does
@@ -79,13 +80,19 @@ Today (this commit):
   calling `from_bytes_<Inner>` on the read side.
 - Enum variants whose payload fields are any of the above
   (primitives, lists, nested @marshal structs — all work).
+- **Optional `T?`** — a presence bool, then the inner `T` written
+  through the shared per-value dispatch only when present. So a
+  present value round-trips and an absent one stays `null` (previously
+  a present optional was silently dropped to `null`). The inner may be
+  any supported type — primitive, nested struct, or list. An optional
+  over an *unsupported* inner (e.g. `Map?`) degrades to the same
+  lossy-skip as an unsupported non-optional field, so it still
+  compiles rather than erroring.
 
 Open (separate sub-tickets):
 
 - `Map<K, V>` — key/value iteration; v1.0 may be intentionally
   excluded per the parent ticket.
-- Nullable `T?` — blocked on `TypeExpr.Optional` being preserved in
-  `ValueType` (currently lowered to `T`).
 
 ## Examples
 
