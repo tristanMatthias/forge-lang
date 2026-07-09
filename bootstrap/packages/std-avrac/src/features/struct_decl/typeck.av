@@ -92,6 +92,36 @@ export fn check_struct_lit_fields(tc: TC, receiver_ty: ValueType, name: string, 
     acc
 }
 
+/// F1005: a FULL struct literal `P { … }` must give every declared field a
+/// value — Avra is fully static (spec Axis 1-8), so an omitted field cannot
+/// silently zero-fill (it would read null/0 at runtime). Callers use this ONLY
+/// for full literals; a `with` update is intentionally partial and must never
+/// reach here. Skips unknown structs (empty field list) — name resolution and
+/// `check_struct_lit_fields` handle those.
+export fn check_struct_lit_complete(tc: TC, name: string, inits: List<FieldInit>) -> TC {
+    let fields = struct_type_lookup(tc.structs, name)
+    if fields.length == 0 { return tc }
+    mut missing: List<string> = []
+    mut i = 0
+    while i < fields.length {
+        if !inits_have_field(inits, fields[i].name) { missing.push(fields[i].name) }
+        i = i + 1
+    }
+    if missing.length == 0 { return tc }
+    let joined = missing.join(", ")
+    tc_report(tc, DiagCode.MissingStructFields, "struct literal for `${name}` is missing field(s): ${joined}")
+}
+
+/// True iff some init in `inits` names field `fname`.
+fn inits_have_field(inits: List<FieldInit>, fname: string) -> bool {
+    mut i = 0
+    while i < inits.length {
+        if inits[i].name == fname { return true }
+        i = i + 1
+    }
+    false
+}
+
 /// Validate ONE field's value against its declared type: a string↔non-string
 /// scalar mismatch (numeric/bool interchange tolerated — the bootstrap stores
 /// bools in int fields) OR a generic-arg layout conflict (`Box<int>` into a

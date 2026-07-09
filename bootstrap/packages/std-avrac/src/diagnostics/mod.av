@@ -205,6 +205,12 @@ export enum DiagCode {
     /// type (`GenOpt<int>`) or make the function generic over the
     /// missing parameter (`fn f<T>(x: GenOpt<T>)`).
     UnderAppliedGeneric
+    /// F1005 — a struct literal `P { … }` that omits one or more of the
+    /// type's declared fields. Avra is fully static (spec Axis 1-8): every
+    /// field must be given a value — there is no silent zero-fill, which
+    /// would leave the omitted field reading null/0 at runtime. (A `with`
+    /// update `p with { … }` is intentionally partial and is NOT gated.)
+    MissingStructFields
     /// F1043 — method call on a receiver whose type has no such
     /// method. The message lists the receiver's available methods.
     UnknownMethod
@@ -401,6 +407,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
         .UnderAppliedGeneric -> ErrorDef { code: "F1004", help: "apply the type's arguments (`Foo<int>`), or make the function generic over the missing parameter (`fn f<T>(x: Foo<T>)`)" }
+        .MissingStructFields -> ErrorDef { code: "F1005", help: "give every declared field a value — Avra has no silent zero-fill; for a partial change to an existing value use `x with { field: … }`" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
