@@ -3805,6 +3805,23 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
         let qualified = method_mangled_name(type_name, method)
         let r = fn_type_get(checked_args.fns, qualified)
         if r.found {
+            // Gate method-call arity. The free-fn path (tc_check_fn_call_with)
+            // checks arity first; this user-defined-method path only gated arg
+            // TYPES, so a wrong-arity method call (`obj.m(1)` on `fn T__m(self,
+            // a, b)`) slipped past typeck and reached codegen — the LLVM verifier
+            // catches it on a direct call ("Incorrect number of arguments") but a
+            // module-scoped/indirect dispatch SIGSEGVs on the garbage extra slot
+            // (qm8l). `params[0]` is `self` (dispatch-bound); user args align with
+            // `params[1..]`, so the visible arity is `params.length - 1` (read
+            // directly — allocating `method_params_without_self` just for its
+            // length would double the per-call list build the gate below does).
+            let expected_args = if r.params.length > 0 { r.params.length - 1 } else { 0 }
+            let actual_args = tc_count_args(args)
+            if expected_args != actual_args {
+                let s = if expected_args != 1 { "s" } else { "" }
+                let msg = "`${type_name}.${method}` expects ${string(expected_args)} argument${s}, got ${string(actual_args)}"
+                return tc_er(tc_report(checked_args, DiagCode.WrongArgCount, msg), r.ret_ty)
+            }
             // y9y4.16: for generic methods (fn Type__name<S>(self, ...)),
             // substitute S from the user-visible args before returning
             // ret_ty. params[0] is `self`; user-visible args align with

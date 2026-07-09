@@ -1,0 +1,104 @@
+// WHY: qm8l — a wrong-arity call must be a compile-time F1001, never a codegen
+// surprise. Two gaps closed here:
+//   1. spec/given/then bodies typecheck their calls like fn bodies, so a
+//      wrong-arity FREE-fn call in a `then` is F1001 (it used to slip through
+//      and SIGSEGV at runtime via the indirect/closure-marker dispatch path).
+//   2. METHOD calls are arity-gated at all — the free-fn path checked arity
+//      first, but the user-defined-method path only gated arg TYPES, so
+//      `obj.m(1)` on `fn T__m(self, a, b)` reached codegen (the LLVM verifier
+//      catches a direct call, but a module-scoped/indirect dispatch SIGSEGVs on
+//      the garbage extra slot). The gate lives in check_method_call, so it fires
+//      in fn bodies AND spec/given/then bodies alike.
+// Negative cases assert F1001 via `bs2 check` (typeck-only — no codegen, so no
+// dependence on the e35y spec-block compile crash). Positive controls run LIVE
+// below: a false positive would break this file's own compile.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn arity_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_arity_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "wrong-arity calls are F1001, in fn bodies and spec/then bodies (qm8l)" {
+    then "a wrong-arity FREE-fn call in a then is F1001" {
+        let out = arity_out("free_then", "fn three(a: int, b: string, c: int) -> int { a + c }
+spec \"s\" { then \"t\" { three(1, \"hi\") == 2 } }")
+        out.contains("F1001")
+    }
+    then "a wrong-arity METHOD call in a then is F1001" {
+        let out = arity_out("method_then", "type Calc = { base: int }
+impl Calc { fn add(self, a: int, b: int) -> int { self.base + a + b } }
+spec \"s\" { then \"t\" {
+    let c = Calc { base: 1 }
+    c.add(2) == 3
+} }")
+        out.contains("F1001")
+    }
+    then "a wrong-arity METHOD call in a plain fn body is F1001 (parity)" {
+        let out = arity_out("method_fn", "type Calc = { base: int }
+impl Calc { fn add(self, a: int, b: int) -> int { self.base + a + b } }
+fn use_it() -> int { let c = Calc { base: 1 }  c.add(2) }
+fn main() { let _ = use_it() }")
+        out.contains("F1001")
+    }
+    then "a wrong-arity call in a given SETUP statement is F1001" {
+        let out = arity_out("given_setup", "fn three(a: int, b: string, c: int) -> int { a + c }
+spec \"s\" { given \"g\" {
+    let x = three(1, \"hi\")
+    then \"t\" { x == 2 }
+} }")
+        out.contains("F1001")
+    }
+    then "too MANY method args is also F1001 (not only too few)" {
+        let out = arity_out("method_over", "type Calc = { base: int }
+impl Calc { fn add(self, a: int, b: int) -> int { self.base + a + b } }
+spec \"s\" { then \"t\" {
+    let c = Calc { base: 1 }
+    c.add(2, 3, 4) == 6
+} }")
+        out.contains("F1001")
+    }
+    then "passing an arg to a no-arg (self-only) method is F1001 (expected 0)" {
+        let out = arity_out("method_zero", "type Box = { v: int }
+impl Box { fn get(self) -> int { self.v } }
+spec \"s\" { then \"t\" {
+    let b = Box { v: 5 }
+    b.get(9) == 5
+} }")
+        out.contains("F1001")
+    }
+}
+
+// Positive controls — correct-arity free-fn and method calls, in a fn body and
+// a then. These run live; a false positive from the arity gate would break this
+// file's own compile.
+type Vec2 = { x: int, y: int }
+impl Vec2 {
+    fn dot(self, other: Vec2) -> int { self.x * other.x + self.y * other.y }
+    fn scaled(self, k: int) -> Vec2 { Vec2 { x: self.x * k, y: self.y * k } }
+    fn sum(self) -> int { self.x + self.y }
+}
+
+fn add3(a: int, b: int, c: int) -> int { a + b + c }
+
+spec "correct-arity calls are NOT rejected (qm8l control)" {
+    then "a correct-arity free-fn call works" {
+        add3(1, 2, 3) == 6
+    }
+    then "a correct-arity method call (one arg) works" {
+        let v = Vec2 { x: 2, y: 3 }
+        v.scaled(2).x == 4
+    }
+    then "a correct-arity method call (struct arg) works" {
+        let a = Vec2 { x: 1, y: 2 }
+        let b = Vec2 { x: 3, y: 4 }
+        a.dot(b) == 11
+    }
+    then "a correct-arity no-arg (self-only) method call works" {
+        let v = Vec2 { x: 2, y: 3 }
+        v.sum() == 5
+    }
+}
