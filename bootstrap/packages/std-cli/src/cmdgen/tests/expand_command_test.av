@@ -53,6 +53,36 @@ fn eg_expand(run_body: string) -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
+// Expand a command declaring one `flag`/`arg` child, whose run body
+// references both by their declared names.
+fn eg_expand_flags() -> string {
+    let path = "/tmp/avra_expand_command_flags_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult}\n" +
+        "use @std.cli.cmdgen.{expand_command}\n" +
+        "\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {\n" +
+        "}\n" +
+        "component flag {\n" +
+        "}\n" +
+        "component arg {\n" +
+        "}\n" +
+        "\n" +
+        "command build {\n" +
+        "    flag xflagq {}\n" +
+        "    arg yargq {}\n" +
+        "    fn run(args: CliResult) -> int {\n" +
+        "        if xflagq { return 1 }\n" +
+        "        return yargq.length\n" +
+        "    }\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
 spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {
     then "command build expands to type Command_build + a Runnable impl for it" {
         let out = eg_expand("return 42")
@@ -67,5 +97,17 @@ spec "expand_command generates a per-instance type + Runnable impl (Components V
         let out = eg_expand("return 31337")
         out.contains("31337")
             && out.contains("Command_build__run")
+    }
+    then "declared flag/arg children become result_has_flag / result_get_arg bindings in run" {
+        // Each `flag x {}` / `arg y {}` prepends a
+        // `let x = result_has_flag(args, "x")` / `let y =
+        // result_get_arg(args, "y")` accessor local to the run body, so
+        // the user body references them by name. The exact call
+        // substrings appear ONLY in the generated bindings — the macro
+        // source splices the name via `"\"" + fname + "\""`, never these
+        // literals, and the `command build` block is consumed by @expand.
+        let out = eg_expand_flags()
+        out.contains("result_has_flag(args, \"xflagq\")")
+            && out.contains("result_get_arg(args, \"yargq\")")
     }
 }

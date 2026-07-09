@@ -13,42 +13,60 @@
 // sidestep all three. `Stmt.Impl` encodes a trait impl as the
 // "Trait:Type" name form the parser uses.
 //
-// SCOPE: MVP — the type, the impl, and name()/run() carrying the user's
-// run body verbatim. Flag/arg let-bindings (result_has_flag / get_arg
-// bound as run-body locals) are the next increment. Registration
-// (`@expand(expand_command) component command`) is deferred to vez6.12:
-// packages/cli/src/main.av still defines `component command` inline, so
-// registering it in the lib would double-register. Ships as an exported
-// @comptime fn; consumers/tests attach it via @expand themselves.
+// SCOPE: generates `type Command_<inst>` + `impl Runnable for
+// Command_<inst>` with name()/run(). The run body is the declared
+// flag/arg accessor bindings (a `flag x {}` → `let x =
+// @std::cli::result_has_flag(args, "x")`, an `arg y {}` → `let y =
+// @std::cli::result_get_arg(args, "y")`, callees emitted fully qualified
+// so they resolve without the consumer importing them) followed by the
+// user's run body verbatim. Registration (`@expand(expand_command)
+// component command`) is deferred to vez6.12: packages/cli/src/main.av
+// still defines `component command` inline, so registering it in the lib
+// would double-register. Ships as an exported @comptime fn; consumers /
+// tests attach it via @expand themselves. Still TODO for full §4.2
+// parity: config fields (`description`) on the generated type + parent
+// (cli) global-flag inheritance — landing with expand_cli.
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
 
 use @std.avrac.core.{Stmt, Expr, ValueType, ParamEntry, TypeParamEntry, FieldEntry}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
 
-/// Expand a `command <inst> { … fn run(args: CliResult) -> int { … } }`
-/// instance into `[type Command_<inst>, impl Runnable for Command_<inst>]`.
-/// The generated `run` carries the user's run body verbatim; `name`
-/// returns the instance's `name` field. Emits names (`Runnable`,
-/// `CliResult`) that resolve in the consumer's scope.
+/// Expand a `command <inst> { flag…/arg… fn run(args: CliResult) -> int
+/// { … } }` instance into `[type Command_<inst>, impl Runnable for
+/// Command_<inst>]`. The generated `run` prepends one accessor binding
+/// per declared `flag`/`arg` child (`let <flag> =
+/// @std::cli::result_has_flag(args, "<flag>")`, `let <arg> =
+/// @std::cli::result_get_arg(args, "<arg>")`) then carries the user's run
+/// body verbatim; `name` returns the instance's `name` field. Emits names
+/// (`Runnable`, `CliResult`) that resolve in the consumer's scope.
 @comptime
 export fn expand_command(s: Stmt) -> List<Stmt> {
-    // Single body-walk: read the instance name and the run method body
-    // in ONE pass (calling two list-returning @comptime helpers in
-    // sequence trips the evaluator — rmzs gap 3).
+    // Single body-walk: read the instance name, the declared flag/arg
+    // child names, and the run method body in ONE pass (calling several
+    // list-returning @comptime helpers in sequence trips the evaluator
+    // — rmzs gap 3, so we inline the traversal instead of reusing
+    // comp_children / comp_instance_name).
     mut inst = ""
     mut run_body: List<Stmt> = []
+    mut flag_names: List<string> = []
+    mut arg_names: List<string> = []
     match s {
         .ComponentBlock(_, instance, _, body) -> {
             inst = instance
             for id in body {
-                match synth_deref_stmt(id) {
+                let child = synth_deref_stmt(id)
+                match child {
                     .Function(fname, _, _, _, fbody) -> {
                         if fname == "run" {
                             for bid in fbody {
                                 run_body.push(synth_deref_stmt(bid))
                             }
                         }
+                    }
+                    .ComponentBlock(cn, cinst, _, _) -> {
+                        if cn == "flag" { flag_names.push(cinst) }
+                        if cn == "arg" { arg_names.push(cinst) }
                     }
                     _ -> {}
                 }
@@ -68,9 +86,36 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
     let ret_name = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "name")))
     let name_fn = Stmt.Function("name", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_name]))
 
-    // fn run(self, args: CliResult) -> int { <user run body> }
+    // fn run(self, args: CliResult) -> int { <flag/arg bindings> <user run body> }
+    //
+    // Prepend one accessor local per declared child (design §4.2): a
+    // `flag x {}` becomes `let x = result_has_flag(args, "x")` (bool),
+    // an `arg y {}` becomes `let y = result_get_arg(args, "y")` (string),
+    // so the user's run body references each by its declared name. String
+    // literals carry their delimiting quotes (the parser's Expr.String
+    // convention). The macro-introduced binding must be visible to the
+    // user body, so it is intentionally NOT hygienically renamed.
+    // The accessor callees are emitted FULLY QUALIFIED so the generated
+    // run body resolves in ANY consumer's scope — a library macro must
+    // not require the consumer to import std-cli's internal helpers.
     let args_p = ParamEntry { name: "args", vtype: cli_ty }
-    let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(run_body))
+    mut full_run: List<Stmt> = []
+    for fname in flag_names {
+        let callee = synth_expr_id(Expr.QualifiedIdent("@std::cli::result_has_flag"))
+        let a_arg = synth_expr_id(Expr.Ident("args"))
+        let a_name = synth_expr_id(Expr.String("\"" + fname + "\""))
+        let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
+        full_run.push(Stmt.Let(fname, ValueType.Bool, call))
+    }
+    for aname in arg_names {
+        let callee = synth_expr_id(Expr.QualifiedIdent("@std::cli::result_get_arg"))
+        let a_arg = synth_expr_id(Expr.Ident("args"))
+        let a_name = synth_expr_id(Expr.String("\"" + aname + "\""))
+        let call = synth_expr_id(Expr.Call(callee, [a_arg, a_name]))
+        full_run.push(Stmt.Let(aname, ValueType.Str, call))
+    }
+    for st in run_body { full_run.push(st) }
+    let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(full_run))
 
     // impl Runnable for Command_<inst> { name; run }  ("Trait:Type" form)
     let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn]))
