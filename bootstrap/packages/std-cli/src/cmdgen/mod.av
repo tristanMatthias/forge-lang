@@ -74,6 +74,20 @@ fn name_in(names: List<string>, name: string) -> bool {
     false
 }
 
+/// A `return [<names as string literals>]` statement — the body of a
+/// generated `flag_names()` / `arg_names()` accessor. Each name becomes
+/// an `Expr.String` (carrying its delimiting quotes, the parser's
+/// convention) inside an `Expr.ListLit`, so the schema `App.run` parses
+/// against is baked from the declared children at expansion time.
+@comptime
+fn string_list_return(names: List<string>) -> Stmt {
+    mut elems: List<ExprId> = []
+    for n in names {
+        elems.push(synth_expr_id(Expr.String("\"" + n + "\"")))
+    }
+    Stmt.Return(synth_expr_id(Expr.ListLit(elems)))
+}
+
 /// Core command-decl generation, shared by expand_command (standalone)
 /// and expand_cli. `extra_flags` are inherited global-flag names (the
 /// parent cli's flags — design §4.2 parent_chain_flags); each is bound
@@ -143,8 +157,27 @@ fn build_command_decls(s: Stmt, extra_flags: List<string>) -> List<Stmt> {
     for st in run_body { full_run.push(st) }
     let run_fn = Stmt.Function("run", empty_tp, [self_p, args_p], ValueType.Int, synth_stmt_ids(full_run))
 
-    // impl Runnable for Command_<inst> { name; run }  ("Trait:Type" form)
-    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn]))
+    // Schema accessors so App.run can parse raw argv against this command
+    // through its `dyn Runnable` box: flag_names() = own flags + inherited
+    // globals (deduped, the same set the run bindings use); arg_names() =
+    // positionals in declaration order; description() reads the stamped
+    // field. The name lists are baked as string literals at expansion.
+    mut all_flag_names: List<string> = []
+    for gname in extra_flags {
+        if !name_in(flag_names, gname) && !name_in(arg_names, gname) {
+            all_flag_names.push(gname)
+        }
+    }
+    for fname in flag_names { all_flag_names.push(fname) }
+    let str_list_vt = ValueType.List(ValueType.Str)
+    let flag_names_fn = Stmt.Function("flag_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(all_flag_names)]))
+    let arg_names_fn = Stmt.Function("arg_names", empty_tp, [self_p], str_list_vt, synth_stmt_ids([string_list_return(arg_names)]))
+    let ret_desc = Stmt.Return(synth_expr_id(Expr.FieldAccess(synth_expr_id(Expr.Ident("self")), "description")))
+    let description_fn = Stmt.Function("description", empty_tp, [self_p], ValueType.Str, synth_stmt_ids([ret_desc]))
+
+    // impl Runnable for Command_<inst> { name; run; flag_names; arg_names;
+    // description }  ("Trait:Type" form)
+    let impl_stmt = Stmt.Impl("Runnable:" + tn, synth_stmt_ids([name_fn, run_fn, flag_names_fn, arg_names_fn, description_fn]))
 
     // type Command_<inst> = { name: string, description: string }
     // (`description` carries the block's `description "…"` config; the

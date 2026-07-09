@@ -88,9 +88,24 @@ export type Cli = {
 /// the parsed argv to pick a command; `run()` executes its body
 /// with the resolved flags / args / options bound as locals (the
 /// macro author handles that lowering — see expand_command).
+///
+/// `flag_names` / `arg_names` / `description` make each command
+/// SELF-DESCRIBING so `App.run` can parse raw argv against the right
+/// schema through the `dyn Runnable` boxes — the per-command flag/arg
+/// schema is otherwise unreachable at parse time (the schema lives
+/// baked into the run body's accessor calls). `flag_names` returns the
+/// command's own flags plus any inherited global flags (WITHOUT
+/// dashes); `arg_names` returns the positional args in declaration
+/// order (so raw positionals map to names); `description` is the
+/// one-line help text (may be ""). expand_command generates all three
+/// from the declared children; hand-written commands return `[]`/`""`
+/// when they take no flags/args.
 export trait Runnable {
     fn name(self) -> string
     fn run(self, args: CliResult) -> int
+    fn flag_names(self) -> List<string>
+    fn arg_names(self) -> List<string>
+    fn description(self) -> string
 }
 
 /// V2 dispatch container (vez6.11). Parallels the design's `Cli`
@@ -118,6 +133,108 @@ impl App {
             }
         }
         1
+    }
+
+    /// Parse a pre-read argv (the command name followed by its args —
+    /// NOT the program name) against the matched command's own schema,
+    /// then dispatch. `--help`/`-h` and `--version`/`-V` in the command
+    /// slot are handled here (print + return 0). Returns the command's
+    /// exit code, or 1 when the slot is empty or no command matches
+    /// (after printing help). The command's `flag_names()`/`arg_names()`
+    /// give the schema the classifier needs, so raw `--flag` tokens and
+    /// positionals resolve to the same names the run body reads via
+    /// `result_has_flag`/`result_get_arg`. Split out from `run` so the
+    /// whole parse+dispatch path is testable with a synthetic argv list.
+    fn run_argv(self, argv: List<string>) -> int {
+        if argv.length == 0 {
+            app_print_help(self)
+            return 1
+        }
+        let first = argv[0]
+        if first == "--help" || first == "-h" {
+            app_print_help(self)
+            return 0
+        }
+        if first == "--version" || first == "-V" {
+            println("${self.name} v${self.version}")
+            return 0
+        }
+        for cmd in self.commands {
+            if cmd.name() == first {
+                mut tokens: List<string> = []
+                mut i = 1
+                while i < argv.length {
+                    tokens.push(argv[i])
+                    i = i + 1
+                }
+                let no_options: List<OptionDef> = []
+                let parsed = parse_tokens(first, flag_defs_for(cmd.flag_names()),
+                                          no_options, arg_defs_for(cmd.arg_names()), tokens)
+                // Reject a mis-parsed invocation (e.g. an undeclared
+                // `--flag`) instead of silently dispatching it — a real CLI
+                // reports the error and stops.
+                if result_has_error(parsed) {
+                    eprintln(parsed.error)
+                    return 1
+                }
+                return cmd.run(parsed)
+            }
+        }
+        app_print_help(self)
+        1
+    }
+
+    /// Read the real process argv (dropping the program name at index 0)
+    /// and run. Thin glue over `run_argv` — all the parse/dispatch logic
+    /// lives there so it can be tested without a live process.
+    fn run(self) -> int {
+        let argc = avra_selfhost_argc()
+        mut argv: List<string> = []
+        mut i = 1
+        while i < argc {
+            argv.push(avra_selfhost_get_arg_cstr(i))
+            i = i + 1
+        }
+        self.run_argv(argv)
+    }
+}
+
+/// Build the classifier's dashed `FlagDef` schema from bare flag names
+/// (`vq` → `--vq`), so `is_flag_match` recognises `--vq` on argv and the
+/// resulting `ParsedFlag` is named `vq` (what `result_has_flag` reads).
+fn flag_defs_for(names: List<string>) -> List<FlagDef> {
+    mut out: List<FlagDef> = []
+    for n in names {
+        out.push(FlagDef { name: "--" + n, short: "", description: "" })
+    }
+    out
+}
+
+/// Build the classifier's positional `ArgDef` schema (in declaration
+/// order) from bare arg names, so positional N resolves to its declared
+/// name (what `result_get_arg` reads).
+fn arg_defs_for(names: List<string>) -> List<ArgDef> {
+    mut out: List<ArgDef> = []
+    for n in names {
+        out.push(ArgDef { name: n, description: "", required: false })
+    }
+    out
+}
+
+/// App-level `--help`: name/version, optional description, usage, and
+/// the command list with each command's one-line description.
+fn app_print_help(app: App) {
+    println("${app.name} v${app.version}")
+    if app.description != "" {
+        println(app.description)
+    }
+    println("")
+    println("USAGE:")
+    println("  ${app.name} <command> [options]")
+    println("")
+    println("COMMANDS:")
+    for cmd in app.commands {
+        println("  ${cmd.name()}  ${cmd.description()}")
     }
 }
 
@@ -276,18 +393,33 @@ fn find_command(cmds: List<CommandDef>, name: string) -> CommandDef? {
 
 /// Walk argv from `start_idx` to `argc`, classifying each token as
 /// a flag (`--name`/`-s`), an option (`--key=value`), or a
-/// positional. Builds the CliResult containing every match.
+/// positional. Reads the real process argv via the selfhost extern;
+/// the classification itself lives in `parse_tokens` so both this
+/// legacy path and the Components V2 `App.run` path share one parser.
 fn parse_args(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>, args: List<ArgDef>,
               start_idx: int, argc: int) -> CliResult {
+    mut tokens: List<string> = []
+    for i in start_idx..argc {
+        tokens.push(avra_selfhost_get_arg_cstr(i))
+    }
+    parse_tokens(cmd_name, flags, options, args, tokens)
+}
+
+/// The argv classifier, decoupled from the process: given already-read
+/// `tokens`, build the CliResult. Each token is a flag (`--name`/`-s`),
+/// an option (`--key=value`), or a positional (mapped to the arg schema
+/// by declaration order). Shared by `parse_args` (legacy, reads real
+/// argv) and `App.run_argv` (Components V2, testable with synthetic
+/// argv) so there is a single classification code path.
+fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>, args: List<ArgDef>,
+                tokens: List<string>) -> CliResult {
     mut parsed_flags: List<ParsedFlag> = []
     mut parsed_options = init_option_defaults(options)
     mut parsed_args: List<ParsedArg> = []
     mut positional_idx = 0
     mut error = ""
 
-    for i in start_idx..argc {
-        let arg = avra_selfhost_get_arg_cstr(i)
-
+    for arg in tokens {
         if arg.starts_with("--") || (arg.starts_with("-") && arg.length > 1) {
             // Check if it's a flag
             if is_flag_match(flags, arg) {
