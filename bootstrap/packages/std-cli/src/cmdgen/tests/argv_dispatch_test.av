@@ -84,6 +84,7 @@ fn ad_src() -> string {
     "    println(\"J=\" + string(toy.run_argv([\"pack\", \"--outfile=result\"])))\n" +
     "    println(\"K=\" + string(toy.run_argv([\"pack\"])))\n" +
     "    println(\"M=\" + string(toy.run_argv([\"build\", \"--help\"])))\n" +
+    "    println(\"N=\" + string(toy.run_argv([\"clean\", \"--help\"])))\n" +
     "}\n" +
     "\n" +
     "fn ad_empty() -> List<string> {\n" +
@@ -173,5 +174,14 @@ spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispa
         out.contains("M=0")
             && out.contains("--verbose")
             && out.contains("target")
+    }
+    then "per-command --help for a command with no flags/args/options prints cleanly, exit 0" {
+        // `clean` declares no flags/args/options, so cmd_print_help runs
+        // print_named_section three times, each hitting the empty
+        // short-circuit (no FLAGS/OPTIONS/ARGS block). It must still print
+        // the command header and return 0 — a schema-less command's help is
+        // a clean no-section page, not a crash or a stray empty header.
+        let out = ad_run()
+        out.contains("N=0")
     }
 }

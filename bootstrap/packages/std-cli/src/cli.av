@@ -153,7 +153,7 @@ impl App {
             return 1
         }
         let first = argv[0]
-        if first == "--help" || first == "-h" {
+        if is_help_flag(first) {
             app_print_help(self)
             return 0
         }
@@ -163,34 +163,37 @@ impl App {
         }
         for cmd in self.commands {
             if cmd.name() == first {
-                mut tokens: List<string> = []
-                mut i = 1
-                while i < argv.length {
-                    tokens.push(argv[i])
-                    i = i + 1
-                }
-                // `<cmd> --help` prints the command's own usage (its
-                // flags/args/options + description) rather than parsing
-                // `--help` as an undeclared flag.
-                if tokens_have_help(tokens) {
-                    cmd_print_help(self, cmd)
-                    return 0
-                }
-                let parsed = parse_tokens(first, flag_defs_for(cmd.flag_names()),
-                                          option_defs_for(cmd.option_names()),
-                                          arg_defs_for(cmd.arg_names()), tokens)
-                // Reject a mis-parsed invocation (e.g. an undeclared
-                // `--flag`) instead of silently dispatching it — a real CLI
-                // reports the error and stops.
-                if result_has_error(parsed) {
-                    eprintln(parsed.error)
-                    return 1
-                }
-                return cmd.run(parsed)
+                return self.run_matched(cmd, argv)
             }
         }
         app_print_help(self)
         1
+    }
+
+    /// Parse the args of an already-matched command (`argv` = the command
+    /// name followed by its args) against the command's schema and dispatch.
+    /// `<cmd> --help` short-circuits to the command's own usage; a parse
+    /// error (e.g. an undeclared `--flag`) is reported and stops dispatch —
+    /// a real CLI doesn't silently run a mis-parsed invocation.
+    fn run_matched(self, cmd: dyn Runnable, argv: List<string>) -> int {
+        mut tokens: List<string> = []
+        mut i = 1
+        while i < argv.length {
+            tokens.push(argv[i])
+            i = i + 1
+        }
+        if tokens_have_help(tokens) {
+            cmd_print_help(self, cmd)
+            return 0
+        }
+        let parsed = parse_tokens(cmd.name(), flag_defs_for(cmd.flag_names()),
+                                  option_defs_for(cmd.option_names()),
+                                  arg_defs_for(cmd.arg_names()), tokens)
+        if result_has_error(parsed) {
+            eprintln(parsed.error)
+            return 1
+        }
+        cmd.run(parsed)
     }
 
     /// Read the real process argv (dropping the program name at index 0)
@@ -260,10 +263,17 @@ fn app_print_help(app: App) {
     }
 }
 
-/// True iff `--help` or `-h` appears among a command's argv tokens.
+/// True iff `s` is the help flag in either spelling (`--help` / `-h`).
+/// One place so the two request points — the top-level command slot and a
+/// command's own tokens — can't drift.
+fn is_help_flag(s: string) -> bool {
+    s == "--help" || s == "-h"
+}
+
+/// True iff the help flag appears among a command's argv tokens.
 fn tokens_have_help(tokens: List<string>) -> bool {
     for t in tokens {
-        if t == "--help" || t == "-h" { return true }
+        if is_help_flag(t) { return true }
     }
     false
 }
