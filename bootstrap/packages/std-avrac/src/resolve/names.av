@@ -704,13 +704,7 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)  // ids resolved in the list walker
-        .TypePattern(_, binding) -> {
-            // list_push_copy avoids mutating the parent ctx's
-            // locals — same leak-prevention reasoning as
-            // bind_params_ctx's docstring.
-            let new_locals = list_push_copy(ctx.locals, LocalBinding { name: binding, mutable: false, defined: true, depth: 0 })
-            ctx_with_locals(ctx, new_locals)
-        }
+        .TypePattern(_, binding) -> scope_add_local(ctx, binding)
         _ -> ctx
     }
 }
