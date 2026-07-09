@@ -36,6 +36,28 @@ enum Wrap { W(v: List<Box<string>>), N }
 fn main() { let e: Wrap = Wrap.W([Box { val: 9 }]) }")
         out.contains("F1000")
     }
+    // t8ny: the gate must be position-independent — a wrong-layout payload
+    // reaching the ctor via a fn RETURN (not an annotated local or a literal)
+    // must be F1000 too. `List<Node>` (ptr elements) into a `List<int>` field is
+    // the scalar↔ptr element conflict `generic_args_layout_conflict` catches. This
+    // used to be caught only when the value was an annotated local, letting the
+    // fn-return form compile and crash at runtime (SExpr ptrs read as ExprId ints).
+    then "a conflict reaching the ctor via a fn RETURN arg is F1000 (t8ny)" {
+        let out = ec_out("type Node = { x: int }
+enum Wrap { W(ids: List<int>), N }
+fn ptrs() -> List<Node> { [Node { x: 1 }] }
+fn main() { let e: Wrap = Wrap.W(ptrs()) }")
+        out.contains("F1000")
+    }
+    then "the same conflict via an annotated local is also F1000 (t8ny control)" {
+        let out = ec_out("type Node = { x: int }
+enum Wrap { W(ids: List<int>), N }
+fn main() {
+    let arg: List<Node> = [Node { x: 1 }]
+    let e: Wrap = Wrap.W(arg)
+}")
+        out.contains("F1000")
+    }
 }
 
 spec "valid enum-ctor payloads still compile (q6p4 — no false positives)" {
