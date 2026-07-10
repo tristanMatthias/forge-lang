@@ -164,6 +164,35 @@ fn vtype_is_int(vt: ValueType) -> bool {
     }
 }
 
+/// `ValueType.Bool` — the JIT can fold a bool-returning `@comptime` fn
+/// (ps3t.5.2.1): comparison / logical bodies are already `body_jit_safe`, and
+/// the i1 result rides back in the low bit of the i64 return register, so it
+/// renders byte-identically to the interpreter's `Expr.Bool`.
+fn vtype_is_bool(vt: ValueType) -> bool {
+    match vt {
+        .Bool -> true
+        _ -> false
+    }
+}
+
+/// Canonicalise a nominal scalar type to its primitive ValueType. `run_comptime`
+/// runs BEFORE the typechecker, so a declared `-> bool` return is still
+/// `Struct("bool")`, not `Bool` (unlike `int`, which the parser already emits as
+/// `Int`). Both the JIT type gate AND the JIT codegen — which maps the fn's
+/// declared return type to an LLVM type — must see the canonical primitive, or
+/// codegen emits the wrong return type and the JIT hands back garbage. Only the
+/// scalar primitives the JIT marshals are canonicalised; anything else passes
+/// through untouched (→ interpreter fallback).
+fn canon_scalar_vtype(vt: ValueType) -> ValueType {
+    match vt {
+        .Struct(name, _, _) -> {
+            if name == "bool" { ValueType.Bool } else if name == "int" { ValueType.Int } else { vt }
+        }
+        .Newtype(_, inner, _) -> canon_scalar_vtype(inner)
+        _ -> vt
+    }
+}
+
 /// Try to evaluate `fn_def(arg_values)` by compiling the fn to machine code and
 /// running it in-process, returning the result as a literal `Expr.Number`.
 /// Returns null (→ interpreter fallback) unless EVERY safety gate holds, because
@@ -172,7 +201,13 @@ fn vtype_is_int(vt: ValueType) -> bool {
 /// resolved in the single-fn module. The gates keep the JIT to pure scalar-int
 /// arithmetic whose result is byte-identical to the interpreter's.
 fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
-    if !vtype_is_int(fn_def.ret_ty) { return null }
+    // Canonicalise the (possibly still-nominal, pre-typecheck) return type. The
+    // JIT-call ABI carries back a scalar the i64 return register can hold: Int
+    // (i64) or Bool (i1 in the low bit). Float (double, in an FP register the ABI
+    // doesn't read) and String/ptr (dangles past the engine dispose) stay on the
+    // interpreter — ps3t.5.2.1 follow-ups.
+    let ret = canon_scalar_vtype(fn_def.ret_ty)
+    if !vtype_is_int(ret) && !vtype_is_bool(ret) { return null }
     let argc = arg_values.length
     if argc != fn_def.params.length { return null }
     if argc > 4 { return null }              // avra_llvm_jit_call arity ceiling
@@ -201,15 +236,31 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
     // its fn, even repeated calls to the same helper. Fine for the first cut
     // (correctness before speed); caching the compiled fn keyed on identity is
     // ps3t.5.5. The interpreter fallback bounds the blast radius until then.
+    // Codegen the JIT fn with the CANONICAL return type so it emits the right
+    // LLVM return (`ret i1` for bool, `ret i64` for int) — feeding the nominal
+    // `Struct("bool")` here would emit a struct/ptr return and hand back garbage.
     let empty_tp: List<TypeParamEntry> = []
-    let fn_stmt_id = reg.runtime.nodes.add_stmt_leaf(Stmt.Function(fn_def.name, empty_tp, fn_def.params, fn_def.ret_ty, fn_def.body))
+    let fn_stmt_id = reg.runtime.nodes.add_stmt_leaf(Stmt.Function(fn_def.name, empty_tp, fn_def.params, ret, fn_def.body))
     let only: List<StmtId> = [fn_stmt_id]
     let folded = match compile_and_jit_call(only, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
-        .Ok(v) -> maybe_number(render_number(v))
+        .Ok(v) -> render_jit_scalar(ret, v)
         .Err(_) -> null
     }
     avra_i64_buf_free(argv)
     folded
+}
+
+/// Render a JIT scalar return byte-identically to the interpreter's
+/// `value_to_expr`: Int → `Expr.Number` (the `value_number(render_number)`
+/// shape); Bool → `Expr.Bool` from the i1 in the return's low bit (`v & 1` — an
+/// i1 return leaves the upper bits undefined). Both mirror the exact literal the
+/// tree-walker produces, so a JIT fold and an interpreter fold are
+/// indistinguishable to diff-test.
+fn render_jit_scalar(ret_ty: ValueType, v: int) -> Expr? {
+    if vtype_is_bool(ret_ty) {
+        return Expr.Bool(if (v & 1) != 0 { "true" } else { "false" })
+    }
+    maybe_number(render_number(v))
 }
 
 /// Wrap a rendered integer literal as an `Expr.Number` — the same shape
