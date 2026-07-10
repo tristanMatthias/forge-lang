@@ -269,8 +269,8 @@ type StructListHelpers = { spanned: string, rebuild: string }
 /// Dispatch table: the extract + rebuild helpers for a `List<Struct>` whose
 /// element is a registered walkable node-container, keyed by the struct's short
 /// name. `spanned == ""` ⇒ not registered (the field stays Scalar). One entry per
-/// struct type (+ its two @std helpers); mirrors the `anynode_ctor` /
-/// `spanned_one_wrapper_fn` name-dispatch style, not a content heuristic. Keying
+/// struct type (+ its two @std helpers); mirrors the `anynode_ctor`
+/// name-dispatch style, not a content heuristic. Keying
 /// on the short name is safe because `classify_field_crosstype` only reaches this
 /// table for an element in the SAME MODULE as the derived enum (its same-module
 /// gate) — a foreign type sharing the short name never routes here.
@@ -789,53 +789,15 @@ fn helper_call(fn_name: string, arg: Expr) -> Expr {
     wc_call(Expr.Ident(fn_name), args)
 }
 
-/// The `spanned_one_*` helper for a single WRAPPER child, by target kind.
-/// Only SExpr/SStmt wrap a node, so only Expr/Stmt are valid; a Pattern/
-/// ValueType target would mean a wrapper that can't exist — emit an undefined
-/// name so the generated fn fails to COMPILE loudly (like `anynode_ctor`).
-@comptime
-fn spanned_one_wrapper_fn(target: string) -> string {
-    let s = type_short_name(target)
-    if s == "Expr" { return "spanned_one_sexpr" }
-    if s == "Stmt" { return "spanned_one_sstmt" }
-    "spanned_one__no_wrapper_for_${s}"
-}
-
-/// The `box_*_list_spanned` helper for a WRAPPER-list child, by target kind
-/// (Expr/Stmt only; poison name otherwise — see `spanned_one_wrapper_fn`).
-@comptime
-fn box_wrapper_list_spanned_fn(target: string) -> string {
-    let s = type_short_name(target)
-    if s == "Expr" { return "box_sexpr_list_spanned" }
-    if s == "Stmt" { return "box_sstmt_list_spanned" }
-    "box_list_spanned__no_wrapper_for_${s}"
-}
-
-/// The `node_opt_spanned_*` helper for a nullable single WRAPPER child, by
-/// target kind (Expr/Stmt only; poison name otherwise).
-@comptime
-fn node_opt_spanned_fn(target: string) -> string {
-    let s = type_short_name(target)
-    if s == "Expr" { return "node_opt_spanned_sexpr" }
-    if s == "Stmt" { return "node_opt_spanned_sstmt" }
-    "node_opt_spanned__no_wrapper_for_${s}"
-}
-
-/// The `List<SpannedChild>` expr for one single child (A2). A WRAPPER child
-/// rides its `spanned_one_*` helper (real (line, col)); a bare DirectSelf is
-/// boxed and tagged position-0 via `spanned_bare_one`.
+/// The `List<SpannedChild>` expr for one single child (A2). Boxed and tagged
+/// position-0 via `spanned_bare_one` (spans are side-table-only).
 @comptime
 fn spanned_single_list(b: CrossBinding) -> Expr {
-    if b.kind is .WrapperOfSelf {
-        return helper_call(spanned_one_wrapper_fn(b.target), Expr.Ident(b.binding_name))
-    }
-    // DirectSelf: box the bare node, position 0 (no wrapper carries its span).
     helper_call("spanned_bare_one", box_single(b))
 }
 
-/// The `List<SpannedChild>` expr for one list/optional child (A2). A WRAPPER
-/// list/optional rides its span-preserving helper; a bare list/optional reuses
-/// the existing `box_*_list` boxing then tags every element position-0.
+/// The `List<SpannedChild>` expr for one list/optional child (A2). Reuses the
+/// existing `box_*_list` boxing then tags every element position-0.
 @comptime
 fn spanned_list_child(b: CrossBinding) -> Expr {
     if b.kind is .StructListOfSelf {
@@ -843,17 +805,11 @@ fn spanned_list_child(b: CrossBinding) -> Expr {
         // element list into cross-type spanned children (field order per element).
         return helper_call(struct_list_helpers(struct_of(b.kind)).spanned, Expr.Ident(b.binding_name))
     }
-    if b.kind is .WrapperListOfSelf {
-        return helper_call(box_wrapper_list_spanned_fn(b.target), Expr.Ident(b.binding_name))
-    }
     if b.kind is .ListOfSelf {
         return helper_call("spanned_bare_list", box_list_call(b.target, Expr.Ident(b.binding_name)))
     }
-    if b.kind is .OptionalDirectSelf {
-        return helper_call("spanned_bare_list", box_list_call(b.target, self_opt_to_list_call(b.binding_name, b.target)))
-    }
-    // OptionalWrapperOfSelf
-    helper_call(node_opt_spanned_fn(b.target), Expr.Ident(b.binding_name))
+    // OptionalDirectSelf
+    helper_call("spanned_bare_list", box_list_call(b.target, self_opt_to_list_call(b.binding_name, b.target)))
 }
 
 /// True for the list/optional kinds (those folded via concat, vs singles) —
@@ -973,32 +929,18 @@ fn wc_kind_tag(target: string) -> string {
     "__no_kind_${s}"   // poison: loud build failure on a new kind
 }
 
-/// Wrapper tag ("sexpr"/"sstmt") for the wrapper-rebuild helper names. Only
-/// Expr/Stmt have spanned wrappers; a Pattern/ValueType target here is impossible
-/// (poison name -> loud build failure).
-@comptime
-fn wc_wrapper_tag(target: string) -> string {
-    let s = type_short_name(target)
-    if s == "Expr" { return "sexpr" }
-    if s == "Stmt" { return "sstmt" }
-    "__no_wrapper_${s}"
-}
-
-/// The @std helper that rebuilds one single-child slot: `respan_*` for a wrapper
-/// (WrapperOfSelf), `unspan_*` for a bare child (DirectSelf).
+/// The @std helper that rebuilds one single-child slot: `unspan_*` for a bare
+/// child (DirectSelf); spans are side-table-only.
 @comptime
 fn wc_single_helper(b: CrossBinding) -> string {
-    if b.kind is .WrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}" }
     "unspan_${wc_kind_tag(b.target)}"
 }
 
-/// The @std helper that rebuilds the variable-arity slot's run (list or optional,
-/// bare or wrapper).
+/// The @std helper that rebuilds the variable-arity slot's run (a bare list or
+/// optional).
 @comptime
 fn wc_run_helper(b: CrossBinding) -> string {
-    if b.kind is .WrapperListOfSelf { return "respan_${wc_wrapper_tag(b.target)}_list" }
     if b.kind is .ListOfSelf { return "unspan_${wc_kind_tag(b.target)}_list" }
-    if b.kind is .OptionalWrapperOfSelf { return "respan_${wc_wrapper_tag(b.target)}_opt" }
     "unspan_${wc_kind_tag(b.target)}_opt"   // OptionalDirectSelf
 }
 
