@@ -1,0 +1,53 @@
+// WHY: codegen regression — an OMITTED nullable field must be initialized to
+// null, not left reading whatever bytes the (un-zeroed) arena buffer held.
+//
+// F1005 allows a nullable (`T?`) field to be omitted from a full struct literal
+// (its absent value is null). But `emit_struct_lit` allocated the struct via the
+// bump arena (which does NOT zero) and only wrote the PROVIDED fields, so an
+// omitted field's slot read back stale bytes — null by luck on a fresh arena,
+// garbage under reuse (the f1005_nullable_omit seed-train flake). The fix
+// synthesizes a `field: null` for every omission, so codegen writes the slot.
+//
+// This pins it deterministically WITHOUT depending on arena timing: the emitted
+// IR for a literal that OMITS a nullable field must be byte-identical to the
+// same literal that writes that field explicitly as `null`. Before the fix the
+// omitting form lacked the field's store, so the two IRs diverged; after, they
+// match exactly (an omission IS an explicit null). Mutation guard: reverting the
+// fill augmentation makes the omitting IR drop the store and the equality fails.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` and return its emitted IR with the two path-dependent header
+/// lines stripped (so two fixtures at different paths compare cleanly), or a
+/// sentinel on failure.
+fn norm_ir(tag: string, source: string) -> string {
+    let path = "/tmp/avra_omitnull_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' >/dev/null 2>&1 && grep -vE '^;|ModuleID|source_filename' '${path}.ll' || echo __COMPILE_FAILED__")
+}
+
+spec "an omitted nullable struct field is codegen-initialized to null (arena-stale fix)" {
+    then "omitting a nullable field emits the SAME IR as writing it `null` explicitly" {
+        let omitted = norm_ir("omit", "type Q = { x: int, note: string? }
+fn main() { let q = Q { x: 1 }
+  println(q.note ?? \"n\") }")
+        let explicit = norm_ir("expl", "type Q = { x: int, note: string? }
+fn main() { let q = Q { x: 1, note: null }
+  println(q.note ?? \"n\") }")
+        omitted == explicit && !omitted.contains("__COMPILE_FAILED__")
+    }
+    then "the same holds for a nullable field DECLARED between two non-nullable ones" {
+        // The fix fills omitted fields AFTER the provided ones (append order, not
+        // declaration order — reordering would needlessly change the IR of every
+        // scrambled complete literal). So the equivalent explicit literal writes
+        // the omitted field last; the point is that its slot is written at all.
+        let omitted = norm_ir("omit2", "type Rec = { id: int, note: string?, count: int }
+fn main() { let r = Rec { id: 7, count: 3 }
+  println(r.note ?? \"n\") }")
+        let explicit = norm_ir("expl2", "type Rec = { id: int, note: string?, count: int }
+fn main() { let r = Rec { id: 7, count: 3, note: null }
+  println(r.note ?? \"n\") }")
+        omitted == explicit && !omitted.contains("__COMPILE_FAILED__")
+    }
+}

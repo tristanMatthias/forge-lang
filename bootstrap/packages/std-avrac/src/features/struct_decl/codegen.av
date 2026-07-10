@@ -28,9 +28,50 @@ export fn emit_struct_lit(ctx: Ctx, env: List<VarBinding>, name: string, inits: 
     // storage instead of re-grabbing our slot — otherwise both structs write
     // into one alloca and the outer's self-pointer clobbers the inner's data.
     let fill_ctx = ctx with { copy_alloc_target: null }
-    let fill = fill_struct_fields(fill_ctx, env, st_ty, buf, inits, lookup.fields)?
+    // Initialize omitted fields to null. The arena buffer is NOT zeroed
+    // (arena_alloc bump-allocates raw bytes), and fill only writes PROVIDED
+    // fields — so an omitted field's slot would read back whatever stale bytes
+    // the arena held (null by luck on a fresh arena, garbage under reuse: the
+    // seed-train flake). F1005 gates non-nullable omissions, so every omittable
+    // field is nullable and its absent value is null; treating an omission as an
+    // explicit `field: null` writes that slot through the normal path.
+    let full_inits = struct_inits_with_null_omitted(ctx, inits, lookup.fields)
+    let fill = fill_struct_fields(fill_ctx, env, st_ty, buf, full_inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
     ok_emit(as_i64, vtype_struct(name, type_registry_id_for(ctx.type_reg, name)))
+}
+
+/// A copy of `inits` with a synthesized `field: null` init appended for every
+/// declared field the literal omits. F1005 guarantees only NULLABLE fields can
+/// be omitted (its absent value is null), so this makes an omitted field behave
+/// exactly like an explicit `field: null` — routing through the same fill path
+/// so the field's slot is written instead of reading stale arena bytes.
+fn struct_inits_with_null_omitted(ctx: Ctx, inits: List<FieldInit>, fields: List<FieldEntry>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut k = 0
+    while k < inits.length {
+        out.push(inits[k])
+        k = k + 1
+    }
+    mut j = 0
+    while j < fields.length {
+        if !field_in_inits(inits, fields[j].name) {
+            let none_id = ctx.nodes.add_expr_leaf(Expr.None)
+            out.push(FieldInit { name: fields[j].name, value_id: none_id })
+        }
+        j = j + 1
+    }
+    out
+}
+
+/// True iff some init in `inits` names `fname`.
+fn field_in_inits(inits: List<FieldInit>, fname: string) -> bool {
+    mut i = 0
+    while i < inits.length {
+        if inits[i].name == fname { return true }
+        i = i + 1
+    }
+    false
 }
 
 /// Allocate `count * 8` bytes for a struct via the arena
