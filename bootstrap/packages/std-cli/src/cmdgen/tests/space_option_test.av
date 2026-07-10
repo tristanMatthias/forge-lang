@@ -1,0 +1,76 @@
+// An option declared in a command schema is settable by BOTH the inline
+// `--key=value` form AND the space-separated `--key value` form (two tokens).
+// A single `parse_tokens` classifier serves App.run_argv and the legacy
+// cli_parse; supporting the space form there lets commands that historically
+// hand-rolled it (via read_kv_value, e.g. `docs --search foo`) share it.
+//
+// The value after a bare `--key` is consumed verbatim — even if it looks like a
+// flag — matching read_kv_value. A trailing `--key` with no following token is a
+// usage error (run_argv reports it and returns 1).
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// @comptime bodies are available. `spo_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn spo_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command build {\n" +
+    "        flag debug {}\n" +
+    "        option module_path {}\n" +
+    "        run() {\n" +
+    "            if debug { return 99 }\n" +
+    "            return module_path.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // space-separated: `--module_path abcd` → module_path == "abcd" (length 4).
+    "    println(\"SPACE=\" + string(toy.run_argv([\"build\", \"--module_path\", \"abcd\"])))\n" +
+    // inline still works: `--module_path=ab` → length 2.
+    "    println(\"INLINE=\" + string(toy.run_argv([\"build\", \"--module_path=ab\"])))\n" +
+    // the value is consumed verbatim even when it looks like a flag:
+    // `--module_path --debug` → module_path == "--debug" (length 7), debug UNSET.
+    "    println(\"VERBATIM=\" + string(toy.run_argv([\"build\", \"--module_path\", \"--debug\"])))\n" +
+    // a trailing bare `--module_path` with no value is a usage error → 1.
+    "    println(\"MISSING=\" + string(toy.run_argv([\"build\", \"--module_path\"])))\n" +
+    "}\n"
+}
+
+fn spo_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_space_option_test.av", spo_src())
+}
+
+spec "space-separated `--key value` options parse alongside `--key=value`" {
+    then "a space-separated option sets its value" {
+        // `--module_path abcd` → module_path reads "abcd" (length 4).
+        let out = spo_run()
+        out.contains("SPACE=4")
+    }
+    then "the inline `--key=value` form still works" {
+        let out = spo_run()
+        out.contains("INLINE=2")
+    }
+    then "the value after a bare option is consumed verbatim, even if flag-like" {
+        // `--module_path --debug` → module_path == "--debug" (length 7); the
+        // `debug` flag is NOT set (99 would mean it leaked through).
+        let out = spo_run()
+        out.contains("VERBATIM=7")
+    }
+    then "a trailing option with no value is a usage error" {
+        // run_argv reports the parse error and returns 1.
+        let out = spo_run()
+        out.contains("MISSING=1")
+    }
+}
