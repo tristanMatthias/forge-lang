@@ -542,10 +542,37 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
         }
     }
 
+    // A declared `arg x { required true }` the user omitted is a usage error,
+    // not a silently-empty result_get_arg. Only surfaces when no earlier parse
+    // error already took priority (that one is the more specific complaint).
+    if error == "" {
+        let missing = first_missing_required_arg(args, parsed_args)
+        if missing != "" {
+            error = "missing required argument: ${missing}"
+        }
+    }
+
     CliResult { command: cmd_name, flags: parsed_flags, options: parsed_options, args: parsed_args, error }
 }
 
 // ── Helpers ──
+
+/// The name of the first declared arg with `required: true` that has no parsed
+/// value, or "" when every required positional was supplied. Positionals are
+/// recorded under their declaration-order arg name (see parse_tokens), so a
+/// name lookup answers "was this required slot filled?".
+fn first_missing_required_arg(args: List<ArgDef>, parsed: List<ParsedArg>) -> string {
+    for a in args {
+        if a.required {
+            mut found = false
+            for p in parsed {
+                if p.name == a.name { found = true }
+            }
+            if !found { return a.name }
+        }
+    }
+    ""
+}
 
 /// Drop the leading `--` or `-` from a flag/option token.
 fn strip_dashes(s: string) -> string {

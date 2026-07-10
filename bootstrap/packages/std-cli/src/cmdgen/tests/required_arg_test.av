@@ -1,0 +1,64 @@
+// A positional declared `arg x { required true }` is enforced: omitting it is a
+// usage error (run_argv reports it and returns 1), not a silently-empty
+// result_get_arg. Exercises both halves — cmdgen threading the `required` config
+// into the generated ArgDef, and parse_tokens (cli.av) validating it. An arg
+// with no `required` config stays optional (omitting it is fine).
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// @comptime bodies are available. `req_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn req_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command build {\n" +
+    "        arg file { required true }\n" +
+    "        run() {\n" +
+    "            return file.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "    command show {\n" +
+    "        arg name {}\n" +
+    "        run() {\n" +
+    "            return 7\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // required arg supplied → run body sees file == "hello" (length 5).
+    "    println(\"OK=\" + string(toy.run_argv([\"build\", \"hello\"])))\n" +
+    // required arg omitted → parse error → run_argv returns 1 (body not run).
+    "    println(\"MISS=\" + string(toy.run_argv([\"build\"])))\n" +
+    // an arg with no `required` config is optional → omitting it is fine (7).
+    "    println(\"OPT=\" + string(toy.run_argv([\"show\"])))\n" +
+    "}\n"
+}
+
+fn req_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_required_arg_test.av", req_src())
+}
+
+spec "a required positional arg is enforced at parse time" {
+    then "a supplied required arg reaches the run body" {
+        let out = req_run()
+        out.contains("OK=5")
+    }
+    then "an omitted required arg is a usage error (exit 1, body not run)" {
+        let out = req_run()
+        out.contains("MISS=1")
+    }
+    then "an arg without `required` stays optional — omitting it is fine" {
+        let out = req_run()
+        out.contains("OPT=7")
+    }
+}

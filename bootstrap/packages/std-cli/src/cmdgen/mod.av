@@ -57,6 +57,17 @@ fn config_value_or_empty(config: List<CompConfigPair>, key: string) -> ExprId {
     str_lit("")
 }
 
+/// A boolean leaf config (`required true`) as an ExprId, defaulting to `false`
+/// when the leaf omits it. Sibling of config_value_or_empty for bool-valued
+/// config (whose absent default is `false`, not the empty string).
+@comptime
+fn config_flag_or_false(config: List<CompConfigPair>, key: string) -> ExprId {
+    for pair in config {
+        if pair.key == key { return synth_expr_id(pair.value) }
+    }
+    synth_expr_id(Expr.Bool("false"))
+}
+
 /// One accessor binding in a run body: `let <name>: <vtype> =
 /// <callee_fqn>(args, "<name>")`. The callee is fully qualified so the
 /// generated body resolves in ANY consumer's scope. Not hygienically
@@ -109,10 +120,10 @@ fn flagdef_lit(name: string, short: ExprId, desc: ExprId) -> ExprId {
 /// literal (positionals aren't dashed). `desc` is the leaf's `description "…"`
 /// config (empty when unset); it renders in the `--help` ARGS section.
 @comptime
-fn argdef_lit(name: string, desc: ExprId) -> ExprId {
+fn argdef_lit(name: string, desc: ExprId, required: ExprId) -> ExprId {
     let n = FieldInit { name: "name", value_id: str_lit(name) }
     let d = FieldInit { name: "description", value_id: desc }
-    let req = FieldInit { name: "required", value_id: synth_expr_id(Expr.Bool("false")) }
+    let req = FieldInit { name: "required", value_id: required }
     synth_expr_id(Expr.StructLit("@std::cli::ArgDef", [n, d, req]))
 }
 
@@ -196,6 +207,9 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     mut flag_descs: List<ExprId> = []
     mut arg_descs: List<ExprId> = []
     mut option_descs: List<ExprId> = []
+    // Each `arg`'s `required true` config (defaults to false), so the generated
+    // ArgDef declares it and parse_tokens can reject an omitted required arg.
+    mut arg_requireds: List<ExprId> = []
     mut desc = str_lit("")
     match s {
         .ComponentBlock(_, instance, cfg, body) -> {
@@ -220,6 +234,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
                         if cn == "arg" {
                             arg_names.push(cinst)
                             arg_descs.push(config_value_or_empty(ccfg, "description"))
+                            arg_requireds.push(config_flag_or_false(ccfg, "required"))
                         }
                         if cn == "option" {
                             option_names.push(cinst)
@@ -292,7 +307,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     mut arg_defs: List<ExprId> = []
     mut ai = 0
     while ai < arg_names.length {
-        arg_defs.push(argdef_lit(arg_names[ai], arg_descs[ai]))
+        arg_defs.push(argdef_lit(arg_names[ai], arg_descs[ai], arg_requireds[ai]))
         ai = ai + 1
     }
     mut opt_defs: List<ExprId> = []
