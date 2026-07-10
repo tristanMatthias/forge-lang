@@ -486,15 +486,22 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
     mut positional_idx = 0
     mut error = ""
 
-    for arg in tokens {
+    // Indexed walk (not a `for`) so a declared option can consume the NEXT
+    // token as its value — the `--key value` space-separated form alongside
+    // `--key=value`. Matches the bespoke parsers' `read_kv_value` (which the
+    // compiler-internal commands use, e.g. `avra docs --search foo`).
+    mut ti = 0
+    while ti < tokens.length {
+        let arg = tokens[ti]
         if arg.starts_with("--") || (arg.starts_with("-") && arg.length > 1) {
             // Check if it's a flag — record under its canonical (long) name so
             // a `-v` short and a `--verbose` long both set `verbose`.
             let fcanon = flag_canonical_name(flags, arg)
             if fcanon != "" {
                 parsed_flags.push(ParsedFlag { name: fcanon, value: true })
+                ti = ti + 1
             }
-            // Check if it's an option with = (--key=value)
+            // An option with an inline value: `--key=value`.
             else if arg.contains("=") {
                 let eq_idx = arg.index_of("=")
                 let key = arg.substring(0, eq_idx)
@@ -505,10 +512,25 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
                 } else {
                     error = "unknown option: ${key}"
                 }
+                ti = ti + 1
             }
-            // Options use --key=value syntax only (for-loop can't skip ahead)
+            // A bare `--key` that names a declared option takes the next token
+            // as its value (`--key value`). The value is consumed verbatim —
+            // even if it looks like a flag — matching read_kv_value. A trailing
+            // `--key` with no following token is a usage error.
+            else if option_canonical_name(options, arg) != "" {
+                let ocanon = option_canonical_name(options, arg)
+                if ti + 1 < tokens.length {
+                    parsed_options = set_option(parsed_options, ocanon, tokens[ti + 1])
+                    ti = ti + 2
+                } else {
+                    error = "option ${arg} requires a value"
+                    ti = ti + 1
+                }
+            }
             else {
                 error = "unknown flag: ${arg}"
+                ti = ti + 1
             }
         } else {
             // Positional argument
@@ -516,6 +538,7 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
             let arg_name = if arg_def != null { arg_def!.name } else { "arg${string(positional_idx)}" }
             parsed_args.push(ParsedArg { name: arg_name, value: arg })
             positional_idx = positional_idx + 1
+            ti = ti + 1
         }
     }
 
