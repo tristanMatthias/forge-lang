@@ -46,7 +46,8 @@ fn empty_loaded_list() -> List<string> {
     empty
 }
 
-use @std.cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option}
+use @std.cli.{Runnable, CliResult, App, result_has_flag, result_get_option, result_get_arg}
+use @std.cli.cmdgen.{expand_cli, expand_command}
 // nce6.1.F: @marshal on TestResults synthesises `impl Marshal:TestResults`
 // + `from_bytes_TestResults` calling bytes_reader. Both depend on
 // @std/process's trait + byte primitives. (Marshal itself is reached
@@ -328,43 +329,22 @@ fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: Nod
 // Match the Rust std-cli component pattern exactly.
 // Template components: init hooks use self.__parent to thread builder calls.
 
-component cli(name: string) {
-    config {
-        description: string = ""
-        version: string = "0.1.0"
-    }
-    fn init() {
-        self.__parent = cli_new(self.name, self.config.description, self.config.version)
-    }
-}
+// Components V2: `cli`/`command` are data components whose expansion
+// is library-authored in `@std.cli.cmdgen`. `@expand(expand_cli)` turns the
+// `cli app { … }` block into a top-level `let app = App { commands: [Subcommand
+// { meta: CommandSpec{…}, body: dyn Runnable }, …] }`; `@expand(expand_command)`
+// turns each `command X { flag/arg/option … run() { … } }` into a
+// `type Command_X` + `impl Runnable`. `flag`/`option`/`arg` leaf children
+// parse as nested component blocks with no top-level `component` declaration;
+// the macros read their instance name + config (`short`, `default`) directly.
+// `option` in particular MUST NOT be declared — it would generate `type
+// Option`, colliding with the built-in nullable `Option<T>`. Zero builder
+// calls; `app.run()` dispatches.
+@expand(expand_cli)
+component cli {}
 
-component command(name: string) {
-    config { description: string = "" }
-    fn init() {
-        self.__parent = cli_add_command(self.__parent, self.name, self.config.description)
-    }
-}
-
-component flag(name: string) {
-    config { short: string = "", description: string = "" }
-    fn init() {
-        self.__parent = cli_command_add_flag(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description)
-    }
-}
-
-component option(name: string) {
-    config { short: string = "", description: string = "", default_val: string = "" }
-    fn init() {
-        self.__parent = cli_command_add_option(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description, self.config.default_val)
-    }
-}
-
-component arg(name: string) {
-    config { description: string = "", required: bool = false }
-    fn init() {
-        self.__parent = cli_command_add_arg(self.__parent, self.__parent_name, self.name, self.config.description, self.config.required)
-    }
-}
+@expand(expand_command)
+component command implements Runnable {}
 
 // Parsed view of `avra docs ...` argv. Keeps the main() handler from
 // drowning in 100+ lines of flag-by-flag if statements.
@@ -3604,28 +3584,45 @@ fn gen_for_symbol(query: string, docs_set: List<Sym>, want_print: bool) -> bool 
     true
 }
 
-// ── Simple file-argument subcommand handlers ──
-// One `fn cmd_<name>(source, path)` per file-taking subcommand: each runs a
-// slice of the compile pipeline and prints its result. Extracted from the
-// `match command` dispatch so main() reads as a routing table, not a wall of
-// inline pipelines — and so each becomes a `run()` body under the declarative
-// `App` (vez6.12).
+// ── Subcommand handlers ──
+// One `fn cmd_<name>(args: CliResult) -> int` per subcommand — the `run()` body
+// of its `command <name> { … }` block in the declarative `App`. Each reads its
+// flags/args from the parsed `args` and returns an exit code.
+
+/// The `file` positional resolved to its path + contents. Every file-taking
+/// subcommand shares `arg_file_source` so the read + existence check lives in
+/// one place.
+type FileArg = { path: string, source: string }
+
+/// Resolve the `file` positional to (path, source), failing clearly when it is
+/// missing or unreadable.
+fn arg_file_source(args: CliResult) -> FileArg {
+    let path = result_get_arg(args, "file")
+    if path == "" { fail("error: this command requires a file argument") }
+    if !file_exists(path) { fail("error: file not found: ${path}") }
+    FileArg { path, source: read_file(path) }
+}
 
 /// `expr <file>` — parse the file as a single expression, print its AST.
-fn cmd_expr(source: string, path: string) {
-    let parsed_e = parse_expr_or_fail(source, render_ctx(false, source, path))
+fn cmd_expr(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let parsed_e = parse_expr_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     println(render_expr(parsed_e.store, parsed_e.expr!))
+    0
 }
 
 /// `program <file>` — parse the file as a full program, print its AST.
-fn cmd_program(source: string, path: string) {
-    let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
+fn cmd_program(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let parsed_p = parse_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     println(render_stmt_ids(parsed_p.store, parsed_p.ids))
+    0
 }
 
 /// `metadata_show <file>` — read a `.meta.bin`, synthesize its arena rows, and
 /// print them with the same id-native renderer `program` uses (xtvc).
-fn cmd_metadata_show(path: string) {
+fn cmd_metadata_show(args: CliResult) -> int {
+    let path = result_get_arg(args, "file")
     if !file_exists(path) { fail("error: file not found: ${path}") }
     let m = metadata_read(path)
     if m.unit_name == "" {
@@ -3635,61 +3632,71 @@ fn cmd_metadata_show(path: string) {
     println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
     let show_store = new_node_store(build_line_index(""))
     println(render_stmt_ids(show_store, synthesize_unit_stmts(m, show_store)))
+    0
 }
 
 /// `eval <file>` — parse the file as an expression, evaluate it, print the value.
-fn cmd_eval(source: string, path: string) {
-    let parsed = parse_expr_or_fail(source, render_ctx(false, source, path))
+fn cmd_eval(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let parsed = parse_expr_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     let result = eval_parsed_expression(parsed.expr!, parsed.store)
     if result.had_error || result.value == null {
         fail(result.error_message)
     }
     println(render_value(result.value!))
+    0
 }
 
 /// `run <file>` — parse the file as a program and execute it in the tree-walk
 /// evaluator, printing the final value. `parse_or_fail` gives F-coded parse
 /// errors a source-line diagnostic frame, like every other subcommand.
-fn cmd_run(source: string, path: string) {
-    let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
+fn cmd_run(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let parsed_prog = parse_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
     if result.had_error || result.value == null {
         fail(result.error_message)
     }
     println(render_value(result.value!))
+    0
 }
 
 /// `fix <file>` — parse, resolve, and (for v1.0) report that no auto-fixes are
 /// available yet (ticket 8ym).
-fn cmd_fix(source: string, path: string) {
-    let ctx = render_ctx(false, source, path)
-    let parsed_prog = parse_or_fail(source, ctx)
+fn cmd_fix(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let ctx = render_ctx(false, fa.source, fa.path)
+    let parsed_prog = parse_or_fail(fa.source, ctx)
     let parsed_stmts = parsed_prog.ids
-    let entry_dir = modules_dirname(path)
+    let entry_dir = modules_dirname(fa.path)
     let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
     fail_on_module_resolve_error(mod_resolved, ctx)
     let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
     render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
     println("no auto-fixes available")
+    0
 }
 
 /// `fmt <file>` — parse and pretty-print the file (ticket c5w, spec Axis 27.1).
-fn cmd_fmt(source: string, path: string) {
-    let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
+fn cmd_fmt(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let parsed_fmt = parse_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.ids, 0))
+    0
 }
 
-/// `expand <file>` — print the post-macro-expansion source (P7 visible magic,
-/// vez6.14): parse → lower_quotes → desugar → resolve_module_files →
+/// `expand <file>` — print the post-macro-expansion source (macro expansion
+/// made visible): parse → lower_quotes → desugar → resolve_module_files →
 /// expand_components → resolve_names → run_comptime, then format. The output is
 /// valid Avra that compiles to the same program.
-fn cmd_expand(source: string, path: string) {
-    let ctx = render_ctx(false, source, path)
-    let parsed_prog = parse_or_fail(source, ctx)
+fn cmd_expand(args: CliResult) -> int {
+    let fa = arg_file_source(args)
+    let ctx = render_ctx(false, fa.source, fa.path)
+    let parsed_prog = parse_or_fail(fa.source, ctx)
     let parsed_stmts = parsed_prog.ids
     let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
     let desugared = desugar_program(post_quote, parsed_prog.store)
-    let entry_dir = modules_dirname(path)
+    let entry_dir = modules_dirname(fa.path)
     let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
     fail_on_module_resolve_error(mod_resolved, ctx)
     let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
@@ -3697,200 +3704,14 @@ fn cmd_expand(source: string, path: string) {
     let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
     let post_comptime = run_comptime(named.stmts, parsed_prog.store)
     println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
+    0
 }
 
-fn main() {
-    // ── Fully declarative CLI ──
-    // Matches the Rust std-cli pattern: nested component blocks, zero builder calls.
-    cli app {
-        description "Avra bootstrap compiler"
-        version "0.1.0"
-
-        command compile {
-            description "Compile a Avra file to LLVM IR"
-            flag coverage { short "-c", description "Enable coverage instrumentation" }
-            flag debug_null { description "Enable null argument checks" }
-            flag json { description "Output diagnostics as JSON" }
-            flag emit_metadata { description "Also write <file>.meta.bin (xtvc)" }
-            flag per_file_metadata { description "Also emit per-file <src>.meta.bin sidecars (g2eo, level-1 incremental)" }
-            option stop_after { description "Stop after phase (parse|resolve|names|check)" }
-            option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
-            option list_files { description "Write the resolved source-file list (one path per line) to this path — used by per-file build drivers (g2eo)" }
-            option target_module { description "Per-module compile (g2eo Phase A): emit only decls whose source path starts with this prefix; mark every other Module wrapper @external_unit" }
-            option output { description "Write the emitted LLVM IR to this path instead of <entry>.ll — used by per-module build drivers (g2eo Phase B) so concurrent compiles of the same entry don't clobber each other's outputs" }
-            arg file { description "Source file", required true }
-        }
-
-        command check {
-            description "Type-check a Avra file"
-            flag json { description "Output diagnostics as JSON" }
-            arg file { description "Source file", required true }
-        }
-
-        command run {
-            description "Compile and run a Avra file"
-            arg file { description "Source file", required true }
-        }
-
-        command build {
-            description "Incremental build via the @std.avrac.build cache (Phase 1: single-unit)"
-            flag release { description "Use [profile.release] instead of [profile.dev]" }
-            flag explain { description "Print why each unit will rebuild (cargo --explain analogue)" }
-            flag per_module { description "g2eo Phase B: dispatch one bs2 compile per src/ subdirectory in parallel via pool_run; each subdir produces its own .ll + .meta.bin under build/per_mod/. Experimental, opt-in." }
-            arg file { description "Entry source file (overrides manifest [bin].path)" }
-        }
-
-        command clean {
-            description "Remove build/ artifacts (preserves the cache by default)"
-            flag all { description "Remove build/cache/ as well" }
-        }
-
-        command cache {
-            description "Manage the build cache: prune | info | clear-failed"
-            flag dry_run { description "Print what would change but do not modify the filesystem" }
-            option max_age_days { description "Evict entries with mtime older than N days" }
-            arg subcommand { description "prune | info | clear-failed", required true }
-        }
-
-        command test {
-            description "Run tests"
-            option filter { short "-f", description "Filter tests by name" }
-            flag coverage { short "-c", description "Enable coverage instrumentation" }
-            arg file { description "Test file (optional)" }
-        }
-
-        command expr {
-            description "Parse and display an expression"
-            arg file { description "Source file", required true }
-        }
-
-        command metadata_show {
-            description "Decode a .meta.bin file and print its public surface (xtvc)"
-            arg file { description "Path to a .meta.bin", required true }
-        }
-
-        command program {
-            description "Parse and display a program"
-            arg file { description "Source file", required true }
-        }
-
-        command eval {
-            description "Evaluate a Avra expression"
-            arg file { description "Source file", required true }
-        }
-
-        command fix {
-            description "Apply auto-fixes to a Avra file"
-            arg file { description "Source file", required true }
-        }
-
-        command fmt {
-            description "Format a Avra source file"
-            arg file { description "Source file", required true }
-        }
-
-        command lsp {
-            description "Start language server"
-        }
-
-        command features {
-            description "List registered features"
-        }
-
-        command docs {
-            description "Project documentation -- look up your project's functions, types, and enums"
-            flag symbols { description "Show symbol/type reference" }
-            flag short { description "Show just the one-liner for a symbol" }
-            flag llm { description "Compact LLM-friendly project documentation" }
-            flag validate { description "Validate documentation coverage for the project" }
-            option search { description "Search project docs (substring match)" }
-            arg query { description "Symbol to look up (function, type, enum name)" }
-        }
-    }
-
-    // Handle subcommands that don't require a file argument.
-    if avra_selfhost_argc() >= 2 {
-        let cmd0 = avra_selfhost_get_arg_cstr(1)
-        if cmd0 == "lsp" {
-            // Index the project once, then enter the JSON-RPC stdio
-            // loop. v1 serves a static graph; reindex-on-edit waits
-            // for the cache layer (rnb9.7) to grow a watch loop.
-            let project_dir = avra_process_env_get("PWD")
-            run_lsp_server(project_dir)
-            return
-        }
-        if cmd0 == "lang" {
-            run_lang_command()
-            return
-        }
-        if cmd0 == "docs" {
-            run_docs_command()
-            return
-        }
-        if cmd0 == "test" {
-            run_test_command()
-            return
-        }
-        if cmd0 == "_test_shard" {
-            // 05yc: internal subcommand — the per-file orchestrator
-            // forks `bs2 _test_shard <path>` per shard so each
-            // compile + run lives in its own process (the prereq for
-            // parallel dispatch via spawn_pool_async + free crash
-            // isolation). Not for direct user invocation.
-            run_test_shard_command()
-            return
-        }
-        if cmd0 == "build" {
-            run_build_command()
-            return
-        }
-        if cmd0 == "clean" {
-            run_clean_command()
-            return
-        }
-        if cmd0 == "cache" {
-            run_cache_command()
-            return
-        }
-    }
-
-    if avra_selfhost_argc() < 3 {
-        print_usage()
-        exit(1)
-    }
-
-    let command = avra_selfhost_get_arg_cstr(1)
-    let path = avra_selfhost_get_arg_cstr(2)
-    let is_flag = path.starts_with("--")
-    if !is_flag && !file_exists(path) {
-        fail("error: file not found: ${path}")
-    }
-
-    let source = if is_flag { "" } else { read_file(path) }
-    match command {
-        "expr" -> {
-            cmd_expr(source, path)
-            return
-        }
-        "program" -> {
-            cmd_program(source, path)
-            return
-        }
-        "metadata_show" -> {
-            cmd_metadata_show(path)
-            return
-        }
-        "eval" -> {
-            cmd_eval(source, path)
-            return
-        }
-        "check" -> {
-            // Parse --json flag using @std/cli
-            let check_parsed = cli_parse(app)
-            let check_json = result_has_flag(check_parsed, "json")
-            let check_argc = avra_selfhost_argc()
-            let check_path = if check_argc > 3 { avra_selfhost_get_arg_cstr(check_argc - 1) } else { path }
-            let check_source = if check_path != path { read_file(check_path) } else { source }
+fn cmd_check(args: CliResult) -> int {
+            let check_json = result_has_flag(args, "json")
+            let check_path = result_get_arg(args, "file")
+            if !file_exists(check_path) { fail("error: file not found: ${check_path}") }
+            let check_source = read_file(check_path)
             let ctx = render_ctx(check_json, check_source, check_path)
 
             let parsed_prog = parse_or_fail(check_source, ctx)
@@ -3915,96 +3736,28 @@ fn main() {
             let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
-            return
-        }
-        "run" -> {
-            cmd_run(source, path)
-            return
-        }
-        "fix" -> {
-            cmd_fix(source, path)
-            return
-        }
-        "fmt" -> {
-            cmd_fmt(source, path)
-            return
-        }
-        "expand" -> {
-            cmd_expand(source, path)
-            return
-        }
-        "test" -> {
-            // Ticket syu: test runner (spec Axis 27.3).
-            // Compile the file (which should contain spec/given/then blocks)
-            // and report the output path for linking and execution.
-            let ctx = render_ctx(false, source, path)
-            let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.ids
-            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote, parsed_prog.store)
-            let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
-            fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
-            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
-            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
-            render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
-            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
-            render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
-            let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, false, path, named.type_reg, false, parsed_prog.store) {
-                .Ok(_) -> {}
-                .Err(e) -> { fail_with_codegen_ice(e, ctx) }
-            }
-            println(output)
-            return
-        }
-        _ -> {}
-    }
+            0
+}
 
-    if command == "compile" {
-        // Parse compile flags using @std/cli
-        let parsed = cli_parse(app)
-        let stop_after = result_get_option(parsed, "stop-after")
-        let debug_null = result_has_flag(parsed, "debug-null")
-        let enable_coverage = result_has_flag(parsed, "coverage")
-        let json_output = result_has_flag(parsed, "json")
-        let emit_metadata = result_has_flag(parsed, "emit_metadata")
-        let per_file_metadata = result_has_flag(parsed, "per_file_metadata")
-        // g2eo: when --list-files=<path> is set, write the resolved
-        // source-file list (the same data per_file_metadata already
-        // walks) to <path>, one path per line. Build drivers consume
-        // this to enumerate compile units honestly without an
-        // out-of-band filesystem walk that picks up unreachable files.
-        let list_files_path = result_get_option(parsed, "list_files")
-        let module_path_dash = result_get_option(parsed, "module-path")
-        let module_path_under = result_get_option(parsed, "module_path")
-        let module_path = if module_path_dash != "" { module_path_dash } else { module_path_under }
-        // g2eo Phase A: per-module compile filter. When --target_module
-        // is set, every Module wrapper whose body has no decls under
-        // this source-path prefix gets `@external_unit` after resolve,
-        // so codegen emits stubs only. The .ll then carries the target
-        // module's bodies and forward-refs every other module's
-        // __init_<name>; multiple .o files link cleanly via k21v.
-        let target_module_dash = result_get_option(parsed, "target-module")
-        let target_module_under = result_get_option(parsed, "target_module")
-        let target_module = if target_module_dash != "" { target_module_dash } else { target_module_under }
-        // g2eo Phase B: --output redirects the emitted .ll. Default
-        // (empty) preserves the legacy `<entry>.ll` shape so existing
-        // callers (run_build_command, scripts) keep working unchanged.
-        let output_override = result_get_option(parsed, "output")
-        // File path: last positional arg
-        let argc = avra_selfhost_argc()
-        let cpath = avra_selfhost_get_arg_cstr(argc - 1)
-        if cpath.starts_with("-") {
-            fail("error: compile requires a file path argument")
-        }
-        if !file_exists(cpath) {
-            fail("error: file not found: ${cpath}")
-        }
-        let csource = read_file(cpath)
+fn cmd_compile(args: CliResult) -> int {
+    let stop_after = result_get_option(args, "stop_after")
+    let debug_null = result_has_flag(args, "debug_null")
+    let enable_coverage = result_has_flag(args, "coverage")
+    let json_output = result_has_flag(args, "json")
+    let emit_metadata = result_has_flag(args, "emit_metadata")
+    let per_file_metadata = result_has_flag(args, "per_file_metadata")
+    let list_files_path = result_get_option(args, "list_files")
+    let module_path = result_get_option(args, "module_path")
+    let target_module = result_get_option(args, "target_module")
+    let output_override = result_get_option(args, "output")
+    let cpath = result_get_arg(args, "file")
+    if cpath == "" || cpath.starts_with("-") {
+        fail("error: compile requires a file path argument")
+    }
+    if !file_exists(cpath) {
+        fail("error: file not found: ${cpath}")
+    }
+    let csource = read_file(cpath)
 
         // Load avra.toml package manifest if present in entry dir.
         let pkg_dir = modules_dirname(cpath)
@@ -4081,7 +3834,7 @@ fn main() {
                     let cached_ll = read_file(cached_ll_path)
                     avra_selfhost_write_file(dest_ll, cached_ll)
                     eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
-                    return
+                    return 0
                 }
                 .Miss(fp, _, _) -> {
                     compile_publish_fp = fp
@@ -4101,7 +3854,7 @@ fn main() {
         let parsed_prog = parse_or_fail(csource, ctx)
         let parsed_stmts = parsed_prog.ids
         let t_parse = avra_uptime_ms()
-        if stop_after_matches(stop_after, "parse") { return }
+        if stop_after_matches(stop_after, "parse") { return 0 }
         // 2f54: when --module_path is set, wrap the parsed body in a
         // virtual Module BEFORE resolve_module_files. The resolver
         // sees Module-with-body and recurses into it (skipping its
@@ -4172,7 +3925,7 @@ fn main() {
         let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
         let t_resolve_mods = avra_uptime_ms()
         fail_on_module_resolve_error(mod_resolved, ctx)
-        if stop_after_matches(stop_after, "resolve") { return }
+        if stop_after_matches(stop_after, "resolve") { return 0 }
         // Inject intrinsics AFTER module resolution so the recursive
         // program_declares_enum scan sees stdlib's Result (now inline)
         // and skips synthesizing a duplicate. Cleanup of the earlier
@@ -4193,7 +3946,7 @@ fn main() {
         let t_expand = avra_uptime_ms()
         let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
         let t_names = avra_uptime_ms()
-        if stop_after_matches(stop_after, "names") { return }
+        if stop_after_matches(stop_after, "names") { return 0 }
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
@@ -4202,7 +3955,7 @@ fn main() {
         let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
-        if stop_after_matches(stop_after, "check") { return }
+        if stop_after_matches(stop_after, "check") { return 0 }
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads each node's resolved type.
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
@@ -4321,9 +4074,225 @@ fn main() {
                 t_names, t_typeck, t_mono, t_codegen, cpath))
         }
         println(output)
-        return
+        return 0
+}
+
+// ── The avra CLI (Components V2) ──
+// Declarative: `@expand(expand_cli)` turns this block into a top-level
+// `let app = App { commands: [Subcommand{…}, …] }`; `app.run()` in main()
+// dispatches. Every command's behaviour is its `run()` body below.
+cli app {
+    description "Avra bootstrap compiler"
+    version "0.1.0"
+
+    command compile {
+        description "Compile a Avra file to LLVM IR"
+        flag coverage { short "-c", description "Enable coverage instrumentation" }
+        flag debug_null { description "Enable null argument checks" }
+        flag json { description "Output diagnostics as JSON" }
+        flag emit_metadata { description "Also write <file>.meta.bin (xtvc)" }
+        flag per_file_metadata { description "Also emit per-file <src>.meta.bin sidecars (g2eo, level-1 incremental)" }
+        option stop_after { description "Stop after phase (parse|resolve|names|check)" }
+        option module_path { description "Wrap parsed stmts in Module(<name>) — pre-qualifies symbols for cross-unit linking (2f54)" }
+        option list_files { description "Write the resolved source-file list (one path per line) to this path — used by per-file build drivers (g2eo)" }
+        option target_module { description "Per-module compile (g2eo Phase A): emit only decls whose source path starts with this prefix; mark every other Module wrapper @external_unit" }
+        option output { description "Write the emitted LLVM IR to this path instead of <entry>.ll — used by per-module build drivers (g2eo Phase B) so concurrent compiles of the same entry don't clobber each other's outputs" }
+        arg file { description "Source file", required true }
+        run() { cmd_compile(args) }
     }
 
-    print_usage()
-    exit(1)
+    command check {
+        description "Type-check a Avra file"
+        flag json { description "Output diagnostics as JSON" }
+        arg file { description "Source file", required true }
+        run() { cmd_check(args) }
+    }
+
+    command run {
+        description "Compile and run a Avra file"
+        arg file { description "Source file", required true }
+        run() { cmd_run(args) }
+    }
+
+    command build {
+        description "Incremental build via the @std.avrac.build cache (Phase 1: single-unit)"
+        flag release { description "Use [profile.release] instead of [profile.dev]" }
+        flag explain { description "Print why each unit will rebuild (cargo --explain analogue)" }
+        flag per_module { description "g2eo Phase B: dispatch one bs2 compile per src/ subdirectory in parallel via pool_run; each subdir produces its own .ll + .meta.bin under build/per_mod/. Experimental, opt-in." }
+        arg file { description "Entry source file (overrides manifest [bin].path)" }
+        run() {
+            run_build_command()
+            0
+        }
+    }
+
+    command clean {
+        description "Remove build/ artifacts (preserves the cache by default)"
+        flag all { description "Remove build/cache/ as well" }
+        run() {
+            run_clean_command()
+            0
+        }
+    }
+
+    command cache {
+        description "Manage the build cache: prune | info | clear-failed"
+        flag dry_run { description "Print what would change but do not modify the filesystem" }
+        option max_age_days { description "Evict entries with mtime older than N days" }
+        arg subcommand { description "prune | info | clear-failed", required true }
+        run() {
+            run_cache_command()
+            0
+        }
+    }
+
+    command test {
+        description "Run tests"
+        option filter { short "-f", description "Filter tests by name" }
+        flag coverage { short "-c", description "Enable coverage instrumentation" }
+        arg file { description "Test file (optional)" }
+        run() {
+            run_test_command()
+            0
+        }
+    }
+
+    command expr {
+        description "Parse and display an expression"
+        arg file { description "Source file", required true }
+        run() { cmd_expr(args) }
+    }
+
+    command metadata_show {
+        description "Decode a .meta.bin file and print its public surface (xtvc)"
+        arg file { description "Path to a .meta.bin", required true }
+        run() { cmd_metadata_show(args) }
+    }
+
+    command program {
+        description "Parse and display a program"
+        arg file { description "Source file", required true }
+        run() { cmd_program(args) }
+    }
+
+    command eval {
+        description "Evaluate a Avra expression"
+        arg file { description "Source file", required true }
+        run() { cmd_eval(args) }
+    }
+
+    command fix {
+        description "Apply auto-fixes to a Avra file"
+        arg file { description "Source file", required true }
+        run() { cmd_fix(args) }
+    }
+
+    command fmt {
+        description "Format a Avra source file"
+        arg file { description "Source file", required true }
+        run() { cmd_fmt(args) }
+    }
+
+    command lsp {
+        description "Start language server"
+        run() {
+            run_lsp_server(avra_process_env_get("PWD"))
+            0
+        }
+    }
+
+    command features {
+        description "List registered features"
+        run() {
+            eprintln("`avra features` is not implemented yet")
+            1
+        }
+    }
+
+    command docs {
+        description "Project documentation -- look up your project's functions, types, and enums"
+        flag symbols { description "Show symbol/type reference" }
+        flag short { description "Show just the one-liner for a symbol" }
+        flag llm { description "Compact LLM-friendly project documentation" }
+        flag validate { description "Validate documentation coverage for the project" }
+        option search { description "Search project docs (substring match)" }
+        arg query { description "Symbol to look up (function, type, enum name)" }
+        run() {
+            run_docs_command()
+            0
+        }
+    }
+    command expand {
+        description "Print the post-macro-expansion source (P7 visible magic)"
+        arg file { description "Source file", required true }
+        run() { cmd_expand(args) }
+    }
+}
+
+fn main() {
+    // Dispatch is split in two. The user-facing commands (compile, check, run,
+    // expr, fmt, fix, program, eval, metadata_show, expand) are fully
+    // declarative: `app.run()` reads the real argv, parses it against the
+    // matched command's schema, and calls that command's `run(args)` body,
+    // which reads its flags/args off the parsed `CliResult`.
+    //
+    // The compiler-internal commands below (build, test, docs, lang, clean,
+    // cache, lsp, and the internal _test_shard) still own bespoke argv parsers
+    // — they accept argv shapes the declarative `App` parser does not model
+    // yet: space-separated options (`docs --search foo`), word aliases
+    // (`--used-by` for `--callers`), and option-form flag aliases
+    // (`--message-format=json`). Routing them through `app.run()` would reject
+    // valid invocations (e.g. `build --lib --emit_metadata`, used by the test
+    // runner). So they are dispatched here by name against the raw argv until
+    // the `App` parser grows those forms; their `command … { run() … }` blocks
+    // above supply their `--help` entries and are the live dispatch target for
+    // when that boundary is removed.
+    if avra_selfhost_argc() >= 2 {
+        let cmd0 = avra_selfhost_get_arg_cstr(1)
+        if cmd0 == "lsp" {
+            // Index the project once, then enter the JSON-RPC stdio
+            // loop. v1 serves a static graph; reindex-on-edit waits
+            // for the cache layer (rnb9.7) to grow a watch loop.
+            let project_dir = avra_process_env_get("PWD")
+            run_lsp_server(project_dir)
+            return
+        }
+        if cmd0 == "lang" {
+            run_lang_command()
+            return
+        }
+        if cmd0 == "docs" {
+            run_docs_command()
+            return
+        }
+        if cmd0 == "test" {
+            run_test_command()
+            return
+        }
+        if cmd0 == "_test_shard" {
+            // 05yc: internal subcommand — the per-file orchestrator
+            // forks `bs2 _test_shard <path>` per shard so each
+            // compile + run lives in its own process (the prereq for
+            // parallel dispatch via spawn_pool_async + free crash
+            // isolation). Not for direct user invocation.
+            run_test_shard_command()
+            return
+        }
+        if cmd0 == "build" {
+            run_build_command()
+            return
+        }
+        if cmd0 == "clean" {
+            run_clean_command()
+            return
+        }
+        if cmd0 == "cache" {
+            run_cache_command()
+            return
+        }
+    }
+
+    // Everything else dispatches declaratively; the exit code is the matched
+    // command's return.
+    exit(app.run())
 }
