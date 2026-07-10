@@ -52,7 +52,7 @@ fn spo_run() -> string {
     write_fixture_and_run_no_metadata("/tmp/avra_space_option_test.av", spo_src())
 }
 
-spec "phx5: space-separated `--key value` options parse alongside `--key=value`" {
+spec "space-separated `--key value` options parse alongside `--key=value`" {
     then "a space-separated option sets its value" {
         // `--module_path abcd` → module_path reads "abcd" (length 4).
         let out = spo_run()
