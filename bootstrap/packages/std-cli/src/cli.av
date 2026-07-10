@@ -531,30 +531,43 @@ fn strip_dashes(s: string) -> string {
     else { s }
 }
 
+/// Normalize a flag/option token for matching: `-` and `_` inside a name are
+/// treated as equivalent, so `--debug-null` and `--debug_null` are the same
+/// flag (a well-established CLI convention — and the reason `compile` could
+/// read both spellings). The leading dashes normalize too, but consistently on
+/// both sides of every comparison, so the equivalence is unaffected.
+fn norm_flag(s: string) -> string {
+    s.replace("-", "_")
+}
+
 /// The canonical (long, dash-stripped) name of the flag that `arg` matches —
-/// by either its `--name` or `-short` spelling — or "" when no flag matches.
-/// A flag is always RECORDED under this canonical name, so `result_has_flag`
-/// (which the generated run bodies call by long name) resolves it regardless
-/// of which spelling the user typed (`-v` and `--verbose` both set `verbose`).
+/// by either its `--name` or `-short` spelling, dash/underscore-insensitive —
+/// or "" when no flag matches. A flag is always RECORDED under this canonical
+/// name, so `result_has_flag` (which the generated run bodies call by long
+/// name) resolves it regardless of which spelling the user typed (`-v` and
+/// `--verbose` both set `verbose`; `--debug-null` sets `debug_null`).
 fn flag_canonical_name(flags: List<FlagDef>, arg: string) -> string {
+    let key = norm_flag(arg)
     mut i = 0
     while i < flags.length {
         let f = flags[i]
-        if f.name == arg || (f.short != "" && f.short == arg) { return strip_dashes(f.name) }
+        if norm_flag(f.name) == key || (f.short != "" && norm_flag(f.short) == key) { return strip_dashes(f.name) }
         i = i + 1
     }
     ""
 }
 
 /// The canonical (long, dash-stripped) name of the option that `arg` matches
-/// — by either its `--name` or `-short` spelling — or "" when none. Mirrors
-/// `flag_canonical_name`: an option is recorded (and defaulted) under this
-/// name, so `result_get_option` resolves it whichever spelling was typed.
+/// — by either its `--name` or `-short` spelling, dash/underscore-insensitive
+/// — or "" when none. Mirrors `flag_canonical_name`: an option is recorded
+/// (and defaulted) under this name, so `result_get_option` resolves it
+/// whichever spelling was typed.
 fn option_canonical_name(options: List<OptionDef>, arg: string) -> string {
+    let key = norm_flag(arg)
     mut i = 0
     while i < options.length {
         let o = options[i]
-        if o.name == arg || (o.short != "" && o.short == arg) { return strip_dashes(o.name) }
+        if norm_flag(o.name) == key || (o.short != "" && norm_flag(o.short) == key) { return strip_dashes(o.name) }
         i = i + 1
     }
     ""

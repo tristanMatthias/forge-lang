@@ -1,0 +1,70 @@
+// vez6.12 prerequisite: a flag/option declared with an underscore name is
+// matchable by its dash spelling and vice-versa (`--debug-null` sets the
+// `debug_null` flag). A well-established CLI convention, and specifically what
+// lets the avra `compile` command accept both `--debug-null` (used by the
+// build) and `--module_path` (used by tests) against one declared schema —
+// the last blocker to migrating main.av's `compile` onto the declarative App.
+//
+// The equivalence lives in the shared classifier (cli.av `norm_flag` in
+// `flag_canonical_name`/`option_canonical_name`), so it holds on BOTH the
+// App.run_argv path exercised here and the legacy cli_parse path.
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
+// cross-package @comptime bodies are available. `du_`-prefixed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn du_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command build {\n" +
+    "        flag debug_null {}\n" +
+    "        option module_path {}\n" +
+    "        run() {\n" +
+    "            if debug_null { return 42 }\n" +
+    "            return module_path.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // `--debug-null` (dash) must set the `debug_null` (underscore) flag.
+    "    println(\"DASH=\" + string(toy.run_argv([\"build\", \"--debug-null\"])))\n" +
+    // and the canonical `--debug_null` still works.
+    "    println(\"UNDER=\" + string(toy.run_argv([\"build\", \"--debug_null\"])))\n" +
+    // an option: `--module-path=x` (dash) sets the `module_path` (underscore) option.
+    "    println(\"OPT=\" + string(toy.run_argv([\"build\", \"--module-path=abcd\"])))\n" +
+    "}\n"
+}
+
+fn du_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_dash_underscore_test.av", du_src())
+}
+
+spec "vez6.12: dash/underscore flag+option spellings are equivalent" {
+    then "a dash-spelled flag sets its underscore-named flag" {
+        // `--debug-null` matches `flag debug_null` → run body's `debug_null`
+        // is true → 42.
+        let out = du_run()
+        out.contains("DASH=42")
+    }
+    then "the canonical underscore spelling still works" {
+        let out = du_run()
+        out.contains("UNDER=42")
+    }
+    then "a dash-spelled option sets its underscore-named option" {
+        // `--module-path=abcd` matches `option module_path` → module_path
+        // reads "abcd" (length 4).
+        let out = du_run()
+        out.contains("OPT=4")
+    }
+}
