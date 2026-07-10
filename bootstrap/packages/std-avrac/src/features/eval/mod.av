@@ -664,6 +664,12 @@ export fn execute_stmt_ids(runtime: Runtime, ids: List<StmtId>) -> StepResult {
 /// (TypeDecl, ShapeDecl, …) are erased. Anything else dispatches
 /// to the feature registry's eval hooks.
 export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
+    // ps3t.5.4: a comptime fold that has allocated past the memory ceiling traps
+    // here (before executing the next statement) instead of OOM-ing the compiler.
+    // No-op at runtime — the budget only charges while a fold is on the stack.
+    if avra_comptime_mem_exceeded() != 0 {
+        return error_result(runtime, "comptime allocation exceeded ${string(avra_comptime_mem_limit())} bytes — a @comptime fn must not build unbounded data at compile time (runaway allocation?)")
+    }
     match stmt {
         .Let(name, _, initializer) -> {
             let init = eval_expr(runtime, runtime.nodes.exprs.get(initializer))
@@ -744,6 +750,12 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
 // unbounded) and threaded, never re-read per iteration.
 extern fn avra_comptime_active() -> int
 extern fn avra_comptime_loop_limit() -> int
+// ps3t.5.4 memory bound: `mem_exceeded` latches once the active fold has
+// allocated past `mem_limit`; the per-statement check in `execute_stmt` traps.
+// At runtime (no fold on the stack) the budget never charges, so `mem_exceeded`
+// is always 0 — the check is a no-op there.
+extern fn avra_comptime_mem_exceeded() -> int
+extern fn avra_comptime_mem_limit() -> int
 
 /// iteration; loops until the condition is falsy or the body
 /// errors / returns.

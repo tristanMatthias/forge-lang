@@ -372,6 +372,12 @@ static void rc_reclaim(void* user_ptr) {
 
 // Allocate an RC-managed object via system malloc.
 // Returns pointer to payload (past header).
+// Forward declarations for the comptime memory bound (ps3t.5.4), defined far
+// below next to the comptime depth counter — avra_rc_alloc charges against the
+// per-fold budget when a comptime fold is on the stack.
+int64_t avra_comptime_active(void);
+static void avra_comptime_charge(int64_t bytes);
+
 void* avra_rc_alloc(int64_t payload_size) {
     size_t payload = (size_t)payload_size;
     size_t prefix = avra_rc_strict ? RC_STRICT_PREFIX : 0;
@@ -382,6 +388,9 @@ void* avra_rc_alloc(int64_t payload_size) {
         avra_runtime_errorf("out of memory (rc_alloc %lld bytes)", (long long)payload_size);
         exit(1);
     }
+    // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
+    // so a runaway fold trips a diagnostic before it can OOM the compiler.
+    if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
     if (avra_rc_strict) *(size_t*)raw = payload;   // size prefix for poison-on-free
     void* user_ptr = (char*)raw + prefix + RC_HEADER_SIZE;
     RcHeader* hdr = (RcHeader*)((char*)user_ptr - RC_HEADER_SIZE);
@@ -4392,9 +4401,52 @@ const char* avra_process_env_get(const char* key) {
 // The fold + macro entry points bracket their eval with enter/leave; the
 // interpreter's `while` executor checks `active` and, when set, caps iterations.
 static _Atomic int64_t avra_comptime_depth_v = 0;
-void avra_comptime_enter(void) { atomic_fetch_add(&avra_comptime_depth_v, 1); }
+// ps3t.5.4 memory bound: cumulative bytes allocated (via avra_rc_alloc) while a
+// comptime fold/macro is on the stack, and a sticky "exceeded" flag the
+// interpreter polls. Reset when the OUTERMOST fold begins (depth 0→1), so each
+// top-level comptime evaluation gets a fresh budget; nested (transitive) enters
+// don't reset it. Bounds a runaway comptime that builds unbounded collections/
+// strings — traps with a diagnostic instead of OOM-ing the compiler.
+static _Atomic int64_t avra_comptime_bytes_v = 0;
+static _Atomic int64_t avra_comptime_mem_exceeded_v = 0;
+void avra_comptime_enter(void) {
+    if (atomic_fetch_add(&avra_comptime_depth_v, 1) == 0) {
+        atomic_store(&avra_comptime_bytes_v, 0);
+        atomic_store(&avra_comptime_mem_exceeded_v, 0);
+    }
+}
 void avra_comptime_leave(void) { atomic_fetch_sub(&avra_comptime_depth_v, 1); }
 int64_t avra_comptime_active(void) { return atomic_load(&avra_comptime_depth_v) > 0 ? 1 : 0; }
+
+// Per-fold comptime allocation ceiling (bytes). A runaway comptime that builds
+// an unbounded collection/string trips this before it can OOM the compiler.
+// Overridable via AVRA_COMPTIME_MEM_LIMIT (mainly for tests, which set it low to
+// trip fast); read once, cached. Default 256 MiB — generous enough that no real
+// fold trips it.
+int64_t avra_comptime_mem_limit(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    const char* e = getenv("AVRA_COMPTIME_MEM_LIMIT");
+    int64_t v = (e && *e) ? strtoll(e, NULL, 10) : (256LL * 1024 * 1024);
+    if (v <= 0) v = 256LL * 1024 * 1024;
+    atomic_store(&cached, v);
+    return v;
+}
+
+// Charge `bytes` against the comptime allocation budget and latch the exceeded
+// flag once the running total passes the ceiling. Called from avra_rc_alloc when
+// a fold is active. Cheap (two atomics) and only on the comptime path.
+static void avra_comptime_charge(int64_t bytes) {
+    int64_t total = atomic_fetch_add(&avra_comptime_bytes_v, bytes) + bytes;
+    if (total > avra_comptime_mem_limit()) {
+        atomic_store(&avra_comptime_mem_exceeded_v, 1);
+    }
+}
+
+// True once the active fold has allocated past the ceiling. The interpreter
+// polls this per statement and traps (→ F4007) instead of continuing to OOM.
+int64_t avra_comptime_mem_exceeded(void) { return atomic_load(&avra_comptime_mem_exceeded_v); }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
 // that runs past this can only be non-terminating (a real one folds in far
