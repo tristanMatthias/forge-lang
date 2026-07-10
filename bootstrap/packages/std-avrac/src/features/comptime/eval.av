@@ -1,10 +1,15 @@
 // WHY: compile-time evaluation of @comptime-annotated fns.
 //
 // `try_fold_call(reg, call_expr)` — given a registered comptime fn
-// and a call expression with literal args, runs the fn body via the
-// tree-walk evaluator (features/eval) and returns the result as an
-// Expr AST literal. Returns null when the call can't be folded
-// (callee not registered, args not literals, or body errors).
+// and a call expression with literal args, evaluates the fn body and
+// returns the result as an Expr AST literal. Returns null when the call
+// can't be folded (callee not registered, args not literals, body errors).
+//
+// A self-contained scalar-int fn is evaluated by the COMPILED-COMPTIME fast
+// path (`try_jit_fold`, ps3t.5): codegen the fn and run it in-process via the
+// JIT, byte-identical to the interpreter but without the tree-walk. Everything
+// else — non-scalar shapes, calls, macros/AST-returning fns — falls back to the
+// tree-walk evaluator (features/eval), so capability is unchanged.
 //
 // Phase 2 of Components V2 (vez6.2). The program-walker that calls
 // this on every call site lives in rewrite.av.
@@ -17,10 +22,17 @@
 // fold path (Value → construct-expression source form) and the
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
-use core.{Expr, ExprId, Stmt, FieldInit, NodeStore}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind, value_to_stmt}
+use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind, value_to_stmt, render_number, parse_num}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
 use features.quote_expr.{construct_stmt}
+use codegen.{compile_and_jit_call}
+
+// Flat i64 argv buffer for the compiled-comptime JIT (declared in core/llvm.av;
+// redeclared here so the fold path is self-contained, converged by exact type).
+extern fn avra_i64_buf_new(n: int) -> ptr
+extern fn avra_i64_buf_set(buf: ptr, i: int, v: int)
+extern fn avra_i64_buf_free(buf: ptr)
 
 // ── Public API ──
 
@@ -66,9 +78,135 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
 /// Call-dispatch overhead (no name lookup, no Expr.Call wrapper,
 /// no per-arg eval_expr round-trip).
 fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
+    // Compiled-comptime fast path (ps3t.5): for a self-contained scalar-int fn
+    // we can codegen + JIT it instead of tree-walking. Falls back to the
+    // interpreter for every shape it can't safely handle, so day-one capability
+    // is unchanged and the folded literal is byte-identical.
+    let jit = try_jit_fold(reg, fn_def, arg_values)
+    if jit != null { return jit }
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) != 0 { return null }
     value_to_expr(reg.runtime.nodes, step_value(result))
+}
+
+// ── Compiled-comptime fold (ps3t.5 Slice A) ──
+
+/// True for `ValueType.Int` — the only param/return shape the first-cut JIT
+/// fold marshals (i64 in, i64 out, unambiguous ABI).
+fn vtype_is_int(vt: ValueType) -> bool {
+    match vt {
+        .Int -> true
+        _ -> false
+    }
+}
+
+/// Try to evaluate `fn_def(arg_values)` by compiling the fn to machine code and
+/// running it in-process, returning the result as a literal `Expr.Number`.
+/// Returns null (→ interpreter fallback) unless EVERY safety gate holds, because
+/// the alternative is worse than slow: a JIT'd `/`-by-zero fires a runtime trap
+/// that `abort()`s the compiler, and a call to a non-comptime callee can't be
+/// resolved in the single-fn module. The gates keep the JIT to pure scalar-int
+/// arithmetic whose result is byte-identical to the interpreter's.
+fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
+    if !vtype_is_int(fn_def.ret_ty) { return null }
+    let argc = arg_values.length
+    if argc != fn_def.params.length { return null }
+    if argc > 4 { return null }              // avra_llvm_jit_call arity ceiling
+    mut pi = 0
+    while pi < fn_def.params.length {
+        if !vtype_is_int(fn_def.params[pi].vtype) { return null }
+        pi = pi + 1
+    }
+    mut ai = 0
+    while ai < argc {
+        if arg_values[ai].kind != "number" { return null }
+        ai = ai + 1
+    }
+    if !body_jit_safe(reg.runtime.nodes, fn_def.body) { return null }
+
+    let argv = avra_i64_buf_new(argc)
+    mut i = 0
+    while i < argc {
+        avra_i64_buf_set(argv, i, parse_num(arg_values[i].number_text))
+        i = i + 1
+    }
+    // Materialise the fn as a standalone declaration in the program store, then
+    // codegen just that row and JIT-call it. The body rows are already in the
+    // store, so a leaf Function row (payload carries params/ret/body) is enough.
+    let empty_tp: List<TypeParamEntry> = []
+    let fn_stmt_id = reg.runtime.nodes.add_stmt_leaf(Stmt.Function(fn_def.name, empty_tp, fn_def.params, fn_def.ret_ty, fn_def.body))
+    let only: List<StmtId> = [fn_stmt_id]
+    let folded = match compile_and_jit_call(only, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
+        .Ok(v) -> maybe_number(render_number(v))
+        .Err(_) -> null
+    }
+    avra_i64_buf_free(argv)
+    folded
+}
+
+/// Wrap a rendered integer literal as an `Expr.Number` — the same shape
+/// `value_to_expr` produces for the interpreter's `value_number(render_number)`,
+/// so a JIT fold and an interpreter fold are byte-identical.
+fn maybe_number(text: string) -> Expr? {
+    Expr.Number(text)
+}
+
+/// Conservatively decide whether a fn body is safe to JIT: only pure scalar
+/// arithmetic + local control flow, with NO call of any kind (the single-fn
+/// module has no callees) and NO `/` or `%` (their zero-divisor trap `abort()`s
+/// the compiler). Any statement/expression this doesn't explicitly bless →
+/// unsafe → interpreter fallback. Fail-closed by design.
+fn body_jit_safe(store: NodeStore, body: List<StmtId>) -> bool {
+    mut i = 0
+    while i < body.length {
+        if !stmt_jit_safe(store, store.stmts.get(body[i])) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn stmt_jit_safe(store: NodeStore, stmt: Stmt) -> bool {
+    match stmt_unwrap(store, stmt) {
+        .Expr(e) -> expr_jit_safe(store, e)
+        .Return(e) -> expr_jit_safe(store, e)
+        .ReturnEmpty -> true
+        .Let(_, _, init) -> expr_jit_safe(store, init)
+        .Mut(_, _, init) -> expr_jit_safe(store, init)
+        .Const(_, _, init) -> expr_jit_safe(store, init)
+        .Block(b) -> body_jit_safe(store, b)
+        .If(cond, then_s, else_s) -> expr_jit_safe(store, cond)
+            && stmt_jit_safe(store, store.stmts.get(then_s))
+            && (else_s == null || stmt_jit_safe(store, store.stmts.get(else_s!)))
+        .While(cond, b) -> expr_jit_safe(store, cond) && stmt_jit_safe(store, store.stmts.get(b))
+        _ -> false
+    }
+}
+
+fn expr_jit_safe(store: NodeStore, id: ExprId) -> bool {
+    match store.exprs.get(id) {
+        .Number(_) -> true
+        .Bool(_) -> true
+        .Ident(_) -> true
+        .Grouping(e) -> expr_jit_safe(store, e)
+        .Unary(_, right) -> expr_jit_safe(store, right)
+        .Binary(left, op, right) -> binop_jit_safe(op)
+            && expr_jit_safe(store, left) && expr_jit_safe(store, right)
+        .Logical(left, _, right) -> expr_jit_safe(store, left) && expr_jit_safe(store, right)
+        .IfExpr(cond, then_e, else_e) -> expr_jit_safe(store, cond)
+            && expr_jit_safe(store, then_e) && expr_jit_safe(store, else_e)
+        .Block(b) -> body_jit_safe(store, b)
+        _ -> false
+    }
+}
+
+/// `/` and `%` are the only pure-int operators that can trap (zero divisor →
+/// `avra_div_by_zero_trap` → `abort()`), so they force the interpreter path.
+fn binop_jit_safe(op: BinOp) -> bool {
+    match op {
+        .Div -> false
+        .Mod -> false
+        _ -> true
+    }
 }
 
 // ── Value → Expr (construct-expression) conversion ──
