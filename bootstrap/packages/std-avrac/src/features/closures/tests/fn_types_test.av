@@ -32,8 +32,8 @@ spec "fn types" {
         add10(5) == 15 && add10(20) == 30
     }
     then "compose pipeline" {
-        let inc = (x) -> x + 1
-        let dbl = (x) -> x * 2
+        let inc = (x: int) -> x + 1
+        let dbl = (x: int) -> x * 2
         ft_compose(dbl, inc)(5) == 12
     }
     then "fn-typed struct field invoked through field access" {

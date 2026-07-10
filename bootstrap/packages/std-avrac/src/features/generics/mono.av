@@ -1840,9 +1840,9 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
         // preserving scalar fields (nominal name + TypeId) untouched.
         .Struct(name, _, _) -> {
             let concrete = type_arg_lookup(ta, name)
-            if !vtype_eq(concrete, vt) { concrete } else { vt.map((c) -> substitute_vtype(c, ta)) }
+            if !vtype_eq(concrete, vt) { concrete } else { vt.map((c: ValueType) -> substitute_vtype(c, ta)) }
         }
-        _ -> vt.map((c) -> substitute_vtype(c, ta))
+        _ -> vt.map((c: ValueType) -> substitute_vtype(c, ta))
     }
 }
 

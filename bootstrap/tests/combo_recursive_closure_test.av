@@ -46,7 +46,7 @@ spec "combo recursive closure" {
         crc_tree_depth(crc_make_tree()) == 4
     }
     then "closure over recursive fn" {
-        let summer = (t) -> { crc_tree_sum(t) }
+        let summer = (t: CrcTree) -> { crc_tree_sum(t) }
         summer(CrcTree.Leaf(99)) == 99
     }
     then "list of trees mapped" {

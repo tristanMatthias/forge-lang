@@ -1755,7 +1755,7 @@ fn rewrite_pattern(ctx: NameCtx, pattern: Pattern) -> Pattern {
             ctx.nodes.pats.add_leaf(rewrite_pattern(ctx, ctx.nodes.pats.get(right))))
         // The remaining variants carry no Pattern children and no resolvable
         // names — leaf transforms.
-        _ -> pattern.map((p) -> rewrite_pattern(ctx, p))
+        _ -> pattern.map((p: Pattern) -> rewrite_pattern(ctx, p))
     }
 }
 

@@ -6,7 +6,7 @@ fn scl_classify(x: int) -> int {
 }
 
 fn scl_run() -> string {
-    let classify = (x) -> {
+    let classify = (x: int) -> {
         if x > 100 { return 3 }
         if x > 50 { return 2 }
         if x > 0 { return 1 }
@@ -33,7 +33,7 @@ fn scl_run() -> string {
     let items = [100, 200, 300]
     items.foreach((x) -> println(string(x)))
 
-    let double = (x) -> x * 2
+    let double = (x: int) -> x * 2
     println(string(double(double(3))))
 
     let data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

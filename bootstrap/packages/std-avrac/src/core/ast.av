@@ -460,10 +460,10 @@ export fn vtype_subst_params(vt: ValueType, tp: List<TypeParamEntry>, args: List
             if idx >= 0 && idx < args.length {
                 args[idx]
             } else {
-                vt.map((c) -> vtype_subst_params(c, tp, args))
+                vt.map((c: ValueType) -> vtype_subst_params(c, tp, args))
             }
         }
-        _ -> vt.map((c) -> vtype_subst_params(c, tp, args))
+        _ -> vt.map((c: ValueType) -> vtype_subst_params(c, tp, args))
     }
 }
 
