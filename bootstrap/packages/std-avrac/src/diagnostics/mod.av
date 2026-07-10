@@ -211,6 +211,14 @@ export enum DiagCode {
     /// would leave the omitted field reading null/0 at runtime. (A `with`
     /// update `p with { … }` is intentionally partial and is NOT gated.)
     MissingStructFields
+    /// F1006 — a standalone lambda parameter with no type annotation and no
+    /// surrounding fn-type context to resolve it from (a bare `let f = (x) ->
+    /// …`). Codegen determines each parameter's layout from its type, so an
+    /// under-determined one would force inference from the body (a guess). A
+    /// lambda passed as a call argument, bound to an `fn(…)`-typed binding, or
+    /// stored in a struct field takes its parameter types from that context
+    /// and is NOT gated.
+    UnannotatedLambdaParam
     /// F1043 — method call on a receiver whose type has no such
     /// method. The message lists the receiver's available methods.
     UnknownMethod
@@ -416,6 +424,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .MissingDisplay      -> ErrorDef { code: "F1003", help: "define `fn display(self) -> string` on the type (or convert through a primitive first)" }
         .UnderAppliedGeneric -> ErrorDef { code: "F1004", help: "apply the type's arguments (`Foo<int>`), or make the function generic over the missing parameter (`fn f<T>(x: Foo<T>)`)" }
         .MissingStructFields -> ErrorDef { code: "F1005", help: "give every declared field a value — Avra has no silent zero-fill; for a partial change to an existing value use `x with { field: … }`" }
+        .UnannotatedLambdaParam -> ErrorDef { code: "F1006", help: "annotate the parameter, e.g. `(x: int)` — a standalone lambda's parameter types are only inferred from a call, an `fn(…)`-typed binding, or a struct field" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }

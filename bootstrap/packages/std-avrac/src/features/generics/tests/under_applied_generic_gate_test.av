@@ -110,9 +110,9 @@ fn main() { let w = Wrapped(GenOpt.Some(1)) }")
 fn main() { let f = (x: GenOpt) -> 0  let r = f(GenOpt.Some(1)) }")
         out.contains("F1004")
     }
-    then "an untyped lambda parameter compiles (no annotation to gate)" {
+    then "an untyped standalone lambda parameter is F1006" {
         let out = uag_compile_out("fn main() { let f = (x) -> 0  let r = f(7) }")
-        out.contains("__AVRA_COMPILE_OK__")
+        out.contains("F1006")
     }
     then "a bare generic EXTERN parameter is F1004" {
         let out = uag_compile_out("enum GenOpt<T> { None, Some(value: T) }
