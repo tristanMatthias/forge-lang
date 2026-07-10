@@ -361,6 +361,13 @@ export enum DiagCode {
     /// a value of the wrong shape, or the decoder doesn't yet handle
     /// the variant the macro produced.
     ExpandUndecodableReturn
+    /// F4007 — a `@comptime` fn used as a constant fold (a normal call
+    /// with literal args, not `@expand`) failed to evaluate: a runtime
+    /// error in the fn body, or the comptime loop-budget trap. The fold
+    /// path's sibling of F4005 — distinct from "not foldable" (a comptime
+    /// fn called with non-literal args), which correctly stays unfolded
+    /// and is never reported.
+    ComptimeFoldFailed
     /// F4100 — a `component` instance's body contains a nested
     /// `ComponentBlock` whose type isn't declared in the parent's
     /// `children { ... }` schema. The compiler refuses to splice
@@ -455,6 +462,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ExpandUnsupportedArity -> ErrorDef { code: "F4004", help: "macros take 0 args, 1 arg (stmt), or 2 args (AnnotatedDecl, ResolverCtx) — adjust the signature" }
         .ExpandEvalFailed    -> ErrorDef { code: "F4005", help: "the comptime evaluator hit a runtime error inside the macro body — see the evaluator message" }
         .ExpandUndecodableReturn -> ErrorDef { code: "F4006", help: "macros must return Stmt, List<Stmt>, or ResolvedDecls — check the return type and shape" }
+        .ComptimeFoldFailed  -> ErrorDef { code: "F4007", help: "the @comptime fn errored while folding at compile time — see the evaluator message; if the loop budget tripped, the fn likely doesn't terminate for these arguments" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }

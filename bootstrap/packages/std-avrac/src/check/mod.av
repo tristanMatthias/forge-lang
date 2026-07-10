@@ -85,16 +85,19 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
         return TypecheckSourceResult { bag: bag_merge(comp.bag, named.bag), stmts: empty_stmts, type_reg: named.type_reg, store: parsed.store }
     }
     let post_comptime = run_comptime(named.stmts, parsed.store, named.type_reg)
-    let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed.store)
-    if bag_has_errors(tc_result.bag) {
-        return TypecheckSourceResult { bag: tc_result.bag, stmts: tc_result.stmts, type_reg: named.type_reg, store: parsed.store }
+    let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed.store)
+    // Fold-path F4007s (ps3t.5.7) merge in alongside the typecheck bag so `avra
+    // check` reports them; a genuine fold error gates just like a type error.
+    let checked_bag = bag_merge(post_comptime.bag, tc_result.bag)
+    if bag_has_errors(checked_bag) {
+        return TypecheckSourceResult { bag: checked_bag, stmts: tc_result.stmts, type_reg: named.type_reg, store: parsed.store }
     }
     // Monomorphize so where-clause / trait-bound errors that only
     // surface during specialisation land in the bag. Merge with the
     // typecheck bag so warnings from earlier stages aren't lost.
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed.store)
     TypecheckSourceResult {
-        bag: bag_merge(tc_result.bag, mono.bag),
+        bag: bag_merge(checked_bag, mono.bag),
         stmts: tc_result.stmts,
         type_reg: named.type_reg,
         store: parsed.store,

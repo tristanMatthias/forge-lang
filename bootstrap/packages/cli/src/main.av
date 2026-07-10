@@ -3842,7 +3842,8 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
-            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
+            render_and_fail_on_errors(post_comptime.bag, ctx, "comptime fold failed")
+            let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
             return
@@ -3905,7 +3906,10 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
-            println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
+            // fmt is best-effort formatting, not a compile gate: an unfoldable
+            // @comptime call formats as its source form, and the F4007 (if any)
+            // surfaces when the file is checked/compiled/run — so drop the bag here.
+            println(fmt_stmt_ids(parsed_prog.store, post_comptime.stmts, 0))
             return
         }
         "test" -> {
@@ -3924,7 +3928,8 @@ fn main() {
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
             let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
-            let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
+            render_and_fail_on_errors(post_comptime.bag, ctx, "comptime fold failed")
+            let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
             render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
@@ -4173,8 +4178,12 @@ fn main() {
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
         let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
+        // A genuine @comptime fold error (F4007) gates before typeck, mirroring
+        // how @expand's F4005 halts — a call that couldn't fold must not slip
+        // through as an unfolded runtime call.
+        render_and_fail_on_errors(post_comptime.bag, ctx, "comptime fold failed")
         // Type check — gates compilation on errors
-        let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
+        let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed_prog.store)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return }

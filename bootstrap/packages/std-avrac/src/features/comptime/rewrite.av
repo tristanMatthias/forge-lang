@@ -12,7 +12,7 @@
 // typecheck_program.
 
 use core.{Stmt, Expr, FieldInit, MatchArm, WhenArm, SelectArm, StmtId, ExprId}
-use features.comptime.{CompTimeRegistry, try_fold_call}
+use features.comptime.{CompTimeRegistry, try_fold_call, comptime_stmt_span}
 
 // ── Public entry ──
 
@@ -37,7 +37,11 @@ fn rewrite_stmt_ids(ids: List<StmtId>, reg: CompTimeRegistry) -> List<StmtId> {
 /// Rewrite one statement row, allocating against the original.
 fn rewrite_stmt_id(id: StmtId, reg: CompTimeRegistry) -> StmtId {
     let store = reg.runtime.nodes
-    store.restmt(rewrite_stmt(store.stmts.get(id), reg), id)
+    // Refresh the fold-failure attribution span to THIS statement, so a genuine
+    // fold error deep in its expressions carets here (ps3t.5.7). `with` shares the
+    // fold_errors accumulator ptr, so appends still reach run_comptime's registry.
+    let sreg = reg with { fold_span: comptime_stmt_span(store, id) }
+    store.restmt(rewrite_stmt(store.stmts.get(id), sreg), id)
 }
 
 /// Rewrite one expression row, allocating against the original.

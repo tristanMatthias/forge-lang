@@ -23,8 +23,8 @@
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, is_boxed_ast_kind, value_to_stmt, render_number, parse_num}
-use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num}
+use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, record_fold_error}
 use features.quote_expr.{construct_stmt}
 use codegen.{compile_and_jit_call}
 
@@ -118,7 +118,14 @@ fn fold_call_compute(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List
     avra_comptime_enter()
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     avra_comptime_leave()
-    if step_had_error(result) != 0 { return null }
+    // A GENUINE fold failure: the callee IS a @comptime fn and the args ARE
+    // literals (both gated upstream in try_fold_call), yet the body errored — a
+    // runtime error or the ps3t.5.4 loop-budget trap. Record it so run_comptime
+    // surfaces an F4007 instead of silently leaving the call unfolded (ps3t.5.7).
+    if step_had_error(result) != 0 {
+        record_fold_error(reg, fn_def.name, step_error_message(result))
+        return null
+    }
     value_to_expr(reg.runtime.nodes, step_value(result))
 }
 
