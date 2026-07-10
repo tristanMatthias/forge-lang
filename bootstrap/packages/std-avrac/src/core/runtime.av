@@ -109,6 +109,18 @@ extern fn avra_stdin_read_line() -> string
 extern fn avra_stdout_write(s: string)
 extern fn avra_str_ends_with(s: string, suffix: string) -> int
 extern fn avra_str_line_starts(s: string) -> List<int>
+/// Length-aware single-character access: like `s[idx]`, but the caller
+/// supplies `len` (the already-known length of `s`) so the bounds check
+/// costs no `strlen`. A per-char scanner over a fixed string (the lexer)
+/// measures the length ONCE and threads it, turning the historic
+/// per-character `strlen` — the dominant cost of every compile — into an
+/// O(1) index. `s` is trusted not to be shorter than `len`.
+extern fn avra_str_char_at_len(s: string, idx: int, len: int) -> string
+/// Length-aware slice: like `s.substring(start, end)`, but the caller
+/// supplies the already-known length of `s` so the end-clamp costs no
+/// `strlen`. Lets the lexer slice every token out of a fixed, once-measured
+/// source without re-measuring it per token.
+extern fn avra_str_substring_len(s: string, start: int, end: int, len: int) -> string
 
 // ── Intmap extensions ──
 extern fn avra_intmap_inc(map: ptr, key: int) -> int

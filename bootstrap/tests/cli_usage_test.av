@@ -1,0 +1,22 @@
+// The top-level `avra` help (invoked with no args) must identify the tool as
+// `avra` — matching the documented CLI (`avra build`, `avra run`, …) — not the
+// internal build name (`bootstrapc` / `forge-bootstrap`), and must list the
+// real commands. Guards against the usage string drifting back to an internal
+// name or losing a command.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn cu_usage() -> string {
+    avra_shell_exec("./build/bs2 2>&1")
+}
+
+spec "avra top-level usage identifies the tool and lists commands" {
+    then "identifies the tool as `avra`, not the internal build name" {
+        let out = cu_usage()
+        out.contains("avra v0.1.0") && !out.contains("bootstrapc")
+    }
+    then "lists the core commands (compile, run, build, test)" {
+        let out = cu_usage()
+        out.contains("compile") && out.contains("run") && out.contains("build") && out.contains("test")
+    }
+}

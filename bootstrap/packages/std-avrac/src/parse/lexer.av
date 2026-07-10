@@ -199,26 +199,26 @@ impl Parser {
 
     fn scan_number_token(self) {
         // Check for 0x, 0b, 0o prefixes
-        let first = self.source[self.start]
+        let first = self.char_at(self.start)
         if first == "0" {
             let prefix = self.peek_char()
             match prefix {
                 "x" or "X" -> {
                     self.advance_char()
                     while p_is_hex_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
-                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    self.set_current(Tk.Number, self.slice(self.start, self.current))
                     return
                 }
                 "b" or "B" -> {
                     self.advance_char()
                     while p_is_binary_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
-                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    self.set_current(Tk.Number, self.slice(self.start, self.current))
                     return
                 }
                 "o" or "O" -> {
                     self.advance_char()
                     while p_is_octal_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
-                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    self.set_current(Tk.Number, self.slice(self.start, self.current))
                     return
                 }
                 _ -> {}
@@ -234,7 +234,7 @@ impl Parser {
             while p_is_digit(self.peek_char()) || self.peek_char() == "_" {
                 self.advance_char()
             }
-            self.set_current(Tk.Float, self.source.substring(self.start, self.current))
+            self.set_current(Tk.Float, self.slice(self.start, self.current))
             return
         }
 
@@ -242,13 +242,13 @@ impl Parser {
         let next = self.peek_char()
         if next == "d" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
-            let num_str = self.source.substring(self.start, self.current - 1)
+            let num_str = self.slice(self.start, self.current - 1)
             self.set_current(Tk.Number, string(int(num_str) * 86400000))
             return
         }
         if next == "h" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
-            let num_str = self.source.substring(self.start, self.current - 1)
+            let num_str = self.slice(self.start, self.current - 1)
             self.set_current(Tk.Number, string(int(num_str) * 3600000))
             return
         }
@@ -256,24 +256,24 @@ impl Parser {
             if self.peek_next_char() == "s" {
                 self.advance_char()
                 self.advance_char()
-                let num_str = self.source.substring(self.start, self.current - 2)
+                let num_str = self.slice(self.start, self.current - 2)
                 self.set_current(Tk.Number, string(int(num_str)))
                 return
             }
             if !p_is_alpha_numeric(self.peek_next_char()) {
                 self.advance_char()
-                let num_str = self.source.substring(self.start, self.current - 1)
+                let num_str = self.slice(self.start, self.current - 1)
                 self.set_current(Tk.Number, string(int(num_str) * 60000))
                 return
             }
         }
         if next == "s" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
-            let num_str = self.source.substring(self.start, self.current - 1)
+            let num_str = self.slice(self.start, self.current - 1)
             self.set_current(Tk.Number, string(int(num_str) * 1000))
             return
         }
-        self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+        self.set_current(Tk.Number, self.slice(self.start, self.current))
     }
 
     fn scan_identifier_token(self) {
@@ -281,7 +281,7 @@ impl Parser {
             self.advance_char()
         }
 
-        let text = self.source.substring(self.start, self.current)
+        let text = self.slice(self.start, self.current)
         self.set_current(p_keyword_kind(text), text)
     }
 
@@ -343,8 +343,8 @@ impl Parser {
             } else if ch == "/" && self.peek_next_char() == "/" {
                 // Check for doc comments: /// and //!
                 // These are NOT skipped — they become tokens.
-                if self.current + 2 < self.source.length {
-                    let third = self.source[self.current + 2]
+                if self.current + 2 < self.source_len {
+                    let third = self.char_at(self.current + 2)
                     if third == "/" || third == "!" {
                         return  // stop skipping, let advance_token handle it
                     }
@@ -377,29 +377,43 @@ impl Parser {
         }
     }
 
+    // Bounds-checked single-character read at byte offset `i`, using the
+    // parser's cached `source_len` so no per-call strlen is paid. This is
+    // the single choke point every per-char lexer helper routes through —
+    // `self.source[i]` would re-strlen the whole source on each access.
+    fn char_at(self, i: int) -> string {
+        avra_str_char_at_len(self.source, i, self.source_len)
+    }
+
+    // Slice `source[start..end]` using the cached length, so extracting a
+    // token's lexeme doesn't re-strlen the whole file (companion to char_at).
+    fn slice(self, start: int, end: int) -> string {
+        avra_str_substring_len(self.source, start, end, self.source_len)
+    }
+
     fn is_at_end(self) -> bool {
-        self.current >= self.source.length
+        self.current >= self.source_len
     }
 
     fn peek_char(self) -> string {
-        if self.current >= self.source.length {
+        if self.current >= self.source_len {
             return ""
         }
-        self.source[self.current]
+        self.char_at(self.current)
     }
 
     fn peek_next_char(self) -> string {
-        if self.current + 1 >= self.source.length {
+        if self.current + 1 >= self.source_len {
             return ""
         }
-        self.source[self.current + 1]
+        self.char_at(self.current + 1)
     }
 
     fn match_next(self, expected: string) -> bool {
         if self.is_at_end() {
             return false
         }
-        if self.source[self.current] != expected {
+        if self.char_at(self.current) != expected {
             return false
         }
         self.advance_char()
@@ -407,7 +421,7 @@ impl Parser {
     }
 
     fn advance_char(self) -> string {
-        let ch = self.source[self.current]
+        let ch = self.char_at(self.current)
         self.current = self.current + 1
         if ch == "\n" {
             self.line = self.line + 1
@@ -557,7 +571,7 @@ impl Parser {
             // Check for closing """
             if ch == "\"" && self.peek_next_char() == "\"" {
                 // Need to check third quote
-                if self.current + 2 < self.source.length && self.source[self.current + 2] == "\"" {
+                if self.current + 2 < self.source_len && self.char_at(self.current + 2) == "\"" {
                     self.advance_char()
                     self.advance_char()
                     self.advance_char()
@@ -624,7 +638,7 @@ impl Parser {
             while !self.is_at_end() {
                 let ch = self.peek_char()
                 if ch == "\"" && self.peek_next_char() == "\"" {
-                    if self.current + 2 < self.source.length && self.source[self.current + 2] == "\"" {
+                    if self.current + 2 < self.source_len && self.char_at(self.current + 2) == "\"" {
                         self.advance_char()
                         self.advance_char()
                         self.advance_char()

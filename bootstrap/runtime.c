@@ -2300,12 +2300,49 @@ const char* avra_str_char_at(const char* s, int64_t idx) {
     return r;
 }
 
+// Length-aware char_at: identical to avra_str_char_at, but the caller
+// supplies the string's known length so the bounds check needs no strlen.
+// Per-char scanners (the lexer) hold a fixed source and its length across
+// an entire file, so threading `len` turns a per-character strlen — the
+// dominant cost of every compile (measured at ~63% of instructions —
+// __strlen_avx2, half of that from this very call) — into an O(1) index.
+// The stored length is trusted; s is NOT re-measured.
+const char* avra_str_char_at_len(const char* s, int64_t idx, int64_t len) {
+    if (idx < 0 || idx >= len) {
+        avra_runtime_errorf("string index %lld out of bounds (length %lld)",
+                            (long long)idx, (long long)len);
+        exit(1);
+    }
+    char* r = (char*)avra_rc_alloc(2);
+    r[0] = s[idx];
+    r[1] = '\0';
+    return r;
+}
+
 // Return a substring from index start (inclusive) to end (exclusive).
 const char* avra_str_substring(const char* s, int64_t start, int64_t end) {
     size_t len = strlen(s);
     if (start < 0) start = 0;
     if (end < start) end = start;
     if ((size_t)end > len) end = (int64_t)len;
+    int64_t sub_len = end - start;
+    char* r = (char*)avra_rc_alloc(sub_len + 1);
+    memcpy(r, s + start, sub_len);
+    r[sub_len] = '\0';
+    return r;
+}
+
+// Length-aware substring: like avra_str_substring, but the caller supplies
+// the source's known length so the end-clamp needs no strlen. The lexer
+// slices each token out of a fixed source it already measured; without the
+// threaded length every token extraction re-strlens the WHOLE file (the
+// secondary half of the lexer's quadratic, after per-char access). `len` is
+// trusted as an upper bound on valid indices; s is NOT re-measured.
+const char* avra_str_substring_len(const char* s, int64_t start, int64_t end,
+                                   int64_t len) {
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    if (end > len) end = len;
     int64_t sub_len = end - start;
     char* r = (char*)avra_rc_alloc(sub_len + 1);
     memcpy(r, s + start, sub_len);

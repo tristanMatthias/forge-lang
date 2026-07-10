@@ -141,6 +141,11 @@ export type ParserState = {
 /// @field features           — feature registry for parser dispatch.
 export type Parser = {
     source: string,
+    // strlen(source), measured once at construction. `source` is never
+    // reassigned, so every per-char access can bounds-check against this
+    // field instead of re-deriving strlen(source) each call — the fix for
+    // the lexer's quadratic-per-file scan.
+    source_len: int,
     file: string,
     mut start: int,
     mut current: int,
@@ -510,6 +515,7 @@ export fn parser_new(source: string) -> Parser {
 export fn parser_new_with_file(source: string, file: string) -> Parser {
     mut parser = Parser {
         source,
+        source_len: source.length,
         file,
         start: 0,
         current: 0,
@@ -614,7 +620,7 @@ impl Parser {
         // spans + provenance ride the store's side-tables. This is what lets
         // `parse_or_fail` serve the program from the PARSER's own arena roots.
         if self.records_roots != 0 {
-            self.store.record_roots(parsed.ids, self.source.length)
+            self.store.record_roots(parsed.ids, self.source_len)
         }
 
         ProgramParseResult {
@@ -1298,10 +1304,10 @@ impl Parser {
     // `.` token to see whether the next identifier starts with an
     // uppercase letter.
     fn peek_next_is_upper(self) -> bool {
-        if self.current >= self.source.length {
+        if self.current >= self.source_len {
             return false
         }
-        let ch = self.source[self.current]
+        let ch = self.char_at(self.current)
         ch in "A".."Z"
     }
 
@@ -1961,8 +1967,8 @@ impl Parser {
     fn peek_after_ident_is_colon(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == ":"
             }
@@ -1977,8 +1983,8 @@ impl Parser {
     fn peek_after_ident_is_lbrace(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == "{"
             }
@@ -1992,44 +1998,44 @@ impl Parser {
     // opposed to a comparison like `table < 10`? Scans source without
     // consuming. The `> {` suffix is what disambiguates the two.
     fn peek_is_table_row_type(self) -> bool {
-        let n = self.source.length
+        let n = self.source_len
         mut i = self.current_start + 1   // skip the `<`
         // skip whitespace
         while i < n {
-            let c = self.source.substring(i, i + 1)
+            let c = self.char_at(i)
             if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
         }
         if i >= n { return false }
         // identifier start
-        let c0 = self.source.substring(i, i + 1)
+        let c0 = self.char_at(i)
         let is_alpha = (c0 >= "a" && c0 <= "z") || (c0 >= "A" && c0 <= "Z") || c0 == "_"
         if !is_alpha { return false }
         // consume identifier characters
         while i < n {
-            let c = self.source.substring(i, i + 1)
+            let c = self.char_at(i)
             let ok = (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
             if ok { i = i + 1 } else { break }
         }
         // skip whitespace, expect `>`
         while i < n {
-            let c = self.source.substring(i, i + 1)
+            let c = self.char_at(i)
             if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
         }
-        if i >= n || self.source.substring(i, i + 1) != ">" { return false }
+        if i >= n || self.char_at(i) != ">" { return false }
         i = i + 1
         // skip whitespace, expect `{`
         while i < n {
-            let c = self.source.substring(i, i + 1)
+            let c = self.char_at(i)
             if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
         }
-        i < n && self.source.substring(i, i + 1) == "{"
+        i < n && self.char_at(i) == "{"
     }
 
     fn peek_after_ident_is_paren(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == "("
             }
@@ -2045,25 +2051,25 @@ impl Parser {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
         // Skip whitespace
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
             i = i + 1
         }
-        if i >= self.source.length { return false }
-        let ch = self.source.substring(i, i + 1)
+        if i >= self.source_len { return false }
+        let ch = self.char_at(i)
         // Must start with letter or underscore
         let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
         if !is_alpha { return false }
         // Extract the full word
         mut j = i
-        while j < self.source.length {
-            let wc = self.source.substring(j, j + 1)
+        while j < self.source_len {
+            let wc = self.char_at(j)
             let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
             if !is_alnum { break }
             j = j + 1
         }
-        let word = self.source.substring(i, j)
+        let word = self.slice(i, j)
         // Exclude keywords that appear after identifiers in non-component contexts
         if word == "true" || word == "false" || word == "null" || word == "none" { return false }
         if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
@@ -2072,13 +2078,13 @@ impl Parser {
         if word == "return" || word == "type" || word == "enum" || word == "trait" || word == "impl" { return false }
         // Check that the word is followed by `{` (to confirm it's instance_name + block)
         mut k = j
-        while k < self.source.length {
-            let sc = self.source.substring(k, k + 1)
+        while k < self.source_len {
+            let sc = self.char_at(k)
             if sc != " " && sc != "\t" && sc != "\n" && sc != "\r" { break }
             k = k + 1
         }
-        if k < self.source.length {
-            return self.source.substring(k, k + 1) == "{"
+        if k < self.source_len {
+            return self.char_at(k) == "{"
         }
         false
     }

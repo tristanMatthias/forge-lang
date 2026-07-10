@@ -114,18 +114,23 @@ use @std.avrac.features.error_propagation.{Result}
 use @std.avrac.features.generics.{monomorphize}
 
 fn print_usage() {
-    eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix|fmt|lsp|test|docs> <file.av>")
-    eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> [--json] <file.av>")
-    eprintln("       bootstrapc fix <file.av>     Apply high-confidence auto-fixes")
-    eprintln("       bootstrapc fmt <file.av>     Format a Avra source file")
-    eprintln("       bootstrapc lsp               Start language server")
-    eprintln("       bootstrapc test <file.av>    Run spec tests in a file")
-    eprintln("       bootstrapc docs [name]       Project documentation from /// comments")
-    eprintln("       bootstrapc docs --symbols    List every project symbol with location")
-    eprintln("       bootstrapc docs --search Q   Search project docs by name or doc body")
-    eprintln("       bootstrapc docs --validate   Report documentation coverage")
-    eprintln("       bootstrapc docs --llm        Markdown-style dump for LLM context")
+    eprintln("avra v0.1.0")
+    eprintln("Usage: avra <command> [options] <file.av>")
+    eprintln("")
+    eprintln("  compile <file>   Compile a Avra file to LLVM IR")
+    eprintln("  run <file>       Compile and run a Avra file")
+    eprintln("  check <file>     Type-check a Avra file")
+    eprintln("  build [file]     Incremental build via the manifest cache")
+    eprintln("  test [file]      Run spec tests")
+    eprintln("  fmt <file>       Format a Avra source file")
+    eprintln("  fix <file>       Apply high-confidence auto-fixes")
+    eprintln("  docs [name]      Project documentation from /// comments")
+    eprintln("  lsp              Start the language server")
+    eprintln("  clean            Remove build/ artifacts")
+    eprintln("  cache <sub>      Manage the build cache (prune|info|clear-failed)")
+    eprintln("")
+    eprintln("  avra compile --stop-after=<parse|resolve|names|check> [--json] <file>")
+    eprintln("  avra docs --symbols | --search Q | --validate | --llm")
 }
 
 fn fail(message: string) {

@@ -1,0 +1,43 @@
+// WHY: the lexer used to scan each source char via `self.source[i]` /
+// `self.source.length`, both of which re-derive strlen(source) per call —
+// O(len) per character, O(len^2) per file. The fix measures the length
+// ONCE at construction (`source_len`) and threads it through length-aware
+// `char_at` / `slice`. The one way that fix could break correctness is an
+// off-by-one in `source_len` (dropping the final char, or reading one past
+// EOF), so these tests pin the exact boundary: `source_len` must equal the
+// real length, and a token that ends EXACTLY at EOF (no trailing newline)
+// must still be scanned whole. The selfhost fixed point already proves this
+// over 640k lines; this file localizes a regression to the lexer in one glance.
+
+use @std.avrac.parse.{parser_new}
+
+spec "source_len is exactly the source byte length" {
+    then "an empty source has length 0 (and construction does not crash)" {
+        parser_new("").source_len == 0
+    }
+    then "a one-char source has length 1" {
+        parser_new("x").source_len == 1
+    }
+    then "a multi-char source has the full length" {
+        parser_new("let abc = 123").source_len == 13
+    }
+    then "a source ending in a newline counts the newline" {
+        parser_new("x\n").source_len == 2
+    }
+}
+
+spec "a token ending exactly at EOF is scanned whole (no off-by-one drop)" {
+    then "a bare identifier with no trailing newline keeps its last char" {
+        // If source_len were one short, `abc` would lex as `ab`.
+        mut p = parser_new("abc")
+        p.current_lexeme == "abc"
+    }
+    then "a bare number with no trailing newline keeps its last digit" {
+        mut p = parser_new("12345")
+        p.current_lexeme == "12345"
+    }
+    then "a single-character identifier at EOF is not swallowed" {
+        mut p = parser_new("q")
+        p.current_lexeme == "q"
+    }
+}

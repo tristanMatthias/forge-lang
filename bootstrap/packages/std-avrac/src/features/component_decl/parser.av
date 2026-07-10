@@ -355,8 +355,8 @@ impl Parser {
     fn peek_after_ident_is_string(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == "\""
             }
@@ -368,8 +368,8 @@ impl Parser {
     fn peek_after_ident_is_number(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch >= "0" && ch <= "9"
             }
@@ -383,12 +383,12 @@ impl Parser {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
         // Skip whitespace
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 // Check if the text starting here matches the keyword
-                if i + keyword.length <= self.source.length {
-                    return self.source.substring(i, i + keyword.length) == keyword
+                if i + keyword.length <= self.source_len {
+                    return self.slice(i, i + keyword.length) == keyword
                 }
                 return false
             }
@@ -401,12 +401,12 @@ impl Parser {
     fn peek_after_ident_is_eq(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 if ch != "=" { return false }
-                if i + 1 < self.source.length {
-                    return self.source.substring(i + 1, i + 2) != "="
+                if i + 1 < self.source_len {
+                    return self.char_at(i + 1) != "="
                 }
                 return true
             }
@@ -419,8 +419,8 @@ impl Parser {
     fn peek_after_ident_is_brace(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == "{"
             }
@@ -434,21 +434,21 @@ impl Parser {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
         // Skip whitespace
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 // Must be a letter or underscore (identifier start)
                 let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
                 if !is_alpha { return false }
                 // Extract the full word to check against keywords
                 mut j = i
-                while j < self.source.length {
-                    let wc = self.source.substring(j, j + 1)
+                while j < self.source_len {
+                    let wc = self.char_at(j)
                     let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
                     if !is_alnum { break }
                     j = j + 1
                 }
-                let word = self.source.substring(i, j)
+                let word = self.slice(i, j)
                 // Exclude literal keywords — these are config values, not nested block names
                 if word == "true" || word == "false" || word == "null" { return false }
                 return true
@@ -465,19 +465,19 @@ impl Parser {
     fn peek_after_ident_is_empty_call_block(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = self.skip_ws_from(end)
-        if i >= self.source.length || self.source.substring(i, i + 1) != "(" { return false }
+        if i >= self.source_len || self.char_at(i) != "(" { return false }
         i = self.skip_ws_from(i + 1)
-        if i >= self.source.length || self.source.substring(i, i + 1) != ")" { return false }
+        if i >= self.source_len || self.char_at(i) != ")" { return false }
         i = self.skip_ws_from(i + 1)
-        if i >= self.source.length { return false }
-        self.source.substring(i, i + 1) == "{"
+        if i >= self.source_len { return false }
+        self.char_at(i) == "{"
     }
 
     /// First non-whitespace source offset at or after `from`.
     fn skip_ws_from(self, from: int) -> int {
         mut i = from
-        while i < self.source.length {
-            let ch = self.source.substring(i, i + 1)
+        while i < self.source_len {
+            let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { return i }
             i = i + 1
         }
