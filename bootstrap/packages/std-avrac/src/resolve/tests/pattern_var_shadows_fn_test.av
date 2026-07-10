@@ -1,0 +1,73 @@
+// zo1a (pattern-var / same-module half) — a local binding whose name
+// matches a SAME-MODULE sibling function MUST shadow that function.
+// This is the exact case the historical "never shadow fn/type names
+// with pattern vars" convention guarded: a match-arm binding named
+// `expr` / `stmt` (or a `let` in a loop body named after a sibling
+// helper) used to resolve to the sibling fn instead of the binding.
+// The name qualifier then emitted a fn-closure reference
+// (`[0xDEADBEEF, fn_ptr]`) where the bound value belonged, and the
+// corruption surfaced far downstream as an unmatched closure-marker
+// tag (e.g. inside `Expr__all_children_spanned` during arena ingest).
+//
+// The sibling `local_value_shadows_import_test.av` pins the
+// cross-module IMPORT case (a local shadows a `use`-imported fn), and
+// `err_private_cross_module_test.av` pins the no-leak half (a private
+// sibling fn stays invisible cross-module). This file closes the last
+// gap: a SAME-MODULE sibling fn shadowed by (a) a match-arm pattern
+// binding and (b) a `let` in a `while` body — the precise shape the
+// compiler's own quote-construction helpers use (`construct_field_list`
+// binds `let struct_lit = …` next to a sibling `struct_lit`-style
+// helper). Runtime asserts (not IR greps): if the shadow regresses the
+// binding reads back the fn's sentinel value — or the closure marker
+// crashes the run — so a broken resolver fails these `then`s.
+
+// Sibling helpers whose names collide with the bindings below. Their
+// sentinel returns are values a correct shadow NEVER produces.
+fn expr() -> int { 999 }
+fn stmt() -> int { 888 }
+fn struct_lit() -> int { 777 }
+
+enum Node { Leaf(v: int), Branch(a: int, b: int) }
+
+/// Pattern bindings `expr` and `stmt` must shadow the sibling fns:
+/// the arm bodies read the bound payloads, not `expr()` / `stmt()`.
+fn eval(n: Node) -> int {
+    match n {
+        .Leaf(expr) -> expr + 1
+        .Branch(stmt, expr) -> stmt + expr
+    }
+}
+
+/// A `let struct_lit` in a `while` body — the `construct_field_list`
+/// shape — must shadow the sibling `struct_lit` fn on every iteration.
+fn sum_locals(n: int) -> int {
+    mut acc = 0
+    mut i = 0
+    while i < n {
+        let struct_lit = i * 2
+        acc = acc + struct_lit
+        i = i + 1
+    }
+    acc
+}
+
+spec "zo1a: a same-module pattern binding / loop local shadows a sibling fn" {
+    then "a `.Leaf(expr)` binding shadows the sibling `expr` fn" {
+        // 10 + 1 = 11; the fn would give 999.
+        eval(Node.Leaf(10)) == 11
+    }
+    then "two bindings `.Branch(stmt, expr)` both shadow their sibling fns" {
+        // 3 + 4 = 7; the fns would give 888 + 999.
+        eval(Node.Branch(3, 4)) == 7
+    }
+    then "a `let struct_lit` in a `while` body shadows the sibling `struct_lit` fn" {
+        // i*2 over i in 0..4 → 0 + 2 + 4 + 6 = 12; the fn (777) would
+        // blow the sum apart (and a closure ref would crash the run).
+        sum_locals(4) == 12
+    }
+    then "the sibling fns are still callable by their bare names elsewhere" {
+        // Shadowing is lexical: outside the shadowing scopes the fns
+        // resolve normally, so the leak fix didn't make them unreachable.
+        expr() + stmt() + struct_lit() == 999 + 888 + 777
+    }
+}
