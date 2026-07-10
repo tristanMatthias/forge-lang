@@ -58,7 +58,7 @@ export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegist
 /// by hand should use this rather than the raw struct literal so
 /// internal fields can evolve without touching call sites.
 export fn comptime_registry_new(store: NodeStore) -> CompTimeRegistry {
-    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new() }
+    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr() }
 }
 
 /// Seed `reg.runtime` with every comptime fn AND build the name → index
@@ -78,7 +78,7 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
         avra_map_set_cstr(idx, f.name, i)
         i = i + 1
     }
-    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx, type_reg: reg.type_reg }
+    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx, type_reg: reg.type_reg, fold_cache: reg.fold_cache }
 }
 
 // ── Types ──
@@ -112,11 +112,19 @@ export type CompTimeFn = {
 ///   ps3t.5). Empty (`type_registry_new()`) on the discovery + @expand paths,
 ///   where folds are macro/AST-returning and stay on the interpreter; the
 ///   top-level `run_comptime` injects the real one for the constant-fold path.
+/// @field fold_cache — content-addressed memo of folded call results
+///   (ps3t.5.5): a `(fn identity + scalar arg values) → ExprId` cstr-map.
+///   A `@comptime` fn is pure, so identical inputs fold to the identical
+///   literal; caching it lets a repeated call reuse the result instead of
+///   re-running the JIT (re-codegen) or the tree-walker. Scoped to one
+///   fold pass (a fresh map per prepared registry). Only scalar-arg folds
+///   are keyed; complex-arg folds bypass the cache.
 export type CompTimeRegistry = {
     fns: List<CompTimeFn>,
     runtime: Runtime,
     name_index: ptr,
     type_reg: TypeRegistry,
+    fold_cache: ptr,
 }
 
 // ── Discovery ──
@@ -130,7 +138,7 @@ export type CompTimeRegistry = {
 /// the @expand fixpoint's per-iteration registry rebuild.
 export fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns_ids(store, ids, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new() })
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr() })
 }
 
 /// Walks the root rows, sharing the

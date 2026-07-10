@@ -33,6 +33,10 @@ use codegen.{compile_and_jit_call}
 extern fn avra_i64_buf_new(n: int) -> ptr
 extern fn avra_i64_buf_set(buf: ptr, i: int, v: int)
 extern fn avra_i64_buf_free(buf: ptr)
+// ps3t.5.5 result cache (a cstr-map on CompTimeRegistry.fold_cache).
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 
 // ── Public API ──
 
@@ -78,15 +82,60 @@ export fn try_fold_call(reg: CompTimeRegistry, call: Expr) -> Expr? {
 /// Call-dispatch overhead (no name lookup, no Expr.Call wrapper,
 /// no per-arg eval_expr round-trip).
 fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
-    // Compiled-comptime fast path (ps3t.5): for a self-contained scalar-int fn
-    // we can codegen + JIT it instead of tree-walking. Falls back to the
-    // interpreter for every shape it can't safely handle, so day-one capability
-    // is unchanged and the folded literal is byte-identical.
+    // ps3t.5.5 content-addressed result memoization: a @comptime fn is pure, so
+    // (fn identity + scalar arg values) fully determines the folded literal.
+    // Cache it, keyed on that content, so a repeated call reuses the result
+    // instead of re-running the JIT (re-codegen) or the tree-walker. Only scalar
+    // args produce a key (unambiguous, length-prefixed); complex-arg folds skip
+    // the cache and recompute. The cached row is a literal leaf re-stamped at
+    // each call site by the id-native rewrite driver, so sharing the value never
+    // shares a span — byte-identical to recomputing it.
+    let key = fold_cache_key(fn_def.name, arg_values)
+    if key != "" && avra_map_has_cstr(reg.fold_cache, key) == 1 {
+        return reg.runtime.nodes.exprs.get(ExprId(avra_map_get_cstr(reg.fold_cache, key)))
+    }
+    let computed = fold_call_compute(reg, fn_def, arg_values)
+    if computed != null && key != "" {
+        avra_map_set_cstr(reg.fold_cache, key, reg.runtime.nodes.add_expr_leaf(computed!).raw())
+    }
+    computed
+}
+
+/// Compute a fold WITHOUT memoization — the compiled-comptime fast path
+/// (ps3t.5 Slice A) with a total interpreter fallback: for a self-contained
+/// scalar-int fn we codegen + JIT it instead of tree-walking, else fall back
+/// to the interpreter for every shape the JIT can't safely handle. `fold_call`
+/// wraps this with the result cache.
+fn fold_call_compute(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
     let jit = try_jit_fold(reg, fn_def, arg_values)
     if jit != null { return jit }
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
     if step_had_error(result) != 0 { return null }
     value_to_expr(reg.runtime.nodes, step_value(result))
+}
+
+/// Content-address a fold: a length-prefixed, unambiguous key over the fn's
+/// (qualified) name + its scalar (number/bool/string) arg values. Returns ""
+/// — "not memoizable, recompute" — for any non-scalar arg, so complex
+/// AST/collection values never collide in the string-keyed cache. Length
+/// prefixes make the concatenation self-delimiting, so distinct (name, args)
+/// tuples can never produce the same key.
+fn fold_cache_key(fn_name: string, arg_values: List<Value>) -> string {
+    mut key = string(fn_name.length) + ":" + fn_name
+    mut i = 0
+    while i < arg_values.length {
+        let a = arg_values[i]
+        let part = match a.kind {
+            "number" -> "n" + string(a.number_text.length) + ":" + a.number_text
+            "bool" -> "b:" + string(a.bool_value)
+            "string" -> "s" + string(a.text.length) + ":" + a.text
+            _ -> ""
+        }
+        if part == "" { return "" }
+        key = key + part
+        i = i + 1
+    }
+    key
 }
 
 // ── Compiled-comptime fold (ps3t.5 Slice A) ──
