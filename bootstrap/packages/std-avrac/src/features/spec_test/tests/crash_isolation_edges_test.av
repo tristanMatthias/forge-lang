@@ -10,9 +10,15 @@
 
 // `avra_test_raise_signal`, `avra_test_ack_expected_crash`, and the
 // SIG* constants come from the inlined spec_test reporter.
-extern fn avra_test_crash_count() -> int
-extern fn avra_test_crash_spec(idx: int) -> string
-extern fn avra_test_crash_signal(idx: int) -> int
+//
+// 4m1e: the crash list is process-global, so under the in-process parallel
+// workers this file's two deliberate crashes interleave with the OTHER
+// crash-isolation file's — a global-count / absolute-index read would race.
+// Filter every introspection read by THIS file's basename.
+const CIE_FILE: string = "crash_isolation_edges_test.av"
+extern fn avra_test_crash_count_for_file(frag: string) -> int
+extern fn avra_test_crash_spec_for_file(frag: string, idx: int) -> string
+extern fn avra_test_crash_signal_for_file(frag: string, idx: int) -> int
 
 spec "crash isolation edges: spec with empty body wraps without crashing" {
 }
@@ -33,25 +39,28 @@ spec "crash isolation edges: second deliberate crash (SIGFPE)" {
 
 spec "crash isolation edges: both crashes were recorded with distinct signals" {
     given "the crash list has two entries" {
-        then "count is exactly 2" {
-            avra_test_crash_count() == 2
+        then "count is exactly 2 for this file" {
+            avra_test_crash_count_for_file(CIE_FILE) == 2
         }
         then "crash 0 was SIGABRT" {
-            avra_test_crash_signal(0) == SIGABRT
+            avra_test_crash_signal_for_file(CIE_FILE, 0) == SIGABRT
         }
         then "crash 1 was SIGFPE" {
-            avra_test_crash_signal(1) == SIGFPE
+            avra_test_crash_signal_for_file(CIE_FILE, 1) == SIGFPE
         }
         then "crashed spec 0 name was captured" {
-            avra_test_crash_spec(0).contains("first deliberate crash")
+            avra_test_crash_spec_for_file(CIE_FILE, 0).contains("first deliberate crash")
         }
         then "crashed spec 1 name was captured" {
-            avra_test_crash_spec(1).contains("second deliberate crash")
+            avra_test_crash_spec_for_file(CIE_FILE, 1).contains("second deliberate crash")
         }
         then "drain both acks so CI stays green" {
+            // The acks drop the GLOBAL live count (green-ness verified by the
+            // shard exit code); the two entries are RETAINED for
+            // introspection, which this asserts (per-file, race-free).
             avra_test_ack_expected_crash()
             avra_test_ack_expected_crash()
-            avra_test_crash_count() == 0
+            avra_test_crash_count_for_file(CIE_FILE) == 2
         }
     }
 }
