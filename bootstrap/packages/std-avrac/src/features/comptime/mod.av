@@ -23,6 +23,7 @@ use core.{NodeStore, StmtId, TypeRegistry, type_registry_new}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program_ids}
 use parse.{parse_body_source}
+use diagnostics.{Span, DiagnosticBag, DiagCode, span_dummy, span_at, diag_error, bag_new, bag_report}
 
 // String → int hashmap, same C-runtime primitive resolve/names + module_graph
 // use. Stores name → index-into-`reg.fns` so `comptime_lookup` is O(1) per
@@ -44,13 +45,54 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 ///
 /// Fast path: when the program has no @comptime fns we short-circuit
 /// without walking the AST at all.
-export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegistry) -> List<StmtId> {
+export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegistry) -> ComptimeResult {
     // Inject the resolved type registry so the fold path can codegen + JIT a
     // constant-fold `@comptime` fn (ps3t.5); `collect_comptime_fns_ids` seeds an
     // empty one for the discovery path.
     let reg = collect_comptime_fns_ids(ids, store) with { type_reg }
-    if reg.fns.length == 0 { return ids }
-    rewrite_program_ids(ids, reg)
+    if reg.fns.length == 0 { return ComptimeResult { stmts: ids, bag: bag_new() } }
+    let out = rewrite_program_ids(ids, reg)
+    // `reg.fold_errors` is a shared heap list appended to by the fold path
+    // (eval.av) as the functional rewrite runs, so it now holds every genuine
+    // fold failure — turn each into an F4007 the callers gate on.
+    ComptimeResult { stmts: out, bag: fold_errors_to_bag(reg.fold_errors) }
+}
+
+/// The result of `run_comptime`: the rewritten root rows plus a
+/// DiagnosticBag carrying any genuine constant-fold failures (F4007).
+/// Callers thread `.stmts` into typecheck and merge `.bag` into the
+/// compile bag, so a fold error gates compilation — the fold-path mirror
+/// of how @expand's F4005 gates via `resolve_and_expand_program`.
+export type ComptimeResult = {
+    stmts: List<StmtId>,
+    bag: DiagnosticBag,
+}
+
+/// Build a DiagnosticBag from the fold-error accumulator: one F4007 per
+/// genuine constant-fold failure recorded during the rewrite. Empty in the
+/// common case (no @comptime fold errored), so `bag_has_errors` is false and
+/// compilation proceeds exactly as before this diagnostic channel existed.
+fn fold_errors_to_bag(errors: List<ComptimeFoldError>) -> DiagnosticBag {
+    mut bag = bag_new()
+    for e in errors {
+        bag = bag_report(bag, diag_error(
+            DiagCode.ComptimeFoldFailed,
+            "@comptime fn `${e.fn_name}` failed to fold at compile time: ${e.message}",
+            e.span
+        ))
+    }
+    bag
+}
+
+/// Build a diagnostics `Span` for a statement row from its byte span +
+/// line/col/file in the store, so a fold failure recorded against
+/// `reg.fold_span` carets at the enclosing statement. Synthesised rows with
+/// no source attribution (line 0) collapse to the caret-less `span_dummy`.
+export fn comptime_stmt_span(store: NodeStore, id: StmtId) -> Span {
+    let pos = store.stmt_pos(id)
+    if pos.line == 0 { return span_dummy() }
+    let bs = store.stmts.span_of(id)
+    span_at(bs.lo, bs.hi, pos.line, pos.col, pos.file)
 }
 
 /// Construct a fresh empty registry — no comptime fns, blank runtime,
@@ -58,7 +100,7 @@ export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegist
 /// by hand should use this rather than the raw struct literal so
 /// internal fields can evolve without touching call sites.
 export fn comptime_registry_new(store: NodeStore) -> CompTimeRegistry {
-    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr() }
+    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr(), fold_errors: [], fold_span: span_dummy() }
 }
 
 /// Seed `reg.runtime` with every comptime fn AND build the name → index
@@ -78,7 +120,7 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
         avra_map_set_cstr(idx, f.name, i)
         i = i + 1
     }
-    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx, type_reg: reg.type_reg, fold_cache: reg.fold_cache }
+    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx, type_reg: reg.type_reg, fold_cache: reg.fold_cache, fold_errors: reg.fold_errors, fold_span: reg.fold_span }
 }
 
 // ── Types ──
@@ -119,12 +161,45 @@ export type CompTimeFn = {
 ///   re-running the JIT (re-codegen) or the tree-walker. Scoped to one
 ///   fold pass (a fresh map per prepared registry). Only scalar-arg folds
 ///   are keyed; complex-arg folds bypass the cache.
+/// @field fold_errors — accumulator for genuine constant-fold FAILURES
+///   (ps3t.5.7): when a call to a KNOWN @comptime fn with LITERAL args can't
+///   be evaluated (a runtime error in the body, or the ps3t.5.4 loop-budget
+///   trap), the fold path used to swallow it silently (null → unfolded call).
+///   The rewrite records each such failure here (with the enclosing
+///   statement's span); `run_comptime` turns them into F4007 diagnostics.
+///   A shared heap list, so appends during the functional rewrite reach the
+///   registry `run_comptime` holds; preserved through `prepare_runtime`.
+/// @field fold_span — the enclosing statement's span, refreshed per-statement
+///   by the rewriter (via `with`), so a fold failure deep in an expression is
+///   attributed to a real source location without threading a span param
+///   through every fold fn.
 export type CompTimeRegistry = {
     fns: List<CompTimeFn>,
     runtime: Runtime,
     name_index: ptr,
     type_reg: TypeRegistry,
     fold_cache: ptr,
+    fold_errors: List<ComptimeFoldError>,
+    fold_span: Span,
+}
+
+/// One genuine constant-fold failure (ps3t.5.7): a call to a known @comptime
+/// fn with literal args that could not be evaluated. `fn_name` + `message`
+/// (the evaluator's error) name the failure; `span` locates it (the enclosing
+/// statement). Distinct from "not foldable" (a comptime fn called with
+/// non-literal args), which correctly stays unfolded and is NOT recorded here.
+export type ComptimeFoldError = {
+    fn_name: string,
+    message: string,
+    span: Span,
+}
+
+/// Record a genuine fold failure on the registry's shared accumulator. Called
+/// from the fold path (eval.av) when a known @comptime fn with literal args
+/// fails to evaluate. `mut` local rebind so the push reaches the shared list.
+export fn record_fold_error(reg: CompTimeRegistry, fn_name: string, message: string) {
+    mut errs = reg.fold_errors
+    errs.push(ComptimeFoldError { fn_name: fn_name, message: message, span: reg.fold_span })
 }
 
 // ── Discovery ──
@@ -138,7 +213,7 @@ export type CompTimeRegistry = {
 /// the @expand fixpoint's per-iteration registry rebuild.
 export fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns_ids(store, ids, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr() })
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new(), fold_cache: avra_map_new_cstr(), fold_errors: [], fold_span: span_dummy() })
 }
 
 /// Walks the root rows, sharing the

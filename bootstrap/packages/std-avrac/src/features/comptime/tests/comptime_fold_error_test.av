@@ -1,0 +1,111 @@
+// ps3t.5.7 — the fold-path diagnostic channel. A `@comptime` fn used as a
+// CONSTANT FOLD (a normal call with literal args, not `@expand`) that genuinely
+// ERRORS at fold time — a runtime error in the body, or the ps3t.5.4
+// loop-budget trap — used to be swallowed silently: the call stayed unfolded,
+// compiled as a runtime call, and no diagnostic ever surfaced. Now `run_comptime`
+// threads a DiagnosticBag its callers gate on, and each genuine failure becomes
+// an F4007 — the fold-path sibling of `@expand`'s F4005.
+//
+// The distinction the fix hinges on: `try_fold_call` returns "not foldable" for a
+// non-@comptime callee OR non-literal args (both correctly stay unfolded, no
+// error); only a null AFTER a known @comptime fn + literal args is a real failure
+// and gets recorded. These specs exercise BOTH sides.
+//
+// Like the 5.4 specs, the error case shells out with a TINY loop ceiling so the
+// trap fires in milliseconds (a fresh process each — the C-side limit cache is
+// per-fixture and never races the in-suite folds, which run at the 10M default).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile-check `source` with the comptime loop ceiling forced to `limit`,
+/// capturing diagnostics. `timeout` bounds the run so a REGRESSION (the fold
+/// never records → the call stays a live runtime loop, or the guard is removed →
+/// a genuine hang) fails loudly instead of wedging the suite.
+fn check_with_limit(tag: string, limit: string, source: string) -> string {
+    let path = "/tmp/avra_ct57_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "ps3t.5.7: a genuine constant-fold error surfaces F4007" {
+    then "a @comptime fn folded with a literal arg whose body never terminates is F4007" {
+        // `spin(1)` is a NORMAL call with a LITERAL arg — the fold path, not
+        // @expand. The `while` excludes it from the JIT, so the interpreter runs
+        // it under the ceiling and traps; run_comptime records the failure.
+        let out = check_with_limit("trap", "100",
+            "@comptime\n" +
+            "fn spin(n: int) -> int {\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 { i = i + n }\n" +
+            "    return i\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let x = spin(1)\n" +
+            "}\n")
+        out.contains("F4007") && out.contains("iterations without terminating")
+    }
+    then "the fold-path error is F4007, NOT the @expand path's F4005" {
+        let out = check_with_limit("notf4005", "100",
+            "@comptime\n" +
+            "fn spin(n: int) -> int {\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 { i = i + n }\n" +
+            "    return i\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let x = spin(1)\n" +
+            "}\n")
+        out.contains("F4007") && !out.contains("F4005")
+    }
+    then "the F4007 diagnostic names the fn that failed to fold" {
+        let out = check_with_limit("named", "100",
+            "@comptime\n" +
+            "fn spin(n: int) -> int {\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 { i = i + n }\n" +
+            "    return i\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let x = spin(1)\n" +
+            "}\n")
+        out.contains("spin") && out.contains("failed to fold")
+    }
+}
+
+spec "ps3t.5.7: 'not foldable' stays unfolded with NO error" {
+    then "a @comptime fn called with a NON-literal arg is not folded and not an error" {
+        // `dbl(v)` — v is a runtime parameter, not a literal — so try_fold_call
+        // declines at the literal-args gate: the call stays as-is, no F4007.
+        // Even with the ceiling at 100 (which WOULD trap if it folded), no trap
+        // fires, because the non-literal arg means no fold is attempted at all.
+        let out = check_with_limit("nonlit", "100",
+            "@comptime\n" +
+            "fn dbl(n: int) -> int { return n * 2 }\n" +
+            "fn use_it(v: int) -> int { return dbl(v) }\n" +
+            "fn main() {\n" +
+            "    let _ = use_it(3)\n" +
+            "}\n")
+        !out.contains("F4007")
+    }
+    then "a call to a NON-@comptime fn is not folded and not an error" {
+        let out = check_with_limit("nonct", "100",
+            "fn plain(n: int) -> int { return n + 1 }\n" +
+            "fn main() {\n" +
+            "    let _ = plain(41)\n" +
+            "}\n")
+        !out.contains("F4007")
+    }
+}
+
+spec "ps3t.5.7: a normal fold is unaffected by the diagnostic channel" {
+    then "a @comptime fn that folds cleanly with a literal arg produces no error" {
+        let out = check_with_limit("clean", "100",
+            "@comptime\n" +
+            "fn dbl(n: int) -> int { return n * 2 }\n" +
+            "fn main() {\n" +
+            "    let x = dbl(21)\n" +
+            "}\n")
+        !out.contains("F4007") && out.contains("ok")
+    }
+}
