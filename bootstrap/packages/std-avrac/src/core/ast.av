@@ -179,94 +179,14 @@ export fn spanned_bare_list(ns: List<AnyNode>) -> List<SpannedChild> {
     out
 }
 
-// ── Inverse-walker helpers (B1 / spine §14.1) ──
-//
-// The dual of the `box_*` / `spanned_*` family above: rebuild a variant's
-// children FROM a `List<SpannedChild>`. The derive-generated `with_children`
-// (features/walker) consumes these to put children back into a node's slots in
-// field order — the inverse of `all_children_spanned` — so the arena can
-// reconstruct a boxed tree from its edge ids (each child's span recovered from
-// the side-table). They rebuild STRUCTURE + SPANS only: a `SpannedChild` carries
-// neither `from_macro` nor `file`, so wrappers are stamped `from_macro = false`,
-// `file = ""`. The reconstruct driver patches `from_macro`/`file` back onto the
-// TOP-LEVEL roots from the arena's provenance / single-source `file`; nested
-// wrappers keep the placeholders (single-file ingest makes `file` uniform, and
-// `render_*` — the round-trip oracle — compares neither). The `_` arm in each
-// unbox is a structural invariant (a slot's edge must be its declared kind);
-// a violation falls to a recognizable `__wc_kind_mismatch` marker (one per node
-// kind) that the round-trip fidelity test (`with_children(self,
-// all_children_spanned(self)) == self`) flags — so it never fires on a
-// faithfully-ingested tree.
-
-/// Unbox a single bare `Expr` child. `_` ⇒ wrong-kind edge → a recognizable
-/// `__wc_kind_mismatch` marker (each sibling uses the same marker in its own kind,
-/// so a violation renders/compares distinctly; the round-trip oracle flags it).
-export fn unspan_expr(sc: SpannedChild) -> Expr { match sc.node { .AnyExpr(e) -> e  _ -> Expr.Ident("__wc_kind_mismatch") } }
-/// Unbox a single bare `Stmt` child (`_` ⇒ recognizable `__wc_kind_mismatch`
-/// marker — carried on the store-free Module name slot since F3a flipped
-/// Stmt.Expr's payload to an arena id).
-export fn unspan_stmt(sc: SpannedChild) -> Stmt { match sc.node { .AnyStmt(s) -> s  _ -> Stmt.Module("__wc_kind_mismatch", []) } }
-/// Unbox a single bare `Pattern` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
-export fn unspan_pat(sc: SpannedChild) -> Pattern { match sc.node { .AnyPat(p) -> p  _ -> Pattern.TypePattern("__wc_kind_mismatch", "") } }
-/// Unbox a single bare `ValueType` child (`_` ⇒ recognizable `__wc_kind_mismatch` marker).
-export fn unspan_type(sc: SpannedChild) -> ValueType { match sc.node { .AnyType(t) -> t  _ -> ValueType.Trait("__wc_kind_mismatch", 0) } }
-
-/// Unbox a bare `Expr` list slot (the whole run, in order).
-export fn unspan_expr_list(scs: List<SpannedChild>) -> List<Expr> { list_map(scs, (sc: SpannedChild) -> unspan_expr(sc)) }
-/// Unbox a bare `Stmt` list slot.
-export fn unspan_stmt_list(scs: List<SpannedChild>) -> List<Stmt> { list_map(scs, (sc: SpannedChild) -> unspan_stmt(sc)) }
-/// Unbox a bare `Pattern` list slot.
-export fn unspan_pat_list(scs: List<SpannedChild>) -> List<Pattern> { list_map(scs, (sc: SpannedChild) -> unspan_pat(sc)) }
-/// Unbox a bare `ValueType` list slot.
-export fn unspan_type_list(scs: List<SpannedChild>) -> List<ValueType> { list_map(scs, (sc: SpannedChild) -> unspan_type(sc)) }
-
-/// A bare `Self?` optional slot: the run is 0-or-1 spanned children.
-export fn unspan_expr_opt(scs: List<SpannedChild>) -> Expr? { if scs.length > 0 { unspan_expr(scs[0]) } else { null } }
-export fn unspan_stmt_opt(scs: List<SpannedChild>) -> Stmt? { if scs.length > 0 { unspan_stmt(scs[0]) } else { null } }
-export fn unspan_pat_opt(scs: List<SpannedChild>) -> Pattern? { if scs.length > 0 { unspan_pat(scs[0]) } else { null } }
-export fn unspan_type_opt(scs: List<SpannedChild>) -> ValueType? { if scs.length > 0 { unspan_type(scs[0]) } else { null } }
-
-/// The contiguous `[lo, hi)` run of a spanned-child list — the one variable-arity
-/// slot's children (a node-list or an optional). `with_children` computes the
-/// bounds from the variant's fixed single-child count (`hi - lo` is the run).
-export fn wc_slice(scs: List<SpannedChild>, lo: int, hi: int) -> List<SpannedChild> {
-    mut out: List<SpannedChild> = []
-    mut i = lo
-    while i < hi {
-        out.push(scs[i])
-        i = i + 1
-    }
-    out
-}
-
-// Indexing accessors the generated `with_children` calls instead of raw `kids[i]`
-// / `kids.length` arithmetic — kept as fn calls so the spliced macro body stays
-// within the @comptime decoder's Expr subset (Call), never `Expr.Index` /
-// `Expr.Binary` (which the macro-return roundtrip doesn't decode).
-
-/// The `i`-th spanned child (a single-child slot before the variable-arity slot).
-export fn wc_at(scs: List<SpannedChild>, i: int) -> SpannedChild { scs[i] }
-/// The spanned child `j` from the END (a single-child slot AFTER the variable
-/// slot — e.g. `ValueType.FnTyped`'s `ret`, which follows the `params` list).
-export fn wc_at_end(scs: List<SpannedChild>, j: int) -> SpannedChild { scs[scs.length - j] }
-/// The variable-arity slot's run: everything between the `before` leading and
-/// `after` trailing single-child slots. `before`/`after` are the variant's fixed
-/// single counts (the generator knows them); the run length is whatever remains.
-export fn wc_run(scs: List<SpannedChild>, before: int, after: int) -> List<SpannedChild> {
-    wc_slice(scs, before, scs.length - after)
-}
-
 // ── Struct-embedded child helpers (y5um.3 / spine §14.1) ──
 //
 // B-final F4b: a `MatchArm` is a MIXED struct — `pattern` is the one walked
 // child the derive walker can't reach through its Self/wrapper-of-Self
 // classification, while `guard_id`/`body_id` are opaque arena `ExprId`s carried
-// structurally (never walked). These hand-written extract + rebuild helpers
-// teach the arena to cover the pattern: `match_arm_children_spanned` flattens
-// the arm list into the cross-type child run (one pattern per arm), and
-// `rebuild_match_arms` inverts it, taking the ORIGINAL arm list for SHAPE (arm
-// count) and pulling each pattern VALUE + span from the run while carrying the
-// opaque `pattern_id`/`guard_id`/`body_id` through unchanged.
+// structurally (never walked). `match_arm_children_spanned` is the hand-written
+// extract helper that teaches all_children_spanned to cover the pattern: it
+// flattens the arm list into the cross-type child run (one pattern per arm).
 
 /// Flatten a `List<MatchArm>` into cross-type spanned children: one child per
 /// arm — the bare `pattern` (position 0 ⇒ span_none). Guard/body are opaque
@@ -282,17 +202,6 @@ export fn match_arm_children_spanned(arms: List<MatchArm>) -> List<SpannedChild>
     out
 }
 
-/// Rebuild a `List<MatchArm>`. B-final F4b: guard/body are opaque `ExprId`s
-/// carried from `original`; only the pattern is walked, so `run` has exactly one
-/// child per arm (the pattern). A faithfully-ingested tree round-trips identically.
-export fn rebuild_match_arms(original: List<MatchArm>, run: List<SpannedChild>) -> List<MatchArm> {
-    mut out: List<MatchArm> = []
-    for (i, arm) in original.enumerate() {
-        out.push(MatchArm { pattern: unspan_pat(run[i]), pattern_id: arm.pattern_id, guard_id: arm.guard_id, body_id: arm.body_id })
-    }
-    out
-}
-
 /// Flatten a `List<FieldInit>` into cross-type spanned children: each init's
 /// `value` (an Expr) at its recorded (line, col). The `name` is a scalar,
 /// not a node child — exactly one child per init. The FieldInit analogue of
@@ -302,15 +211,6 @@ export fn field_init_children_spanned(_inits: List<FieldInit>) -> List<SpannedCh
     // FieldInit contributes no spanned children — `StructLit`/`With` are leaves
     // over their inits (the value_ids are carried structurally, not walked).
     []
-}
-
-/// Rebuild a `List<FieldInit>`. B-final F4: each init's value is an opaque
-/// `ExprId` carried structurally, so `field_init_children_spanned` walks
-/// nothing and `run` is empty — the `original` list (value_ids intact) IS the
-/// faithful reconstruction. Kept as the inverse-walker counterpart of the
-/// other `rebuild_*` helpers for a uniform reconstruct surface.
-export fn rebuild_field_inits(original: List<FieldInit>, _run: List<SpannedChild>) -> List<FieldInit> {
-    original
 }
 
 // `enum ExprList` retired in lkze.9 #18 — `List<ExprId>` everywhere.
