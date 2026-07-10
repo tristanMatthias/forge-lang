@@ -1,0 +1,67 @@
+// WHY: negative-path spec for the F1006 standalone-lambda gate (ps3t.4.5).
+//
+// A bare `let f = (x) -> …` binds a lambda whose parameter has no annotation
+// and no surrounding fn-type context to resolve it from. Codegen determines a
+// parameter's layout from its type, so an under-determined one would otherwise
+// be inferred from the body — a guess. The typeck gate rejects it before
+// codegen with F1006. Every error case is paired with a context-supplied
+// positive control (call argument / `fn(…)`-typed binding / struct field /
+// return position) proving the gate fires on the NO-CONTEXT case specifically,
+// not on lambdas in general.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ulg_compile_out(source: string) -> string {
+    let path = "/tmp/avra_ulg_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a standalone un-annotated lambda parameter is rejected (F1006)" {
+    then "a bare `let` lambda parameter is F1006" {
+        let out = ulg_compile_out("fn main() { let f = (x) -> x * 2  let r = f(3) }")
+        out.contains("F1006")
+    }
+    then "the diagnostic names the offending parameter" {
+        let out = ulg_compile_out("fn main() { let g = (widget) -> widget + 1  let r = g(1) }")
+        out.contains("widget")
+    }
+    then "a bare `mut` lambda parameter is also F1006" {
+        let out = ulg_compile_out("fn main() { mut f = (x) -> x + 1  let r = f(1) }")
+        out.contains("F1006")
+    }
+    then "a bare `const` lambda parameter is also F1006" {
+        let out = ulg_compile_out("fn main() { const f = (x) -> x + 1  let r = f(1) }")
+        out.contains("F1006")
+    }
+    then "only the first bare parameter needs to be missing" {
+        let out = ulg_compile_out("fn main() { let f = (a, b) -> a + b  let r = f(1, 2) }")
+        out.contains("F1006")
+    }
+    then "an annotated parameter compiles (positive control)" {
+        let out = ulg_compile_out("fn main() { let f = (x: int) -> x * 2  let r = f(3) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "a lambda with fn-type context is NOT gated" {
+    then "a call argument resolves from the callee (positive control)" {
+        let out = ulg_compile_out("fn main() { let xs = [1, 2, 3].map((x) -> x * 2)  let n = xs.length }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an `fn(…)`-typed binding resolves from the annotation (positive control)" {
+        let out = ulg_compile_out("fn main() { let f: fn(int) -> int = (x) -> x * 2  let r = f(3) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a struct field resolves from the field type (positive control)" {
+        let out = ulg_compile_out("type H = { act: fn(int) -> int }
+fn main() { let h = H { act: (x) -> x * 2 }  let r = h.act(3) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a returned lambda resolves from the return type (positive control)" {
+        let out = ulg_compile_out("fn mk(n: int) -> fn(int) -> int { (x) -> x + n }
+fn main() { let a = mk(5)  let r = a(3) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

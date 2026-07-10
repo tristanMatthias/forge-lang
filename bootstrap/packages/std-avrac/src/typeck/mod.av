@@ -2138,8 +2138,36 @@ fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: s
 /// initializer's type, verify it matches any declared annotation,
 /// and bind `name: type` into the env. `is_mut` distinguishes `mut`
 /// from `let`/`const` for narrowing.
+/// First lambda parameter carrying no type annotation (its `vtype` is still
+/// `Unknown`), or "" when every parameter is annotated. Drives the F1006
+/// standalone-lambda gate.
+fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
+    for p in params {
+        if vtype_is_unknown(p.vtype) { return p.name }
+    }
+    ""
+}
+
 fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool, is_mut: bool) -> TC {
     let has_annotation = !vtype_is_unknown(ty_vt)
+    // F1006 (ps3t.4.5 totality): a bare `let f = (x) -> …` binds a lambda whose
+    // parameter has no annotation and no surrounding fn-type context to resolve
+    // it — codegen would otherwise infer the layout from the body (a guess). A
+    // typed binding (`let f: fn(int) -> int = …`), a call argument, or a struct
+    // field supplies the parameter types from context, so ONLY this no-context
+    // binding is gated. Reject with an actionable diagnostic before codegen.
+    if !has_annotation {
+        match init {
+            .Lambda(params, _) -> {
+                let unresolved = tc_first_unannotated_param(params)
+                if unresolved != "" {
+                    let reported = tc_report(tc, DiagCode.UnannotatedLambdaParam, "cannot infer type of lambda parameter `${unresolved}`")
+                    return bind_decl(reported, name, ValueType.Unknown, is_mut)
+                }
+            }
+            _ -> {}
+        }
+    }
     // so07.4 (T4): resolve the annotation BEFORE checking the init so
     // we can thread it as the expected type for ListLit-style literals.
     // Other Expr variants are unaffected — check_expr_expected falls
