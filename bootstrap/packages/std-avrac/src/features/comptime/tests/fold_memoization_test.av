@@ -1,0 +1,98 @@
+// ps3t.5.5 — comptime result memoization. A `@comptime` fn is pure, so a
+// call folded once can be reused: fold_call content-addresses the result on
+// (fn identity + scalar arg values) into CompTimeRegistry.fold_cache and, on a
+// repeat, returns the cached literal instead of re-running the JIT (re-codegen)
+// or the tree-walker.
+//
+// These specs pin the cache behaviourally WITHOUT a shared global counter
+// (which parallel test workers would race on): the cache is the registry's own
+// `fold_cache` cstr-map, so a test reads its `avra_map_len_cstr` directly.
+// Folding the SAME call twice must leave exactly ONE entry (the second fold hit
+// the cache, added nothing); folding DISTINCT args must add a second. A broken
+// memo — no cache (0 entries), always-miss (grows per fold), or a key collision
+// (distinct args share one slot) — fails one of these assertions. Result
+// correctness is asserted alongside so a cache that returns the WRONG literal
+// is caught too.
+
+use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, Expr, ParamEntry, ValueType, BinOp}
+use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
+
+extern fn avra_map_len_cstr(map: ptr) -> int
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+// `fn add(x: int, y: int) -> int { return x + y }` — a scalar-int fold that
+// the JIT handles (pure arithmetic, no calls/div/loops), so this also pins the
+// cache wrapping the compiled path.
+fn mk_add_fn(ws: NodeStore) -> CompTimeFn {
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(ws.exprs.add_leaf(Expr.Binary(ws.exprs.add_leaf(Expr.Ident("x")), BinOp.Add, ws.exprs.add_leaf(Expr.Ident("y")))))),
+    ]
+    CompTimeFn {
+        name: "add",
+        params: [
+            ParamEntry { name: "x", vtype: ValueType.Int },
+            ParamEntry { name: "y", vtype: ValueType.Int },
+        ],
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn add_registry() -> CompTimeRegistry {
+    let ws = ts()
+    prepare_runtime(comptime_registry_new(ws) with { fns: [mk_add_fn(ws)] })
+}
+
+fn mk_call(store: NodeStore, name: string, args: List<ExprId>) -> Expr {
+    Expr.Call(store.exprs.add_leaf(Expr.Ident(name)), args)
+}
+
+fn number_text_of(e: Expr?) -> string {
+    if e == null { return "" }
+    match e! {
+        .Number(text) -> text
+        _ -> ""
+    }
+}
+
+/// Fold `add(a, b)` against `reg` (fresh literal arg rows each call, so the
+/// only thing shared across calls is the content — the memo key).
+fn fold_add(reg: CompTimeRegistry, a: string, b: string) -> string {
+    let store = reg.runtime.nodes
+    let args: List<ExprId> = [store.exprs.add_leaf(Expr.Number(a)), store.exprs.add_leaf(Expr.Number(b))]
+    number_text_of(try_fold_call(reg, mk_call(store, "add", args)))
+}
+
+spec "ps3t.5.5: comptime folds are content-addressed + memoized" {
+    then "an identical call folded twice caches ONE entry (the second is a hit)" {
+        let reg = add_registry()
+        let r1 = fold_add(reg, "2", "3")
+        let after_first = avra_map_len_cstr(reg.fold_cache)
+        let r2 = fold_add(reg, "2", "3")
+        let after_second = avra_map_len_cstr(reg.fold_cache)
+        // Both folds yield 5; the second added no entry — it hit the cache.
+        r1 == "5" && r2 == "5" && after_first == 1 && after_second == 1
+    }
+    then "the cached result is the correct literal, not stale garbage" {
+        let reg = add_registry()
+        let _ = fold_add(reg, "7", "8")   // miss: computes + caches 15
+        fold_add(reg, "7", "8") == "15"    // hit: must return 15
+    }
+    then "distinct args do NOT collide — each adds its own entry" {
+        let reg = add_registry()
+        let a = fold_add(reg, "2", "3")    // key A → 5
+        let b = fold_add(reg, "10", "20")  // key B → 30
+        let c = fold_add(reg, "3", "2")    // key C (order matters) → 5
+        a == "5" && b == "30" && c == "5" && avra_map_len_cstr(reg.fold_cache) == 3
+    }
+    then "a repeated distinct call still hits (grows only on genuinely new keys)" {
+        let reg = add_registry()
+        let _ = fold_add(reg, "4", "4")    // 8, entry 1
+        let _ = fold_add(reg, "5", "5")    // 10, entry 2
+        let again = fold_add(reg, "4", "4") // hit
+        again == "8" && avra_map_len_cstr(reg.fold_cache) == 2
+    }
+}
