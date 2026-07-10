@@ -1,0 +1,6 @@
+// `hidden` is private to `seclib` and is NOT imported here. A bare reference
+// to it must stay unresolved (F3000), never silently qualify to
+// `seclib::hidden` — the zo1a cross-module leak. If the qualifier grew a
+// global fallback again, this would resolve and codegen would materialise the
+// fn reference as the [0xDEADBEEF, fn_ptr] closure array (silent corruption).
+export fn tries() -> int { hidden() }

@@ -1,0 +1,4 @@
+// A non-export (module-private) fn. Visible to its OWN module's siblings,
+// never to a different module of the same package (zo1a).
+fn hidden() -> int { 7 }
+export fn shown() -> int { hidden() }
