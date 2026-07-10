@@ -735,9 +735,30 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
 }
 
 /// Recursive `while` evaluator. Re-evaluates the condition each
+// ps3t.5.4 comptime execution budget: a @comptime fn must terminate, so a
+// comptime `while` that runs past a ceiling can only be non-terminating and is
+// halted with a clear error (surfaced as F4005 on the @expand path) instead of
+// hanging the compiler. The ceiling is enforced ONLY when a comptime fold/macro
+// is on the stack (`avra_comptime_active`) — bs2 run / spec-test loops are
+// runtime and stay unbounded. The limit is read ONCE per loop instance (0 =
+// unbounded) and threaded, never re-read per iteration.
+extern fn avra_comptime_active() -> int
+extern fn avra_comptime_loop_limit() -> int
+
 /// iteration; loops until the condition is falsy or the body
 /// errors / returns.
 export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
+    let limit = if avra_comptime_active() != 0 { avra_comptime_loop_limit() } else { 0 }
+    execute_while_step(runtime, condition, body, 0, limit)
+}
+
+/// Body of `execute_while`, threading the iteration count + the (already
+/// resolved) comptime ceiling. `limit == 0` means unbounded (the runtime path),
+/// so this is byte-identical to the old loop for every non-comptime execution.
+fn execute_while_step(runtime: Runtime, condition: Expr, body: Stmt, iters: int, limit: int) -> StepResult {
+    if limit != 0 && iters >= limit {
+        return error_result(runtime, "comptime `while` loop ran ${string(limit)} iterations without terminating — a @comptime fn must halt at compile time (infinite loop?)")
+    }
     let cond_result = eval_expr(runtime, condition)
     if cond_result.had_error {
         return cond_result
@@ -752,7 +773,7 @@ export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepRe
         return body_result
     }
 
-    execute_while(body_result.runtime, condition, body)
+    execute_while_step(body_result.runtime, condition, body, iters + 1, limit)
 }
 
 /// Tree-walk evaluator for `for i in start..end { body }`. Both bounds
