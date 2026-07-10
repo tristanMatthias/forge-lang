@@ -1,0 +1,58 @@
+// Per-command `--help` renders a real usage line (actual positionals as
+// `<required>` / `[optional]`, plus `[FLAGS]`/`[OPTIONS]` markers), grouped
+// FLAGS/OPTIONS/ARGS sections, and each leaf's description. `<cmd> --help`
+// short-circuits to this and exits 0.
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// @comptime bodies are available. `hlp_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn hlp_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command build {\n" +
+    "        flag verbose { short \"-v\", description \"Print each step\" }\n" +
+    "        option out { description \"Where to write output\" }\n" +
+    "        arg file { required true, description \"Source file\" }\n" +
+    "        arg tag { description \"Optional label\" }\n" +
+    "        run() { return 0 }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    toy.run_argv([\"build\", \"--help\"])\n" +
+    "}\n"
+}
+
+fn hlp_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_help_render_test.av", hlp_src())
+}
+
+spec "per-command --help renders a real usage line + aligned sections" {
+    then "the usage line shows the real positionals: required <file>, optional [tag]" {
+        let out = hlp_run()
+        out.contains("USAGE:") && out.contains("toy build") && out.contains("<file>") && out.contains("[tag]")
+    }
+    then "the usage line marks the presence of flags and options" {
+        let out = hlp_run()
+        out.contains("[FLAGS]") && out.contains("[OPTIONS]")
+    }
+    then "the FLAGS section renders the flag with its short spelling and description" {
+        let out = hlp_run()
+        out.contains("FLAGS:") && out.contains("-v") && out.contains("Print each step")
+    }
+    then "the ARGS section marks the required arg <file> and optional [tag]" {
+        let out = hlp_run()
+        out.contains("ARGS:") && out.contains("<file>") && out.contains("[tag]") && out.contains("Source file")
+    }
+}
