@@ -19,7 +19,7 @@
 // Design doc: docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.1
 
 use core.{Stmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
-use core.{NodeStore, StmtId}
+use core.{NodeStore, StmtId, TypeRegistry, type_registry_new}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program_ids}
 use parse.{parse_body_source}
@@ -44,8 +44,11 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 ///
 /// Fast path: when the program has no @comptime fns we short-circuit
 /// without walking the AST at all.
-export fn run_comptime(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
-    let reg = collect_comptime_fns_ids(ids, store)
+export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegistry) -> List<StmtId> {
+    // Inject the resolved type registry so the fold path can codegen + JIT a
+    // constant-fold `@comptime` fn (ps3t.5); `collect_comptime_fns_ids` seeds an
+    // empty one for the discovery path.
+    let reg = collect_comptime_fns_ids(ids, store) with { type_reg }
     if reg.fns.length == 0 { return ids }
     rewrite_program_ids(ids, reg)
 }
@@ -55,7 +58,7 @@ export fn run_comptime(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
 /// by hand should use this rather than the raw struct literal so
 /// internal fields can evolve without touching call sites.
 export fn comptime_registry_new(store: NodeStore) -> CompTimeRegistry {
-    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr() }
+    CompTimeRegistry { fns: [], runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new() }
 }
 
 /// Seed `reg.runtime` with every comptime fn AND build the name → index
@@ -75,7 +78,7 @@ export fn prepare_runtime(reg: CompTimeRegistry) -> CompTimeRegistry {
         avra_map_set_cstr(idx, f.name, i)
         i = i + 1
     }
-    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx }
+    CompTimeRegistry { fns: reg.fns, runtime: rt, name_index: idx, type_reg: reg.type_reg }
 }
 
 // ── Types ──
@@ -104,10 +107,16 @@ export type CompTimeFn = {
 /// @field fns        — every @comptime fn, in source order.
 /// @field runtime    — eval Runtime with every fn pre-registered.
 /// @field name_index — name → index-in-`fns` hashmap.
+/// @field type_reg   — the program's resolved type registry, so the fold path
+///   can codegen a `@comptime` fn in isolation and JIT it (compiled comptime,
+///   ps3t.5). Empty (`type_registry_new()`) on the discovery + @expand paths,
+///   where folds are macro/AST-returning and stay on the interpreter; the
+///   top-level `run_comptime` injects the real one for the constant-fold path.
 export type CompTimeRegistry = {
     fns: List<CompTimeFn>,
     runtime: Runtime,
     name_index: ptr,
+    type_reg: TypeRegistry,
 }
 
 // ── Discovery ──
@@ -121,7 +130,7 @@ export type CompTimeRegistry = {
 /// the @expand fixpoint's per-iteration registry rebuild.
 export fn collect_comptime_fns_ids(ids: List<StmtId>, store: NodeStore) -> CompTimeRegistry {
     let fns = gather_fns_ids(store, ids, [])
-    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr() })
+    prepare_runtime(CompTimeRegistry { fns, runtime: runtime_new(store), name_index: avra_map_new_cstr(), type_reg: type_registry_new() })
 }
 
 /// Walks the root rows, sharing the

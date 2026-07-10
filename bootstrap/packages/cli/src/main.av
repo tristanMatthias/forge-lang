@@ -3836,7 +3836,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
             let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             if !check_json { println("ok") }
@@ -3899,7 +3899,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
             println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
             return
         }
@@ -3918,7 +3918,7 @@ fn main() {
             let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
             let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
             let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+            let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
             let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
             render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
             let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
@@ -4167,7 +4167,7 @@ fn main() {
         // Comptime fold: replace `@comptime` calls with their literal results.
         // Runs after resolve_and_expand_program so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
-        let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+        let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(post_comptime, named.type_reg, named.macro_origins, parsed_prog.store)
         let t_typeck = avra_uptime_ms()
