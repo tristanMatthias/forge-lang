@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -375,156 +375,25 @@ fn find_captures_stmt_ids(store: NodeStore, ids: List<StmtId>, params: List<Para
     }
 }
 
-// ── Parameter type inference ──
-//
-// When a lambda has no explicit parameter types (the common case), we
-// infer types from the body. If a parameter appears in a binary
-// expression with a Float-typed variable (from captures or the enclosing
-// env), we infer the parameter as Float. This prevents the lambda from
-// treating float bits (passed as i64) as integer values and applying
-// sitofp instead of bitcast.
+// ── Parameter types ──
 
-/// Look up the declared type of a name in the enclosing env.
-/// Falls through to top-level globals when the local lookup
-/// misses. Returns `Unknown` if the name doesn't exist.
-fn env_type_of(ctx: Ctx, env: List<VarBinding>, name: string) -> ValueType {
-    let lookup = env_lookup(env, name)
-    if lookup.found { return lookup.ty }
-    let g = ctx.lookup_toplevel(name)
-    if g.found { return g.ty }
-    ValueType.Unknown
-}
-
-/// Look up a capture's declared type by name. Returns `Unknown`
-/// when not in the list — callers then fall back to env lookup.
-fn capture_type_of(captures: List<Capture>, name: string) -> ValueType {
-    mut i = 0
-    while i < captures.length {
-        let c = captures[i]
-        if c.name == name { return c.ty }
-        i = i + 1
-    }
-    ValueType.Unknown
-}
-
-// Check if an expression contains a Float-typed identifier (from captures, env, or globals).
-/// True when `expr` references at least one float-typed name —
-/// used by `infer_param_types` to widen otherwise-untyped lambda
-/// params to Float when they participate in float arithmetic.
-fn has_float_ident(expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    match expr {
-        .Ident(name) -> {
-            if is_param(params, name) { return false }
-            let ty = capture_type_of(captures, name)
-            if vtype_eq(ty, .Float) { return true }
-            let ety = env_type_of(ctx, env, name)
-            vtype_eq(ety, .Float)
-        }
-        .FloatLit(_) -> true
-        .Binary(left, _, right) -> {
-            has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
-        }
-        .Unary(_, inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .Grouping(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .Call(callee, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
-        .GenericCall(callee, _, args) -> has_float_ident(ctx.nodes.exprs.get(callee), ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
-        .FieldAccess(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
-        .Index(obj, idx) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(idx), ctx, env, captures, params)
-        .IfExpr(c, t, e) -> has_float_ident(ctx.nodes.exprs.get(c), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(t), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(e), ctx, env, captures, params)
-        .NullCoalesce(left, right) -> has_float_ident(ctx.nodes.exprs.get(left), ctx, env, captures, params) || has_float_ident(ctx.nodes.exprs.get(right), ctx, env, captures, params)
-        .Try(inner) -> has_float_ident(ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .With(base, _) -> has_float_ident(ctx.nodes.exprs.get(base), ctx, env, captures, params)
-        .TupleIndex(obj, _) -> has_float_ident(ctx.nodes.exprs.get(obj), ctx, env, captures, params)
-        _ -> false
-    }
-}
-
-/// Map `has_float_ident` over a `List<ExprId>`.
-fn has_float_ident_list(exprs: List<ExprId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    mut i = 0
-    while i < exprs.length {
-        if has_float_ident(ctx.nodes.exprs.get(exprs[i]), ctx, env, captures, params) { return true }
-        i = i + 1
-    }
-    false
-}
-
-// Check if a parameter is used in a binary expression with a Float value.
-/// True when `param_name` appears alongside a float operand in
-/// an arithmetic expression. Drives the heuristic that promotes
-/// otherwise-untyped lambda params to Float so `(x) -> x + 1.5`
-/// works without explicit type annotations.
-fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    match expr {
-        .Binary(left, _, right) -> {
-            let left_e = ctx.nodes.exprs.get(left)
-            let right_e = ctx.nodes.exprs.get(right)
-            let left_is_param = match left_e { .Ident(n) -> n == param_name, _ -> false }
-            let right_is_param = match right_e { .Ident(n) -> n == param_name, _ -> false }
-            if left_is_param && has_float_ident(right_e, ctx, env, captures, params) { return true }
-            if right_is_param && has_float_ident(left_e, ctx, env, captures, params) { return true }
-            param_used_with_float(param_name, left_e, ctx, env, captures, params) || param_used_with_float(param_name, right_e, ctx, env, captures, params)
-        }
-        .Unary(_, inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .Grouping(inner) -> param_used_with_float(param_name, ctx.nodes.exprs.get(inner), ctx, env, captures, params)
-        .Call(callee, args) -> {
-            param_used_with_float(param_name, ctx.nodes.exprs.get(callee), ctx, env, captures, params) || param_used_with_float_list(param_name, args, ctx, env, captures, params)
-        }
-        .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
-        .IfExpr(c, t, e) -> {
-            param_used_with_float(param_name, ctx.nodes.exprs.get(c), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(t), ctx, env, captures, params) || param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
-        }
-        _ -> false
-    }
-}
-
-/// Map `param_used_with_float` over a `List<ExprId>`.
-fn param_used_with_float_list(param_name: string, exprs: List<ExprId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    mut i = 0
-    while i < exprs.length {
-        if param_used_with_float(param_name, ctx.nodes.exprs.get(exprs[i]), ctx, env, captures, params) { return true }
-        i = i + 1
-    }
-    false
-}
-
-/// Map `param_used_with_float` through a statement list,
-/// recursing into expression payloads + nested bodies.
-fn param_used_with_float_stmts(param_name: string, stmts: List<StmtId>, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>, params: List<ParamEntry>) -> bool {
-    mut i = 0
-    while i < stmts.length {
-        let found = match ctx.nodes.stmts.get(stmts[i]) {
-            .Expr(e) -> param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
-            .Return(e) -> param_used_with_float(param_name, ctx.nodes.exprs.get(e), ctx, env, captures, params)
-            .Let(_, _, init) -> param_used_with_float(param_name, ctx.nodes.exprs.get(init), ctx, env, captures, params)
-            .Mut(_, _, init) -> param_used_with_float(param_name, ctx.nodes.exprs.get(init), ctx, env, captures, params)
-            _ -> false
-        }
-        if found { return true }
-        i = i + 1
-    }
-    false
-}
-
-/// Infer types for unannotated lambda params by scanning the
-/// body. Defaults to Int; promotes to Float when the param is
-/// used alongside another float operand. Result is a
-/// `List<ValueType>` matched 1:1 to the input param list.
-fn infer_param_types(params: List<ParamEntry>, body: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>) -> List<ValueType> {
+/// The declared codegen type of each lambda parameter, in order — an
+/// annotated param's resolved type, or `Unknown` for an un-annotated one
+/// (the value-scalar default the type→layout boundary applies).
+///
+/// Codegen CONSUMES the resolved type; it does not INFER it (ps3t.4.5: no
+/// representation decision from an under-determined type). The former
+/// body-scanning heuristic (`infer_param_types` + the `param_used_with_float`
+/// / `has_float_ident` family) guessed Int/Float from usage; it was proven
+/// redundant — producing byte-identical IR to reading the param's own
+/// resolved type across the whole selfhost + curated corpus — and removed. A
+/// param used in a typed context (`.map`, an `fn(T)->U` argument) already
+/// receives its type from the caller via `emit_typed_lambda_arg`; this path
+/// serves the untyped-standalone lambda, where the param's annotation (or
+/// `Unknown`) is the whole story.
+fn declared_param_vtypes(params: List<ParamEntry>) -> List<ValueType> {
     mut out: List<ValueType> = []
-    mut i = 0
-    while i < params.length {
-        let p = params[i]
-        let ty = if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
-            ctx.resolve_codegen_vtype(p.vtype)
-        } else if param_used_with_float(p.name, body, ctx, env, captures, params) {
-            ValueType.Float
-        } else {
-            ValueType.Unknown
-        }
-        out.push(ty)
-        i = i + 1
-    }
+    for p in params { out.push(p.vtype) }
     out
 }
 
@@ -533,10 +402,10 @@ fn infer_param_types(params: List<ParamEntry>, body: Expr, ctx: Ctx, env: List<V
 // Unique lambda ID generation — uses a C-side counter to avoid mutable globals.
 extern fn avra_next_lambda_id() -> int
 
-// Compile a lambda with default parameter types (all Int).
-/// Public entry for lambda codegen. Forwards to
-/// `emit_lambda_typed` after letting the heuristic
-/// `infer_param_types` pick a default per param.
+/// Public entry for lambda codegen (the untyped-standalone path — no
+/// caller-supplied param types). Forwards to `emit_lambda_typed`, which
+/// reads each param's declared type via `declared_param_vtypes` (no
+/// codegen-side inference).
 export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Lambda(params, body) -> {
@@ -586,7 +455,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     // so we can build a properly-typed LLVM function signature.
     // Empty caller-supplied list means "infer from the body".
     let effective_types = if param_types.length == 0 {
-        infer_param_types(params, body, ctx, env, captures)
+        declared_param_vtypes(params)
     } else {
         param_types
     }
