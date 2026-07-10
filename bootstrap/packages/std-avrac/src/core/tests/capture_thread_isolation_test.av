@@ -16,7 +16,10 @@ extern fn avra_capture_stdout(closure: fn() -> void) -> string
 extern fn avra_channel_new() -> ptr
 extern fn avra_channel_send(ch: ptr, v: int)
 extern fn avra_channel_recv(ch: ptr) -> int
-extern fn avra_test_crash_count() -> int
+// 4m1e: filter the crash introspection by THIS file's basename so a
+// concurrent crash-isolation file's entries can't race our global read.
+const CTI_FILE: string = "capture_thread_isolation_test.av"
+extern fn avra_test_crash_count_for_file(frag: string) -> int
 
 mut cti_captured: string = "?"
 mut cti_window_open: ptr = null
@@ -78,8 +81,12 @@ spec "capture still works after a crash unwound the stack" {
             !out.contains("doomed-window-line") && out == "second-round-trip"
         }
         then "ack the deliberate crash so the suite exits green" {
+            // The ack drops the GLOBAL live count (green-ness verified by the
+            // shard exit code); the entry is RETAINED for introspection,
+            // which this asserts (per-file, race-free — the global count is
+            // not, under parallel workers).
             avra_test_ack_expected_crash()
-            avra_test_crash_count() == 0
+            avra_test_crash_count_for_file(CTI_FILE) == 1
         }
     }
 }

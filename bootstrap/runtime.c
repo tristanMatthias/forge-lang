@@ -4712,6 +4712,58 @@ const char* avra_test_crash_signal_name(int64_t idx) {
     return c ? avra_signal_label((int)c->signal) : "";
 }
 
+// ── Per-file crash introspection (4m1e) ──
+// The process-global `_crashes` list interleaves crashes from every test
+// file running concurrently across the in-process worker threads (d4jv), so
+// a test asserting on its OWN deliberate crashes must filter by source file
+// — a global-count (`avra_test_crash_count`) or absolute-index
+// (`avra_test_crash_spec(0)`) read races the other crash-isolation file's
+// entries. `frag` is a substring of the caller's own path (its basename);
+// the crash-isolation files' basenames are mutually non-substring, so
+// containment matching is unambiguous. The list mutex is held for the walk
+// so a concurrent append can't tear a node mid-traversal. Entries survive
+// `avra_test_ack_expected_crash` (it drops the global live count but leaves
+// the record), so these reflect exactly what THIS file recorded — the
+// global count/ack/summary path is left untouched, so real (unacked)
+// crashes are still detected by the shard's exit code as before.
+int64_t avra_test_crash_count_for_file(const char* frag) {
+    if (!frag) return 0;
+    int64_t n = 0;
+    pthread_mutex_lock(&_crashes.mutex);
+    for (AvraRecordNode* node = _crashes.head; node; node = node->next) {
+        AvraTestCrash* c = (AvraTestCrash*)node->payload;
+        if (c && c->file && strstr(c->file, frag)) n++;
+    }
+    pthread_mutex_unlock(&_crashes.mutex);
+    return n;
+}
+
+static AvraTestCrash* crash_at_for_file(const char* frag, int64_t idx) {
+    if (!frag || idx < 0) return NULL;
+    AvraTestCrash* found = NULL;
+    int64_t seen = 0;
+    pthread_mutex_lock(&_crashes.mutex);
+    for (AvraRecordNode* node = _crashes.head; node; node = node->next) {
+        AvraTestCrash* c = (AvraTestCrash*)node->payload;
+        if (c && c->file && strstr(c->file, frag)) {
+            if (seen == idx) { found = c; break; }
+            seen++;
+        }
+    }
+    pthread_mutex_unlock(&_crashes.mutex);
+    return found;
+}
+
+const char* avra_test_crash_spec_for_file(const char* frag, int64_t idx) {
+    AvraTestCrash* c = crash_at_for_file(frag, idx);
+    return c ? c->spec : "";
+}
+
+int64_t avra_test_crash_signal_for_file(const char* frag, int64_t idx) {
+    AvraTestCrash* c = crash_at_for_file(frag, idx);
+    return c ? c->signal : 0;
+}
+
 #undef AVRA_RECORD_FIELD
 
 // Testing helper for the spec-guard mechanism itself: raise a
