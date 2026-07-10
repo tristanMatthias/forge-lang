@@ -138,6 +138,14 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
     }
     items.push(json_str(runtime_o))
     items.push(json_str(llvm_wrapper_o))
+    // Export the program's symbols to the dynamic symbol table so an
+    // in-process MCJIT (compiled-comptime, ps3t.5) can resolve the
+    // `avra_*` runtime functions a JIT'd `@comptime` body calls (e.g. the
+    // div-by-zero trap, string/list ops) via dlsym. Without this, any
+    // JIT'd module that references a runtime symbol fails to link at
+    // materialization time. Clang maps `-rdynamic` to `-export_dynamic`
+    // on Darwin and `--export-dynamic` on Linux, so it is portable.
+    items.push(json_str("-rdynamic"))
     items.push(json_str("-o"))
     items.push(json_str(out))
     let is_mac = host_is_macos()

@@ -1102,6 +1102,72 @@ int64_t avra_llvm_jit_run(LLVMModuleRef module) {
     return 0;
 }
 
+// Compiled-comptime (ps3t.5, Slice A): MCJIT the module and CALL a NAMED
+// function with `argc` i64 arguments, returning its i64 result. Where
+// `avra_llvm_jit_run` runs `main()`, this runs an arbitrary fn — the primitive
+// that lets the compiler evaluate a `@comptime` fn by compiling+running it
+// instead of tree-walking it. Arguments and result are i64: int/bool pass
+// directly; float is bit-cast by the Avra marshal layer; a pointer result
+// (string/enum) must be consumed BEFORE the engine is disposed (the JIT'd code
+// + its allocations live in the engine) — Slice A gates on scalar returns, so
+// dispose-after-read is safe here. Arity is dispatched by a switch because C
+// cannot call through a runtime-arity function pointer.
+int64_t avra_llvm_jit_call(LLVMModuleRef module, const char* fn_name,
+                           int64_t argc, int64_t* argv) {
+    LLVMLinkInMCJIT();
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
+    char* error = NULL;
+    LLVMExecutionEngineRef engine;
+    struct LLVMMCJITCompilerOptions options;
+    LLVMInitializeMCJITCompilerOptions(&options, sizeof(options));
+    options.OptLevel = 2;
+
+    if (LLVMCreateMCJITCompilerForModule(&engine, module, &options, sizeof(options), &error)) {
+        fprintf(stderr, "JIT-call error: %s\n", error);
+        LLVMDisposeMessage(error);
+        return 0;
+    }
+
+    uint64_t addr = LLVMGetFunctionAddress(engine, fn_name);
+    if (!addr) {
+        fprintf(stderr, "JIT-call error: fn `%s` not found\n", fn_name);
+        LLVMDisposeExecutionEngine(engine);
+        return 0;
+    }
+
+    int64_t result = 0;
+    switch (argc) {
+        case 0: result = ((int64_t(*)(void))addr)(); break;
+        case 1: result = ((int64_t(*)(int64_t))addr)(argv[0]); break;
+        case 2: result = ((int64_t(*)(int64_t, int64_t))addr)(argv[0], argv[1]); break;
+        case 3: result = ((int64_t(*)(int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2]); break;
+        case 4: result = ((int64_t(*)(int64_t, int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2], argv[3]); break;
+        default:
+            fprintf(stderr, "JIT-call error: arity %lld unsupported (max 4)\n", (long long)argc);
+            LLVMDisposeExecutionEngine(engine);
+            return 0;
+    }
+
+    LLVMDisposeExecutionEngine(engine);
+    return result;
+}
+
+// ── i64 argument-vector marshalling (ps3t.5, Slice A) ──
+// A flat `int64_t[]` for `avra_llvm_jit_call`'s argv. The Avra marshal layer
+// lowers a List<Value> into one of these — int/bool go in directly, float is
+// bit-cast to its i64 pattern, string/enum pass their pointer as an integer.
+// (The LLVM value/type array helpers above hold `LLVMValueRef`/`LLVMTypeRef`,
+// not raw operands, so they can't serve here.)
+int64_t* avra_i64_buf_new(int64_t n) {
+    if (n <= 0) return NULL;
+    return (int64_t*)calloc((size_t)n, sizeof(int64_t));
+}
+void avra_i64_buf_set(int64_t* buf, int64_t i, int64_t v) { buf[i] = v; }
+void avra_i64_buf_free(int64_t* buf) { free(buf); }
+
 // ── Object File Emission ──
 // Emit an LLVM module as an object file. Returns 0 on success, -1 on error.
 
