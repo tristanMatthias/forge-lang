@@ -1,0 +1,17 @@
+// ps3t.5.2.1: bool-returning @comptime folds. OLD interprets these; NEW JITs
+// them — the folded Expr.Bool literals must be byte-identical either way.
+@comptime
+fn gt(a: int, b: int) -> bool { return a > b }
+@comptime
+fn between(x: int, lo: int, hi: int) -> bool { return x >= lo && x <= hi }
+@comptime
+fn pick(flag: int, a: int, b: int) -> bool { return if flag > 0 { a > b } else { a < b } }
+
+fn main() {
+    let a = gt(5, 3)
+    let b = gt(2, 8)
+    let c = between(5, 1, 10)
+    let d = between(11, 1, 10)
+    let e = pick(1, 8, 3)
+    let f = pick(0, 8, 3)
+}

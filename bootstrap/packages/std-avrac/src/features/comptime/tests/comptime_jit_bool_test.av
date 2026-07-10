@@ -1,0 +1,39 @@
+// ps3t.5.2.1 — extend the compiled-comptime (JIT) fold path to bool returns.
+// Slice A (ps3t.5.2) JIT-folded only scalar-INT single fns; a bool-returning
+// @comptime fn fell back to the interpreter. Comparison/logical bodies are
+// already body_jit_safe, and the i1 result rides back in the low bit of the i64
+// JIT-call return, so try_jit_fold now accepts a Bool return and renders it
+// byte-identically to the interpreter's Expr.Bool (mask the low bit, `v & 1`).
+//
+// These specs fold bool @comptime fns (this file is compiled through
+// run_comptime → try_jit_fold, so the calls below fold at COMPILE time) and
+// assert the folded values. A wrong JIT marshal would flip a literal and fail
+// the assertion; byte-identity with the interpreter is separately gated by
+// diff-test. Float/String/transitive-callee returns remain interpreter-only
+// (ps3t.5.2.1 follow-ups).
+
+@comptime
+fn gt(a: int, b: int) -> bool { return a > b }
+@comptime
+fn eq(a: int, b: int) -> bool { return a == b }
+@comptime
+fn le(a: int, b: int) -> bool { return a <= b }
+@comptime
+fn between(x: int, lo: int, hi: int) -> bool { return x >= lo && x <= hi }
+@comptime
+fn pick(flag: int, a: int, b: int) -> bool { return if flag > 0 { a > b } else { a < b } }
+
+spec "ps3t.5.2.1: bool-returning @comptime fns fold to the correct value" {
+    then "a `>` comparison folds true / false correctly" {
+        gt(5, 3) && !gt(2, 8) && !gt(4, 4)
+    }
+    then "`==` and `<=` fold correctly (incl. the boundary)" {
+        eq(4, 4) && !eq(4, 7) && le(3, 3) && le(2, 9) && !le(9, 2)
+    }
+    then "a logical-`&&` body (multiple comparisons) folds correctly" {
+        between(5, 1, 10) && !between(0, 1, 10) && !between(11, 1, 10) && between(1, 1, 10)
+    }
+    then "an if-expr body returning bool folds on both branches" {
+        pick(1, 8, 3) && !pick(1, 3, 8) && pick(0, 3, 8) && !pick(0, 8, 3)
+    }
+}
