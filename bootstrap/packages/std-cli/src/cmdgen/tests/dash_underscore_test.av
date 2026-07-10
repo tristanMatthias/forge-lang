@@ -1,9 +1,8 @@
-// vez6.12 prerequisite: a flag/option declared with an underscore name is
-// matchable by its dash spelling and vice-versa (`--debug-null` sets the
-// `debug_null` flag). A well-established CLI convention, and specifically what
-// lets the avra `compile` command accept both `--debug-null` (used by the
-// build) and `--module_path` (used by tests) against one declared schema —
-// the last blocker to migrating main.av's `compile` onto the declarative App.
+// A flag/option declared with an underscore name is matchable by its dash
+// spelling and vice-versa (`--debug-null` sets the `debug_null` flag). A
+// well-established CLI convention, and specifically what lets the avra
+// `compile` command accept both `--debug-null` (used by the build) and
+// `--module_path` (used by tests) against one declared schema.
 //
 // The equivalence lives in the shared classifier (cli.av `norm_flag` in
 // `flag_canonical_name`/`option_canonical_name`), so it holds on BOTH the
@@ -50,7 +49,7 @@ fn du_run() -> string {
     write_fixture_and_run_no_metadata("/tmp/avra_dash_underscore_test.av", du_src())
 }
 
-spec "vez6.12: dash/underscore flag+option spellings are equivalent" {
+spec "dash/underscore flag+option spellings are equivalent" {
     then "a dash-spelled flag sets its underscore-named flag" {
         // `--debug-null` matches `flag debug_null` → run body's `debug_null`
         // is true → 42.
