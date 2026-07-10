@@ -10,7 +10,15 @@
 <header class="topbar">
   <div class="topbar-row primary">
     <div class="brand">beads</div>
-    <input id="search" type="search" placeholder="filter…" autocomplete="off" />
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="filter…" autocomplete="off" />
+      <button id="search-clear" class="search-clear" aria-label="Clear search" title="Clear">×</button>
+    </div>
+    <div class="view-toggle" role="tablist" aria-label="View">
+      <button class="view-btn" data-view="tree" title="Hierarchy / parent-child tree">tree</button>
+      <button class="view-btn" data-view="graph" title="Dependency graph by 'blocks' edges">graph</button>
+      <button class="view-btn" data-view="dashboard" title="Epic progress dashboard">dashboard</button>
+    </div>
     <button id="toggle-filters" class="icon-btn" title="Filters" aria-expanded="false">☰</button>
     <button id="expand-all" class="icon-btn" title="Expand all">⊕</button>
     <button id="collapse-all" class="icon-btn" title="Collapse all">⊖</button>
@@ -35,7 +43,7 @@
 </header>
 
 <main>
-  <aside id="tree" class="tree" aria-label="Issue tree"></aside>
+  <aside id="tree" class="tree" aria-label="Issue list"></aside>
   <section id="detail" class="detail">
     <button id="back" class="back-btn" aria-label="Back to list">← back</button>
     <div id="detail-body"><div class="empty">Select an issue to see details.</div></div>

@@ -5,12 +5,15 @@ Beads UI — local web server for browsing .beads/issues.jsonl as a collapsible 
 Usage:
     python3 beads_ui/server.py [--port 7842] [--host 127.0.0.1] [--beads .beads]
 
-Reads the raw issues.jsonl file directly (no `bd` CLI) and serves it as JSON.
+Reads the raw issues.jsonl file directly and serves it as JSON. POST /api/pull
+runs `bd --sandbox dolt pull` to fetch the latest from the Dolt remote (bd
+auto-exports to issues.jsonl) before the next read.
 """
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -33,6 +36,29 @@ def load_issues(beads_dir: str):
                 sys.stderr.write(f"skip bad line: {e}\n")
     mtime = os.path.getmtime(path)
     return issues, mtime
+
+
+def dolt_pull(beads_dir: str):
+    """Run `bd --sandbox dolt pull` in the repo (parent of .beads) to fetch the
+    latest issues from the Dolt remote. bd auto-exports to issues.jsonl on pull,
+    so the server's subsequent read picks up the new state. --sandbox disables
+    bd's auto-push wrapper (which hangs on interactive git auth here)."""
+    repo_root = os.path.dirname(os.path.abspath(beads_dir))
+    try:
+        proc = subprocess.run(
+            ["bd", "--sandbox", "dolt", "pull"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "BD_NON_INTERACTIVE": "1"},
+        )
+    except FileNotFoundError:
+        return {"ok": False, "error": "bd not found on PATH"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "bd dolt pull timed out"}
+    out = (proc.stdout or "") + (proc.stderr or "")
+    return {"ok": proc.returncode == 0, "output": out.strip(), "code": proc.returncode}
 
 
 def make_handler(beads_dir: str):
@@ -62,6 +88,14 @@ def make_handler(beads_dir: str):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/pull":
+                result = dolt_pull(beads_dir)
+                self._send_json(result, 200 if result.get("ok") else 502)
+                return
+            self.send_error(404, "not found")
 
         def do_GET(self):
             parsed = urlparse(self.path)
