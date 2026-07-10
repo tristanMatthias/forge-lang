@@ -1,0 +1,73 @@
+// A bare `--` token ends option parsing (getopt / POSIX convention): every
+// following token is a positional, even one that looks like a flag. Without it,
+// a CLI cannot accept a positional beginning with `-` (a `-weird` filename, a
+// `-5` literal) — parse_tokens would reject it as `unknown flag`. Exercises the
+// terminator latch in parse_tokens (cli.av) end-to-end through run_argv.
+//
+// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// @comptime bodies are available. `dt_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+fn dt_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command build {\n" +
+    "        arg name {}\n" +
+    "        flag verbose {}\n" +
+    "        run() {\n" +
+    "            if verbose { return 100 + name.length }\n" +
+    "            return name.length\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // After `--`, a flag-like token is a positional: name == "-5" (length 2).
+    "    println(\"TERM=\" + string(toy.run_argv([\"build\", \"--\", \"-5\"])))\n" +
+    // A flag BEFORE the terminator still parses; a flag-like token AFTER it is a
+    // positional: verbose set + name == "--notaflag" (10) → 100 + 10 = 110.
+    "    println(\"BOTH=\" + string(toy.run_argv([\"build\", \"--verbose\", \"--\", \"--notaflag\"])))\n" +
+    // No terminator: a normal positional parses as before → name == "value" (5).
+    "    println(\"NORMAL=\" + string(toy.run_argv([\"build\", \"value\"])))\n" +
+    // A bare trailing `--` is consumed, records NO positional; the optional arg
+    // stays empty → name == "" (0). (Without the fix this errored → 1.)
+    "    println(\"BARE=\" + string(toy.run_argv([\"build\", \"--\"])))\n" +
+    "}\n"
+}
+
+fn dt_run() -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_dash_terminator_test.av", dt_src())
+}
+
+spec "a bare `--` ends option parsing (getopt end-of-options terminator)" {
+    then "a flag-like token after `--` is captured as a positional, not rejected" {
+        // ["build", "--", "-5"] → name == "-5" (length 2). Without the fix,
+        // "-5" (or the "--" itself) errors as an unknown flag → 1.
+        let out = dt_run()
+        out.contains("TERM=2")
+    }
+    then "a flag before `--` still parses; a flag-like token after it is positional" {
+        // verbose set + name == "--notaflag" → 100 + 10 = 110.
+        let out = dt_run()
+        out.contains("BOTH=110")
+    }
+    then "a normal positional still parses when there is no terminator" {
+        let out = dt_run()
+        out.contains("NORMAL=5")
+    }
+    then "a bare trailing `--` is consumed and records no spurious positional" {
+        // The terminator itself is not a positional; the optional arg stays "".
+        let out = dt_run()
+        out.contains("BARE=0")
+    }
+}
