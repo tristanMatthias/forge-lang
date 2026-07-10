@@ -257,51 +257,104 @@ fn tokens_have_help(tokens: List<string>) -> bool {
     false
 }
 
-/// Per-command `--help`: the command's name + description, then its
-/// declared flags, options, and positional args — read straight off the
-/// command's `CommandSpec`. Only non-empty sections are printed.
+/// Per-command `--help`: the command's name + description, a usage line
+/// showing its real positionals, then its declared flags, options, and args —
+/// read straight off the `CommandSpec`. Descriptions align to one column across
+/// all three sections; only non-empty sections are printed.
 fn cmd_print_help(app: App, meta: CommandSpec) {
     println("${app.name} ${meta.name}  ${meta.description}")
     println("")
     println("USAGE:")
-    println("  ${app.name} ${meta.name} [flags] [options] [args]")
-    print_flag_section(meta.flags)
-    print_option_section(meta.options)
-    print_arg_section(meta.args)
+    println("  ${app.name} ${meta.name}${cmd_usage_tail(meta)}")
+    let w = cmd_help_col_width(meta)
+    print_flag_section(meta.flags, w)
+    print_option_section(meta.options, w)
+    print_arg_section(meta.args, w)
 }
 
-/// Render the `FLAGS:` block: one `--name[, -short]  description` line per
-/// declared flag. Nothing printed when there are none.
-fn print_flag_section(flags: List<FlagDef>) {
+/// The trailing part of a command's USAGE line: `[FLAGS]`/`[OPTIONS]` markers
+/// when the command has any, then each positional as `<name>` (required) or
+/// `[name]` (optional), in declaration order.
+fn cmd_usage_tail(meta: CommandSpec) -> string {
+    mut s = ""
+    if meta.flags.length > 0 { s = "${s} [FLAGS]" }
+    if meta.options.length > 0 { s = "${s} [OPTIONS]" }
+    for a in meta.args {
+        s = if a.required { "${s} <${a.name}>" } else { "${s} [${a.name}]" }
+    }
+    s
+}
+
+/// Left-column text for a flag in `--help` — `--name` or `--name, -s`.
+fn flag_display(f: FlagDef) -> string {
+    if f.short != "" { "${f.name}, ${f.short}" } else { f.name }
+}
+
+/// Left-column text for an option — same shape as a flag.
+fn option_display(o: OptionDef) -> string {
+    if o.short != "" { "${o.name}, ${o.short}" } else { o.name }
+}
+
+/// Left-column text for a positional — `<name>` required, `[name]` optional.
+fn arg_display(a: ArgDef) -> string {
+    if a.required { "<${a.name}>" } else { "[${a.name}]" }
+}
+
+/// Widest left-column across a command's flags, options, and args, so every
+/// section's descriptions align to a single column.
+fn cmd_help_col_width(meta: CommandSpec) -> int {
+    mut w = 0
+    for f in meta.flags {
+        let d = flag_display(f)
+        if d.length > w { w = d.length }
+    }
+    for o in meta.options {
+        let d = option_display(o)
+        if d.length > w { w = d.length }
+    }
+    for a in meta.args {
+        let d = arg_display(a)
+        if d.length > w { w = d.length }
+    }
+    w
+}
+
+/// Pad `s` with trailing spaces to at least `width` columns.
+fn pad_to(s: string, width: int) -> string {
+    mut out = s
+    while out.length < width { out = "${out} " }
+    out
+}
+
+/// Render the `FLAGS:` block, each `--name[, -short]` padded to `col_width` so
+/// descriptions align. Nothing printed when there are none.
+fn print_flag_section(flags: List<FlagDef>, col_width: int) {
     if flags.length == 0 { return }
     println("")
     println("FLAGS:")
     for f in flags {
-        let short = if f.short != "" { ", ${f.short}" } else { "" }
-        println("  ${f.name}${short}  ${f.description}")
+        println("  ${pad_to(flag_display(f), col_width)}  ${f.description}")
     }
 }
 
-/// Render the `OPTIONS:` block: one `--name[, -short]  description` line
-/// per declared option. Nothing printed when there are none.
-fn print_option_section(options: List<OptionDef>) {
+/// Render the `OPTIONS:` block, names padded to `col_width`. Nothing when none.
+fn print_option_section(options: List<OptionDef>, col_width: int) {
     if options.length == 0 { return }
     println("")
     println("OPTIONS:")
     for o in options {
-        let short = if o.short != "" { ", ${o.short}" } else { "" }
-        println("  ${o.name}${short}  ${o.description}")
+        println("  ${pad_to(option_display(o), col_width)}  ${o.description}")
     }
 }
 
-/// Render the `ARGS:` block: one `name  description` line per declared
-/// positional (positionals aren't dashed). Nothing printed when none.
-fn print_arg_section(args: List<ArgDef>) {
+/// Render the `ARGS:` block, each `<name>`/`[name]` padded to `col_width`.
+/// Nothing printed when none.
+fn print_arg_section(args: List<ArgDef>, col_width: int) {
     if args.length == 0 { return }
     println("")
     println("ARGS:")
     for a in args {
-        println("  ${a.name}  ${a.description}")
+        println("  ${pad_to(arg_display(a), col_width)}  ${a.description}")
     }
 }
 
@@ -542,10 +595,37 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
         }
     }
 
+    // A declared `arg x { required true }` the user omitted is a usage error,
+    // not a silently-empty result_get_arg. Only surfaces when no earlier parse
+    // error already took priority (that one is the more specific complaint).
+    if error == "" {
+        let missing = first_missing_required_arg(args, parsed_args)
+        if missing != "" {
+            error = "missing required argument: ${missing}"
+        }
+    }
+
     CliResult { command: cmd_name, flags: parsed_flags, options: parsed_options, args: parsed_args, error }
 }
 
 // ── Helpers ──
+
+/// The name of the first declared arg with `required: true` that has no parsed
+/// value, or "" when every required positional was supplied. Positionals are
+/// recorded under their declaration-order arg name (see parse_tokens), so a
+/// name lookup answers "was this required slot filled?".
+fn first_missing_required_arg(args: List<ArgDef>, parsed: List<ParsedArg>) -> string {
+    for a in args {
+        if a.required {
+            mut found = false
+            for p in parsed {
+                if p.name == a.name { found = true }
+            }
+            if !found { return a.name }
+        }
+    }
+    ""
+}
 
 /// Drop the leading `--` or `-` from a flag/option token.
 fn strip_dashes(s: string) -> string {
