@@ -1847,7 +1847,7 @@ fn vtype_node_unresolved(tc: TC, x: ValueType) -> bool {
 /// pointer-shaped, so comparing it against a concrete `Box<int>` would wrongly
 /// reject valid generic code (`fn id<T>(b: Box<T>)` called with `Box { val: 9 }`).
 fn vtype_mentions_unresolved(tc: TC, t: ValueType) -> bool {
-    t.any((x) -> vtype_node_unresolved(tc, x))
+    t.any((x: ValueType) -> vtype_node_unresolved(tc, x))
 }
 
 /// True iff the TOP-LEVEL layout of `t` is unknown — i.e. `t` itself (Optional
@@ -3174,7 +3174,7 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     // predicate on every node (self + all children), so it subsumes the
     // hand-rolled List/Task/FnTyped/Enum recursion — and additionally
     // reaches Union / Tuple / Newtype members the old walker skipped.
-    ty.any((t) -> match t {
+    ty.any((t: ValueType) -> match t {
         .Struct(n, _, _) -> type_param_has(tp, n)
         _ -> false
     })
@@ -3558,7 +3558,7 @@ export fn tc_subst_vtype(ty: ValueType, bindings: List<TypeArg>) -> ValueType {
     // `(T, int)` return now substitutes T instead of leaking it downstream).
     let bound = tc_type_arg_lookup(bindings, vtype_display(ty))
     if !vtype_is_unknown(bound) { return bound }
-    ty.map((c) -> tc_subst_vtype(c, bindings))
+    ty.map((c: ValueType) -> tc_subst_vtype(c, bindings))
 }
 
 /// Lookup a binding by type-param name. Returns `Unknown` on miss

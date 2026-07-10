@@ -1,12 +1,12 @@
 spec "hunt closure captures mut" {
     then "closure captures value" {
         let base = 10
-        let snap = (x) -> x + base
+        let snap = (x: int) -> x + base
         snap(5) == 15
     }
     then "closure captures value second call" {
         let base = 10
-        let snap = (x) -> x + base
+        let snap = (x: int) -> x + base
         snap(100) == 110
     }
 }

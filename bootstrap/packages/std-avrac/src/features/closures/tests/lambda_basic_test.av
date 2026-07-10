@@ -1,19 +1,19 @@
 spec "lambda basic" {
     then "single-param lambda" {
-        let double = (x) -> x * 2
+        let double = (x: int) -> x * 2
         double(5) == 10
     }
     then "two-param lambda" {
-        let add = (a, b) -> a + b
+        let add = (a: int, b: int) -> a + b
         add(3, 4) == 7
     }
     then "lambda captures outer int" {
         let n = 10
-        let add_n = (x) -> x + n
+        let add_n = (x: int) -> x + n
         add_n(5) == 15
     }
     then "lambda with block body" {
-        let f = (x) -> {
+        let f = (x: int) -> {
             let y = x + 1
             y * 2
         }

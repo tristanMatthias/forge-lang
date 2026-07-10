@@ -9,7 +9,7 @@ spec "hunt closure ret type" {
         greetings[0] == "Hello Alice" && greetings[1] == "Hello Bob" && greetings[2] == "Hello Charlie"
     }
     then "let-bound closure returning string" {
-        let upper_fn = (s) -> { s + "!" }
+        let upper_fn = (s: string) -> { s + "!" }
         upper_fn("test") == "test!"
     }
     then "higher-order: fn returning fn" {

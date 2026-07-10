@@ -23,8 +23,8 @@ spec "fn returns fn" {
         triple(7) == 21
     }
     then "compose pipeline applies g then f" {
-        let inc = (x) -> x + 1
-        let dbl = (x) -> x * 2
+        let inc = (x: int) -> x + 1
+        let dbl = (x: int) -> x * 2
         let pipeline = frf_compose(dbl, inc)
         pipeline(5) == 12
     }

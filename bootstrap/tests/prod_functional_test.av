@@ -3,8 +3,8 @@ fn pf_compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
 }
 
 fn pf_run() -> string {
-    let inc = (x) -> x + 1
-    let dbl = (x) -> x * 2
+    let inc = (x: int) -> x + 1
+    let dbl = (x: int) -> x * 2
 
     let inc_then_dbl = pf_compose(dbl, inc)
     let dbl_then_sqr = pf_compose((x) -> x * x, dbl)

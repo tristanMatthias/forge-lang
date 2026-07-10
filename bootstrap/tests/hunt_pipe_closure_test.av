@@ -9,8 +9,8 @@ spec "hunt pipe closure" {
         result == 15
     }
     then "chain pipes with closures" {
-        let inc = (x) -> x + 1
-        let dbl = (x) -> x * 2
+        let inc = (x: int) -> x + 1
+        let dbl = (x: int) -> x * 2
         let val = 5 |> inc |> dbl |> inc
         val == 13
     }
