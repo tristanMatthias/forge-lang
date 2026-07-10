@@ -1,0 +1,93 @@
+// WHY: ps3t.5.2 — compiled-comptime constant fold. A scalar-int `@comptime` fn
+// called with literal args is evaluated at compile time by codegen'ing the fn
+// and running it in-process (try_jit_fold), instead of tree-walking it. The
+// folded literal is byte-identical to the interpreter's (proven by the diff-test
+// selfhost oracle).
+//
+// These specs compile a fixture through `bs2 compile` and inspect the emitted
+// IR: a folded call leaves its computed literal in the IR at the call site
+// (`i64 49` for `sq(7)`), whereas an UN-folded call would emit `call @sq(i64 7)`
+// and never materialise the constant. Asserting the folded literal therefore
+// pins both that the fold happened AND that its value is correct — a wrong
+// marshal (49 → 1049) or a regressed gate (call survives) fails the check. The
+// division case pins the interpreter fallback: `/` is declined by the JIT (its
+// zero-divisor trap would `abort()` the compiler) yet must still fold correctly.
+// Same `bs2 compile` + captured-output harness as the sibling 4d5r specs.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` and return its emitted LLVM IR (`.ll`), or a sentinel so a
+/// failed compile surfaces as a missing literal rather than a false pass.
+fn fold_ir(tag: string, source: string) -> string {
+    let path = "/tmp/avra_jitfold_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' >/dev/null 2>&1 && cat '${path}.ll' 2>/dev/null || echo __COMPILE_FAILED__")
+}
+
+/// A minimal program that folds `expr` into a `let`, then consumes it so the
+/// binding can't be eliminated before codegen materialises the folded literal.
+fn fold_prog(defs: string, expr: string) -> string {
+    "${defs}\nfn main() { let __f = ${expr}\n  println(string(__f)) }"
+}
+
+spec "compiled-comptime folds a scalar-int @comptime call to its literal (ps3t.5)" {
+    then "multiplication: sq(7) folds to i64 49" {
+        let ir = fold_ir("sq", fold_prog("@comptime fn sq(n: int) -> int { n * n }", "sq(7)"))
+        ir.contains("i64 49")
+    }
+    then "a different input folds differently: sq(9) → i64 81 (not a fixed 49)" {
+        let ir = fold_ir("sq9", fold_prog("@comptime fn sq(n: int) -> int { n * n }", "sq(9)"))
+        ir.contains("i64 81") && !ir.contains("i64 49")
+    }
+    then "3-arg addition folds in order: add3(10,20,12) → i64 42" {
+        let ir = fold_ir("add3", fold_prog("@comptime fn add3(a: int, b: int, c: int) -> int { a + b + c }", "add3(10, 20, 12)"))
+        ir.contains("i64 42")
+    }
+    then "4-arg addition folds at the JIT arity ceiling: → i64 100" {
+        let ir = fold_ir("add4", fold_prog("@comptime fn add4(a: int, b: int, c: int, d: int) -> int { a + b + c + d }", "add4(10, 20, 30, 40)"))
+        ir.contains("i64 100")
+    }
+    // The folded value must be COMPUTED (not a literal in the fn body): the
+    // fn's own definition is still codegen'd as dead code, so a body-literal
+    // result (`{ 100 }`) would appear in the IR whether or not the fold fired.
+    // `c * 10` puts 70/60 in the IR only via the fold.
+    then "if/else control flow folds — then branch: pick(7) → i64 70" {
+        let ir = fold_ir("pick_then", fold_prog("@comptime fn pick(c: int) -> int { if c > 5 { c * 10 } else { c * 20 } }", "pick(7)"))
+        ir.contains("i64 70")
+    }
+    then "if/else control flow folds — else branch: pick(3) → i64 60" {
+        let ir = fold_ir("pick_else", fold_prog("@comptime fn pick(c: int) -> int { if c > 5 { c * 10 } else { c * 20 } }", "pick(3)"))
+        ir.contains("i64 60")
+    }
+    then "a negative result round-trips through the i64 ABI: negf(7) → i64 -7" {
+        let ir = fold_ir("neg", fold_prog("@comptime fn negf(x: int) -> int { 0 - x }", "negf(7)"))
+        ir.contains("i64 -7")
+    }
+    then "a 0-arg fn folds (null argv path): answer() → i64 42" {
+        let ir = fold_ir("zero", fold_prog("@comptime fn answer() -> int { 6 * 7 }", "answer()"))
+        ir.contains("i64 42")
+    }
+    then "division folds correctly via the interpreter fallback: div(84,2) → i64 42" {
+        let ir = fold_ir("div", fold_prog("@comptime fn dv(a: int, b: int) -> int { a / b }", "dv(84, 2)"))
+        ir.contains("i64 42")
+    }
+    then "a fn calling another fn falls back to the interpreter and still folds: viacall(20) → i64 42" {
+        let ir = fold_ir("viacall", fold_prog("@comptime fn helperf(n: int) -> int { n + 1 }\n@comptime fn viacall(n: int) -> int { helperf(n) * 2 }", "viacall(20)"))
+        ir.contains("i64 42")
+    }
+    then "a while-loop fn falls back to the interpreter and still folds: sumto(5) → i64 10" {
+        // Loops are not JIT-blessed (a terminating loop needs an assignment,
+        // which body_jit_safe rejects; an infinite one would hang the JIT'd
+        // compiler), so this folds via the interpreter — proving loop folds
+        // still work through the fallback.
+        let ir = fold_ir("sumto", fold_prog("@comptime fn sumto(n: int) -> int { mut acc = 0\n  mut i = 0\n  while i < n { acc = acc + i\n  i = i + 1 }\n  acc }", "sumto(5)"))
+        ir.contains("i64 10")
+    }
+    then "the callee is eliminated — no `call` to the folded fn remains" {
+        // A folded call leaves no `call` to `sq` in main; the literal stands in
+        // for it. (The `define` of `sq` itself may remain as dead code.)
+        let ir = fold_ir("nocall", fold_prog("@comptime fn sq(n: int) -> int { n * n }", "sq(7)"))
+        ir.contains("i64 49") && !ir.contains("call i64 @sq")
+    }
+}

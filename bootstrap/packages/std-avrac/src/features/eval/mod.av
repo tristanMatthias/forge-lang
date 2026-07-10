@@ -28,7 +28,7 @@ extern fn avra_selfhost_string_to_int(s: string) -> int
 
 /// Parse a base-10 integer from a string. Replaces the older
 /// `float()` wrapper; same call shape, different (correct) impl.
-fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
+export fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
 
 /// Tagged value used by the tree-walking evaluator. The `kind`
 /// field discriminates which other field holds the payload —
@@ -344,7 +344,7 @@ export fn execute_program_stmts(ids: List<StmtId>, store: NodeStore) -> EvalResu
 
 /// Render an integer as its canonical decimal text. Strips a
 /// trailing `.0` so `42.0` becomes `42` for CLI output.
-fn render_number(value: int) -> string {
+export fn render_number(value: int) -> string {
     let text = string(value)
     if text.length >= 2 {
         let suffix = text.substring(text.length - 2, text.length)
