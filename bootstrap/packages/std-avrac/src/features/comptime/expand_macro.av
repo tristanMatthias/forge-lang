@@ -60,6 +60,9 @@ use list_ops.{list_concat, list_contains_str}
 extern fn avra_resolver_ctx_push(state: ptr) -> int
 extern fn avra_resolver_ctx_pop()
 extern fn avra_resolver_ctx_top() -> int
+// ps3t.5.4: bracket a macro's comptime eval so its `while` loops are bounded.
+extern fn avra_comptime_enter()
+extern fn avra_comptime_leave()
 
 // ── Resolver-data layer (step 5 of expand-pipeline doc) ──
 //
@@ -663,7 +666,12 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
             span
         )
     }
+    // ps3t.5.4: mark comptime-active so a non-terminating `while` in the macro
+    // body is capped by the interpreter (surfaces below as F4005) rather than
+    // hanging the compiler.
+    avra_comptime_enter()
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
+    avra_comptime_leave()
     if step_had_error(result) {
         return expand_fail(
             DiagCode.ExpandEvalFailed,

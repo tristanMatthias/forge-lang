@@ -37,6 +37,10 @@ extern fn avra_i64_buf_free(buf: ptr)
 extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
 extern fn avra_map_get_cstr(map: ptr, key: string) -> int
 extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+// ps3t.5.4: mark the interpreter comptime-active around a fold so its `while`
+// executor enforces the loop ceiling (runtime bs2-run loops stay unbounded).
+extern fn avra_comptime_enter()
+extern fn avra_comptime_leave()
 
 // ── Public API ──
 
@@ -109,7 +113,11 @@ fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>)
 fn fold_call_compute(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
     let jit = try_jit_fold(reg, fn_def, arg_values)
     if jit != null { return jit }
+    // The JIT path can't loop (body_jit_safe excludes loops), so only the
+    // interpreter fallback needs the comptime loop ceiling (ps3t.5.4).
+    avra_comptime_enter()
     let result = eval_fn_with_resolved_args(reg.runtime, fn_def.params, fn_def.body, arg_values)
+    avra_comptime_leave()
     if step_had_error(result) != 0 { return null }
     value_to_expr(reg.runtime.nodes, step_value(result))
 }

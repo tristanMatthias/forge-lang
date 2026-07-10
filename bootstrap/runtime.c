@@ -4384,6 +4384,33 @@ const char* avra_process_env_get(const char* key) {
     return copy;
 }
 
+// ── Comptime execution budget (ps3t.5.4) ──
+// The tree-walk interpreter is shared between compile-time folding/expansion
+// and runtime program execution (bs2 run / spec tests). A @comptime fn MUST
+// terminate, but a runtime program's loops are unbounded — so the comptime
+// loop ceiling is enforced ONLY while a comptime fold/macro is on the stack.
+// The fold + macro entry points bracket their eval with enter/leave; the
+// interpreter's `while` executor checks `active` and, when set, caps iterations.
+static _Atomic int64_t avra_comptime_depth_v = 0;
+void avra_comptime_enter(void) { atomic_fetch_add(&avra_comptime_depth_v, 1); }
+void avra_comptime_leave(void) { atomic_fetch_sub(&avra_comptime_depth_v, 1); }
+int64_t avra_comptime_active(void) { return atomic_load(&avra_comptime_depth_v) > 0 ? 1 : 0; }
+
+// Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
+// that runs past this can only be non-terminating (a real one folds in far
+// fewer steps). Overridable via AVRA_COMPTIME_LOOP_LIMIT — mainly for tests,
+// which set it low to trip fast — and read once, cached.
+int64_t avra_comptime_loop_limit(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    const char* e = getenv("AVRA_COMPTIME_LOOP_LIMIT");
+    int64_t v = (e && *e) ? strtoll(e, NULL, 10) : 10000000;
+    if (v <= 0) v = 10000000;
+    atomic_store(&cached, v);
+    return v;
+}
+
 // Unset an environment variable for THIS process. Used by the test
 // runner before forking the test binary so its shell-outs to bs2
 // don't inherit AVRA_USE_METADATA / AVRA_LIB_OBJS / AVRA_LIB_PKG_ROOT

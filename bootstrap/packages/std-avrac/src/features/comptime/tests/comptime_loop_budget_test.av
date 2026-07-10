@@ -1,0 +1,78 @@
+// ps3t.5.4 — comptime execution budget. The tree-walk interpreter is shared
+// between compile-time folding/expansion and runtime program execution
+// (`bs2 run` / spec tests). A `@comptime`/`@expand` fn MUST terminate, so a
+// non-terminating `while` in one used to HANG the compiler with no diagnostic.
+// Now the interpreter caps `while` iterations WHILE a comptime fold/macro is on
+// the stack (a per-loop ceiling, `AVRA_COMPTIME_LOOP_LIMIT`, default 10M) and
+// halts with a clear error — surfaced as F4005 on the `@expand` path — instead
+// of hanging. Runtime loops (`bs2 run`) are unaffected: the ceiling is enforced
+// only when comptime-active, so a real program's loops stay unbounded.
+//
+// These specs shell out with a TINY limit so the trap fires in milliseconds
+// (a fresh process each, so the C-side limit cache is per-fixture and never
+// races the in-suite folds, which run at the 10M default).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` with the comptime loop ceiling forced to `limit`, capturing
+/// diagnostics. `timeout` bounds the run so a REGRESSION (the guard removed →
+/// genuine hang) fails loudly instead of wedging the suite.
+fn compile_with_limit(tag: string, limit: string, source: string) -> string {
+    let path = "/tmp/avra_ct54_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 ./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+/// Run `source` (compile + execute) with the comptime ceiling forced low, to
+/// prove RUNTIME loops are not comptime-bounded.
+fn run_with_limit(tag: string, limit: string, source: string) -> string {
+    let path = "/tmp/avra_ct54run_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+}
+
+spec "ps3t.5.4: a non-terminating comptime loop traps, not hangs" {
+    then "an @expand macro whose `while` never ends is F4005 with a clear message" {
+        let out = compile_with_limit("expand", "100",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "@comptime\n" +
+            "fn loopy(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 { i = i + 1 }\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Number(string(i))))\n" +
+            "}\n" +
+            "@expand(loopy)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("F4005") && out.contains("iterations without terminating")
+    }
+    then "a bounded @expand macro loop UNDER the ceiling expands cleanly (no over-fire)" {
+        let out = compile_with_limit("bounded", "100000",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "@comptime\n" +
+            "fn tiny(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    mut i = 0\n" +
+            "    while i < 10 { i = i + 1 }\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Number(string(i))))\n" +
+            "}\n" +
+            "@expand(tiny)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        !out.contains("F4005") && !out.contains("iterations without terminating")
+    }
+    then "a RUNTIME loop over the comptime ceiling still runs to completion (comptime-scoped)" {
+        // 500 iterations at runtime with the comptime ceiling at 100: if the
+        // bound leaked into runtime execution this would trap at 100; correctly
+        // scoped, it prints 500.
+        let out = run_with_limit("rt", "100",
+            "fn main() {\n" +
+            "    mut i = 0\n" +
+            "    while i < 500 { i = i + 1 }\n" +
+            "    println(string(i))\n" +
+            "}\n")
+        out.contains("500") && !out.contains("iterations without terminating")
+    }
+}
