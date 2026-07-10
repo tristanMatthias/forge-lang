@@ -3604,6 +3604,101 @@ fn gen_for_symbol(query: string, docs_set: List<Sym>, want_print: bool) -> bool 
     true
 }
 
+// ── Simple file-argument subcommand handlers ──
+// One `fn cmd_<name>(source, path)` per file-taking subcommand: each runs a
+// slice of the compile pipeline and prints its result. Extracted from the
+// `match command` dispatch so main() reads as a routing table, not a wall of
+// inline pipelines — and so each becomes a `run()` body under the declarative
+// `App` (vez6.12).
+
+/// `expr <file>` — parse the file as a single expression, print its AST.
+fn cmd_expr(source: string, path: string) {
+    let parsed_e = parse_expr_or_fail(source, render_ctx(false, source, path))
+    println(render_expr(parsed_e.store, parsed_e.expr!))
+}
+
+/// `program <file>` — parse the file as a full program, print its AST.
+fn cmd_program(source: string, path: string) {
+    let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
+    println(render_stmt_ids(parsed_p.store, parsed_p.ids))
+}
+
+/// `metadata_show <file>` — read a `.meta.bin`, synthesize its arena rows, and
+/// print them with the same id-native renderer `program` uses (xtvc).
+fn cmd_metadata_show(path: string) {
+    if !file_exists(path) { fail("error: file not found: ${path}") }
+    let m = metadata_read(path)
+    if m.unit_name == "" {
+        fail("error: ${path} is empty or unreadable")
+    }
+    println("// metadata for unit `${m.unit_name}`")
+    println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
+    let show_store = new_node_store(build_line_index(""))
+    println(render_stmt_ids(show_store, synthesize_unit_stmts(m, show_store)))
+}
+
+/// `eval <file>` — parse the file as an expression, evaluate it, print the value.
+fn cmd_eval(source: string, path: string) {
+    let parsed = parse_expr_or_fail(source, render_ctx(false, source, path))
+    let result = eval_parsed_expression(parsed.expr!, parsed.store)
+    if result.had_error || result.value == null {
+        fail(result.error_message)
+    }
+    println(render_value(result.value!))
+}
+
+/// `run <file>` — parse the file as a program and execute it in the tree-walk
+/// evaluator, printing the final value. `parse_or_fail` gives F-coded parse
+/// errors a source-line diagnostic frame, like every other subcommand.
+fn cmd_run(source: string, path: string) {
+    let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
+    let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
+    if result.had_error || result.value == null {
+        fail(result.error_message)
+    }
+    println(render_value(result.value!))
+}
+
+/// `fix <file>` — parse, resolve, and (for v1.0) report that no auto-fixes are
+/// available yet (ticket 8ym).
+fn cmd_fix(source: string, path: string) {
+    let ctx = render_ctx(false, source, path)
+    let parsed_prog = parse_or_fail(source, ctx)
+    let parsed_stmts = parsed_prog.ids
+    let entry_dir = modules_dirname(path)
+    let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
+    fail_on_module_resolve_error(mod_resolved, ctx)
+    let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
+    render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
+    println("no auto-fixes available")
+}
+
+/// `fmt <file>` — parse and pretty-print the file (ticket c5w, spec Axis 27.1).
+fn cmd_fmt(source: string, path: string) {
+    let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
+    println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.ids, 0))
+}
+
+/// `expand <file>` — print the post-macro-expansion source (P7 visible magic,
+/// vez6.14): parse → lower_quotes → desugar → resolve_module_files →
+/// expand_components → resolve_names → run_comptime, then format. The output is
+/// valid Avra that compiles to the same program.
+fn cmd_expand(source: string, path: string) {
+    let ctx = render_ctx(false, source, path)
+    let parsed_prog = parse_or_fail(source, ctx)
+    let parsed_stmts = parsed_prog.ids
+    let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
+    let desugared = desugar_program(post_quote, parsed_prog.store)
+    let entry_dir = modules_dirname(path)
+    let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
+    fail_on_module_resolve_error(mod_resolved, ctx)
+    let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
+    let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
+    let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+    let post_comptime = run_comptime(named.stmts, parsed_prog.store)
+    println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
+}
+
 fn main() {
     // ── Fully declarative CLI ──
     // Matches the Rust std-cli pattern: nested component blocks, zero builder calls.
@@ -3774,39 +3869,19 @@ fn main() {
     let source = if is_flag { "" } else { read_file(path) }
     match command {
         "expr" -> {
-            let parsed_e = parse_expr_or_fail(source, render_ctx(false, source, path))
-            println(render_expr(parsed_e.store, parsed_e.expr!))
+            cmd_expr(source, path)
             return
         }
         "program" -> {
-            let parsed_p = parse_or_fail(source, render_ctx(false, source, path))
-            println(render_stmt_ids(parsed_p.store, parsed_p.ids))
+            cmd_program(source, path)
             return
         }
         "metadata_show" -> {
-            // xtvc consumer-side smoke: read a .meta.bin from disk,
-            // synthesize the arena rows, and print them. Same renderer
-            // `program` uses — round-trippable through the eyes.
-            if !file_exists(path) { fail("error: file not found: ${path}") }
-            let m = metadata_read(path)
-            if m.unit_name == "" {
-                fail("error: ${path} is empty or unreadable")
-            }
-            println("// metadata for unit `${m.unit_name}`")
-            println("// fingerprint: ${avra_bytes_to_hex(m.fingerprint)}")
-            // Synthesis allocates the reconstructed decls into this fresh
-            // store; the id-native renderer reads them straight back out.
-            let show_store = new_node_store(build_line_index(""))
-            println(render_stmt_ids(show_store, synthesize_unit_stmts(m, show_store)))
+            cmd_metadata_show(path)
             return
         }
         "eval" -> {
-            let parsed = parse_expr_or_fail(source, render_ctx(false, source, path))
-            let result = eval_parsed_expression(parsed.expr!, parsed.store)
-            if result.had_error || result.value == null {
-                fail(result.error_message)
-            }
-            println(render_value(result.value!))
+            cmd_eval(source, path)
             return
         }
         "check" -> {
@@ -3843,64 +3918,19 @@ fn main() {
             return
         }
         "run" -> {
-            // parse_or_fail handles F-coded parse errors with source-line
-            // context, just like every other bs2 subcommand. Without it,
-            // a parse error in cmd_run would print only a bare one-line
-            // message ("parse error at L:C: …") with no diagnostic frame.
-            let parsed_prog = parse_or_fail(source, render_ctx(false, source, path))
-            let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
-            if result.had_error || result.value == null {
-                fail(result.error_message)
-            }
-            println(render_value(result.value!))
+            cmd_run(source, path)
             return
         }
         "fix" -> {
-            // Ticket 8ym: autofix infrastructure.
-            // Parse and check the file, then apply high-confidence fixes.
-            // For v1.0: no auto-fixes are implemented yet, so we just report that.
-            let ctx = render_ctx(false, source, path)
-            let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.ids
-            let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
-            fail_on_module_resolve_error(mod_resolved, ctx)
-            let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
-            render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
-            println("no auto-fixes available")
+            cmd_fix(source, path)
             return
         }
         "fmt" -> {
-            // Ticket c5w: code formatter (spec Axis 27.1).
-            // Avra syntax.
-            let parsed_fmt = parse_or_fail(source, render_ctx(false, source, path))
-            println(fmt_stmt_ids(parsed_fmt.store, parsed_fmt.ids, 0))
+            cmd_fmt(source, path)
             return
         }
         "expand" -> {
-            // vez6.14: print the post-macro-expansion source so users
-            // can SEE what their `@expand`-decorated declarations and
-            // `@comptime` calls produced. Pipeline runs parse →
-            // lower_quotes → desugar → resolve_module_files →
-            // expand_components → resolve_names → expand_macros →
-            // run_comptime, then formats with fmt_stmt_ids.
-            //
-            // The output is valid Avra source that compiles to the
-            // same program as the original — the P7 (visible magic)
-            // promise made tangible.
-            let ctx = render_ctx(false, source, path)
-            let parsed_prog = parse_or_fail(source, ctx)
-            let parsed_stmts = parsed_prog.ids
-            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote, parsed_prog.store)
-            let entry_dir = modules_dirname(path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
-            fail_on_module_resolve_error(mod_resolved, ctx)
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
-            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store)
-            println(fmt_stmt_ids(parsed_prog.store, post_comptime, 0))
+            cmd_expand(source, path)
             return
         }
         "test" -> {
