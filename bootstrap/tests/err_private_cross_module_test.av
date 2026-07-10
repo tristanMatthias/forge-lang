@@ -1,0 +1,30 @@
+// Regression for zo1a (the "leak" half): a module-private (non-export) fn
+// declared in one module of a package MUST NOT be reachable by a bare,
+// unqualified reference from a DIFFERENT module of the same package. The name
+// qualifier (resolve/names.av `rewrite_ident`) resolves a bare name only to a
+// local, a `use` alias, or a sibling in the CURRENT module — with no global /
+// cross-module fallback. If that fallback ever returned, a bare `hidden()` in
+// `caller` would silently qualify to `seclib::hidden` and codegen would
+// materialise the fn reference as the `[0xDEADBEEF, fn_ptr]` closure array
+// where a value was expected — the silent memory corruption zo1a describes.
+//
+// The fixture (tests/err_private_cross_module/) has `seclib` export `shown`
+// and keep `hidden` private; `caller` references `hidden` unqualified. This
+// pins the LEAK direction; the local-shadow direction of zo1a is pinned by
+// resolve/tests/local_value_shadows_import_test.av, and `use`-import privacy by
+// err_import_private_test.av.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "a private fn does not leak across module boundaries (zo1a)" {
+    then "a bare cross-module reference to a private sibling is unresolved (F3000)" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_private_cross_module/main.av 2>&1 || true")
+        out.contains("F3000")
+    }
+    then "the diagnostic names the private fn, not a qualified path to it" {
+        let out = avra_shell_exec("./build/bs2 check tests/err_private_cross_module/main.av 2>&1 || true")
+        // `undefined variable hidden` — NOT a resolved `seclib::hidden`, which
+        // would mean the private fn leaked.
+        out.contains("undefined variable `hidden`") && !out.contains("seclib::hidden")
+    }
+}
