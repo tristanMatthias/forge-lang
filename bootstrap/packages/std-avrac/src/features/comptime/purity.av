@@ -214,7 +214,9 @@ fn reach_impure_from(store: NodeStore, graph: FnGraph, name: string, visited: pt
 // `Ident` or `QualifiedIdent`; always recurses into every sub-expression. The
 // walker-duplication with rewrite/desugar is the known generic-visitor debt.
 
-fn collect_calls_in_stmts(store: NodeStore, ids: List<StmtId>, acc: List<string>) -> List<string> {
+/// Exported for reuse by the JIT transitive-callee closure (ps3t.5.2.1.1): the
+/// same complete call-name walk the purity check uses.
+export fn collect_calls_in_stmts(store: NodeStore, ids: List<StmtId>, acc: List<string>) -> List<string> {
     mut out = acc
     for id in ids { out = collect_calls_in_stmt(store, store.stmts.get(id), out) }
     out

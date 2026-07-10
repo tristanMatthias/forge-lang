@@ -1,0 +1,30 @@
+// ps3t.5.2.1.1 — the JIT folds a @comptime fn whose body calls OTHER @comptime
+// fns (transitive callees), not just self-contained scalar fns. The whole
+// @comptime-callee closure is codegen'd into one JIT module and the entry is
+// JIT-called; a call to any NON-@comptime callee makes the whole fold fall back
+// to the (correct) interpreter. These specs fold transitive chains at COMPILE
+// time and assert the results; byte-identity with the interpreter is separately
+// gated by tests/difftest_corpus/comptime_transitive_fold.av.
+
+@comptime
+fn dbl(n: int) -> int { return n * 2 }
+@comptime
+fn quad(n: int) -> int { return dbl(dbl(n)) }
+@comptime
+fn inc(n: int) -> int { return n + 1 }
+@comptime
+fn poly(n: int) -> int { return quad(n) + inc(dbl(n)) }
+@comptime
+fn is_big(n: int) -> bool { return quad(n) > inc(20) }
+
+spec "ps3t.5.2.1.1: transitive @comptime callees fold via the JIT" {
+    then "a one-hop callee (quad -> dbl) folds correctly" {
+        quad(3) == 12 && quad(0) == 0 && quad(5) == 20
+    }
+    then "a deep + nested-arg chain (poly -> quad/inc/dbl, quad(inc(x))) folds" {
+        poly(2) == 13 && quad(inc(4)) == 20
+    }
+    then "a transitive chain returning bool folds correctly" {
+        is_big(6) && !is_big(1)
+    }
+}

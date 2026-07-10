@@ -1,0 +1,21 @@
+// ps3t.5.2.1.1: transitive @comptime->@comptime folds. OLD interprets these
+// (the callee is registered), NEW JITs the whole closure — the folded literals
+// must be byte-identical.
+@comptime
+fn dbl(n: int) -> int { return n * 2 }
+@comptime
+fn quad(n: int) -> int { return dbl(dbl(n)) }
+@comptime
+fn inc(n: int) -> int { return n + 1 }
+@comptime
+fn poly(n: int) -> int { return quad(n) + inc(dbl(n)) }
+@comptime
+fn is_big(n: int) -> bool { return quad(n) > inc(20) }
+
+fn main() {
+    let a = quad(3)
+    let b = poly(2)
+    let c = quad(inc(4))
+    let d = is_big(6)
+    let e = is_big(1)
+}
