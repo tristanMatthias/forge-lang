@@ -1,0 +1,33 @@
+// WHY: diff-test corpus — standalone (untyped-context) lambda codegen with
+// EXPLICIT param annotations across the pointer/value type split. Guards
+// ps3t.4.5: when codegen stops body-scanning to infer a lambda param's type
+// and instead consumes the DECLARED type, these shapes must stay
+// byte-identical — a `string` param slotted as a pointer (not i64), an `int`
+// as i64, a `float` as a double, and a float captured through the closure
+// (the exact `float_closure_capture` shape #692's body-scan deletion
+// regressed, which the corpus previously lacked). The un-annotated variant is
+// a compile error under the annotation gate, so it lives as a negative test,
+// not here.
+
+fn main() {
+    // string param → pointer slot; `.length` must read a real string, not an i64
+    let slen = (s: string) -> s.length
+    println(string(slen("hello")))
+
+    // int param → i64
+    let dbl = (n: int) -> n * 2
+    println(string(dbl(21)))
+
+    // float param → double
+    let inc = (x: float) -> x + 1.5
+    println(string(inc(2.0)))
+
+    // float captured through the closure — the float_closure_capture shape
+    let factor = 10.0
+    let scale = (x: float) -> x * factor
+    println(string(scale(2.0)))
+
+    // mixed pointer + value params in one lambda
+    let combine = (s: string, n: int) -> s.length + n
+    println(string(combine("hi", 3)))
+}
