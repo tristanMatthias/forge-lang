@@ -1,0 +1,77 @@
+// WHY: validates the ps3t.5 Slice-A mini-Ctx codegen path — that a single,
+// self-contained fn can be codegen'd STANDALONE (reusing the resolve-time type
+// registry) and JIT-called in-process with i64 args, returning the same scalar
+// a run of the program would. This is the mechanism the compiled-comptime fold
+// path (jit_fold_call) will drive to evaluate a `@comptime` fn by compiling it
+// instead of tree-walking it; proving codegen-of-one-fn-standalone + the
+// avra_llvm_jit_call marshalling here de-risks that swap (ps3t.5.2-A).
+//
+// Scope: i64 (`-> int`) returns with 0..4 i64 args — the ABI is unambiguous for
+// int/int. Bool/float/string marshalling (result masking, bit-cast, pointer
+// lifetime) is the marshal layer's job in the fold integration, not the raw
+// primitive's, so it is deliberately out of scope for this proof.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.codegen.{compile_and_jit_call}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+// The flat i64 argv buffer for avra_llvm_jit_call (declared in core/llvm.av;
+// redeclared here so the test is self-contained, converged by exact type).
+extern fn avra_i64_buf_new(n: int) -> ptr
+extern fn avra_i64_buf_set(buf: ptr, i: int, v: int)
+extern fn avra_i64_buf_free(buf: ptr)
+
+/// Compile `source` in-process, then JIT-call `fn_name` with `args` (a list of
+/// i64 values), returning the fn's i64 result — or a sentinel on any failure so
+/// a broken pipeline surfaces as a wrong number, never a silent pass.
+fn jit_eval(source: string, fn_name: string, args: List<int>) -> int {
+    let r = typecheck_source(source)
+    if bag_has_errors(r.bag) { return -111111 }
+    let argc = args.length
+    let argv = avra_i64_buf_new(argc)
+    mut i = 0
+    while i < argc {
+        avra_i64_buf_set(argv, i, args[i])
+        i = i + 1
+    }
+    let out = match compile_and_jit_call(r.stmts, r.type_reg, r.store, fn_name, argc, argv) {
+        .Ok(v) -> v
+        .Err(_) -> -222222
+    }
+    avra_i64_buf_free(argv)
+    out
+}
+
+spec "ps3t.5 Slice A: a standalone fn codegen's and JIT-calls with i64 args" {
+    then "0 args — a constant-folding body returns its computed scalar" {
+        jit_eval("fn answer() -> int { 7 * 6 }", "answer", []) == 42
+    }
+    then "1 arg — the argument reaches the JIT'd body" {
+        jit_eval("fn double(x: int) -> int { x * 2 }", "double", [21]) == 42
+    }
+    then "1 arg — a different input gives a different result (not a fixed 42)" {
+        jit_eval("fn double(x: int) -> int { x * 2 }", "double", [100]) == 200
+    }
+    then "2 args — both arguments marshal in order" {
+        jit_eval("fn sub(a: int, b: int) -> int { a - b }", "sub", [50, 8]) == 42
+    }
+    then "3 args — all three marshal in order" {
+        jit_eval("fn add3(a: int, b: int, c: int) -> int { a + b + c }", "add3", [10, 20, 30]) == 60
+    }
+    then "4 args — the max supported arity marshals in order" {
+        jit_eval("fn add4(a: int, b: int, c: int, d: int) -> int { a + b + c + d }", "add4", [1, 2, 3, 4]) == 10
+    }
+    then "argument order is preserved (non-commutative op distinguishes a/b)" {
+        jit_eval("fn div(a: int, b: int) -> int { a / b }", "div", [84, 2]) == 42
+    }
+    then "the body runs real control flow, not just a constant" {
+        jit_eval("fn absval(x: int) -> int { if x < 0 { 0 - x } else { x } }", "absval", [-42]) == 42
+    }
+    then "a fn that calls a sibling fn JITs the whole module (transitive callee)" {
+        jit_eval("fn helper(n: int) -> int { n + 1 }
+fn viacall(x: int) -> int { helper(x) * 2 }", "viacall", [20]) == 42
+    }
+    then "negative results round-trip through the i64 ABI" {
+        jit_eval("fn neg(x: int) -> int { 0 - x }", "neg", [42]) == -42
+    }
+}

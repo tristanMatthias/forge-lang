@@ -36,6 +36,41 @@ So: **Slice A is the unblock** — it proves compiled comptime end-to-end with z
 
 Deliverable proof for ps3t.5.2-A: a `@comptime fn add(a: int, b: int) -> int { a + b }` used at a call site folds to `5` via the JIT (traced), interpreter path disabled for that shape, suite green.
 
+### Stage 1 progress — spike landed + mini-Ctx path VALIDATED
+
+Step 1 (primitive) and the crux the ticket flagged "unknown-until-tried" —
+*can a single fn be codegen'd standalone and JIT-called?* — are done and proven:
+
+- `avra_llvm_jit_call(module, fn_name, argc, i64* argv) -> i64` + the flat
+  `avra_i64_buf_*` argv-marshalling helpers (`llvm_wrapper.c`), plus
+  `compile_and_jit_call(stmts, type_reg, store, fn_name, argc, argv)`
+  (`codegen/setup.av`) — the codegen+JIT building block `jit_fold_call` will
+  drive. All additive; diff-test byte-identical, so zero behavior change.
+- **Validated** by `codegen/tests/jit_call_slice_a_test.av`: a self-contained fn
+  (with transitive callees, `if` control flow, and a runtime-trap call)
+  codegen's standalone via `codegen_program` reusing the resolve-time
+  `type_reg`, then JIT-calls with 0..4 i64 args and round-trips the i64 result
+  (incl. negatives). The mini-Ctx approach works — `codegen_program` emits a
+  single-fn subset into a valid module with no `main`.
+
+**Load-bearing finding — in-process MCJIT needs `-rdynamic`.** A JIT'd body that
+calls a runtime function (`avra_div_by_zero_trap` from an integer `/`, and every
+string/list/map op) fails at materialization unless the host binary's `avra_*`
+symbols are in the dynamic symbol table — MCJIT resolves externs via
+`dlsym(RTLD_DEFAULT)`, which only sees exported dynamic symbols. Pure-arithmetic
+bodies (no runtime refs) JIT without it; anything real does not. Fixed by adding
+`-rdynamic` to the Avra program linker (`build/link.av build_link_argv`), which
+covers test-shard binaries. **PR-B prerequisite:** bs2's own link
+(`diagnose.sh link_ll`) needs the same flag before the fold path JITs inside the
+compiler proper — the test binaries JIT today, bs2 will JIT once `fold_call`
+swaps.
+
+Remaining for the real integration (PR-B): marshal `Value` ↔ `i64` by declared
+return type (mask bool to the low bit; bit-cast float; pointer for str/enum),
+`build_comptime_fn_module` (fn + transitive `@comptime` callees), swap
+`fold_call` to try the JIT for `{Int,Bool,Float,Str}` with interpreter fallback,
+thread `type_reg` through `run_comptime`, and gate diff-test byte-identical.
+
 ## Stage 2 (trails L1/L3) — slice B: AST-returning macros
 
 The JIT'd macro fn must build `Stmt`/`Expr` nodes. Today those are `Value`-boxed AST (`is_boxed_ast_kind`); compiled comptime builds **real** nodes, which must be interned into the compiler's arena (`ps3t.3` L1) with content-addressed identity (`ps3t.4` L3). This is the "delete `Value`" ripple (`ps3t.5.6`). Slice B is scheduled **after** L1+L3 land — but Slice A already retires the interpreter for the common fold path and de-risks the whole layer.

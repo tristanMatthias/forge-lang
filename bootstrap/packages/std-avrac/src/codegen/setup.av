@@ -533,6 +533,23 @@ export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: No
     }
 }
 
+/// Compile `stmts` and JIT-call the named fn with `argc` i64 args,
+/// returning its i64 result. The compiled-comptime building block
+/// (ps3t.5 Slice A): evaluate a self-contained `@comptime` fn by
+/// codegen + in-process MCJIT instead of tree-walking it. `stmts` must
+/// declare `fn_name` (plus any transitive callees); `argv` is a flat
+/// i64 buffer (`avra_i64_buf_*`) of length `argc`. The JIT engine takes
+/// ownership of the module and is disposed inside `avra_llvm_jit_call`
+/// after the call, so `ctx` is deliberately not disposed — its module
+/// is already gone. Scalar-return only (int/bool/float-bits); a pointer
+/// result would dangle past the dispose.
+export fn compile_and_jit_call(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+        .Ok(ctx) -> Result.Ok(avra_llvm_jit_call(ctx.module, fn_name, argc, argv))
+        .Err(e) -> Result.Err(e)
+    }
+}
+
 /// Compile and emit a native object file directly. Skips the IR-on-
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.

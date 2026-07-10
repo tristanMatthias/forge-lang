@@ -163,3 +163,16 @@ extern fn avra_llvm_emit_object(module: ptr, output_path: string) -> int
 
 // ── JIT execution ──
 extern fn avra_llvm_jit_run(module: ptr) -> int
+/// MCJIT the module and call a NAMED fn with `argc` i64 args, returning its i64
+/// result. The compiled-comptime primitive (ps3t.5 Slice A): evaluate a
+/// `@comptime` fn by compiling+running it instead of interpreting it. Scalar
+/// (int/bool/float-bitcast) args + result; pointer results must be read before
+/// the engine is freed (Slice A gates on scalar returns).
+extern fn avra_llvm_jit_call(module: ptr, fn_name: string, argc: int, argv: ptr) -> int
+
+// ── i64 argument-vector marshalling (JIT argv) ──
+// A flat int64_t[] for avra_llvm_jit_call's argv — the marshal layer lowers a
+// List<Value> into one (int/bool direct, float bit-cast, string/enum pointer).
+extern fn avra_i64_buf_new(n: int) -> ptr
+extern fn avra_i64_buf_set(buf: ptr, i: int, v: int)
+extern fn avra_i64_buf_free(buf: ptr)
