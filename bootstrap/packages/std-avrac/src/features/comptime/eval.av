@@ -24,7 +24,7 @@
 
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
 use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num}
-use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, record_fold_error}
+use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
 use features.quote_expr.{construct_stmt}
 use codegen.{compile_and_jit_call}
 
@@ -33,7 +33,9 @@ use codegen.{compile_and_jit_call}
 extern fn avra_i64_buf_new(n: int) -> ptr
 extern fn avra_i64_buf_set(buf: ptr, i: int, v: int)
 extern fn avra_i64_buf_free(buf: ptr)
-// ps3t.5.5 result cache (a cstr-map on CompTimeRegistry.fold_cache).
+// ps3t.5.5 result cache (a cstr-map on CompTimeRegistry.fold_cache);
+// avra_map_new_cstr also backs the ps3t.5.2.1.1 transitive-closure visited set.
+extern fn avra_map_new_cstr() -> ptr
 extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
 extern fn avra_map_get_cstr(map: ptr, key: string) -> int
 extern fn avra_map_has_cstr(map: ptr, key: string) -> int
@@ -221,7 +223,13 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
         if arg_values[ai].kind != "number" { return null }
         ai = ai + 1
     }
-    if !body_jit_safe(reg.runtime.nodes, fn_def.body) { return null }
+    // Gather the transitive @comptime-callee closure so a fold whose body calls
+    // OTHER @comptime fns can JIT too (ps3t.5.2.1.1). null → some reachable callee
+    // is not a jit-safe @comptime fn (a builtin/extern/non-comptime call, or an
+    // unsafe body) → interpreter fallback. Subsumes the old single-fn
+    // `body_jit_safe` gate (which is now applied per closure fn inside the gather).
+    let closure = jit_callee_closure(reg, fn_def)
+    if closure == null { return null }
 
     let argv = avra_i64_buf_new(argc)
     mut i = 0
@@ -229,25 +237,77 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
         avra_i64_buf_set(argv, i, parse_num(arg_values[i].number_text))
         i = i + 1
     }
-    // Materialise the fn as a standalone declaration in the program store, then
-    // codegen just that row and JIT-call it. The body rows are already in the
-    // store, so a leaf Function row (payload carries params/ret/body) is enough.
-    // NOTE: no memoization — every eligible call site re-runs codegen + JIT for
-    // its fn, even repeated calls to the same helper. Fine for the first cut
-    // (correctness before speed); caching the compiled fn keyed on identity is
-    // ps3t.5.5. The interpreter fallback bounds the blast radius until then.
-    // Codegen the JIT fn with the CANONICAL return type so it emits the right
-    // LLVM return (`ret i1` for bool, `ret i64` for int) — feeding the nominal
-    // `Struct("bool")` here would emit a struct/ptr return and hand back garbage.
-    let empty_tp: List<TypeParamEntry> = []
-    let fn_stmt_id = reg.runtime.nodes.add_stmt_leaf(Stmt.Function(fn_def.name, empty_tp, fn_def.params, ret, fn_def.body))
-    let only: List<StmtId> = [fn_stmt_id]
-    let folded = match compile_and_jit_call(only, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
+    // Materialise EVERY closure fn as a standalone declaration (each with
+    // canonical scalar types, so codegen emits the right LLVM signatures and the
+    // entry's cross-calls resolve inside the single JIT module), then JIT-call the
+    // entry. NOTE: no memoization of the compiled closure yet — every eligible
+    // call site re-codegens (ps3t.5.5 caches the RESULT; the interpreter fallback
+    // bounds the blast radius until compiled-fn caching lands).
+    let fn_ids = materialise_jit_closure(reg.runtime.nodes, closure!)
+    let folded = match compile_and_jit_call(fn_ids, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
         .Ok(v) -> render_jit_scalar(ret, v)
         .Err(_) -> null
     }
     avra_i64_buf_free(argv)
     folded
+}
+
+/// The transitive closure of `@comptime` fns the JIT must codegen to fold
+/// `fn_def`: `fn_def` plus every `@comptime` fn reachable through its (and their)
+/// free-fn calls. Returns null — "not JIT-foldable, use the interpreter" — the
+/// moment a reachable callee is NOT a registered `@comptime` fn (a builtin,
+/// extern, or ordinary fn the single JIT module couldn't link) OR a closure fn's
+/// body isn't jit-safe. Cycle-safe via a visited-name set. Being conservative
+/// here only costs a fallback to the (correct) tree-walker.
+fn jit_callee_closure(reg: CompTimeRegistry, fn_def: CompTimeFn) -> List<CompTimeFn>? {
+    let store = reg.runtime.nodes
+    let visited = avra_map_new_cstr()
+    mut result: List<CompTimeFn> = []
+    mut worklist: List<CompTimeFn> = [fn_def]
+    mut wi = 0
+    while wi < worklist.length {
+        let f = worklist[wi]
+        wi = wi + 1
+        if avra_map_has_cstr(visited, f.name) == 1 { continue }
+        avra_map_set_cstr(visited, f.name, 1)
+        if !body_jit_safe(store, f.body) { return null }
+        result.push(f)
+        let empty: List<string> = []
+        for name in collect_calls_in_stmts(store, f.body, empty) {
+            let callee = comptime_lookup(reg, name)
+            if callee == null { return null }
+            // A cross-package lazy @comptime fn is a body-less stub until
+            // rehydrated; JIT-ing it would codegen an empty fn and return
+            // garbage. Bail to the interpreter (which rehydrates it) instead.
+            if callee!.body.length == 0 { return null }
+            worklist.push(callee!)
+        }
+    }
+    result
+}
+
+/// Add each closure fn to the store as a leaf `Function` row with canonicalised
+/// scalar param/return types (the pre-typecheck nominal `Struct("bool")` etc.
+/// must be the primitive for codegen — see `canon_scalar_vtype`), returning the
+/// row ids in closure order. The entry fn is `closure[0]`.
+fn materialise_jit_closure(store: NodeStore, closure: List<CompTimeFn>) -> List<StmtId> {
+    let empty_tp: List<TypeParamEntry> = []
+    mut ids: List<StmtId> = []
+    for f in closure {
+        let params = canon_param_types(f.params)
+        ids.push(store.add_stmt_leaf(Stmt.Function(f.name, empty_tp, params, canon_scalar_vtype(f.ret_ty), f.body)))
+    }
+    ids
+}
+
+/// Canonicalise each parameter's scalar type (`canon_scalar_vtype`) so the JIT
+/// codegen emits the right LLVM parameter types for a closure fn.
+fn canon_param_types(params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for p in params {
+        out.push(ParamEntry { name: p.name, vtype: canon_scalar_vtype(p.vtype) })
+    }
+    out
 }
 
 /// Render a JIT scalar return byte-identically to the interpreter's
@@ -322,8 +382,32 @@ fn expr_jit_safe(store: NodeStore, id: ExprId) -> bool {
         .IfExpr(cond, then_e, else_e) -> expr_jit_safe(store, cond)
             && expr_jit_safe(store, then_e) && expr_jit_safe(store, else_e)
         .Block(b) -> body_jit_safe(store, b)
+        // A free-fn call is jit-safe when its args are (ps3t.5.2.1.1); that the
+        // callee is a jit-safe @comptime fn present in the JIT module is proven
+        // separately by `jit_callee_closure`. Method / computed callees aren't
+        // blessed (non-Ident) → interpreter fallback.
+        .Call(callee, args) -> call_jit_safe(store, callee, args)
         _ -> false
     }
+}
+
+/// A `Call` is jit-safe when its callee is a bare `Ident` (a free-fn reference)
+/// and every argument is jit-safe. Method calls (`FieldAccess` callee) and
+/// computed callees are not blessed.
+fn call_jit_safe(store: NodeStore, callee: ExprId, args: List<ExprId>) -> bool {
+    match store.exprs.get(callee) {
+        .Ident(_) -> args_jit_safe(store, args)
+        _ -> false
+    }
+}
+
+fn args_jit_safe(store: NodeStore, args: List<ExprId>) -> bool {
+    mut i = 0
+    while i < args.length {
+        if !expr_jit_safe(store, args[i]) { return false }
+        i = i + 1
+    }
+    true
 }
 
 /// `/` and `%` are the only pure-int operators that can trap (zero divisor →
