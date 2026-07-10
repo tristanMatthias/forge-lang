@@ -1,0 +1,373 @@
+// WHY: ps3t.5.3 — static comptime sandbox / purity check.
+//
+// A `@comptime` fn (constant-fold OR macro) must be PURE compile-time compute:
+// it may not reach ambient IO / filesystem / process / clock / stdin. Impurity
+// can enter ONLY through the extern-fn FFI boundary — pure Avra code has no way
+// to touch the outside world without calling a C symbol — so this pass walks a
+// `@comptime` fn's transitive free-fn call graph and rejects any that reaches an
+// impure extern, BEFORE the fold/JIT path runs (surfaced as F4008 by the caller,
+// the sibling of the F4007 fold-error channel).
+//
+// Impure boundary policy (`extern_name_is_impure`): the effectful C symbols are
+// re-declared per-file (`extern fn` appears in ~10 files each, "self-contained
+// per path"), so there is no single declaration to annotate — the extern's
+// identity IS its C-symbol name. The policy therefore lives centrally, keyed on
+// that name: one exhaustive, auditable set of ambient-effect symbols (a
+// seccomp-style allow/deny boundary, NOT a name-pattern heuristic). Add a new
+// effectful extern here when one is introduced.
+//
+// Soundness scope (v1.0): sound for the FREE-FN call graph — direct calls and
+// calls through helper free fns, transitively, which is how every impure extern
+// is actually reached (externs are free fns, never methods). Reachability that
+// is only expressible through a METHOD dispatch (`x.foo()` whose impl body calls
+// an impure extern) needs type-aware receiver resolution and is a documented
+// follow-up (ticket), not covered here; the compiler's own `@comptime` macros
+// reach externs via free-fn calls, so this scope covers the real vector.
+
+use core.{Stmt, Expr, StmtId, ExprId, FieldInit, MatchArm, WhenArm, SelectArm, NodeStore, stmt_unwrap}
+use features.comptime.{CompTimeRegistry}
+
+// Name → index cstr-map (same C primitive the registry name_index uses) for
+// O(1) call-graph node lookup.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+// ── Impure-boundary policy ──
+
+/// The ambient-effect FFI boundary: the exhaustive set of C symbols a `@comptime`
+/// fn may NOT reach. Every entry performs IO, filesystem, process control, wall
+/// clock, or stdin — the operations a compile-time sandbox must forbid. Keyed on
+/// the C-symbol name because effectful externs are re-declared per-file (no single
+/// annotation site). This is the security boundary; keep it exhaustive.
+export fn extern_name_is_impure(name: string) -> bool {
+    match name {
+        // Process / shell — arbitrary command + subprocess control.
+        "avra_shell_exec" -> true
+        "avra_process_forward" -> true
+        "avra_process_exec" -> true
+        "avra_process_spawn_bg" -> true
+        "avra_process_wait" -> true
+        "avra_process_is_alive" -> true
+        "avra_process_exit" -> true
+        "avra_process_env_get" -> true
+        "avra_process_env_unset" -> true
+        // Filesystem — read/stat/lock ambient files.
+        "avra_readdir" -> true
+        "avra_file_size" -> true
+        "avra_file_mtime" -> true
+        "avra_file_lock_exclusive" -> true
+        "avra_file_unlock" -> true
+        // Wall clock — non-deterministic.
+        "avra_uptime_ms" -> true
+        // Stdin — ambient input.
+        "avra_stdin_read_bytes" -> true
+        "avra_stdin_read_line" -> true
+        _ -> false
+    }
+}
+
+// ── Result type ──
+
+/// One purity violation: a `@comptime` fn that transitively reaches an impure
+/// extern. `comptime_fn` is the annotated entry point (the fn the user wrote
+/// `@comptime` on); `impure_extern` is the effectful C symbol it can reach;
+/// `via` names the immediate free fn in `comptime_fn`'s graph through which the
+/// extern is reached (equal to `comptime_fn` when the call is direct) — enough
+/// for the diagnostic to point at the offending edge.
+export type PurityViolation = {
+    comptime_fn: string,
+    impure_extern: string,
+    via: string,
+}
+
+// ── Call-graph node table ──
+
+/// A callable in the program: a free fn (with a body to descend into) or an
+/// extern (a leaf — impurity is decided by `extern_name_is_impure`).
+type FnNode = {
+    name: string,
+    body: List<StmtId>,
+    is_extern: bool,
+}
+
+/// The program's free-fn/extern call-graph nodes plus a name → index map for
+/// O(1) lookup. Impl methods are NOT indexed (method reachability is out of the
+/// v1.0 scope — see file header); free fns and externs are.
+type FnGraph = {
+    nodes: List<FnNode>,
+    index: ptr,
+}
+
+/// Walk the whole program (recursing Modules) and register every free `Function`
+/// and `ExternFn` into a `FnGraph`. First declaration of a name wins; the graph
+/// is a coarse over-approximation of resolution (cross-module same-name fns
+/// collapse), which is safe here — the query is only "can an impure extern be
+/// reached", and extern names are globally unique.
+fn build_fn_graph(store: NodeStore, ids: List<StmtId>) -> FnGraph {
+    mut nodes: List<FnNode> = []
+    let index = avra_map_new_cstr()
+    nodes = gather_fns(store, ids, nodes, index)
+    FnGraph { nodes, index }
+}
+
+fn gather_fns(store: NodeStore, ids: List<StmtId>, acc: List<FnNode>, index: ptr) -> List<FnNode> {
+    mut nodes = acc
+    for id in ids {
+        nodes = gather_fn_from_stmt(store, stmt_unwrap(store, store.stmts.get(id)), nodes, index)
+    }
+    nodes
+}
+
+fn gather_fn_from_stmt(store: NodeStore, stmt: Stmt, acc: List<FnNode>, index: ptr) -> List<FnNode> {
+    mut nodes = acc
+    match stmt {
+        .Function(name, _, _, _, body) -> {
+            nodes = register_fn(nodes, index, FnNode { name, body, is_extern: false })
+        }
+        .ExternFn(name, _, _) -> {
+            let empty: List<StmtId> = []
+            nodes = register_fn(nodes, index, FnNode { name, body: empty, is_extern: true })
+        }
+        .Module(_, body) -> { nodes = gather_fns(store, body, nodes, index) }
+        _ -> {}
+    }
+    nodes
+}
+
+/// Register a node under its name unless the name is already taken (first wins).
+fn register_fn(nodes: List<FnNode>, index: ptr, node: FnNode) -> List<FnNode> {
+    if avra_map_has_cstr(index, node.name) == 1 { return nodes }
+    mut out = nodes
+    avra_map_set_cstr(index, node.name, out.length)
+    out.push(node)
+    out
+}
+
+fn graph_lookup(g: FnGraph, name: string) -> FnNode? {
+    if avra_map_has_cstr(g.index, name) == 0 { return null }
+    g.nodes[avra_map_get_cstr(g.index, name)]
+}
+
+// ── Purity check ──
+
+/// Check every `@comptime` fn in `reg` for transitive reachability to an impure
+/// extern. Returns one `PurityViolation` per offending `@comptime` fn (the first
+/// impure extern found — enough to reject; the diagnostic names it). Empty when
+/// every `@comptime` fn is pure, so the caller adds no diagnostics and folding
+/// proceeds unchanged.
+export fn check_comptime_purity(reg: CompTimeRegistry, ids: List<StmtId>) -> List<PurityViolation> {
+    let store = reg.runtime.nodes
+    let graph = build_fn_graph(store, ids)
+    mut violations: List<PurityViolation> = []
+    for cf in reg.fns {
+        let hit = reach_impure(store, graph, cf.name)
+        if hit != null {
+            violations.push(PurityViolation { comptime_fn: cf.name, impure_extern: hit!.extern_name, via: hit!.via })
+        }
+    }
+    violations
+}
+
+/// A reached impure extern + the immediate free fn through which it was reached.
+type ImpureHit = { extern_name: string, via: string }
+
+/// DFS from `start` over the free-fn call graph. Returns the first impure extern
+/// reachable, with the free fn that directly calls it, or null if `start`'s
+/// transitive graph is pure. Cycle-safe via a visited-name set.
+fn reach_impure(store: NodeStore, graph: FnGraph, start: string) -> ImpureHit? {
+    let visited = avra_map_new_cstr()
+    reach_impure_from(store, graph, start, visited)
+}
+
+fn reach_impure_from(store: NodeStore, graph: FnGraph, name: string, visited: ptr) -> ImpureHit? {
+    if avra_map_has_cstr(visited, name) == 1 { return null }
+    avra_map_set_cstr(visited, name, 1)
+    let node_opt = graph_lookup(graph, name)
+    if node_opt == null { return null }        // unknown callee (method/builtin/local) — out of scope, treated pure
+    let node = node_opt!
+    if node.is_extern {
+        if extern_name_is_impure(name) { return ImpureHit { extern_name: name, via: name } }
+        return null
+    }
+    // Free fn: collect its call targets, then descend.
+    mut callees: List<string> = []
+    callees = collect_calls_in_stmts(store, node.body, callees)
+    for callee in callees {
+        // Direct impure extern call → attribute the edge to THIS fn.
+        let cnode = graph_lookup(graph, callee)
+        if cnode != null && cnode!.is_extern && extern_name_is_impure(callee) {
+            return ImpureHit { extern_name: callee, via: name }
+        }
+        let deeper = reach_impure_from(store, graph, callee, visited)
+        if deeper != null { return deeper }
+    }
+    null
+}
+
+// ── Call-target collection (complete traversal) ──
+//
+// Mirrors the structural coverage of `rewrite.av`'s walker so NO expression
+// context is missed (a call buried in a match arm, lambda, or if-expr counts).
+// Collects the callee NAME of every `Call`/`GenericCall` whose callee is a bare
+// `Ident` or `QualifiedIdent`; always recurses into every sub-expression. The
+// walker-duplication with rewrite/desugar is the known generic-visitor debt.
+
+fn collect_calls_in_stmts(store: NodeStore, ids: List<StmtId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for id in ids { out = collect_calls_in_stmt(store, store.stmts.get(id), out) }
+    out
+}
+
+fn collect_calls_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
+    let e = (id: ExprId, a: List<string>) -> collect_calls_in_expr(store, store.exprs.get(id), a)
+    let s = (id: StmtId, a: List<string>) -> collect_calls_in_stmt(store, store.stmts.get(id), a)
+    match stmt_unwrap(store, stmt) {
+        .Let(_, _, init) -> e(init, acc)
+        .Mut(_, _, init) -> e(init, acc)
+        .Const(_, _, init) -> e(init, acc)
+        .Expr(x) -> e(x, acc)
+        .Return(x) -> e(x, acc)
+        .Block(body) -> collect_calls_in_stmts(store, body, acc)
+        .If(cond, then_b, else_b) -> {
+            let a1 = s(then_b, e(cond, acc))
+            if else_b != null { s(else_b!, a1) } else { a1 }
+        }
+        .While(cond, body) -> s(body, e(cond, acc))
+        .For(_, start, end, body) -> s(body, e(end, e(start, acc)))
+        .ForIn(_, coll, body) -> s(body, e(coll, acc))
+        .Match(subj, arms) -> collect_calls_in_match_arms(store, arms, e(subj, acc))
+        .Function(_, _, _, _, body) -> collect_calls_in_stmts(store, body, acc)
+        .Impl(_, methods) -> collect_calls_in_stmts(store, methods, acc)
+        .TraitDecl(_, methods) -> collect_calls_in_stmts(store, methods, acc)
+        .LetDestructure(_, init) -> e(init, acc)
+        .Defer(body) -> e(body, acc)
+        .Errdefer(body) -> e(body, acc)
+        .SpecBlock(_, body) -> collect_calls_in_stmts(store, body, acc)
+        .GivenBlock(_, body) -> collect_calls_in_stmts(store, body, acc)
+        .ThenBlock(_, cond) -> e(cond, acc)
+        .Select(arms) -> collect_calls_in_select_arms(store, arms, acc)
+        .Parallel(body) -> collect_calls_in_stmts(store, body, acc)
+        .Module(_, body) -> collect_calls_in_stmts(store, body, acc)
+        .ComponentDef(_, _, _, _, _, body) -> collect_calls_in_stmts(store, body, acc)
+        .ComponentBlock(_, _, _, body) -> collect_calls_in_stmts(store, body, acc)
+        _ -> acc
+    }
+}
+
+fn collect_calls_in_expr(store: NodeStore, expr: Expr, acc: List<string>) -> List<string> {
+    let e = (id: ExprId, a: List<string>) -> collect_calls_in_expr(store, store.exprs.get(id), a)
+    let el = (ids: List<ExprId>, a: List<string>) -> collect_calls_in_expr_list(store, ids, a)
+    match expr {
+        .Call(callee, args) -> el(args, e(callee, record_callee(store, callee, acc)))
+        .GenericCall(callee, _, args) -> el(args, e(callee, record_callee(store, callee, acc)))
+        .Binary(l, _, r) -> e(r, e(l, acc))
+        .Unary(_, r) -> e(r, acc)
+        .Logical(l, _, r) -> e(r, e(l, acc))
+        .StructLit(_, inits) -> collect_calls_in_field_inits(store, inits, acc)
+        .Grouping(inner) -> e(inner, acc)
+        .Assign(_, val) -> e(val, acc)
+        .Index(obj, idx) -> e(idx, e(obj, acc))
+        .FieldAccess(obj, _) -> e(obj, acc)
+        .FieldAssign(obj, _, val) -> e(val, e(obj, acc))
+        .EnumCtor(_, _, args) -> el(args, acc)
+        .IfExpr(c, t, f) -> e(f, e(t, e(c, acc)))
+        .Block(body) -> collect_calls_in_stmts(store, body, acc)
+        .MatchExpr(subj, arms) -> collect_calls_in_match_arms(store, arms, e(subj, acc))
+        .NullCoalesce(l, r) -> e(r, e(l, acc))
+        .OptionalChain(obj, _) -> e(obj, acc)
+        .OptionalMethodCall(obj, _, args) -> el(args, e(obj, acc))
+        .Try(inner) -> e(inner, acc)
+        .Tuple(elems) -> el(elems, acc)
+        .TupleIndex(obj, _) -> e(obj, acc)
+        .With(obj, overrides) -> collect_calls_in_field_inits(store, overrides, e(obj, acc))
+        .ListLit(elems) -> el(elems, acc)
+        .Lambda(_, body) -> e(body, acc)
+        .MapLit(entries) -> el(entries, acc)
+        .Slice(obj, s, en) -> e(en, e(s, e(obj, acc)))
+        .IsCheck(subj, _) -> e(subj, acc)
+        .InCheck(needle, items) -> el(items, e(needle, acc))
+        .ListComp(body, _, coll, filt) -> {
+            let base = e(coll, e(body, acc))
+            if filt != null { e(filt!, base) } else { base }
+        }
+        .When(arms) -> collect_calls_in_when_arms(store, arms, acc)
+        .Catch(inner, _, body, _, _) -> e(body, e(inner, acc))
+        .Spawn(body) -> e(body, acc)
+        .ChannelNew(_, capacity) -> { if capacity != null { e(capacity!, acc) } else { acc } }
+        .Isolated(body) -> e(body, acc)
+        .Quote(_, body) -> e(body, acc)
+        .Splice(target) -> e(target, acc)
+        _ -> acc
+    }
+}
+
+/// Record the callee name when it is a bare `Ident` / `QualifiedIdent` (a free-fn
+/// reference). Method callees (`FieldAccess`) and computed callees are not free
+/// fns and are handled by descending into them (via the caller's recursion).
+/// `push` mutates the shared accumulator in place; return the same list.
+fn record_callee(store: NodeStore, callee: ExprId, acc: List<string>) -> List<string> {
+    mut out = acc
+    match store.exprs.get(callee) {
+        .Ident(name) -> { out.push(name) }
+        .QualifiedIdent(path) -> { out.push(last_path_segment(path)) }
+        _ -> {}
+    }
+    out
+}
+
+/// A `QualifiedIdent` path like "core::ast::foo" refers to `foo`; the FnGraph is
+/// keyed on the unqualified name, so match on the last segment.
+fn last_path_segment(path: string) -> string {
+    mut seg = path
+    mut i = 0
+    while i < path.length {
+        if i + 2 <= path.length && path.substring(i, i + 2) == "::" {
+            seg = path.substring(i + 2, path.length)
+            i = i + 2
+        } else {
+            i = i + 1
+        }
+    }
+    seg
+}
+
+fn collect_calls_in_expr_list(store: NodeStore, ids: List<ExprId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for id in ids { out = collect_calls_in_expr(store, store.exprs.get(id), out) }
+    out
+}
+
+fn collect_calls_in_field_inits(store: NodeStore, inits: List<FieldInit>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for init in inits { out = collect_calls_in_expr(store, store.exprs.get(init.value_id), out) }
+    out
+}
+
+fn collect_calls_in_match_arms(store: NodeStore, arms: List<MatchArm>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for arm in arms {
+        if arm.guard_id != null { out = collect_calls_in_expr(store, store.exprs.get(arm.guard_id!), out) }
+        out = collect_calls_in_expr(store, store.exprs.get(arm.body_id), out)
+    }
+    out
+}
+
+fn collect_calls_in_when_arms(store: NodeStore, arms: List<WhenArm>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for arm in arms {
+        if arm.cond_id != null { out = collect_calls_in_expr(store, store.exprs.get(arm.cond_id!), out) }
+        out = collect_calls_in_expr(store, store.exprs.get(arm.body_id), out)
+    }
+    out
+}
+
+fn collect_calls_in_select_arms(store: NodeStore, arms: List<SelectArm>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for arm in arms {
+        out = collect_calls_in_expr(store, store.exprs.get(arm.chan_id), out)
+        out = collect_calls_in_stmts(store, arm.body_ids, out)
+    }
+    out
+}

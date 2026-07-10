@@ -1,0 +1,105 @@
+// ps3t.5.3 — comptime sandbox / static purity check. A `@comptime` fn must be
+// pure compile-time compute: it may not reach ambient IO / filesystem / process
+// / clock / stdin. Impurity enters ONLY through the extern-fn FFI boundary, so
+// the check walks each `@comptime` fn's transitive FREE-FN call graph and, if it
+// reaches an impure extern, rejects it (F4008) BEFORE any fold runs — the
+// sandbox sibling of the F4005/@expand and F4007/fold channels.
+//
+// These specs shell out (a fresh process each) and assert the F-code in the
+// captured diagnostics, the same shape as the loop-budget and fold-error specs.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile-check `source`, capturing diagnostics.
+fn check_src(tag: string, source: string) -> string {
+    let path = "/tmp/avra_ct53_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "ps3t.5.3: a @comptime fn reaching an impure extern is rejected (F4008)" {
+    then "a direct impure extern call in a @comptime body is F4008, naming the extern" {
+        let out = check_src("direct",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "@comptime\n" +
+            "fn evil(x: int) -> int {\n" +
+            "    let r = avra_shell_exec(\"echo hi\")\n" +
+            "    return x\n" +
+            "}\n" +
+            "fn main() { let y = evil(1) }\n")
+        out.contains("F4008") && out.contains("avra_shell_exec")
+    }
+    then "impurity reached THROUGH a helper free fn is caught and names the via-fn" {
+        let out = check_src("transitive",
+            "extern fn avra_uptime_ms() -> int\n" +
+            "fn helper() -> int { return avra_uptime_ms() }\n" +
+            "@comptime\n" +
+            "fn sneaky(x: int) -> int { return x + helper() }\n" +
+            "fn main() { let y = sneaky(1) }\n")
+        out.contains("F4008") && out.contains("avra_uptime_ms") && out.contains("helper")
+    }
+    then "a DEEP chain (a -> b -> c -> impure) is still caught" {
+        let out = check_src("deep",
+            "extern fn avra_readdir(path: string) -> int\n" +
+            "fn c() -> int { return avra_readdir(\"/\") }\n" +
+            "fn b() -> int { return c() }\n" +
+            "fn a() -> int { return b() }\n" +
+            "@comptime\n" +
+            "fn top(x: int) -> int { return x + a() }\n" +
+            "fn main() { let y = top(1) }\n")
+        out.contains("F4008") && out.contains("avra_readdir")
+    }
+    then "impurity buried in a nested expr context (match arm) is caught (complete walker)" {
+        let out = check_src("nested",
+            "extern fn avra_file_size(path: string) -> int\n" +
+            "@comptime\n" +
+            "fn buried(x: int) -> int {\n" +
+            "    return match x {\n" +
+            "        0 -> 0\n" +
+            "        _ -> avra_file_size(\"/etc/passwd\")\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { let y = buried(1) }\n")
+        out.contains("F4008") && out.contains("avra_file_size")
+    }
+}
+
+spec "ps3t.5.3: pure comptime and non-comptime code are unaffected" {
+    then "a pure @comptime fn (arith only) is not flagged and folds" {
+        let out = check_src("pure",
+            "@comptime\n" +
+            "fn dbl(n: int) -> int { return n * 2 }\n" +
+            "fn main() { let y = dbl(21) }\n")
+        !out.contains("F4008") && out.contains("ok")
+    }
+    then "a NON-@comptime fn calling an impure extern is fine — only comptime is sandboxed" {
+        let out = check_src("runtime_io",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "fn at_runtime() -> string { return avra_shell_exec(\"date\") }\n" +
+            "fn main() { let _ = at_runtime() }\n")
+        !out.contains("F4008")
+    }
+    then "a pure @comptime fn calling a pure (non-impure) helper is not flagged by the sandbox" {
+        // The purity check passes (no F4008); a separate concern — whether a
+        // non-@comptime helper can be FOLDED (ps3t.5.2.1 transitive callees) — is
+        // out of scope here, so we assert only the sandbox property.
+        let out = check_src("pure_helper",
+            "fn triple(n: int) -> int { return n * 3 }\n" +
+            "@comptime\n" +
+            "fn compute(x: int) -> int { return triple(x) + 1 }\n" +
+            "fn main() { let y = compute(4) }\n")
+        !out.contains("F4008")
+    }
+    then "mutually-recursive PURE helpers don't hang or false-positive (cycle-safe walk)" {
+        // bounce -> ping -> pong -> ping is a cycle in the call graph; the
+        // checker's visited-set must terminate and not falsely flag it.
+        let out = check_src("cycle",
+            "fn ping(n: int) -> int { if n <= 0 { return 0 } else { return pong(n - 1) } }\n" +
+            "fn pong(n: int) -> int { if n <= 0 { return 0 } else { return ping(n - 1) } }\n" +
+            "@comptime\n" +
+            "fn bounce(x: int) -> int { return ping(x) }\n" +
+            "fn main() { let y = bounce(3) }\n")
+        !out.contains("F4008")
+    }
+}

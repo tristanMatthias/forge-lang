@@ -22,6 +22,7 @@ use core.{Stmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
 use core.{NodeStore, StmtId, TypeRegistry, type_registry_new}
 use features.eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program_ids}
+use features.comptime.{check_comptime_purity, PurityViolation}
 use parse.{parse_body_source}
 use diagnostics.{Span, DiagnosticBag, DiagCode, span_dummy, span_at, diag_error, bag_new, bag_report}
 
@@ -51,11 +52,50 @@ export fn run_comptime(ids: List<StmtId>, store: NodeStore, type_reg: TypeRegist
     // empty one for the discovery path.
     let reg = collect_comptime_fns_ids(ids, store) with { type_reg }
     if reg.fns.length == 0 { return ComptimeResult { stmts: ids, bag: bag_new() } }
+    // ps3t.5.3 sandbox: reject any @comptime fn whose transitive call graph
+    // reaches an impure extern (ambient IO/FS/proc/clock/stdin) BEFORE running a
+    // single fold — comptime must be a pure sandbox. On a violation we surface
+    // F4008 and skip folding entirely (the AST is returned unfolded; the caller
+    // gates on the bag), so no impure comptime code executes.
+    let violations = check_comptime_purity(reg, ids)
+    if violations.length > 0 {
+        return ComptimeResult { stmts: ids, bag: purity_violations_to_bag(reg, violations) }
+    }
     let out = rewrite_program_ids(ids, reg)
     // `reg.fold_errors` is a shared heap list appended to by the fold path
     // (eval.av) as the functional rewrite runs, so it now holds every genuine
     // fold failure — turn each into an F4007 the callers gate on.
     ComptimeResult { stmts: out, bag: fold_errors_to_bag(reg.fold_errors) }
+}
+
+/// Build a DiagnosticBag from the sandbox purity violations (ps3t.5.3): one
+/// F4008 per @comptime fn that can reach an impure extern. Caretted at the
+/// offending fn's body (via `comptime_stmt_span` on its first row); names the
+/// reached extern and, when the reach is indirect, the intermediate fn.
+fn purity_violations_to_bag(reg: CompTimeRegistry, violations: List<PurityViolation>) -> DiagnosticBag {
+    mut bag = bag_new()
+    for v in violations {
+        let msg = if v.via == v.comptime_fn {
+            "@comptime fn `${v.comptime_fn}` reaches impure extern `${v.impure_extern}` — comptime must be pure"
+        } else {
+            "@comptime fn `${v.comptime_fn}` reaches impure extern `${v.impure_extern}` via `${v.via}` — comptime must be pure"
+        }
+        bag = bag_report(bag, diag_error(DiagCode.ComptimeImpureCall, msg, purity_span_for(reg, v.comptime_fn)))
+    }
+    bag
+}
+
+/// Best-effort source span for a @comptime fn by name: the span of its first
+/// body row (`comptime_stmt_span`), or the caret-less dummy when the body is
+/// empty / synthesised.
+fn purity_span_for(reg: CompTimeRegistry, fn_name: string) -> Span {
+    for f in reg.fns {
+        if f.name == fn_name {
+            if f.body.length > 0 { return comptime_stmt_span(reg.runtime.nodes, f.body[0]) }
+            return span_dummy()
+        }
+    }
+    span_dummy()
 }
 
 /// The result of `run_comptime`: the rewritten root rows plus a
