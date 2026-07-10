@@ -31,6 +31,10 @@ spec "a standalone un-annotated lambda parameter is rejected (F1006)" {
         let out = ulg_compile_out("fn main() { mut f = (x) -> x + 1  let r = f(1) }")
         out.contains("F1006")
     }
+    then "a bare `const` lambda parameter is also F1006" {
+        let out = ulg_compile_out("fn main() { const f = (x) -> x + 1  let r = f(1) }")
+        out.contains("F1006")
+    }
     then "only the first bare parameter needs to be missing" {
         let out = ulg_compile_out("fn main() { let f = (a, b) -> a + b  let r = f(1, 2) }")
         out.contains("F1006")
