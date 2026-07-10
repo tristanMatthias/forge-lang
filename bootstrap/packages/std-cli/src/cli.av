@@ -249,9 +249,13 @@ fn is_help_flag(s: string) -> bool {
     s == "--help" || s == "-h"
 }
 
-/// True iff the help flag appears among a command's argv tokens.
+/// True iff the help flag appears among a command's argv tokens, scanning only
+/// up to a bare `--`. The terminator ends option parsing (mirroring
+/// parse_tokens), so a `--help` AFTER `--` is a positional value, not a help
+/// request — otherwise this pre-scan would hijack `cmd -- --help`.
 fn tokens_have_help(tokens: List<string>) -> bool {
     for t in tokens {
+        if t == "--" { return false }
         if is_help_flag(t) { return true }
     }
     false

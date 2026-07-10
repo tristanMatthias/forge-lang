@@ -42,6 +42,11 @@ fn dt_src() -> string {
     // A bare trailing `--` is consumed, records NO positional; the optional arg
     // stays empty → name == "" (0). (Without the fix this errored → 1.)
     "    println(\"BARE=\" + string(toy.run_argv([\"build\", \"--\"])))\n" +
+    // A `--help` AFTER `--` is a positional, not a help request: the help
+    // pre-scan (tokens_have_help) must honor the terminator too. name ==
+    // "--help" (6) → 6. Without the terminator-aware pre-scan this prints help
+    // and returns 0.
+    "    println(\"HELP=\" + string(toy.run_argv([\"build\", \"--\", \"--help\"])))\n" +
     "}\n"
 }
 
@@ -69,5 +74,11 @@ spec "a bare `--` ends option parsing (getopt end-of-options terminator)" {
         // The terminator itself is not a positional; the optional arg stays "".
         let out = dt_run()
         out.contains("BARE=0")
+    }
+    then "a `--help` after `--` is a positional, not a help request" {
+        // The help pre-scan (tokens_have_help) must also stop at `--`; otherwise
+        // it hijacks the invocation and prints help. name == "--help" (6).
+        let out = dt_run()
+        out.contains("HELP=6")
     }
 }
