@@ -249,9 +249,13 @@ fn is_help_flag(s: string) -> bool {
     s == "--help" || s == "-h"
 }
 
-/// True iff the help flag appears among a command's argv tokens.
+/// True iff the help flag appears among a command's argv tokens, scanning only
+/// up to a bare `--`. The terminator ends option parsing (mirroring
+/// parse_tokens), so a `--help` AFTER `--` is a positional value, not a help
+/// request — otherwise this pre-scan would hijack `cmd -- --help`.
 fn tokens_have_help(tokens: List<string>) -> bool {
     for t in tokens {
+        if t == "--" { return false }
         if is_help_flag(t) { return true }
     }
     false
@@ -544,9 +548,18 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
     // `--key=value`. Matches the bespoke parsers' `read_kv_value` (which the
     // compiler-internal commands use, e.g. `avra docs --search foo`).
     mut ti = 0
+    // Latches once a bare `--` is seen: every following token is a positional,
+    // even one that looks like a flag (getopt / POSIX end-of-options marker).
+    // Lets a CLI take positionals that start with `-` (a `-weird` filename, a
+    // `-5` literal) via `myapp -- -5`.
+    mut opts_ended = false
     while ti < tokens.length {
         let arg = tokens[ti]
-        if arg.starts_with("--") || (arg.starts_with("-") && arg.length > 1) {
+        if !opts_ended && arg == "--" {
+            // The terminator itself is consumed, not recorded.
+            opts_ended = true
+            ti = ti + 1
+        } else if !opts_ended && (arg.starts_with("--") || (arg.starts_with("-") && arg.length > 1)) {
             // Check if it's a flag — record under its canonical (long) name so
             // a `-v` short and a `--verbose` long both set `verbose`.
             let fcanon = flag_canonical_name(flags, arg)
@@ -586,7 +599,8 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
                 ti = ti + 1
             }
         } else {
-            // Positional argument
+            // Positional argument — a bare token, or anything after the `--`
+            // terminator (opts_ended), mapped to the arg schema by order.
             let arg_def = arg_at(args, positional_idx)
             let arg_name = if arg_def != null { arg_def!.name } else { "arg${string(positional_idx)}" }
             parsed_args.push(ParsedArg { name: arg_name, value: arg })
