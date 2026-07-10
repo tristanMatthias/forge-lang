@@ -1,0 +1,34 @@
+// WHY: diff-test corpus — scalar-int `@comptime` constant folding. This is the
+// byte-identical proof for the compiled-comptime JIT (ps3t.5): the NEW compiler
+// folds each of these calls by codegen'ing the fn and running it in-process
+// (try_jit_fold), while the OLD/oracle compiler folds them with the tree-walk
+// interpreter. Both must emit byte-identical IR — i.e. the JIT fold and the
+// interpreter fold must agree on the folded literal at every call site. The
+// selfhost pass does NOT cover this (the compiler's own `@comptime` fns are
+// AST-returning macros, which stay on the interpreter), so this file is the
+// only place the diff-test oracle exercises the JIT-vs-interpreter fold path.
+//
+// Covers the JIT-eligible shapes (multiplication, multi-arg addition to the
+// arity ceiling, if/else control flow, a negative result) plus the shapes it
+// declines to the interpreter (division — its zero-divisor trap would abort
+// the compiler; a cross-fn call — the single-fn JIT module has no callees).
+
+@comptime fn ci_sq(n: int) -> int { n * n }
+@comptime fn ci_add4(a: int, b: int, c: int, d: int) -> int { a + b + c + d }
+@comptime fn ci_abs(x: int) -> int { if x > 0 { x } else { 0 - x } }
+@comptime fn ci_neg(x: int) -> int { 0 - x }
+@comptime fn ci_div(a: int, b: int) -> int { a / b }
+@comptime fn ci_inc(n: int) -> int { n + 1 }
+@comptime fn ci_via(n: int) -> int { ci_inc(n) * 2 }
+
+fn main() {
+    // JIT-folded in NEW, interpreter-folded in OLD.
+    let a = ci_sq(9)              // 81
+    let b = ci_add4(10, 20, 30, 40)  // 100
+    let c = ci_abs(7)            // 7
+    let d = ci_neg(42)          // -42
+    // Interpreter-folded in BOTH (JIT declines: division, and a cross-fn call).
+    let e = ci_div(84, 2)        // 42
+    let f = ci_via(20)          // 42
+    println(string(a + b + c + d + e + f))
+}
