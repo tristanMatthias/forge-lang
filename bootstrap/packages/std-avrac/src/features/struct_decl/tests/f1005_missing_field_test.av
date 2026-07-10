@@ -1,0 +1,52 @@
+// WHY: 6y4y regression — the F1005 completeness gate must FIRE when a struct
+// literal omits a NON-nullable field. Spec (fully static, Axis 1-8) requires
+// every field present; a missing non-nullable field (int, string, a struct, …)
+// has no sensible default, so silently zero-filling it reads back garbage at
+// runtime — the bug F1005 exists to prevent. `check_struct_lit_complete`
+// implements the gate, but only the POSITIVE side was pinned
+// (`f1005_nullable_omit_test.av`: a nullable field MAY be omitted). This pins
+// the negative side so the gate can't silently regress: a missing non-nullable
+// field is F1005, and the message names the missing field(s).
+//
+// Compile-error fixtures via `bs2 check`, asserting the F-code in captured
+// output (the standard negative-path harness).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn check_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_f1005neg_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "a struct literal omitting a NON-nullable field is F1005 (6y4y)" {
+    then "a single missing non-nullable field is F1005 and names it" {
+        let out = check_out("one", "type P = { x: int, y: int, z: int }
+fn main() { let p = P { x: 1, y: 2 } }")
+        out.contains("F1005") && out.contains("z")
+    }
+    then "multiple missing non-nullable fields are all reported" {
+        let out = check_out("multi", "type P = { a: int, b: int, c: int }
+fn main() { let p = P { a: 1 } }")
+        out.contains("F1005") && out.contains("b") && out.contains("c")
+    }
+    then "a missing non-nullable field of struct type is F1005" {
+        let out = check_out("structty", "type Inner = { v: int }
+type Outer = { name: string, inner: Inner }
+fn main() { let o = Outer { name: \"hi\" } }")
+        out.contains("F1005") && out.contains("inner")
+    }
+    then "a missing non-nullable field alongside a present nullable one is F1005" {
+        // The nullable `note` may be omitted, but the non-nullable `count` may
+        // not — only `count` is reported.
+        let out = check_out("mixed", "type Rec = { id: int, note: string?, count: int }
+fn main() { let r = Rec { id: 7 } }")
+        out.contains("F1005") && out.contains("count") && !out.contains("note")
+    }
+    then "the complete literal compiles (positive control — gate doesn't over-fire)" {
+        let out = check_out("ok", "type P = { x: int, y: int, z: int }
+fn main() { let p = P { x: 1, y: 2, z: 3 } }")
+        out.contains("ok") && !out.contains("F1005")
+    }
+}
