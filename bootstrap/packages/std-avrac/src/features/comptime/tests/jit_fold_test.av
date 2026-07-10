@@ -76,6 +76,14 @@ spec "compiled-comptime folds a scalar-int @comptime call to its literal (ps3t.5
         let ir = fold_ir("viacall", fold_prog("@comptime fn helperf(n: int) -> int { n + 1 }\n@comptime fn viacall(n: int) -> int { helperf(n) * 2 }", "viacall(20)"))
         ir.contains("i64 42")
     }
+    then "a while-loop fn falls back to the interpreter and still folds: sumto(5) → i64 10" {
+        // Loops are not JIT-blessed (a terminating loop needs an assignment,
+        // which body_jit_safe rejects; an infinite one would hang the JIT'd
+        // compiler), so this folds via the interpreter — proving loop folds
+        // still work through the fallback.
+        let ir = fold_ir("sumto", fold_prog("@comptime fn sumto(n: int) -> int { mut acc = 0\n  mut i = 0\n  while i < n { acc = acc + i\n  i = i + 1 }\n  acc }", "sumto(5)"))
+        ir.contains("i64 10")
+    }
     then "the callee is eliminated — no `call` to the folded fn remains" {
         // A folded call leaves no `call` to `sq` in main; the literal stands in
         // for it. (The `define` of `sq` itself may remain as dead code.)

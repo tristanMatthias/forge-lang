@@ -133,6 +133,10 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
     // Materialise the fn as a standalone declaration in the program store, then
     // codegen just that row and JIT-call it. The body rows are already in the
     // store, so a leaf Function row (payload carries params/ret/body) is enough.
+    // NOTE: no memoization — every eligible call site re-runs codegen + JIT for
+    // its fn, even repeated calls to the same helper. Fine for the first cut
+    // (correctness before speed); caching the compiled fn keyed on identity is
+    // ps3t.5.5. The interpreter fallback bounds the blast radius until then.
     let empty_tp: List<TypeParamEntry> = []
     let fn_stmt_id = reg.runtime.nodes.add_stmt_leaf(Stmt.Function(fn_def.name, empty_tp, fn_def.params, fn_def.ret_ty, fn_def.body))
     let only: List<StmtId> = [fn_stmt_id]
@@ -152,10 +156,15 @@ fn maybe_number(text: string) -> Expr? {
 }
 
 /// Conservatively decide whether a fn body is safe to JIT: only pure scalar
-/// arithmetic + local control flow, with NO call of any kind (the single-fn
-/// module has no callees) and NO `/` or `%` (their zero-divisor trap `abort()`s
-/// the compiler). Any statement/expression this doesn't explicitly bless →
-/// unsafe → interpreter fallback. Fail-closed by design.
+/// arithmetic + branching control flow, with NO call of any kind (the single-fn
+/// module has no callees), NO `/` or `%` (their zero-divisor trap `abort()`s
+/// the compiler), and NO loops. Loops are excluded on purpose: the blessed
+/// subset has no assignment, so the only loop that would type-check is one whose
+/// condition never changes — an infinite loop that, JIT'd and run in-process,
+/// would HANG the compiler (the interpreter fallback at least tree-walks it
+/// under the evaluator's control). So the body is terminating by construction.
+/// Any statement/expression this doesn't explicitly bless → unsafe → interpreter
+/// fallback. Fail-closed by design.
 fn body_jit_safe(store: NodeStore, body: List<StmtId>) -> bool {
     mut i = 0
     while i < body.length {
@@ -177,7 +186,10 @@ fn stmt_jit_safe(store: NodeStore, stmt: Stmt) -> bool {
         .If(cond, then_s, else_s) -> expr_jit_safe(store, cond)
             && stmt_jit_safe(store, store.stmts.get(then_s))
             && (else_s == null || stmt_jit_safe(store, store.stmts.get(else_s!)))
-        .While(cond, b) -> expr_jit_safe(store, cond) && stmt_jit_safe(store, store.stmts.get(b))
+        // NB: no `.While` / `.For` arm — loops are deliberately not blessed (see
+        // body_jit_safe: without assignment a terminating loop is impossible, and
+        // an infinite one would hang the JIT'd compiler). Loops fall back to the
+        // interpreter, which folds them under the evaluator's control.
         _ -> false
     }
 }
