@@ -453,7 +453,9 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
 
     // Compute effective parameter types BEFORE creating the LLVM function,
     // so we can build a properly-typed LLVM function signature.
-    // Empty caller-supplied list means "infer from the body".
+    // An empty caller-supplied list means the untyped-standalone path: use each
+    // parameter's own resolved declared type (`declared_param_vtypes`), not a
+    // body-inferred guess.
     let effective_types = if param_types.length == 0 {
         declared_param_vtypes(params)
     } else {
