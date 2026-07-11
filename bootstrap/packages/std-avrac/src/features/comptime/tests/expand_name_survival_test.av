@@ -1,0 +1,64 @@
+// pqyp — PIN the hygiene rule for macro-EMITTED top-level declared names: they
+// are NOT renamed, so sibling declarations (and user code) can reference them by
+// the exact name the macro wrote. This is load-bearing for vez6.11
+// `expand_command`, which emits `type Command_<inst>` + `impl Runnable for
+// Command_<inst>` + a helper fn and references those names ACROSS declarations.
+//
+// DESIGN DECISION (resolves the OPEN §6 question "do generated type names get
+// hygiene treatment?"): NO — a macro's top-level declared output (type / enum /
+// fn / impl target) keeps the name the macro wrote. Renaming would sever the
+// cross-declaration references that make multi-decl macro output usable. (Interior
+// local bindings are a separate concern — spec §3.7's hygienic-by-default +
+// @unhygienic — tracked separately; today @expand renames nothing, and macro
+// authors get fresh names on demand via ctx_fresh_ident.)
+//
+// These tests would FAIL the moment a hygiene pass started renaming a declared
+// output name: the cross-decl reference would no longer resolve.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "pqyp: macro-emitted top-level declared names survive hygiene un-renamed" {
+    then "an emitted type + its trait impl + a maker fn are all referenced across decls" {
+        // The expand_command shape: three sibling declarations the macro emits,
+        // wired together by NAME — Command_Foo referenced by the impl, the maker
+        // fn's return type, and main; run() reached via the Runnable impl.
+        let out = write_fixture_and_run("/tmp/avra_expand_name_survival_impl.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "trait Runnable { fn run(self) -> string }\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let ty = quote stmt { type Command_Foo = { n: int } }\n" +
+            "    let im = quote stmt { impl Runnable for Command_Foo { fn run(self) -> string { \"ran_foo\" } } }\n" +
+            "    let mk = quote stmt { fn make_command() -> Command_Foo { Command_Foo { n: 7 } } }\n" +
+            "    [synth_stmt_id(ty), synth_stmt_id(im), synth_stmt_id(mk)]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {\n" +
+            "    let c = make_command()\n" +          // references emitted fn + type
+            "    println(c.run())\n" +                 // references emitted impl method
+            "}\n")
+        out.contains("ran_foo")
+    }
+    then "an emitted enum + a fn returning it survive and are matched by the emitted variant name" {
+        let out = write_fixture_and_run("/tmp/avra_expand_name_survival_enum.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let en = quote stmt { enum Status_Gen { Ready, Busy } }\n" +
+            "    let mk = quote stmt { fn current() -> Status_Gen { Status_Gen.Ready } }\n" +
+            "    [synth_stmt_id(en), synth_stmt_id(mk)]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {\n" +
+            "    match current() {\n" +
+            "        Status_Gen.Ready -> println(\"is_ready\")\n" +
+            "        Status_Gen.Busy -> println(\"is_busy\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("is_ready")
+    }
+}
