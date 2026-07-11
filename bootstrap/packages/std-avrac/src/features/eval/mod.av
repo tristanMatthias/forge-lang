@@ -1173,6 +1173,18 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<ExprId>) -> StepResult {
     // decoder consumes, so the call passes its argument straight
     // through, exactly like the span wrappers above.
     if call_is_synth_shim(callee) {
+        // `synth_expr_id` additionally coerces a spliced SCALAR to a boxed Expr
+        // literal (rmzs GAP2): `~(expr)` in an expression slot lowers to
+        // `synth_expr_id(<raw target>)`, and a computed target evaluates to a
+        // bare number/string/bool/null where an Expr node is needed. Normal
+        // construction only ever hands this shim an Expr-enum value, so only a
+        // splice reaches the scalar arms — and the coercion stays on the
+        // CONSTRUCTION path (this shim), never the decoder (value_to_expr_node)
+        // whose scalar-error the @derive walkers rely on as a "leaf, not a child"
+        // signal.
+        if callee_last_segment(callee) == "synth_expr_id" {
+            return eval_synth_expr_id(runtime, args)
+        }
         return eval_shim_passthrough(runtime, args)
     }
 
@@ -1504,6 +1516,27 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
 fn eval_shim_passthrough(runtime: Runtime, args: List<ExprId>) -> StepResult {
     if args.length == 0 { return error_result(runtime, "id-shim call needs at least one argument") }
     eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+}
+
+/// `synth_expr_id` eval: identity for an already-Expr value (the Expr-enum a
+/// constructor evaluates to, or a boxed `kind=expr` node), but a spliced SCALAR
+/// value coerces to the matching boxed Expr literal — the inverse of
+/// literal_expr_to_value, same mapping as the fold path's value_to_expr. This is
+/// the splice-scoped home for rmzs GAP2: it never touches the decoder path, so
+/// the @derive walkers' scalar-error signal is preserved.
+fn eval_synth_expr_id(runtime: Runtime, args: List<ExprId>) -> StepResult {
+    if args.length == 0 { return error_result(runtime, "synth_expr_id needs at least one argument") }
+    let r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+    if r.had_error { return r }
+    let coerced: Expr? = match r.value.kind {
+        "number" -> if num_text_is_float(r.value.number_text) { Expr.FloatLit(r.value.number_text) } else { Expr.Number(r.value.number_text) }
+        "string" -> Expr.String("\"${r.value.text}\"")
+        "bool"   -> Expr.Bool(if r.value.bool_value != 0 { "true" } else { "false" })
+        "null"   -> Expr.None
+        _        -> null
+    }
+    if coerced == null { return r }
+    ok_result(r.runtime, value_for_expr(coerced!))
 }
 
 /// True when `callee` is the qualified path to the standard
