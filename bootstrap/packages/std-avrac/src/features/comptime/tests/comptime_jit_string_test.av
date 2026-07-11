@@ -1,0 +1,65 @@
+// ps3t.5.2.1.1 part b — extend the compiled-comptime (JIT) fold to STRING returns,
+// the last of the a/b/c return-type coverage. A string-returning @comptime fn fell
+// back to the interpreter because the JIT engine is disposed inside the call, and
+// a returned char* may point into the engine's own memory (a string literal is a
+// module constant). avra_llvm_jit_call_str COPIES the result into RC-managed host
+// memory (avra_rc_alloc) BEFORE the dispose, so the pointer stays valid; it's then
+// re-quoted into the same Expr.String the interpreter produces (byte-identity gated
+// by tests/difftest_corpus/comptime_string_fold.av).
+//
+// The fns below are JIT-eligible (string return, int/no params, jit-safe bodies —
+// String literals are blessed, `+` concat lowers to avra_string_concat which the
+// -rdynamic symbol table resolves), so bs2 folds them through the JIT at COMPILE
+// time. These specs COMPILE + RUN a fixture and assert its stdout, exercising the
+// real fold→codegen→run path. Part b completes ps3t.5.2.1's return-type coverage.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` with the current `./build/bs2` (which JIT-folds the eligible
+/// string @comptime calls), link, run, and return stdout.
+fn run_fixture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_jits_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+}
+
+spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct value" {
+    then "a bare string-literal return JIT-folds and survives the engine dispose" {
+        let out = run_fixture("bare",
+            "@comptime\nfn greet() -> string { return \"hello world\" }\n" +
+            "fn main() { println(greet()) }\n")
+        out.contains("hello world")
+    }
+    then "an empty-string return folds (boundary: zero-length copy-out)" {
+        let out = run_fixture("empty",
+            "@comptime\nfn empty() -> string { return \"\" }\n" +
+            "fn main() {\n" +
+            "    println(\"[\" + empty() + \"]\")\n" +   // "[]" — the fold is the empty string
+            "}\n")
+        out.contains("[]")
+    }
+    then "string concat in the body JIT-folds to the joined literal" {
+        let out = run_fixture("concat",
+            "@comptime\nfn cat() -> string { return \"foo\" + \"bar\" }\n" +
+            "@comptime\nfn cat3() -> string { return \"a\" + \"b\" + \"c\" }\n" +
+            "fn main() {\n" +
+            "    println(cat())\n" +    // foobar
+            "    println(cat3())\n" +   // abc
+            "}\n")
+        out.contains("foobar") && out.contains("abc")
+    }
+    then "an int param (int-register arg) with a string return JIT-folds correctly" {
+        let out = run_fixture("intparam",
+            "@comptime\nfn konst(n: int) -> string { return \"fixed\" }\n" +
+            "fn main() { println(konst(9)) }\n")
+        out.contains("fixed")
+    }
+    then "a transitive string callee (via_callee -> base) JIT-folds the whole closure" {
+        let out = run_fixture("transitive",
+            "@comptime\nfn base() -> string { return \"base\" }\n" +
+            "@comptime\nfn via_callee() -> string { return base() + \"-tip\" }\n" +
+            "fn main() { println(via_callee()) }\n")   // base-tip
+        out.contains("base-tip")
+    }
+}

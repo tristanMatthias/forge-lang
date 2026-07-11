@@ -1,0 +1,31 @@
+// ps3t.5.2.1.1 part b: string-returning @comptime folds. OLD interprets these;
+// NEW JITs them, copying the const char* result out of the JIT engine before it's
+// disposed (a string literal is a module constant that dies with the engine). The
+// folded Expr.String literals must be byte-identical either way — the JIT
+// re-quotes its result into the same `"\"${text}\""` shape the interpreter's
+// value_to_expr produces. Bodies keep params int-only (string args aren't
+// marshalled), and use string literals + `+` concat (both jit-safe; concat lowers
+// to avra_string_concat, resolved via the -rdynamic dynamic symbol table).
+@comptime
+fn greet() -> string { return "hello" }
+@comptime
+fn empty() -> string { return "" }
+@comptime
+fn cat() -> string { return "foo" + "bar" }
+@comptime
+fn cat3() -> string { return "a" + "b" + "c" }
+@comptime
+fn konst(n: int) -> string { return "word" }
+@comptime
+fn base() -> string { return "base" }
+@comptime
+fn via_callee() -> string { return base() + "!" }
+
+fn main() {
+    let a = greet()
+    let b = empty()
+    let c = cat()
+    let d = cat3()
+    let e = konst(7)
+    let f = via_callee()
+}
