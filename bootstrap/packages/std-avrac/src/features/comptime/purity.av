@@ -16,15 +16,20 @@
 // seccomp-style allow/deny boundary, NOT a name-pattern heuristic). Add a new
 // effectful extern here when one is introduced.
 //
-// Soundness scope (v1.0): sound for the FREE-FN call graph — direct calls and
-// calls through helper free fns, transitively, which is how every impure extern
-// is actually reached (externs are free fns, never methods). Reachability that
-// is only expressible through a METHOD dispatch (`x.foo()` whose impl body calls
-// an impure extern) needs type-aware receiver resolution and is a documented
-// follow-up (ticket), not covered here; the compiler's own `@comptime` macros
-// reach externs via free-fn calls, so this scope covers the real vector.
+// Soundness scope (v1.0): covers both the FREE-FN call graph — direct calls and
+// calls through helper free fns, transitively — AND METHOD dispatch. Impl methods
+// are parsed as free fns already mangled to `Type__method` (impl_decl/parser),
+// with `self` a param typed to the impl's owner, so once a method call's receiver
+// type is known the edge is an ordinary graph edge. Receiver types are resolved
+// pre-typecheck from the reliable cases: params (incl. `self`) and locals bound
+// by an annotated / struct-literal `let`; a shadowed or non-nominal receiver is
+// left UNRESOLVED and skipped (a false negative, never a false positive — a false
+// positive would wrongly reject a pure `@comptime` fn and break selfhost). The
+// residual gap is a fully type-INFERRED receiver (no annotation), which needs the
+// type checker; better than the previous zero method coverage, still no false
+// positives.
 
-use core.{Stmt, Expr, StmtId, ExprId, FieldInit, MatchArm, WhenArm, SelectArm, NodeStore, stmt_unwrap}
+use core.{Stmt, Expr, StmtId, ExprId, FieldInit, MatchArm, WhenArm, SelectArm, Pattern, ParamEntry, ValueType, NodeStore, stmt_unwrap, method_mangled_name}
 use features.comptime.{CompTimeRegistry}
 
 // Name → index cstr-map (same C primitive the registry name_index uses) for
@@ -85,16 +90,21 @@ export type PurityViolation = {
 // ── Call-graph node table ──
 
 /// A callable in the program: a free fn (with a body to descend into) or an
-/// extern (a leaf — impurity is decided by `extern_name_is_impure`).
+/// extern (a leaf — impurity is decided by `extern_name_is_impure`). `params`
+/// carry the receiver context for method-edge resolution: an impl method's
+/// `params[0]` is `self`, typed to the impl's owner, so descending into a
+/// resolved `Type__method` re-derives `self`'s type for its own method calls.
 type FnNode = {
     name: string,
+    params: List<ParamEntry>,
     body: List<StmtId>,
     is_extern: bool,
 }
 
-/// The program's free-fn/extern call-graph nodes plus a name → index map for
-/// O(1) lookup. Impl methods are NOT indexed (method reachability is out of the
-/// v1.0 scope — see file header); free fns and externs are.
+/// The program's free-fn/extern/method call-graph nodes plus a name → index map
+/// for O(1) lookup. Impl methods ARE indexed, under their parser-mangled
+/// `Type__method` names (impl_decl/parser desugars each method to a free fn), so
+/// a resolved method call is a normal graph edge.
 type FnGraph = {
     nodes: List<FnNode>,
     index: ptr,
@@ -123,13 +133,18 @@ fn gather_fns(store: NodeStore, ids: List<StmtId>, acc: List<FnNode>, index: ptr
 fn gather_fn_from_stmt(store: NodeStore, stmt: Stmt, acc: List<FnNode>, index: ptr) -> List<FnNode> {
     mut nodes = acc
     match stmt {
-        .Function(name, _, _, _, body) -> {
-            nodes = register_fn(nodes, index, FnNode { name, body, is_extern: false })
+        .Function(name, _, params, _, body) -> {
+            nodes = register_fn(nodes, index, FnNode { name, params, body, is_extern: false })
         }
-        .ExternFn(name, _, _) -> {
+        .ExternFn(name, params, _) -> {
             let empty: List<StmtId> = []
-            nodes = register_fn(nodes, index, FnNode { name, body: empty, is_extern: true })
+            nodes = register_fn(nodes, index, FnNode { name, params, body: empty, is_extern: true })
         }
+        // Impl methods are parsed as free `Function`s already mangled to
+        // `Type__method` (impl_decl/parser), with `self` a param typed to the
+        // impl's owner. Descending indexes them under those mangled names, so a
+        // resolved `x.foo()` (→ `Type__foo`) resolves to an ordinary graph node.
+        .Impl(_, methods) -> { nodes = gather_fns(store, methods, nodes, index) }
         .Module(_, body) -> { nodes = gather_fns(store, body, nodes, index) }
         _ -> {}
     }
@@ -191,9 +206,13 @@ fn reach_impure_from(store: NodeStore, graph: FnGraph, name: string, visited: pt
         if extern_name_is_impure(name) { return ImpureHit { extern_name: name, via: name } }
         return null
     }
-    // Free fn: collect its call targets, then descend.
-    mut callees: List<string> = []
-    callees = collect_calls_in_stmts(store, node.body, callees)
+    // One walk yields the free-fn callee names (threaded), the method calls, and
+    // the body's variable bindings (both accumulated into captured lists).
+    let free_fns: List<string> = []
+    let methods: List<PurityMethodCall> = []
+    let binds: List<RecvBinding> = []
+    let callees = collect_call_sites_in_stmts(store, node.body, free_fns, methods, binds)
+    // Free-fn edges.
     for callee in callees {
         // Direct impure extern call → attribute the edge to THIS fn.
         let cnode = graph_lookup(graph, callee)
@@ -203,71 +222,134 @@ fn reach_impure_from(store: NodeStore, graph: FnGraph, name: string, visited: pt
         let deeper = reach_impure_from(store, graph, callee, visited)
         if deeper != null { return deeper }
     }
+    // Method edges: build the receiver type env (params — incl. `self` — plus the
+    // body's bindings), resolve each receiver's nominal type, then descend into
+    // the ONE resolved impl method (`Type__method`, a graph node). An unresolvable
+    // receiver is skipped — conservative by design.
+    let idx_map = avra_map_new_cstr()
+    let poison = avra_map_new_cstr()
+    let types: List<string> = []
+    recv_env_populate(idx_map, poison, types, node.params, binds)
+    for mc in methods {
+        let recv_type = resolve_recv_type(store, idx_map, poison, types, mc.recv)
+        if recv_type.length == 0 { continue }
+        let deeper = reach_impure_from(store, graph, method_mangled_name(recv_type, mc.method), visited)
+        if deeper != null { return deeper }
+    }
     null
 }
 
-// ── Call-target collection (complete traversal) ──
+// ── Call-site + binding collection (complete traversal) ──
 //
 // Mirrors the structural coverage of `rewrite.av`'s walker so NO expression
 // context is missed (a call buried in a match arm, lambda, or if-expr counts).
-// Collects the callee NAME of every `Call`/`GenericCall` whose callee is a bare
-// `Ident` or `QualifiedIdent`; always recurses into every sub-expression. The
-// walker-duplication with rewrite/desugar is the known generic-visitor debt.
+// One walk over a fn body yields three things:
+//   • free-fn callee NAMES — of every `Call`/`GenericCall` whose callee is a bare
+//     `Ident`/`QualifiedIdent`. THREADED through the walk as `acc` and returned.
+//   • method calls — the (receiver, method) of every `x.m(..)`
+//     (`Call(FieldAccess(x,m),..)`, its generic form, and `x?.m(..)`);
+//   • bindings — every variable the body introduces, with its nominal type when
+//     known (fed to `recv_env_populate` to resolve method receivers).
+// `methods` and `binds` are CAPTURED reference lists (side-effect accumulation),
+// not threaded — only the single-ptr `acc` list crosses the closure boundary, so
+// the walk never passes a multi-word struct through a closure argument (which the
+// value-model would copy-corrupt). The walker-duplication with rewrite/desugar is
+// the known generic-visitor debt.
+
+/// A method call `recv.method(..)`: the receiver expression (resolved to a
+/// nominal type by `reach_impure`) and the method name (mangled with that type
+/// into its `Type__method` dispatch symbol).
+type PurityMethodCall = { recv: ExprId, method: string }
+
+/// A variable binding the body introduces: `name` and its nominal type ("" when
+/// non-nominal / unresolvable). `recv_env_populate` applies the poison rule.
+type RecvBinding = { name: string, ty: string }
 
 /// Exported for reuse by the JIT transitive-callee closure (ps3t.5.2.1.1): the
-/// same complete call-name walk the purity check uses.
+/// free-fn callee names only, appended to `acc` (its historic contract). The
+/// method edges + bindings the same walk collects are internal to the purity pass.
 export fn collect_calls_in_stmts(store: NodeStore, ids: List<StmtId>, acc: List<string>) -> List<string> {
+    let methods: List<PurityMethodCall> = []
+    let binds: List<RecvBinding> = []
+    collect_call_sites_in_stmts(store, ids, acc, methods, binds)
+}
+
+fn collect_call_sites_in_stmts(store: NodeStore, ids: List<StmtId>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
-    for id in ids { out = collect_calls_in_stmt(store, store.stmts.get(id), out) }
+    for id in ids { out = collect_call_sites_in_stmt(store, store.stmts.get(id), out, methods, binds) }
     out
 }
 
-fn collect_calls_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>) -> List<string> {
-    let e = (id: ExprId, a: List<string>) -> collect_calls_in_expr(store, store.exprs.get(id), a)
-    let s = (id: StmtId, a: List<string>) -> collect_calls_in_stmt(store, store.stmts.get(id), a)
+fn collect_call_sites_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
+    let e = (id: ExprId, a: List<string>) -> collect_call_sites_in_expr(store, store.exprs.get(id), a, methods, binds)
+    let s = (id: StmtId, a: List<string>) -> collect_call_sites_in_stmt(store, store.stmts.get(id), a, methods, binds)
     match stmt_unwrap(store, stmt) {
-        .Let(_, _, init) -> e(init, acc)
-        .Mut(_, _, init) -> e(init, acc)
-        .Const(_, _, init) -> e(init, acc)
+        .Let(name, ty_vt, init) -> {
+            record_bind(binds, name, binding_type(store, ty_vt, init))
+            e(init, acc)
+        }
+        .Mut(name, ty_vt, init) -> {
+            record_bind(binds, name, binding_type(store, ty_vt, init))
+            e(init, acc)
+        }
+        .Const(name, ty_vt, init) -> {
+            record_bind(binds, name, binding_type(store, ty_vt, init))
+            e(init, acc)
+        }
         .Expr(x) -> e(x, acc)
         .Return(x) -> e(x, acc)
-        .Block(body) -> collect_calls_in_stmts(store, body, acc)
+        .Block(body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
         .If(cond, then_b, else_b) -> {
             let a1 = s(then_b, e(cond, acc))
             if else_b != null { s(else_b!, a1) } else { a1 }
         }
         .While(cond, body) -> s(body, e(cond, acc))
-        .For(_, start, end, body) -> s(body, e(end, e(start, acc)))
-        .ForIn(_, coll, body) -> s(body, e(coll, acc))
-        .Match(subj, arms) -> collect_calls_in_match_arms(store, arms, e(subj, acc))
-        .Function(_, _, _, _, body) -> collect_calls_in_stmts(store, body, acc)
-        .Impl(_, methods) -> collect_calls_in_stmts(store, methods, acc)
-        .TraitDecl(_, methods) -> collect_calls_in_stmts(store, methods, acc)
-        .LetDestructure(_, init) -> e(init, acc)
+        .For(v, start, end, body) -> {
+            record_bind(binds, v, "")
+            s(body, e(end, e(start, acc)))
+        }
+        .ForIn(v, coll, body) -> {
+            record_bind(binds, v, "")
+            s(body, e(coll, acc))
+        }
+        .Match(subj, arms) -> collect_call_sites_in_match_arms(store, arms, e(subj, acc), methods, binds)
+        .Function(_, _, params, _, body) -> {
+            // A nested named fn introduces its own params; record them so a name
+            // that shadows an outer binding is poisoned (conservative) rather than
+            // resolved against the outer scope's type — the wrong impl.
+            record_param_binds(binds, params)
+            collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        }
+        .Impl(_, ms) -> collect_call_sites_in_stmts(store, ms, acc, methods, binds)
+        .TraitDecl(_, ms) -> collect_call_sites_in_stmts(store, ms, acc, methods, binds)
+        .LetDestructure(names, init) -> {
+            record_param_binds(binds, names)
+            e(init, acc)
+        }
         .Defer(body) -> e(body, acc)
         .Errdefer(body) -> e(body, acc)
-        .SpecBlock(_, body) -> collect_calls_in_stmts(store, body, acc)
-        .GivenBlock(_, body) -> collect_calls_in_stmts(store, body, acc)
+        .SpecBlock(_, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .GivenBlock(_, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
         .ThenBlock(_, cond) -> e(cond, acc)
-        .Select(arms) -> collect_calls_in_select_arms(store, arms, acc)
-        .Parallel(body) -> collect_calls_in_stmts(store, body, acc)
-        .Module(_, body) -> collect_calls_in_stmts(store, body, acc)
-        .ComponentDef(_, _, _, _, _, body) -> collect_calls_in_stmts(store, body, acc)
-        .ComponentBlock(_, _, _, body) -> collect_calls_in_stmts(store, body, acc)
+        .Select(arms) -> collect_call_sites_in_select_arms(store, arms, acc, methods, binds)
+        .Parallel(body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .Module(_, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .ComponentDef(_, _, _, _, _, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .ComponentBlock(_, _, _, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
         _ -> acc
     }
 }
 
-fn collect_calls_in_expr(store: NodeStore, expr: Expr, acc: List<string>) -> List<string> {
-    let e = (id: ExprId, a: List<string>) -> collect_calls_in_expr(store, store.exprs.get(id), a)
-    let el = (ids: List<ExprId>, a: List<string>) -> collect_calls_in_expr_list(store, ids, a)
+fn collect_call_sites_in_expr(store: NodeStore, expr: Expr, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
+    let e = (id: ExprId, a: List<string>) -> collect_call_sites_in_expr(store, store.exprs.get(id), a, methods, binds)
+    let el = (ids: List<ExprId>, a: List<string>) -> collect_call_sites_in_expr_list(store, ids, a, methods, binds)
     match expr {
-        .Call(callee, args) -> el(args, e(callee, record_callee(store, callee, acc)))
-        .GenericCall(callee, _, args) -> el(args, e(callee, record_callee(store, callee, acc)))
+        .Call(callee, args) -> el(args, e(callee, record_callee(store, callee, acc, methods)))
+        .GenericCall(callee, _, args) -> el(args, e(callee, record_callee(store, callee, acc, methods)))
         .Binary(l, _, r) -> e(r, e(l, acc))
         .Unary(_, r) -> e(r, acc)
         .Logical(l, _, r) -> e(r, e(l, acc))
-        .StructLit(_, inits) -> collect_calls_in_field_inits(store, inits, acc)
+        .StructLit(_, inits) -> collect_call_sites_in_field_inits(store, inits, acc, methods, binds)
         .Grouping(inner) -> e(inner, acc)
         .Assign(_, val) -> e(val, acc)
         .Index(obj, idx) -> e(idx, e(obj, acc))
@@ -275,27 +357,37 @@ fn collect_calls_in_expr(store: NodeStore, expr: Expr, acc: List<string>) -> Lis
         .FieldAssign(obj, _, val) -> e(val, e(obj, acc))
         .EnumCtor(_, _, args) -> el(args, acc)
         .IfExpr(c, t, f) -> e(f, e(t, e(c, acc)))
-        .Block(body) -> collect_calls_in_stmts(store, body, acc)
-        .MatchExpr(subj, arms) -> collect_calls_in_match_arms(store, arms, e(subj, acc))
+        .Block(body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .MatchExpr(subj, arms) -> collect_call_sites_in_match_arms(store, arms, e(subj, acc), methods, binds)
         .NullCoalesce(l, r) -> e(r, e(l, acc))
         .OptionalChain(obj, _) -> e(obj, acc)
-        .OptionalMethodCall(obj, _, args) -> el(args, e(obj, acc))
+        .OptionalMethodCall(obj, method, args) -> {
+            record_method(methods, obj, method)
+            el(args, e(obj, acc))
+        }
         .Try(inner) -> e(inner, acc)
         .Tuple(elems) -> el(elems, acc)
         .TupleIndex(obj, _) -> e(obj, acc)
-        .With(obj, overrides) -> collect_calls_in_field_inits(store, overrides, e(obj, acc))
+        .With(obj, overrides) -> collect_call_sites_in_field_inits(store, overrides, e(obj, acc), methods, binds)
         .ListLit(elems) -> el(elems, acc)
-        .Lambda(_, body) -> e(body, acc)
+        .Lambda(params, body) -> {
+            record_param_binds(binds, params)
+            e(body, acc)
+        }
         .MapLit(entries) -> el(entries, acc)
         .Slice(obj, s, en) -> e(en, e(s, e(obj, acc)))
         .IsCheck(subj, _) -> e(subj, acc)
         .InCheck(needle, items) -> el(items, e(needle, acc))
-        .ListComp(body, _, coll, filt) -> {
+        .ListComp(body, v, coll, filt) -> {
+            record_bind(binds, v, "")
             let base = e(coll, e(body, acc))
             if filt != null { e(filt!, base) } else { base }
         }
-        .When(arms) -> collect_calls_in_when_arms(store, arms, acc)
-        .Catch(inner, _, body, _, _) -> e(body, e(inner, acc))
+        .When(arms) -> collect_call_sites_in_when_arms(store, arms, acc, methods, binds)
+        .Catch(inner, binding, body, _, _) -> {
+            record_bind(binds, binding, "")
+            e(body, e(inner, acc))
+        }
         .Spawn(body) -> e(body, acc)
         .ChannelNew(_, capacity) -> { if capacity != null { e(capacity!, acc) } else { acc } }
         .Isolated(body) -> e(body, acc)
@@ -305,18 +397,54 @@ fn collect_calls_in_expr(store: NodeStore, expr: Expr, acc: List<string>) -> Lis
     }
 }
 
-/// Record the callee name when it is a bare `Ident` / `QualifiedIdent` (a free-fn
-/// reference). Method callees (`FieldAccess`) and computed callees are not free
-/// fns and are handled by descending into them (via the caller's recursion).
-/// `push` mutates the shared accumulator in place; return the same list.
-fn record_callee(store: NodeStore, callee: ExprId, acc: List<string>) -> List<string> {
+/// Record a `Call`/`GenericCall` callee: a bare `Ident`/`QualifiedIdent` is a
+/// free-fn edge (pushed into the threaded `acc`); a `FieldAccess(recv, m)` callee
+/// is a method call (pushed into the captured `methods` list). Computed callees
+/// are handled by the caller descending into them.
+fn record_callee(store: NodeStore, callee: ExprId, acc: List<string>, methods: List<PurityMethodCall>) -> List<string> {
     mut out = acc
     match store.exprs.get(callee) {
         .Ident(name) -> { out.push(name) }
         .QualifiedIdent(path) -> { out.push(last_path_segment(path)) }
+        .FieldAccess(obj, field) -> { record_method(methods, obj, field) }
         _ -> {}
     }
     out
+}
+
+/// Push a method call into the captured accumulator (`push` mutates in place).
+fn record_method(methods: List<PurityMethodCall>, recv: ExprId, method: string) {
+    mut ms = methods
+    ms.push(PurityMethodCall { recv: recv, method: method })
+}
+
+/// Push one binding into the captured accumulator.
+fn record_bind(binds: List<RecvBinding>, name: string, ty: string) {
+    mut bs = binds
+    bs.push(RecvBinding { name: name, ty: ty })
+}
+
+/// Record every param/destructure entry as a binding (a param carries a nominal
+/// `ValueType`; a destructure name carries none, so it poisons).
+fn record_param_binds(binds: List<RecvBinding>, params: List<ParamEntry>) {
+    mut bs = binds
+    for p in params { bs.push(RecvBinding { name: p.name, ty: nominal_type_name(p.vtype) }) }
+}
+
+/// Record the value names a pattern introduces (all non-nominal → poison; a
+/// pattern-bound receiver's type needs the checker, out of scope here).
+fn record_pattern_binds(binds: List<RecvBinding>, store: NodeStore, pattern: Pattern) {
+    mut bs = binds
+    match pattern {
+        .Variant(_, bindings) -> { for b in bindings { bs.push(RecvBinding { name: b.name, ty: "" }) } }
+        .NestedVariant(_, sub_ids) -> { for sid in sub_ids { record_pattern_binds(binds, store, store.pats.get(sid)) } }
+        .Or(l, r) -> {
+            record_pattern_binds(binds, store, store.pats.get(l))
+            record_pattern_binds(binds, store, store.pats.get(r))
+        }
+        .TypePattern(_, binding) -> bs.push(RecvBinding { name: binding, ty: "" })
+        _ -> {}
+    }
 }
 
 /// A `QualifiedIdent` path like "core::ast::foo" refers to `foo`; the FnGraph is
@@ -335,41 +463,133 @@ fn last_path_segment(path: string) -> string {
     seg
 }
 
-fn collect_calls_in_expr_list(store: NodeStore, ids: List<ExprId>, acc: List<string>) -> List<string> {
+fn collect_call_sites_in_expr_list(store: NodeStore, ids: List<ExprId>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
-    for id in ids { out = collect_calls_in_expr(store, store.exprs.get(id), out) }
+    for id in ids { out = collect_call_sites_in_expr(store, store.exprs.get(id), out, methods, binds) }
     out
 }
 
-fn collect_calls_in_field_inits(store: NodeStore, inits: List<FieldInit>, acc: List<string>) -> List<string> {
+fn collect_call_sites_in_field_inits(store: NodeStore, inits: List<FieldInit>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
-    for init in inits { out = collect_calls_in_expr(store, store.exprs.get(init.value_id), out) }
+    for init in inits { out = collect_call_sites_in_expr(store, store.exprs.get(init.value_id), out, methods, binds) }
     out
 }
 
-fn collect_calls_in_match_arms(store: NodeStore, arms: List<MatchArm>, acc: List<string>) -> List<string> {
+fn collect_call_sites_in_match_arms(store: NodeStore, arms: List<MatchArm>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
     for arm in arms {
-        if arm.guard_id != null { out = collect_calls_in_expr(store, store.exprs.get(arm.guard_id!), out) }
-        out = collect_calls_in_expr(store, store.exprs.get(arm.body_id), out)
+        record_pattern_binds(binds, store, arm.pattern)
+        if arm.guard_id != null { out = collect_call_sites_in_expr(store, store.exprs.get(arm.guard_id!), out, methods, binds) }
+        out = collect_call_sites_in_expr(store, store.exprs.get(arm.body_id), out, methods, binds)
     }
     out
 }
 
-fn collect_calls_in_when_arms(store: NodeStore, arms: List<WhenArm>, acc: List<string>) -> List<string> {
+fn collect_call_sites_in_when_arms(store: NodeStore, arms: List<WhenArm>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
     for arm in arms {
-        if arm.cond_id != null { out = collect_calls_in_expr(store, store.exprs.get(arm.cond_id!), out) }
-        out = collect_calls_in_expr(store, store.exprs.get(arm.body_id), out)
+        if arm.cond_id != null { out = collect_call_sites_in_expr(store, store.exprs.get(arm.cond_id!), out, methods, binds) }
+        out = collect_call_sites_in_expr(store, store.exprs.get(arm.body_id), out, methods, binds)
     }
     out
 }
 
-fn collect_calls_in_select_arms(store: NodeStore, arms: List<SelectArm>, acc: List<string>) -> List<string> {
+fn collect_call_sites_in_select_arms(store: NodeStore, arms: List<SelectArm>, acc: List<string>, methods: List<PurityMethodCall>, binds: List<RecvBinding>) -> List<string> {
     mut out = acc
     for arm in arms {
-        out = collect_calls_in_expr(store, store.exprs.get(arm.chan_id), out)
-        out = collect_calls_in_stmts(store, arm.body_ids, out)
+        record_bind(binds, arm.binding, "")
+        out = collect_call_sites_in_expr(store, store.exprs.get(arm.chan_id), out, methods, binds)
+        out = collect_call_sites_in_stmts(store, arm.body_ids, out, methods, binds)
     }
     out
+}
+
+// ── Receiver type environment ──
+//
+// Resolves a method call's receiver to a nominal type NAME pre-typecheck. Only
+// the reliable bindings are trusted: a param (incl. `self`, typed to the impl's
+// owner) and a local bound by an annotated / struct-literal `let`. EVERY binding
+// the body introduces is recorded; a name bound more than once (lexical shadow)
+// or by any non-nominal form (destructure, loop/pattern/select binding,
+// unannotated init) is POISONED and never resolves. A resolved receiver is thus
+// unambiguous — a method edge never descends into the wrong impl. False negatives
+// (skips) are fine; a false positive would wrongly reject a pure `@comptime` fn.
+//
+// The env is three primitive handles — an index cstr-map (var → slot), a `types`
+// name list, and a poison cstr-map — passed SEPARATELY, never bundled into a
+// struct. A struct carrying a `List` field alongside `ptr` fields is not passed
+// reliably by-value through this compiler's seed codegen (the fields load back as
+// garbage), so keeping the pieces unbundled is the robust representation.
+
+/// Record one binding of `var` into the env. The first nominal binding sets its
+/// type; a second binding of any kind, or a first non-nominal binding, poisons
+/// the name so it never resolves (conservative — a shadowed / untyped receiver
+/// must not be mistaken for a single known type).
+fn recv_bind(idx_map: ptr, poison: ptr, types: List<string>, var: string, type_name: string) {
+    if var.length == 0 { return }
+    if avra_map_has_cstr(poison, var) == 1 { return }
+    if avra_map_has_cstr(idx_map, var) == 1 {
+        avra_map_set_cstr(poison, var, 1)   // shadowed → ambiguous
+        return
+    }
+    if type_name.length == 0 {
+        avra_map_set_cstr(poison, var, 1)    // non-nominal → unresolvable
+        return
+    }
+    mut t = types
+    avra_map_set_cstr(idx_map, var, t.length)
+    t.push(type_name)
+}
+
+/// Look a variable's nominal type up in the env, or "" when poisoned / unbound.
+fn recv_lookup(idx_map: ptr, poison: ptr, types: List<string>, var: string) -> string {
+    if avra_map_has_cstr(poison, var) == 1 { return "" }
+    if avra_map_has_cstr(idx_map, var) == 0 { return "" }
+    let idx = avra_map_get_cstr(idx_map, var)
+    if idx < 0 || idx >= types.length { return "" }
+    types[idx]
+}
+
+/// Populate the env from a fn's params (incl. `self`, typed to the impl's owner)
+/// and the bindings its body introduces. Params are bound first, but a name bound
+/// twice poisons regardless of order, so order is immaterial to the poison outcome.
+fn recv_env_populate(idx_map: ptr, poison: ptr, types: List<string>, params: List<ParamEntry>, binds: List<RecvBinding>) {
+    for p in params { recv_bind(idx_map, poison, types, p.name, nominal_type_name(p.vtype)) }
+    for b in binds { recv_bind(idx_map, poison, types, b.name, b.ty) }
+}
+
+/// The nominal type NAME of a value type, or "" for a structural / primitive /
+/// dynamic / unresolved type (which has no `Type__method` symbol to descend
+/// into). `dyn Trait` is excluded — it dispatches to an impl the receiver's
+/// static type doesn't name.
+fn nominal_type_name(vt: ValueType) -> string {
+    match vt {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        .NarrowedEnum(en, _, _) -> en
+        _ -> ""
+    }
+}
+
+/// The nominal type a `let`/`mut`/`const` binds: its annotation if nominal, else
+/// a struct-literal initializer's type (`let x = Foo{..}`), else "" (skip).
+fn binding_type(store: NodeStore, ty_vt: ValueType, init: ExprId) -> string {
+    let annotated = nominal_type_name(ty_vt)
+    if annotated.length > 0 { return annotated }
+    match store.exprs.get(init) {
+        .StructLit(name, _) -> name
+        _ -> ""
+    }
+}
+
+/// Resolve a method call's receiver expression to a nominal type name, or "" when
+/// it cannot be resolved reliably pre-typecheck (skip → conservative). A bare
+/// `Ident` goes through the env; a `StructLit` receiver names its own type.
+fn resolve_recv_type(store: NodeStore, idx_map: ptr, poison: ptr, types: List<string>, recv: ExprId) -> string {
+    match store.exprs.get(recv) {
+        .Ident(name) -> recv_lookup(idx_map, poison, types, name)
+        .StructLit(name, _) -> name
+        _ -> ""
+    }
 }

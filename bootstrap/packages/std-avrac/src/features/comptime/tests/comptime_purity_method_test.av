@@ -1,0 +1,208 @@
+// ps3t.5.3.1 — comptime sandbox: METHOD-mediated impurity. The ps3t.5.3 check
+// (comptime_purity_test.av) covers the FREE-FN call graph; this file covers
+// reachability expressible only through a METHOD dispatch (`x.foo()`), which the
+// checker resolves by typing the receiver (params — incl. `self`, typed to the
+// impl's owner — and locals bound by an annotated / struct-literal `let`) and
+// following the ONE resolved impl method `Type__method`. A shadowed / untyped
+// receiver is conservatively SKIPPED (a false negative, never a false positive:
+// a false positive would wrongly reject valid code and break selfhost).
+//
+// These specs shell out (a fresh process each) and assert the F-code in the
+// captured diagnostics, the same shape as comptime_purity_test.av.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile-check `source`, capturing diagnostics.
+fn check_src(tag: string, source: string) -> string {
+    let path = "/tmp/avra_ct531_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "ps3t.5.3.1: a @comptime fn reaching an impure extern VIA A METHOD is rejected (F4008)" {
+    then "a struct-literal-local receiver whose method reaches an impure extern is F4008" {
+        let out = check_src("local",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "type Runner = { tag: int }\n" +
+            "impl Runner {\n" +
+            "    fn run(self) -> int {\n" +
+            "        let r = avra_shell_exec(\"echo hi\")\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn bad() -> int {\n" +
+            "    let r = Runner { tag: 1 }\n" +
+            "    return r.run()\n" +
+            "}\n" +
+            "fn main() { let y = bad() }\n")
+        out.contains("F4008") && out.contains("avra_shell_exec")
+    }
+    then "a PARAM receiver whose method reaches an impure extern is F4008 (self typed to impl)" {
+        let out = check_src("param",
+            "extern fn avra_uptime_ms() -> int\n" +
+            "type Clock = { t: int }\n" +
+            "impl Clock {\n" +
+            "    fn now(self) -> int { return avra_uptime_ms() }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn readclock(c: Clock) -> int { return c.now() }\n" +
+            "fn main() {}\n")
+        out.contains("F4008") && out.contains("avra_uptime_ms")
+    }
+    then "a self.method() CHAIN inside the impl (now -> raw -> impure) is caught" {
+        let out = check_src("selfchain",
+            "extern fn avra_uptime_ms() -> int\n" +
+            "type Clock = { t: int }\n" +
+            "impl Clock {\n" +
+            "    fn now(self) -> int { return self.raw() }\n" +
+            "    fn raw(self) -> int { return avra_uptime_ms() }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn readclock(c: Clock) -> int { return c.now() }\n" +
+            "fn main() {}\n")
+        out.contains("F4008") && out.contains("avra_uptime_ms")
+    }
+    then "a method call BURIED in a match arm is caught (complete walker)" {
+        let out = check_src("buried",
+            "extern fn avra_readdir(path: string) -> int\n" +
+            "type Fs = { t: int }\n" +
+            "impl Fs {\n" +
+            "    fn scan(self) -> int { return avra_readdir(\"/\") }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn buried(x: int) -> int {\n" +
+            "    let f = Fs { t: 0 }\n" +
+            "    return match x {\n" +
+            "        0 -> 0\n" +
+            "        _ -> f.scan()\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { let y = buried(1) }\n")
+        out.contains("F4008") && out.contains("avra_readdir")
+    }
+    then "a method that hops through a free fn (method -> helper -> impure) is caught" {
+        let out = check_src("methodfree",
+            "extern fn avra_file_size(path: string) -> int\n" +
+            "fn helper() -> int { return avra_file_size(\"/x\") }\n" +
+            "type Probe = { t: int }\n" +
+            "impl Probe {\n" +
+            "    fn measure(self) -> int { return helper() }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn m() -> int {\n" +
+            "    let p = Probe { t: 0 }\n" +
+            "    return p.measure()\n" +
+            "}\n" +
+            "fn main() { let y = m() }\n")
+        out.contains("F4008") && out.contains("avra_file_size")
+    }
+}
+
+spec "ps3t.5.3.1: pure method calls and unresolvable receivers are never false-positived" {
+    then "a PURE method call (no impure reach) is not flagged by the sandbox (no F4008)" {
+        let out = check_src("pure",
+            "type Calc = { base: int }\n" +
+            "impl Calc {\n" +
+            "    fn double(self, n: int) -> int { return n * 2 }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn good() -> int {\n" +
+            "    let c = Calc { base: 0 }\n" +
+            "    return c.double(21)\n" +
+            "}\n" +
+            "fn main() { let y = good() }\n")
+        !out.contains("F4008")
+    }
+    then "a NON-@comptime fn calling an impure method is fine — only comptime is sandboxed" {
+        let out = check_src("runtime",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "type Runner = { t: int }\n" +
+            "impl Runner {\n" +
+            "    fn run(self) -> int {\n" +
+            "        let r = avra_shell_exec(\"x\")\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "}\n" +
+            "fn at_runtime() -> int {\n" +
+            "    let r = Runner { t: 0 }\n" +
+            "    return r.run()\n" +
+            "}\n" +
+            "fn main() { let _ = at_runtime() }\n")
+        !out.contains("F4008")
+    }
+    then "an UNRESOLVABLE (shadowed) receiver is conservatively skipped — no false positive" {
+        // `r` is bound twice with conflicting types, so the receiver is poisoned
+        // and the method edge is not followed. Conservative: a false NEGATIVE (the
+        // impure `Runner__run` goes unreached) is acceptable; a false POSITIVE
+        // would wrongly reject valid code and break selfhost.
+        let out = check_src("shadow",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "type Runner = { t: int }\n" +
+            "type Safe = { t: int }\n" +
+            "impl Runner {\n" +
+            "    fn run(self) -> int {\n" +
+            "        let x = avra_shell_exec(\"x\")\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "}\n" +
+            "impl Safe {\n" +
+            "    fn run(self) -> int { return 0 }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn amb(flag: bool) -> int {\n" +
+            "    let r = Runner { t: 0 }\n" +
+            "    if flag {\n" +
+            "        let r = Safe { t: 0 }\n" +
+            "        return r.run()\n" +
+            "    }\n" +
+            "    return 0\n" +
+            "}\n" +
+            "fn main() { let y = amb(true) }\n")
+        !out.contains("F4008")
+    }
+    then "a nested-fn param shadowing an outer receiver does not leak the outer type (no false positive)" {
+        // `x.run()` inside `inner` binds to inner's param `x: Safe` (pure), NOT the
+        // outer `x: Impure`. Recording nested-fn params poisons the shadowed name so
+        // the outer type can't leak into the nested scope and resolve the wrong impl
+        // (`Impure__run`). Conservative: a false negative is fine, a false positive
+        // here would wrongly reject valid code (regression caught by CodeRabbit).
+        let out = check_src("nestfn",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "type Impure = { t: int }\n" +
+            "impl Impure {\n" +
+            "    fn run(self) -> int {\n" +
+            "        let r = avra_shell_exec(\"x\")\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "}\n" +
+            "type Safe = { t: int }\n" +
+            "impl Safe {\n" +
+            "    fn run(self) -> int { return 0 }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn outer(x: Impure) -> int {\n" +
+            "    fn inner(x: Safe) -> int {\n" +
+            "        return x.run()\n" +
+            "    }\n" +
+            "    return inner(Safe { t: 0 })\n" +
+            "}\n" +
+            "fn main() { let y = outer(Impure { t: 1 }) }\n")
+        !out.contains("F4008")
+    }
+    then "cycle-safe: a self-referential method (loop -> loop) terminates and is not flagged" {
+        let out = check_src("cycle",
+            "type Node = { t: int }\n" +
+            "impl Node {\n" +
+            "    fn spin(self, n: int) -> int {\n" +
+            "        if n <= 0 { return 0 }\n" +
+            "        return self.spin(n - 1)\n" +
+            "    }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn go(nd: Node) -> int { return nd.spin(3) }\n" +
+            "fn main() {}\n")
+        !out.contains("F4008")
+    }
+}
