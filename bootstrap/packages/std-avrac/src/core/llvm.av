@@ -170,6 +170,12 @@ extern fn avra_llvm_jit_run(module: ptr) -> int
 /// the engine is freed (Slice A gates on scalar returns).
 extern fn avra_llvm_jit_call(module: ptr, fn_name: string, argc: int, argv: ptr) -> int
 
+/// Float-return sibling of avra_llvm_jit_call (ps3t.5.2.1.1). Reads the JIT'd
+/// fn's `double` result from the FP return register — the int variant reads the
+/// integer register, so it can't see a float. Args stay i64; only the return
+/// ABI differs. A fn with float PARAMS stays interpreter-folded (int-only args).
+extern fn avra_llvm_jit_call_f64(module: ptr, fn_name: string, argc: int, argv: ptr) -> float
+
 // ── i64 argument-vector marshalling (JIT argv) ──
 // A flat int64_t[] for avra_llvm_jit_call's argv — the marshal layer lowers a
 // List<Value> into one (int/bool direct, float bit-cast, string/enum pointer).

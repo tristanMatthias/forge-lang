@@ -44,7 +44,10 @@ export fn num_text_is_float(text: string) -> bool {
 /// still recognises it and the fold splices an `Expr.FloatLit`, not an
 /// int literal. The `.0` is invisible at runtime — `string(4.0)` is `"4"`
 /// either way — so the folded program prints identically to the unfolded.
-fn render_float(f: float) -> string {
+/// Exported so the JIT float fold (features/comptime) renders its `double`
+/// result through the SAME function as the interpreter — a prerequisite for the
+/// two fold paths to splice byte-identical `Expr.FloatLit`s.
+export fn render_float(f: float) -> string {
     let s = string(f)
     if num_text_is_float(s) { s } else { s + ".0" }
 }

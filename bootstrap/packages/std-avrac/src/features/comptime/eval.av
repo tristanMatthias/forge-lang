@@ -23,10 +23,10 @@
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
 use features.quote_expr.{construct_stmt}
-use codegen.{compile_and_jit_call}
+use codegen.{compile_and_jit_call, compile_and_jit_call_f64}
 
 // Flat i64 argv buffer for the compiled-comptime JIT (declared in core/llvm.av;
 // redeclared here so the fold path is self-contained, converged by exact type).
@@ -177,6 +177,17 @@ fn vtype_is_bool(vt: ValueType) -> bool {
     }
 }
 
+/// `ValueType.Float` — the JIT can fold a float-returning `@comptime` fn
+/// (ps3t.5.2.1.1 part a): its `double` result rides the FP return register,
+/// read by `avra_llvm_jit_call_f64`, then rendered by the same `render_float`
+/// the interpreter uses, so the folded literal is byte-identical.
+fn vtype_is_float(vt: ValueType) -> bool {
+    match vt {
+        .Float -> true
+        _ -> false
+    }
+}
+
 /// Canonicalise a nominal scalar type to its primitive ValueType. `run_comptime`
 /// runs BEFORE the typechecker, so a declared `-> bool` return is still
 /// `Struct("bool")`, not `Bool` (unlike `int`, which the parser already emits as
@@ -188,7 +199,7 @@ fn vtype_is_bool(vt: ValueType) -> bool {
 fn canon_scalar_vtype(vt: ValueType) -> ValueType {
     match vt {
         .Struct(name, _, _) -> {
-            if name == "bool" { ValueType.Bool } else if name == "int" { ValueType.Int } else { vt }
+            if name == "bool" { ValueType.Bool } else if name == "int" { ValueType.Int } else if name == "float" { ValueType.Float } else { vt }
         }
         .Newtype(_, inner, _) -> canon_scalar_vtype(inner)
         _ -> vt
@@ -203,16 +214,20 @@ fn canon_scalar_vtype(vt: ValueType) -> ValueType {
 /// resolved in the single-fn module. The gates keep the JIT to pure scalar-int
 /// arithmetic whose result is byte-identical to the interpreter's.
 fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>) -> Expr? {
-    // Canonicalise the (possibly still-nominal, pre-typecheck) return type. The
-    // JIT-call ABI carries back a scalar the i64 return register can hold: Int
-    // (i64) or Bool (i1 in the low bit). Float (double, in an FP register the ABI
-    // doesn't read) and String/ptr (dangles past the engine dispose) stay on the
-    // interpreter — ps3t.5.2.1 follow-ups.
+    // Canonicalise the (possibly still-nominal, pre-typecheck) return type. Three
+    // return ABIs are JIT-foldable: Int (i64 register), Bool (i1 in the low bit),
+    // and Float (double in the FP register, read by the f64 call variant). Only
+    // String/ptr stays on the interpreter — a pointer result dangles past the
+    // engine dispose (ps3t.5.2.1.1 part b follow-up).
     let ret = canon_scalar_vtype(fn_def.ret_ty)
-    if !vtype_is_int(ret) && !vtype_is_bool(ret) { return null }
+    if !vtype_is_int(ret) && !vtype_is_bool(ret) && !vtype_is_float(ret) { return null }
     let argc = arg_values.length
     if argc != fn_def.params.length { return null }
     if argc > 4 { return null }              // avra_llvm_jit_call arity ceiling
+    // Params stay int-only: an int arg rides an integer register (matching the
+    // i64 argv marshalling), whereas a float param would need its arg in an FP
+    // register — so a fn WITH float params stays interpreter-folded even when its
+    // RETURN is float. (Float return + int/no params is the part-a scope.)
     mut pi = 0
     while pi < fn_def.params.length {
         if !vtype_is_int(fn_def.params[pi].vtype) { return null }
@@ -244,9 +259,20 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
     // call site re-codegens (ps3t.5.5 caches the RESULT; the interpreter fallback
     // bounds the blast radius until compiled-fn caching lands).
     let fn_ids = materialise_jit_closure(reg.runtime.nodes, closure!)
-    let folded = match compile_and_jit_call(fn_ids, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
-        .Ok(v) -> render_jit_scalar(ret, v)
-        .Err(_) -> null
+    // A float return reads the FP register (compile_and_jit_call_f64) and renders
+    // through `render_float` — the SAME function the interpreter's float fold
+    // uses — so the spliced `Expr.FloatLit` is byte-identical to a tree-walked
+    // fold. Int/Bool ride the integer register and render via render_jit_scalar.
+    let folded = if vtype_is_float(ret) {
+        match compile_and_jit_call_f64(fn_ids, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
+            .Ok(d) -> Expr.FloatLit(render_float(d))
+            .Err(_) -> null
+        }
+    } else {
+        match compile_and_jit_call(fn_ids, reg.type_reg, reg.runtime.nodes, fn_def.name, argc, argv) {
+            .Ok(v) -> render_jit_scalar(ret, v)
+            .Err(_) -> null
+        }
     }
     avra_i64_buf_free(argv)
     folded
@@ -372,6 +398,7 @@ fn stmt_jit_safe(store: NodeStore, stmt: Stmt) -> bool {
 fn expr_jit_safe(store: NodeStore, id: ExprId) -> bool {
     match store.exprs.get(id) {
         .Number(_) -> true
+        .FloatLit(_) -> true
         .Bool(_) -> true
         .Ident(_) -> true
         .Grouping(e) -> expr_jit_safe(store, e)
