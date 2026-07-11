@@ -285,6 +285,20 @@ export fn table_zip_entries(headers: List<ExprId>, values: List<ExprId>) -> List
     out
 }
 
+/// True iff the LAST `::`-separated segment of a qualified name starts
+/// uppercase — i.e. names a type (PascalCase), not a value. Used to decide
+/// whether `@pkg::mod::X.Variant(args)` is an enum constructor (X is a type)
+/// or a method call on a qualified value (X is lowercase).
+fn p_qualified_last_upper(n: string) -> bool {
+    mut start = 0
+    mut i = 0
+    while i + 1 < n.length {
+        if n.substring(i, i + 2) == "::" { start = i + 2 }
+        i = i + 1
+    }
+    start < n.length && p_starts_with_upper(n.substring(start, start + 1))
+}
+
 /// True iff `e` is a bare or qualified identifier — used to gate
 /// promotions like Ident-to-call or Ident-to-pattern.
 fn expr_is_ident(e: Expr) -> bool {
@@ -1505,6 +1519,16 @@ impl Parser {
                             ""
                         }
                     }
+                    // A fully-qualified type head `@pkg::mod::Type.Variant(args)`
+                    // is an enum constructor too — the renderer emits resolved
+                    // enum ctors this way so a shipped @comptime body round-trips
+                    // with its enum type intact (pqc9/znl0). Without this the
+                    // reconstructed value carries an empty enum_type and fails to
+                    // decode back into a Stmt/Expr. Gated on a PascalCase LAST
+                    // segment, mirroring the bare-Ident rule — a lowercase last
+                    // segment (`@pkg::mod::a_const.method(args)`) is a method
+                    // call on a qualified value, not an enum construction.
+                    .QualifiedIdent(n) -> if p_qualified_last_upper(n) { n } else { "" }
                     _ -> ""
                 }
                 if type_name != "" && self.check(Tk.LeftParen) {
