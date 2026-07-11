@@ -1062,15 +1062,41 @@ fn find_char(s: string, ch: string) -> int {
 
 /// Find the index of the first top-level comma in a type-arg
 /// string. Respects nesting: `Map<string, int>, string` returns
-/// the index of the comma after `>`, not the inner one.
+/// the index of the comma after `>`, not the inner one. An `->`
+/// arrow is skipped whole so its `>` never wrongly closes a `<`
+/// depth — needed once a type-arg can itself be a function type
+/// (`fn(int) -> int, string`).
 fn top_level_split_idx(s: string) -> int {
     mut depth = 0
     mut i = 0
     while i < s.length {
         let ch = s.substring(i, i + 1)
-        if ch == "<" || ch == "(" { depth = depth + 1 }
-        if ch == ">" || ch == ")" { depth = depth - 1 }
-        if ch == "," && depth == 0 { return i }
+        if ch == "-" && i + 1 < s.length && s.substring(i + 1, i + 2) == ">" {
+            i = i + 2
+        } else {
+            if ch == "<" || ch == "(" { depth = depth + 1 }
+            if ch == ">" || ch == ")" { depth = depth - 1 }
+            if ch == "," && depth == 0 { return i }
+            i = i + 1
+        }
+    }
+    -1
+}
+
+/// Index of the `)` that closes the `(` at `open_idx`, tracking only
+/// paren depth — a valid type render never puts an unbalanced paren
+/// inside `<…>`, and an `->` arrow carries no paren, so paren depth
+/// alone locates the match. Returns -1 when unbalanced.
+fn matching_paren(s: string, open_idx: int) -> int {
+    mut depth = 0
+    mut i = open_idx
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "(" { depth = depth + 1 }
+        if ch == ")" {
+            depth = depth - 1
+            if depth == 0 { return i }
+        }
         i = i + 1
     }
     -1
@@ -2134,6 +2160,25 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     // round-trips, e.g. impl-name reconstruction → spurious F3104.)
     if ty.ends_with("?") && ty.length > 1 {
         return vtype_from_type_string(ty.substring(0, ty.length - 1))
+    }
+    // Handle function type strings like "fn(int, string) -> bool" — produced by
+    // `vtype_render_full(.FnTyped(params, ret))`. Without this, the round-trip
+    // through mono's `rewrite_fn_ret` (render → parse-back) lands at
+    // `vtype_from_name` and corrupts the function type into a Struct whose name
+    // is the type's text ("fn(int) -> int"). A fn RETURNING a function type then
+    // loses its param/ret structure, so every sparse `.FnTyped` match downstream
+    // (`vtype_fn_params`, `resolve_fn_ret`, …) misfires against the Struct tag
+    // and drops the returned lambda's param types. Sibling of the tuple / List<T>
+    // / Task<T> peels below.
+    if ty.length >= 3 && ty.substring(0, 3) == "fn(" {
+        let close = matching_paren(ty, 2)
+        if close > 0 {
+            let params = parse_type_args_to_list(ty.substring(3, close))
+            let after = ty.substring(close + 1, ty.length).trim()
+            let ret_str = if after.length >= 2 && after.substring(0, 2) == "->" { after.substring(2, after.length).trim() } else { after }
+            let ret = if ret_str == "" { ValueType.Void } else { vtype_from_type_string(ret_str) }
+            return ValueType.FnTyped(params, ret)
+        }
     }
     // Handle tuple type strings like "(int, string)" — produced by
     // `vtype_render_full(.Tuple(types))`. Without this, the round-
