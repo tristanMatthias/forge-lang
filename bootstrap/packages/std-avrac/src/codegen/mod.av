@@ -9,7 +9,7 @@
 use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
-use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
+use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed}
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
@@ -264,7 +264,28 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
         }
         .Return(value_id) -> {
             let value = ctx.nodes.exprs.get(value_id)
-            mut r = emit_expr(ctx, env, value)?
+            // A returned lambda under a fn-typed declared return compiles
+            // against the DECLARED param types — the same expected-type
+            // threading as the let/struct-field paths (ps3t.4.5). The
+            // params ride in the FnRetTypes row (FnRetMeta.fn_params)
+            // because resolve_fn_ret's tail-lambda transform drops them
+            // from the registered ret type. Empty list = ret not
+            // fn-typed → generic emit (body-scan heuristic).
+            mut r = EmitValue { value: ctx.i64(0), ty: .Int }
+            mut lambda_threaded = false
+            match value {
+                .Lambda(lparams, lbody) -> {
+                    let declared = ctx.fn_ret_params(ctx.current_fn_name)
+                    if declared.length > 0 {
+                        r = emit_lambda_typed(ctx, env, lparams, ctx.nodes.exprs.get(lbody), declared)?
+                        lambda_threaded = true
+                    }
+                }
+                _ -> {}
+            }
+            if !lambda_threaded {
+                r = emit_expr(ctx, env, value)?
+            }
             // Structured concurrency: await all spawned tasks before returning.
             if ctx.task_group != null {
                 ctx.call("avra_task_group_await_all", [ctx.task_group])
