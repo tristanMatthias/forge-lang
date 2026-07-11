@@ -428,24 +428,55 @@ export fn eval_fn_with_resolved_args(runtime: Runtime, params: List<ParamEntry>,
 export fn literal_args_to_values(store: NodeStore, ids: List<ExprId>) -> List<Value>? {
     mut out: List<Value> = []
     for id in ids {
-        let v_opt = literal_expr_to_value(store.exprs.get(id))
+        let v_opt = literal_expr_to_value(store, store.exprs.get(id))
         if v_opt == none { return none }
         out.push(v_opt!)
     }
     out
 }
 
-/// Convert a single literal Expr to a Value, or null if the Expr
-/// isn't a literal shape eval can represent directly.
-fn literal_expr_to_value(e: Expr) -> Value? {
+/// Convert a single literal Expr to a Value, or null if the Expr isn't a literal
+/// shape eval can represent. ps3t.5.8: `ListLit`/`StructLit` of literals convert
+/// recursively (into `value_list`/`value_struct`), so a @comptime call with a
+/// list/struct-literal arg FOLDS at compile time instead of running at runtime
+/// (byte-identical to what the interpreter would compute — the fn is
+/// purity-checked, so the fold is run-equivalent). A non-literal element bails
+/// the whole aggregate (null → "can't fold, leave the call alone").
+fn literal_expr_to_value(store: NodeStore, e: Expr) -> Value? {
     match e {
         .Number(text) -> value_number(render_number(parse_num(text)))
         .FloatLit(text) -> value_number(text)
         .String(text) -> value_string(unquote_string(text))
         .Bool(text) -> value_bool(text == "true")
         .None -> value_null()
+        .ListLit(elems) -> literal_list_to_value(store, elems)
+        .StructLit(name, inits) -> literal_struct_to_value(store, name, inits)
         _ -> null
     }
+}
+
+/// A `ListLit` whose every element is a literal → a `value_list`; any non-literal
+/// element → null (bail the whole list).
+fn literal_list_to_value(store: NodeStore, elems: List<ExprId>) -> Value? {
+    mut vs: List<Value> = []
+    for id in elems {
+        let v = literal_expr_to_value(store, store.exprs.get(id))
+        if v == none { return none }
+        vs.push(v!)
+    }
+    value_list(vs)
+}
+
+/// A `StructLit` whose every field value is a literal → a `value_struct`; any
+/// non-literal field value → null (bail the whole struct).
+fn literal_struct_to_value(store: NodeStore, name: string, inits: List<FieldInit>) -> Value? {
+    mut fields: List<StructField> = []
+    for init in inits {
+        let v = literal_expr_to_value(store, store.exprs.get(init.value_id))
+        if v == none { return none }
+        fields.push(struct_field(init.name, v!))
+    }
+    value_struct(name, fields)
 }
 
 /// Construct a fresh evaluator runtime — empty bindings + fns,

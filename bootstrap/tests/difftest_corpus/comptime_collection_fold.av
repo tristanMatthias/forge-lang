@@ -1,0 +1,46 @@
+// WHY: diff-test corpus — `@comptime` constant folding over COLLECTION-literal
+// arguments (ps3t.5.8). This is the intended-IR-change proof for enabling
+// complex-literal folds: the NEW compiler converts a list/struct LITERAL arg to
+// an interpreter Value (literal_expr_to_value now recurses ListLit/StructLit) so
+// the call folds to a literal at compile time, while the OLD/oracle compiler —
+// whose literal_expr_to_value bails on ListLit/StructLit — cannot fold it and
+// emits a RUNTIME call instead. So OLD and NEW emit DIFFERENT IR here (the point
+// of the ticket), and this file lands via the intended-ir-change / run-equiv
+// path: because every `@comptime` fn is purity-checked, the folded literal is
+// byte-identical to what the runtime call would compute, so OLD and NEW must
+// still RUN to the same output. The scalar-arg corpus files (comptime_int_fold
+// etc.) never exercised this path — a collection-literal arg keyed to `null` and
+// left the call alone; this file is the only place the oracle sees it.
+//
+// List args are JIT-declined (the single-fn JIT marshals only i64/i1/f64/str),
+// so these fold via the tree-walk interpreter fallback — the path g18a must
+// eventually subsume. Covers: index into a list literal, a fold OVER the whole
+// list (the motivating "macro folding over a collection" case), a struct-literal
+// field read, and a nested list literal (recursion in literal_list_to_value).
+
+type Rect = { w: int, h: int }
+
+@comptime fn cl_first(xs: [int]) -> int { return xs[0] }
+
+@comptime fn cl_sum(xs: [int]) -> int {
+    mut s = 0
+    for x in xs { s = s + x }
+    return s
+}
+
+@comptime fn cl_area(r: Rect) -> int { return r.w * r.h }
+
+@comptime fn cl_sum2(rows: [[int]]) -> int {
+    mut s = 0
+    for row in rows { s = s + cl_sum(row) }
+    return s
+}
+
+fn main() {
+    let a = cl_first([7, 8, 9])            // 7   — index into a list literal
+    let b = cl_sum([1, 2, 3, 4])           // 10  — fold over the whole list
+    let c = cl_area(Rect { w: 6, h: 7 })   // 42  — struct-literal field read
+    let d = cl_sum([10, 20])               // 30  — distinct list, distinct fold
+    let e = cl_sum2([[1, 2], [3, 4]])      // 10  — nested list literal
+    println(string(a + b + c + d + e))      // 7+10+42+30+10 = 99
+}
