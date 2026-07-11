@@ -1,0 +1,46 @@
+// WHY: the renderer (`fmt_stmt_ids`) emits RESOLVED names in their canonical
+// fully-qualified `@pkg::mod::name` form. Shipping an `@comptime` fn body across
+// a package boundary round-trips through render→parse (the metadata fast-path,
+// pqc9/znl0), so the parser MUST accept that qualified form everywhere a name
+// can appear — otherwise a cross-package macro body re-parses to nothing and the
+// macro silently returns null (F4006). Before this support the parser rejected
+// `@a::b::c` in expression position (F0040), in type-argument position (F0001),
+// as a struct-literal head, and as a statement's tail expression (it mis-read
+// the leading `@` as an annotation). These specs pin each position.
+//
+// Note: this canonical `::`-qualified form is produced by the renderer, not
+// hand-written in normal source (source uses dot paths + `use` imports); the
+// parser accepts it so the render→parse round-trip is total.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn qnr_parses(source: string) -> bool {
+    let path = "/tmp/avra_qnr.av"
+    write_fixture(path, source)
+    let out = avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+    // A clean parse produces no lexer/parser diagnostic (F0001/F0040); later
+    // resolve/type diagnostics are fine — we only assert the grammar accepts it.
+    !out.contains("F0001") && !out.contains("F0040") && !out.contains("parse error")
+}
+
+spec "the parser accepts fully-qualified @pkg::mod::name in every name position" {
+    then "qualified name in expression position" {
+        qnr_parses("fn f() -> int {\n    return @std::avrac::core::some_fn(1)\n}\n")
+    }
+    then "qualified name in generic type-argument position" {
+        qnr_parses("fn f() {\n    let xs: List<@std::avrac::core::ExprId> = []\n}\n")
+    }
+    then "qualified name as a top-level type annotation" {
+        qnr_parses("fn f(x: @std::avrac::core::ExprId) {\n}\n")
+    }
+    then "qualified name heads a struct literal" {
+        qnr_parses("fn f() {\n    let p = @std::avrac::core::ParamEntry { name: \"a\", vtype: 0 }\n}\n")
+    }
+    then "qualified name as a statement's tail expression is not read as an annotation" {
+        qnr_parses("fn f() -> int {\n    @std::avrac::core::CommandGen { decls: [], subcommand: 0 }\n}\n")
+    }
+    then "a real annotation still parses (no regression)" {
+        qnr_parses("@comptime\nfn f() -> int {\n    return 1\n}\n")
+    }
+}
