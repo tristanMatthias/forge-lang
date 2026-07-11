@@ -16,6 +16,14 @@ name: diff-test
 on:
   pull_request:
     branches: [feat/crafting-intepreters]
+    # `labeled`/`unlabeled` beyond the default [opened, synchronize, reopened]:
+    # an intended-ir-change PR is labeled AFTER it opens (you can't label a PR
+    # that doesn't exist yet), so the opened-event run evaluates RUN_EQUIV with
+    # no label and false-fails in byte-identity mode on the very divergence the
+    # label exists to allow. Re-triggering on the label re-runs the oracle in
+    # the correct (run-equivalence) mode. The job `if` keeps this cheap — only
+    # the intended-ir-change label re-runs; other label churn is ignored.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Least privilege: a trust gate that builds + runs PR code — read only.
 permissions:
@@ -27,6 +35,12 @@ concurrency:
 
 jobs:
   diff-test:
+    # Code events (opened/synchronize/reopened) always run. A label event runs
+    # ONLY for intended-ir-change — the one label that flips the oracle mode —
+    # so unrelated label churn doesn't re-spend a 45-minute build.
+    if: >-
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'intended-ir-change'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
