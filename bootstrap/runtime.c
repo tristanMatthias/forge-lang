@@ -4400,23 +4400,39 @@ const char* avra_process_env_get(const char* key) {
 // loop ceiling is enforced ONLY while a comptime fold/macro is on the stack.
 // The fold + macro entry points bracket their eval with enter/leave; the
 // interpreter's `while` executor checks `active` and, when set, caps iterations.
-static _Atomic int64_t avra_comptime_depth_v = 0;
+// THREAD-LOCAL (o092): a comptime fold/macro is on the stack of exactly ONE
+// thread, and the in-process parallel test runner (d4jv) runs test files on
+// worker THREADS that each do their own in-process folds. A process-global
+// counter let one worker's in-flight fold (depth>0) make ANOTHER worker's
+// `avra_comptime_active()` check see "comptime active" — so a plain runtime loop
+// on the second worker was wrongly capped by the comptime ceiling. Per-thread
+// state isolates the workers (and is race-free within a thread, so no atomics).
+// Single-threaded bs2 is unaffected (thread-local ≡ global for one thread).
+static _Thread_local int64_t avra_comptime_depth_v = 0;
 // ps3t.5.4 memory bound: cumulative bytes allocated (via avra_rc_alloc) while a
 // comptime fold/macro is on the stack, and a sticky "exceeded" flag the
 // interpreter polls. Reset when the OUTERMOST fold begins (depth 0→1), so each
 // top-level comptime evaluation gets a fresh budget; nested (transitive) enters
 // don't reset it. Bounds a runaway comptime that builds unbounded collections/
-// strings — traps with a diagnostic instead of OOM-ing the compiler.
-static _Atomic int64_t avra_comptime_bytes_v = 0;
-static _Atomic int64_t avra_comptime_mem_exceeded_v = 0;
+// strings — traps with a diagnostic instead of OOM-ing the compiler. Thread-local
+// alongside the depth: the budget is per-fold, and folds are per-thread.
+static _Thread_local int64_t avra_comptime_bytes_v = 0;
+static _Thread_local int64_t avra_comptime_mem_exceeded_v = 0;
 void avra_comptime_enter(void) {
-    if (atomic_fetch_add(&avra_comptime_depth_v, 1) == 0) {
-        atomic_store(&avra_comptime_bytes_v, 0);
-        atomic_store(&avra_comptime_mem_exceeded_v, 0);
+    if (avra_comptime_depth_v++ == 0) {
+        avra_comptime_bytes_v = 0;
+        avra_comptime_mem_exceeded_v = 0;
     }
 }
-void avra_comptime_leave(void) { atomic_fetch_sub(&avra_comptime_depth_v, 1); }
-int64_t avra_comptime_active(void) { return atomic_load(&avra_comptime_depth_v) > 0 ? 1 : 0; }
+void avra_comptime_leave(void) { avra_comptime_depth_v--; }
+int64_t avra_comptime_active(void) { return avra_comptime_depth_v > 0 ? 1 : 0; }
+// o092: snapshot/restore the per-thread comptime depth around the per-spec crash
+// guard — a caught crash (siglongjmp) unwinds past a pending avra_comptime_leave,
+// so restore the pre-spec depth on the crash path (mirrors the guard's existing
+// sink/lock unwinds). Same translation unit, but exposed so the guard reads it
+// through a stable name.
+int64_t avra_comptime_depth_snapshot(void) { return avra_comptime_depth_v; }
+void avra_comptime_depth_restore(int64_t v) { avra_comptime_depth_v = v; }
 
 // Per-fold comptime allocation ceiling (bytes). A runaway comptime that builds
 // an unbounded collection/string trips this before it can OOM the compiler.
@@ -4438,15 +4454,15 @@ int64_t avra_comptime_mem_limit(void) {
 // flag once the running total passes the ceiling. Called from avra_rc_alloc when
 // a fold is active. Cheap (two atomics) and only on the comptime path.
 static void avra_comptime_charge(int64_t bytes) {
-    int64_t total = atomic_fetch_add(&avra_comptime_bytes_v, bytes) + bytes;
-    if (total > avra_comptime_mem_limit()) {
-        atomic_store(&avra_comptime_mem_exceeded_v, 1);
+    avra_comptime_bytes_v += bytes;
+    if (avra_comptime_bytes_v > avra_comptime_mem_limit()) {
+        avra_comptime_mem_exceeded_v = 1;
     }
 }
 
 // True once the active fold has allocated past the ceiling. The interpreter
 // polls this per statement and traps (→ F4007) instead of continuing to OOM.
-int64_t avra_comptime_mem_exceeded(void) { return atomic_load(&avra_comptime_mem_exceeded_v); }
+int64_t avra_comptime_mem_exceeded(void) { return avra_comptime_mem_exceeded_v; }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
 // that runs past this can only be non-terminating (a real one folds in far
@@ -4936,6 +4952,10 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
     AvraSinkFrame* sink_snapshot = t_sink;
 
     int lock_snapshot = t_held_locks_n;
+    // o092: a crash mid-comptime-fold longjmps past the pending
+    // avra_comptime_leave, leaking the thread's comptime depth into the next
+    // spec (whose plain runtime loop is then wrongly capped by the ceiling).
+    int64_t comptime_depth_snapshot = avra_comptime_depth_snapshot();
     int sig = sigsetjmp(_spec_guard_jmp, 1);
     if (sig == 0) {
         _spec_guard_active = 1;
@@ -4948,6 +4968,7 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
         // waiting on that fixture.
         sink_unwind_to(sink_snapshot);
         avra_locks_unwind_to(lock_snapshot);
+        avra_comptime_depth_restore(comptime_depth_snapshot);
         avra_test_record_crash(name, file, line, sig);
         char crash_line[512];
         snprintf(crash_line, sizeof(crash_line),

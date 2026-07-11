@@ -1,0 +1,40 @@
+// o092 — the comptime loop/mem ceiling is gated by a per-thread depth counter
+// (avra_comptime_enter/leave). A crash inside a comptime fold is caught by the
+// per-spec crash guard, whose siglongjmp unwinds the stack WITHOUT running the
+// pending avra_comptime_leave — leaking the depth so a LATER spec's plain runtime
+// loop is wrongly capped by the comptime ceiling (comptime_loop_budget_test then
+// FAILs intermittently in the bundled suite, passes in isolation).
+//
+// Fix (runtime.c): (1) the depth/budget statics are now _Thread_local, so one
+// worker's in-flight fold can't leak into another worker's ceiling check; and
+// (2) the per-spec crash guard snapshots the depth and restores it on the crash
+// path (mirroring its existing sink/lock unwinds). This test drives the exact
+// leak: enter comptime, crash, and assert the NEXT spec sees depth reset.
+//
+// avra_test_raise_signal / avra_test_ack_expected_crash / SIG* come from the
+// inlined spec_test reporter.
+
+extern fn avra_comptime_enter()
+extern fn avra_comptime_active() -> int
+
+spec "o092: a crash mid-comptime-fold enters the guard with depth on the stack" {
+    then "deliberately enter comptime, then crash — the per-spec guard catches it" {
+        // depth 0 -> 1 on THIS worker thread; without the fix the matching
+        // avra_comptime_leave is skipped by the crash unwind and the 1 leaks.
+        avra_comptime_enter()
+        avra_test_raise_signal(SIGABRT)
+        true   // unreachable — the signal unwinds to the guard
+    }
+}
+
+spec "o092: the next spec on the same thread sees the comptime depth restored" {
+    then "avra_comptime_active() == 0 — the crash guard reclaimed the leaked fold depth" {
+        // Without the crash-catch restore this reads 1 (leaked) and a runtime
+        // loop here would be wrongly ceiling-capped.
+        avra_comptime_active() == 0
+    }
+    then "ack the deliberate crash so the suite stays green" {
+        avra_test_ack_expected_crash()
+        true
+    }
+}
