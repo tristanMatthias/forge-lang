@@ -1,0 +1,71 @@
+// ps3t.5.4 (memory bound) — the sibling of the loop budget. Comptime execution
+// must be BOUNDED: a @comptime fn that builds unbounded data (a runaway
+// collection/string) must trap with a clear diagnostic at compile time, not
+// OOM-the-compiler or hang. avra_rc_alloc charges each allocation against a
+// per-fold byte ceiling while a fold is on the stack (avra_comptime_active); the
+// interpreter polls the latch per statement and surfaces the trap through the
+// F4007 fold-error channel. The ceiling is AVRA_COMPTIME_MEM_LIMIT (default
+// 256 MiB); these specs set it low so the trap fires in milliseconds. Runtime
+// allocation (bs2 run / spec tests) is unbounded — the budget only charges while
+// a comptime fold is active.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile-check `source` with the comptime memory ceiling forced to `limit`
+/// bytes AND the loop ceiling left HIGH, so a trap is attributable to memory,
+/// not iteration count. `timeout` bounds a regression (guard removed → genuine
+/// OOM/hang) so it fails loudly instead of wedging the suite.
+fn check_with_mem_limit(tag: string, limit: string, source: string) -> string {
+    let path = "/tmp/avra_ct54mem_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("AVRA_COMPTIME_MEM_LIMIT=${limit} AVRA_COMPTIME_LOOP_LIMIT=100000000 timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "ps3t.5.4: a runaway comptime allocation traps, not OOMs" {
+    then "a @comptime fn building an unbounded list is F4007 'allocation exceeded'" {
+        let out = check_with_mem_limit("hog", "20000",
+            "@comptime\n" +
+            "fn hog(n: int) -> int {\n" +
+            "    mut xs = [1, 2, 3]\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 {\n" +
+            "        xs.push(i)\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    return xs.length\n" +
+            "}\n" +
+            "fn main() { let x = hog(1) }\n")
+        out.contains("F4007") && out.contains("allocation exceeded")
+    }
+    then "the trap is the MEMORY bound, not the loop budget (message says allocation, not iterations)" {
+        let out = check_with_mem_limit("mem_not_loop", "20000",
+            "@comptime\n" +
+            "fn hog(n: int) -> int {\n" +
+            "    mut xs = [1, 2, 3]\n" +
+            "    mut i = 0\n" +
+            "    while i < 100000000 {\n" +
+            "        xs.push(i)\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    return xs.length\n" +
+            "}\n" +
+            "fn main() { let x = hog(1) }\n")
+        out.contains("allocation exceeded") && !out.contains("iterations without terminating")
+    }
+    then "a normal comptime fold UNDER the ceiling folds cleanly (no false trip)" {
+        let out = check_with_mem_limit("ok", "20000",
+            "@comptime\n" +
+            "fn sum(n: int) -> int {\n" +
+            "    mut total = 0\n" +
+            "    mut i = 0\n" +
+            "    while i < n {\n" +
+            "        total = total + i\n" +
+            "        i = i + 1\n" +
+            "    }\n" +
+            "    return total\n" +
+            "}\n" +
+            "fn main() { let x = sum(10) }\n")
+        !out.contains("F4007") && !out.contains("allocation exceeded") && out.contains("ok")
+    }
+}
