@@ -1,0 +1,58 @@
+// WHY: a cross-package `@expand` macro (`@std.cli.cmdgen.expand_cli` /
+// `expand_command`) must expand correctly under the METADATA fast-path
+// (AVRA_USE_METADATA=1), not only when compiled from source. The macro body is
+// shipped as fmt-rendered source and re-parsed on the consumer side; if the
+// render→parse→eval round-trip is lossy the macro silently returns null and the
+// compile dies with F4006 / F4005 (pqc9, znl0). Two fidelity gaps caused that:
+//
+//   1. The renderer emits RESOLVED names in `@pkg::mod::name` form, which the
+//      parser rejected in expression / type-arg / struct-literal / statement-tail
+//      positions — so the body re-parsed to nothing (empty macro → null).
+//   2. The renderer dropped the TYPE of a resolved enum constructor
+//      (`@std::avrac::core::Stmt.TypeDecl(…)` rendered as bare `.TypeDecl(…)`),
+//      so the reconstructed decls carried an empty `enum_type` and failed to
+//      decode back into a `Stmt` (the returned list wouldn't decode).
+//
+// This test drives the exact path the other cmdgen tests DODGE with
+// `write_fixture_and_run_no_metadata`: it keeps the metadata fast-path ON, so a
+// regression in the render→parse→eval round-trip re-surfaces as F4006/F4005.
+// Mutation-checked: reverting either fix re-breaks it.
+//@@fixture-stateful@@
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn cpe_run(source: string) -> string {
+    write_fixture_and_run("/tmp/avra_cpe_metadata.av", source)
+}
+
+spec "cross-package @expand expands under the metadata fast-path" {
+    then "cli + command expand with no macro-decode failure (F4006/F4005)" {
+        let out = cpe_run(
+            "use @std.cli.{Runnable, CliResult, App}\n" +
+            "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+            "@expand(expand_cli)\n" +
+            "component cli {}\n" +
+            "@expand(expand_command)\n" +
+            "component command implements Runnable {}\n" +
+            "cli avra {\n" +
+            "    command build {\n" +
+            "        fn run(args: CliResult) -> int { return 42 }\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {}\n")
+        // No macro-expansion failure of any kind — the round-trip is total.
+        !out.contains("F4006") && !out.contains("F4005") && !out.contains("F9999")
+    }
+    then "a bare command expands under metadata too" {
+        let out = cpe_run(
+            "use @std.cli.{Runnable, CliResult}\n" +
+            "use @std.cli.cmdgen.{expand_command}\n" +
+            "@expand(expand_command)\n" +
+            "component command implements Runnable {}\n" +
+            "command build {\n" +
+            "    fn run(args: CliResult) -> int { return 7 }\n" +
+            "}\n" +
+            "fn main() {}\n")
+        !out.contains("F4006") && !out.contains("F4005") && !out.contains("F9999")
+    }
+}

@@ -285,6 +285,20 @@ export fn table_zip_entries(headers: List<ExprId>, values: List<ExprId>) -> List
     out
 }
 
+/// True iff the LAST `::`-separated segment of a qualified name starts
+/// uppercase — i.e. names a type (PascalCase), not a value. Used to decide
+/// whether `@pkg::mod::X.Variant(args)` is an enum constructor (X is a type)
+/// or a method call on a qualified value (X is lowercase).
+fn p_qualified_last_upper(n: string) -> bool {
+    mut start = 0
+    mut i = 0
+    while i + 1 < n.length {
+        if n.substring(i, i + 2) == "::" { start = i + 2 }
+        i = i + 1
+    }
+    start < n.length && p_starts_with_upper(n.substring(start, start + 1))
+}
+
 /// True iff `e` is a bare or qualified identifier — used to gate
 /// promotions like Ident-to-call or Ident-to-pattern.
 fn expr_is_ident(e: Expr) -> bool {
@@ -724,7 +738,10 @@ impl Parser {
         }
 
         // Annotations: `@name` or `@name(args)` before a declaration.
-        if self.check(Tk.At) {
+        // A `@pkg::mod::name` (qualified expression — e.g. a re-parsed
+        // @comptime body's tail-return of a resolved name) is NOT an
+        // annotation: fall through to statement/expression parsing.
+        if self.check(Tk.At) && !self.peek_after_at_is_qualified() {
             let annotations = self.parse_annotations()
             let inner_l = self.current_line
             let inner_c = self.current_column
@@ -1502,6 +1519,16 @@ impl Parser {
                             ""
                         }
                     }
+                    // A fully-qualified type head `@pkg::mod::Type.Variant(args)`
+                    // is an enum constructor too — the renderer emits resolved
+                    // enum ctors this way so a shipped @comptime body round-trips
+                    // with its enum type intact (pqc9/znl0). Without this the
+                    // reconstructed value carries an empty enum_type and fails to
+                    // decode back into a Stmt/Expr. Gated on a PascalCase LAST
+                    // segment, mirroring the bare-Ident rule — a lowercase last
+                    // segment (`@pkg::mod::a_const.method(args)`) is a method
+                    // call on a qualified value, not an enum construction.
+                    .QualifiedIdent(n) -> if p_qualified_last_upper(n) { n } else { "" }
                     _ -> ""
                 }
                 if type_name != "" && self.check(Tk.LeftParen) {
@@ -1583,7 +1610,47 @@ impl Parser {
     /// templates, table/map literals, blocks) still build boxed and enter
     /// via the glue bridge at their own boundary — each bridge disappears
     /// when its producer converts to ids.
+    /// Read a fully-qualified `@pkg::mod::name` path into its canonical
+    /// `::`-joined string. The renderer (`fmt_stmt_ids`) emits resolved
+    /// names in this form, so re-parsing a shipped `@comptime` body must
+    /// accept it — in expression position (→ `QualifiedIdent`) and type
+    /// position (→ `Named`) alike. `::` lexes as two `Colon` tokens.
+    /// Precondition: current token is `Tk.At`.
+    fn parse_qualified_at_name(self) -> string {
+        self.advance()  // consume `@`
+        mut name = "@" + self.current_lexeme
+        self.advance()  // consume first segment
+        while self.check(Tk.Colon) {
+            self.advance()  // first `:`
+            if self.check(Tk.Colon) { self.advance() }  // second `:`
+            let seg = self.current_lexeme
+            self.advance()  // segment identifier
+            name = name + "::" + seg
+        }
+        name
+    }
+
     fn parse_primary(self) -> Result<ExprId, string> {
+        // Fully-qualified name `@pkg::mod::name` in expression position —
+        // produced by the renderer when a shipped `@comptime` body is
+        // re-parsed (pqc9/znl0). Resolves directly to a `QualifiedIdent`
+        // the comptime evaluator looks up by full path, so a rehydrated
+        // body needs no second resolve pass.
+        if self.check(Tk.At) {
+            let qname = self.parse_qualified_at_name()
+            // `@pkg::mod::Type { field: v, … }` — a struct literal with a
+            // qualified type name (the renderer emits these for a resolved
+            // `StructLit`). Mirrors the bare-identifier struct-literal path.
+            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
+                self.advance()
+                let parsed = self.parse_field_init_list()?
+                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
+                    return .Err("parse error")
+                }
+                return .Ok(self.alloc_leaf(Expr.StructLit(qname, parsed.inits)))
+            }
+            return .Ok(self.alloc_leaf(Expr.QualifiedIdent(qname)))
+        }
         if self.check(Tk.Number) {
             let value = self.current_lexeme
             self.advance()
@@ -1964,6 +2031,19 @@ impl Parser {
 
     // Peek ahead: after the current identifier, skip whitespace,
     // return true if the next char is ':'. For typed lambda detection.
+    /// At a `@` token: does a `::` follow the identifier — i.e. is this a
+    /// qualified-name EXPRESSION (`@pkg::mod::name`), not an annotation
+    /// (`@comptime`, `@expand(…)`)? Lets a statement whose tail expression
+    /// is a rendered qualified name (a re-parsed `@comptime` body's implicit
+    /// return) route to expression parsing instead of annotation parsing.
+    fn peek_after_at_is_qualified(self) -> bool {
+        mut i = self.current_start + 1  // skip `@`
+        while i < self.source_len && (self.char_at(i) == " " || self.char_at(i) == "\t") { i = i + 1 }
+        while i < self.source_len && p_is_alpha_numeric(self.char_at(i)) { i = i + 1 }
+        while i < self.source_len && (self.char_at(i) == " " || self.char_at(i) == "\t") { i = i + 1 }
+        i < self.source_len && self.char_at(i) == ":"
+    }
+
     fn peek_after_ident_is_colon(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
@@ -2231,6 +2311,13 @@ impl Parser {
 
     // Parse a single type atom (everything except union |).
     fn parse_type_atom(self, message: string) -> Result<TypeExpr, string> {
+        // Fully-qualified type name `@pkg::mod::Type` — the renderer emits
+        // resolved type names this way, so re-parsing a shipped `@comptime`
+        // body's type annotations (e.g. `List<@std::avrac::core::ExprId>`)
+        // must accept them here as well as at the top level (pqc9/znl0).
+        if self.check(Tk.At) {
+            return .Ok(TypeExpr.Named(self.parse_qualified_at_name()))
+        }
         // qa6i probe 3: `~name` in type position splices a string-
         // valued local into a TypeExpr.Named at construction time.
         // The lowerer detects the leading `~` in the name field and
