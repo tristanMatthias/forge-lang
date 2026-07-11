@@ -1151,11 +1151,47 @@ fn construct_expr_ids(store: NodeStore, list: List<ExprId>) -> Expr {
 /// `Stmt` constructor — `synth_stmt_ids` takes `List<Stmt>`, so no
 /// per-element span wrapper is needed (the shim is an eval identity).
 fn construct_stmt_ids(store: NodeStore, ids: List<StmtId>) -> Expr {
-    mut elems: List<Expr> = []
+    // A bare `~list` statement in the body splices its `List<Stmt>` target in as
+    // siblings (rmzs GAP 1) — the statement-list analogue of the match-arm
+    // `~arms` splice: constructed stmts accumulate into a segment, and each
+    // splice flushes the segment then `list_concat`s the target. With NO splice
+    // this is byte-identical to the old `synth_stmt_ids(listlit_of(all))` — the
+    // segment IS the full list, `result_opt` stays null, so the same nodes are
+    // allocated in the same order.
+    mut result_opt: Expr? = null
+    mut current_seg: List<Expr> = []
     for id in ids {
-        elems.push(construct_stmt(store, store.stmts.get(id)))
+        let stmt = store.stmts.get(id)
+        let splice_opt = bare_stmt_splice_target(store, stmt)
+        if splice_opt == null {
+            current_seg = current_seg.push(construct_stmt(store, stmt))
+        } else {
+            let seg_lit = listlit_of(store, current_seg)
+            result_opt = if result_opt == null { seg_lit } else { list_concat_call(store, result_opt!, seg_lit) }
+            result_opt = list_concat_call(store, result_opt!, splice_opt!)
+            current_seg = []
+        }
     }
-    synth_shim_call(store, "synth_stmt_ids", listlit_of(store, elems))
+    let final_seg = listlit_of(store, current_seg)
+    let list_expr = if result_opt == null { final_seg } else { list_concat_call(store, result_opt!, final_seg) }
+    synth_shim_call(store, "synth_stmt_ids", list_expr)
+}
+
+/// A bare `~target` statement inside a quote body — parsed as
+/// `Stmt.Expr(Splice(target))` — whose target evaluates to a `List<Stmt>` that
+/// splices in as siblings (rmzs GAP 1). Returns the raw target Expr (skip
+/// construction, paste the value — same contract as the expr-position splice at
+/// `construct_expr`'s `.Splice` arm), or null when `stmt` is an ordinary stmt.
+fn bare_stmt_splice_target(store: NodeStore, stmt: Stmt) -> Expr? {
+    match stmt {
+        .Expr(e) -> {
+            match store.exprs.get(e) {
+                .Splice(target) -> store.exprs.get(target)
+                _ -> null
+            }
+        }
+        _ -> null
+    }
 }
 
 /// Resolve one statement row and build its constructor expression,
