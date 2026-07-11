@@ -23,7 +23,7 @@
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
+use features.eval.{Runtime, Value, StructField, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
 use features.quote_expr.{construct_stmt}
 use codegen.{compile_and_jit_call, compile_and_jit_call_f64, compile_and_jit_call_str}
@@ -131,23 +131,77 @@ fn fold_call_compute(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List
     value_to_expr(reg.runtime.nodes, step_value(result))
 }
 
+/// Serialize one Value arg into a self-delimiting cache-key part, or "" when it
+/// carries a shape we don't memoize. ps3t.5.8 extends the key past scalars to
+/// `list`/`struct`/`enum` of memoizable elements — now that complex-literal args
+/// FOLD (literal_args_to_values), the expensive "macro over a collection" folds
+/// are cacheable. Every variable-length piece is LENGTH-PREFIXED, so the
+/// serialization is collision-free: distinct Values can never share a key, hence
+/// a cache hit is exact (the memoized fold is byte-identical to recomputing).
+/// CONSERVATIVE: boxed AST (`stmt`/`expr`/`value_type` — mydc/yfb6 fragility) and
+/// opaque handles (`builtin`/`function`/`type_marker`) return "" and stay
+/// uncached; a collection CONTAINING such a value bails too.
+fn value_cache_part(v: Value) -> string {
+    match v.kind {
+        "number" -> "n" + string(v.number_text.length) + ":" + v.number_text
+        "bool" -> "b:" + string(v.bool_value)
+        "string" -> "s" + string(v.text.length) + ":" + v.text
+        "null" -> "z:"
+        "list" -> value_cache_list("l", v.list_payload)
+        "enum" -> {
+            let body = value_cache_list("p", v.enum_payload)
+            if body == "" {
+                ""
+            } else {
+                "e" + string(v.enum_type.length) + ":" + v.enum_type +
+                    string(v.enum_variant.length) + ":" + v.enum_variant + body
+            }
+        }
+        "struct" -> value_cache_struct(v.struct_type, v.struct_payload)
+        _ -> ""
+    }
+}
+
+/// Serialize a Value list (`list` payload or `enum` payload) under `tag`:
+/// `<tag><count>:` then each element's part. Returns "" if ANY element is
+/// unmemoizable. An empty list is `<tag>0:` — cacheable.
+fn value_cache_list(tag: string, elems: List<Value>) -> string {
+    mut out = tag + string(elems.length) + ":"
+    mut i = 0
+    while i < elems.length {
+        let part = value_cache_part(elems[i])
+        if part == "" { return "" }
+        out = out + part
+        i = i + 1
+    }
+    out
+}
+
+/// Serialize a `struct` Value: `t<typelen>:<type><fieldcount>:` then each field
+/// as `<namelen>:<name><value-part>` (construction order is deterministic).
+/// Returns "" if any field value is unmemoizable.
+fn value_cache_struct(sty: string, fields: List<StructField>) -> string {
+    mut out = "t" + string(sty.length) + ":" + sty + string(fields.length) + ":"
+    mut i = 0
+    while i < fields.length {
+        let f = fields[i]
+        let vp = value_cache_part(f.value)
+        if vp == "" { return "" }
+        out = out + string(f.name.length) + ":" + f.name + vp
+        i = i + 1
+    }
+    out
+}
+
 /// Content-address a fold: a length-prefixed, unambiguous key over the fn's
-/// (qualified) name + its scalar (number/bool/string) arg values. Returns ""
-/// — "not memoizable, recompute" — for any non-scalar arg, so complex
-/// AST/collection values never collide in the string-keyed cache. Length
-/// prefixes make the concatenation self-delimiting, so distinct (name, args)
-/// tuples can never produce the same key.
+/// (qualified) name + its arg values (`value_cache_part` per arg). Returns ""
+/// — "not memoizable, recompute" — if ANY arg carries an unmemoizable shape, so
+/// the string-keyed cache stays collision-free and a hit is always exact.
 fn fold_cache_key(fn_name: string, arg_values: List<Value>) -> string {
     mut key = string(fn_name.length) + ":" + fn_name
     mut i = 0
     while i < arg_values.length {
-        let a = arg_values[i]
-        let part = match a.kind {
-            "number" -> "n" + string(a.number_text.length) + ":" + a.number_text
-            "bool" -> "b:" + string(a.bool_value)
-            "string" -> "s" + string(a.text.length) + ":" + a.text
-            _ -> ""
-        }
+        let part = value_cache_part(arg_values[i])
         if part == "" { return "" }
         key = key + part
         i = i + 1
