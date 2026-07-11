@@ -133,40 +133,33 @@ fn fold_call_compute(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List
 
 /// Serialize one Value arg into a self-delimiting cache-key part, or "" when it
 /// carries a shape we don't memoize. ps3t.5.8 extends the key past scalars to
-/// `list`/`struct`/`enum` of memoizable elements — now that complex-literal args
-/// FOLD (literal_args_to_values), the expensive "macro over a collection" folds
-/// are cacheable. Every variable-length piece is LENGTH-PREFIXED, so the
+/// `list`/`struct` of memoizable elements — now that complex-literal args FOLD
+/// (literal_args_to_values), the expensive "macro over a collection" folds are
+/// cacheable. Every variable-length piece is LENGTH-PREFIXED, so the
 /// serialization is collision-free: distinct Values can never share a key, hence
 /// a cache hit is exact (the memoized fold is byte-identical to recomputing).
 /// CONSERVATIVE: boxed AST (`stmt`/`expr`/`value_type` — mydc/yfb6 fragility) and
-/// opaque handles (`builtin`/`function`/`type_marker`) return "" and stay
-/// uncached; a collection CONTAINING such a value bails too.
+/// opaque handles (`builtin`/`function`/`type_marker`) fall to `_ -> ""` and stay
+/// uncached; a collection CONTAINING such a value bails too. `enum` also falls
+/// there — no fold path produces an enum arg today (literal_expr_to_value has no
+/// enum-literal case), so it would be untestable; add an `enum` arm here when
+/// enum literals become foldable.
 fn value_cache_part(v: Value) -> string {
     match v.kind {
         "number" -> "n" + string(v.number_text.length) + ":" + v.number_text
         "bool" -> "b:" + string(v.bool_value)
         "string" -> "s" + string(v.text.length) + ":" + v.text
         "null" -> "z:"
-        "list" -> value_cache_list("l", v.list_payload)
-        "enum" -> {
-            let body = value_cache_list("p", v.enum_payload)
-            if body == "" {
-                ""
-            } else {
-                "e" + string(v.enum_type.length) + ":" + v.enum_type +
-                    string(v.enum_variant.length) + ":" + v.enum_variant + body
-            }
-        }
+        "list" -> value_cache_list(v.list_payload)
         "struct" -> value_cache_struct(v.struct_type, v.struct_payload)
         _ -> ""
     }
 }
 
-/// Serialize a Value list (`list` payload or `enum` payload) under `tag`:
-/// `<tag><count>:` then each element's part. Returns "" if ANY element is
-/// unmemoizable. An empty list is `<tag>0:` — cacheable.
-fn value_cache_list(tag: string, elems: List<Value>) -> string {
-    mut out = tag + string(elems.length) + ":"
+/// Serialize a Value list: `l<count>:` then each element's part. Returns "" if
+/// ANY element is unmemoizable. An empty list is `l0:` — cacheable.
+fn value_cache_list(elems: List<Value>) -> string {
+    mut out = "l" + string(elems.length) + ":"
     mut i = 0
     while i < elems.length {
         let part = value_cache_part(elems[i])

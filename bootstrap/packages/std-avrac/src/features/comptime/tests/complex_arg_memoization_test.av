@@ -3,7 +3,7 @@
 // literals to Values, so a @comptime call with a list/struct-literal arg FOLDS
 // at compile time (it ran at runtime before — an intended IR change, sound
 // because @comptime fns are purity-checked so the fold is run-equivalent); and
-// (2) fold_cache_key now serialises list/struct/enum args (value_cache_part,
+// (2) fold_cache_key now serialises list/struct args (value_cache_part,
 // length-prefixed → collision-free), so those folds are memoized instead of
 // recomputed — the expensive "macro folding over a collection" case.
 //
@@ -11,7 +11,7 @@
 // `fold_cache` cstr-map directly — an identical repeat adds NO entry (it hit),
 // distinct args each add one, and the folded literal is asserted correct.
 
-use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, Expr, ParamEntry, ValueType, BinOp}
+use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, Expr, FieldInit, ParamEntry, ValueType, BinOp}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
 extern fn avra_map_len_cstr(map: ptr) -> int
@@ -61,6 +61,81 @@ fn fold_head(reg: CompTimeRegistry, nums: List<string>) -> string {
     number_text_of(try_fold_call(reg, call))
 }
 
+// `fn fst(p: Pair) -> int { return p.a }` — reads a field of a STRUCT-literal
+// arg, so the fold's cache key runs through value_cache_struct (keyed on the
+// field values, not just the type name).
+fn mk_fst_fn(ws: NodeStore) -> CompTimeFn {
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(
+            ws.exprs.add_leaf(Expr.FieldAccess(
+                ws.exprs.add_leaf(Expr.Ident("p")), "a")))),
+    ]
+    CompTimeFn {
+        name: "fst",
+        params: [ ParamEntry { name: "p", vtype: ValueType.Struct("Pair", [], 0) } ],
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn fst_registry() -> CompTimeRegistry {
+    let ws = ts()
+    prepare_runtime(comptime_registry_new(ws) with { fns: [mk_fst_fn(ws)] })
+}
+
+/// Fold a fresh `fst(Pair { a: <a>, b: <b> })` — fresh literal rows each call, so
+/// the memo key is driven only by the struct's field values.
+fn fold_fst(reg: CompTimeRegistry, a: string, b: string) -> string {
+    let store = reg.runtime.nodes
+    let inits: List<FieldInit> = [
+        FieldInit { name: "a", value_id: store.exprs.add_leaf(Expr.Number(a)) },
+        FieldInit { name: "b", value_id: store.exprs.add_leaf(Expr.Number(b)) },
+    ]
+    let arg = store.exprs.add_leaf(Expr.StructLit("Pair", inits))
+    let call = Expr.Call(store.exprs.add_leaf(Expr.Ident("fst")), [arg])
+    number_text_of(try_fold_call(reg, call))
+}
+
+// `fn nfst(rows: [[int]]) -> int { return rows[0][0] }` — indexes a NESTED list
+// literal, so the fold's cache key recurses value_cache_list one level down.
+fn mk_nfst_fn(ws: NodeStore) -> CompTimeFn {
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(
+            ws.exprs.add_leaf(Expr.Index(
+                ws.exprs.add_leaf(Expr.Index(
+                    ws.exprs.add_leaf(Expr.Ident("rows")),
+                    ws.exprs.add_leaf(Expr.Number("0")))),
+                ws.exprs.add_leaf(Expr.Number("0")))))),
+    ]
+    CompTimeFn {
+        name: "nfst",
+        params: [ ParamEntry { name: "rows", vtype: ValueType.List(ValueType.List(ValueType.Int)) } ],
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn nfst_registry() -> CompTimeRegistry {
+    let ws = ts()
+    prepare_runtime(comptime_registry_new(ws) with { fns: [mk_nfst_fn(ws)] })
+}
+
+/// Fold a fresh `nfst([[<a>, ...], [<b>, ...]])` from two rows of numbers.
+fn fold_nfst(reg: CompTimeRegistry, row0: List<string>, row1: List<string>) -> string {
+    let store = reg.runtime.nodes
+    let rows: List<ExprId> = [ mk_num_list(store, row0), mk_num_list(store, row1) ]
+    let arg = store.exprs.add_leaf(Expr.ListLit(rows))
+    let call = Expr.Call(store.exprs.add_leaf(Expr.Ident("nfst")), [arg])
+    number_text_of(try_fold_call(reg, call))
+}
+
+/// A `ListLit` ExprId over number literals — a nested-list row builder.
+fn mk_num_list(store: NodeStore, nums: List<string>) -> ExprId {
+    mut elems: List<ExprId> = []
+    for n in nums { elems.push(store.exprs.add_leaf(Expr.Number(n))) }
+    store.exprs.add_leaf(Expr.ListLit(elems))
+}
+
 spec "ps3t.5.8: @comptime folds over a COLLECTION arg happen and are memoized" {
     then "a list-literal arg folds (was a runtime call before) — result depends on the list" {
         let reg = head_registry()
@@ -89,5 +164,27 @@ spec "ps3t.5.8: @comptime folds over a COLLECTION arg happen and are memoized" {
         let _ = fold_head(reg, ["8", "0"])
         let again = fold_head(reg, ["9", "0"])
         again == "9" && avra_map_len_cstr(reg.fold_cache) == 2
+    }
+    then "a STRUCT-literal arg folds and is memoized on its field values" {
+        let reg = fst_registry()
+        let r1 = fold_fst(reg, "7", "8")            // Pair{a:7,b:8} → 7
+        let after1 = avra_map_len_cstr(reg.fold_cache)
+        let r2 = fold_fst(reg, "7", "8")            // identical struct → hit
+        let after2 = avra_map_len_cstr(reg.fold_cache)
+        let r3 = fold_fst(reg, "9", "8")            // differs in field `a` → new key
+        // value_cache_struct keys on field VALUES: {a:7} and {a:9} must not collide.
+        r1 == "7" && r2 == "7" && r3 == "9" && after1 == 1 && after2 == 1 && avra_map_len_cstr(reg.fold_cache) == 2
+    }
+    then "a NESTED-list arg folds and is memoized (value_cache_list recurses)" {
+        let reg = nfst_registry()
+        let r1 = fold_nfst(reg, ["1", "2"], ["3", "4"])   // [[1,2],[3,4]] → 1
+        let after1 = avra_map_len_cstr(reg.fold_cache)
+        let r2 = fold_nfst(reg, ["1", "2"], ["3", "4"])   // identical → hit
+        let after2 = avra_map_len_cstr(reg.fold_cache)
+        // Same flattened numbers, DIFFERENT nesting — must not collide: the
+        // length prefixes on each inner list make [[1,2],[3,4]] and [[1],[2,3,4]]
+        // distinct keys even though both flatten to 1,2,3,4.
+        let r3 = fold_nfst(reg, ["1"], ["2", "3", "4"])   // [[1],[2,3,4]] → 1
+        r1 == "1" && r2 == "1" && r3 == "1" && after1 == 1 && after2 == 1 && avra_map_len_cstr(reg.fold_cache) == 2
     }
 }
