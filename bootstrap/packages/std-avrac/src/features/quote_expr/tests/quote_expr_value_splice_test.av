@@ -1,0 +1,80 @@
+// rmzs GAP 2 — a computed value spliced into an EXPRESSION slot (`~(expr)`)
+// pastes as a literal expression. Before this landed, `quote stmt { println(~(
+// "PREFIX-" + kind)) }` produced `error[F4006] ... (kind=enum)`: the splice
+// reached the Value→Expr decoder as a bare scalar Value (a string), where only
+// Expr-enum children were handled. value_to_expr_node now coerces a scalar Value
+// to the matching literal Expr (string→String, number→Number/FloatLit, bool→Bool,
+// null→None) — the inverse of literal_expr_to_value. An already-Expr value still
+// passes through unchanged (the `kind == "expr"` fast path), so a bound-node
+// splice is unaffected.
+//
+// Exercised via write_fixture_and_run (the quote machinery needs @std + the
+// @expand pipeline), mirroring quote_stmt_list_splice_test.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GAP2)" {
+    then "a computed STRING splices as a string-literal argument" {
+        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_str.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let kind = \"widget\"\n" +
+            "    let decl = quote stmt { fn g2s() { println(~(\"PREFIX-\" + kind)) } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { g2s() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("PREFIX-widget")
+    }
+    then "a computed INT splices as a NUMBER literal (arithmetic proves it, not a string)" {
+        // If the splice pasted a string, `+ 10` would not yield 13 — the result
+        // pins that `~(1 + 2)` became the integer literal 3, an expression.
+        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_int.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let decl = quote stmt { fn g2i() { println(string(~(1 + 2) + 10)) } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { g2i() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("13")
+    }
+    then "a computed FLOAT splices as a FloatLit (the double branch, not a truncated int)" {
+        // A float-shaped number must become Expr.FloatLit so codegen emits a
+        // `double`; 1.5 + 0.5 → 2.0, and 2.0 * 2.0 = 4.0 prints as a float.
+        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_float.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let decl = quote stmt { fn g2f() { println(\"g2float=\" + string(~(1.5 + 0.5) * 2.0)) } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { g2f() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        // Distinctive prefix so the assertion can't be satisfied by stray "4"s in
+        // build/error output when the fixture fails — 2.0 * 2.0 = 4.
+        out.contains("g2float=4")
+    }
+    then "a computed BOOL splices as a bool literal (drives an if)" {
+        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_bool.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let decl = quote stmt { fn g2b() { if ~(2 > 1) { println(\"bool_true_branch\") } } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { g2b() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("bool_true_branch")
+    }
+}
