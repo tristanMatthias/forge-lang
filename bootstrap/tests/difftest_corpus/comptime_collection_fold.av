@@ -16,7 +16,10 @@
 // so these fold via the tree-walk interpreter fallback — the path g18a must
 // eventually subsume. Covers: index into a list literal, a fold OVER the whole
 // list (the motivating "macro folding over a collection" case), a struct-literal
-// field read, and a nested list literal (recursion in literal_list_to_value).
+// field read, a nested list literal (recursion in literal_list_to_value), a
+// repeated identical call (the memo hit must re-stamp the same literal), and a
+// NON-literal element (bails the conversion — the call stays a RUNTIME call, so
+// the fn body still gets codegen'd alongside its folded call sites).
 
 type Rect = { w: int, h: int }
 
@@ -42,5 +45,9 @@ fn main() {
     let c = cl_area(Rect { w: 6, h: 7 })   // 42  — struct-literal field read
     let d = cl_sum([10, 20])               // 30  — distinct list, distinct fold
     let e = cl_sum2([[1, 2], [3, 4]])      // 10  — nested list literal
-    println(string(a + b + c + d + e))      // 7+10+42+30+10 = 99
+    let f = cl_sum([1, 2, 3, 4])           // 10  — identical repeat: memo hit re-stamps the same literal
+    mut z = 40
+    z = z + 2
+    let g = cl_sum([z, 1])                 // 43  — non-literal element: no fold, runtime call
+    println(string(a + b + c + d + e + f + g))  // 99+10+43 = 152
 }
