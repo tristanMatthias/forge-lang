@@ -471,7 +471,16 @@ WRAP
   [ "$linked" = 1 ] || warn "beads: could not install bd wrapper on PATH — auto-sync may not run"
   local bd="$rt/bd"
 
-  local slug; slug="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*/git/##; s#\.git$##')"
+  # Derive owner/repo from the git origin URL. Two shapes exist in the wild:
+  # the proxy URL (…/git/OWNER/REPO.git — strip through /git/) and a plain
+  # github URL (https://github.com/OWNER/REPO[.git] / git@github.com:OWNER/REPO).
+  # The old proxy-only sed left a plain URL UNCHANGED, so the dolt push remote
+  # became git+https://…github.com/https://github.com/OWNER/REPO.git — every
+  # push then failed, and (dolt exits 0 on that usage error) the wrapper still
+  # stamped last_synced, so writes stranded SILENTLY. The case-guard rejects
+  # anything still URL-shaped so a new shape can never poison the remote again.
+  local slug; slug="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*/git/##; s#^(https?://)?(git@)?github\.com[:/]##; s#\.git$##')"
+  case "$slug" in *://*|*github.com*) slug="" ;; esac
   : "${slug:=tristanMatthias/forge-lang}"
 
   # Hydrate from refs/dolt/data via the git origin (the proxy — reads need no
