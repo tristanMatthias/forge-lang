@@ -1,0 +1,119 @@
+// ps3t.5.2.1.1 part b — extend the compiled-comptime (JIT) fold to STRING returns,
+// the last of the a/b/c return-type coverage. A string-returning @comptime fn fell
+// back to the interpreter because the JIT engine is disposed inside the call, and
+// a returned char* may point into the engine's own memory (a string literal is a
+// module constant). avra_llvm_jit_call_str COPIES the result into RC-managed host
+// memory (avra_rc_alloc) BEFORE the dispose, so the pointer stays valid; it's then
+// re-quoted into the same Expr.String the interpreter produces (byte-identity gated
+// by tests/difftest_corpus/comptime_string_fold.av).
+//
+// The fns below are JIT-eligible (string return, int/no params, jit-safe bodies —
+// String literals are blessed, `+` concat lowers to avra_string_concat which the
+// -rdynamic symbol table resolves), so bs2 folds them through the JIT at COMPILE
+// time. These specs COMPILE + RUN a fixture and assert its stdout, exercising the
+// real fold→codegen→run path. Part b completes ps3t.5.2.1's return-type coverage.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` with the current `./build/bs2` (which JIT-folds the eligible
+/// string @comptime calls), link, run, and return stdout.
+fn run_fixture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_jits_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+}
+
+spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct value" {
+    then "a bare string-literal return JIT-folds and survives the engine dispose" {
+        let out = run_fixture("bare",
+            "@comptime\nfn greet() -> string { return \"hello world\" }\n" +
+            "fn main() { println(greet()) }\n")
+        out.contains("hello world")
+    }
+    then "an empty-string return folds (boundary: zero-length copy-out)" {
+        let out = run_fixture("empty",
+            "@comptime\nfn empty() -> string { return \"\" }\n" +
+            "fn main() {\n" +
+            "    println(\"[\" + empty() + \"]\")\n" +   // "[]" — the fold is the empty string
+            "}\n")
+        out.contains("[]")
+    }
+    then "string concat in the body JIT-folds to the joined literal" {
+        let out = run_fixture("concat",
+            "@comptime\nfn cat() -> string { return \"foo\" + \"bar\" }\n" +
+            "@comptime\nfn cat3() -> string { return \"a\" + \"b\" + \"c\" }\n" +
+            "fn main() {\n" +
+            "    println(cat())\n" +    // foobar
+            "    println(cat3())\n" +   // abc
+            "}\n")
+        out.contains("foobar") && out.contains("abc")
+    }
+    then "an int param (int-register arg) with a string return JIT-folds correctly" {
+        let out = run_fixture("intparam",
+            "@comptime\nfn konst(n: int) -> string { return \"fixed\" }\n" +
+            "fn main() { println(konst(9)) }\n")
+        out.contains("fixed")
+    }
+    then "a transitive string callee (via_callee -> base) JIT-folds the whole closure" {
+        let out = run_fixture("transitive",
+            "@comptime\nfn base() -> string { return \"base\" }\n" +
+            "@comptime\nfn via_callee() -> string { return base() + \"-tip\" }\n" +
+            "fn main() { println(via_callee()) }\n")   // base-tip
+        out.contains("base-tip")
+    }
+}
+
+/// Compile-check `source` and return the captured diagnostics.
+fn check_fixture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_jits_err_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+// The string JIT codegens BEFORE the type checker runs, so it can reach an
+// INVALID string body (`"a" - "b"`, `"a" + 5`) the checker would otherwise
+// reject. Such a body must fail GRACEFULLY through the F4007 fold-error channel
+// (JIT codegen errors → interpreter fallback → the evaluator's message), NOT
+// crash the compiler with an F9999 ICE. emit_binary rejects a string operand on
+// any op but +/==/!=/ordering, and any mixed (string-vs-non-string) operand.
+spec "ps3t.5.2.1.1: an invalid string @comptime body fails gracefully, never crashes" {
+    then "an unsupported string operator (`\"a\" - \"b\"`) is F4007, not an ICE" {
+        let out = check_fixture("sub",
+            "@comptime\nfn bad() -> string { return \"a\" - \"b\" }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a mixed string+int operand (`\"a\" + 5`) is F4007, not an ICE" {
+        let out = check_fixture("mixed",
+            "@comptime\nfn bad() -> string { return \"a\" + 5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a mixed string+float operand (`\"a\" + 1.5`) is F4007, not an ICE" {
+        // A float operand routes through the float codegen path, so this guards a
+        // distinct crash from the int case (an LLVM instruction-selection failure).
+        let out = check_fixture("mixed_float",
+            "@comptime\nfn bad() -> string { return \"a\" + 1.5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a string + bool-literal (`\"a\" + true`) is F4007, not an ICE" {
+        let out = check_fixture("mixed_bool",
+            "@comptime\nfn bad() -> string { return \"a\" + true }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a string + negative-number literal (`\"a\" + -5`, a Unary over a Number) is F4007, not an ICE" {
+        let out = check_fixture("mixed_neg",
+            "@comptime\nfn bad() -> string { return \"a\" + -5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a valid all-string body still folds (the guard doesn't over-reject)" {
+        let out = run_fixture("guard_ok",
+            "@comptime\nfn ok() -> string { return \"a\" + \"b\" }\n" +
+            "fn main() { println(ok()) }\n")
+        out.contains("ab")
+    }
+}

@@ -1209,6 +1209,46 @@ double avra_llvm_jit_call_f64(LLVMModuleRef module, const char* fn_name,
     return result;
 }
 
+// String-return sibling of avra_llvm_jit_call (ps3t.5.2.1.1, part b). A @comptime
+// fn declared `-> string` returns a `const char*`, but that pointer may reference
+// the JIT module's own data section (a string literal is a module constant),
+// which LLVMDisposeExecutionEngine frees along with the engine. So the result is
+// COPIED into RC-managed host memory (avra_rc_alloc — the compiler's own
+// allocator) BEFORE the dispose, and the copy, not the soon-to-dangle original,
+// is returned. Args stay i64 (int params only, like the int/float variants).
+extern void* avra_rc_alloc(int64_t payload_size);
+const char* avra_llvm_jit_call_str(LLVMModuleRef module, const char* fn_name,
+                                   int64_t argc, int64_t* argv) {
+    LLVMExecutionEngineRef engine = NULL;
+    uint64_t addr = avra_jit_resolve(module, fn_name, &engine);
+    if (!addr) return NULL;
+
+    const char* raw = NULL;
+    switch (argc) {
+        case 0: raw = ((const char*(*)(void))addr)(); break;
+        case 1: raw = ((const char*(*)(int64_t))addr)(argv[0]); break;
+        case 2: raw = ((const char*(*)(int64_t, int64_t))addr)(argv[0], argv[1]); break;
+        case 3: raw = ((const char*(*)(int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2]); break;
+        case 4: raw = ((const char*(*)(int64_t, int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2], argv[3]); break;
+        default:
+            fprintf(stderr, "JIT-call error: arity %lld unsupported (max 4)\n", (long long)argc);
+            LLVMDisposeExecutionEngine(engine);
+            return NULL;
+    }
+
+    // Copy out BEFORE dispose — `raw` may point into the engine's memory.
+    const char* copy = NULL;
+    if (raw) {
+        size_t len = strlen(raw);
+        char* buf = (char*)avra_rc_alloc((int64_t)len + 1);
+        memcpy(buf, raw, len + 1);
+        copy = buf;
+    }
+
+    LLVMDisposeExecutionEngine(engine);
+    return copy;
+}
+
 // ── i64 argument-vector marshalling (ps3t.5, Slice A) ──
 // A flat `int64_t[]` for `avra_llvm_jit_call`'s argv. The Avra marshal layer
 // lowers a List<Value> into one of these — int/bool go in directly, float is

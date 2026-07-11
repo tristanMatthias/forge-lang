@@ -176,6 +176,12 @@ extern fn avra_llvm_jit_call(module: ptr, fn_name: string, argc: int, argv: ptr)
 /// ABI differs. A fn with float PARAMS stays interpreter-folded (int-only args).
 extern fn avra_llvm_jit_call_f64(module: ptr, fn_name: string, argc: int, argv: ptr) -> float
 
+/// String-return sibling (ps3t.5.2.1.1 part b). Copies the JIT'd fn's
+/// `const char*` result into RC-managed host memory BEFORE disposing the engine
+/// (a string literal is a module constant that dies with the engine), so the
+/// returned pointer stays valid. Args stay i64 (int params only).
+extern fn avra_llvm_jit_call_str(module: ptr, fn_name: string, argc: int, argv: ptr) -> string
+
 // ── i64 argument-vector marshalling (JIT argv) ──
 // A flat int64_t[] for avra_llvm_jit_call's argv — the marshal layer lowers a
 // List<Value> into one (int/bool direct, float bit-cast, string/enum pointer).
