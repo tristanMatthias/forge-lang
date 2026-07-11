@@ -4,11 +4,11 @@
 // into the generated ArgDef, and parse_tokens (cli.av) validating it. An arg
 // with no `required` config stays optional (omitting it is fine).
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
 // @comptime bodies are available. `req_`-prefixed to avoid fn/local collisions.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn req_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -45,7 +45,7 @@ fn req_src() -> string {
 }
 
 fn req_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_required_arg_test.av", req_src())
+    write_fixture_and_run("/tmp/avra_required_arg_test.av", req_src())
 }
 
 spec "a required positional arg is enforced at parse time" {

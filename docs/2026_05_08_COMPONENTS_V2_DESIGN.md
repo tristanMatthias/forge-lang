@@ -485,7 +485,7 @@ Phased so each phase ships independently and the bootstrap stays green throughou
 ## 6. Open questions deferred to implementation
 
 - **Reflection depth**: how much can a `@comptime fn` introspect about types beyond their declared shape? Field iteration is required; method introspection might be too.
-- **Cross-package macros**: a macro defined in std-cli used in user code — how does the build pipeline order this? (Build std-cli first, then expand user code — extension of existing dep ordering.)
+- **Cross-package macros**: ~~a macro defined in std-cli used in user code — how does the build pipeline order this?~~ **Resolved.** Both build modes work: source mode compiles the producer package first (dep ordering), and the metadata fast-path ships `@comptime` fn bodies in `unit.meta.bin` as fmt-rendered source that rehydrates lazily on the consumer side. The load-bearing invariant is that **fmt output is valid Avra source** — the renderer keeps enum-ctor type qualifiers and re-escapes string literals, and the parser accepts fully-qualified `@pkg::mod::name` references in expression and type position (a lone `@ident` stays annotation syntax). The std-cli cmdgen test suite runs entirely through the fast-path as regression coverage.
 - **Macro debugging**: stack traces inside macros, breakpoints, "trace this expansion" mode. P7 again — needs first-class tooling.
 - **Recursion limits**: macro can call macro can call macro. Cap depth, error gracefully on infinite loops.
 - **Hygiene with type-level identifiers**: do generated type names get hygiene treatment too? (Probably yes, with explicit opt-out for "I want this type to be referable from outside.")

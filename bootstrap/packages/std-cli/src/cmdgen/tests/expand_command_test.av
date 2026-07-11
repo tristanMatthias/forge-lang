@@ -23,9 +23,14 @@
 // assert on the `Runnable:Command_build` substring, which survives the
 // mangle, rather than the broken pretty form.
 //
-// Compiled FROM SOURCE (clean env) so @std.cli.cmdgen's @comptime body is
-// available cross-package (the metadata-stub path can't carry it — znl0).
-// All top-level names are `eg_`-prefixed to avoid cross-shard clashes.
+// Compiled with the shard's METADATA FAST-PATH inherited: std-cli's
+// @comptime bodies ship in unit.meta.bin as fmt-rendered source with
+// QUALIFIED AST ctors, and the re-parse recognizes those as EnumCtors —
+// so these expansions double as regression coverage for that round-trip
+// (a regressed fmt or parser side reverts them to F4006 "macro returned
+// null"). Only the shard-hygiene vars are cleared: the results-bin
+// channel, and the producer-build pkg root. All top-level names are
+// `eg_`-prefixed to avoid cross-shard clashes.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
@@ -50,7 +55,7 @@ fn eg_expand(run_body: string) -> string {
         "\n" +
         EG_MAIN + " {\n" +
         "}\n")
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
 // Expand a command declaring one `flag`/`arg` child, whose run body
@@ -81,7 +86,7 @@ fn eg_expand_flags() -> string {
         "\n" +
         EG_MAIN + " {\n" +
         "}\n")
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
 // Expand a command whose run method uses the `run() { … }` METHOD
@@ -92,9 +97,9 @@ fn eg_expand_flags() -> string {
 // block; `run() { … }` (ident + `()` + `{`) is the method. Both must be
 // identified for the generated run to carry BOTH the `vq` accessor
 // binding (flag sibling → child) AND the shorthand's body (run() {} →
-// method). A self-contained local macro can't cover this — splicing a
-// multi-child block's body trips the comptime-eval gap (rmzs); only
-// expand_command's wrap-in-generated-fn construction sidesteps it.
+// method). The self-contained mixed-children analogue lives in
+// comptime/tests/expand_wildcard_arm_test.av; this one goes through the
+// real expand_command.
 fn eg_expand_shorthand() -> string {
     let path = "/tmp/avra_expand_command_shorthand_test.av"
     write_fixture(path,
@@ -117,7 +122,7 @@ fn eg_expand_shorthand() -> string {
         "\n" +
         EG_MAIN + " {\n" +
         "}\n")
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
 /// Count non-overlapping occurrences of `needle` in `haystack`.
@@ -165,7 +170,7 @@ fn eg_expand_cli_globals() -> string {
         "\n" +
         EG_MAIN + " {\n" +
         "}\n")
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
 // Expand a `cli` carrying its own `description`/`version` config plus one
@@ -192,7 +197,7 @@ fn eg_expand_cli_config() -> string {
         "\n" +
         EG_MAIN + " {\n" +
         "}\n")
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
 spec "expand_command generates a per-instance type + Runnable impl (Components V2 core)" {

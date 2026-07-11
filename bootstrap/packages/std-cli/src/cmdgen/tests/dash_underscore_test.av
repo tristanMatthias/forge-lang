@@ -8,11 +8,11 @@
 // `flag_canonical_name`/`option_canonical_name`), so it holds on BOTH the
 // App.run_argv path exercised here and the legacy cli_parse path.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
+// Source-compiled (write_fixture_and_run) so cmdgen's
 // cross-package @comptime bodies are available. `du_`-prefixed.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn du_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -46,7 +46,7 @@ fn du_src() -> string {
 }
 
 fn du_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_dash_underscore_test.av", du_src())
+    write_fixture_and_run("/tmp/avra_dash_underscore_test.av", du_src())
 }
 
 spec "dash/underscore flag+option spellings are equivalent" {

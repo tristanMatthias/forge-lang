@@ -1,0 +1,50 @@
+// A FULLY-QUALIFIED enum constructor — `@pkg::mod::Type.Variant(args)` —
+// must parse as an EnumCtor carrying its args, exactly like the bare
+// `Type.Variant(args)` form. The parser's ctor gate judges PascalCase on
+// the head identifier, and a qualified path's first char is `@`, so the
+// qualified form used to fall through to Call(FieldAccess(...)) — whose
+// eval path builds a ZERO-arg enum and silently drops the args. Nothing
+// in ordinary source hits this (imports keep ctors bare), but the build
+// metadata ships @comptime fn bodies as fmt-rendered source with
+// QUALIFIED ctors, so every metadata re-parse of a direct-AST-construction
+// macro did — the macro then returned null (F4006).
+//
+// Pinned end-to-end at the parse layer: a qualified ctor in plain source
+// round-trips through match with its payload intact.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "qualified-path enum ctor parses as EnumCtor with args" {
+    then "a @std-qualified ctor carries its payload through a match" {
+        let out = write_fixture_and_run("/tmp/avra_qualified_ctor_parse.av",
+            "use @std.avrac.core.{Expr}\n" +
+            "fn main() {\n" +
+            "    let e = @std::avrac::core::Expr.Number(\"4242\")\n" +
+            "    match e {\n" +
+            "        .Number(v) -> println(\"QCTOR_\" + v)\n" +
+            "        _ -> println(\"QCTOR_WRONG_VARIANT\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("QCTOR_4242")
+    }
+    then "a qualified ctor and the bare ctor build the same value" {
+        let out = write_fixture_and_run("/tmp/avra_qualified_ctor_eq.av",
+            "use @std.avrac.core.{Expr}\n" +
+            "fn payload(e: Expr) -> string {\n" +
+            "    match e {\n" +
+            "        .Number(v) -> v\n" +
+            "        _ -> \"wrong\"\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let plainc = Expr.Number(\"77\")\n" +
+            "    let qualified = @std::avrac::core::Expr.Number(\"77\")\n" +
+            "    if payload(plainc) == payload(qualified) {\n" +
+            "        println(\"QCTOR_EQ_OK\")\n" +
+            "    } else {\n" +
+            "        println(\"QCTOR_EQ_MISMATCH\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("QCTOR_EQ_OK")
+    }
+}
