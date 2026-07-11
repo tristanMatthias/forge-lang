@@ -1,0 +1,65 @@
+// rmzs GAP 1 — a bare `~list` statement inside a quote body splices its
+// `List<Stmt>` target in as SIBLING statements (the statement-list analogue of
+// the match-arm `~arms` splice). Before this landed, `quote stmt { fn f() {
+// ~body } }` with `body: List<Stmt>` produced `error[F4006] ... (kind=enum)`:
+// the splice pasted the whole list where a single stmt was expected. Now
+// `construct_stmt_ids` segments around bare-splice statements and `list_concat`s
+// each target, so the list flattens in place.
+//
+// Exercised via write_fixture_and_run (the quote machinery needs @std + the
+// @expand pipeline), mirroring quote_iteration_splice_test.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "quote: `~list` statement splices a List<Stmt> as siblings (rmzs GAP1)" {
+    then "a repeating splice flattens into the enclosing block, in order" {
+        let out = write_fixture_and_run("/tmp/avra_quote_stmt_splice_basic.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id, synth_deref_stmt}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let a = synth_stmt_id(quote stmt { println(\"splice_alpha\") })\n" +
+            "    let b = synth_stmt_id(quote stmt { println(\"splice_beta\") })\n" +
+            "    let body: List<Stmt> = [synth_deref_stmt(a), synth_deref_stmt(b)]\n" +
+            "    let decl = quote stmt { fn spliced() { ~body } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { spliced() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("splice_alpha") && out.contains("splice_beta")
+    }
+    then "non-splice statements around the splice are preserved (segment handling)" {
+        let out = write_fixture_and_run("/tmp/avra_quote_stmt_splice_mixed.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id, synth_deref_stmt}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let m = synth_stmt_id(quote stmt { println(\"mid_splice\") })\n" +
+            "    let body: List<Stmt> = [synth_deref_stmt(m)]\n" +
+            // before + ~body + after: the leading/trailing non-splice stmts must
+            // survive the segment flush on either side of the list_concat.
+            "    let decl = quote stmt { fn spliced() { println(\"before_splice\") ~body println(\"after_splice\") } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { spliced() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("before_splice") && out.contains("mid_splice") && out.contains("after_splice")
+    }
+    then "an EMPTY list splice contributes no statements (block still valid)" {
+        let out = write_fixture_and_run("/tmp/avra_quote_stmt_splice_empty.av",
+            "use @std.avrac.core.{Stmt, StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id, synth_deref_stmt}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let body: List<Stmt> = []\n" +
+            "    let decl = quote stmt { fn spliced() { println(\"only_stmt\") ~body } }\n" +
+            "    [synth_stmt_id(decl), synth_stmt_id(quote stmt { spliced() })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("only_stmt")
+    }
+}
