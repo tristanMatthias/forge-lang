@@ -3,7 +3,7 @@
 // is in scope without a self-import.
 use codegen.{err_emit}
 use core.{feature_new, Feature, ValueType}
-use features.eval.{eval_expr, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
+use features.eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
 use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
 
@@ -35,13 +35,10 @@ fn map_lit_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
             mut rows: List<StructField> = []
             mut i = 0
             while i < entries.length {
-                let key_r = eval_expr(cur, cur.nodes.exprs.get(entries[i]))
+                let key_r = eval_map_key(cur, entries[i])
                 if step_had_error(key_r) { return key_r }
                 if i + 1 >= entries.length {
                     return error_result(step_runtime(key_r), "map literal has key without value")
-                }
-                if step_value(key_r).kind != "string" {
-                    return error_result(step_runtime(key_r), "map key must be a string (got kind=${step_value(key_r).kind})")
                 }
                 let val_r = eval_expr(step_runtime(key_r), cur.nodes.exprs.get(entries[i + 1]))
                 if step_had_error(val_r) { return val_r }

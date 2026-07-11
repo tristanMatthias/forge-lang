@@ -9,7 +9,29 @@
 // The macro scores each behavior and emits the OK marker only on a
 // perfect score, so a single wrong result flips the printed marker.
 
-use @std.avrac.test_runner.{write_fixture_and_run}
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+/// Count non-overlapping occurrences of `needle` in `haystack` —
+/// `bs2 expand` echoes the macro source and appends the expansion, so a
+/// winning branch's marker appears exactly one more time than a losing
+/// branch's (the comp_helpers_test assertion pattern).
+fn me_count(haystack: string, needle: string) -> int {
+    let hl = haystack.length
+    let nl = needle.length
+    if nl == 0 { return 0 }
+    mut n = 0
+    mut i = 0
+    while i + nl <= hl {
+        if haystack.substring(i, i + nl) == needle {
+            n = n + 1
+            i = i + nl
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
 
 spec "@comptime map literals + methods evaluate (rmzs GAP3)" {
     then "literal, get/has/len, set write-back, overwrite, remove, keys/values order" {
@@ -71,5 +93,70 @@ spec "@comptime map literals + methods evaluate (rmzs GAP3)" {
             "fn placeholder() {}\n" +
             "fn main() {}\n")
         out.contains("MAP_EMPTY_DUP_OK")
+    }
+    then "map-in-list reads and get on a missing key → null" {
+        let out = write_fixture_and_run("/tmp/avra_comptime_map_in_list.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    let lm = [{\"a\": 1}, {\"a\": 2}]\n" +
+            "    if lm[1].get(\"a\") == 2 { score = score + 1 }\n" +
+            "    let d = {\"k\": 1}\n" +
+            "    if d.get(\"zz\") == null { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        2 -> return [synth_stmt_id(quote stmt { println(\"MAP_IN_LIST_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"MAP_IN_LIST_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("MAP_IN_LIST_OK")
+    }
+    then "chained get reads a nested map value (eval-only surface, expand-level)" {
+        // Compiled map get returns an UNTYPED value, so `.get(…).get(…)`
+        // does not codegen (tracked as the typed-map-read gap) — the
+        // dynamically-typed evaluator handles it, and a @comptime-only
+        // check needs `bs2 expand`, which never codegens the macro body.
+        // The chained receiver is a call result, not an Ident, so this
+        // also exercises the non-write-back dispatch path.
+        let path = "/tmp/avra_comptime_map_chain.av"
+        write_fixture(path,
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    let nested = {\"inner\": {\"x\": 1, \"y\": 2}}\n" +
+            "    match nested.get(\"inner\").get(\"y\") {\n" +
+            "        2 -> return [synth_stmt_id(quote stmt { println(\"MAP_CHAIN_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"MAP_CHAIN_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+        me_count(out, "MAP_CHAIN_OK") == me_count(out, "MAP_CHAIN_BAD") + 1
+    }
+    then "a non-string key reaching eval (m.set(2, 3)) is a clean F4005, not a crash" {
+        // `{1: 2}` never reaches eval — the parser rejects it (F0040) — so
+        // the eval-side guard is exercised through a method key argument.
+        let path = "/tmp/avra_comptime_map_bad_key.av"
+        write_fixture(path,
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut m = {\"a\": 1}\n" +
+            "    m.set(2, 3)\n" +
+            "    return [synth_stmt_id(quote stmt { println(\"BAD_KEY_UNREACHED\") })]\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 compile '${path}' 2>&1 || true")
+        out.contains("F4005") && out.contains("map key must be a string (got kind=number)")
     }
 }

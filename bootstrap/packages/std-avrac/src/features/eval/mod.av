@@ -2024,11 +2024,8 @@ fn method_result_writeback(sr: StepResult, obj_expr: Expr, mutates: bool) -> Ste
 fn eval_map_method(runtime: Runtime, map_val: Value, method: string, args: List<ExprId>) -> StepResult? {
     if method == "get" || method == "has" || method == "remove" {
         if args.length != 1 { return error_result(runtime, "map.${method} expects 1 argument") }
-        let key_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+        let key_r = eval_map_key(runtime, args[0])
         if key_r.had_error { return key_r }
-        if key_r.value.kind != "string" {
-            return error_result(key_r.runtime, "map key must be a string (got kind=${key_r.value.kind})")
-        }
         let key = key_r.value.text
         if method == "has" {
             for e in map_val.struct_payload {
@@ -2050,11 +2047,8 @@ fn eval_map_method(runtime: Runtime, map_val: Value, method: string, args: List<
     }
     if method == "set" {
         if args.length != 2 { return error_result(runtime, "map.set expects 2 arguments: key and value") }
-        let key_r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+        let key_r = eval_map_key(runtime, args[0])
         if key_r.had_error { return key_r }
-        if key_r.value.kind != "string" {
-            return error_result(key_r.runtime, "map key must be a string (got kind=${key_r.value.kind})")
-        }
         let val_r = eval_expr(key_r.runtime, key_r.runtime.nodes.exprs.get(args[1]))
         if val_r.had_error { return val_r }
         let updated = map_upsert(map_val.struct_payload, key_r.value.text, val_r.value)
@@ -2077,6 +2071,20 @@ fn eval_map_method(runtime: Runtime, map_val: Value, method: string, args: List<
         return ok_result(runtime, value_list(vs))
     }
     null
+}
+
+/// Evaluate a map operation's key expression and require a string
+/// Value — the shared preamble for every string-keyed map op (maps are
+/// `Map<string, V>`). On success the returned step's value IS the key
+/// string Value; a non-string key becomes an error step. Shared by
+/// `eval_map_method` and the MapLit eval hook (map_lit/mod.av).
+export fn eval_map_key(runtime: Runtime, key_id: ExprId) -> StepResult {
+    let key_r = eval_expr(runtime, runtime.nodes.exprs.get(key_id))
+    if key_r.had_error { return key_r }
+    if key_r.value.kind != "string" {
+        return error_result(key_r.runtime, "map key must be a string (got kind=${key_r.value.kind})")
+    }
+    key_r
 }
 
 /// Insertion-order-preserving upsert into map entry rows: overwrite in
