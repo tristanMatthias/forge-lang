@@ -14,7 +14,11 @@ extern fn avra_selfhost_append_file(path: string, content: string) -> int
 // _file variants strlen-truncate at the first NUL.
 extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
 extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
-extern fn avra_selfhost_string_to_float(s: string) -> int
+// Returns a real `double` (strtod). The historic `-> int` declaration
+// reinterpreted the xmm0 double-bits as an i64, so the result was garbage
+// — which is why the tree-walk evaluator's number model stayed int-only.
+// The honest `-> float` type unlocks float @comptime folds (uabd).
+extern fn avra_selfhost_string_to_float(s: string) -> float
 extern fn avra_selfhost_levenshtein(a: string, b: string, len_a: int, len_b: int) -> int
 
 // 73r2: per-process memo for package_source_fingerprint. Stores

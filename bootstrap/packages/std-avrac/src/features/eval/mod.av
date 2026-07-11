@@ -15,20 +15,39 @@ use list_ops.{list_contains_str}
 use parse.{parse_expression_source, parse_program_source}
 use core.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, avra_stmt_tag, avra_expr_tag}
 
-// Numeric-literal parsing for the bootstrap evaluator. Originally
-// routed through `float()` (which called avra_selfhost_string_to_float
-// — a `double`-returning C fn). The Avra-side `int` declaration
-// reinterpreted those float-bits as i64, so any arithmetic on
-// parsed numbers produced garbage (e.g. 2 + 3 = 4890910294835986432).
-//
-// Fix: route Number-literal parsing through an honest base-10
-// integer parser. The bootstrap value model is i64 anyway —
-// no real floats — so this is what we always wanted.
+// Numeric parsing for the bootstrap evaluator. Integer literals parse
+// through an honest base-10 parser; float literals + float arithmetic
+// parse through `avra_selfhost_string_to_float` (a real `double`, now
+// that its extern type is honest — uabd). A number Value carries its
+// decimal TEXT; the text's shape (a `.` or exponent) is what
+// discriminates a float from an int, exactly as the parser decides
+// `FloatLit` vs `Number` from `is_float_fmt`.
 extern fn avra_selfhost_string_to_int(s: string) -> int
+use core.{avra_selfhost_string_to_float}
 
 /// Parse a base-10 integer from a string. Replaces the older
 /// `float()` wrapper; same call shape, different (correct) impl.
 export fn parse_num(s: string) -> int { avra_selfhost_string_to_int(s) }
+
+/// True when a number Value's text denotes a float — it has a
+/// fractional part or exponent. Mirrors the parser's `FloatLit` vs
+/// `Number` split so a computed float is treated as a float everywhere
+/// the evaluator handles numbers (arithmetic, comparison, splicing).
+export fn num_text_is_float(text: string) -> bool {
+    text.contains(".") || text.contains("e") || text.contains("E")
+}
+
+/// Render a computed float as decimal text that ROUND-TRIPS as a float:
+/// byte-identical to runtime `string(float)` (shortest form that
+/// round-trips, no trailing `.0`), but with a `.0` re-appended when the
+/// value is integral (`4.0` → `"4.0"`, not `"4"`) so `num_text_is_float`
+/// still recognises it and the fold splices an `Expr.FloatLit`, not an
+/// int literal. The `.0` is invisible at runtime — `string(4.0)` is `"4"`
+/// either way — so the folded program prints identically to the unfolded.
+fn render_float(f: float) -> string {
+    let s = string(f)
+    if num_text_is_float(s) { s } else { s + ".0" }
+}
 
 /// Tagged value used by the tree-walking evaluator. The `kind`
 /// field discriminates which other field holds the payload —
@@ -223,7 +242,14 @@ type AssignBindingsResult = {
 /// strings pass through, and null renders as `"null"`.
 export fn render_value(value: Value) -> string {
     match value.kind {
-        "number" -> value.number_text
+        // A float's stored text keeps its shape (`4.0`) so it round-trips
+        // as a FloatLit; DISPLAY canonicalises it to match runtime
+        // `string(float)` (`4.0` → `4`). Integer text passes through.
+        "number" -> if num_text_is_float(value.number_text) {
+            string(avra_selfhost_string_to_float(value.number_text))
+        } else {
+            value.number_text
+        }
         "string" -> value.text
         "bool" -> if value.bool_value { "true" } else { "false" }
         _ -> "null"
@@ -411,6 +437,7 @@ export fn literal_args_to_values(store: NodeStore, ids: List<ExprId>) -> List<Va
 fn literal_expr_to_value(e: Expr) -> Value? {
     match e {
         .Number(text) -> value_number(render_number(parse_num(text)))
+        .FloatLit(text) -> value_number(text)
         .String(text) -> value_string(unquote_string(text))
         .Bool(text) -> value_bool(text == "true")
         .None -> value_null()
@@ -1989,10 +2016,55 @@ fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
             if number_text == null {
                 return error_result(right_result.runtime, "operand must be a number")
             }
-            ok_result(right_result.runtime, value_number(render_number(0 - parse_num(number_text!))))
+            let negated = if num_text_is_float(number_text!) {
+                render_float(0.0 - avra_selfhost_string_to_float(number_text!))
+            } else {
+                render_number(0 - parse_num(number_text!))
+            }
+            ok_result(right_result.runtime, value_number(negated))
         }
         .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
         .BitNot -> error_result(right_result.runtime, "bitwise NOT not supported by tree-walk evaluator")
+    }
+}
+
+/// Evaluate an arithmetic/comparison binop on two number-texts, the
+/// single source of truth for the evaluator's numeric semantics.
+/// FLOAT-AWARE: when either operand is a float (`num_text_is_float`)
+/// the operation runs in `double` and preserves float shape; otherwise
+/// it runs in `i64`, byte-identical to the historic int-only path.
+/// Integer `/` stays integer division (matching codegen's `sdiv`);
+/// a float operand promotes to `fdiv`. Returns null for an operator
+/// this path doesn't handle (`+`/`==`/`!=` are dispatched by callers,
+/// `%` is unsupported by the tree-walk evaluator).
+fn num_binop(op: BinOp, lt: string, rt: string) -> Value? {
+    if num_text_is_float(lt) || num_text_is_float(rt) {
+        let l = avra_selfhost_string_to_float(lt)
+        let r = avra_selfhost_string_to_float(rt)
+        return match op {
+            .Add -> value_number(render_float(l + r))
+            .Sub -> value_number(render_float(l - r))
+            .Mul -> value_number(render_float(l * r))
+            .Div -> value_number(render_float(l / r))
+            .Lt -> value_bool(l < r)
+            .Le -> value_bool(l <= r)
+            .Gt -> value_bool(l > r)
+            .Ge -> value_bool(l >= r)
+            _ -> null
+        }
+    }
+    let l = parse_num(lt)
+    let r = parse_num(rt)
+    match op {
+        .Add -> value_number(render_number(l + r))
+        .Sub -> value_number(render_number(l - r))
+        .Mul -> value_number(render_number(l * r))
+        .Div -> value_number(render_number(l / r))
+        .Lt -> value_bool(l < r)
+        .Le -> value_bool(l <= r)
+        .Gt -> value_bool(l > r)
+        .Ge -> value_bool(l >= r)
+        _ -> null
     }
 }
 
@@ -2022,18 +2094,11 @@ fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResu
             if right_text == null {
                 return error_result(rt, "operand must be a number")
             }
-            let l = parse_num(left_text!)
-            let r = parse_num(right_text!)
-            match op {
-                .Sub -> ok_result(rt, value_number(render_number(l - r)))
-                .Mul -> ok_result(rt, value_number(render_number(l * r)))
-                .Div -> ok_result(rt, value_number(render_number(l / r)))
-                .Lt -> ok_result(rt, value_bool(l < r))
-                .Le -> ok_result(rt, value_bool(l <= r))
-                .Gt -> ok_result(rt, value_bool(l > r))
-                .Ge -> ok_result(rt, value_bool(l >= r))
-                _ -> error_result(rt, "unsupported binary operator")
+            let result = num_binop(op, left_text!, right_text!)
+            if result == null {
+                return error_result(rt, "unsupported binary operator")
             }
+            ok_result(rt, result!)
         }
     }
 }
@@ -2067,9 +2132,7 @@ fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
         if right_num_text == null {
             return error_result(runtime, "operands to `+` must both be numbers or both be strings")
         }
-        let left_num = parse_num(left_num_text!)
-        let right_num = parse_num(right_num_text!)
-        return ok_result(runtime, value_number(render_number(left_num + right_num)))
+        return ok_result(runtime, num_binop(.Add, left_num_text!, right_num_text!)!)
     }
 
     let left_text = as_string(left)
@@ -2109,7 +2172,11 @@ fn as_string(value: Value) -> string? {
 fn values_equal(left: Value, right: Value) -> bool {
     if left.kind != right.kind { return false }
     match left.kind {
-        "number" -> parse_num(left.number_text) == parse_num(right.number_text)
+        "number" -> if num_text_is_float(left.number_text) || num_text_is_float(right.number_text) {
+            avra_selfhost_string_to_float(left.number_text) == avra_selfhost_string_to_float(right.number_text)
+        } else {
+            parse_num(left.number_text) == parse_num(right.number_text)
+        }
         "string" -> left.text == right.text
         "bool" -> left.bool_value == right.bool_value
         _ -> true

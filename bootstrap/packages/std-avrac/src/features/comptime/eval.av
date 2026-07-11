@@ -23,7 +23,7 @@
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
-use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num}
+use features.eval.{Runtime, Value, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
 use features.quote_expr.{construct_stmt}
 use codegen.{compile_and_jit_call}
@@ -442,7 +442,9 @@ fn fold_kind(v: Value) -> string {
 /// of the original Value rather than a post-resolve raw AST node.
 fn value_to_expr(store: NodeStore, v: Value) -> Expr? {
     match fold_kind(v) {
-        "number" -> Expr.Number(v.number_text)
+        // A float-shaped number splices as a FloatLit so codegen emits a
+        // `double`, not a truncated int literal (uabd). An int stays a Number.
+        "number" -> if num_text_is_float(v.number_text) { Expr.FloatLit(v.number_text) } else { Expr.Number(v.number_text) }
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.None
@@ -458,7 +460,9 @@ fn value_to_expr(store: NodeStore, v: Value) -> Expr? {
 /// source. Primitives reuse the fast-path forms in `value_to_expr`.
 fn value_to_construct_expr(store: NodeStore, v: Value) -> Expr? {
     match fold_kind(v) {
-        "number" -> Expr.Number(v.number_text)
+        // A float-shaped number splices as a FloatLit so codegen emits a
+        // `double`, not a truncated int literal (uabd). An int stays a Number.
+        "number" -> if num_text_is_float(v.number_text) { Expr.FloatLit(v.number_text) } else { Expr.Number(v.number_text) }
         "string" -> Expr.String("\"${v.text}\"")
         "bool"   -> Expr.Bool(if v.bool_value != 0 { "true" } else { "false" })
         "null"   -> Expr.None
