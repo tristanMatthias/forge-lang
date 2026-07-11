@@ -1,0 +1,57 @@
+// WHY: monomorphization rewrites every function's return type by rendering it
+// to a string (`vtype_render_full`) and parsing it back (`vtype_from_type_string`
+// via `rewrite_fn_ret`). That parser peels the shapes it knows — tuples,
+// `List<T>`, `Task<T>`, generics — but for a long time it did NOT recognise a
+// rendered FUNCTION type (`fn(int) -> int`), so it fell through to
+// `vtype_from_name` and rebuilt the type as `Struct("fn(int) -> int")` — a
+// nominal struct whose NAME is the type's own text. Downstream that Struct has
+// the wrong enum tag, so every sparse `.FnTyped` match (`vtype_fn_params`,
+// codegen's `resolve_fn_ret`, …) misfires and the returned function loses its
+// param/return structure. The visible failure is a fn RETURNING a function
+// type: binding the result of an intermediate application then calling it
+// (`let h = g(5)  h(7)`) codegen-errors with `undefined function h`, because
+// the intermediate value's type came back as a Struct, not a callable.
+//
+// These specs pin the round-trip: a function whose return type IS a function
+// type survives monomorphization as a real callable — including the nested,
+// multi-arg, nullary, generic, and higher-order-consumer forms.
+
+fn ftr_mk1() -> fn(int) -> int { (x) -> x + 1 }
+fn ftr_mk2() -> fn(int, int) -> int { (a, b) -> a + b }
+fn ftr_mk0() -> fn() -> int { () -> 42 }
+fn ftr_nested() -> fn(int) -> fn(int) -> int { (a) -> (b) -> a + b }
+fn ftr_generic<T>(seed: T) -> fn(int) -> int { (x) -> x + 1 }
+fn ftr_apply(f: fn(int) -> int, x: int) -> int { f(x) }
+
+spec "a returned function type survives monomorphization" {
+    then "single-param returned fn is callable" {
+        let g = ftr_mk1()
+        g(10) == 11
+    }
+    then "multi-param returned fn keeps its arity" {
+        let g = ftr_mk2()
+        g(3, 4) == 7
+    }
+    then "nullary returned fn is callable" {
+        let g = ftr_mk0()
+        g() == 42
+    }
+    then "nested returned fn stays callable through the intermediate binding" {
+        // The mutation-critical case: without the fn-type round-trip the inner
+        // `fn(int) -> int` degrades to a Struct and `h = g(5)` is no longer a
+        // callable, producing `undefined function h` at codegen.
+        let g = ftr_nested()
+        let h = g(5)
+        h(7) == 12
+    }
+    then "a generic fn returning a function type monomorphizes cleanly" {
+        // A generic fn is definitely rewritten by mono's `rewrite_function`,
+        // so this drives the render→parse round-trip on the return type.
+        let g = ftr_generic(99)
+        g(10) == 11
+    }
+    then "a returned fn threads into a higher-order consumer" {
+        let g = ftr_mk1()
+        ftr_apply(g, 20) == 21
+    }
+}
