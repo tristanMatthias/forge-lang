@@ -16,7 +16,7 @@ spec "ps3t.5.6: the interpreter Value type stays compiler-internal (g18a-deletab
         // inside std-avrac. A nonzero count outside it is a cross-package leak
         // onto a public/std/user surface — exactly what this audit forbids.
         let n = avra_shell_exec(
-            "grep -rlE '\\bValue\\b' packages/*/src --include=*.av 2>/dev/null " +
+            "grep -rlE '\\bValue\\b' packages/*/src --include='*.av' 2>/dev/null " +
             "| grep -v '/tests/' | grep -vE 'packages/std-avrac/' | wc -l | tr -d ' \\n'")
         n == "0"
     }
