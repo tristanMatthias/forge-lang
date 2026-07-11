@@ -162,6 +162,35 @@ spec "ps3t.5.3.1: pure method calls and unresolvable receivers are never false-p
             "fn main() { let y = amb(true) }\n")
         !out.contains("F4008")
     }
+    then "a nested-fn param shadowing an outer receiver does not leak the outer type (no false positive)" {
+        // `x.run()` inside `inner` binds to inner's param `x: Safe` (pure), NOT the
+        // outer `x: Impure`. Recording nested-fn params poisons the shadowed name so
+        // the outer type can't leak into the nested scope and resolve the wrong impl
+        // (`Impure__run`). Conservative: a false negative is fine, a false positive
+        // here would wrongly reject valid code (regression caught by CodeRabbit).
+        let out = check_src("nestfn",
+            "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "type Impure = { t: int }\n" +
+            "impl Impure {\n" +
+            "    fn run(self) -> int {\n" +
+            "        let r = avra_shell_exec(\"x\")\n" +
+            "        return 1\n" +
+            "    }\n" +
+            "}\n" +
+            "type Safe = { t: int }\n" +
+            "impl Safe {\n" +
+            "    fn run(self) -> int { return 0 }\n" +
+            "}\n" +
+            "@comptime\n" +
+            "fn outer(x: Impure) -> int {\n" +
+            "    fn inner(x: Safe) -> int {\n" +
+            "        return x.run()\n" +
+            "    }\n" +
+            "    return inner(Safe { t: 0 })\n" +
+            "}\n" +
+            "fn main() { let y = outer(Impure { t: 1 }) }\n")
+        !out.contains("F4008")
+    }
     then "cycle-safe: a self-referential method (loop -> loop) terminates and is not flagged" {
         let out = check_src("cycle",
             "type Node = { t: int }\n" +

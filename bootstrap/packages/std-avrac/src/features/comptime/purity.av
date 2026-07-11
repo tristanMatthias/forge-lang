@@ -313,7 +313,13 @@ fn collect_call_sites_in_stmt(store: NodeStore, stmt: Stmt, acc: List<string>, m
             s(body, e(coll, acc))
         }
         .Match(subj, arms) -> collect_call_sites_in_match_arms(store, arms, e(subj, acc), methods, binds)
-        .Function(_, _, _, _, body) -> collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        .Function(_, _, params, _, body) -> {
+            // A nested named fn introduces its own params; record them so a name
+            // that shadows an outer binding is poisoned (conservative) rather than
+            // resolved against the outer scope's type — the wrong impl.
+            record_param_binds(binds, params)
+            collect_call_sites_in_stmts(store, body, acc, methods, binds)
+        }
         .Impl(_, ms) -> collect_call_sites_in_stmts(store, ms, acc, methods, binds)
         .TraitDecl(_, ms) -> collect_call_sites_in_stmts(store, ms, acc, methods, binds)
         .LetDestructure(names, init) -> {
