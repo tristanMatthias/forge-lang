@@ -1,0 +1,42 @@
+// rmzs — the eval method-dispatch write-back must apply ONLY to
+// mutating methods. It used to write EVERY list-method result back to
+// an Ident receiver, so `xs.enumerate()` silently REPLACED xs with the
+// derived pairs list (same for zip). Latent until now because no
+// @comptime body read the receiver after a derived-list call. Pinned
+// here: enumerate/zip leave the receiver untouched; push still writes
+// back (the `mut xs = []; xs.push(...)` accumulator pattern macros
+// rely on).
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "eval list methods: only mutators write back to the receiver (rmzs)" {
+    then "enumerate/zip leave the receiver intact; push still writes back" {
+        let out = write_fixture_and_run("/tmp/avra_eval_list_writeback.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    mut xs = [10, 20]\n" +
+            "    let pairs = xs.enumerate()\n" +
+            "    if pairs.length == 2 { score = score + 1 }\n" +
+            "    if xs.length == 2 { score = score + 1 }\n" +
+            "    if xs[0] == 10 { score = score + 1 }\n" +
+            "    let zipped = xs.zip([1, 2])\n" +
+            "    if zipped.length == 2 { score = score + 1 }\n" +
+            "    if xs[1] == 20 { score = score + 1 }\n" +
+            "    mut ys: List<int> = []\n" +
+            "    ys.push(7)\n" +
+            "    if ys.length == 1 { score = score + 1 }\n" +
+            "    if ys[0] == 7 { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        7 -> return [synth_stmt_id(quote stmt { println(\"LIST_WRITEBACK_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"LIST_WRITEBACK_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("LIST_WRITEBACK_OK")
+    }
+}

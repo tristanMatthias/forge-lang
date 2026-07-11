@@ -56,6 +56,14 @@ expressions must evaluate to a string at runtime.
   (e.g. `Map<string, Box<string>> = {"k": Box{val: 9}}` — F1000).
 - Codegen emits the map-build sequence in
   `features/map_lit/codegen.av`.
+- @comptime eval (`map_lit_eval_expr`, rmzs): a literal evaluates to
+  a kind="map" Value (string-keyed rows, insertion order, duplicate
+  keys last-write-wins), and `eval_map_method` (features/eval)
+  mirrors the compiled method surface — `get` / `has` / `set` /
+  `len` / `length` / `keys` / `values` / `remove` — so macro bodies
+  can use maps. `get` on a missing key yields null. This includes
+  the EMPTY `{}` an idle match-arm body parses to, which previously
+  hit the noop eval handler (F4005 "no eval_expr handler").
 
 ## v1.0 limitations
 

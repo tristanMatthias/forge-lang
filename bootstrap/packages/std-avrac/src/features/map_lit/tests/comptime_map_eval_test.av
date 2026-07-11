@@ -1,0 +1,75 @@
+// rmzs GAP 3 — the @comptime evaluator's map surface. map_lit registered
+// resolver/typeck/codegen but NO eval hook, so any `{k: v}` (including
+// the empty `{}` an idle match-arm body parses to) hit noop_eval_expr →
+// F4005. Now MapLit evaluates to a kind="map" Value and the method set
+// mirrors emit_map_method_call (map_lit/codegen.av): get / has / set /
+// len / length / keys / values / remove, string-keyed, insertion-order
+// keys, last-write-wins on duplicates, get-on-missing → null.
+//
+// The macro scores each behavior and emits the OK marker only on a
+// perfect score, so a single wrong result flips the printed marker.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "@comptime map literals + methods evaluate (rmzs GAP3)" {
+    then "literal, get/has/len, set write-back, overwrite, remove, keys/values order" {
+        let out = write_fixture_and_run("/tmp/avra_comptime_map_eval.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    mut m = {\"a\": 1, \"b\": 2}\n" +
+            "    if m.len() == 2 { score = score + 1 }\n" +
+            "    if m.length() == 2 { score = score + 1 }\n" +
+            "    if m.get(\"a\") == 1 { score = score + 1 }\n" +
+            "    if m.has(\"b\") { score = score + 1 }\n" +
+            "    if m.has(\"z\") { } else { score = score + 1 }\n" +
+            "    m.set(\"a\", 9)\n" +
+            "    if m.get(\"a\") == 9 { score = score + 1 }\n" +
+            "    if m.len() == 2 { score = score + 1 }\n" +
+            "    m.set(\"c\", 3)\n" +
+            "    if m.len() == 3 { score = score + 1 }\n" +
+            "    m.remove(\"b\")\n" +
+            "    if m.len() == 2 { score = score + 1 }\n" +
+            "    if m.has(\"b\") { } else { score = score + 1 }\n" +
+            "    let keys = m.keys()\n" +
+            "    if keys.length == 2 { score = score + 1 }\n" +
+            "    if keys[0] == \"a\" { score = score + 1 }\n" +
+            "    if keys[1] == \"c\" { score = score + 1 }\n" +
+            "    let vals = m.values()\n" +
+            "    if vals[0] == 9 { score = score + 1 }\n" +
+            "    if vals[1] == 3 { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        15 -> return [synth_stmt_id(quote stmt { println(\"MAP_EVAL_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"MAP_EVAL_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("MAP_EVAL_OK")
+    }
+    then "the empty `{}` evaluates and a duplicate-key literal keeps the LAST value" {
+        let out = write_fixture_and_run("/tmp/avra_comptime_map_empty_dup.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    let e = {}\n" +
+            "    if e.len() == 0 { score = score + 1 }\n" +
+            "    let d = {\"k\": 1, \"k\": 2}\n" +
+            "    if d.len() == 1 { score = score + 1 }\n" +
+            "    if d.get(\"k\") == 2 { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        3 -> return [synth_stmt_id(quote stmt { println(\"MAP_EMPTY_DUP_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"MAP_EMPTY_DUP_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("MAP_EMPTY_DUP_OK")
+    }
+}

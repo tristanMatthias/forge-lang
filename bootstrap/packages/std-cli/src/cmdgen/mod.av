@@ -15,14 +15,16 @@
 // real `@std::cli::CommandSpec` / `FlagDef` / … struct literals (the schema
 // types are exported; a macro can construct them qualified).
 //
-// Built by DIRECT AST construction, NOT the design's §4.2 quote-splice form
-// (repeating/computed splice → F4006). A command's children are walked EXACTLY
-// ONCE, in `build_command_gen`, which returns BOTH the behaviour decls and the
-// schema `Subcommand` literal: a second walk (a `match`-on-Stmt inside a `for`,
-// nested in a deeper eval frame than the first) overruns the comptime evaluator
-// (rmzs — surfaces as "no eval_expr handler"), so the cli assembles from what
-// that one walk returns rather than re-scanning. `Stmt.Impl` encodes a trait
-// impl as the "Trait:Type" name form the parser uses.
+// Built by DIRECT AST construction. Historical: this shape predates the
+// quote foundation — repeating/computed splice landed later (#722/#723),
+// and the "second walk overruns the evaluator" F4005 that forced the
+// single-walk construction turned out to be an executed wildcard arm's
+// `{}` body: an empty MAP literal with no eval handler, fixed by giving
+// the @comptime evaluator real map support (rmzs). The one-walk
+// `build_command_gen` — returning BOTH the behaviour decls and the schema
+// `Subcommand` literal — is kept as the simpler shape; the design's §4.2
+// quote-splice rewrite is now unblocked (znl0 / vez6.12). `Stmt.Impl`
+// encodes a trait impl as the "Trait:Type" name form the parser uses.
 //
 // Leaf children (`flag x {}` / `arg y {}` / `option z {}`) need no
 // `component` declaration (they parse as nested blocks regardless; `option`
@@ -95,8 +97,7 @@ fn name_in(names: List<string>, name: string) -> bool {
 /// command-local binding wins and the global must not be inherited (else the
 /// run body gets two `let <name>` of conflicting types, and the schema and
 /// bindings disagree). One predicate so the run-body bindings and the
-/// CommandSpec's flag list can't drift. Returns a `bool`, so it stays clear
-/// of the sequential-list-helper evaluator path (rmzs gap-3).
+/// CommandSpec's flag list can't drift.
 @comptime
 fn global_shadowed(gname: string, flag_names: List<string>, arg_names: List<string>, option_names: List<string>) -> bool {
     name_in(flag_names, gname) || name_in(arg_names, gname) || name_in(option_names, gname)
