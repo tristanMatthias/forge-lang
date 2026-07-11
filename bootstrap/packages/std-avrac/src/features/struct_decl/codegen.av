@@ -1,6 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr}
+use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr, vtype_fn_params}
+use features.closures.{emit_lambda_typed}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
@@ -131,6 +132,16 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
                 let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
                 ctx.store_field(boxed, gep, fld_ty)
             }
+            // A lambda initializing a fn-typed field compiles against the
+            // FIELD's declared param types — the struct-field analog of the
+            // let-annotation and call-arg threading: without it the lambda
+            // falls to the body-scan heuristic, whose unresolved params lay
+            // out as i64, so a pointer-typed param miscompiles silently.
+            .Lambda(params, body) if fld_ty is .FnTyped -> {
+                let lam = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(fld_ty))?
+                let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+                ctx.store_field(lam.value, gep, fld_ty)
+            }
             _ -> {
                 mut r = ctx.emit(env, init_expr)?
                 let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
@@ -176,8 +187,20 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     let st_ty = ctx.get_type(struct_name)
     let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
-    mut v = ctx.emit(env, value)?
     let fld_ty = ctx.resolve_field_type(lookup.fields, field)
+    // A lambda assigned into a fn-typed field compiles against the FIELD's
+    // declared param types — same threading as the struct-literal arm in
+    // fill_struct_fields (and the let-annotation / call-arg paths): the
+    // body-scan heuristic would lay unresolved params out as i64.
+    mut v = EmitValue { value: ctx.i64(0), ty: .Int }
+    match value {
+        .Lambda(params, body) if fld_ty is .FnTyped -> {
+            v = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(fld_ty))?
+        }
+        _ -> {
+            v = ctx.emit(env, value)?
+        }
+    }
     // Optional box/unbox into the field's slot (no-op when neither applies).
     v = emit_optional_coerce(ctx, v, fld_ty)
     // Box a concrete value into a bare `dyn Trait` field — same as the struct

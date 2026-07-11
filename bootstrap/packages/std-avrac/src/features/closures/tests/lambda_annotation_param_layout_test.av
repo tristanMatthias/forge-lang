@@ -41,3 +41,31 @@ spec "fn-typed let annotation threads param types into the lambda" {
         out.contains("42")
     }
 }
+
+spec "fn-typed struct fields thread param types into lambda initializers" {
+    then "a string-param lambda in a struct literal reads its param as a string" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_field_string.av",
+            "type LapHandler = {\n" +
+            "    measure: fn(string) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let h = LapHandler { measure: (s) -> s.length }\n" +
+            "    let m = h.measure\n" +
+            "    println(string(m(\"sixteen chars!!!\")))\n" +
+            "}\n")
+        out.contains("16")
+    }
+    then "a string-param lambda ASSIGNED to a fn-typed field reads its param as a string" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_field_assign_string.av",
+            "type LapSlot = {\n" +
+            "    act: fn(string) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    mut sl = LapSlot { act: (s) -> 0 }\n" +
+            "    sl.act = (s) -> s.length + 1\n" +
+            "    let f = sl.act\n" +
+            "    println(string(f(\"ten chars!\")))\n" +
+            "}\n")
+        out.contains("11")
+    }
+}
