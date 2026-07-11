@@ -1102,18 +1102,22 @@ int64_t avra_llvm_jit_run(LLVMModuleRef module) {
     return 0;
 }
 
-// Compiled-comptime (ps3t.5, Slice A): MCJIT the module and CALL a NAMED
-// function with `argc` i64 arguments, returning its i64 result. Where
-// `avra_llvm_jit_run` runs `main()`, this runs an arbitrary fn — the primitive
-// that lets the compiler evaluate a `@comptime` fn by compiling+running it
-// instead of tree-walking it. Arguments and result are i64: int/bool pass
-// directly; float is bit-cast by the Avra marshal layer; a pointer result
-// (string/enum) must be consumed BEFORE the engine is disposed (the JIT'd code
-// + its allocations live in the engine) — Slice A gates on scalar returns, so
-// dispose-after-read is safe here. Arity is dispatched by a switch because C
-// cannot call through a runtime-arity function pointer.
-int64_t avra_llvm_jit_call(LLVMModuleRef module, const char* fn_name,
-                           int64_t argc, int64_t* argv) {
+// Shared MCJIT setup for the JIT-call primitives: build an execution engine for
+// `module` and resolve `fn_name` to a callable address, handing the engine back
+// (via `engine_out`) for the caller to dispose after the call. Returns 0 — and
+// disposes any engine it created — on any error, so callers just check for a
+// null address. Factored out so the int-return and float-return callers below
+// share one engine-lifecycle path (their only real difference is the ABI of the
+// return register they read).
+// A JIT'd @comptime body reaches back into the host for any runtime symbol its
+// codegen emits — e.g. a float literal lowers to `avra_float_parse(<str>)`.
+// MCJIT resolves such symbols through dlsym(RTLD_DEFAULT, …) against bs2's own
+// dynamic symbol table, so bs2 MUST be linked `-rdynamic`/`--export-dynamic`
+// (see scripts/diagnose.sh); without it the reference resolves to null and the
+// JIT'd code segfaults on the first call. Int/bool bodies never tripped this —
+// their literals lower to LLVM constants, needing no host symbol.
+static uint64_t avra_jit_resolve(LLVMModuleRef module, const char* fn_name,
+                                 LLVMExecutionEngineRef* engine_out) {
     LLVMLinkInMCJIT();
     LLVMInitializeNativeTarget();
     LLVMInitializeNativeAsmPrinter();
@@ -1137,6 +1141,25 @@ int64_t avra_llvm_jit_call(LLVMModuleRef module, const char* fn_name,
         LLVMDisposeExecutionEngine(engine);
         return 0;
     }
+    *engine_out = engine;
+    return addr;
+}
+
+// Compiled-comptime (ps3t.5, Slice A): MCJIT the module and CALL a NAMED
+// function with `argc` i64 arguments, returning its i64 result. Where
+// `avra_llvm_jit_run` runs `main()`, this runs an arbitrary fn — the primitive
+// that lets the compiler evaluate a `@comptime` fn by compiling+running it
+// instead of tree-walking it. Arguments and result are i64: int/bool pass
+// directly; float is bit-cast by the Avra marshal layer; a pointer result
+// (string/enum) must be consumed BEFORE the engine is disposed (the JIT'd code
+// + its allocations live in the engine) — Slice A gates on scalar returns, so
+// dispose-after-read is safe here. Arity is dispatched by a switch because C
+// cannot call through a runtime-arity function pointer.
+int64_t avra_llvm_jit_call(LLVMModuleRef module, const char* fn_name,
+                           int64_t argc, int64_t* argv) {
+    LLVMExecutionEngineRef engine = NULL;
+    uint64_t addr = avra_jit_resolve(module, fn_name, &engine);
+    if (!addr) return 0;
 
     int64_t result = 0;
     switch (argc) {
@@ -1149,6 +1172,37 @@ int64_t avra_llvm_jit_call(LLVMModuleRef module, const char* fn_name,
             fprintf(stderr, "JIT-call error: arity %lld unsupported (max 4)\n", (long long)argc);
             LLVMDisposeExecutionEngine(engine);
             return 0;
+    }
+
+    LLVMDisposeExecutionEngine(engine);
+    return result;
+}
+
+// Float-return sibling of avra_llvm_jit_call (ps3t.5.2.1.1, part a). A @comptime
+// fn declared `-> float` hands its result back in an FP register (xmm0/d0), which
+// the int64 caller above cannot read — it would return whatever garbage sits in
+// rax. Casting the JIT'd address to a `double`-returning fn pointer makes the ABI
+// read the FP return register. Arguments stay i64 (int params ride the integer
+// registers exactly as before); only the RETURN ABI differs. Float PARAMS would
+// additionally need their args in FP registers, so a fn WITH float params stays
+// interpreter-folded (the Avra-side gate keeps params int-only).
+double avra_llvm_jit_call_f64(LLVMModuleRef module, const char* fn_name,
+                              int64_t argc, int64_t* argv) {
+    LLVMExecutionEngineRef engine = NULL;
+    uint64_t addr = avra_jit_resolve(module, fn_name, &engine);
+    if (!addr) return 0.0;
+
+    double result = 0.0;
+    switch (argc) {
+        case 0: result = ((double(*)(void))addr)(); break;
+        case 1: result = ((double(*)(int64_t))addr)(argv[0]); break;
+        case 2: result = ((double(*)(int64_t, int64_t))addr)(argv[0], argv[1]); break;
+        case 3: result = ((double(*)(int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2]); break;
+        case 4: result = ((double(*)(int64_t, int64_t, int64_t, int64_t))addr)(argv[0], argv[1], argv[2], argv[3]); break;
+        default:
+            fprintf(stderr, "JIT-call error: arity %lld unsupported (max 4)\n", (long long)argc);
+            LLVMDisposeExecutionEngine(engine);
+            return 0.0;
     }
 
     LLVMDisposeExecutionEngine(engine);

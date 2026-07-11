@@ -1,0 +1,33 @@
+// ps3t.5.2.1.1 part a: float-returning @comptime folds. OLD interprets these
+// (uabd made the interpreter's float fold correct); NEW JITs them, reading the
+// double result from the FP return register. The folded Expr.FloatLit literals
+// must be byte-identical either way — the JIT renders its double through the
+// same `render_float` the interpreter uses. Bodies keep params int-only (float
+// params would need FP-register args) and avoid `/` (its zero-divisor trap is
+// gated out of the JIT), so every fn here is JIT-eligible.
+@comptime
+fn half() -> float { return 3.5 }
+@comptime
+fn pi() -> float { return 3.14 }
+@comptime
+fn addf() -> float { return 1.5 + 2.5 }
+@comptime
+fn combo() -> float { return 1.5 + 2.5 - 1.0 }
+@comptime
+fn scale() -> float { return 1.5 * 4.0 }
+@comptime
+fn konst(n: int) -> float { return 2.25 }
+@comptime
+fn base() -> float { return 2.5 }
+@comptime
+fn via_callee() -> float { return base() + 1.0 }
+
+fn main() {
+    let a = half()
+    let b = pi()
+    let c = addf()
+    let d = combo()
+    let e = scale()
+    let f = konst(7)
+    let g = via_callee()
+}

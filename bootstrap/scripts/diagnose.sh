@@ -153,6 +153,18 @@ else
   LD_SELECT="${LD_SELECT:-}"
 fi
 
+# Export the dynamic symbol table on every binary we link. The compiler hosts an
+# in-process MCJIT (the @comptime JIT fold, ps3t.5.2.1); a JIT'd body reaches back
+# into the host for any runtime symbol its codegen emits (e.g. a float literal
+# lowers to `avra_float_parse`), and MCJIT resolves those through
+# dlsym(RTLD_DEFAULT, …) against the host's dynamic symbol table. Without
+# `-rdynamic` that table is empty, the reference resolves to null, and the JIT'd
+# code segfaults on the first call. clang and gcc both accept `-rdynamic` (Linux
+# → `--export-dynamic`, macOS → `-export_dynamic`). Applied uniformly so no
+# compiler binary — however it's built — can miss it; the extra symbols on a
+# plain fixture binary are harmless.
+EXPORT_DYNAMIC="${EXPORT_DYNAMIC:--rdynamic}"
+
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
 # The integration branch the seed train runs on. Feature
@@ -901,7 +913,7 @@ ensure_seed() {
       || die "seed llc failed"
     cc -o "${SEED_BIN}.tmp" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
       $STACK_LDFLAGS \
-      $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/seed.link.log" \
+      $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/seed.link.log" \
       || { rm -f "${SEED_BIN}.tmp"; cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
     mv "${SEED_BIN}.tmp" "$SEED_BIN"
     echo "$seed_hash" > "$seed_hash_file"
@@ -1016,7 +1028,7 @@ link_ll() {
   local tmp_out="${out}.tmp.$$"
   cc -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
     $STACK_LDFLAGS \
-    $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB $extra_libs 2>"$logfile" \
+    $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB $extra_libs 2>"$logfile" \
     || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
   mv "$tmp_out" "$out"
 
@@ -1076,7 +1088,7 @@ ensure_bs2() {
         || die "seed llc -O0 failed"
       cc -o "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
         $STACK_LDFLAGS \
-        $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null \
+        $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null \
         || { rm -f "$BUILD_DIR/seed_o0.tmp"; die "seed -O0 link failed"; }
       mv "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0"
       if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
@@ -1108,7 +1120,7 @@ link_ll_O0() {
   local tmp_out="${out}.tmp.$$"
   cc -g -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
     $STACK_LDFLAGS \
-    $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$logfile" \
+    $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$logfile" \
     || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
   mv "$tmp_out" "$out"
 }
@@ -1154,7 +1166,7 @@ ensure_bs2_asan() {
     log "linking $BS2_ASAN with -fsanitize=address"
     cc -fsanitize=address -g -o "$BS2_ASAN" \
        "$SRC_DIR/main.av.ll" "$RUNTIME_ASAN_O" "$LLVM_WRAPPER_O" \
-       $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/bs2_asan.link.log" \
+       $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$BUILD_DIR/bs2_asan.link.log" \
       || { cat "$BUILD_DIR/bs2_asan.link.log" >&2; die "bs2_asan link failed"; }
     ok "built $BS2_ASAN"
   fi
@@ -1267,7 +1279,7 @@ mode_build_bs2() {
   "$LLC" -O0 $LLC_RELOC -filetype=obj "$SRC_DIR/main.av.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
   if cc -o "$BUILD_DIR/bs2_o0" "$BUILD_DIR/bs2_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
        $STACK_LDFLAGS \
-       $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null; then
+       $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null; then
     if "$BUILD_DIR/bs2_o0" compile "$SRC_DIR/main.av" >/dev/null 2>&1; then
       err ""
       err "LLVM OPTIMIZATION BUG DETECTED"
@@ -2387,7 +2399,7 @@ llc_link_bin() {
   local runtime_o="${5:-$RUNTIME_O}" wrapper_o="${6:-$LLVM_WRAPPER_O}"
   "$LLC" -O2 $LLC_RELOC -filetype=obj "$ll" -o "$obj" 2>"$buildlog" || return 1
   cc -o "$out.tmp" "$obj" "$runtime_o" "$wrapper_o" \
-    $STACK_LDFLAGS $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>>"$buildlog" \
+    $STACK_LDFLAGS $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>>"$buildlog" \
     || { rm -f "$out.tmp"; return 2; }
   mv "$out.tmp" "$out"
 }
