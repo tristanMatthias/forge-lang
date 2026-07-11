@@ -136,6 +136,45 @@ fn mk_num_list(store: NodeStore, nums: List<string>) -> ExprId {
     store.exprs.add_leaf(Expr.ListLit(elems))
 }
 
+// `fn len(xs) -> int { return xs.length }` — content-agnostic (no indexing),
+// so the edge battery (empty list, null element) can pin cache-key behavior
+// without tripping an eval error on the element values. The param is
+// deliberately shape-agnostic (Unknown — a hand-built stand-in for a generic
+// `len<T>(xs: List<T>)`), so one fn serves every list shape the battery
+// throws at it.
+fn mk_len_fn(ws: NodeStore) -> CompTimeFn {
+    let body: List<StmtId> = [
+        ws.stmts.add_leaf(Stmt.Return(
+            ws.exprs.add_leaf(Expr.FieldAccess(ws.exprs.add_leaf(Expr.Ident("xs")), "length")))),
+    ]
+    CompTimeFn {
+        name: "len",
+        params: [ ParamEntry { name: "xs", vtype: ValueType.Unknown } ],
+        ret_ty: ValueType.Int,
+        body,
+    }
+}
+
+fn len_registry() -> CompTimeRegistry {
+    let ws = ts()
+    prepare_runtime(comptime_registry_new(ws) with { fns: [mk_len_fn(ws)] })
+}
+
+/// Fold a fresh `len([<nums>])` call — flat number-literal list arg.
+fn fold_len(reg: CompTimeRegistry, nums: List<string>) -> string {
+    let store = reg.runtime.nodes
+    let call = Expr.Call(store.exprs.add_leaf(Expr.Ident("len")), [mk_num_list(store, nums)])
+    number_text_of(try_fold_call(reg, call))
+}
+
+/// Fold `len(<one-element ListLit>)` from a prebuilt element ExprId — lets a
+/// then inject non-Number elements (None, Ident) into the list literal.
+fn fold_len_of(reg: CompTimeRegistry, elem: ExprId) -> Expr? {
+    let store = reg.runtime.nodes
+    let arg = store.exprs.add_leaf(Expr.ListLit([elem]))
+    try_fold_call(reg, Expr.Call(store.exprs.add_leaf(Expr.Ident("len")), [arg]))
+}
+
 spec "ps3t.5.8: @comptime folds over a COLLECTION arg happen and are memoized" {
     then "a list-literal arg folds (was a runtime call before) — result depends on the list" {
         let reg = head_registry()
@@ -186,5 +225,33 @@ spec "ps3t.5.8: @comptime folds over a COLLECTION arg happen and are memoized" {
         // distinct keys even though both flatten to 1,2,3,4.
         let r3 = fold_nfst(reg, ["1"], ["2", "3", "4"])   // [[1],[2,3,4]] → 1
         r1 == "1" && r2 == "1" && r3 == "1" && after1 == 1 && after2 == 1 && avra_map_len_cstr(reg.fold_cache) == 2
+    }
+    then "an EMPTY list literal folds + memoizes (l0: is a real key, not a bail)" {
+        let reg = len_registry()
+        let r1 = fold_len(reg, [])
+        let r2 = fold_len(reg, [])
+        r1 == "0" && r2 == "0" && avra_map_len_cstr(reg.fold_cache) == 1
+    }
+    then "length prefixes keep adjacent digits unambiguous across element boundaries" {
+        let reg = nfst_registry()
+        // [[12],[3]] vs [[1],[23]] — both flatten to the digit stream "123";
+        // an unprefixed key would collide and the second call would WRONGLY
+        // hit the first's cached 12.
+        let a = fold_nfst(reg, ["12"], ["3"])   // → 12
+        let b = fold_nfst(reg, ["1"], ["23"])   // → 1
+        a == "12" && b == "1" && avra_map_len_cstr(reg.fold_cache) == 2
+    }
+    then "a null element serializes (z:) — the fold still memoizes" {
+        let reg = len_registry()
+        let store = reg.runtime.nodes
+        let r1 = number_text_of(fold_len_of(reg, store.exprs.add_leaf(Expr.None)))
+        let r2 = number_text_of(fold_len_of(reg, store.exprs.add_leaf(Expr.None)))
+        r1 == "1" && r2 == "1" && avra_map_len_cstr(reg.fold_cache) == 1
+    }
+    then "a non-literal element bails the whole fold — no fold, no cache entry" {
+        let reg = len_registry()
+        let store = reg.runtime.nodes
+        let folded = fold_len_of(reg, store.exprs.add_leaf(Expr.Ident("q")))
+        folded == null && avra_map_len_cstr(reg.fold_cache) == 0
     }
 }
