@@ -16,7 +16,15 @@ extern fn avra_process_exit(code: int)
 /// alone toggles it. Exported: a command's schema (CommandSpec) is public
 /// so App.run can parse argv against it and hand-written commands can
 /// describe themselves.
-export type FlagDef = { name: string, short: string, description: string }
+///
+/// `aliases` are extra WHOLE-TOKEN spellings that also set this flag, matched
+/// dash/underscore-insensitively. Two shapes fall out of one field: a bare
+/// alias (`--used-by` for the `callers` flag) and an option-FORM alias
+/// (`--message-format=json` for the `json` flag) — the alias is compared
+/// against the raw argv token intact, so the `=json` is part of the match and
+/// the token never reaches the `--key=value` option classifier. Empty for a
+/// flag with only its canonical (and optional short) spelling.
+export type FlagDef = { name: string, short: string, description: string, aliases: List<string> }
 
 /// Option declaration: `--name <value>` or `--name=<value>` /
 /// `-s <value>`. Carries a default for when the user omits it.
@@ -396,7 +404,7 @@ export fn cli_add_command(cli: Cli, name: string, description: string) -> Cli {
 /// Register a top-level boolean flag (`--name` / `-s`). Visible
 /// under any subcommand.
 export fn cli_add_flag(cli: Cli, name: string, short: string, description: string) -> Cli {
-    let f = FlagDef { name, short, description }
+    let f = FlagDef { name, short, description, aliases: [] }
     mut flags = cli.flags
     flags.push(f)
     cli with { flags: flags }
@@ -422,7 +430,7 @@ export fn cli_add_arg(cli: Cli, name: string, description: string, required: boo
 
 /// Register a flag scoped to a specific subcommand.
 export fn cli_command_add_flag(cli: Cli, cmd_name: string, name: string, short: string, description: string) -> Cli {
-    let f = FlagDef { name, short, description }
+    let f = FlagDef { name, short, description, aliases: [] }
     mut cmds = cli.commands
     for (i, cmd) in cmds.enumerate() {
         if cmd.name == cmd_name {
@@ -658,17 +666,24 @@ fn norm_flag(s: string) -> string {
 }
 
 /// The canonical (long, dash-stripped) name of the flag that `arg` matches —
-/// by either its `--name` or `-short` spelling, dash/underscore-insensitive —
-/// or "" when no flag matches. A flag is always RECORDED under this canonical
-/// name, so `result_has_flag` (which the generated run bodies call by long
-/// name) resolves it regardless of which spelling the user typed (`-v` and
-/// `--verbose` both set `verbose`; `--debug-null` sets `debug_null`).
+/// by its `--name`, its `-short`, or any of its whole-token `aliases`, all
+/// dash/underscore-insensitive — or "" when no flag matches. A flag is always
+/// RECORDED under this canonical name, so `result_has_flag` (which the
+/// generated run bodies call by long name) resolves it regardless of which
+/// spelling the user typed (`-v` and `--verbose` both set `verbose`;
+/// `--debug-null` sets `debug_null`; `--used-by` sets `callers`;
+/// `--message-format=json` sets `json`). Aliases are matched here — BEFORE the
+/// `--key=value` option classifier — so an option-form alias's `=value` is part
+/// of the whole-token comparison, not split off as an option.
 fn flag_canonical_name(flags: List<FlagDef>, arg: string) -> string {
     let key = norm_flag(arg)
     mut i = 0
     while i < flags.length {
         let f = flags[i]
         if norm_flag(f.name) == key || (f.short != "" && norm_flag(f.short) == key) { return strip_dashes(f.name) }
+        for al in f.aliases {
+            if norm_flag(al) == key { return strip_dashes(f.name) }
+        }
         i = i + 1
     }
     ""
