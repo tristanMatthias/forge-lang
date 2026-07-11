@@ -2,7 +2,8 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
+use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor, vtype_fn_params}
+use features.closures.{emit_lambda_typed}
 use core.{type_registry_id_for, method_mangled_name}
 use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
@@ -57,6 +58,22 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
                 .EnumCtor(tn, variant, args) if tn == "" && variant_is_optional_ctor(variant, args.length) -> {
                     let r = emit_optional_ctor_value(emit_ctx, env, variant, args, decl)?
                     return ok_stmt(ctx.bind(env, name, r.value, decl))
+                }
+                _ -> {}
+            }
+        }
+        // A lambda initializer under a fn-typed annotation compiles against
+        // the ANNOTATION's declared param types — the same expected-type-
+        // directed pattern as the two cases above, and the same threading
+        // the call-arg path already does (fill_arg_array_boxing). Without
+        // it the lambda falls to the body-scan heuristic, whose unresolved
+        // params lay out as i64 — a ptr-typed param (string/struct/list)
+        // then miscompiles silently (the under-determined-layout class).
+        if decl is .FnTyped {
+            match initializer {
+                .Lambda(params, body) -> {
+                    let lam = emit_lambda_typed(emit_ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(decl))?
+                    return ok_stmt(ctx.bind(env, name, lam.value, decl))
                 }
                 _ -> {}
             }
