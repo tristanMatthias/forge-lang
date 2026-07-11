@@ -13,13 +13,14 @@
 //
 // The COMPLEMENT — that the disambiguator still identifies `run() { … }`
 // as the method when a SIBLING child (`flag x {}`) shares the block — is
-// covered in std-cli's `expand_command_test` ("run() shorthand alongside
-// a flag sibling"), through the real `expand_command`. It can't live here:
-// (1) a self-contained local macro that splices a multi-child block's body
-// trips the comptime-evaluator foundation gap (F4005/F4006, ticket rmzs) —
-// only `expand_command`'s wrap-in-generated-fn construction sidesteps it;
-// (2) this is a std-avrac test, and std-cli depends on std-avrac, so
-// importing `@std.cli` here would be a layering cycle.
+// covered in std-cli's `expand_command_test` (through the real
+// `expand_command`) and, with a self-contained local macro over mixed
+// children, in comptime/tests/expand_wildcard_arm_test.av. (Mixed
+// children were exactly the trigger for the F4005 evaluator gap this
+// note used to document as blocking; fixed — an executed wildcard arm's
+// `{}` body is an empty map literal, and the evaluator now has map
+// support, rmzs.) std-cli can't be imported here regardless: std-cli
+// depends on std-avrac, so `use @std.cli` would be a layering cycle.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture_and_run}

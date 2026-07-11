@@ -3,18 +3,52 @@
 // is in scope without a self-import.
 use codegen.{err_emit}
 use core.{feature_new, Feature, ValueType}
+use features.eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
 use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
 
 /// Register the `{k: v, k: v}` map literal feature. Wires up
-/// resolver, typeck, and codegen via the standard feature
-/// registry. Spec axis 28.
+/// resolver, typeck, codegen, and the @comptime evaluator via the
+/// standard feature registry. Spec axis 28.
 export fn map_lit_feature() -> Feature {
     feature_new("map_lit") with {
         expr_tag: Expr.MapLit([]),
         emit_expr: map_lit_emit_expr,
         resolve_expr: map_lit_resolve_expr,
         check_expr: map_lit_check_expr,
+        eval_expr: map_lit_eval_expr,
+    }
+}
+
+/// @comptime eval hook for `MapLit` (rmzs GAP 3). `{k: v}` — and
+/// crucially the EMPTY `{}` that an idle match-arm body parses to —
+/// evaluates to a kind="map" Value instead of tripping noop_eval_expr's
+/// "no eval_expr handler" (that mine detonated whenever a macro's
+/// wildcard arm actually executed). Entries evaluate pairwise
+/// left-to-right; keys must be strings (the literal's typeck shape is
+/// `Map<string, V>`); duplicate keys keep the LAST value, matching
+/// avra_map_set_cstr.
+fn map_lit_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .MapLit(entries) -> {
+            mut cur = rt
+            mut rows: List<StructField> = []
+            mut i = 0
+            while i < entries.length {
+                let key_r = eval_map_key(cur, entries[i])
+                if step_had_error(key_r) { return key_r }
+                if i + 1 >= entries.length {
+                    return error_result(step_runtime(key_r), "map literal has key without value")
+                }
+                let val_r = eval_expr(step_runtime(key_r), cur.nodes.exprs.get(entries[i + 1]))
+                if step_had_error(val_r) { return val_r }
+                rows = map_upsert(rows, step_value(key_r).text, step_value(val_r))
+                cur = step_runtime(val_r)
+                i = i + 2
+            }
+            ok_result(cur, value_map(rows))
+        }
+        _ -> error_result(rt, "map_lit_eval_expr: expected MapLit")
     }
 }
 

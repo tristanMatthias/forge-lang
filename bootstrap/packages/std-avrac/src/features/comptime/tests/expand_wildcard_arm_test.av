@@ -1,0 +1,98 @@
+// rmzs GAP 3 — a match-arm WILDCARD body `_ -> {}` inside a @comptime fn
+// is an empty MAP literal (the bare-`{}` parse), and until map_lit gained
+// an eval hook it hit noop_eval_expr → F4005 "no eval_expr handler" the
+// moment the arm actually EXECUTED. The mine only detonated on MIXED
+// component children: a `fn` child falling through `.ComponentBlock`-only
+// arms (or a component child through `.Function`-only arms) ran the
+// wildcard body; homogeneous fixtures never did — which is why the bug
+// masqueraded as "two sequential list-building helper calls fail" (each
+// helper alone was probed on single-kind fixtures) and as cmdgen's
+// "second walk overruns the evaluator" (its match covers both variants,
+// so its wildcard never runs).
+//
+// Both directions pinned here: a ComponentBlock-walking macro over a
+// body that ALSO holds a `fn` child, and a Function-walking macro over
+// a body that ALSO holds component children.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "@expand macro survives an executed wildcard arm (`_ -> {}`, rmzs GAP3)" {
+    then "a fn child falling through .ComponentBlock arms expands (wildcard runs)" {
+        let out = write_fixture_and_run("/tmp/avra_expand_wildcard_cb.av",
+            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.features.comptime.{synth_deref_stmt}\n" +
+            "@comptime\n" +
+            "fn count_flags(s: Stmt) -> Stmt {\n" +
+            "    mut n = 0\n" +
+            "    match s {\n" +
+            "        .ComponentBlock(_, _, _, body) -> {\n" +
+            "            for id in body {\n" +
+            "                match synth_deref_stmt(id) {\n" +
+            "                    .ComponentBlock(cn, _, _, _) -> { if cn == \"flag\" { n = n + 1 } }\n" +
+            "                    _ -> {}\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "        _ -> {}\n" +
+            "    }\n" +
+            "    match n {\n" +
+            "        2 -> return quote stmt { println(\"WILDCARD_CB_OK\") }\n" +
+            "        _ -> return quote stmt { println(\"WILDCARD_CB_BAD\") }\n" +
+            "    }\n" +
+            "}\n" +
+            "component flag {\n" +
+            "}\n" +
+            "@expand(count_flags)\n" +
+            "component cmd {\n" +
+            "}\n" +
+            "cmd build {\n" +
+            "    flag a {}\n" +
+            "    flag b {}\n" +
+            "    fn run() {\n" +
+            "        println(\"unreached_run\")\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {}\n")
+        out.contains("WILDCARD_CB_OK")
+    }
+    then "component children falling through .Function arms expand (reverse direction)" {
+        let out = write_fixture_and_run("/tmp/avra_expand_wildcard_fn.av",
+            "use @std.avrac.core.{Stmt}\n" +
+            "use @std.avrac.features.comptime.{synth_deref_stmt}\n" +
+            "@comptime\n" +
+            "fn count_run_stmts(s: Stmt) -> Stmt {\n" +
+            "    mut n = 0\n" +
+            "    match s {\n" +
+            "        .ComponentBlock(_, _, _, body) -> {\n" +
+            "            for id in body {\n" +
+            "                match synth_deref_stmt(id) {\n" +
+            "                    .Function(fname, _, _, _, fbody) -> {\n" +
+            "                        if fname == \"run\" { n = n + fbody.length }\n" +
+            "                    }\n" +
+            "                    _ -> {}\n" +
+            "                }\n" +
+            "            }\n" +
+            "        }\n" +
+            "        _ -> {}\n" +
+            "    }\n" +
+            "    match n {\n" +
+            "        1 -> return quote stmt { println(\"WILDCARD_FN_OK\") }\n" +
+            "        _ -> return quote stmt { println(\"WILDCARD_FN_BAD\") }\n" +
+            "    }\n" +
+            "}\n" +
+            "component flag {\n" +
+            "}\n" +
+            "@expand(count_run_stmts)\n" +
+            "component cmd {\n" +
+            "}\n" +
+            "cmd build {\n" +
+            "    flag a {}\n" +
+            "    flag b {}\n" +
+            "    fn run() {\n" +
+            "        println(\"unreached_run\")\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {}\n")
+        out.contains("WILDCARD_FN_OK")
+    }
+}

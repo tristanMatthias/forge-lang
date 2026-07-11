@@ -5180,6 +5180,45 @@ double avra_bytes_to_float_le(const char* b, int64_t offset) {
     return v;
 }
 
+// EINTR-safe full-buffer pipe IO for the isolated-run frames. The
+// test runner's signal traffic (stall-detector timers, SIGCHLD storms
+// at high parallelism) can interrupt a blocking read/write after a
+// PARTIAL transfer; a single call then reports a short count, which
+// the framing logic misreads as a crash (child side) or a short read
+// (parent side). Observed as a load-only flake: a 100 KB payload —
+// larger than the 64 KB pipe buffer, so the transfer must block —
+// round-trips fine in isolation but intermittently "crashes" under a
+// full parallel suite.
+static int avra_write_all(int fd, const void* buf, size_t n) {
+    const char* p = (const char*)buf;
+    size_t left = n;
+    while (left > 0) {
+        ssize_t w = write(fd, p, left);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        p += (size_t)w;
+        left -= (size_t)w;
+    }
+    return 0;
+}
+
+static ssize_t avra_read_full(int fd, void* buf, size_t n) {
+    char* p = (char*)buf;
+    size_t got = 0;
+    while (got < n) {
+        ssize_t r = read(fd, p + got, n - got);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (r == 0) break;  // EOF: writer closed early
+        got += (size_t)r;
+    }
+    return (ssize_t)got;
+}
+
 const char* avra_isolated_run(int64_t closure) {
     int pipefd[2];
     if (pipe(pipefd) != 0) return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_PIPE_FAILED);
@@ -5199,13 +5238,12 @@ const char* avra_isolated_run(int64_t closure) {
         int64_t result = avra_closure_call_0(closure);
         const char* b = (const char*)(uintptr_t)result;
         int64_t len = b ? *(int64_t*)b : 0;
-        ssize_t hn = write(pipefd[1], &len, sizeof(len));
-        ssize_t dn = 0;
-        if (hn == sizeof(len) && len > 0) {
-            dn = write(pipefd[1], avra_bytes_data((char*)b), (size_t)len);
+        int wrote_ok = avra_write_all(pipefd[1], &len, sizeof(len)) == 0;
+        if (wrote_ok && len > 0) {
+            wrote_ok = avra_write_all(pipefd[1], avra_bytes_data((char*)b), (size_t)len) == 0;
         }
         close(pipefd[1]);
-        _exit((hn == sizeof(len) && dn == len) ? 0 : 1);
+        _exit(wrote_ok ? 0 : 1);
     }
 
     // Parent: read length header, allocate the receiving bytes,
@@ -5213,7 +5251,7 @@ const char* avra_isolated_run(int64_t closure) {
     // PIPE_BUF can't deadlock on a full pipe.
     close(pipefd[1]);
     int64_t len = 0;
-    ssize_t hn = read(pipefd[0], &len, sizeof(len));
+    ssize_t hn = avra_read_full(pipefd[0], &len, sizeof(len));
     int header_ok = (hn == (ssize_t)sizeof(len) && len >= 0 && len <= AVRA_ISOLATED_PAYLOAD_CAP);
 
     // Drain payload into a scratch buffer (when the header was
@@ -5223,12 +5261,8 @@ const char* avra_isolated_run(int64_t closure) {
     char* scratch = (header_ok && len > 0) ? (char*)malloc((size_t)len) : NULL;
     int short_read = 0;
     if (header_ok && len > 0) {
-        int64_t got = 0;
-        while (got < len) {
-            ssize_t m = read(pipefd[0], scratch + got, (size_t)(len - got));
-            if (m <= 0) { short_read = 1; break; }
-            got += m;
-        }
+        ssize_t got = avra_read_full(pipefd[0], scratch, (size_t)len);
+        if (got != (ssize_t)len) short_read = 1;
     }
     close(pipefd[0]);
 

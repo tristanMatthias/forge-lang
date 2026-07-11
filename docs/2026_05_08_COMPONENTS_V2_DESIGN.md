@@ -27,7 +27,7 @@ Three concepts, one new primitive:
 | Concept | What it does | Status (as of vez6.11) |
 |---|---|---|
 | **`@comptime fn`** | Function callable at compile time. Returns AST values. | ✅ shipped |
-| **`quote { … }`** | Build AST values via familiar syntax instead of constructor calls. | 🟡 single-value only — repeating/computed splice blocked (rmzs) |
+| **`quote { … }`** | Build AST values via familiar syntax instead of constructor calls. | ✅ shipped — incl. repeating `~list` (#722) + computed `~(expr)` (#723) splice |
 | **`@expand(macro_fn)`** | Attribute that registers a `@comptime fn` to rewrite the declaration it's attached to. | ✅ shipped |
 | **`component`** (extended) | Block-syntax registration; declares accepted children + traits implemented. | ✅ shipped (children schema + `implements Trait`) |
 
@@ -38,7 +38,7 @@ Every block-syntax DSL Avra ships (cli, test, http routes, sql, html, …) is a 
 The declarative cli layer is **implemented and consumer-complete** (`@std.cli` + `@std.cli.cmdgen`; Phase 11 done, merged). Two things diverge from the §4 worked example, which predates the implementation:
 
 - **Runtime shape — data/behaviour split.** The trait is ONE method — `trait Runnable { fn run(self, args: CliResult) -> int }`, not the two-method `name()/run()` of §4.2. A command's identity + parse schema are DATA in a `CommandSpec { name, description, flags, args, options }`, paired with the `dyn Runnable` behaviour in a `Subcommand { meta, body }`. The container is `App` holding `List<Subcommand>` (not `Cli` holding `List<dyn Runnable>`); `App.run` / `run_argv` / `dispatch` read the schema by DIRECT field access (`c.meta.name`) rather than trait accessors. Deliberate improvement — homogeneous schema as data, heterogeneous behaviour behind `dyn`; this is what §4.2/4.3 would show if rewritten.
-- **Macros use direct AST construction, not quote/splice.** `expand_command` / `expand_cli` (`cmdgen/mod.av`) build output via `Expr.StructLit` / `synth_expr_id` / … in a single body-walk, not the elegant `quote decl { … ~bindings ~user_run }` of §4.2. Reason: repeating/computed splice (`~bindings`, `.map(…)`) and a second child-walk in a deeper eval frame trip the comptime evaluator (F4005/F4006 — ticket `rmzs`, owned by the AST-rewrite program ps3t.5). Single-value quote/splice works; the ergonomic story lands when rmzs does.
+- **Macros use direct AST construction, not quote/splice.** `expand_command` / `expand_cli` (`cmdgen/mod.av`) build output via `Expr.StructLit` / `synth_expr_id` / … in a single body-walk, not the elegant `quote decl { … ~bindings ~user_run }` of §4.2. Historical: the shape predates the quote foundation. Its blockers are now resolved — repeating/computed splice landed (#722/#723), and the "second child-walk trips the evaluator" F4005 was an executed wildcard arm's `{}` body (an empty map literal the evaluator couldn't eval; fixed with @comptime map support, rmzs). The §4.2 quote-splice rewrite of cmdgen is unblocked (znl0 / vez6.12).
 
 Feature status against §3:
 
@@ -47,7 +47,7 @@ Feature status against §3:
 | 3.1 `@comptime`, 3.5 `@expand`, 3.6.1 `config` | ✅ shipped |
 | 3.6.2 `children { }` schema + validation ("not a valid child" errors) | ✅ shipped |
 | 3.6.3 `implements Trait` | ✅ shipped (1-method, see above) |
-| 3.3 / 3.4 quote / splice | 🟡 single-value only; repeating/computed → rmzs (ps3t.5) |
+| 3.3 / 3.4 quote / splice | ✅ shipped — repeating `~list` (#722), computed `~(expr)` (#723); evaluator `{}` map-lit gap fixed (rmzs) |
 | 3.2 rich inspection (`children_of_type` / `method_body` / `parent_chain_flags`) | ❌ macros walk manually via `comp_children` / `match` |
 | 3.7 hygiene / `@unhygienic` | ❌ not implemented |
 | 3.6.4 `body: TokenStream` | ❌ not implemented |

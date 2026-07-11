@@ -98,6 +98,9 @@ export fn struct_field(name: string, value: Value) -> StructField {
 ///      | "enum"     — enum_type / enum_variant / enum_payload set
 ///      | "list"     — list_payload set
 ///      | "struct"   — struct_type + struct_payload set
+///      | "map"      — struct_payload doubles as the string-keyed entry
+///                     rows, in insertion order (rmzs — `{k: v}` literals
+///                     and the map method surface inside @comptime fns)
 ///      | "stmt"     — stmt_payload carries a native Stmt AST node (so07.8 Phase A)
 ///      | "expr"     — expr_payload carries a native Expr AST node (so07.8 Phase A)
 ///      | "value_type" — value_type_payload carries a native ValueType (so07.8 Phase A)
@@ -1075,7 +1078,17 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         _ -> {
             let tag = avra_expr_tag(expr)
             let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
-            if result != null { return result! }
+            if result != null {
+                let r = result!
+                // A feature registered this tag but left eval as the noop.
+                // Name the node: the bare "no eval_expr handler" string cost
+                // days of misdiagnosis on rmzs — tag + render makes the
+                // offending feature identifiable from the error alone.
+                if step_had_error(r) && step_error_message(r) == "no eval_expr handler" {
+                    return error_result(step_runtime(r), "no eval_expr handler (tag=${string(tag)} render=${render_expr(runtime.nodes, expr)})")
+                }
+                return r
+            }
             error_result(runtime, "unsupported expression type in tree-walk evaluator (tag=${string(tag)} render=${render_expr(runtime.nodes, expr)})")
         }
     }
@@ -1206,19 +1219,13 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<ExprId>) -> StepResult {
             if !probe.had_error && probe.value.kind == "list" {
                 let lm = eval_list_method(probe.runtime, probe.value, method, args)
                 if lm != null {
-                    let lm_val = lm!
-                    if lm_val.had_error { return lm_val }
-                    match runtime.nodes.exprs.get(obj) {
-                        .Ident(name) -> {
-                            let assigned = assign_binding(lm_val.runtime.bindings, name, lm_val.value)
-                            if assigned.found {
-                                let next_rt = lm_val.runtime with { bindings: assigned.bindings }
-                                return ok_result(next_rt, lm_val.value)
-                            }
-                        }
-                        _ -> {}
-                    }
-                    return lm_val
+                    return method_result_writeback(lm!, runtime.nodes.exprs.get(obj), list_method_mutates(method))
+                }
+            }
+            if !probe.had_error && probe.value.kind == "map" {
+                let mm = eval_map_method(probe.runtime, probe.value, method, args)
+                if mm != null {
+                    return method_result_writeback(mm!, runtime.nodes.exprs.get(obj), map_method_mutates(method))
                 }
             }
             if !probe.had_error && probe.value.kind == "string" {
@@ -1403,6 +1410,28 @@ export fn value_struct(type_name: string, fields: List<StructField>) -> Value {
         list_payload: [],
         struct_type: type_name,
         struct_payload: fields,
+        stmt_payload: null,
+        expr_payload: null,
+        value_type_payload: null,
+    }
+}
+
+/// Construct a map Value (`{k: v}` literal). Maps are string-keyed
+/// (`Map<string, V>` — the map_lit typeck shape); entries live in
+/// `struct_payload` rows in insertion order so `keys()` mirrors the
+/// runtime's avra_map_keys_cstr ordering. rmzs — @comptime map support.
+export fn value_map(entries: List<StructField>) -> Value {
+    Value {
+        kind: "map",
+        number_text: "",
+        text: "",
+        bool_value: false,
+        enum_type: "",
+        enum_variant: "",
+        enum_payload: [],
+        list_payload: [],
+        struct_type: "",
+        struct_payload: entries,
         stmt_payload: null,
         expr_payload: null,
         value_type_payload: null,
@@ -1949,6 +1978,132 @@ fn eval_list_method(runtime: Runtime, list_val: Value, method: string, args: Lis
         return ok_result(arg_r.runtime, value_list(pairs))
     }
     null
+}
+
+/// True for the list methods whose result is the UPDATED RECEIVER —
+/// only those may write back to the receiver binding. `enumerate`/`zip`
+/// return derived pair lists; writing those back would clobber the
+/// receiver (rmzs — the write-back used to apply unconditionally).
+fn list_method_mutates(method: string) -> bool { method == "push" }
+
+/// Map analogue of `list_method_mutates` — `set`/`remove` return the
+/// updated map; the read methods must not touch the receiver binding.
+fn map_method_mutates(method: string) -> bool { method == "set" || method == "remove" }
+
+/// Write a mutating method's result back to the receiver binding when
+/// the receiver is a simple Ident — emulating compiled Avra's in-place
+/// `mut xs; xs.push(v)` / `mut m; m.set(k, v)` update in a by-value
+/// tree-walker. Read methods and non-Ident receivers pass the result
+/// through untouched.
+fn method_result_writeback(sr: StepResult, obj_expr: Expr, mutates: bool) -> StepResult {
+    if sr.had_error || !mutates { return sr }
+    match obj_expr {
+        .Ident(name) -> {
+            let assigned = assign_binding(sr.runtime.bindings, name, sr.value)
+            if assigned.found {
+                let next_rt = sr.runtime with { bindings: assigned.bindings }
+                return ok_result(next_rt, sr.value)
+            }
+            sr
+        }
+        _ -> sr
+    }
+}
+
+/// Map built-in methods on a kind="map" Value — the eval-side mirror of
+/// `emit_map_method_call` (map_lit/codegen.av) so @comptime fn bodies
+/// have the same map surface compiled code has: get / has / set / len /
+/// length / keys / values / remove. Maps are string-keyed (`Map<string,
+/// V>`): a non-string key errors. `get` on a missing key yields null
+/// (the runtime returns the zero value). `set`/`remove` return the
+/// UPDATED MAP so `method_result_writeback` can emulate the runtime's
+/// in-place mutation; compiled `remove` returns Void, but at eval the
+/// updated receiver is required for the write-back and is harmless in
+/// statement position. Returns null for unknown methods so the caller
+/// falls through to ordinary call dispatch.
+fn eval_map_method(runtime: Runtime, map_val: Value, method: string, args: List<ExprId>) -> StepResult? {
+    if method == "get" || method == "has" || method == "remove" {
+        if args.length != 1 { return error_result(runtime, "map.${method} expects 1 argument") }
+        let key_r = eval_map_key(runtime, args[0])
+        if key_r.had_error { return key_r }
+        let key = key_r.value.text
+        if method == "has" {
+            for e in map_val.struct_payload {
+                if e.name == key { return ok_result(key_r.runtime, value_bool(true)) }
+            }
+            return ok_result(key_r.runtime, value_bool(false))
+        }
+        if method == "get" {
+            for e in map_val.struct_payload {
+                if e.name == key { return ok_result(key_r.runtime, e.value) }
+            }
+            return ok_result(key_r.runtime, value_null())
+        }
+        mut kept: List<StructField> = []
+        for e in map_val.struct_payload {
+            if e.name != key { kept = kept.push(e) }
+        }
+        return ok_result(key_r.runtime, map_val with { struct_payload: kept })
+    }
+    if method == "set" {
+        if args.length != 2 { return error_result(runtime, "map.set expects 2 arguments: key and value") }
+        let key_r = eval_map_key(runtime, args[0])
+        if key_r.had_error { return key_r }
+        let val_r = eval_expr(key_r.runtime, key_r.runtime.nodes.exprs.get(args[1]))
+        if val_r.had_error { return val_r }
+        let updated = map_upsert(map_val.struct_payload, key_r.value.text, val_r.value)
+        return ok_result(val_r.runtime, map_val with { struct_payload: updated })
+    }
+    if method == "len" || method == "length" {
+        if args.length != 0 { return error_result(runtime, "map.${method} expects 0 arguments") }
+        return ok_result(runtime, value_number(string(map_val.struct_payload.length)))
+    }
+    if method == "keys" {
+        if args.length != 0 { return error_result(runtime, "map.keys expects 0 arguments") }
+        mut ks: List<Value> = []
+        for e in map_val.struct_payload { ks = ks.push(value_string(e.name)) }
+        return ok_result(runtime, value_list(ks))
+    }
+    if method == "values" {
+        if args.length != 0 { return error_result(runtime, "map.values expects 0 arguments") }
+        mut vs: List<Value> = []
+        for e in map_val.struct_payload { vs = vs.push(e.value) }
+        return ok_result(runtime, value_list(vs))
+    }
+    null
+}
+
+/// Evaluate a map operation's key expression and require a string
+/// Value — the shared preamble for every string-keyed map op (maps are
+/// `Map<string, V>`). On success the returned step's value IS the key
+/// string Value; a non-string key becomes an error step. Shared by
+/// `eval_map_method` and the MapLit eval hook (map_lit/mod.av).
+export fn eval_map_key(runtime: Runtime, key_id: ExprId) -> StepResult {
+    let key_r = eval_expr(runtime, runtime.nodes.exprs.get(key_id))
+    if key_r.had_error { return key_r }
+    if key_r.value.kind != "string" {
+        return error_result(key_r.runtime, "map key must be a string (got kind=${key_r.value.kind})")
+    }
+    key_r
+}
+
+/// Insertion-order-preserving upsert into map entry rows: overwrite in
+/// place when the key exists (last write wins, first-insertion position
+/// kept), append otherwise — matching avra_map_set_cstr. Shared by
+/// `eval_map_method` and the MapLit eval hook (map_lit/mod.av).
+export fn map_upsert(entries: List<StructField>, key: string, v: Value) -> List<StructField> {
+    mut out: List<StructField> = []
+    mut replaced = false
+    for e in entries {
+        if e.name == key {
+            out = out.push(StructField { name: key, value: v })
+            replaced = true
+        } else {
+            out = out.push(e)
+        }
+    }
+    if !replaced { out = out.push(StructField { name: key, value: v }) }
+    out
 }
 
 fn eval_list_concat(runtime: Runtime, args: List<ExprId>) -> StepResult {
