@@ -1990,24 +1990,109 @@ fn list_method_mutates(method: string) -> bool { method == "push" }
 /// updated map; the read methods must not touch the receiver binding.
 fn map_method_mutates(method: string) -> bool { method == "set" || method == "remove" }
 
-/// Write a mutating method's result back to the receiver binding when
-/// the receiver is a simple Ident — emulating compiled Avra's in-place
-/// `mut xs; xs.push(v)` / `mut m; m.set(k, v)` update in a by-value
-/// tree-walker. Read methods and non-Ident receivers pass the result
-/// through untouched.
+/// Write a mutating method's result back to the receiver — emulating
+/// compiled Avra's in-place `mut xs; xs.push(v)` / `mut m; m.set(k, v)`
+/// update in a by-value tree-walker. The receiver may be a bare Ident
+/// or a pure lvalue chain of FieldAccess/Index links over one (xerh):
+/// `s.xs.push(v)` / `rows[0].set(k, v)` rebuild each container copy
+/// bottom-up via `writeback_lvalue` until the root Ident re-binds.
+/// Read methods and non-lvalue receivers (`make_s().xs`) pass the
+/// result through untouched — the dispatch site already evaluated the
+/// receiver once, and re-walking a side-effecting base here would
+/// evaluate it a second time.
 fn method_result_writeback(sr: StepResult, obj_expr: Expr, mutates: bool) -> StepResult {
     if sr.had_error || !mutates { return sr }
-    match obj_expr {
-        .Ident(name) -> {
-            let assigned = assign_binding(sr.runtime.bindings, name, sr.value)
-            if assigned.found {
-                let next_rt = sr.runtime with { bindings: assigned.bindings }
-                return ok_result(next_rt, sr.value)
-            }
-            sr
-        }
-        _ -> sr
+    if !expr_is_pure_lvalue(sr.runtime.nodes, obj_expr) { return sr }
+    let written = writeback_lvalue(sr.runtime, obj_expr, sr.value)
+    if written == null { return sr }
+    ok_result(written!, sr.value)
+}
+
+/// True when `expr` is a side-effect-free lvalue chain the write-back
+/// may safely re-evaluate: Ident / FieldAccess / Index links bottoming
+/// out at an Ident, with Index subscripts restricted to literal or
+/// Ident reads (`expr_is_pure_subscript`). Anything else — a call, a
+/// literal receiver, a computed subscript — skips the write-back
+/// exactly like the pre-xerh non-Ident case.
+fn expr_is_pure_lvalue(nodes: NodeStore, expr: Expr) -> bool {
+    match expr {
+        .Ident(_) -> true
+        .FieldAccess(obj, _) -> expr_is_pure_lvalue(nodes, nodes.exprs.get(obj))
+        .Index(obj, idx) -> expr_is_pure_lvalue(nodes, nodes.exprs.get(obj)) && expr_is_pure_subscript(nodes.exprs.get(idx))
+        _ -> false
     }
+}
+
+/// Subscript expressions the write-back may re-evaluate without
+/// observable effects: number / string literals and plain Ident reads.
+/// Everything else is conservatively treated as side-effecting.
+fn expr_is_pure_subscript(expr: Expr) -> bool {
+    match expr {
+        .Number(_) -> true
+        .String(_) -> true
+        .Ident(_) -> true
+        _ -> false
+    }
+}
+
+/// Recursively write `new_value` through one link of a pure lvalue
+/// chain, rebuilding each container by value: FieldAccess replaces the
+/// named field in a copy of the base's struct Value, Index replaces
+/// element i in a copy of the base's list Value, and the root Ident
+/// re-binds. Returns the updated runtime, or null when the chain can't
+/// be rebound (unknown binding, immutable root, shape mismatch) — the
+/// caller then skips the write-back, matching the old silent-skip
+/// behavior for unbound/immutable Ident receivers.
+fn writeback_lvalue(runtime: Runtime, target: Expr, new_value: Value) -> Runtime? {
+    match target {
+        .Ident(name) -> {
+            let assigned = assign_binding(runtime.bindings, name, new_value)
+            if assigned.had_error || !assigned.found { return null }
+            return runtime with { bindings: assigned.bindings }
+        }
+        .FieldAccess(obj, field) -> {
+            let base_expr = runtime.nodes.exprs.get(obj)
+            let base_r = eval_expr(runtime, base_expr)
+            if base_r.had_error { return null }
+            let base = base_r.value
+            if base.kind != "struct" { return null }
+            mut replaced = false
+            mut fields: List<StructField> = []
+            for f in base.struct_payload {
+                if f.name == field {
+                    fields = fields.push(f with { value: new_value })
+                    replaced = true
+                } else {
+                    fields = fields.push(f)
+                }
+            }
+            if !replaced { return null }
+            return writeback_lvalue(base_r.runtime, base_expr, base with { struct_payload: fields })
+        }
+        .Index(obj, idx) -> {
+            let base_expr = runtime.nodes.exprs.get(obj)
+            let base_r = eval_expr(runtime, base_expr)
+            if base_r.had_error { return null }
+            let base = base_r.value
+            if base.kind != "list" { return null }
+            let idx_r = eval_expr(base_r.runtime, base_r.runtime.nodes.exprs.get(idx))
+            if idx_r.had_error { return null }
+            if idx_r.value.kind != "number" { return null }
+            let i = parse_num(idx_r.value.number_text)
+            if i < 0 || i >= base.list_payload.length { return null }
+            mut elems: List<Value> = []
+            for (j, v) in base.list_payload.enumerate() {
+                if j == i {
+                    elems = elems.push(new_value)
+                } else {
+                    elems = elems.push(v)
+                }
+            }
+            return writeback_lvalue(idx_r.runtime, base_expr, base with { list_payload: elems })
+        }
+        _ -> {}
+    }
+    null
 }
 
 /// Map built-in methods on a kind="map" Value — the eval-side mirror of

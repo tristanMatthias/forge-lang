@@ -1,0 +1,88 @@
+// xerh — the eval method-dispatch write-back must walk lvalue CHAINS,
+// not just bare Idents. `method_result_writeback` used to re-bind only
+// an Ident receiver, so `s.xs.push(1)` / `c.kv.set(k, v)` /
+// `rows[0].xs.push(3)` inside a @comptime fn evaluated the method and
+// silently DISCARDED the updated receiver — diverging from compiled
+// in-place semantics. Now a pure Ident/FieldAccess/Index chain is
+// rebuilt bottom-up (replace the field / element, recurse on the base,
+// re-bind at the root Ident). Non-lvalue receivers (a call result)
+// keep the old skip behavior — re-walking them would double-evaluate
+// a side-effecting base.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "eval mutator write-back walks FieldAccess/Index receiver chains (xerh)" {
+    then "struct-field push/set, nested field, and list-element field all persist" {
+        let out = write_fixture_and_run("/tmp/avra_eval_field_index_writeback.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "type Bag = { xs: List<int> }\n" +
+            "type Cfg = { kv: Map<string, int> }\n" +
+            "type Inner = { xs: List<int> }\n" +
+            "type Outer = { inner: Inner }\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    mut s = Bag { xs: [] }\n" +
+            "    s.xs.push(1)\n" +
+            "    if s.xs.length == 1 { score = score + 1 }\n" +
+            "    if s.xs[0] == 1 { score = score + 1 }\n" +
+            "    s.xs.push(2)\n" +
+            "    if s.xs.length == 2 { score = score + 1 }\n" +
+            "    if s.xs[1] == 2 { score = score + 1 }\n" +
+            "    mut c = Cfg { kv: {} }\n" +
+            "    c.kv.set(\"a\", 5)\n" +
+            "    if c.kv.get(\"a\") == 5 { score = score + 1 }\n" +
+            "    c.kv.set(\"b\", 6)\n" +
+            "    c.kv.remove(\"a\")\n" +
+            "    if c.kv.len() == 1 { score = score + 1 }\n" +
+            "    if c.kv.has(\"a\") { } else { score = score + 1 }\n" +
+            "    if c.kv.get(\"b\") == 6 { score = score + 1 }\n" +
+            "    mut o = Outer { inner: Inner { xs: [] } }\n" +
+            "    o.inner.xs.push(9)\n" +
+            "    if o.inner.xs.length == 1 { score = score + 1 }\n" +
+            "    if o.inner.xs[0] == 9 { score = score + 1 }\n" +
+            "    mut rows = [Inner { xs: [] }, Inner { xs: [7] }]\n" +
+            "    rows[0].xs.push(3)\n" +
+            "    if rows[0].xs.length == 1 { score = score + 1 }\n" +
+            "    if rows[0].xs[0] == 3 { score = score + 1 }\n" +
+            "    if rows[1].xs.length == 1 { score = score + 1 }\n" +
+            "    if rows[1].xs[0] == 7 { score = score + 1 }\n" +
+            "    mut ms = [{\"a\": 1}]\n" +
+            "    ms[0].set(\"b\", 2)\n" +
+            "    if ms[0].len() == 2 { score = score + 1 }\n" +
+            "    if ms[0].get(\"b\") == 2 { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        16 -> return [synth_stmt_id(quote stmt { println(\"FIELD_INDEX_WRITEBACK_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"FIELD_INDEX_WRITEBACK_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("FIELD_INDEX_WRITEBACK_OK")
+    }
+    then "a non-lvalue receiver (call result) still skips the write-back cleanly" {
+        let out = write_fixture_and_run("/tmp/avra_eval_nonlvalue_writeback_skip.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "type Inner = { xs: List<int> }\n" +
+            "@comptime\n" +
+            "fn make_inner() -> Inner { return Inner { xs: [] } }\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    make_inner().xs.push(1)\n" +
+            "    score = score + 1\n" +
+            "    if make_inner().xs.length == 0 { score = score + 1 }\n" +
+            "    match score {\n" +
+            "        2 -> return [synth_stmt_id(quote stmt { println(\"NONLVALUE_SKIP_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"NONLVALUE_SKIP_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("NONLVALUE_SKIP_OK")
+    }
+}
