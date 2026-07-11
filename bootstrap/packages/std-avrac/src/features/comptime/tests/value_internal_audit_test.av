@@ -1,0 +1,32 @@
+// ps3t.5.6 — Value-deletion audit guard. The interpreter `Value` type
+// (features/eval/mod.av) must stay CONFINED to the std-avrac compiler package
+// and OFF its public API root (avrac.av), so g18a can delete it without a
+// public-surface migration. This spec pins that invariant: a future change that
+// leaks `Value` onto another package or the package root fails here.
+// See docs/2026_07_11_VALUE_DELETION_AUDIT.md for the full audit.
+//
+// @@fixture-stateful@@ — greps the working tree; never cache a FAIL (a repaired
+// tree must re-probe, not replay a stale capture).
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "ps3t.5.6: the interpreter Value type stays compiler-internal (g18a-deletable)" {
+    then "no package OTHER than std-avrac references the interpreter `Value` type" {
+        // Every real `Value` reference (and even prose word-matches) lives only
+        // inside std-avrac. A nonzero count outside it is a cross-package leak
+        // onto a public/std/user surface — exactly what this audit forbids.
+        let n = avra_shell_exec(
+            "grep -rlE '\\bValue\\b' packages/*/src --include='*.av' 2>/dev/null " +
+            "| grep -v '/tests/' | grep -vE 'packages/std-avrac/' | wc -l | tr -d ' \\n'")
+        n == "0"
+    }
+    then "`Value` is NOT re-exported from the std-avrac public root (avrac.av)" {
+        // External packages can only import what the package root re-exports.
+        // Keeping `Value` off avrac.av is the load-bearing external-visibility
+        // guarantee: no consumer can reach it even though the `type` is exported
+        // within std-avrac's own module graph.
+        let n = avra_shell_exec(
+            "grep -cE '\\bValue\\b' packages/std-avrac/src/avrac.av 2>/dev/null | tr -d ' \\n'")
+        n == "0"
+    }
+}
