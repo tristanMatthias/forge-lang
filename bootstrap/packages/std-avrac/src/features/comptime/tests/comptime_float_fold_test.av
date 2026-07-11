@@ -1,0 +1,94 @@
+// uabd — a float-returning @comptime fn folds to its CORRECT float value, not
+// a truncated int. The historic tree-walk evaluator modelled every number as an
+// i64 (`parse_num`/`render_number`), so a folded float lost its fractional part
+// (`half()` → "3") and float arithmetic didn't fold at all (float literal args
+// weren't recognised). The value model is now float-aware: a number Value's TEXT
+// shape (a `.` or exponent) discriminates float from int, arithmetic runs in
+// `double` when either operand is a float, and the fold splices an `Expr.FloatLit`
+// so codegen emits a real `double`. Integer folds stay byte-identical.
+//
+// These specs COMPILE + RUN a fixture and assert its stdout. That path is the
+// true regression guard: `string(<folded float>)` is evaluated in an integer
+// context, so a truncating fold (`3.5` → int `3`) is NOT "rescued" by a
+// surrounding float type annotation — the wrong value reaches stdout verbatim.
+// (An inline `then`-block `half() == 3.5` is NOT a valid guard here: the float
+// literal on the rhs supplies float context that reparses even a truncated
+// splice, and the @comptime bodies also codegen correctly when called at
+// runtime — so it passes even against a broken fold. Compile+run+stdout is the
+// only assertion that isolates the fold's value.) This is a behaviour-FIXING
+// change, so it has no difftest-corpus guard: a float-fold corpus file would
+// run differently under the pre-fix oracle and the fixed compiler (the whole
+// point), tripping both the IR-equality gate and the run-equivalence path.
+// Every EXISTING corpus + the selfhost stay byte-identical (nothing folds a
+// float @comptime call), so plain `make diff-test` stays green.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile `source` with the current `./build/bs2`, link, run the binary, and
+/// return its stdout. `diagnose.sh --run` emits ONLY the program's stdout
+/// (compiler diagnostics are captured separately), and its fixture-binary cache
+/// keys on the bs2 mtime, so a rebuilt compiler always recompiles the fixture.
+fn run_fixture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_uabd_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+}
+
+spec "uabd: a float @comptime fold reaches stdout as its correct value" {
+    then "a bare float-literal return folds to the exact float, not a truncated int" {
+        let out = run_fixture("bare",
+            "@comptime\nfn half() -> float { return 3.5 }\n" +
+            "@comptime\nfn pi() -> float { return 3.14 }\n" +
+            "fn main() {\n" +
+            "    println(string(half()))\n" +
+            "    println(string(pi()))\n" +
+            "}\n")
+        out.contains("3.5") && out.contains("3.14") && !out.contains("\n3\n")
+    }
+    then "float add/sub/mul fold in double — no operand truncation" {
+        let out = run_fixture("arith",
+            "@comptime\nfn addf(a: float, b: float) -> float { return a + b }\n" +
+            "@comptime\nfn subf(a: float, b: float) -> float { return a - b }\n" +
+            "@comptime\nfn mulf(a: float, b: float) -> float { return a * b }\n" +
+            "fn main() {\n" +
+            "    println(string(addf(1.5, 2.5)))\n" +   // 4.0 -> "4"
+            "    println(string(subf(5.5, 2.0)))\n" +   // 3.5
+            "    println(string(mulf(1.5, 4.0)))\n" +   // 6.0 -> "6"
+            "}\n")
+        out.contains("4") && out.contains("3.5") && out.contains("6")
+    }
+    then "float division folds to a fractional result (not integer division)" {
+        let out = run_fixture("div",
+            "@comptime\nfn divf(a: float, b: float) -> float { return a / b }\n" +
+            "fn main() {\n" +
+            "    println(string(divf(7.0, 2.0)))\n" +    // 3.5
+            "    println(string(divf(1.0, 4.0)))\n" +    // 0.25
+            "}\n")
+        out.contains("3.5") && out.contains("0.25")
+    }
+    then "a folded float renders byte-identically to the runtime evaluation" {
+        // The compile-time fold and the runtime evaluation of the same
+        // expression must stringify to the SAME text. The fixture prints their
+        // equality directly, so a truncating fold ("3" vs runtime "4") fails.
+        let out = run_fixture("render",
+            "@comptime\nfn addf(a: float, b: float) -> float { return a + b }\n" +
+            "fn main() {\n" +
+            "    println(string(string(addf(1.5, 2.5)) == string(1.5 + 2.5)))\n" +
+            "}\n")
+        out.contains("true") && !out.contains("false")
+    }
+}
+
+spec "uabd: integer @comptime folds are unchanged (no float-path regression)" {
+    then "integer arithmetic still folds to an integer, and int division stays integer" {
+        let out = run_fixture("int",
+            "@comptime\nfn addi(a: int, b: int) -> int { return a + b }\n" +
+            "@comptime\nfn idiv(a: int, b: int) -> int { return a / b }\n" +
+            "fn main() {\n" +
+            "    println(string(addi(2, 3)))\n" +    // 5
+            "    println(string(idiv(7, 2)))\n" +    // 3 (integer division)
+            "}\n")
+        out.contains("5") && out.contains("3") && !out.contains("3.5")
+    }
+}
