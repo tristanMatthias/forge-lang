@@ -63,3 +63,57 @@ spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct val
         out.contains("base-tip")
     }
 }
+
+/// Compile-check `source` and return the captured diagnostics.
+fn check_fixture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_jits_err_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+}
+
+// The string JIT codegens BEFORE the type checker runs, so it can reach an
+// INVALID string body (`"a" - "b"`, `"a" + 5`) the checker would otherwise
+// reject. Such a body must fail GRACEFULLY through the F4007 fold-error channel
+// (JIT codegen errors → interpreter fallback → the evaluator's message), NOT
+// crash the compiler with an F9999 ICE. emit_binary rejects a string operand on
+// any op but +/==/!=/ordering, and any mixed (string-vs-non-string) operand.
+spec "ps3t.5.2.1.1: an invalid string @comptime body fails gracefully, never crashes" {
+    then "an unsupported string operator (`\"a\" - \"b\"`) is F4007, not an ICE" {
+        let out = check_fixture("sub",
+            "@comptime\nfn bad() -> string { return \"a\" - \"b\" }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a mixed string+int operand (`\"a\" + 5`) is F4007, not an ICE" {
+        let out = check_fixture("mixed",
+            "@comptime\nfn bad() -> string { return \"a\" + 5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a mixed string+float operand (`\"a\" + 1.5`) is F4007, not an ICE" {
+        // A float operand routes through the float codegen path, so this guards a
+        // distinct crash from the int case (an LLVM instruction-selection failure).
+        let out = check_fixture("mixed_float",
+            "@comptime\nfn bad() -> string { return \"a\" + 1.5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a string + bool-literal (`\"a\" + true`) is F4007, not an ICE" {
+        let out = check_fixture("mixed_bool",
+            "@comptime\nfn bad() -> string { return \"a\" + true }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a string + negative-number literal (`\"a\" + -5`, a Unary over a Number) is F4007, not an ICE" {
+        let out = check_fixture("mixed_neg",
+            "@comptime\nfn bad() -> string { return \"a\" + -5 }\n" +
+            "fn main() { let x = bad() }\n")
+        out.contains("F4007") && !out.contains("F9999") && !out.contains("internal compiler error")
+    }
+    then "a valid all-string body still folds (the guard doesn't over-reject)" {
+        let out = run_fixture("guard_ok",
+            "@comptime\nfn ok() -> string { return \"a\" + \"b\" }\n" +
+            "fn main() { println(ok()) }\n")
+        out.contains("ab")
+    }
+}

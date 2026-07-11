@@ -272,10 +272,6 @@ fn try_jit_fold(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Valu
     // bounds the blast radius until compiled-fn caching lands).
     let fn_ids = materialise_jit_closure(reg.runtime.nodes, closure!)
     // A float return reads the FP register (compile_and_jit_call_f64) and renders
-    // through `render_float` — the SAME function the interpreter's float fold
-    // uses — so the spliced `Expr.FloatLit` is byte-identical to a tree-walked
-    // fold. Int/Bool ride the integer register and render via render_jit_scalar.
-    // A float return reads the FP register (compile_and_jit_call_f64) and renders
     // through `render_float`; a string return reads the copied-out `const char*`
     // (compile_and_jit_call_str) and re-quotes it into the SAME `Expr.String`
     // shape the interpreter's `value_to_expr` produces (`"\"${text}\""`), so both

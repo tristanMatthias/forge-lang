@@ -45,6 +45,24 @@ export fn emit_unary(ctx: Ctx, env: List<VarBinding>, op: UnOp, right: Expr) -> 
 ///
 /// Division and modulo emit a `avra_div_by_zero_trap` guard at the
 /// call site (via `ctx.div_zero_trap`).
+///
+/// The binary operators `emit_binary` gives dedicated STRING handling: concat
+/// (`+`), (in)equality (`==`/`!=`), and ordering compares. Every other operator
+/// on a string operand is a type error — `emit_binary` rejects it rather than
+/// misinterpreting the string pointer as an integer.
+fn str_binop_supported(op: BinOp) -> bool {
+    match op {
+        .Add -> true
+        .Eq -> true
+        .Ne -> true
+        .Lt -> true
+        .Le -> true
+        .Gt -> true
+        .Ge -> true
+        _ -> false
+    }
+}
+
 export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
     mut lhs = left_result.value
@@ -96,6 +114,29 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     let null_cmp = is_null_literal(left) || is_null_literal(right)
     let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
     let is_float = vtype_eq(left_result.ty, .Float) || vtype_eq(right_result.ty, .Float)
+
+    // Guard the string ops (concat `+`, `==`/`!=`, ordering) against two shapes
+    // that would misread the string pointer (or a number as a pointer) and crash,
+    // BEFORE any numeric path so a string never reaches the float/int codegen:
+    //   1. an UNSUPPORTED operator on a string (`"a" - "b"`);
+    //   2. a string paired with a non-string scalar LITERAL (`"a" + 5`, `"a" + 1.5`,
+    //      `"a" + true`, `"a" + -5`) — the literal is unambiguously a real
+    //      number/bool whose value becomes a bad pointer.
+    // Only a bare literal is rejected, NOT a numeric-typed variable: a string value
+    // can be statically typed `.Int` (`x ?? panic(...)`) or `.Ptr` (a map value)
+    // yet still be a valid string pointer that `== "v"` must compare — and those are
+    // never literals, so the literal key never rejects a valid compare (the ptr
+    // normalization + str-handlers below cope with the mistyped-but-pointer operand).
+    // A `<str> == null` niche check is exempt (its null path is separate). Normally
+    // unreachable for arithmetic (the type checker rejects `"a" - "b"`), but the
+    // comptime JIT codegens BEFORE typecheck, so it must fail gracefully
+    // (→ interpreter fallback → the real error) rather than crash.
+    let l_str = vtype_is_str(left_result.ty)
+    let r_str = vtype_is_str(right_result.ty)
+    let str_and_numlit = (l_str && is_nonstr_scalar_literal(ctx, right)) || (r_str && is_nonstr_scalar_literal(ctx, left))
+    if is_str && !null_cmp && (str_and_numlit || !str_binop_supported(op)) {
+        return err_emit("a string operand pairs only with another string or `null`, via +, ==, !=, or an ordering comparison")
+    }
 
     if is_float {
         return emit_float_binary(ctx, lhs, rhs, op, left_result.ty, right_result.ty)
@@ -271,6 +312,27 @@ fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr,
 /// detect when a binary op needs width normalisation.
 fn is_narrow(ty: ValueType) -> bool {
     vtype_is_unsigned_int(ty) || vtype_is_signed_narrow_int(ty)
+}
+
+/// A NON-string scalar literal — an int/sized-int (`Number`), `FloatLit`, `Bool`,
+/// or a unary op over one of those (`-5` is `Unary(Neg, Number)`, `!true` is
+/// `Unary(Not, Bool)`). Paired with a string via a binary op this is an
+/// unambiguous type error whose value (a real number/bool) would be misread as a
+/// pointer and crash. A bare literal is the ONLY string-vs-scalar shape codegen
+/// can reject safely: a mistyped string operand (`x ?? panic(...)` typed `.Int`,
+/// or a `.Ptr`-typed map value) is statically indistinguishable from a genuine
+/// scalar at the value level, but is never a literal — so keying on the literal
+/// never rejects a valid compare. A unary over a VARIABLE (`-n`) is likewise not a
+/// literal and stays uncaught (tracked in f16w — the root fix is the type checker
+/// rejecting string<->numeric ops).
+fn is_nonstr_scalar_literal(ctx: Ctx, e: Expr) -> bool {
+    match e {
+        .Number(_) -> true
+        .FloatLit(_) -> true
+        .Bool(_) -> true
+        .Unary(_, inner) -> is_nonstr_scalar_literal(ctx, ctx.nodes.exprs.get(inner))
+        _ -> false
+    }
 }
 
 /// True iff a binary comparison should use unsigned ICmp. Either
