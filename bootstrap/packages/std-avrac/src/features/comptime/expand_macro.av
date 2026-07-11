@@ -626,6 +626,19 @@ fn invoke_macro(stmt: Stmt, macro_name: string, reg: CompTimeRegistry, line: int
         )
     }
     let fn_def = lookup!
+    // A lazily-shipped macro whose stashed body FAILED to re-parse comes
+    // back as the empty-body stub (comptime_lookup_lazy falls back to it).
+    // Evaluating that empty body would "succeed" with a null Value and
+    // die much later as an F4006 decode failure — the misleading trail
+    // that kept the fmt→re-parse round-trip bugs invisible. Name the
+    // real failure at its source instead.
+    if fn_def.body.length == 0 && avra_lazy_comptime_has(macro_name) != 0 {
+        return expand_fail(
+            DiagCode.ExpandEvalFailed,
+            "@expand(${macro_name}) — the macro's metadata-shipped body failed to re-parse (a fmt→parse round-trip gap); rebuild the producer package, and if it persists the rendered body contains syntax the parser cannot re-read",
+            span
+        )
+    }
     let arity = fn_def.params.length
     let arg_values = if arity == 1 {
         let boxed = stmt_to_value(reg.runtime, stmt)

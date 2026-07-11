@@ -15,12 +15,12 @@
 //   - the run bodies' string literals print UNQUOTED (the full CLI path
 //     exercises the macro-carried-string round-trip, 102g).
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so @std.cli.cmdgen's
-// cross-package @comptime bodies are available (metadata stub can't carry
-// them — znl0). `tc_`-prefixed to avoid cross-shard clashes.
+// Runs through the shard's metadata fast-path: cmdgen's @comptime
+// bodies rehydrate from unit.meta.bin (the fmt→re-parse round-trip
+// these tests co-regress). `tc_`-prefixed to avoid cross-shard clashes.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 // One command instance: its run body prints a marker (proves it ran)
 // then returns a distinct code (proves routing). Newline-separated —
@@ -64,7 +64,7 @@ fn tc_src() -> string {
 }
 
 fn tc_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_toycli_acceptance_test.av", tc_src())
+    write_fixture_and_run("/tmp/avra_toycli_acceptance_test.av", tc_src())
 }
 
 spec "vez6.11 acceptance: a 5-command Components V2 CLI dispatches correctly" {

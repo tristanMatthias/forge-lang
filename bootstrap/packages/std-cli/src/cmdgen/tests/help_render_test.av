@@ -3,11 +3,11 @@
 // FLAGS/OPTIONS/ARGS sections, and each leaf's description. `<cmd> --help`
 // short-circuits to this and exits 0.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
 // @comptime bodies are available. `hlp_`-prefixed to avoid fn/local collisions.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn hlp_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -35,7 +35,7 @@ fn hlp_src() -> string {
 }
 
 fn hlp_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_help_render_test.av", hlp_src())
+    write_fixture_and_run("/tmp/avra_help_render_test.av", hlp_src())
 }
 
 spec "per-command --help renders a real usage line + aligned sections" {

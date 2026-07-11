@@ -79,18 +79,16 @@ fn ch_expand() -> string {
         "\n" +
         CH_MAIN + " {\n" +
         "}\n")
-    // Compile FROM SOURCE: clear the shard's metadata-stub env so
-    // std-cli's @comptime helper *bodies* are available to the
-    // evaluator. Under AVRA_USE_METADATA std-cli is stubbed to
-    // symbols-only and a cross-package @comptime call evaluates to null
-    // (the open cross-package-macro gap, znl0). A real `avra` compile
-    // (clean env, as here) resolves the helper bodies and expands.
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 expand '${path}' 2>&1 || true")
+    // Compile with the shard's METADATA FAST-PATH inherited: std-cli's
+    // @comptime helper bodies ship in unit.meta.bin (fmt-rendered source,
+    // qualified AST ctors) and rehydrate for the evaluator on the
+    // consumer side — the cross-package fast-path this test now also
+    // regresses. Only the shard-hygiene vars are cleared: the results-bin
+    // channel, and the producer-build pkg root.
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
 }
 
-// One source-compiled case (~20s: the fixture rebuilds std from source —
-// the only path that carries std-cli's cross-package @comptime bodies
-// today). CH_OK appears once in the echoed macro source; if both helpers
+// CH_OK appears once in the echoed macro source; if both helpers
 // read correctly the expansion adds it once more, so it wins by exactly
 // one over each BAD marker.
 spec "introspection helpers read instance name + children (cross-module @comptime)" {

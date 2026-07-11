@@ -5,11 +5,11 @@
 // print_option_section / print_arg_section) already prints the `description`
 // field — so a declared description renders under FLAGS/OPTIONS/ARGS.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
 // @comptime bodies are available. `fd_`-prefixed.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn fd_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -41,7 +41,7 @@ fn fd_src() -> string {
 }
 
 fn fd_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_flag_description_help_test.av", fd_src())
+    write_fixture_and_run("/tmp/avra_flag_description_help_test.av", fd_src())
 }
 
 spec "leaf descriptions render in per-command --help" {

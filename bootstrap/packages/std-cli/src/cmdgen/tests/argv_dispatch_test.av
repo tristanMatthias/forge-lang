@@ -20,12 +20,12 @@
 //   - empty argv returns 1,
 //   - `--help` prints the app + command descriptions and returns 0.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
-// cross-package @comptime bodies are available (metadata stub can't carry
-// them — znl0). `ad_`-prefixed to avoid cross-shard clashes.
+// Runs through the shard's metadata fast-path: cmdgen's @comptime
+// bodies rehydrate from unit.meta.bin (the fmt→re-parse round-trip
+// these tests co-regress). `ad_`-prefixed to avoid cross-shard clashes.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn ad_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -104,7 +104,7 @@ fn ad_src() -> string {
 }
 
 fn ad_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_argv_dispatch_test.av", ad_src())
+    write_fixture_and_run("/tmp/avra_argv_dispatch_test.av", ad_src())
 }
 
 spec "vez6.11 argv front-end: App.run_argv parses raw argv per-command and dispatches" {

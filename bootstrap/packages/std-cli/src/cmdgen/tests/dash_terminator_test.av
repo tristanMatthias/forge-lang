@@ -4,11 +4,11 @@
 // `-5` literal) — parse_tokens would reject it as `unknown flag`. Exercises the
 // terminator latch in parse_tokens (cli.av) end-to-end through run_argv.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
 // @comptime bodies are available. `dt_`-prefixed to avoid fn/local collisions.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn dt_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -51,7 +51,7 @@ fn dt_src() -> string {
 }
 
 fn dt_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_dash_terminator_test.av", dt_src())
+    write_fixture_and_run("/tmp/avra_dash_terminator_test.av", dt_src())
 }
 
 spec "a bare `--` ends option parsing (getopt end-of-options terminator)" {

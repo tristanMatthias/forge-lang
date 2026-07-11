@@ -25,12 +25,50 @@ fn fmt_indent(depth: int) -> string {
     result
 }
 
+/// Re-encode a decoded string-literal payload for rendering. The lexer
+/// resolves escapes (`\n \t \r \\ \" \0 \x??`) into raw chars inside the
+/// token (delimiting quotes kept), so rendering the payload verbatim
+/// emits broken source for any string containing quotes, backslashes, or
+/// control chars — and fmt output must re-lex identically (build
+/// metadata re-parses @comptime fn bodies from it; cmdgen's `str_lit`
+/// body carries `"\""` and rendered as `"""` before this). Inverse of
+/// the lexer's decode; a literal `$`+`{` is split via `\x24` so decoded
+/// text can't re-lex as an interpolation head.
+fn fmt_string_lit(v: string) -> string {
+    if v.length < 2 { return v }
+    let inner = v.substring(1, v.length - 1)
+    mut out = "\""
+    mut i = 0
+    while i < inner.length {
+        let ch = inner.substring(i, i + 1)
+        if ch == "\\" {
+            out = out + "\\\\"
+        } else if ch == "\"" {
+            out = out + "\\\""
+        } else if ch == "\n" {
+            out = out + "\\n"
+        } else if ch == "\t" {
+            out = out + "\\t"
+        } else if ch == "\r" {
+            out = out + "\\r"
+        } else if ch == "\0" {
+            out = out + "\\0"
+        } else if ch == "$" && i + 1 < inner.length && inner.substring(i + 1, i + 2) == "{" {
+            out = out + "\\x24"
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    out + "\""
+}
+
 /// Render an expression node back to source. Recursive — composes with
 /// the helper renderers (lists, patterns, match arms) for nested forms.
 export fn fmt_expr(store: NodeStore, se: Expr) -> string {
     match se {
         .Number(v) -> v
-        .String(v) -> v
+        .String(v) -> fmt_string_lit(v)
         .Bool(v) -> v
         .None -> "none"
         .Ident(name) -> name

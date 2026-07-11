@@ -1616,18 +1616,37 @@ impl Parser {
     /// accept it — in expression position (→ `QualifiedIdent`) and type
     /// position (→ `Named`) alike. `::` lexes as two `Colon` tokens.
     /// Precondition: current token is `Tk.At`.
-    fn parse_qualified_at_name(self) -> string {
+    // The `::` separator is STRICT: two ADJACENT colons (adjacency is
+    // confirmed against the raw source, bounds-guarded for input
+    // truncated at a lone `:`), each followed by an identifier segment —
+    // a single `:` never pairs, so `@a:b` stays a parse error instead of
+    // silently reading as `@a::b`. At least one `::` is required: a lone
+    // `@ident` is annotation syntax everywhere Avra accepts `@`.
+    fn parse_qualified_at_name(self) -> Result<string, string> {
         self.advance()  // consume `@`
+        if !self.check(Tk.Identifier) {
+            self.set_error("expected identifier after `@` in qualified reference")
+            return .Err("parse error")
+        }
         mut name = "@" + self.current_lexeme
         self.advance()  // consume first segment
-        while self.check(Tk.Colon) {
+        mut segments = 0
+        while self.check(Tk.Colon) && self.current_start + 1 < self.source_len && self.char_at(self.current_start + 1) == ":" {
             self.advance()  // first `:`
-            if self.check(Tk.Colon) { self.advance() }  // second `:`
-            let seg = self.current_lexeme
+            self.advance()  // second `:`
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected identifier after `::` in qualified reference")
+                return .Err("parse error")
+            }
+            name = name + "::" + self.current_lexeme
             self.advance()  // segment identifier
-            name = name + "::" + seg
+            segments = segments + 1
         }
-        name
+        if segments == 0 {
+            self.set_error("expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
+            return .Err("parse error")
+        }
+        .Ok(name)
     }
 
     fn parse_primary(self) -> Result<ExprId, string> {
@@ -1637,7 +1656,7 @@ impl Parser {
         // the comptime evaluator looks up by full path, so a rehydrated
         // body needs no second resolve pass.
         if self.check(Tk.At) {
-            let qname = self.parse_qualified_at_name()
+            let qname = self.parse_qualified_at_name()?
             // `@pkg::mod::Type { field: v, … }` — a struct literal with a
             // qualified type name (the renderer emits these for a resolved
             // `StructLit`). Mirrors the bare-identifier struct-literal path.
@@ -2316,7 +2335,25 @@ impl Parser {
         // body's type annotations (e.g. `List<@std::avrac::core::ExprId>`)
         // must accept them here as well as at the top level (pqc9/znl0).
         if self.check(Tk.At) {
-            return .Ok(TypeExpr.Named(self.parse_qualified_at_name()))
+            let qname = self.parse_qualified_at_name()?
+            // Qualified GENERIC (`@pkg::mod::Result<T, E>`) and OPTIONAL
+            // (`@pkg::mod::Type?`) forms — mirror the bare-identifier
+            // type-atom path below, which handles both suffixes.
+            if self.check(Tk.Less) {
+                let qargs = self.parse_generic_type_args()?
+                let qte = TypeExpr.Generic(qname, qargs)
+                if self.check(Tk.Question) {
+                    self.advance()
+                    return .Ok(TypeExpr.Optional(qte))
+                }
+                return .Ok(qte)
+            }
+            let qte = TypeExpr.Named(qname)
+            if self.check(Tk.Question) {
+                self.advance()
+                return .Ok(TypeExpr.Optional(qte))
+            }
+            return .Ok(qte)
         }
         // qa6i probe 3: `~name` in type position splices a string-
         // valued local into a TypeExpr.Named at construction time.

@@ -11,12 +11,12 @@
 // that a short-matched flag records under its CANONICAL long name so the run
 // body's `result_has_flag(args, "verbose")` resolves a `-v` invocation.
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's
-// cross-package @comptime bodies are available (metadata stub can't carry
-// them — znl0). `sd_`-prefixed to avoid cross-shard clashes.
+// Runs through the shard's metadata fast-path: cmdgen's @comptime
+// bodies rehydrate from unit.meta.bin (the fmt→re-parse round-trip
+// these tests co-regress). `sd_`-prefixed to avoid cross-shard clashes.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn sd_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -55,7 +55,7 @@ fn sd_src() -> string {
 }
 
 fn sd_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_shorts_defaults_test.av", sd_src())
+    write_fixture_and_run("/tmp/avra_shorts_defaults_test.av", sd_src())
 }
 
 spec "vez6.11 / 5az8: flag shorts dispatch and option defaults apply" {

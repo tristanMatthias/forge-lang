@@ -8,11 +8,11 @@
 // flag — matching read_kv_value. A trailing `--key` with no following token is a
 // usage error (run_argv reports it and returns 1).
 //
-// Source-compiled (write_fixture_and_run_no_metadata) so cmdgen's cross-package
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
 // @comptime bodies are available. `spo_`-prefixed to avoid fn/local collisions.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn spo_src() -> string {
     "use @std.cli.{Runnable, CliResult, App}\n" +
@@ -49,7 +49,7 @@ fn spo_src() -> string {
 }
 
 fn spo_run() -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_space_option_test.av", spo_src())
+    write_fixture_and_run("/tmp/avra_space_option_test.av", spo_src())
 }
 
 spec "space-separated `--key value` options parse alongside `--key=value`" {
