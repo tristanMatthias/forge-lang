@@ -227,6 +227,7 @@ fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
     // serve-path above runs unconditionally.
     if avra_process_env_get("AVRA_L1_INGEST") == "1" {
         println("[l1-ingest] NodeStore: ${string(store.stmts.count())} stmt nodes")
+        println("[l1-ingest] exprs: ${string(store.exprs.count())} rows, ${string(store.intern_hits)} interned")
         if store.stmts.count() > 0 {
             let last = StmtId(store.stmts.count())
             let sp = store.stmts.span_of(last)

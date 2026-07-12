@@ -2624,9 +2624,10 @@ impl Parser {
         self.store.pats.get(id)
     }
 
-    /// Alloc a pattern LEAF (no node children) — the arena's one-push path.
+    /// Alloc a pattern LEAF (no node children) — the arena's one-push path,
+    /// interning pure literal/wildcard patterns (§14.4; see `pat_intern_key`).
     fn alloc_pat_leaf(self, node: Pattern) -> PatId {
-        self.store.pats.add_leaf(node)
+        self.store.intern_pat_leaf(node)
     }
 
     /// Row twin of `expr_force_unwrap(Ident(name))`: subject leaf + fresh
@@ -2654,9 +2655,12 @@ impl Parser {
         self.store.exprs.get(id)
     }
 
-    /// Alloc an expr LEAF (no node children) — the arena's one-push path.
+    /// Alloc an expr LEAF (no node children) — the arena's one-push path,
+    /// interning pure literal/ident leaves so repeat occurrences share one
+    /// row (§14.4; eligibility lives in `expr_intern_key` — childful payloads
+    /// like the desugar-minted Call/Binary rows fall through per-occurrence).
     fn alloc_leaf(self, node: Expr) -> ExprId {
-        self.store.exprs.add_leaf(node)
+        self.store.intern_expr_leaf(node)
     }
 
     /// Alloc an expr with ONE expr child (field order).
