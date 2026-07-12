@@ -1,0 +1,112 @@
+// phx5 Part A2: a flag's `alias "…"` config declares extra WHOLE-TOKEN
+// spellings the classifier also resolves to that flag. Two shapes fall out of
+// one mechanism, both real compiler-CLI needs the guarded bespoke parsers
+// carried:
+//   - a bare alias  — `--used-by` sets the `callers` flag (docs);
+//   - an option-FORM alias — `--message-format=json` sets the `json` flag
+//     (build). The `=json` is part of the whole-token match, so the token is
+//     resolved to the flag BEFORE the `--key=value` option classifier sees it.
+//
+// Asserts, through the REAL expand_cli/expand_command → parse_tokens path:
+//   - both alias shapes set their flag; the canonical spelling still works;
+//   - aliases are dash/underscore-insensitive (`--used_by` == `--used-by`);
+//   - a NON-alias value of the same option key (`--message-format=short`) does
+//     NOT match — it's an unknown option (exact-token, not a prefix), exit 1.
+//
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package @comptime
+// bodies are available. `fa_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn fa_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "component flag {}\n" +
+    "\n" +
+    "cli tool {\n" +
+    "    command scan {\n" +
+    "        flag callers { alias \"--used-by\" }\n" +
+    "        flag json { alias \"--message-format=json\" }\n" +
+    "        run() {\n" +
+    // Encodes which flags are set — 2 for callers, 20 for json — so a single
+    // int distinguishes callers-only (2), json-only (20), both (22), neither
+    // (0), all clear of the parse-error exit code 1.
+    "            mut code = 0\n" +
+    "            if callers { code = code + 2 }\n" +
+    "            if json { code = code + 20 }\n" +
+    "            return code\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // bare alias → callers
+    "    println(\"A=\" + string(tool.run_argv([\"scan\", \"--used-by\"])))\n" +
+    // canonical still works
+    "    println(\"B=\" + string(tool.run_argv([\"scan\", \"--callers\"])))\n" +
+    // option-form alias → json (the `=json` is matched whole, not split off)
+    "    println(\"C=\" + string(tool.run_argv([\"scan\", \"--message-format=json\"])))\n" +
+    // canonical json
+    "    println(\"D=\" + string(tool.run_argv([\"scan\", \"--json\"])))\n" +
+    // both aliases together
+    "    println(\"E=\" + string(tool.run_argv([\"scan\", \"--used-by\", \"--message-format=json\"])))\n" +
+    // alias is dash/underscore-insensitive: `--used_by` == `--used-by`
+    "    println(\"F=\" + string(tool.run_argv([\"scan\", \"--used_by\"])))\n" +
+    // a DIFFERENT value of the same option key is NOT the alias: exact-token,
+    // so `--message-format=short` is an unknown option (no such option declared)
+    "    println(\"G=\" + string(tool.run_argv([\"scan\", \"--message-format=short\"])))\n" +
+    // neither flag set
+    "    println(\"H=\" + string(tool.run_argv([\"scan\"])))\n" +
+    "}\n"
+}
+
+fn fa_run() -> string {
+    write_fixture_and_run("/tmp/avra_flag_alias_test.av", fa_src())
+}
+
+spec "phx5 A2: a flag's `alias` declares extra whole-token spellings that set it" {
+    then "a bare alias sets the flag (`--used-by` → callers)" {
+        let out = fa_run()
+        out.contains("A=2")
+    }
+    then "the canonical spelling still sets the flag" {
+        let out = fa_run()
+        out.contains("B=2")
+    }
+    then "an option-form alias sets the flag (`--message-format=json` → json)" {
+        // The whole `--message-format=json` token matches json's alias BEFORE
+        // the `--key=value` option classifier runs, so it sets the flag rather
+        // than parsing as an (undeclared) `message-format` option.
+        let out = fa_run()
+        out.contains("C=20")
+    }
+    then "the canonical flag spelling still works alongside its option-form alias" {
+        let out = fa_run()
+        out.contains("D=20")
+    }
+    then "two aliases in one invocation both set their flags" {
+        let out = fa_run()
+        out.contains("E=22")
+    }
+    then "aliases are dash/underscore-insensitive (`--used_by` == `--used-by`)" {
+        let out = fa_run()
+        out.contains("F=2")
+    }
+    then "a non-alias value of the same option key is an unknown option, exit 1" {
+        // `--message-format=short` is NOT json's alias (the alias is the exact
+        // whole token `--message-format=json`), and `message-format` is not a
+        // declared option — so parse_tokens reports it and run_argv returns 1.
+        let out = fa_run()
+        out.contains("G=1") && out.contains("unknown option: --message-format")
+    }
+    then "no alias, no flag: the run body sees both flags clear" {
+        let out = fa_run()
+        out.contains("H=0")
+    }
+}

@@ -70,6 +70,20 @@ fn config_flag_or_false(config: List<CompConfigPair>, key: string) -> ExprId {
     synth_expr_id(Expr.Bool("false"))
 }
 
+/// EVERY `key`-named config value as a `[…]` list-literal ExprId — sibling of
+/// config_value_or_empty for a REPEATABLE leaf config. A flag's `alias "…"` may
+/// appear more than once (`flag callers { alias "--used-by" alias "--old" }`),
+/// so all matching pairs are collected in declaration order; an empty list when
+/// the key is absent.
+@comptime
+fn config_values_list(config: List<CompConfigPair>, key: string) -> ExprId {
+    mut vals: List<ExprId> = []
+    for pair in config {
+        if pair.key == key { vals.push(synth_expr_id(pair.value)) }
+    }
+    synth_expr_id(Expr.ListLit(vals))
+}
+
 /// One accessor binding in a run body: `let <name>: <vtype> =
 /// <callee_fqn>(args, "<name>")`. The callee is fully qualified so the
 /// generated body resolves in ANY consumer's scope. Not hygienically
@@ -103,18 +117,21 @@ fn global_shadowed(gname: string, flag_names: List<string>, arg_names: List<stri
     name_in(flag_names, gname) || name_in(arg_names, gname) || name_in(option_names, gname)
 }
 
-/// A `@std::cli::FlagDef { name: "--<n>", short: <short>, description: <desc> }`
-/// literal (name dashed so the classifier matches `--<n>` on argv). `short`
-/// is the flag leaf's `short "…"` config value (e.g. `"-v"`), or the empty
-/// string when unset — the parser's `flag_canonical_name` accepts either spelling.
-/// `desc` is the leaf's `description "…"` config (empty when unset); it renders
-/// in the command's `--help` FLAGS section.
+/// A `@std::cli::FlagDef { name: "--<n>", short: <short>, description: <desc>,
+/// aliases: <aliases> }` literal (name dashed so the classifier matches `--<n>`
+/// on argv). `short` is the flag leaf's `short "…"` config value (e.g. `"-v"`),
+/// or the empty string when unset — the parser's `flag_canonical_name` accepts
+/// either spelling. `desc` is the leaf's `description "…"` config (empty when
+/// unset); it renders in the command's `--help` FLAGS section. `aliases` is the
+/// leaf's `alias "…"` config values as a list literal (empty when none) — extra
+/// whole-token spellings the classifier also resolves to this flag.
 @comptime
-fn flagdef_lit(name: string, short: ExprId, desc: ExprId) -> ExprId {
+fn flagdef_lit(name: string, short: ExprId, desc: ExprId, aliases: ExprId) -> ExprId {
     let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
     let sh = FieldInit { name: "short", value_id: short }
     let d = FieldInit { name: "description", value_id: desc }
-    synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [n, sh, d]))
+    let al = FieldInit { name: "aliases", value_id: aliases }
+    synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [n, sh, d, al]))
 }
 
 /// A `@std::cli::ArgDef { name: "<n>", description: <desc>, required: false }`
@@ -202,6 +219,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     mut arg_names: List<string> = []
     mut option_names: List<string> = []
     mut flag_shorts: List<ExprId> = []
+    mut flag_aliases: List<ExprId> = []
     mut option_defaults: List<ExprId> = []
     // Each leaf's `description "…"` config, collected index-aligned with its
     // names so the generated FlagDef/ArgDef/OptionDef carry it into `--help`.
@@ -231,6 +249,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
                             flag_names.push(cinst)
                             flag_shorts.push(config_value_or_empty(ccfg, "short"))
                             flag_descs.push(config_value_or_empty(ccfg, "description"))
+                            flag_aliases.push(config_values_list(ccfg, "alias"))
                         }
                         if cn == "arg" {
                             arg_names.push(cinst)
@@ -302,7 +321,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     }
     mut fi = 0
     while fi < flag_names.length {
-        schema_flag_defs.push(flagdef_lit(flag_names[fi], flag_shorts[fi], flag_descs[fi]))
+        schema_flag_defs.push(flagdef_lit(flag_names[fi], flag_shorts[fi], flag_descs[fi], flag_aliases[fi]))
         fi = fi + 1
     }
     mut arg_defs: List<ExprId> = []
@@ -383,7 +402,7 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
                     .ComponentBlock(cn, cinst, gcfg, _) -> {
                         if cn == "flag" {
                             global_flags.push(cinst)
-                            global_flag_defs.push(flagdef_lit(cinst, config_value_or_empty(gcfg, "short"), config_value_or_empty(gcfg, "description")))
+                            global_flag_defs.push(flagdef_lit(cinst, config_value_or_empty(gcfg, "short"), config_value_or_empty(gcfg, "description"), config_values_list(gcfg, "alias")))
                         }
                     }
                     _ -> {}
