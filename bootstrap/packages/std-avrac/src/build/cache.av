@@ -23,6 +23,7 @@ use core.{
     avra_mkdir_p,
     avra_rename,
     avra_remove_file,
+    avra_remove_tree,
     avra_is_dir,
     avra_shell_exec_status,
     avra_file_size,
@@ -247,12 +248,26 @@ export fn cache_publish(
         // Most likely cause: another process won the race and
         // already published this fingerprint. Treat that as success
         // — both ended up with byte-identical content (cache is
-        // content-addressed). Only flag a real failure if neither
-        // path got the entry into place.
+        // content-addressed).
         if cache_has(c, fp) {
             return PublishResult { success: true, error: "" }
         }
-        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+        // pdme.9-found: the destination exists but is INCOMPLETE —
+        // half-slot wreckage (a damaged or interrupted slot).
+        // cache_has correctly misses it, but rename can never replace
+        // a non-empty directory, so without repair this fingerprint
+        // is PERMANENTLY unpublishable: every later build recompiles,
+        // re-fails the publish, and the cache silently dies for the
+        // unit. Evict the wreck and retry once.
+        let _ = avra_remove_tree(final_dir)
+        if avra_rename(staging, final_dir) == 0 {
+            // A concurrent publisher may have raced the retry — their
+            // content-addressed slot is equally good.
+            if cache_has(c, fp) {
+                return PublishResult { success: true, error: "" }
+            }
+            return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+        }
     }
     PublishResult { success: true, error: "" }
 }
@@ -492,7 +507,14 @@ export fn cache_publish_test(
         if cache_has_test(c, fp) {
             return PublishResult { success: true, error: "" }
         }
-        return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+        // Half-slot wreckage — same repair as cache_publish above.
+        let _ = avra_remove_tree(final_dir)
+        if avra_rename(staging, final_dir) == 0 {
+            if cache_has_test(c, fp) {
+                return PublishResult { success: true, error: "" }
+            }
+            return PublishResult { success: false, error: "rename failed: " + staging + " -> " + final_dir }
+        }
     }
     PublishResult { success: true, error: "" }
 }

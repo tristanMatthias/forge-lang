@@ -1,0 +1,73 @@
+// pdme.9-found: republishing into HALF-SLOT WRECKAGE must repair it.
+// A slot whose companion artifact was lost (interrupted publish,
+// external damage — e.g. metadata.bin deleted) correctly reads as a
+// miss, but the re-publish's rename can never replace a non-empty
+// directory: without repair the fingerprint became PERMANENTLY
+// unpublishable — every later build recompiled, re-failed the
+// publish, and the cache silently died for that unit (found by the
+// cache-fuzz net: its slot-damage kind poisoned every subsequent
+// iteration). cache_publish / cache_publish_test now evict the wreck
+// and retry once; a COMPLETE existing slot keeps the concurrent-
+// winner semantics (success, no eviction needed to prove it).
+
+use @std.avrac.build.{
+    Cache, cache_for, cache_init, cache_has, cache_has_test,
+    cache_publish, cache_publish_test,
+    entry_metadata_path, entry_manifest_path, entry_bin_path, entry_ll_path,
+}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{
+    avra_selfhost_write_file, avra_remove_file, avra_shell_exec, avra_file_size,
+}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_pdme9_repair_${slug}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+const FP_A: string = "5100000000000000000000000000000000000000000000000000000000000000"
+const FP_B: string = "5200000000000000000000000000000000000000000000000000000000000000"
+const FP_C: string = "5300000000000000000000000000000000000000000000000000000000000000"
+
+spec "pdme.9: publish repairs half-slot wreckage instead of dying" {
+    then "BUILD slot: delete metadata.bin, republish → success and complete" {
+        let c = mk_cache("build")
+        let fp = mk_fp(FP_A)
+        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s1")
+        // Wreck the slot the way the fuzz's damage kind does.
+        let _ = avra_remove_file(entry_metadata_path(c, fp))
+        let wrecked = !cache_has(c, fp)
+        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s2")
+        p1.success && wrecked && p2.success && cache_has(c, fp)
+            && avra_file_size(entry_ll_path(c, fp)) > 0
+    }
+    then "TEST slot: delete manifest.txt, republish → success and complete" {
+        let c = mk_cache("test")
+        let fp = mk_fp(FP_B)
+        let bin = "/tmp/avra_pdme9_repair_test.bin"
+        let _ = avra_selfhost_write_file(bin, "FAKE-BIN")
+        let p1 = cache_publish_test(c, fp, bin, "manifest v1", "s1")
+        let _ = avra_remove_file(entry_manifest_path(c, fp))
+        let wrecked = !cache_has_test(c, fp)
+        let p2 = cache_publish_test(c, fp, bin, "manifest v1", "s2")
+        avra_shell_exec("rm -f '${bin}'")
+        p1.success && wrecked && p2.success && cache_has_test(c, fp)
+            && avra_file_size(entry_bin_path(c, fp)) > 0
+    }
+    then "a COMPLETE existing slot keeps concurrent-winner semantics" {
+        let c = mk_cache("winner")
+        let fp = mk_fp(FP_C)
+        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s1")
+        // Same fp, same (content-addressed) inputs — the loser of a
+        // publish race must report success without disturbing the slot.
+        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s2")
+        p1.success && p2.success && cache_has(c, fp)
+    }
+}

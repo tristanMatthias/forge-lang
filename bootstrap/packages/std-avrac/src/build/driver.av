@@ -234,7 +234,11 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
 }
 
 fn last_inputs_path(c: Cache, unit_name: string) -> string {
-    c.cache_dir + "last/" + unit_name + ".txt"
+    // Unit names may embed paths ("compile:/abs/path/main.av") — the
+    // slashes made this a nested path under last/ whose parents never
+    // exist, so write_last_inputs silently failed and every such unit
+    // lost its --explain attribution. Flatten to one path component.
+    c.cache_dir + "last/" + unit_name.replace("/", "_") + ".txt"
 }
 
 /// Pull a single value from the prior-inputs text file. Format is

@@ -1,0 +1,22 @@
+// pdme.9: the cache-correctness fuzz net, wired into the suite at a
+// small iteration count so every run exercises the invariants —
+// cached IR == recomputed IR under seeded edit/damage sequences, a
+// liveness HIT after every iteration, and revert restores the golden
+// IR. The full acceptance run is `diagnose.sh --cache-fuzz 100 <seed>`
+// (~8s); this wrapper keeps the suite cost to a couple of seconds.
+// Detection is proven: with the dep-fingerprint axis deliberately
+// disabled (the lkze.9 regression), the net fails at the first
+// semantic-edit iteration ("the cache lied").
+//
+// @@fixture-stateful@@ — the net compiles against the SHARED build/bs2
+// via diagnose.sh; a transient environment hiccup (mid-rebuild, OOM
+// kill) must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "pdme.9: cache-fuzz net is green on the real toolchain" {
+    then "8 seeded iterations pass with liveness and golden-revert checks" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --cache-fuzz 8 99 2>&1 || true")
+        out.contains("cache-fuzz PASS")
+    }
+}
