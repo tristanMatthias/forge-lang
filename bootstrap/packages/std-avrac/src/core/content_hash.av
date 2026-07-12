@@ -12,7 +12,17 @@
 // node's SPAN-FREE structural render (`render_*_id`): render is position-free
 // and recurses child CONTENT, so FNV(render(a)) == FNV(render(b)) iff a and b
 // are structurally identical — exactly §15.2's equivalence, and exactly
-// span-exclusion (a re-spanned node renders the same). §14.4's "child ids" form
+// span-exclusion (a re-spanned node renders the same). CAVEAT (same-arena
+// variant ambiguity): the render is faithful to SOURCE text, not to the
+// variant, so two same-arena nodes of DIFFERENT variants can render alike —
+// `Ident("x")` and the resolver-produced `QualifiedIdent("x")` both render
+// `x`. The "iff" therefore holds on PARSED trees (where the ambiguous
+// variants cannot co-occur: QualifiedIdent is never parsed, and one lexer
+// maps one lexeme to one variant) but not on arbitrary post-resolve trees.
+// This is why the §14.4 interning key (arena.av `expr_intern_key`) is
+// VARIANT-QUALIFIED instead of reusing this render-based hash — a consumer
+// that must never merge across variants cannot tolerate the ambiguity, while
+// a fingerprint consumer comparing parsed trees can. §14.4's "child ids" form
 // is the SAME thing once interning makes ids content-addressed (§15.3: an id IS
 // its content-hash); before interning, ids are sequential, so the recursive
 // (render) form is the correct one for structural equality. The O(1) child-ids

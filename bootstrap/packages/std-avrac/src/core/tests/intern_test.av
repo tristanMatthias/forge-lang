@@ -1,0 +1,198 @@
+// ps3t.3.5 — pure-leaf hash-consing contract (spine §14.4). The parser's leaf
+// allocations intern PURE literal/ident leaves: structurally-identical content
+// shares ONE arena row, so structural equality within the interned class is an
+// id compare and repeat occurrences cost no memory (the acceptance criteria
+// "identical subtrees interned to one shared node / structural equality = id
+// compare / memory deduped / dedup test", scoped to the span-safe pure-leaf
+// slice — spanned/childful interning stays gated on span-occurrence-keying).
+//
+// Three contract families:
+//   1. DEDUP    — identical pure leaves share a row; different content (or the
+//                 same text under a different VARIANT) never merges.
+//   2. EXCLUDE  — per-occurrence nodes (Error/Missing, childful payloads,
+//                 binding-carrying patterns) are never interned.
+//   3. ROLLBACK — a speculative-parse truncate leaves the intern map with
+//                 stale entries; every hit is validated (in-bounds +
+//                 content-equal), so a stale entry is repaired, never served.
+//                 (This is what makes eviction-free interning sound.)
+// Plus the WIRED check: the real parser path dedups (AVRA_L1_INGEST probe).
+
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, Expr, Pattern, ParamEntry}
+use @std.avrac.core.{ExprId, expr_intern_key, pat_intern_key, expr_content_hash}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+fn ts() -> NodeStore { new_node_store(build_line_index("")) }
+
+spec "pure-leaf interning dedups identical content (ps3t.3.5)" {
+    then "identical Ident leaves share one row — structural equality is an id compare" {
+        let store = ts()
+        let a = store.intern_expr_leaf(Expr.Ident("x"))
+        let b = store.intern_expr_leaf(Expr.Ident("x"))
+        a == b && store.exprs.count() == 1 && store.intern_hits == 1
+    }
+    then "every internable expr variant dedups (Number/String/Bool/None/FloatLit)" {
+        let store = ts()
+        let n1 = store.intern_expr_leaf(Expr.Number("42"))
+        let n2 = store.intern_expr_leaf(Expr.Number("42"))
+        let s1 = store.intern_expr_leaf(Expr.String("\"hi\""))
+        let s2 = store.intern_expr_leaf(Expr.String("\"hi\""))
+        let b1 = store.intern_expr_leaf(Expr.Bool("true"))
+        let b2 = store.intern_expr_leaf(Expr.Bool("true"))
+        let o1 = store.intern_expr_leaf(Expr.None)
+        let o2 = store.intern_expr_leaf(Expr.None)
+        let f1 = store.intern_expr_leaf(Expr.FloatLit("1.5"))
+        let f2 = store.intern_expr_leaf(Expr.FloatLit("1.5"))
+        n1 == n2 && s1 == s2 && b1 == b2
+            && o1 == o2 && f1 == f2
+            && store.exprs.count() == 5 && store.intern_hits == 5
+    }
+    then "different content stays distinct" {
+        let store = ts()
+        let a = store.intern_expr_leaf(Expr.Ident("x"))
+        let b = store.intern_expr_leaf(Expr.Ident("y"))
+        let c = store.intern_expr_leaf(Expr.Number("5"))
+        !(a == b) && !(b == c) && store.exprs.count() == 3
+    }
+    then "same payload text under different VARIANTS never merges (variant-qualified key)" {
+        let store = ts()
+        // A lexer never produces both from one lexeme, but parser desugars MINT
+        // leaves directly — a text-keyed intern would merge an int into a float.
+        let n = store.intern_expr_leaf(Expr.Number("5"))
+        let f = store.intern_expr_leaf(Expr.FloatLit("5"))
+        !(n == f) && store.exprs.count() == 2
+    }
+    then "interned occurrences agree with the content-hash fingerprint (they ARE one row)" {
+        let store = ts()
+        let a = store.intern_expr_leaf(Expr.Ident("x"))
+        let b = store.intern_expr_leaf(Expr.Ident("x"))
+        expr_content_hash(store, a) == expr_content_hash(store, b)
+    }
+}
+
+spec "per-occurrence nodes are never interned" {
+    then "Expr.Error rows stay per-occurrence (their ids identify individual syntax errors)" {
+        let store = ts()
+        let a = store.intern_expr_leaf(Expr.Error)
+        let b = store.intern_expr_leaf(Expr.Error)
+        !(a == b) && store.exprs.count() == 2 && store.intern_hits == 0
+    }
+    then "Expr.Missing rows stay per-occurrence" {
+        let store = ts()
+        let a = store.intern_expr_leaf(Expr.Missing)
+        let b = store.intern_expr_leaf(Expr.Missing)
+        !(a == b)
+    }
+    then "a CHILDFUL leaf payload (desugar-minted Call row) is not interned" {
+        let store = ts()
+        // 'leaf' means edge-less, not childless: alloc_force_unwrap_row allocs
+        // Expr.Call(callee, [subject]) via the leaf path. Its payload carries
+        // ids, so sharing would alias distinct subtrees — must stay distinct.
+        let callee = store.intern_expr_leaf(Expr.Ident("f"))
+        let args: List<ExprId> = []
+        let a = store.intern_expr_leaf(Expr.Call(callee, args))
+        let b = store.intern_expr_leaf(Expr.Call(callee, args))
+        !(a == b)
+    }
+    then "the whitelist is the key fn: internable leaves key non-empty, the rest empty" {
+        let no_args: List<ExprId> = []
+        expr_intern_key(Expr.Ident("x")) != "" && expr_intern_key(Expr.None) != ""
+            && expr_intern_key(Expr.Error) == "" && expr_intern_key(Expr.Missing) == ""
+            && expr_intern_key(Expr.Call(ExprId(1), no_args)) == ""
+            && expr_intern_key(Expr.QualifiedIdent("x")) == ""
+    }
+}
+
+spec "pattern pure-leaf interning" {
+    then "Wildcard and literal patterns dedup; different content stays distinct" {
+        let store = ts()
+        let w1 = store.intern_pat_leaf(Pattern.Wildcard)
+        let w2 = store.intern_pat_leaf(Pattern.Wildcard)
+        let i1 = store.intern_pat_leaf(Pattern.LitInt(5))
+        let i2 = store.intern_pat_leaf(Pattern.LitInt(5))
+        let i3 = store.intern_pat_leaf(Pattern.LitInt(7))
+        w1 == w2 && i1 == i2 && !(i1 == i3)
+            && store.pats.count() == 3
+    }
+    then "binding-carrying patterns are not interned (Variant carries ParamEntry bindings)" {
+        let binds: List<ParamEntry> = []
+        pat_intern_key(Pattern.Variant("Some", binds)) == ""
+            && pat_intern_key(Pattern.TypePattern("int", "n")) == ""
+            && pat_intern_key(Pattern.Wildcard) != ""
+    }
+}
+
+spec "interning survives speculative-parse rollback (stale-entry validation)" {
+    then "a pre-mark interned row still dedups after a rollback" {
+        let store = ts()
+        let keep = store.intern_expr_leaf(Expr.Ident("keep"))
+        let m = store.mark()
+        let _ = store.intern_expr_leaf(Expr.Ident("gone"))
+        store.truncate_to_mark(m)
+        let again = store.intern_expr_leaf(Expr.Ident("keep"))
+        again == keep && store.exprs.count() == 1
+    }
+    then "a stale entry pointing past the truncated arena is repaired, not read out of bounds" {
+        let store = ts()
+        let m = store.mark()
+        let first = store.intern_expr_leaf(Expr.Ident("z"))
+        store.truncate_to_mark(m)
+        // the map still holds z -> first, but the row is gone (count 0)
+        let re = store.intern_expr_leaf(Expr.Ident("z"))
+        re == first && store.exprs.count() == 1
+            && expr_intern_key(store.exprs.get(re)) == "id:z"
+    }
+    then "a stale entry whose row was REUSED by different content is not served" {
+        let store = ts()
+        let m = store.mark()
+        let spec_row = store.intern_expr_leaf(Expr.Ident("spec_only"))
+        store.truncate_to_mark(m)
+        // the freed raw id is reused by DIFFERENT content; the stale entry
+        // spec_only -> raw now points at other's row
+        let other = store.intern_expr_leaf(Expr.Ident("other"))
+        let again = store.intern_expr_leaf(Expr.Ident("spec_only"))
+        other == spec_row
+            && !(again == other)
+            && expr_intern_key(store.exprs.get(again)) == "id:spec_only"
+            && expr_intern_key(store.exprs.get(other)) == "id:other"
+    }
+    then "the repaired entry serves dedup hits again" {
+        let store = ts()
+        let m = store.mark()
+        let _ = store.intern_expr_leaf(Expr.Ident("z"))
+        store.truncate_to_mark(m)
+        let re = store.intern_expr_leaf(Expr.Ident("z"))   // repairs the entry
+        let hit = store.intern_expr_leaf(Expr.Ident("z"))  // must dedup again
+        hit == re && store.exprs.count() == 1
+    }
+    then "pattern rollback: stale entry repaired on the pat map too" {
+        let store = ts()
+        let m = store.mark()
+        let first = store.intern_pat_leaf(Pattern.LitInt(9))
+        store.truncate_to_mark(m)
+        let re = store.intern_pat_leaf(Pattern.LitInt(9))
+        re == first && store.pats.count() == 1
+            && pat_intern_key(store.pats.get(re)) == "int:9"
+    }
+}
+
+// The WIRED check: the real parser allocation path (alloc_leaf /
+// alloc_pat_leaf) interns. Shelling out to bs2 is the established pattern for
+// compiler-behaviour specs (see arena_test.av); the AVRA_L1_INGEST probe
+// surfaces the store's expr row count and dedup-hit counter.
+fn l1_intern_output() -> string {
+    let fixture = "build/_l1_intern_fixture.av"
+    let _ = avra_selfhost_write_file(fixture,
+        "fn f(a: int) -> int { a + a + a }\nfn main() { let x = f(1) + f(1) }\n")
+    avra_shell_exec("AVRA_L1_INGEST=1 ./build/bs2 check ${fixture} 2>&1")
+}
+
+spec "the parser's allocation path interns (wired)" {
+    then "repeated idents/literals in real source produce dedup hits" {
+        // `a` x3 in the body and `f`/`1` x2 at the call sites guarantee hits;
+        // exact counts are left to the in-process specs above (parser-internal
+        // synthesis could legitimately shift them).
+        let out = l1_intern_output()
+        out.contains("[l1-ingest] exprs:") && out.contains(" interned")
+            && !out.contains(", 0 interned")
+    }
+}

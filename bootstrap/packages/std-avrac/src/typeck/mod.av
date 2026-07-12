@@ -686,6 +686,20 @@ type TC = {
     union_aliases: UnionAliasReg,
     depth: int,
     bag: DiagnosticBag,
+    // Diagnostic gate honored by every report chokepoint (tc_report_at,
+    // tc_warn, tc_report_with_cause, and feature-side bag writers).
+    // Pass 2 (check) runs with this true and owns ALL diagnostics.
+    // Pass 3 (annotate) re-runs check_expr purely to EXTRACT types and
+    // runs with this false: its TC context (current_fn / current_line /
+    // current_col) is terminally stale by then — the walk never re-enters
+    // fn contexts — so anything it reported would misattribute to the
+    // last-checked fn, and a context-SENSITIVE check (the @opaque
+    // `.raw()` module gate, which passes on legal code only under the
+    // right current_fn) would false-fire on legal code. The bag is a
+    // shared mutable structure, so a report fired during annotate DOES
+    // surface even though annotate's TC is discarded — this flag is what
+    // enforces the "annotate never reports" contract.
+    reporting: bool,
     current_fn: string,
     current_line: int,
     current_col: int,
@@ -769,6 +783,7 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: Nod
         union_aliases: union_alias_reg_new(),
         depth: 0,
         bag: bag_new(),
+        reporting: true,
         current_fn: "",
         current_line: 0,
         current_col: 0,
@@ -953,6 +968,7 @@ fn tc_decorate_span(tc: TC, fallback_sp: Span) -> Span {
 /// Used when the offending expression has a known span that
 /// differs from the TC's "current" position.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
+    if !tc.reporting { return tc }
     let fallback = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     tc with { bag: bag_report(tc.bag, diag_error(code, tc_decorate_msg(tc, msg), sp)) }
@@ -963,6 +979,7 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
 /// strict-mode checks that want to surface signal without blocking
 /// the build (e.g. AVRA_STRICT_ARGS).
 export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
+    if !tc.reporting { return tc }
     let sp = tc_decorate_span(tc, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_warning(code, tc_decorate_msg(tc, msg), sp)) }
 }
@@ -970,6 +987,7 @@ export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
 /// Append a diagnostic with a dedicated cause message — surfaced
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
+    if !tc.reporting { return tc }
     let fallback = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     let primary = diag_error(code, tc_decorate_msg(tc, msg), sp)
@@ -1270,8 +1288,12 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // Pass 2.5: naming convention warnings
     let tc3 = check_naming_stmt_ids(tc2, ids)
     let t_naming = avra_uptime_ms()
-    // Pass 3: annotate AST — uses fast paths for leaf expressions
-    let annotated = annotate_stmt_ids(tc3, ids)
+    // Pass 3: annotate AST — uses fast paths for leaf expressions.
+    // Silent by contract (see TC.reporting): annotate re-runs check_expr
+    // only to extract types; its context is stale, so reporting here
+    // would misattribute diagnostics and false-fire context-sensitive
+    // checks on legal code.
+    let annotated = annotate_stmt_ids(tc3 with { reporting: false }, ids)
     let t_annotate = avra_uptime_ms()
     if timings_on {
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")

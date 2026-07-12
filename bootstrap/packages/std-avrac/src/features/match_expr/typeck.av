@@ -164,6 +164,7 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
     if arms_has_wildcard(arms) {
         let hidden_count = count_missing(variants, matched)
         if hidden_count > 2 {
+            if !tc.reporting { return tc }
             let sp = span_new(0, 6 + enum_name.length, tc.current_line, tc.current_col)
             let msg = "wildcard arm hides ${string(hidden_count)} variants of `${enum_name}`: ${missing}"
             let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
@@ -230,6 +231,7 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>
     if arms_has_wildcard(arms) {
         let hidden_count = count_missing_union_members(types, matched)
         if hidden_count > 2 {
+            if !tc.reporting { return tc }
             let type_str = vtype_render_full(subject_ty)
             let sp = span_new(0, 6 + type_str.length, tc.current_line, tc.current_col)
             let msg = "wildcard arm hides ${string(hidden_count)} members of `${type_str}`: ${missing}"
