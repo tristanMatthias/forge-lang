@@ -1,0 +1,68 @@
+// Spec test for `bs2 docs` — phx5 Part B moved it off the raw-argv guard onto
+// the declarative App (avra.run()). Its schema was COMPLETED in the process
+// (the bespoke parse_docs_args read ~9 flags + several options the old
+// `command docs` block didn't declare), including the `--used-by`→`--callers`
+// word alias (phx5 A2). run() builds a DocsArgs from the parsed CliResult.
+//
+// We drive the real bs2 binary against a tiny temp project (one .av file with a
+// documented `bar` and a `baz` that calls it) and probe the rendered output:
+//   1. `docs bar`        : positional query resolves to the symbol lookup
+//   2. `docs --used-by bar` : the A2 alias routes to the callers (reverse) path
+//   3. `docs --callers bar` : the canonical spelling does the same
+//   4. `docs --bogus`    : the declarative parser rejects the unknown flag
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn docs_bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+// Writes a one-file project: `bar` (documented) and `baz` (a caller of `bar`).
+fn docs_fixture(project: string) -> string {
+    avra_shell_exec(
+        "rm -rf " + project + " && mkdir -p " + project + " && " +
+        "printf '/// Adds one to n.\\nfn bar(n: int) -> int { n + 1 }\\n\\nfn baz() -> int { bar(2) }\\n' > " + project + "foo.av")
+}
+
+spec "bs2 docs <symbol>: the positional query resolves to the symbol" {
+    then "`docs bar` renders bar's signature" {
+        let project = "/tmp/avra_docs_lookup_fixture/"
+        let _ = docs_fixture(project)
+        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs bar 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        out.contains("fn bar") && out.contains("n: int")
+    }
+}
+
+spec "bs2 docs --used-by <symbol>: the A2 alias routes to the callers path" {
+    then "`docs --used-by bar` lists baz as a caller" {
+        let project = "/tmp/avra_docs_usedby_fixture/"
+        let _ = docs_fixture(project)
+        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs --used-by bar 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        out.contains("Used by") && out.contains("baz")
+    }
+}
+
+spec "bs2 docs --callers <symbol>: the canonical spelling does the same" {
+    then "`docs --callers bar` lists baz as a caller" {
+        let project = "/tmp/avra_docs_callers_fixture/"
+        let _ = docs_fixture(project)
+        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs --callers bar 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        out.contains("Used by") && out.contains("baz")
+    }
+}
+
+// phx5 Part B: dispatched through avra.run(), which rejects an undeclared flag
+// rather than silently ignoring it as the old parse_docs_args scan did.
+spec "bs2 docs: rejects an unknown flag (declarative parse)" {
+    then "`docs --bogus` errors and exits non-zero" {
+        let project = "/tmp/avra_docs_bogus_fixture/"
+        let _ = docs_fixture(project)
+        let probe = avra_shell_exec(
+            "cd " + project + " && (" + docs_bs2() + " docs --bogus 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("rc=nonzero") && probe.contains("unknown flag")
+    }
+}
