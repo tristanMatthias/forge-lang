@@ -828,6 +828,7 @@ impl Parser {
     // from context (let/return/arg annotation) by the typechecker; an
     // unresolved row type is a compile error (no weak List<Map> fallback).
     fn parse_table_literal(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         // Optional `<RowStruct>` row-type ascription.
         mut row_type = ""
         if self.check(Tk.Less) {
@@ -855,7 +856,7 @@ impl Parser {
         if header_count == 0 {
             if !self.consume(Tk.RightBrace, "expected `}` to close table") { return .Err("parse error") }
             let empty: List<ExprId> = []
-            return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
+            return .Ok(self.alloc_at(Expr.ListLit(empty), sp_start))
         }
         // Reject duplicate column names — they would silently collide on the
         // same struct field.
@@ -913,7 +914,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return .Err("parse error")
         }
-        .Ok(self.alloc_leaf(Expr.ListLit(row_ids)))
+        .Ok(self.alloc_at(Expr.ListLit(row_ids), sp_start))
     }
 
     // Module parser (parse_module_declaration, parse_use_declaration)
@@ -975,6 +976,7 @@ impl Parser {
     }
 
     fn parse_assignment(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_pipe()?
 
         if !self.check(Tk.Equal) {
@@ -991,8 +993,8 @@ impl Parser {
             // Flipped payloads are inline ids (F3b) — the node IS its own edge,
             // so these build as leaves (no recorded child edge), matching F3a's
             // alloc_stmt_leaf and the walker's scalar view of id fields.
-            .Ident(name) -> .Ok(self.alloc_leaf(Expr.Assign(name, value)))
-            .FieldAccess(obj, field) -> .Ok(self.alloc_leaf(Expr.FieldAssign(obj, field, value)))
+            .Ident(name) -> .Ok(self.alloc_at(Expr.Assign(name, value), sp_start))
+            .FieldAccess(obj, field) -> .Ok(self.alloc_at(Expr.FieldAssign(obj, field, value), sp_start))
             _ -> {
                 self.set_error("invalid assignment target")
                 .Err("invalid assignment target")
@@ -1001,6 +1003,7 @@ impl Parser {
     }
 
     fn parse_pipe(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_null_coalesce()?
 
         mut eid = left
@@ -1020,16 +1023,16 @@ impl Parser {
             eid = match self.expr_of(rhs) {
                 .Call(callee, args) -> {
                     if pipe_args_has_placeholder(self.store, args) {
-                        self.alloc_leaf(Expr.Call(callee, pipe_replace_placeholder(self.store, args, eid)))
+                        self.alloc_at(Expr.Call(callee, pipe_replace_placeholder(self.store, args, eid)), sp_start)
                     } else {
                         mut prepended: List<ExprId> = [eid]
                         for a in args { prepended.push(a) }
-                        self.alloc_leaf(Expr.Call(callee, prepended))
+                        self.alloc_at(Expr.Call(callee, prepended), sp_start)
                     }
                 }
                 _ -> {
                     let one: List<ExprId> = [eid]
-                    self.alloc_leaf(Expr.Call(rhs, one))
+                    self.alloc_at(Expr.Call(rhs, one), sp_start)
                 }
             }
         }
@@ -1073,45 +1076,49 @@ fn pipe_replace_placeholder(store: NodeStore, args: List<ExprId>, replacement: E
 
 impl Parser {
     fn parse_null_coalesce(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_or()?
 
         mut eid = left
         while self.check(Tk.QuestionQuestion) {
             self.advance()
             let right = self.parse_or()?
-            eid = self.alloc_leaf(Expr.NullCoalesce(eid, right))
+            eid = self.alloc_at(Expr.NullCoalesce(eid, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_or(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_and()?
 
         mut eid = left
         while self.current_kind in [Tk.PipePipe, Tk.KwOr] {
             self.advance()
             let right = self.parse_and()?
-            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.Or, right))
+            eid = self.alloc_at(Expr.Logical(eid, LogicOp.Or, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_and(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_equality()?
 
         mut eid = left
         while self.current_kind in [Tk.AmpAmp, Tk.KwAnd] {
             self.advance()
             let right = self.parse_equality()?
-            eid = self.alloc_leaf(Expr.Logical(eid, LogicOp.And, right))
+            eid = self.alloc_at(Expr.Logical(eid, LogicOp.And, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_equality(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_bitwise_or()?
 
         if self.check(Tk.KwIs) {
@@ -1120,7 +1127,7 @@ impl Parser {
                 return .Err("parse error")
             }
             let vname = self.consume_identifier("expected variant name after `is .`")?
-            return .Ok(self.alloc_leaf(Expr.IsCheck(left, vname)))
+            return .Ok(self.alloc_at(Expr.IsCheck(left, vname), sp_start))
         }
 
         if self.check(Tk.KwIn) {
@@ -1136,7 +1143,7 @@ impl Parser {
                 if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_leaf(Expr.InCheck(left, items)))
+                return .Ok(self.alloc_at(Expr.InCheck(left, items), sp_start))
             }
             // Range membership: x in start..end → x >= start && x <= end.
             // `left` is SHARED by both comparisons — in the boxed tree the same
@@ -1147,9 +1154,9 @@ impl Parser {
                 return .Err("parse error")
             }
             let end = self.parse_bitwise_or()?
-            let ge = self.alloc_leaf(Expr.Binary(left, BinOp.Ge, start))
-            let le = self.alloc_leaf(Expr.Binary(left, BinOp.Le, end))
-            return .Ok(self.alloc_leaf(Expr.Logical(ge, LogicOp.And, le)))
+            let ge = self.alloc_at(Expr.Binary(left, BinOp.Ge, start), sp_start)
+            let le = self.alloc_at(Expr.Binary(left, BinOp.Le, end), sp_start)
+            return .Ok(self.alloc_at(Expr.Logical(ge, LogicOp.And, le), sp_start))
         }
 
         mut eid = left
@@ -1157,46 +1164,50 @@ impl Parser {
             let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
             self.advance()
             let right = self.parse_bitwise_or()?
-            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
+            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_bitwise_or(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_bitwise_xor()?
         mut eid = left
         while self.check(Tk.Pipe) {
             self.advance()
             let right = self.parse_bitwise_xor()?
-            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitOr, right))
+            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitOr, right), sp_start)
         }
         .Ok(eid)
     }
 
     fn parse_bitwise_xor(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_bitwise_and()?
         mut eid = left
         while self.check(Tk.Caret) {
             self.advance()
             let right = self.parse_bitwise_and()?
-            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitXor, right))
+            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitXor, right), sp_start)
         }
         .Ok(eid)
     }
 
     fn parse_bitwise_and(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_comparison()?
         mut eid = left
         while self.check(Tk.Amp) {
             self.advance()
             let right = self.parse_comparison()?
-            eid = self.alloc_leaf(Expr.Binary(eid, BinOp.BitAnd, right))
+            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitAnd, right), sp_start)
         }
         .Ok(eid)
     }
 
     fn parse_comparison(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_shift()?
 
         mut eid = left
@@ -1209,25 +1220,27 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_shift()?
-            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
+            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_shift(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_term()?
         mut eid = left
         while self.current_kind in [Tk.Shl, Tk.Shr] {
             let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
             self.advance()
             let right = self.parse_term()?
-            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
+            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
         .Ok(eid)
     }
 
     fn parse_term(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_factor()?
 
         mut eid = left
@@ -1237,13 +1250,14 @@ impl Parser {
             let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
-            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
+            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
 
         .Ok(eid)
     }
 
     fn parse_factor(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let left = self.parse_unary()?
 
         mut eid = left
@@ -1255,7 +1269,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            eid = self.alloc_leaf(Expr.Binary(eid, op, right))
+            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
 
         .Ok(eid)
@@ -1269,6 +1283,7 @@ impl Parser {
         // write `(~f)(x)` to scope the splice tightly. The greedy
         // form matches the typical metaprogramming pattern where
         // the spliced expression IS the whole quoted hole.
+        let sp_start = self.current_start
         if self.check(Tk.Tilde) && self.quote_depth > 0 {
             self.advance()
             // `~Name { ... }` splices the *constructor name* of a struct
@@ -1283,10 +1298,10 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_leaf(Expr.StructLit("~" + var_name, parsed.inits)))
+                return .Ok(self.alloc_at(Expr.StructLit("~" + var_name, parsed.inits), sp_start))
             }
             let target = self.parse_unary()?
-            return .Ok(self.alloc_leaf(Expr.Splice(target)))
+            return .Ok(self.alloc_at(Expr.Splice(target), sp_start))
         }
         if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
@@ -1296,7 +1311,7 @@ impl Parser {
             }
             self.advance()
             let right = self.parse_unary()?
-            return .Ok(self.alloc_leaf(Expr.Unary(op, right)))
+            return .Ok(self.alloc_at(Expr.Unary(op, right), sp_start))
         }
 
         mut eid = self.parse_call()?
@@ -1312,7 +1327,7 @@ impl Parser {
             }
             // B-final F4: With.obj is a walker-opaque ExprId and the override
             // values are opaque value_ids — a leaf, like StructLit/Block.
-            eid = self.alloc_leaf(Expr.With(eid, parsed.inits))
+            eid = self.alloc_at(Expr.With(eid, parsed.inits), sp_start)
         }
         .Ok(eid)
     }
@@ -1365,6 +1380,7 @@ impl Parser {
     }
 
     fn parse_call(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         let primary_id = self.parse_primary()?
 
         // Dual cursor through the postfix loop: `rid` is the arena id of the
@@ -1384,14 +1400,14 @@ impl Parser {
                 // the subject rides in the flipped Call's id fields (leaf row).
                 let fu_callee = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
                 result = Expr.Call(fu_callee, [rid])
-                rid = self.alloc_leaf(result)
+                rid = self.alloc_at(result, sp_start)
             }
             // Error propagation: `expr?` — if null, return .Err("parse error")
             // from the enclosing function.
             if self.check(Tk.Question) {
                 self.advance()
                 result = Expr.Try(rid)
-                rid = self.alloc_leaf(result)
+                rid = self.alloc_at(result, sp_start)
                 continue
             }
             // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
@@ -1416,7 +1432,7 @@ impl Parser {
                 // Flipped Catch.inner/.body are ExprId scalars (walker-opaque) — the
                 // node holds both arena ids directly, so the Catch row is a leaf.
                 result = Expr.Catch(rid, binding, handler_id, catch_line, catch_col)
-                rid = self.alloc_leaf(result)
+                rid = self.alloc_at(result, sp_start)
                 continue
             }
             // Optional chaining `expr?.field` / `expr?.method(args)`.
@@ -1439,10 +1455,10 @@ impl Parser {
                     self.allow_it_sugar = saved_it
                     if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
                     result = Expr.OptionalMethodCall(rid, field, parsed.ids)
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                 } else {
                     result = Expr.OptionalChain(rid, field)
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                 }
             } else if self.check(Tk.LeftBracket) {
                 self.advance()
@@ -1455,14 +1471,14 @@ impl Parser {
                         return .Err("parse error")
                     }
                     result = Expr.Slice(rid, idx, end)
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                     continue
                 }
                 if !self.consume(Tk.RightBracket, "expected `]` after index") {
                     return .Err("parse error")
                 }
                 result = Expr.Index(rid, idx)
-                rid = self.alloc_leaf(result)
+                rid = self.alloc_at(result, sp_start)
             } else if self.check(Tk.Less) && is_callable(result) {
                 // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
                 match self.try_parse_generic_call(rid) {
@@ -1495,7 +1511,7 @@ impl Parser {
                     return .Err("parse error")
                 }
                 result = Expr.Call(rid, parsed.ids)
-                rid = self.alloc_leaf(result)
+                rid = self.alloc_at(result, sp_start)
             } else {
                 self.advance()
                 // Tuple index: `t.0`, `t.1` — number after dot
@@ -1503,7 +1519,7 @@ impl Parser {
                     let idx_text = self.current_lexeme
                     self.advance()
                     result = Expr.TupleIndex(rid, int(idx_text))
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                     continue
                 }
                 let field = self.consume_field_name("expected field name after `.`")?
@@ -1541,10 +1557,10 @@ impl Parser {
                     // ctor node itself is a leaf (its children ARE the id
                     // fields, so the arena records no edges).
                     result = Expr.EnumCtor(type_name, field, parsed.ids)
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                 } else {
                     result = Expr.FieldAccess(rid, field)
-                    rid = self.alloc_leaf(result)
+                    rid = self.alloc_at(result, sp_start)
                 }
             }
             }
@@ -1650,6 +1666,7 @@ impl Parser {
     }
 
     fn parse_primary(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         // Fully-qualified name `@pkg::mod::name` in expression position —
         // produced by the renderer when a shipped `@comptime` body is
         // re-parsed (pqc9/znl0). Resolves directly to a `QualifiedIdent`
@@ -1666,7 +1683,7 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_leaf(Expr.StructLit(qname, parsed.inits)))
+                return .Ok(self.alloc_at(Expr.StructLit(qname, parsed.inits), sp_start))
             }
             return .Ok(self.alloc_leaf(Expr.QualifiedIdent(qname)))
         }
@@ -1721,10 +1738,10 @@ impl Parser {
                         return .Err("parse error")
                     }
                     let ctor = Expr.EnumCtor("", variant, parsed.ids)
-                    return .Ok(self.alloc_leaf(ctor))
+                    return .Ok(self.alloc_at(ctor, sp_start))
                 }
                 let empty: List<ExprId> = []
-                return .Ok(self.alloc_leaf(Expr.EnumCtor("", variant, empty)))
+                return .Ok(self.alloc_at(Expr.EnumCtor("", variant, empty), sp_start))
             }
         }
 
@@ -1745,7 +1762,7 @@ impl Parser {
                 if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return .Err("parse error")
                 }
-                return .Ok(self.alloc_leaf(Expr.StructLit(name, parsed.inits)))
+                return .Ok(self.alloc_at(Expr.StructLit(name, parsed.inits), sp_start))
             }
             // Tagged template: `tag`template with ${expr}`
             // Desugars to: tag(desugar_template(raw))
@@ -1754,7 +1771,7 @@ impl Parser {
                 self.advance()
                 let template_id = self.desugar_template(raw)?
                 let tag_callee = self.alloc_leaf(Expr.Ident(name))
-                return .Ok(self.alloc_leaf(Expr.Call(tag_callee, [template_id])))
+                return .Ok(self.alloc_at(Expr.Call(tag_callee, [template_id]), sp_start))
             }
             return .Ok(self.alloc_leaf(Expr.Ident(name)))
         }
@@ -1772,10 +1789,10 @@ impl Parser {
                     self.advance()
                     let body = self.parse_lambda_body()?
                     let empty_ps: List<ParamEntry> = []
-                    return .Ok(self.alloc_leaf(Expr.Lambda(empty_ps, body)))
+                    return .Ok(self.alloc_at(Expr.Lambda(empty_ps, body), sp_start))
                 }
                 let empty: List<ExprId> = []
-                return .Ok(self.alloc_leaf(Expr.Tuple(empty)))
+                return .Ok(self.alloc_at(Expr.Tuple(empty), sp_start))
             }
             // Typed lambda: (x: int, y: string) -> body
             // Detect by peeking: if current is identifier and next non-ws is ':'
@@ -1789,7 +1806,7 @@ impl Parser {
                     return .Err("parse error")
                 }
                 let body = self.parse_lambda_body()?
-                return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
+                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
             }
             let expr_opt = self.parse_expression()
             self.allow_dot_postfix = saved
@@ -1809,11 +1826,11 @@ impl Parser {
                     for tid in rest.ids { combined_ids.push(tid) }
                     let params = exprs_to_params(self.store, combined_ids)
                     let body = self.parse_lambda_body()?
-                    return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
+                    return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
                 }
                 mut tuple_ids: List<ExprId> = [expr]
                 for tid in rest.ids { tuple_ids.push(tid) }
-                return .Ok(self.alloc_leaf(Expr.Tuple(tuple_ids)))
+                return .Ok(self.alloc_at(Expr.Tuple(tuple_ids), sp_start))
             }
             if !self.consume(Tk.RightParen, "expected `)` after expression") {
                 return .Err("parse error")
@@ -1824,9 +1841,9 @@ impl Parser {
                 let one: List<ExprId> = [expr]
                 let params = exprs_to_params(self.store, one)
                 let body = self.parse_lambda_body()?
-                return .Ok(self.alloc_leaf(Expr.Lambda(params, body)))
+                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
             }
-            return .Ok(self.alloc_leaf(Expr.Grouping(expr)))
+            return .Ok(self.alloc_at(Expr.Grouping(expr), sp_start))
         }
 
         // List literal: [expr, expr, ...]
@@ -1835,7 +1852,7 @@ impl Parser {
             if self.check(Tk.RightBracket) {
                 self.advance()
                 let empty: List<ExprId> = []
-                return .Ok(self.alloc_leaf(Expr.ListLit(empty)))
+                return .Ok(self.alloc_at(Expr.ListLit(empty), sp_start))
             }
             let elements = self.parse_list_elements()?
             if !self.consume(Tk.RightBracket, "expected `]` after list") {
@@ -1852,7 +1869,7 @@ impl Parser {
                     _ -> {}
                 }
             }
-            return .Ok(self.alloc_leaf(Expr.ListLit(elements.ids)))
+            return .Ok(self.alloc_at(Expr.ListLit(elements.ids), sp_start))
         }
 
         if self.check(Tk.KwMatch) {
@@ -2027,6 +2044,7 @@ impl Parser {
     }
 
     fn parse_block_expression(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         self.advance()
         // A block expression's body is parsed as a regular statement
         // list. Re-enable `.field` postfix consumption inside —
@@ -2041,7 +2059,7 @@ impl Parser {
         }
         // Flipped Expr.Block holds List<StmtId> (walker-opaque, like Stmt.Block) —
         // the stmt ids ARE the structure, so the block-expr is a leaf row.
-        .Ok(self.alloc_leaf(Expr.Block(body_val.ids)))
+        .Ok(self.alloc_at(Expr.Block(body_val.ids), sp_start))
     }
 
     fn check(self, kind: Tk) -> bool {
@@ -2486,6 +2504,7 @@ impl Parser {
     }
 
     fn parse_quote(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         self.advance()  // consume `quote`
         // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
         // `arm` selects the result-type of the captured AST. Default
@@ -2498,11 +2517,11 @@ impl Parser {
             let body_id = self.parse_quote_arm_body()?
             self.quote_depth = self.quote_depth - 1
             // Flipped Quote.body is an ExprId scalar (walker-opaque) — leaf row.
-            return .Ok(self.alloc_leaf(Expr.Quote(kind, body_id)))
+            return .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
         }
         let body_id = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
-        .Ok(self.alloc_leaf(Expr.Quote(kind, body_id)))
+        .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
     }
 
     fn parse_quote_kind(self) -> string {
@@ -2525,6 +2544,7 @@ impl Parser {
     /// so the existing Quote(kind, body) shape stays — the lowering
     /// pass picks the arm back out via its `arm` kind discriminator.
     fn parse_quote_arm_body(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
         let pat_id = self.parse_pattern_or()?
         let pattern = self.pat_of(pat_id)
@@ -2549,7 +2569,7 @@ impl Parser {
         // spanned` flattens to just the pattern.
         let subject_id = self.alloc_leaf(Expr.None)
         let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
-        .Ok(self.alloc_expr(Expr.MatchExpr(subject_id, arms), byte_span_none(), edges))
+        .Ok(self.alloc_expr(Expr.MatchExpr(subject_id, arms), self.span_from(sp_start), edges))
     }
 
     // Parse `when { cond -> body, ... }` — subjectless match expression.
@@ -2558,11 +2578,12 @@ impl Parser {
     // that as a leaf; the arms' natively-parsed rows orphan until WhenArm
     // registers with the walker.
     fn parse_when_expression(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         self.advance()  // consume `when`
         if !self.consume(Tk.LeftBrace, "expected `{` after `when`") { return .Err("parse error") }
         let arms = self.parse_when_arms()?
         if !self.consume(Tk.RightBrace, "expected `}` after when arms") { return .Err("parse error") }
-        .Ok(self.alloc_leaf(Expr.When(arms)))
+        .Ok(self.alloc_at(Expr.When(arms), sp_start))
     }
 
     fn parse_when_arms(self) -> Result<List<WhenArm>, string> {
@@ -2663,19 +2684,26 @@ impl Parser {
         self.store.intern_expr_leaf(node)
     }
 
-    /// Alloc an expr with ONE expr child (field order).
-    fn alloc1(self, node: Expr, a: ExprId) -> ExprId {
-        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a)])
+    /// Alloc a BARE compound expr row with a REAL byte span covering
+    /// [start, current token): the production captured `start`
+    /// (self.current_start) before consuming its first token, and by
+    /// allocation time the lexer has staged the token AFTER the expression —
+    /// the same [lo, next-token) convention Stmt.Error spans use. §14.2's
+    /// missing half for bare children: Binary operands, sub-exprs, and
+    /// call-shaped nodes previously kept the byte_span_none() sentinel.
+    /// Only for variants OUTSIDE the intern whitelist (childful/compound
+    /// nodes — never interned): pure literal/ident leaves stay span-free by
+    /// design, because interned rows are shared across occurrences and must
+    /// not carry any one occurrence's position.
+    fn alloc_at(self, node: Expr, start: int) -> ExprId {
+        self.store.add_expr(node, self.span_from(start), [])
     }
 
-    /// Alloc an expr with TWO expr children (field order).
-    fn alloc2(self, node: Expr, a: ExprId, b: ExprId) -> ExprId {
-        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a), NodeRef.ExprRef(b)])
-    }
-
-    /// Alloc an expr with THREE expr children (field order).
-    fn alloc3(self, node: Expr, a: ExprId, b: ExprId, c: ExprId) -> ExprId {
-        self.alloc_expr(node, byte_span_none(), [NodeRef.ExprRef(a), NodeRef.ExprRef(b), NodeRef.ExprRef(c)])
+    /// The [start, current token) byte span `alloc_at` stamps — exposed for
+    /// the few edge-carrying productions that go through `alloc_expr`
+    /// directly (match, channel) so they use the same convention.
+    fn span_from(self, start: int) -> ByteSpan {
+        byte_span(start, self.current_start)
     }
 
     /// Edge refs for a plain id list (arg-only nodes like EnumCtor).
