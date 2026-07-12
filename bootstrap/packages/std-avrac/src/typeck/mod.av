@@ -14,7 +14,7 @@ use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
 use core.{method_mangled_name, type_short_name, is_result_enum_name, qualified_module_of}
-use core.{Annotation, find_annotation, annotation_string_args}
+use core.{find_annotation, annotation_string_args}
 use core.{variant_is_optional_present, variant_is_optional_absent}
 use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, collect_id_zero_names_stmt_ids, stamp_ids_stmt_ids}
 use core.{exit}
