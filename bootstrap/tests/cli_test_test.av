@@ -1,0 +1,45 @@
+// Spec test for `bs2 test` — phx5 Part B moved it off the raw-argv guard onto
+// the declarative App (avra.run()). Its schema was completed in the process
+// (per_file/bundled/list flags + the lcov option; the -f/--filter short landed
+// via new cmdgen option-short support). The whole suite already runs THROUGH
+// this command, so its happy path is covered by every gate; these two specs pin
+// the declarative-parse CONTRACT the gate's valid args don't exercise:
+//   1. --list <path> : structural discovery (no compile/run) resolves the
+//                       positional path arg and lists the fixture's specs
+//   2. --bogus       : the declarative parser rejects the unknown flag (exit 1),
+//                       where the old parse_test_args scan silently ignored it
+//
+// The inner `bs2 test --list` runs in list-only mode (no shard fan-out, no
+// nested test execution), so there is no recursion.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn ct_bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "bs2 test --list <path>: lists a fixture's specs without running them" {
+    then "the discovered spec name is printed and nothing is executed" {
+        let project = "/tmp/avra_cli_test_list_fixture/"
+        let _ = avra_shell_exec(
+            "rm -rf " + project + " && mkdir -p " + project + " && " +
+            "printf 'spec \"probe marker spec\" {\\n  then \"holds\" { true }\\n}\\n' > " + project + "probe_test.av")
+        // Pass the fixture path positionally so this also exercises the `file`
+        // arg wiring (the positional → path_filter → scoped discovery), not just
+        // bare --list.
+        let out = avra_shell_exec("cd " + project + " && " + ct_bs2() + " test --list probe_test.av 2>&1")
+        let _ = avra_shell_exec("rm -rf " + project)
+        out.contains("probe marker spec")
+    }
+}
+
+spec "bs2 test: rejects an unknown flag (declarative parse)" {
+    then "`test --bogus` errors and exits non-zero" {
+        let project = "/tmp/avra_cli_test_bogus_fixture/"
+        let _ = avra_shell_exec("rm -rf " + project + " && mkdir -p " + project)
+        let probe = avra_shell_exec(
+            "cd " + project + " && (" + ct_bs2() + " test --bogus 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi)")
+        let _ = avra_shell_exec("rm -rf " + project)
+        probe.contains("rc=nonzero") && probe.contains("unknown flag")
+    }
+}

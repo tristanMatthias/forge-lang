@@ -1,15 +1,16 @@
-// vez6.11 / 5az8: a leaf's `short "…"` (flag) and `default "…"` (option)
-// config flow into the generated schema, so shorts dispatch and option
-// defaults apply — the last flag/option DX gap after the data/behaviour
-// split.
+// vez6.11 / 5az8: a leaf's `short "…"` (flag AND option) and `default "…"`
+// (option) config flow into the generated schema, so shorts dispatch and option
+// defaults apply — the last flag/option DX gap after the data/behaviour split.
 //
-// expand_cli reads each flag leaf's `short` into its FlagDef.short and each
-// option leaf's `default` into its OptionDef.default_val (globals too, whose
-// configs live at the cli level). The parser already accepts either spelling
-// (`flag_canonical_name`) and pre-fills option defaults
+// expand_cli reads each flag leaf's `short` into its FlagDef.short, each option
+// leaf's `short` into its OptionDef.short and its `default` into
+// OptionDef.default_val (globals too, whose configs live at the cli level). The
+// parser already accepts either spelling (`flag_canonical_name` /
+// `option_canonical_name`) and pre-fills option defaults
 // (`init_option_defaults`) — this pins that the MACRO now populates them, AND
-// that a short-matched flag records under its CANONICAL long name so the run
-// body's `result_has_flag(args, "verbose")` resolves a `-v` invocation.
+// that a short-matched flag/option records under its CANONICAL long name so the
+// run body's `result_has_flag(args, "verbose")` / `result_get_option(args,
+// "outfile")` resolves a `-v` / `-o` invocation.
 //
 // Runs through the shard's metadata fast-path: cmdgen's @comptime
 // bodies rehydrate from unit.meta.bin (the fmt→re-parse round-trip
@@ -40,7 +41,7 @@ fn sd_src() -> string {
     "        }\n" +
     "    }\n" +
     "    command pack {\n" +
-    "        option outfile { default \"out.txt\" }\n" +
+    "        option outfile { short \"-o\", default \"out.txt\" }\n" +
     "        run() { return outfile.length }\n" +
     "    }\n" +
     "}\n" +
@@ -51,6 +52,9 @@ fn sd_src() -> string {
     "    println(\"LONG=\" + string(toy.run_argv([\"build\", \"--verbose\"])))\n" +
     "    println(\"DEF=\" + string(toy.run_argv([\"pack\"])))\n" +
     "    println(\"SET=\" + string(toy.run_argv([\"pack\", \"--outfile=x\"])))\n" +
+    // an OPTION short (-o) takes the next token as its value, recorded under the
+    // canonical long name, so `outfile` reads "yy" (length 2).
+    "    println(\"OSHORT=\" + string(toy.run_argv([\"pack\", \"-o\", \"yy\"])))\n" +
     "}\n"
 }
 
@@ -90,5 +94,13 @@ spec "vez6.11 / 5az8: flag shorts dispatch and option defaults apply" {
         // the "out.txt" default.
         let out = sd_run()
         out.contains("SET=1")
+    }
+    then "an option's short (-o) takes the next token as its value" {
+        // `option outfile { short "-o" }`: `["pack", "-o", "yy"]` matches the
+        // short via option_canonical_name, recorded under the canonical name
+        // `outfile`, so the run body reads "yy" (length 2). Pins that the macro
+        // populates OptionDef.short (mirroring flag shorts), not just flags.
+        let out = sd_run()
+        out.contains("OSHORT=2")
     }
 }

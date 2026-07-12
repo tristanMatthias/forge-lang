@@ -145,16 +145,19 @@ fn argdef_lit(name: string, desc: ExprId, required: ExprId) -> ExprId {
     synth_expr_id(Expr.StructLit("@std::cli::ArgDef", [n, d, req]))
 }
 
-/// A `@std::cli::OptionDef { name: "--<n>", short: "", description: <desc>,
-/// default_val: <default> }` literal. `default_val` is the option leaf's
-/// `default "…"` config value (used to pre-fill the parsed option when the
-/// user omits it — see `init_option_defaults`), or the empty string when
-/// unset. `desc` is the leaf's `description "…"` config (empty when unset); it
-/// renders in the `--help` OPTIONS section.
+/// A `@std::cli::OptionDef { name: "--<n>", short: <short>, description: <desc>,
+/// default_val: <default> }` literal. `short` is the option leaf's `short "…"`
+/// config value (e.g. `"-f"`), or the empty string when unset — the parser's
+/// `option_canonical_name` accepts either spelling, mirroring flag shorts.
+/// `default_val` is the option leaf's `default "…"` config value (used to
+/// pre-fill the parsed option when the user omits it — see
+/// `init_option_defaults`), or the empty string when unset. `desc` is the leaf's
+/// `description "…"` config (empty when unset); it renders in the `--help`
+/// OPTIONS section.
 @comptime
-fn optiondef_lit(name: string, default_val: ExprId, desc: ExprId) -> ExprId {
+fn optiondef_lit(name: string, short: ExprId, default_val: ExprId, desc: ExprId) -> ExprId {
     let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
-    let sh = FieldInit { name: "short", value_id: str_lit("") }
+    let sh = FieldInit { name: "short", value_id: short }
     let d = FieldInit { name: "description", value_id: desc }
     let dv = FieldInit { name: "default_val", value_id: default_val }
     synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [n, sh, d, dv]))
@@ -220,6 +223,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     mut option_names: List<string> = []
     mut flag_shorts: List<ExprId> = []
     mut flag_aliases: List<ExprId> = []
+    mut option_shorts: List<ExprId> = []
     mut option_defaults: List<ExprId> = []
     // Each leaf's `description "…"` config, collected index-aligned with its
     // names so the generated FlagDef/ArgDef/OptionDef carry it into `--help`.
@@ -258,6 +262,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
                         }
                         if cn == "option" {
                             option_names.push(cinst)
+                            option_shorts.push(config_value_or_empty(ccfg, "short"))
                             option_defaults.push(config_value_or_empty(ccfg, "default"))
                             option_descs.push(config_value_or_empty(ccfg, "description"))
                         }
@@ -333,7 +338,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     mut opt_defs: List<ExprId> = []
     mut oi = 0
     while oi < option_names.length {
-        opt_defs.push(optiondef_lit(option_names[oi], option_defaults[oi], option_descs[oi]))
+        opt_defs.push(optiondef_lit(option_names[oi], option_shorts[oi], option_defaults[oi], option_descs[oi]))
         oi = oi + 1
     }
 

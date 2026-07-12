@@ -3093,9 +3093,12 @@ fn format_elapsed_seconds(elapsed_ms: int) -> string {
 // pipeline. The command itself owns: arg parsing, test-file
 // discovery + filtering, cache lookup/publish, exec, and the
 // coverage-only post-run profdata/render steps.
-fn run_test_command() {
+// `args` is built from the parsed CliResult by the declarative `command test`
+// block. The shard subcommand (`_test_shard`, still on the guarded raw-argv
+// path) builds the same TestArgs via parse_test_args, so that parser stays until
+// _test_shard is converted too (it needs variadic-positional schema support).
+fn run_test_command(args: TestArgs) {
     let project_dir = avra_process_env_get("PWD")
-    let args = parse_test_args()
 
     // Structural discovery via the @std.avrac.test_runner discovery
     // module. Walks the project tree natively (no shell fork),
@@ -3993,9 +3996,24 @@ cli avra {
         description "Run tests"
         option filter { short "-f", description "Filter tests by name" }
         flag coverage { short "-c", description "Enable coverage instrumentation" }
-        arg file { description "Test file (optional)" }
+        flag per_file { description "Run each test file in its own subprocess (the default)" }
+        flag bundled { description "Opt out of per-file: run all tests in one process (legacy; coverage uses it)" }
+        flag list { description "List discovered tests and exit — no compile, no run" }
+        option lcov { description "Enable coverage and write an LCOV report to this path" }
+        arg file { description "Test file or path to scope the run (optional)" }
         run() {
-            run_test_command()
+            // per_file is the DEFAULT (per-file isolation avoids the bundled
+            // path's ~10GB working set / OOM); `--bundled` opts out, `--per_file`
+            // reaffirms. `|| !bundled` keeps the safe default unless bundled is
+            // explicit. `--lcov <path>` implies coverage.
+            run_test_command(TestArgs {
+                filter: filter,
+                coverage: coverage || lcov != "",
+                lcov_path: lcov,
+                per_file: per_file || !bundled,
+                list_only: list,
+                path_filter: file,
+            })
             0
         }
     }
@@ -4107,28 +4125,26 @@ cli avra {
 fn main() {
     // Dispatch is split in two. The declarative commands (compile, check, run,
     // expr, fmt, fix, program, eval, metadata_show, expand, clean, cache, lsp,
-    // lang, docs) parse via `avra.run()`: it reads the real argv against the
-    // matched command's schema and calls that command's `run(args)` body, which
-    // reads its flags/args off the parsed `CliResult`.
+    // lang, docs, test) parse via `avra.run()`: it reads the real argv against
+    // the matched command's schema and calls that command's `run(args)` body,
+    // which reads its flags/args off the parsed `CliResult`.
     //
-    // The compiler-internal commands below (build, test, and the internal
-    // _test_shard) still own bespoke raw-argv parsers and are dispatched here by
-    // name. The `App` parser now models every argv shape they use —
-    // space-separated `--key value` options, word aliases (`--used-by` for
-    // `--callers`, now live in `docs`), and option-form flag aliases
-    // (`--message-format=json`), all landed in phx5 A1/A2 — so this guard is
-    // being retired one command at a time: each handler is converted to read
-    // from `CliResult` and its branch dropped here (phx5 Part B → the vez6.12
-    // single-`avra.run()` collapse). The `command … { run() … }` blocks above
-    // already carry the schema + `--help`; converting a command just moves its
-    // dispatch onto that block (see `clean`, `cache`, `lsp`, `lang`, `docs`,
-    // converted so far).
+    // Two compiler-internal commands still own bespoke raw-argv parsers and are
+    // dispatched here by name: `build`, and the internal `_test_shard`. The
+    // `App` parser models every argv shape they use — space-separated
+    // `--key value` options, word aliases (`--used-by` for `--callers`, now live
+    // in `docs`), and option-form flag aliases (`--message-format=json`), all
+    // landed in phx5 A1/A2 — so this guard is being retired one command at a
+    // time: each handler is converted to read from `CliResult` and its branch
+    // dropped here (phx5 Part B → the vez6.12 single-`avra.run()` collapse).
+    // `_test_shard` is last: it takes VARIADIC positional paths
+    // (`bs2 _test_shard a.av b.av …`), which the current single-named-positional
+    // arg schema can't express — it needs variadic-positional support first. The
+    // `command … { run() … }` blocks above already carry the schema + `--help`;
+    // converting a command just moves its dispatch onto that block (see `clean`,
+    // `cache`, `lsp`, `lang`, `docs`, `test`, converted so far).
     if avra_selfhost_argc() >= 2 {
         let cmd0 = avra_selfhost_get_arg_cstr(1)
-        if cmd0 == "test" {
-            run_test_command()
-            return
-        }
         if cmd0 == "_test_shard" {
             // 05yc: internal subcommand — the per-file orchestrator
             // forks `bs2 _test_shard <path>` per shard so each
