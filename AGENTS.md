@@ -1,18 +1,19 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project tracks all work in the **Agent Tasks MCP** (`mcp__Agent_Tasks__*`).
+Task IDs use the `forge-crafting-intepreters-*` scheme, so existing ticket
+references throughout the codebase still resolve via `mcp__Agent_Tasks__show`.
 
 ## Quick Reference
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-# NOTE: sync is automatic on Claude Code Web — a bd wrapper auto-pushes after
-# create/update/close (see CLAUDE.md "Beads sync on Claude Code Web"). You do
-# NOT need to run `bd dolt push` manually. (Off the web, it pushes to refs/dolt/data.)
-```
+Use the Agent Tasks MCP tools:
+
+- `mcp__Agent_Tasks__ready` — find available work
+- `mcp__Agent_Tasks__show` — view a task's details
+- `mcp__Agent_Tasks__update` (with `claim: true`) — claim work atomically
+- `mcp__Agent_Tasks__close` — complete work
+
+Do NOT use TodoWrite or markdown TODO lists.
 
 ## Non-Interactive Shell Commands
 
@@ -38,27 +39,12 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Beads Issue Tracker
+## Task Tracking — USE AGENT TASKS
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+All work is tracked in the **Agent Tasks MCP** (`mcp__Agent_Tasks__*`) —
+`mcp__Agent_Tasks__ready` / `show` / `update` (with `claim: true`) / `close` /
+`create` / `comment`. Do NOT use TodoWrite or markdown TODO lists; persistent
+knowledge goes in CLAUDE.md or project docs, not a MEMORY.md file.
 
 ## Session Completion
 
@@ -84,4 +70,3 @@ bd close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->

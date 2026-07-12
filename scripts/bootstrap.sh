@@ -19,10 +19,8 @@
 #   sha256sum          (coreutils on Linux; shasum on macOS) — seed provenance hashing
 #   python3            seed-trap patcher + scripts/diagnose.sh helpers
 #
-# Also required: bd, the beads issue tracker the dev workflow runs on. The script
-# installs it unconditionally and brings its own prerequisite with it (a Go toolchain
-# to build bd). bd bundles an embedded dolt server (`bd dolt ...`), so no separate
-# `dolt` binary is needed.
+# Task tracking is handled by the Agent Tasks MCP (mcp__Agent_Tasks__*), not by
+# anything this script installs.
 #
 # Platforms: macOS (Homebrew), Debian/Ubuntu (apt), Fedora/RHEL (dnf/yum),
 #            Arch (pacman), openSUSE (zypper), Alpine (apk).
@@ -51,17 +49,6 @@ set -euo pipefail
 # --- required LLVM major version (see header) -------------------------------------
 LLVM_MAJOR=20
 
-# --- pinned beads (bd) version ----------------------------------------------------
-# bd is PINNED, not @latest. bd's storage is an embedded Dolt DB whose schema is
-# migrated forward by each bd release. The repo's checked-in DB (cloned from the
-# remote on first `bd` use) is at a specific schema; a newer bd will try to apply
-# migrations it doesn't have data for and abort — e.g. bd v1.0.5's migration
-# 0047_recompute_mixed_is_blocked fails with `table not found: wisps` /
-# `pending schema migrations alter pre-existing dirty tables`. v1.0.4 is the
-# last release compatible with the current DB schema. Bump this ONLY together
-# with a deliberate DB schema migration.
-BD_VERSION="v1.0.4"
-
 # --- locate the repo root (this script lives in <repo>/scripts) -------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -76,7 +63,6 @@ for arg in "$@"; do
   case "$arg" in
     --check)      DO_INSTALL=0 ;;
     --yes|-y)     ASSUME_YES=1 ;;
-    --with-beads) ;;  # deprecated no-op: beads is now always installed
     --persist)    PERSIST=1 ;;
     --print-env)  PRINT_ENV_ONLY=1 ;;
     -h|--help)
@@ -271,296 +257,6 @@ install_toolchain() {
     fi
   fi
 
-  # beads (bd) is mandatory — the dev workflow tracks all work in it.
-  install_beads
-}
-
-# Package name for the Go toolchain (needed to build bd).
-go_package() {
-  case "$PM" in
-    brew)    echo "go" ;;
-    apt-get) echo "golang-go" ;;
-    dnf|yum) echo "golang" ;;
-    pacman)  echo "go" ;;
-    zypper)  echo "go" ;;
-    apk)     echo "go" ;;
-    *)       echo "" ;;
-  esac
-}
-
-# Where `go install` drops binaries — add it to PATH so verify() can see bd.
-go_bin_dir() {
-  if have go; then go env GOBIN 2>/dev/null | grep . || echo "$(go env GOPATH 2>/dev/null || echo "$HOME/go")/bin"
-  else echo "$HOME/go/bin"; fi
-}
-
-# Make bd resolvable in NON-login shells — Claude Code sessions and, critically,
-# the beads git hooks (.beads/hooks/* via core.hooksPath) and the SessionStart/
-# PreCompact `bd prime` hooks. Those hooks gate on `command -v bd`; if bd only
-# lives in GOPATH/bin (not on the default PATH), every hook SILENTLY no-ops —
-# which disables refs/dolt/data sync and DB hydration entirely. Symlink bd into
-# a directory that is always on PATH so the hook gate (`command -v bd`) passes.
-ensure_bd_on_path() {
-  local gobin; gobin="$(go_bin_dir)"
-  [ -x "$gobin/bd" ] || return 0
-  # Already resolvable via a real PATH dir (not just this script's transient
-  # PATH export)? A symlink we previously dropped counts. Then nothing to do.
-  for d in /usr/local/bin "$HOME/.local/bin"; do
-    [ -e "$d/bd" ] && return 0
-  done
-  for d in /usr/local/bin "$HOME/.local/bin"; do
-    if [ -d "$d" ] && [ -w "$d" ]; then
-      ln -sf "$gobin/bd" "$d/bd" && { ok "linked bd → $d/bd (PATH for sessions + git hooks)"; return 0; }
-    fi
-  done
-  warn "bd at $gobin/bd is not on a default PATH dir — beads git hooks may not run in fresh shells"
-}
-
-# major.minor.patch reported by `bd version` (e.g. "1.0.5"), or empty.
-bd_installed_version() {
-  have bd || { echo ""; return; }
-  bd version 2>/dev/null | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p' | head -1
-}
-
-install_beads() {
-  # --- bd: pinned to BD_VERSION. Install when missing OR when the present
-  # bd is a different (e.g. schema-incompatible @latest) build. ---
-  local want="${BD_VERSION#v}" have_ver
-  have_ver="$(bd_installed_version)"
-  if [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; then
-    warn "bd $have_ver is installed but this repo pins bd $want (schema compatibility) — reinstalling"
-  fi
-  if ! have bd || { [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; }; then
-    if confirm "install bd $want (beads issue tracker — required by the dev workflow)?"; then
-      if ! have go && [ "$PM" != "brew" ]; then
-        log "bd needs a Go toolchain to build — installing it first"
-        # shellcheck disable=SC2046
-        pm_install $(go_package) || warn "could not install a Go toolchain automatically"
-      fi
-      if have go; then
-        # Pinned to $BD_VERSION (see BD_VERSION note above) — NOT @latest, whose
-        # newer Dolt-schema migrations break against the repo's checked-in DB.
-        GOFLAGS="" go install "github.com/steveyegge/beads/cmd/bd@${BD_VERSION}" \
-          || warn "bd install via go failed — see https://github.com/steveyegge/beads"
-        # `go install` lands in GOPATH/bin (or GOBIN); make it visible now and onward.
-        case ":$PATH:" in *":$(go_bin_dir):"*) ;; *) export PATH="$PATH:$(go_bin_dir)" ;; esac
-      elif [ "$PM" = "brew" ]; then
-        # Homebrew can't pin to the schema-compatible bd; prefer the pinned go install.
-        brew install beads 2>/dev/null \
-          || warn "bd not available via brew — install the pinned build: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
-      else
-        warn "no Go toolchain available to build bd — install with: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
-      fi
-    fi
-  fi
-  # No external `dolt` binary: bd ships an embedded dolt server (`bd dolt ...`).
-
-  # bd lands in GOPATH/bin which is NOT on a default shell PATH; link it onto
-  # PATH so the beads git hooks and session hooks can actually find it.
-  ensure_bd_on_path
-
-  # Wire up beads Dolt sync (refs/dolt/data) when a token is present; otherwise
-  # fall back to the offline jsonl import.
-  setup_beads_sync
-}
-
-# Set up beads sync via Dolt's refs/dolt/data — Claude-Code-Web compatible.
-#
-# Why this is non-obvious (three platform constraints we work around):
-#   1. The GitHub proxy allows `git push` ONLY to the working branch, so Dolt's
-#      refs/dolt/data CANNOT be pushed through it (it 403s). Reads (fetch) DO
-#      work. → we PULL/hydrate through the proxy (no creds), and PUSH DIRECT to
-#      github.com using a fine-grained PAT in $GH_TOKEN (Contents: write, this
-#      repo only), which bypasses the working-branch restriction.
-#   2. There is no secrets store, so the PAT lives only in the GH_TOKEN env var;
-#      we feed it to git via GIT_ASKPASS so it never lands on argv, on disk, or
-#      in the repo.
-#   3. The container's mandatory commit-signing rejects Dolt's data commits, so
-#      Dolt's git ops must run with commit.gpgsign=false. We scope that (and the
-#      token) to bd ONLY via a wrapper, so the agent's own source commits keep
-#      their normal signing.
-#
-# The wrapper is installed UNCONDITIONALLY and decides at RUNTIME whether to push
-# (based on $GH_TOKEN), so a container that gains the token later starts syncing
-# with no re-bootstrap. Without a usable token bd stays read-only (hydrate works,
-# writes just don't push); jsonl is a last resort only if the ref is unavailable.
-setup_beads_sync() {
-  have bd || return 0
-  local bd_dir="$REPO_ROOT/.beads"
-  local gobin; gobin="$(go_bin_dir)"
-  local real_bd="$gobin/bd"; [ -x "$real_bd" ] || real_bd="$(command -v bd)"
-
-  # Per-container runtime dir (recreated each bootstrap; never committed).
-  local rt="$HOME/.bd-sync"; mkdir -p "$rt"
-  # askpass: prints $GH_TOKEN at call time — token is never written to disk/argv.
-  printf '#!/bin/sh\nprintf "%%s" "$GH_TOKEN"\n' > "$rt/askpass.sh"; chmod +x "$rt/askpass.sh"
-  # git config that inherits the real global config but turns signing OFF — the
-  # container's sign-server rejects Dolt's data commits (needed for hydration
-  # commits too, so it's applied whether or not a token is present).
-  printf '[include]\n\tpath = %s/.gitconfig\n[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n' \
-    "$HOME" > "$rt/gitconfig"
-
-  # The bd wrapper is the CANONICAL bd entrypoint — always installed, ahead of
-  # the raw bd on PATH, so it can never be silently bypassed. It checks $GH_TOKEN
-  # at RUNTIME (not install time): with a token it auto-pushes refs/dolt/data
-  # DIRECT to github (the proxy blocks that ref, and bd doesn't auto-push on
-  # write); without one it's a transparent passthrough.
-  #
-  # Sync is COMMAND-AGNOSTIC — there is NO allowlist of verbs to maintain. We
-  # fingerprint the Dolt store's root via its noms `manifest` file (a ~1ms read
-  # that changes on any write — commit OR working-set — and never on a read) and
-  # cache the last-synced fingerprint. After every command: if the fingerprint
-  # moved, `dolt commit` (flush any uncommitted working set; no-op if already
-  # committed) then `dolt push`, and cache the new fingerprint; otherwise do
-  # nothing. So a mutation by ANY verb (today's or a future one) syncs, a read
-  # pays only the file read (never the ~2s network push), and explicit
-  # `bd dolt commit/pull/push` is handled without special-casing. We commit
-  # explicitly rather than via a persisted `dolt.auto-commit` config (which would
-  # dirty the git-tracked config.yaml). Inner dolt calls hit the REAL bd (no
-  # recursion). Because refs/dolt/data is a SHARED ref, we pull (merge) before
-  # pushing so a remote that advanced (another session / the seed-train / CI)
-  # doesn't reject the push non-fast-forward; the push is best-effort (cache is
-  # only advanced on success, so a failure retries on the next command) and its
-  # output is logged to $rt/sync.log rather than discarded, so a persistent
-  # failure is visible instead of silently stranding writes. If the manifest
-  # can't be located we fall back to pushing (fail toward syncing, never
-  # silently drop a write).
-  cat > "$rt/bd" <<WRAP
-#!/bin/sh
-export GIT_CONFIG_GLOBAL="$rt/gitconfig"
-export GIT_TERMINAL_PROMPT=0
-[ -n "\${GH_TOKEN:-}" ] && export GIT_ASKPASS="$rt/askpass.sh"
-"$real_bd" "\$@"; __rc=\$?
-if [ -n "\${GH_TOKEN:-}" ]; then
-  __mani="\$(ls $REPO_ROOT/.beads/embeddeddolt/*/.dolt/noms/manifest 2>/dev/null | head -1)"
-  __fp="\$(cat "\$__mani" 2>/dev/null)"
-  if [ -z "\$__mani" ] || [ "\$__fp" != "\$(cat "$rt/last_synced" 2>/dev/null)" ]; then
-    "$real_bd" dolt commit -m "bd: sync" >/dev/null 2>&1 || true
-    # refs/dolt/data is SHARED (other sessions, the seed-train, and CI all push
-    # it), so PULL (merge any remote advance) before pushing — otherwise the push
-    # is rejected non-fast-forward and, with output discarded to /dev/null, fails
-    # SILENTLY and can never recover (retry-on-next-command can't fast-forward a
-    # diverged remote without a pull). Output goes to sync.log so a persistent
-    # failure is diagnosable instead of invisible.
-    # PULL (read) stays on the agent proxy — reads to github are allowed.
-    "$real_bd" dolt pull origin >>"$rt/sync.log" 2>&1 || true
-    # PUSH must BYPASS the agent proxy: the proxy 403s writes to refs/dolt/data
-    # (a non-working-branch ref), so an auto-push routed through it fails and the
-    # write strands SILENTLY — the recurring multi-agent breakage this block
-    # exists to prevent. Unset the proxy vars so dolt's chunk upload goes DIRECT
-    # to github with the PAT (via GIT_ASKPASS). (The comment above already
-    # promised "DIRECT to github"; this is what actually makes it direct.)
-    if env -u https_proxy -u HTTPS_PROXY -u http_proxy -u HTTP_PROXY \
-           -u all_proxy -u ALL_PROXY \
-           "$real_bd" dolt push origin >>"$rt/sync.log" 2>&1; then
-      cat "\$__mani" 2>/dev/null > "$rt/last_synced" || true
-    fi
-  fi
-fi
-exit \$__rc
-WRAP
-  chmod +x "$rt/bd"
-  # Install the wrapper into EVERY writable PATH bin dir (the last word, ahead of
-  # the raw bd that ensure_bd_on_path linked) so no shell or git hook resolves the
-  # raw bd by accident. No `break` — link all candidates. ensure_bd_on_path's
-  # early-return then protects this link from any later re-run.
-  local linked=0
-  for d in /usr/local/bin "$HOME/.local/bin"; do
-    [ -d "$d" ] && [ -w "$d" ] && ln -sf "$rt/bd" "$d/bd" 2>/dev/null && linked=1
-  done
-  [ "$linked" = 1 ] || warn "beads: could not install bd wrapper on PATH — auto-sync may not run"
-  local bd="$rt/bd"
-
-  # Derive owner/repo from the git origin URL. Two shapes exist in the wild:
-  # the proxy URL (…/git/OWNER/REPO.git — strip through /git/) and a plain
-  # github URL (https://github.com/OWNER/REPO[.git] / git@github.com:OWNER/REPO).
-  # The old proxy-only sed left a plain URL UNCHANGED, so the dolt push remote
-  # became git+https://…github.com/https://github.com/OWNER/REPO.git — every
-  # push then failed, and (dolt exits 0 on that usage error) the wrapper still
-  # stamped last_synced, so writes stranded SILENTLY. The case-guard rejects
-  # anything still URL-shaped so a new shape can never poison the remote again.
-  local slug; slug="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null | sed -E 's#.*/git/##; s#^(https?://)?(git@)?github\.com[:/]##; s#\.git$##')"
-  case "$slug" in *://*|*github.com*) slug="" ;; esac
-  : "${slug:=tristanMatthias/forge-lang}"
-
-  # Hydrate from refs/dolt/data via the git origin (the proxy — reads need no
-  # creds, works with or without a token). If a store exists, pull latest.
-  if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
-    ( cd "$REPO_ROOT" && BD_NON_INTERACTIVE=1 "$bd" dolt pull origin >/dev/null 2>&1 ) \
-      && ok "beads: pulled latest from refs/dolt/data" || warn "beads: dolt pull failed"
-  else
-    if ( cd "$REPO_ROOT" && BD_NON_INTERACTIVE=1 "$bd" bootstrap --yes >/dev/null 2>&1 ) \
-       && { [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; }; then
-      ok "beads: hydrated DB from refs/dolt/data (no committed jsonl)"
-    else
-      warn "beads: bootstrap from refs/dolt/data failed — falling back to jsonl"; init_beads_local; return 0
-    fi
-  fi
-
-  # Configure the PUSH remote = direct-to-github (token via askpass at push time).
-  # Hydration above used the proxy git origin; set the dolt remote AFTER so it
-  # doesn't redirect those reads. Harmless when GH_TOKEN is absent (the wrapper
-  # just won't push). NOTE: `bd dolt remote add` auto-commits .beads/config.yaml
-  # ("bd: update sync.remote"), which would pollute the working branch in every
-  # fresh container. We capture HEAD first, drop any commit bd makes, and restore
-  # config.yaml — the dolt remote itself persists in the gitignored Dolt store
-  # (the source of truth for `dolt push`), so reverting the git-tracked config is
-  # safe.
-  ( cd "$REPO_ROOT"
-    before="$(git rev-parse HEAD 2>/dev/null)"
-    "$bd" dolt remote remove origin >/dev/null 2>&1
-    "$bd" dolt remote add origin "git+https://x-access-token@github.com/${slug}.git" >/dev/null 2>&1
-    if [ -n "$before" ] && [ "$(git rev-parse HEAD 2>/dev/null)" != "$before" ]; then
-      git reset --soft "$before" >/dev/null 2>&1 || true
-    fi
-    git restore --staged --worktree .beads/config.yaml >/dev/null 2>&1 \
-      || git checkout -- .beads/config.yaml >/dev/null 2>&1 || true )
-
-  # Seed the wrapper's sync fingerprint to the just-hydrated state, so the first
-  # read in the session doesn't trigger a spurious push (only a real write will).
-  local mani; mani="$(ls "$REPO_ROOT"/.beads/embeddeddolt/*/.dolt/noms/manifest 2>/dev/null | head -1)"
-  [ -n "$mani" ] && cat "$mani" > "$rt/last_synced" 2>/dev/null || true
-
-  if [ -n "${GH_TOKEN:-}" ]; then
-    ok "beads: Dolt sync ON — pull via proxy, push direct-to-github (no committed jsonl)"
-  else
-    warn "beads: READ-ONLY (GH_TOKEN unset) — hydrated from refs/dolt/data; writes sync automatically once GH_TOKEN is set"
-  fi
-}
-
-# Offline fallback: build bd's local Dolt store from the committed
-# .beads/issues.jsonl. Used only when GH_TOKEN is absent. Never touches network.
-init_beads_local() {
-  have bd || return 0
-  local bd_dir="$REPO_ROOT/.beads"
-  [ -f "$bd_dir/issues.jsonl" ] || return 0
-  # Already have a local store? Reconcile it with the committed issues.jsonl.
-  # The container's Dolt store is built once at create-time, but a later
-  # `git pull` (or a fresh checkout of an updated branch) brings a NEWER
-  # issues.jsonl — which, in Claude Code Web, IS the source of truth (the
-  # proxy blocks Dolt's remote sync). Without this re-import, `bd ready`
-  # serves a stale snapshot (the 902-vs-965 drift this repo hit). `bd import`
-  # is upsert-only — safe and non-destructive — so re-running it is cheap.
-  if [ -d "$bd_dir/embeddeddolt" ] || [ -d "$bd_dir/dolt" ]; then
-    if ( cd "$REPO_ROOT" && bd import .beads/issues.jsonl >/dev/null 2>&1 ); then
-      ok "bd store reconciled from issues.jsonl (latest committed state)"
-    else
-      ok "bd local store present — offline, no network sync"
-    fi
-    return 0
-  fi
-  log "building local bd store from issues.jsonl (offline; no Dolt clone/push)"
-  if ( cd "$REPO_ROOT" && bd init --from-jsonl --sandbox >/dev/null 2>&1 ); then
-    # `bd init` persists the git origin as `sync.remote`, which would make
-    # every subsequent write attempt a network Dolt push. Strip it so bd
-    # stays fully offline; the committed config.yaml keeps it commented out.
-    if grep -q '^sync\.remote:' "$bd_dir/config.yaml" 2>/dev/null; then
-      sed -i.bak '/^sync\.remote:/d' "$bd_dir/config.yaml" && rm -f "$bd_dir/config.yaml.bak"
-    fi
-    ok "bd initialized offline from issues.jsonl"
-  else
-    warn "bd init --from-jsonl failed — run it manually in the repo root: bd init --from-jsonl --sandbox"
-  fi
 }
 
 # ----------------------------------------------------------------------------------
@@ -618,24 +314,6 @@ verify() {
     if have llvm-config; then warn "found llvm-config $(llvm-config --version) — wrong major; LLVM 21's -O2 miscompiles ARM64, so $LLVM_MAJOR is pinned."; fi
     MISSING=$((MISSING + 1))
   fi
-
-  # beads — required: the dev workflow tracks all work in it. (bd bundles an
-  # embedded dolt server, so no separate dolt binary is checked.)
-  # `go install` may have dropped bd under GOPATH/bin; make sure we look there.
-  local gobin; gobin="$(go_bin_dir)"
-  case ":$PATH:" in *":$gobin:"*) ;; *) [ -d "$gobin" ] && export PATH="$PATH:$gobin" ;; esac
-  check_cmd "bd (beads)"  bd
-  # bd must be the pinned, schema-compatible version (a newer @latest aborts
-  # opening the repo's Dolt DB). Flag a mismatch as a hard failure in --check.
-  if have bd; then
-    local want="${BD_VERSION#v}" have_ver; have_ver="$(bd_installed_version)"
-    if [ -n "$have_ver" ] && [ "$have_ver" != "$want" ]; then
-      err "bd version $have_ver != pinned $want — newer bd breaks against this repo's Dolt schema. Reinstall: go install github.com/steveyegge/beads/cmd/bd@${BD_VERSION}"
-      MISSING=$((MISSING + 1))
-    elif [ -n "$have_ver" ]; then
-      ok "bd version $have_ver matches pin"
-    fi
-  fi
 }
 
 # ----------------------------------------------------------------------------------
@@ -648,11 +326,6 @@ recommended_env() {
   # Pin llc explicitly when an LLVM_MAJOR llc exists outside the prefix bin.
   if [ -x "$pfx/bin/llc" ]; then
     echo "export LLC=\"$pfx/bin/llc\""
-  fi
-  # If bd was built into GOPATH/bin and that's not already on PATH, surface it.
-  local gobin; gobin="$(go_bin_dir)"
-  if [ -x "$gobin/bd" ]; then
-    case ":$PATH:" in *":$gobin:"*) ;; *) echo "export PATH=\"\$PATH:$gobin\"" ;; esac
   fi
 }
 

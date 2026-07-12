@@ -610,7 +610,7 @@ If the probe outputs "ok" and the test suite passes, the work is done.
 
 - `98e32334` — `feat(comptime): @expand macros can return List<SStmt>` — independent improvement to `expand_macro.av`, already landed. Useful context but unrelated to the pipeline fix.
 
-## Related beads tickets
+## Related tickets
 
 - `forge-crafting-intepreters-qa6i` — the @expand pipeline ordering bug — references this doc.
 

@@ -110,8 +110,8 @@ enforced by `diagnose.sh --check-bootstrap-window`:
   integration branch's CURRENT pristine seed in an isolated tree with
   a cold unit cache, then smoke-runs the produced compiler.
 
-Wired into the pre-push hook (`scripts/pre-push`, chained from
-`.beads/hooks/pre-push` on hooksPath checkouts) and CI
+Wired into the pre-push hook (`scripts/pre-push`, installed at
+`.git/hooks/pre-push`) and CI
 (`.github/workflows/bootstrap-window.yml`, every PR into the
 integration branch). Green verifies are cached in
 `build/window/.window_verified`; force a re-check with

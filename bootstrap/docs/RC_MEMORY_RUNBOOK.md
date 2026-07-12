@@ -126,7 +126,7 @@ garbage — which post-guard means a stale binary or a new bypass.
 - Post-mortem narrative: `927f_union_match_mono_bug.md` (zm77: phantom
   release of uninit cleanup slots froze a live AST node; fix evolved
   bind-level → universal alloca guard → this verifier).
-- Open hardening: beads epic `rcsf` — `.3` strict allocator mode
+- Open hardening: epic `rcsf` — `.3` strict allocator mode
   (poison-on-free, abort on foreign release), `.4` phase arenas for
   the AST, `.5` definite-init analysis + block-scoped cleanup (the
   principled replacement for the blanket guard), `.1` registration

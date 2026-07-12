@@ -520,7 +520,7 @@ test is the quality gate for the next.
 
 ## Working with this document
 
-- Each `/loop` iteration: `bd ready` → pick the lowest-stage open
+- Each `/loop` iteration: `mcp__Agent_Tasks__ready` → pick the lowest-stage open
   ticket → drive it to its acceptance criteria → run the cleanup
   tickets (perf/DRY/red-team) per `ticket-inner` formula → close it →
   move on.

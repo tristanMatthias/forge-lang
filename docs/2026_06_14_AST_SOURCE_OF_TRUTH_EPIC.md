@@ -609,9 +609,9 @@ is a **versioned public contract**. LSP/rustc-shaped → familiar to LLMs.
 - **`Value`-deletion ripple:** audit std/user exposure of `Value` before L2
   deletes it (tracked under `g18a`).
 
-## 11. Execution DAG (beads structure)
+## 11. Execution DAG (ticket structure)
 
-The beads refactor that makes `bd ready` show *exactly* the right work. 241
+The ticket-graph refactor that makes ready-work queries show *exactly* the right work. 241
 non-closed issues triaged: **spine** (re-parented into the layer epics) vs **out**
 (stays under its own epic).
 
@@ -631,7 +631,7 @@ non-closed issues triaged: **spine** (re-parented into the layer epics) vs **out
 
 † `93k3` superseded by L4.
 
-### Dependency DAG (drives `bd ready`)
+### Dependency DAG (drives ready-work)
 ```
 L0 ──▶ HRN ──▶ ┌ L1 ┐
                └ L3 ┘ ──▶ L2 ──▶ L4 ──▶ L5
@@ -640,7 +640,7 @@ L0 ──▶ HRN ──▶ ┌ L1 ┐
                     L4, L6 ──────▶ MIR
 ```
 Gates serial (`L0 → HRN → all`); then **L1 ∥ L3**; then **L2 ∥ L4** + L6-engine;
-L5 / LLM / MIR trail. `bd ready` surfaces L0 → HRN → L1+L3 → fan-out.
+L5 / LLM / MIR trail. Ready-work surfaces L0 → HRN → L1+L3 → fan-out.
 
 ### New tickets (from §10 + de-risking)
 Each layer's **first child is a design-doc ticket** (Definition-of-Ready). Plus:
@@ -653,7 +653,7 @@ diagnostic schema/`--fix`/AST-as-data; `ps3t` success-metrics.
 Nullability (`xm2g.*` ~18), RC memory (`rcsf.*` ~5), test-runner/cache
 (`uzs9`/`pdme`/… ~30), Components V2 (`vez6.*` ~16, *feeds* L4), language features
 (~14), general bugs (~40), CLI (`y4n1.*` ~4), isolated/channels (`nce6.*` ~5),
-bd/infra (`8nza`, `87al`, … ~4). **Cross-linked inputs (not moved):** `rcsf.4`
+tracker/infra (`8nza`, `87al`, … ~4). **Cross-linked inputs (not moved):** `rcsf.4`
 (AST phase arenas) → L1; `y4n1.8` (module-graph name-res) → L6; content-addressed
 cache bits → L6.
 
@@ -668,7 +668,7 @@ what's pickable.
 
 How an agent picks up and executes `ps3t` work.
 
-**Every session:** `bd ready` → claim (`bd update <id> --claim`) → read the
+**Every session:** query ready work (`mcp__Agent_Tasks__ready`) → claim (`mcp__Agent_Tasks__update`, `claim: true`) → read the
 ticket's **acceptance criteria** + the spine-doc sections it references. The DAG
 decides what's pickable — don't touch blocked work.
 
@@ -690,11 +690,10 @@ decides what's pickable — don't touch blocked work.
   syntax/macros in compiler `src/`** needs a seed advance. Don't over-serialize.
 - **Staged, never broken (§10.A):** big changes (esp. L1) use the compat shim so
   the tree always builds; "go hard" *within* a buildable step.
-- **Parallel coordination:** branch/worktree per agent (`bd worktree`); the
+- **Parallel coordination:** branch/worktree per agent; the
   seed-train is serialized (one advance at a time); the harness catches conflicts.
 - **No destructive git** (`checkout --` / `reset --hard` / `clean`); commit +
-  push per change; beads auto-syncs — **requires `bash scripts/bootstrap.sh` at
-  container start (NOT `sh`)**.
+  push per change.
 - **Close a ticket only at 100%** of its acceptance criteria (CLAUDE.md rule 19);
   if a premise looks stale, check the ticket's PLAN-RECONCILE note first.
 
