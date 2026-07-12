@@ -469,9 +469,9 @@ Phased so each phase ships independently and the bootstrap stays green throughou
 - Tested: toy CLIs (dispatch, argv parse, help/version, inheritance, shorts/defaults) + a 16-command scale check.
 
 ### Phase 12 — main.av (avra CLI) rewrite 🚧 IN PROGRESS (vez6.12)
-- Convert every `if cmd0 == "X" { run_X_command() }` and `match command { … }` into `command X { run() { … } }`.
-- Single `avra.run()` at end; rip out manual dispatch helpers (`run_test_command`, `run_build_command`, `run_docs_command`, etc.).
-- Target line count for `main.av`: ~300 lines (down from 2,652).
+- ✅ Convert every `if cmd0 == "X" { run_X_command() }` and `match command { … }` into `command X { run() { … } }` — all 18 commands, including the internal `_test_shard` (variadic positional paths via `arg paths { variadic true }`, phx5 Part B).
+- ✅ Single `avra.run()` at end; every bespoke argv scanner (`parse_*_args`, `collect_shard_paths`) deleted — `main()` is the bare `exit(avra.run())`. The `run_X_command` handler bodies remain as the commands' behaviour, called from their `run()` blocks.
+- Target line count for `main.av`: ~300 lines (down from 2,652) — outstanding; handler logic still lives in main.av (the vez6.12.cleanup* passes).
 - Test: `make test`, all pre-existing CLI invocations still work.
 
 ### Phase 13 — Optional follow-ups
