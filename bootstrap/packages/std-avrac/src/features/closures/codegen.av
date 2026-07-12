@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown}
+use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown, vtype_fn_params}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr}
 use codegen.{analyze_releasable_expr}
@@ -544,6 +544,21 @@ export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
             emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), empty_types)
         }
         _ -> err_emit("expected Lambda")
+    }
+}
+
+/// Emit an expression under a declared/expected type: a `.Lambda` whose
+/// expectation is `.FnTyped` compiles against the expectation's param
+/// types (the layout-totality threading — without it the lambda falls to
+/// the body-scan heuristic, whose unresolved params lay out as i64, so a
+/// pointer-typed param miscompiles silently). Every other expr/expected
+/// combination takes the plain emit path. This is the ONE interception
+/// point shared by every position that knows its declared type
+/// (let annotation, struct field, enum payload, with-override, assign, …).
+export fn emit_expected(ctx: Ctx, env: List<VarBinding>, e: Expr, expected: ValueType) -> Result<EmitValue, string> {
+    match e {
+        .Lambda(params, body) if expected is .FnTyped -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(expected))
+        _ -> ctx.emit(env, e)
     }
 }
 

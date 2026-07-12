@@ -9,7 +9,7 @@
 use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
-use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed}
+use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed, emit_expected}
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
@@ -411,8 +411,21 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
-            mut r = emit_expr(ctx, env, ctx.nodes.exprs.get(value))?
             let local = env_lookup(env, name)
+            let g = ctx.lookup_toplevel(name)
+            // The target's declared type directs the value emit —
+            // emit_expected threads a fn-typed target's param types into a
+            // lambda value (the layout-totality threading); every other
+            // value is a plain emit. Both lookups are pure, so hoisting
+            // them above the emit changes no IR.
+            let target_ty = if local.found {
+                local.ty
+            } else if g.found {
+                g.ty
+            } else {
+                ValueType.Unknown
+            }
+            mut r = emit_expected(ctx, env, ctx.nodes.exprs.get(value), target_ty)?
             if local.found {
                 // Optional box/unbox into the variable's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, local.ty)
@@ -425,7 +438,6 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
                 ctx.store(r.value, local.alloca)
                 return ok_emit(r.value, local.ty)
             }
-            let g = ctx.lookup_toplevel(name)
             if g.found {
                 // Optional box/unbox into the global's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, g.ty)

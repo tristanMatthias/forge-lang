@@ -5,6 +5,7 @@ use core.{ExprId, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vt
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 use core.{type_registry_id_for, variant_payload_name, vtype_strip_optional}
 use codegen.{needs_optional_box, emit_optional_some}
+use features.closures.{emit_expected}
 
 /// Codegen for `EnumName.Variant(args)` and the leading-dot
 /// shorthand `.Variant(args)`. Allocates the outer
@@ -82,8 +83,10 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
 fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: List<FieldEntry>, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
     for (i, id) in args.enumerate() {
         let slot = idx + i
-        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        // emit_expected threads a fn-typed payload field's declared param
+        // types into a lambda arg (the layout-totality threading).
+        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(id), fld_ty)?
         // Box a present value-inner arg into a `T?` field (guarded).
         let v = if needs_optional_box(r.ty, fld_ty) {
             emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
@@ -102,9 +105,11 @@ fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: 
 fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
     for (i, id) in args.enumerate() {
         let slot = idx + i
-        let r = ctx.emit(env, ctx.nodes.exprs.get(id))?
-        let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
         let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
+        // emit_expected threads a fn-typed payload field's declared param
+        // types into a lambda arg (the layout-totality threading).
+        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(id), fld_ty)?
+        let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
         // Box a present value-inner arg into a `T?` field (guarded).
         let v = if needs_optional_box(r.ty, fld_ty) {
             emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)

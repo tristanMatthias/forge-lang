@@ -601,12 +601,15 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     }
     ctx.null_check(r.value, method, owner)
 
-    // Build arg array with self prepended.
+    // Build arg array with self prepended. The declared param types
+    // (registered under the mangled name, self at slot 0 — so they align
+    // with the idx=1 fill) let a lambda arg compile against its declared
+    // fn-typed param instead of the body-scan heuristic.
     let extra_count = args.length
     let arg_count = extra_count + 1
     let arg_arr = ctx.value_array(arg_count)
     ctx.value_array_set(arg_arr, 0, r.value)
-    match fill_arg_array(ctx, env, arg_arr, args, 1) {
+    match fill_arg_array(ctx, env, arg_arr, args, ctx.lookup_fn_params(mangled), 1) {
         .Ok(_) -> {}
         .Err(e) -> {
             ctx.value_array_free(arg_arr)
