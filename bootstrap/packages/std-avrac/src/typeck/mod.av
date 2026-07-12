@@ -5,7 +5,7 @@
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
-use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
@@ -2428,7 +2428,15 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     // lie like `-> List<Box<string>> { [Box { val: 9 }] }` is caught here. A
     // type-only query (the old tc_body_tail_type) silently dropped those.
     let tail = tc_tail_expr(tc, stmts)
-    let tr = if tail != null { check_expr_expected(tc, tail!, declared) } else { tc_er(tc, ValueType.Void) }
+    // RE-WALK DISCIPLINE (see the .Return arm of tc_check_stmt_returns):
+    // the tail was already checked by the body walk; this expected-threaded
+    // re-check collects into a fresh bag and merges back only unseen
+    // diagnostics, so the so07.7.15 layout conflicts land once and the
+    // re-fired context-free diagnostics don't duplicate.
+    let tr = if tail != null {
+        let probe = check_expr_expected(tc with { bag: bag_new() }, tail!, declared)
+        tc_er(probe.tc with { bag: bag_merge_unseen(tc.bag, probe.tc.bag) }, probe.ty)
+    } else { tc_er(tc, ValueType.Void) }
     mut after = tr.tc
     let body_ty = tr.ty
     // A tail `match` STATEMENT carries the fn's return value in its expression
@@ -2497,7 +2505,14 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             // for the returned expression. Empty `[]` literals + generic
             // calls in return position pick up the fn's declared return
             // type instead of decaying to List<Unknown> / unresolved T.
-            let r = check_expr_expected(tc, tc.nodes.exprs.get(value), declared)
+            //
+            // RE-WALK DISCIPLINE: the check pass already checked this
+            // expression once (without the expected type). Collect this
+            // expected-threaded re-check into a fresh bag and merge back
+            // only unseen diagnostics — the expected-dependent findings
+            // land, the re-fires don't duplicate.
+            let probe = check_expr_expected(tc with { bag: bag_new() }, tc.nodes.exprs.get(value), declared)
+            let r = tc_er(probe.tc with { bag: bag_merge_unseen(tc.bag, probe.tc.bag) }, probe.ty)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but return produces `${vtype_render_full(r.ty)}`"
                 let cause = "declared return type is `${vtype_render_full(declared)}`"
@@ -4198,7 +4213,13 @@ fn annotate_enter_fn(tc: TC, params: List<ParamEntry>) -> TC {
 /// (mostly free since the check pass already did the work) and
 /// register the binding for downstream lookups.
 fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
-    let r = check_expr(tc, init)
+    // Pure type EXTRACTION: the check pass already checked (and reported on)
+    // this initializer — this re-inference exists only to recover the
+    // binding's type, and its checked TC is discarded below (only r.ty is
+    // read). Run it silent, or its re-fired diagnostics land in the shared
+    // bag as duplicates (both the annotate pass and pass 2's return-analysis
+    // let-threading route through here).
+    let r = check_expr(tc with { reporting: false }, init)
     let declared_ty = if !vtype_is_unknown(ty_vt) { resolve_vtype(tc, ty_vt) } else { r.ty }
     tc_bind(tc, name, declared_ty)
 }

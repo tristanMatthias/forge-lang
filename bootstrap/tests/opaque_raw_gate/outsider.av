@@ -6,3 +6,14 @@ export fn steal() -> int { make(9).raw() }
 
 // Comparison and pass-through stay legal — only the peel is gated.
 export fn same(a: Handle, b: Handle) -> bool { a == b }
+
+// The same illegal peel through each RETURN-ANALYSIS shape: pass 2's
+// return analysis RE-WALKS fn bodies (implicit-return tail check,
+// explicit-return check, mid-block let binding-type threading), so a
+// re-fire bug would double any of these. The count spec pins one
+// diagnostic per peel.
+export fn steal_let() -> int {
+    let x = make(8).raw()
+    x
+}
+export fn steal_ret() -> int { return make(7).raw() }
