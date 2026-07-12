@@ -1,6 +1,4 @@
 
-# Dolt database files (added by bd init)
-.dolt/
 *.db
 
 # Local-only docs Claude tools emit at repo root — keep them on
@@ -29,9 +27,6 @@
 .ralph/progress.json
 .ralph/status.json
 .ralph/docs/
-
-# Beads / Dolt files (added by bd init)
-.beads-credential-key
 
 # macOS metadata
 .DS_Store

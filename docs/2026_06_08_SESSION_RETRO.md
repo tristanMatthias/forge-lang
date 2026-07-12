@@ -18,8 +18,8 @@ produced `docs/2026_06_08_ERROR_HANDLING_EPIC.md`.
    Linux; llvm-18 rejects the `nuw` GEP flag the compiler emits). Filed `3jcq`.
 3. **`make test` is 360–414s warm, >600s cold, and OOM-flaky** (one run jetsam-killed 76
    shards and retried). Every quality gate was a 5–7 min stall.
-4. **Beads `bd export` re-dumps the whole DB** (1.7 MB diff), and the `.beads/issues.jsonl`
-   kept getting swept into commits — I reconstructed the minimal PR-diff jsonl ~4 times.
+4. **(Resolved) Issue-tracker export churn** — the tracker's JSONL export kept getting
+   swept into PR diffs. Since fixed: task tracking moved to the Agent Tasks MCP.
 5. **The stale-`bs2` trap + build-cache false failures** — a "regression" that was a cache
    artifact, and a build that silently re-linked the old binary. Documented in CLAUDE.md, but
    still cost a stash/clear/rebuild dance to prove innocence.
@@ -112,20 +112,12 @@ bead/git bookkeeping.
 
 ---
 
-## 3. Beads / issue-tracking — a recurring papercut
+## 3. Issue-tracking (resolved)
 
-- **`bd export` re-dumps the entire DB** → a 1.7 MB diff full of unrelated tickets. There's no
-  "export only my touched issues" or "export to the committed minimal set."
-- **`.beads/issues.jsonl` kept getting swept into commits** I didn't intend (it was pre-staged
-  from reset states). I reconstructed the minimal jsonl (base + only my 2–3 tickets, reverting
-  churn on `xm2g.1`/`xm2g.2`/`y9y4.9`) **about four times**, via ad-hoc Python.
-- **Branch divergence:** the jsonl on a feature branch goes stale vs the Dolt DB; keeping the
-  *PR diff* clean (only the tickets this PR closes/files) is a constant manual fight.
-- `bd` wasn't on `PATH` after a reset (`/root/go/bin`).
-- **The dual source of truth (Dolt DB vs passive jsonl) is the root problem** for "keep the PR
-  diff clean." Either don't track the full jsonl in git, or give `bd` a "diff-minimal export."
-- **Lesson:** never `git add -A` with beads around. Stage named files only. Before committing
-  jsonl, reconstruct = `git show <base>:.beads/issues.jsonl` + your new ticket lines, nothing else.
+The old tracker's JSONL export churned PR diffs and created a dual source of truth
+(DB vs committed export) — a constant manual fight to keep PR diffs clean.
+**Resolved:** task tracking has since moved to the Agent Tasks MCP — no committed
+export, no diff churn.
 
 ---
 
@@ -226,8 +218,8 @@ bead/git bookkeeping.
 3. **Memory-adaptive test parallelism** — auto-tune shard `jobs=` to free memory so we don't
    jetsam-kill 76 shards. And a reliable warm-cache fast path (per-file cache-miss bug `uzs9.1`).
 4. **Platform: don't silently reclaim uncommitted work** — snapshot/auto-stash-to-ref or warn loudly.
-5. **`bd` diff-minimal export** — "export only issues I touched" / "export to match committed set,"
-   so the PR jsonl diff stays clean without ad-hoc Python.
+5. **(Resolved) Tracker export hygiene** — the JSONL-diff churn is moot now that task
+   tracking uses the Agent Tasks MCP (no committed export).
 6. **An "IR-neutral edit?" oracle** — tell me whether an edit changes emitted IR (→ reseed) before I
    spend 90s finding out.
 7. **Bidirectional type info in codegen** (architectural) — fixes `uyao` and a class of coercion bugs;

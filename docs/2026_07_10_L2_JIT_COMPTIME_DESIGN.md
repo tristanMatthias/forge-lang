@@ -4,7 +4,7 @@ Spine: `docs/2026_06_14_AST_SOURCE_OF_TRUTH_EPIC.md` §Layer-2. Ticket: `ps3t.5`
 
 ## The finding that unblocks ps3t.5
 
-The bd dependency `ps3t.5 → {ps3t.3 (L1), ps3t.4 (L3)}` is **over-conservative**. The JIT *mechanism* is not missing:
+The dependency `ps3t.5 → {ps3t.3 (L1), ps3t.4 (L3)}` is **over-conservative**. The JIT *mechanism* is not missing:
 
 - **`avra_llvm_jit_run(module) -> int`** (`core/llvm.av:165`, impl `llvm_wrapper.c:1066`) already JIT-compiles an LLVM module and runs its `main()` **in-process via MCJIT** — and it is **live and proven**: `codegen/setup.av:529` uses it for `bs2 run`. The spine doc explicitly accepts MCJIT as a bootstrap stage-1 (ORC is a later polish, not a prerequisite).
 - Codegen already emits every Avra fn to IR. **A `@comptime` fn IS an ordinary Avra fn** — codegen already produces its IR.

@@ -5,7 +5,7 @@
 // The structural-walker pattern mirrors desugar/mod.av — same shape,
 // different rewrite hook (`try_fold_call` instead of
 // dispatch-on-callee-name). The duplication is real tech debt; see
-// the bd ticket on a generic AST visitor.
+// the tracked ticket on a generic AST visitor.
 //
 // Phase 2 of Components V2 (vez6.2). Plumbed into 4 compile-pipeline
 // sites in packages/cli/src/main.av between resolve_names and

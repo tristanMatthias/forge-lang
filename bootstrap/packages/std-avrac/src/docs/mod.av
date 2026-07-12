@@ -48,12 +48,12 @@ export type DocsCorpus = {
 }
 
 /// Walk every `.av` file under `dir`, parse it, and build the
-/// project DocsCorpus. Skips `build/`, `.beads/`, `seed/` and any
+/// project DocsCorpus. Skips `build/`, `seed/` and any
 /// file that fails to parse — tooling shouldn't fail loudly on a
 /// half-edited source tree; the compiler's primary error path will
 /// surface parse errors when it runs.
 export fn extract_project_corpus(dir: string) -> DocsCorpus {
-    let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/.beads/*' -not -path '*/seed/*' 2>/dev/null | sort"
+    let cmd = "find ${dir} -name '*.av' -type f -not -path '*/build/*' -not -path '*/seed/*' 2>/dev/null | sort"
     let files_text = avra_shell_exec(cmd)
     if files_text == "" {
         return DocsCorpus { syms: [], calls: [] }

@@ -135,7 +135,7 @@ Concretely:
   branch's compiler source AT HEAD (what a push ships — untracked or
   uncommitted files don't count; commit first) from the integration seed in
   an isolated tree (cold unit cache) and smoke-runs the result. Wired into the pre-push hook
-  (`bootstrap/scripts/pre-push`, chained from `.beads/hooks/pre-push`) and
+  (`bootstrap/scripts/pre-push`, installed at `.git/hooks/pre-push` via `make install-hooks`) and
   CI (`.github/workflows/bootstrap-window.yml`, every PR into the
   integration branch). Green results are cached (keyed on integration seed
   + compiler sources), so a clean push is seconds. Escape hatch for genuine
@@ -303,7 +303,7 @@ When any command fails with ENOSPC / "no space left on device" / similar disk-fu
 ## Adding a Feature — MANDATORY PROCESS
 
 ### Phase 1: Plan
-1. Check the TRD (`docs/TRD_V1.md`) and beads (`bd ready`) for related tickets
+1. Check the TRD (`docs/TRD_V1.md`) and Agent Tasks (`mcp__Agent_Tasks__ready`) for related tickets
 2. Identify seed impact — new keywords need a seed cycle. So does any **new surface syntax the current seed's parser cannot produce**, even when it reuses existing tokens (e.g. a new literal form like `table<Row> { … }`): the checked-in seed is an older compiler, so you must `make update-seed` BEFORE that syntax appears anywhere in compiler `src/` — otherwise `make build` fails parsing it (often as a misleading `undefined variable` / parse error). This is inherent to self-hosting, not a bug. Order: implement + land the feature without using it in `src/` → `make update-seed` → then dogfood the new syntax in `src/`. New enum VARIANTS on types the seed processes (ValueType, Expr, Stmt) DO need seed patching: run `make seed-patch-traps` before `make build` to convert the seed's match traps to safe fallthrough. Then `make update-seed` after the build succeeds. Adding fields to existing variants also needs this treatment.
 
 ### Phase 2: Two-Phase Bootstrap (only if adding new keywords)
@@ -534,28 +534,22 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 19. NEVER close or defer a ticket without 100% of the work being done. "Partially done" is NOT done. "Deferred" is NOT done. "Acceptable for bootstrap" is NOT done. If a ticket says "implement X" and X is not fully implemented per the spec, the ticket stays OPEN. If you can't finish it now, leave it open and move to the next one — do NOT close it with excuses. The only valid close reason is "all work described in this ticket is complete, tested, and committed." Adding a test without implementing the feature is NOT closing the ticket. Adding scaffolding without the logic is NOT closing the ticket. Workarounds are NOT closing the ticket.
 20. NEVER close a parent ticket (epic) until ALL child tickets are genuinely closed with real completed work. "All sub-tasks resolved" means nothing if those sub-tasks were themselves closed without doing the work.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Beads Issue Tracker
+## Task Tracking — USE AGENT TASKS (`mcp__Agent_Tasks__*`)
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+All work is tracked in the **Agent Tasks MCP**. Use it for ALL task tracking —
+`mcp__Agent_Tasks__create` / `update` / `close` / `comment` / `ready` / `search`
+/ `show` / `list` / `tree` / `dep`. Do NOT use TodoWrite or markdown TODO lists.
+Persistent knowledge goes in CLAUDE.md or project docs — never a MEMORY.md file.
 
-### Quick Reference
+Task IDs use the `forge-crafting-intepreters-*` scheme, so ticket references
+throughout the codebase and these docs still resolve via `mcp__Agent_Tasks__show`.
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-- **SEARCH before you FILE.** Before opening a ticket for a perf / test-runner / compiler-memory / OOM symptom, `bd search` it and skim the epics `4apk` (COMPILER-FAST) and `uzs9` (test cycle speed) — that area is already densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel tickets (and re-diagnosing what they already document) burns a session; the existing ones often already hold the answer + a warning you're about to ignore.
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+**SEARCH before you FILE.** Before opening a ticket for a perf / test-runner /
+compiler-memory / OOM symptom, `mcp__Agent_Tasks__search` it and skim the epics
+`4apk` (COMPILER-FAST) and `uzs9` (test cycle speed) — that area is already
+densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel
+tickets (and re-diagnosing what they already document) burns a session; the
+existing ones often already hold the answer.
 
 ## Session Completion
 
@@ -581,33 +575,3 @@ bd close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
-
-## Beads sync on Claude Code Web (this repo) — READ THIS
-
-This **overrides** the generic "issues.jsonl is a passive export" line in the
-bd-managed block above. On Claude Code Web, beads sync is automatic and you do
-**not** manage it manually:
-
-- **Just use beads normally** — `bd create` / `bd update` / `bd close`. A `bd`
-  wrapper (installed by `scripts/bootstrap.sh`) **auto-pushes** after every
-  mutating command, so changes reach GitHub with no manual `bd dolt push`.
-- **Source of truth is `refs/dolt/data`** (the Dolt DB ref), **not**
-  `.beads/issues.jsonl` — which is **gitignored here and no longer committed**.
-- On container start, `bootstrap.sh` hydrates the DB from `refs/dolt/data`.
-
-Why it's non-standard (three Claude-Code-Web constraints, handled in
-`bootstrap.sh::setup_beads_sync`):
-1. the GitHub proxy only allows pushing the *working branch*, so `refs/dolt/data`
-   is pushed **direct to github.com** via a fine-grained PAT in `$GH_TOKEN`
-   (Contents:write, this repo only); reads/hydration go through the proxy (no token);
-2. Dolt's data commits run with `commit.gpgsign=false` (the env's sign-server
-   rejects them) — scoped to bd only, so your *source* commits keep signing.
-
-Caveats: auto-push is **best-effort** — a failed push (network blip / expired
-token) leaves the write local until the next successful push. Requires `GH_TOKEN`
-in the environment; without it, beads is **read-only** (hydrate works, writes
-won't sync). The token is fed via `GIT_ASKPASS` and never stored on disk or in
-the repo. Beads' own general model is at
-https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md — this repo
-intentionally diverges from it for the reasons above.

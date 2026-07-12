@@ -1,7 +1,7 @@
 # Avra v1.0 — Technical Requirements Document
 
 > Maps the FULL_SPEC.md v1.0 scope against the current Avra bootstrap compiler.
-> Every section ends with numbered tickets for the beads (`bd`) tracker.
+> Every section ends with numbered tickets for the Agent Tasks tracker.
 
 ---
 

@@ -10,7 +10,5 @@
 *.ll
 /main
 
-# Dolt database files (added by bd init)
-.dolt/
 *.db
 packages/forgec/bin/

@@ -1,7 +1,7 @@
 # Nullability / Option Epic — Implementation Handoff
 
 **Status:** design ratified, implementation not started.
-**Tracking:** beads epic **`forge-crafting-intepreters-xm2g`**, children `xm2g.1`–`xm2g.7` (one per phase, dependency-chained — `bd show forge-crafting-intepreters-xm2g`). Claim a phase with `bd update <id> --claim`; close only when its acceptance criteria are fully met (`bd close <id>`).
+**Tracking:** epic **`forge-crafting-intepreters-xm2g`**, children `xm2g.1`–`xm2g.7` (one per phase, dependency-chained — `mcp__Agent_Tasks__show forge-crafting-intepreters-xm2g`). Claim a phase with `mcp__Agent_Tasks__update` (`claim: true`); close only when its acceptance criteria are fully met (`mcp__Agent_Tasks__close`).
 **Audience:** an agent with **no prior context**. Read this top to bottom; it is self-contained.
 **Source of truth:** the language spec `docs/2026_04_18_FULL_SPEC.md` **Axis 10** (lines ~1793–1954) and **Axis 12** (error handling). Where this doc and the spec disagree, this doc *amends* the spec — see §1.4 — and you must update Axis 10 to match as part of the final phase.
 
@@ -241,4 +241,4 @@ Final codes are the implementer's call; keep them contiguous, stable, and docume
 - The broader typeck foundation bug (`cpvo`, type-param/type-name conflation) is a *separate* epic; don't fold it in.
 
 ## 10. First concrete step
-Claim `forge-crafting-intepreters-xm2g.1` (`bd update forge-crafting-intepreters-xm2g.1 --claim`). Phase 0, step 1–4: add the `none` keyword and rename `Expr.Null`→`Expr.None` (seed-patch-traps → build → fix → update-seed), keeping `null` as an alias. Then define `Option<T>` in the prelude. Commit, push, and proceed to Phase 1. Loop bodies of the spans epic (`While`/`For`/`ForIn`) can be migrated in parallel by another agent at any time — only `If.else_branch` depends on Phase 1.
+Claim `forge-crafting-intepreters-xm2g.1` (`mcp__Agent_Tasks__update`, `claim: true`). Phase 0, step 1–4: add the `none` keyword and rename `Expr.Null`→`Expr.None` (seed-patch-traps → build → fix → update-seed), keeping `null` as an alias. Then define `Option<T>` in the prelude. Commit, push, and proceed to Phase 1. Loop bodies of the spans epic (`While`/`For`/`ForIn`) can be migrated in parallel by another agent at any time — only `If.else_branch` depends on Phase 1.
