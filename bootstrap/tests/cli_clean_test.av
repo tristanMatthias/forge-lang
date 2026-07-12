@@ -81,6 +81,21 @@ spec "bs2 clean: rejects an unknown flag (declarative parse)" {
     }
 }
 
+// phx5 Part B: `cache`'s subcommand is a `required true` positional in the
+// declarative schema, so a missing one is rejected by the parser — this REPLACES
+// the bespoke empty-string usage check the conversion removed. Must exit
+// non-zero (so scripts see the failure) and name the missing arg.
+spec "bs2 cache: a missing subcommand is rejected by the required-arg schema" {
+    then "`cache` with no subcommand errors and exits non-zero" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let probe = avra_shell_exec(
+            "cd " + project + " && (" + bs2 + " cache 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi)")
+        let _ = teardown_fixture(project)
+        probe.contains("rc=nonzero") && probe.contains("subcommand")
+    }
+}
+
 spec "bs2 cache info: reports the cache state" {
     then "info output mentions the cache path and entry count" {
         let project = setup_fixture()
