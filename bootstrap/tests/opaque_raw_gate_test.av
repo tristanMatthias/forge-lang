@@ -15,6 +15,18 @@ spec "@opaque .raw() is gated to the declaring module + friends" {
         let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
         out.contains("F3106") && out.contains("outsider::steal")
     }
+    then "each illegal peel reports exactly once across the return-analysis re-walks" {
+        // outsider has exactly THREE illegal peels, one per shape the pass-2
+        // return analysis re-walks (tail, mid-block let, explicit return).
+        // A re-fired diagnostic from any of those walks would push the
+        // count past three — the historic duplicate-F3106 bug.
+        // The renderer interleaves ANSI codes into the "Found N errors"
+        // footer, so count the per-error title marker instead: three
+        // errors produce exactly three `error[F3106]` titles (the code
+        // string appears nowhere else in the render).
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        out.split("error[F3106]").length == 4
+    }
     then "the declaring module and the declared friend peel clean" {
         let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
         // Exactly the outsider's peel lines mention F3106 — the

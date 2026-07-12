@@ -623,6 +623,36 @@ export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
     }
 }
 
+/// True iff `bag` already holds a diagnostic equivalent to `d` — same
+/// severity, code, and message. Span is deliberately EXCLUDED: a re-walk's
+/// position state drifts, so the same diagnostic re-fired by a second walk
+/// carries a different span while saying exactly the same thing.
+fn bag_contains_equivalent(bag: DiagnosticBag, d: Diagnostic) -> bool {
+    for e in bag.diagnostics {
+        if severity_str(e.severity) == severity_str(d.severity)
+            && diag_code_str(e.code) == diag_code_str(d.code)
+            && e.message == d.message {
+            return true
+        }
+    }
+    false
+}
+
+/// Append every diagnostic from `fresh` that `primary` holds no equivalent
+/// of (see `bag_contains_equivalent`). The merge half of the RE-WALK
+/// discipline: typeck's return analysis re-runs check_expr_expected over
+/// ALREADY-CHECKED code purely to thread the declared type through it — its
+/// expected-DEPENDENT findings are new information and must land, while its
+/// re-fires of the primary walk's diagnostics must not duplicate. The
+/// re-walk collects into a fresh bag and merges back through here.
+export fn bag_merge_unseen(primary: DiagnosticBag, fresh: DiagnosticBag) -> DiagnosticBag {
+    mut cur = primary
+    for d in fresh.diagnostics {
+        if !bag_contains_equivalent(cur, d) { cur = bag_report(cur, d) }
+    }
+    cur
+}
+
 /// True iff at least one Error-severity diagnostic has been reported.
 /// Drives the compile-pipeline gate (don't proceed past failed pass).
 export fn bag_has_errors(bag: DiagnosticBag) -> bool {
