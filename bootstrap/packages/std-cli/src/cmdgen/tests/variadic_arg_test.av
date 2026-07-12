@@ -60,6 +60,9 @@ fn vrd_src() -> string {
     "    println(\"E=\" + string(toy.run_argv([\"shard\", \"z.av\", \"--jobs\", \"8\"])))\n" +
     // an OPTIONAL variadic with zero values is fine (empty list, no error).
     "    println(\"F=\" + string(toy.run_argv([\"opt\"])))\n" +
+    // after the `--` terminator, even dash-prefixed tokens are positionals —
+    // a variadic can absorb `-weird.av`-style filenames.
+    "    println(\"G=\" + string(toy.run_argv([\"shard\", \"--\", \"-p.av\", \"q.av\"])))\n" +
     "}\n"
 }
 
@@ -91,5 +94,9 @@ spec "a variadic positional arg absorbs all remaining positionals" {
     then "an optional variadic accepts zero values (empty list, no error)" {
         let out = vrd_run()
         out.contains("OPTN=0") && out.contains("F=0")
+    }
+    then "after `--`, dash-prefixed tokens land in the variadic list" {
+        let out = vrd_run()
+        out.contains("N=2 JOIN=-p.av,q.av") && out.contains("G=0")
     }
 }
