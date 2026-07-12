@@ -411,22 +411,15 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
-            let local = env_lookup(env, name)
-            let g = ctx.lookup_toplevel(name)
             // The target's declared type directs the value emit —
             // emit_expected threads a fn-typed target's param types into a
             // lambda value (the layout-totality threading); every other
-            // value is a plain emit. Both lookups are pure, so hoisting
-            // them above the emit changes no IR.
-            let target_ty = if local.found {
-                local.ty
-            } else if g.found {
-                g.ty
-            } else {
-                ValueType.Unknown
-            }
-            mut r = emit_expected(ctx, env, ctx.nodes.exprs.get(value), target_ty)?
+            // value is a plain emit. The binding lookup is pure, so doing
+            // it before the emit changes no IR — and the toplevel walk
+            // stays off the common local-assign path.
+            let local = env_lookup(env, name)
             if local.found {
+                mut r = emit_expected(ctx, env, ctx.nodes.exprs.get(value), local.ty)?
                 // Optional box/unbox into the variable's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, local.ty)
                 // Union wrapping: reassigning to a union-typed variable
@@ -438,7 +431,9 @@ export fn emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitV
                 ctx.store(r.value, local.alloca)
                 return ok_emit(r.value, local.ty)
             }
+            let g = ctx.lookup_toplevel(name)
             if g.found {
+                mut r = emit_expected(ctx, env, ctx.nodes.exprs.get(value), g.ty)?
                 // Optional box/unbox into the global's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, g.ty)
                 if needs_union_wrap(r.ty, g.ty) {
