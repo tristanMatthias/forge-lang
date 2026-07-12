@@ -38,6 +38,10 @@ extern fn avra_process_env_get(key: string) -> string
 // runtime shell-outs (e.g. `avra_shell_exec("bs2 compile /tmp/x.av")`)
 // see a clean env rather than inheriting AVRA_USE_METADATA + co.
 extern fn avra_process_env_unset(key: string)
+// Set env var in THIS process; children inherit it. Counterpart of
+// env_unset — the test orchestrator stamps AVRA_SKIP_ENSURE_BS2=1 so
+// no fixture's diagnose.sh shell-out rebuilds bs2 mid-suite.
+extern fn avra_process_env_set(key: string, value: string)
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn exit(code: int)
