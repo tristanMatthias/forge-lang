@@ -1149,10 +1149,13 @@ fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType,
     cur
 }
 
-/// No-type-param entry point for callers with no enclosing generic context
-/// (lambdas, externs). Exported for the closures feature.
+/// Signature-arity entry point for callers without their OWN type params
+/// (lambdas, externs). The ENCLOSING fn's params still apply — a lambda
+/// inside `fn f<T>` may annotate `(x: T)` — so the scope comes from TC
+/// state (empty at top level, where externs live). Exported for the
+/// closures feature.
 export fn tc_check_signature_arity_top(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
-    tc_check_signature_arity(tc, params, ret_vt, empty_type_params())
+    tc_check_signature_arity(tc, params, ret_vt, tc.current_scope_tp)
 }
 
 /// Run the F1004 gate over a struct/shape's fields (or an enum variant's
@@ -2237,10 +2240,12 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // through to check_expr for them.
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
     // F1004: a bare/under-applied generic annotation (`let x: GenOpt = …`)
-    // determines no layout — reject before it reaches codegen. (No enclosing
-    // type params threaded to bindings; a type-param-shadowed local annotation
-    // is the residual tracked under the totality lint.)
-    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, empty_type_params()) } else { tc }
+    // determines no layout — reject before it reaches codegen. The enclosing
+    // fn's type params ride TC state (current_scope_tp, set on Function
+    // entry), so a type-param-shadowed local annotation (`fn f<T>` +
+    // `let y: T` under a global generic `type T<U>`) is exempt, same as
+    // signature/field positions.
+    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, tc.current_scope_tp) } else { tc }
     let r = if has_annotation { check_expr_expected(gated, init, pre_declared) } else { check_expr(gated, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
@@ -2314,7 +2319,13 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
-            let result = tc_exit(checked)
+            // Restore the ENCLOSING fn identity + type-param scope alongside
+            // the scope pop — the checked TC flows on to sibling statements,
+            // and without this a nested helper's (empty) scope would leak
+            // into the rest of the enclosing body: annotations using the
+            // enclosing fn's type params would spuriously F1004, and their
+            // diagnostics would be attributed to the helper.
+            let result = tc_exit(checked) with { current_fn: tc.current_fn, current_scope_tp: tc.current_scope_tp }
             avra_ice_pop_fn()
             result
         }
