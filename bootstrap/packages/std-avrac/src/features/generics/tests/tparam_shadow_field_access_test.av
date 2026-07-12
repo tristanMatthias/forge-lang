@@ -1,0 +1,55 @@
+// Field access on a value whose static type is an in-scope type param
+// must stay OPAQUE when that param SHADOWS a same-named global struct.
+// Pre-guard, `fn f<T>(x: T)` under a global `type T<U> = { val: string }`
+// resolved `x.val` against the GLOBAL's registry entry, stamping the
+// global's field type onto an unrelated value — `let n: int = x.val`
+// false-positived F1000 ("expected int, got string") on valid generic
+// code. The shadow only exists in the flat namespace (module scope
+// qualifies the global apart from the param); monomorphization re-checks
+// the access per concrete instantiation, so opacity here loses nothing.
+
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "shadowed type-param values are opaque to field access" {
+    then "x.val on a shadowed type param does not inherit the global's field type" {
+        write_fixture("/tmp/avra_tparam_shadow_field.av",
+            "type T<U> = { val: string }\n" +
+            "fn f<T>(x: T) -> int {\n" +
+            "    let n: int = x.val\n" +
+            "    n\n" +
+            "}\n" +
+            "fn main() { }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_tparam_shadow_field.av 2>&1 || true")
+        // The global's `val: string` must NOT leak into the shadowed
+        // param's field access — no mismatch against the int annotation.
+        !out.contains("F1000")
+    }
+    then "the same access on a genuine global receiver still type-errors" {
+        // Control: with a concrete `T<int>` receiver the registry lookup
+        // is correct and the string-into-int mismatch must still fire —
+        // the opacity guard is scoped to in-scope params only.
+        write_fixture("/tmp/avra_tparam_direct_field.av",
+            "type T<U> = { val: string }\n" +
+            "fn g(t: T<int>) -> int {\n" +
+            "    let n: int = t.val\n" +
+            "    n\n" +
+            "}\n" +
+            "fn main() { }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_tparam_direct_field.av 2>&1 || true")
+        out.contains("F1000")
+    }
+    then "a NON-shadowing type param keeps its opaque behavior (no spurious field error)" {
+        // No global named `P` exists — the param was already opaque via
+        // the empty-registry path; the guard must not change that.
+        write_fixture("/tmp/avra_tparam_plain_field.av",
+            "fn h<P>(x: P) -> int {\n" +
+            "    let n: int = x.anything\n" +
+            "    n\n" +
+            "}\n" +
+            "fn main() { }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_tparam_plain_field.av 2>&1 || true")
+        !out.contains("F1000")
+    }
+}
