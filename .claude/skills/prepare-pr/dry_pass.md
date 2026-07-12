@@ -1,10 +1,12 @@
+# DRY + use-the-language pass contract
+
 After the parent ticket's core implementation lands AND the perf pass is complete, do a deep DRY + readability + use-the-language pass over EVERY new code path. This is not optional polish — it is mandatory before the parent phase counts as done.
 
 The bar is not "it works" or even "it's not duplicated." The bar is **does this read like the language was designed for it**. Resist functional-duct-tape; lean into the language's idioms.
 
 ## Scope (do not skip any item)
 
-1. **Duplication audit.** For every new function, find all near-duplicates elsewhere in the codebase. Pull common logic into a shared helper. If the duplication spans modules, file a ticket for the cross-cutting refactor (e.g. a generic visitor) but extract the local DRY in this pass.
+1. **Duplication audit.** For every new function, find all near-duplicates elsewhere in the codebase. Pull common logic into a shared helper — including when the duplication spans modules (SKILL.md Phase 4: extract the shared helper now, don't file it for later). The only deferral is a consolidation the bootstrap genuinely blocks (e.g. seed-gated); state it in the PR body and do it the moment the block clears.
 
 2. **Use the language's features, don't fight them.** For every multi-line helper you wrote, ask: did the language already give me a tool for this? Examples to look for:
    - **Are you threading state through recursion via accumulators?** Probably wants a method on a struct, a class, or the language's iteration construct.
@@ -41,7 +43,7 @@ The bar is not "it works" or even "it's not duplicated." The bar is **does this 
 ## Acceptance
 
 - Each DRY commits separately so the reviewer can verify the consolidation.
-- File an issue for every cross-cutting refactor uncovered (don't fix in this pass; just track).
+- Cross-module consolidation lands in this pass too; defer only what the bootstrap genuinely blocks, say so in the PR body, and do it when the block clears (matching SKILL.md Phase 4).
 - The parent phase ticket cannot close until this cleanup is complete.
 
 ## Anti-patterns (zero tolerance)

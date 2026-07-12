@@ -1,3 +1,5 @@
+# Performance pass contract
+
 After the parent ticket's core implementation lands, do a deep performance pass over EVERY new code path. This is not optional polish — it is mandatory before the parent phase counts as done.
 
 ## Scope (do not skip any item)
