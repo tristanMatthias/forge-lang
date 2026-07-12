@@ -283,6 +283,12 @@ export enum DiagCode {
     /// of producing differently-laid-out structs that share a
     /// name.
     DuplicateDecl
+    /// F3106 — `.raw()` on an `@opaque` newtype outside its declaring
+    /// module and declared friend modules. Opaque handles (AST ids,
+    /// registry keys) are compared and looked-up, never inspected —
+    /// peeling one elsewhere couples the caller to the handle's
+    /// representation (the L3 typed-identity rule).
+    OpaqueRawOutsideFriends
     // ── Warnings (F9000-9998) ───────────────────────────────────────
     // ── Spec-test failures (F0900-0999) ─────────────────────────────
     /// F0900 — a spec/given/then assertion evaluated to false at run
@@ -452,6 +458,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
         .DuplicateDecl       -> ErrorDef { code: "F3105", help: "rename one of the duplicates, or remove the redundant declaration" }
+        .OpaqueRawOutsideFriends -> ErrorDef { code: "F3106", help: "use the handle's lookup/compare API instead, or add this module to the @opaque(\"...\") friend list on the newtype declaration" }
         .SpecTestFailed      -> ErrorDef { code: "F0900", help: "the assertion expression evaluated to false — fix the implementation or update the expectation" }
         .ReturnInSpecBlock   -> ErrorDef { code: "F0901", help: "a `return` here exits the whole test file's initializer and silently drops this and every later test — move the early exit into a helper fn, or let the block's final expression be the result" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
