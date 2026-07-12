@@ -4488,6 +4488,16 @@ void avra_process_env_unset(const char* key) {
     unsetenv(key);
 }
 
+// Set an environment variable for THIS process (and everything it
+// forks). The test orchestrator uses this to stamp
+// AVRA_SKIP_ENSURE_BS2=1 before dispatching shards: the bs2 running
+// the suite IS the compiler under test, so no child shell-out to
+// scripts/diagnose.sh may ever decide bs2 is stale and rebuild it
+// mid-run out from under the live shards (t-gv3n).
+void avra_process_env_set(const char* key, const char* value) {
+    setenv(key, value, 1);
+}
+
 /// Get the directory containing the current executable. The path to
 /// the running binary is resolved per-platform: `_NSGetExecutablePath`
 /// on macOS, the `/proc/self/exe` symlink on Linux.

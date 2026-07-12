@@ -200,13 +200,27 @@ die()  { err "$*"; exit 1; }
 # Cost of the false-positive case (no source change but mtimes equal,
 # e.g. after `touch -r`): one extra rebuild. Vastly preferable to a
 # silent stale-binary bug.
+# 6cks: portable epoch-mtime stat. GNU coreutils spells it `stat -c %Y`;
+# BSD/macOS spells it `stat -f %m`. The BSD spelling was hardcoded, so on
+# Linux the probe misbehaved by coreutils version — either `stat -f`
+# errored (freshness degraded to "always stale": every ensure-bs2 paid an
+# unconditional ~40s rebuild) or printed a MOUNT POINT (the `-ge` compare
+# then failed non-numerically: "never stale", silently serving a stale
+# binary). Probe the GNU spelling once against `.`; consumers word-split
+# $STAT_MTIME deliberately.
+if stat -c %Y . >/dev/null 2>&1; then
+  STAT_MTIME="stat -c %Y"
+else
+  STAT_MTIME="stat -f %m"
+fi
+
 source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
   local target_mtime
-  target_mtime=$(stat -f %m "$target" 2>/dev/null) || return 0
+  target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
   local newest_src
-  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
+  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec $STAT_MTIME {} + 2>/dev/null | sort -rn | head -1)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
   [ "$newest_src" -ge "$target_mtime" ]
 }
@@ -243,6 +257,9 @@ BUILD MODES
 
 RUN MODES
   --run    <file.av>   Compile <file.av> with bs2, link, run. Prints stdout.
+  --bs2-stale-check    Read-only: print `fresh`/`stale` for build/bs2 vs
+                       compiler sources + seed (ensure_bs2's decision),
+                       building nothing. rc 0 = fresh.
   --rc-strict-suite [f] Run the spec suite under AVRA_RC_STRICT=1 (rcsf.3):
                        poison-on-free + reuse quarantine + abort on release of
                        already-freed RC memory. Validates the compiler's own
@@ -986,7 +1003,13 @@ link_ll() {
     fp=$(printf '%s:%s' "$shared_fp" "$ll_h" | $SHA256_CMD | cut -d' ' -f1 | head -c 16)
     cached_bin="$LINK_CACHE_DIR/$fp.bin"
     if [ -f "$cached_bin" ]; then
-      cp "$cached_bin" "$out"
+      # Stage + rename, never cp-in-place: cp truncates $out where it
+      # stands, so a concurrent exec of $out (a live test shard when
+      # $out is build/bs2) sees a half-written binary — or the cp
+      # itself dies on ETXTBSY. mv swaps the inode atomically; running
+      # processes keep the old image.
+      cp "$cached_bin" "${out}.tmp.$$" && mv "${out}.tmp.$$" "$out" \
+        || { rm -f "${out}.tmp.$$"; die "link-cache copy failed for $out"; }
       return
     fi
   fi
@@ -1000,8 +1023,13 @@ link_ll() {
       || die "opt instrprof lowering failed for $ll"
     obj_ll="$lowered"
   fi
-  "$LLC" -O2 $LLC_RELOC -filetype=obj "$obj_ll" -o "${out}.o" \
-    || die "llc failed for $ll"
+  # PID-scoped object: two concurrent link_ll calls on the same $out
+  # (e.g. racing ensure_bs2 rebuilds) would clobber each other's
+  # ${out}.o mid-llc and feed cc a torn object. Stage per-invocation,
+  # publish by rename after the link succeeds.
+  local tmp_obj="${out}.o.tmp.$$"
+  "$LLC" -O2 $LLC_RELOC -filetype=obj "$obj_ll" -o "$tmp_obj" \
+    || { rm -f "$tmp_obj"; die "llc failed for $ll"; }
   local extra_libs=""
   if [ "$coverage" = "coverage" ]; then
     # Link against LLVM's profiling runtime for .profraw output
@@ -1026,10 +1054,11 @@ link_ll() {
   # iteration alone), the previous $out remains intact instead of
   # being corrupted into a 2.2MB Mach-O that SIGKILLs on dyld load.
   local tmp_out="${out}.tmp.$$"
-  cc -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
+  cc -o "$tmp_out" "$tmp_obj" "$RUNTIME_O" "$LLVM_WRAPPER_O" $lib_objs \
     $STACK_LDFLAGS \
     $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB $extra_libs 2>"$logfile" \
-    || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
+    || { rm -f "$tmp_out" "$tmp_obj"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "$tmp_obj" "${out}.o"
   mv "$tmp_out" "$out"
 
   # rqwh: publish to cache on success. Atomic write via .tmp + mv so
@@ -1057,17 +1086,16 @@ emit_ll_bs2() {
 }
 
 ensure_bs2() {
-  # AVRA_SKIP_ENSURE_BS2=1 is the test runner's signal that bs2 is
-  # already current — see run_per_file_test_command's env block.
-  # Touching @std/avrac/src/* makes `source_newer_than $BS2` return
-  # true (any .av is newer than the bs2 binary's mtime). Without this
-  # short-circuit, every one of the ~10 diagnose.sh-based tests
-  # ALSO running in parallel test shards would each kick off a fresh
-  # bs2 rebuild — 10 concurrent llc + cc invocations holding 1-2GB
-  # RSS each → jetsam mass-kill → flaky test failures with messages
-  # like "scripts/diagnose.sh: line N: PID Killed: 9 bs2 compile".
-  # The test runner has already ensured bs2 is current before
-  # dispatching shards; shards must not redo that work.
+  # AVRA_SKIP_ENSURE_BS2=1 is the test orchestrator's signal that bs2
+  # is already current — run_test_command stamps it (via
+  # avra_process_env_set) before dispatching, so every shard and every
+  # test's shell-out inherits it. The bs2 running the suite IS the
+  # compiler under test, so the guard is correct by construction.
+  # Without this short-circuit, a stale-looking tree would make every
+  # one of the ~10 diagnose.sh-based tests running in parallel shards
+  # kick off its own bs2 rebuild — concurrent seed compiles holding
+  # 1-2GB RSS each (jetsam mass-kill) AND racing relinks of build/bs2
+  # while live shards exec it (t-gv3n).
   if [ -n "${AVRA_SKIP_ENSURE_BS2:-}" ]; then
     [ -x "$BS2" ] || die "AVRA_SKIP_ENSURE_BS2 set but $BS2 missing"
     return
@@ -1114,14 +1142,16 @@ ensure_bs2() {
 # Link an LLVM IR file into an executable at -O0 (for debuggability).
 link_ll_O0() {
   local ll="$1" out="$2" logfile="$3"
-  "$LLC" -O0 $LLC_RELOC -filetype=obj "$ll" -o "${out}.o" \
-    || die "llc -O0 failed for $ll"
-  # Atomic + race-safe link via PID-scoped staging path (see link_ll).
+  # Atomic + race-safe link via PID-scoped staging paths (see link_ll).
+  local tmp_obj="${out}.o.tmp.$$"
+  "$LLC" -O0 $LLC_RELOC -filetype=obj "$ll" -o "$tmp_obj" \
+    || { rm -f "$tmp_obj"; die "llc -O0 failed for $ll"; }
   local tmp_out="${out}.tmp.$$"
-  cc -g -o "$tmp_out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+  cc -g -o "$tmp_out" "$tmp_obj" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
     $STACK_LDFLAGS \
     $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>"$logfile" \
-    || { rm -f "$tmp_out"; cat "$logfile" >&2; die "link failed for $out"; }
+    || { rm -f "$tmp_out" "$tmp_obj"; cat "$logfile" >&2; die "link failed for $out"; }
+  mv "$tmp_obj" "${out}.o"
   mv "$tmp_out" "$out"
 }
 
@@ -1563,6 +1593,23 @@ run_fg() {
 
 mode_run() { run_fg "$1"; }
 
+# Read-only probe of ensure_bs2's staleness decision — prints `fresh`
+# (rc 0) or `stale` (rc 1) and NEVER builds anything. Regression witness
+# for t-gv3n: the BSD-only `stat -f %m` made source_newer_than report
+# stale on every Linux invocation, so each of the ~10 diagnose.sh-based
+# fixture tests in a suite run kicked off its own concurrent bs2
+# rebuild. tests/suite_bs2_guard_test.av asserts `fresh` from inside a
+# running suite (where bs2 is the binary under test, current by
+# construction).
+mode_bs2_stale_check() {
+  [ -x "$BS2" ] || { echo "stale (no bs2 at $BS2)"; exit 1; }
+  if source_newer_than "$BS2" || { [ -f "$SEED_LL" ] && [ "$SEED_LL" -nt "$BS2" ]; }; then
+    echo "stale"
+    exit 1
+  fi
+  echo "fresh"
+}
+
 # rcsf.3: run the spec suite under AVRA_RC_STRICT=1. Strict mode lives in
 # runtime.c, so BOTH bs2 (as it compiles + runs each test binary) AND the
 # test programs themselves execute under it — a release of a stale pointer to
@@ -1889,6 +1936,7 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
+    --bs2-stale-check)    mode_bs2_stale_check "$@" ;;
     --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
     --link-run)           mode_link_run "$@" ;;
     --check)              mode_check "$@" ;;
