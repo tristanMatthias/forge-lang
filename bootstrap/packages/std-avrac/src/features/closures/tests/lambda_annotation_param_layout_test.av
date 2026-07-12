@@ -1,0 +1,71 @@
+// The under-determined-layout class at its most concrete: a lambda bound
+// under a fn-typed annotation must compile its params against the
+// ANNOTATION's types, not the body-scan heuristic. Before this threading,
+// `let f: fn(string) -> int = (s) -> …` laid `s` out as i64 (the
+// heuristic only distinguishes float-vs-other, and Unknown fell to the
+// i64 arm) — a pointer carried in an integer slot, the silent-miscompile
+// class this ticket's totality rule exists to kill.
+//
+// Pointer-typed params are the load-bearing cases: an int lambda under an
+// int annotation was accidentally correct (i64 == i64), so these fixtures
+// use string and struct params where the old layout was genuinely wrong.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "fn-typed let annotation threads param types into the lambda" {
+    then "a string param reaches the body as a string (length works)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ann_string.av",
+            "fn main() {\n" +
+            "    let f: fn(string) -> int = (s) -> s.length\n" +
+            "    println(string(f(\"hello\")))\n" +
+            "}\n")
+        out.contains("5")
+    }
+    then "a struct param reaches the body as a struct (field access works)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ann_struct.av",
+            "type LapBox = {\n" +
+            "    v: int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let get: fn(LapBox) -> int = (b) -> b.v\n" +
+            "    println(string(get(LapBox { v: 742 })))\n" +
+            "}\n")
+        out.contains("742")
+    }
+    then "an int param stays correct (the previously-accidentally-right case)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ann_int.av",
+            "fn main() {\n" +
+            "    let add3: fn(int) -> int = (x) -> x + 3\n" +
+            "    println(string(add3(39)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}
+
+spec "fn-typed struct fields thread param types into lambda initializers" {
+    then "a string-param lambda in a struct literal reads its param as a string" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_field_string.av",
+            "type LapHandler = {\n" +
+            "    measure: fn(string) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let h = LapHandler { measure: (s) -> s.length }\n" +
+            "    let m = h.measure\n" +
+            "    println(string(m(\"sixteen chars!!!\")))\n" +
+            "}\n")
+        out.contains("16")
+    }
+    then "a string-param lambda ASSIGNED to a fn-typed field reads its param as a string" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_field_assign_string.av",
+            "type LapSlot = {\n" +
+            "    act: fn(string) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    mut sl = LapSlot { act: (s) -> 0 }\n" +
+            "    sl.act = (s) -> s.length + 1\n" +
+            "    let f = sl.act\n" +
+            "    println(string(f(\"ten chars!\")))\n" +
+            "}\n")
+        out.contains("11")
+    }
+}

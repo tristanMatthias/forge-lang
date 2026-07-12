@@ -1,0 +1,67 @@
+// Layout-totality threading: every position
+// that knows its declared type now emits lambda values through the ONE
+// shared interception point `emit_expected`, so the lambda's params
+// compile against the DECLARED fn type instead of the body-scan
+// heuristic. These witnesses cover the positions A4 added — enum-ctor
+// payload, `with`-override, and reassignment — using string params,
+// where the old heuristic laid the pointer out as i64 (the
+// silent-miscompile class this ticket's totality rule exists to kill).
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "fn-typed enum payload threads param types into a lambda arg" {
+    then "a string-param lambda stored in a payload works when extracted" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_enum_payload.av",
+            "enum Op {\n" +
+            "    Apply(g: fn(string) -> int)\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let op = Op.Apply((s) -> s.length)\n" +
+            "    match op {\n" +
+            "        .Apply(g) -> println(string(g(\"hello\")))\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("5")
+    }
+}
+
+spec "fn-typed with-override threads param types into a lambda value" {
+    then "a string-param lambda override replaces the field and works" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_with_override.av",
+            "type Handler = {\n" +
+            "    f: fn(string) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let h = Handler { f: (s: string) -> 0 }\n" +
+            "    let h2 = h with { f: (s) -> s.length * 2 }\n" +
+            "    println(string(h2.f(\"hello\")))\n" +
+            "}\n")
+        out.contains("10")
+    }
+}
+
+spec "fn-typed reassignment threads param types into a lambda value" {
+    then "a string-param lambda assigned over a fn-typed mut works" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_reassign.av",
+            "fn main() {\n" +
+            "    mut f: fn(string) -> int = (s: string) -> 0\n" +
+            "    f = (s) -> s.length + 1\n" +
+            "    println(string(f(\"hello\")))\n" +
+            "}\n")
+        out.contains("6")
+    }
+    then "a MULTI-param declared type threads mixed ptr/scalar layouts" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_reassign_multi.av",
+            "fn main() {\n" +
+            "    mut f: fn(string, int) -> int = (s: string, n: int) -> 0\n" +
+            "    f = (s, n) -> s.length + n\n" +
+            "    println(string(f(\"hello\", 37)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}
+
+// Zero-param threading is pinned in lambda_method_arg_param_layout_test;
+// an arity-mismatch compile error does not exist yet — today the extra
+// params fall to the Unknown layout default, and the gate belongs to the
+// same future increment as the Unknown-at-layout hard error.

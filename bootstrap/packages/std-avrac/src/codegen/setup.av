@@ -1491,6 +1491,22 @@ fn resolve_fn_ret(store: NodeStore, regs: TypeRegs, traits: TraitDeclReg, rvt: V
     }
 }
 
+/// Extract the declared param types from a fn-typed return
+/// annotation, resolved through the setup registries. Empty for any
+/// other return shape — consumers use empty as "not fn-typed". Kept
+/// separate from resolve_fn_ret because its tail-lambda transform
+/// rewrites the ret to `Closure(-1, ret)`, which drops the param
+/// list; this preserves it in the FnRetTypes row.
+fn declared_ret_fn_params(regs: TypeRegs, rvt: ValueType) -> List<ValueType> {
+    match rvt {
+        .FnTyped(params, _) -> resolve_setup_vt_list(regs, params)
+        _ -> {
+            let e: List<ValueType> = []
+            e
+        }
+    }
+}
+
 /// Walk the AST declaring every `fn` and `extern fn` as an LLVM
 /// function. Resolves param + return types via the codegen
 /// registries, builds the function-type, and registers the return
@@ -1518,7 +1534,7 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
-                fn_ret_types_register(cur, name, ret_vt)
+                fn_ret_types_register(cur, name, ret_vt, declared_ret_fn_params(regs, rvt))
             }
             .ExternFn(name, params, ext_rvt) -> {
                 let resolved_params = resolve_param_list(params, regs)
@@ -1531,7 +1547,7 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
-                fn_ret_types_register(cur, name, ret_vt)
+                fn_ret_types_register(cur, name, ret_vt, declared_ret_fn_params(regs, ext_rvt))
             }
             .Impl(_, methods) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, cur, type_reg)
             .Module(_, body) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, body, cur, type_reg)

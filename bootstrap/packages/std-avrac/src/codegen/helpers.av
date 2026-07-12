@@ -1,10 +1,10 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, ExprId, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, ExprId, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
-use features.closures.{emit_lambda_typed}
+use features.closures.{emit_expected}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, box_into_list, needs_tuple_rebox, emit_tuple_rebox}
 use core.{vtype_strip_optional, vtype_is_list, vtype_is_optional, vtype_list_elem}
@@ -29,13 +29,18 @@ export fn strip_quotes(s: string) -> string {
 }
 
 /// Fill an LLVM value array with the SSA results of a list of
-/// expressions, in order. No type coercion — for that, see
+/// expressions, in order. `ptypes` carries the callee's declared param
+/// types (self included, aligned with `idx`) purely so a lambda arg
+/// under a fn-typed param compiles against the DECLARED types instead
+/// of the body-scan heuristic (the layout-totality threading; an empty
+/// or short list resolves to Unknown → plain emit). No trait/union
+/// coercion — for the full call-site pipeline, see
 /// `fill_arg_array_boxing`.
-export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
+export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<ExprId>, ptypes: List<ValueType>, idx: int) -> Result<EmitValue, string> {
     mut i = 0
     let n = args.length
     while i < n {
-        let r = ctx.emit(env, ctx.nodes.exprs.get(args[i]))?
+        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(args[i]), param_type_vt_at(ptypes, idx + i))?
         ctx.value_array_set(arr, idx + i, r.value)
         i = i + 1
     }
@@ -53,15 +58,8 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
     while i < n {
         let se = args[i]
         let slot = idx + i
-        // When a Lambda arg is passed to a function expecting a typed fn param,
-        // compile the lambda with the expected param types so enum matching works.
         mut r = EmitValue { value: ctx.i64(0), ty: .Int }
         match ctx.nodes.exprs.get(se) {
-            .Lambda(params, body) -> {
-                let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot))
-                let lambda_types = vtype_fn_params(fn_vt)
-                r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), lambda_types)?
-            }
             // A list-literal arg for a `List<T?>` param must box each present
             // element into the optional repr, even with no `none` in the
             // literal (`f([1, 2])` where `f(xs: List<int?>)`). Emit the
@@ -83,7 +81,11 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
                 }
             }
             _ -> {
-                r = ctx.emit(env, ctx.nodes.exprs.get(se))?
+                // emit_expected compiles a Lambda arg against the callee's
+                // declared fn-typed param (the layout-totality threading —
+                // so e.g. enum matching works inside the closure body);
+                // every other arg is a plain emit.
+                r = emit_expected(ctx, env, ctx.nodes.exprs.get(se), param_type_vt_at(ptypes, slot))?
             }
         }
         // Check if the parameter type is a trait and the argument is concrete

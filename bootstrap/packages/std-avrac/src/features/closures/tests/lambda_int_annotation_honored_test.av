@@ -1,0 +1,44 @@
+// A declared param annotation is TRUTH at the lambda layout boundary —
+// never overridden by the body-scan heuristic. The
+// old resolver excluded `.Int` from the annotated fast-path, so an
+// annotated int param that appeared next to a float operand was
+// silently PROMOTED to Float: the call site passed a raw i64 which the
+// body then reinterpreted as a double — f(4) returned 4.94066e-323
+// (denormal garbage), the under-determined-layout miscompile class.
+// With the annotation honored, the param stays i64 and the int×float
+// arithmetic promotes numerically: 4 * 2.5 == 10.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "an int param annotation is honored next to float operands" {
+    then "the annotated param stays int and the arithmetic promotes" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_int_ann.av",
+            "fn main() {\n" +
+            "    let factor = 2.5\n" +
+            "    let f = (x: int) -> x * factor\n" +
+            "    println(string(f(4)))\n" +
+            "}\n")
+        out.contains("10")
+    }
+    then "a negative annotated int promotes with its sign intact" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_int_ann_neg.av",
+            "fn main() {\n" +
+            "    let factor = 2.5\n" +
+            "    let f = (x: int) -> x * factor\n" +
+            "    println(string(f(-4)))\n" +
+            "}\n")
+        out.contains("-10")
+    }
+    then "the float operand on the LEFT scans the same way" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_int_ann_left.av",
+            "fn main() {\n" +
+            "    let factor = 2.5\n" +
+            "    let f = (x: int) -> factor * x\n" +
+            "    println(string(f(4)))\n" +
+            "}\n")
+        out.contains("10")
+    }
+}
+
+// The compile-error side (un-annotated param in an untyped context →
+// F1006) is pinned by unannotated_lambda_gate_test in this directory.

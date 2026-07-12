@@ -1,0 +1,95 @@
+// The under-determined-layout kill at the return position: a lambda
+// RETURNED from a fn whose declared return is fn-typed must compile its
+// params against the DECLARATION's types, not the body-scan heuristic.
+// Before this threading, `fn mk() -> fn(string) -> int { (s) -> … }`
+// laid `s` out as i64 (resolve_fn_ret's Closure(-1, ret) transform drops
+// the declared param list, so the lambda emit had nothing to thread) —
+// a pointer carried in an integer slot, the silent-miscompile class.
+//
+// The declared params now ride in the FnRetTypes row (FnRetMeta.fn_params)
+// and are threaded at BOTH return positions: the implicit tail statement
+// (emit_function_body) and explicit `return lambda` (emit_stmt's .Return
+// arm). Pointer-typed params are the load-bearing cases, same as the
+// A1/A2 fixtures.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "fn-typed declared return threads param types into a tail lambda" {
+    then "a string param reaches the body as a string (length works)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_tail_string.av",
+            "fn mk() -> fn(string) -> int {\n" +
+            "    (s) -> s.length\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk()\n" +
+            "    println(string(f(\"hello\")))\n" +
+            "}\n")
+        out.contains("5")
+    }
+    then "a struct param reaches the body as a struct (field access works)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_tail_struct.av",
+            "type RetBox = {\n" +
+            "    v: int\n" +
+            "}\n" +
+            "fn mk() -> fn(RetBox) -> int {\n" +
+            "    (b) -> b.v\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk()\n" +
+            "    println(string(f(RetBox { v: 742 })))\n" +
+            "}\n")
+        out.contains("742")
+    }
+    then "prefix statements and captures still work around the tail lambda" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_tail_prefix.av",
+            "fn mk() -> fn(string) -> int {\n" +
+            "    let bonus = 2\n" +
+            "    (s) -> s.length + bonus\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk()\n" +
+            "    println(string(f(\"hello\")))\n" +
+            "}\n")
+        out.contains("7")
+    }
+    then "an int param stays correct (the previously-accidentally-right case)" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_tail_int.av",
+            "fn mk() -> fn(int) -> int {\n" +
+            "    (x) -> x + 3\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk()\n" +
+            "    println(string(f(39)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}
+
+spec "fn-typed declared return threads param types into explicit returns" {
+    then "a string param in a `return lambda` reads its param as a string" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_explicit_string.av",
+            "fn mk() -> fn(string) -> int {\n" +
+            "    return (s) -> s.length\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk()\n" +
+            "    println(string(f(\"sixteen chars!!!\")))\n" +
+            "}\n")
+        out.contains("16")
+    }
+    then "an early `return lambda` in a branch threads too" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_ret_early_string.av",
+            "fn mk(long: bool) -> fn(string) -> int {\n" +
+            "    if long {\n" +
+            "        return (s) -> s.length\n" +
+            "    }\n" +
+            "    (s) -> 0\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let f = mk(true)\n" +
+            "    let g = mk(false)\n" +
+            "    println(string(f(\"ten chars!\") + g(\"ten chars!\")))\n" +
+            "}\n")
+        out.contains("10")
+    }
+}

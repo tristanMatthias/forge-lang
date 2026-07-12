@@ -1,6 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr}
+use features.closures.{emit_expected}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
@@ -132,7 +133,10 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
                 ctx.store_field(boxed, gep, fld_ty)
             }
             _ -> {
-                mut r = ctx.emit(env, init_expr)?
+                // emit_expected threads a fn-typed field's declared param
+                // types into a lambda initializer (the layout-totality
+                // threading); every other init is a plain emit.
+                mut r = emit_expected(ctx, env, init_expr, fld_ty)?
                 let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
                 // Optional box/unbox into the field's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, fld_ty)
@@ -176,8 +180,11 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
     let st_ty = ctx.get_type(struct_name)
     let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
-    mut v = ctx.emit(env, value)?
     let fld_ty = ctx.resolve_field_type(lookup.fields, field)
+    // emit_expected threads a fn-typed field's declared param types into a
+    // lambda value (the layout-totality threading, same as the struct-
+    // literal path); every other value is a plain emit.
+    mut v = emit_expected(ctx, env, value, fld_ty)?
     // Optional box/unbox into the field's slot (no-op when neither applies).
     v = emit_optional_coerce(ctx, v, fld_ty)
     // Box a concrete value into a bare `dyn Trait` field — same as the struct

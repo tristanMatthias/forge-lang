@@ -13,8 +13,13 @@ use core.{avra_tag_as_result}
 
 
 /// Wrap a successful block-as-expr emit (value + type + threaded
-/// ctx + env) as `Result.Ok`. Internal helper for this module only.
-fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding>) -> Result<BlockResult, string> {
+/// ctx + env) as `Result.Ok`. Exported so block-shaped emitters
+/// outside this module (fn_decl's tail-lambda threading) construct
+/// BlockResults through the same single path — a hand-rolled
+/// intermediate BlockResult that gets dropped releases its `ty`,
+/// and a registry-owned ValueType stored there dangles the type
+/// registries (phantom-release class, RC_MEMORY_RUNBOOK).
+export fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding>) -> Result<BlockResult, string> {
     let r = Result.Ok(BlockResult { value, ty, ctx, env })
     avra_tag_as_result(r)
     r

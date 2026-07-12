@@ -383,8 +383,13 @@ export fn field_resolved_at(fields: List<FieldEntry>, idx: int) -> ValueType {
 // function parameters.
 
 
-/// One fn's return-type entry in FnRetTypes' `ord` list.
-export type FnRetMeta = { name: string, ret_ty: ValueType }
+/// One fn's return-type entry in FnRetTypes' `ord` list. `fn_params`
+/// carries the DECLARED param types when the return annotation is
+/// fn-typed (`fn f() -> fn(string) -> int`), empty otherwise. It rides
+/// here because resolve_fn_ret's tail-lambda transform rewrites the
+/// registered ret to `Closure(-1, ret)`, which cannot carry the param
+/// list — and returned lambdas need it for param layout.
+export type FnRetMeta = { name: string, ret_ty: ValueType, fn_params: List<ValueType> }
 
 /// Function return-type registry — `name → ValueType`. Built once
 /// during the declaration pass; consulted everywhere a call site
@@ -404,10 +409,10 @@ export fn fn_ret_types_new() -> FnRetTypes {
     FnRetTypes { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType) -> FnRetTypes {
+export fn fn_ret_types_register(reg: FnRetTypes, name: string, ret_ty: ValueType, fn_params: List<ValueType>) -> FnRetTypes {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(FnRetMeta { name, ret_ty })
+    ord.push(FnRetMeta { name, ret_ty, fn_params })
     avra_map_set_cstr(reg.idx, name, new_idx)
     FnRetTypes { ord, idx: reg.idx }
 }
@@ -640,6 +645,17 @@ export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].ret_ty
+}
+
+/// Look up the DECLARED param types of a function whose return
+/// annotation is fn-typed. Empty when the fn isn't registered or its
+/// return isn't fn-typed — callers treat empty as "no declared types"
+/// and leave the lambda to the generic emit path.
+export fn fn_ret_param_lookup(reg: FnRetTypes, name: string) -> List<ValueType> {
+    let e: List<ValueType> = []
+    if avra_map_has_cstr(reg.idx, name) == 0 { return e }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i].fn_params
 }
 
 /// Result of a top-level-var lookup.
@@ -1438,6 +1454,10 @@ impl Ctx {
 
     // Return type of the current function being emitted.
     fn current_fn_ret(self) -> ValueType { fn_ret_lookup(self.fn_rets, self.current_fn_name) }
+
+    // Declared fn-type param list of a named function's return
+    // annotation (empty when not fn-typed). See FnRetMeta.fn_params.
+    fn fn_ret_params(self, name: string) -> List<ValueType> { fn_ret_param_lookup(self.fn_rets, name) }
 
     // ── Context builders ──
 
