@@ -560,14 +560,22 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     if owner == "" {
         return err_emit("method call on non-struct/enum value (ty=${vtype_render_full(r.ty)})")
     }
-    let mangled = method_mangled_name(owner, method)
+    mut mangled = method_mangled_name(owner, method)
     mut fn_val = ctx.get_fn(mangled)
-    // Fallback: resolve via TypeRegistry using TypeId
+    // Fallback: resolve via TypeRegistry using TypeId. `mangled` follows
+    // the re-resolution — the param/ret registries are keyed by the
+    // CANONICAL mangled name, so reading them under the original owner
+    // name would silently drop the declared types (param threading and
+    // the return type would fall back to guesses).
     if fn_val == null {
         let tid = match r.ty { .Struct(_, _, id) -> id, .Enum(_, _, id) -> id, _ -> 0 }
         let canonical = type_registry_name_for(ctx.type_reg, tid)
         if canonical != "" {
-            fn_val = ctx.get_fn(method_mangled_name(canonical, method))
+            let canonical_mangled = method_mangled_name(canonical, method)
+            fn_val = ctx.get_fn(canonical_mangled)
+            if fn_val != null {
+                mangled = canonical_mangled
+            }
         }
     }
     if fn_val == null {

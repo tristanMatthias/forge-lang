@@ -908,7 +908,7 @@ fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamE
             // registry's module-qualified entry. resolve_codegen_vtype
             // is idempotent on already-qualified types.
             ctx.resolve_codegen_vtype(types[type_idx])
-        } else if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+        } else if !vtype_is_unknown(p.vtype) {
             ctx.resolve_codegen_vtype(p.vtype)
         } else {
             ValueType.Unknown

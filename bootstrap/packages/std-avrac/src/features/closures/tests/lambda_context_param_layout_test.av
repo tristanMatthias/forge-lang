@@ -50,4 +50,18 @@ spec "fn-typed reassignment threads param types into a lambda value" {
             "}\n")
         out.contains("6")
     }
+    then "a MULTI-param declared type threads mixed ptr/scalar layouts" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_reassign_multi.av",
+            "fn main() {\n" +
+            "    mut f: fn(string, int) -> int = (s: string, n: int) -> 0\n" +
+            "    f = (s, n) -> s.length + n\n" +
+            "    println(string(f(\"hello\", 37)))\n" +
+            "}\n")
+        out.contains("42")
+    }
 }
+
+// Zero-param threading is pinned in lambda_method_arg_param_layout_test;
+// an arity-mismatch compile error does not exist yet — today the extra
+// params fall to the Unknown layout default, and the gate belongs to the
+// same future increment as the Unknown-at-layout hard error.
