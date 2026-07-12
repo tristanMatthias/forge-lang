@@ -16,8 +16,9 @@ spec "@opaque .raw() is gated to the declaring module + friends" {
     }
     then "the declaring module and the declared friend peel clean" {
         let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
-        // Exactly the outsider's two render lines mention F3106 — the
-        // idlib/friendmod peels must contribute none.
-        !out.contains("inspect_here") && !out.contains("peel_as_friend")
+        // Exactly the outsider's peel lines mention F3106 — the
+        // idlib/friendmod peels AND the outsider's ungated comparison
+        // must contribute none.
+        !out.contains("inspect_here") && !out.contains("peel_as_friend") && !out.contains("outsider::same")
     }
 }
