@@ -1,0 +1,218 @@
+// WHY: derive_walker's generated method fns (`ValueType__map` etc.) are
+// born FULLY-QUALIFIED (`@pkg::mod::Type__map`) because @expand runs
+// post-resolve, and the producer's metadata stores that qualified name in
+// the FNS section. The consumer's resolver deliberately never re-qualifies
+// a `__`-mangled Function name (is_mangled_method), so if synthesis strips
+// the entry to its local name the fn registers BARE at the consumer while
+// method dispatch — and the producer's .o symbol — use the qualified
+// mangle. Pre-fix witness: a consumer of @std::avrac metadata failed
+// `vt.map((c) -> c)` with `undefined method @std::avrac::core::ValueType.map`
+// under AVRA_USE_METADATA, while the source-inlined build compiled it fine.
+//
+// These specs pin the synthesis contract:
+//   * mangled FNS entries keep their STORED qualified name;
+//   * plain fns keep the local-name synthesis (the nested-Module trie
+//     supplies their qualification);
+//   * the mangled entry's fn-typed param survives intact, so the consumer
+//     threads `.map`-style callback lambda params from it (the layout-
+//     totality contract — an Unknown param would lay out as i64 and
+//     miscompile a pointer-typed callback argument).
+
+use @std.avrac.build.{
+    UnitMetadata, FnDeclEntry, sym_id_for, bytes_from_hex,
+    synthesize_unit_body,
+}
+use @std.avrac.core.{
+    NodeStore, StmtId, new_node_store, build_line_index, Stmt, stmt_unwrap,
+    ParamEntry, TypeParamEntry, ValueType,
+}
+
+fn fp32() -> bytes {
+    bytes_from_hex("00000000000000000000000000000000000000000000000000000000000000ff")
+}
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+const ENUM_QN: string = "@t::pkg::core::Color"
+
+// A walker-shaped method fn as the extractor records it: qualified
+// mangled name, not exported (derive output carries no @export), self +
+// callback params typed against the qualified enum.
+fn walker_shaped_fn(qn: string) -> FnDeclEntry {
+    let no_args: List<ValueType> = []
+    let self_ty = ValueType.Enum(ENUM_QN, no_args, 0)
+    let f_params: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_params, self_ty)
+    let params: List<ParamEntry> = [
+        ParamEntry { name: "self", vtype: self_ty },
+        ParamEntry { name: "f", vtype: f_ty },
+    ]
+    let no_tp: List<TypeParamEntry> = []
+    FnDeclEntry {
+        sym_id: sym_id_for(qn),
+        name: qn,
+        exported: false,
+        is_extern: false,
+        is_comptime: false,
+        type_params: no_tp,
+        params: params,
+        ret: self_ty,
+    }
+}
+
+fn plain_fn(qn: string) -> FnDeclEntry {
+    let no_params: List<ParamEntry> = []
+    let no_tp: List<TypeParamEntry> = []
+    let no_args: List<ValueType> = []
+    FnDeclEntry {
+        sym_id: sym_id_for(qn),
+        name: qn,
+        exported: true,
+        is_extern: false,
+        is_comptime: false,
+        type_params: no_tp,
+        params: no_params,
+        ret: ValueType.Enum(ENUM_QN, no_args, 0),
+    }
+}
+
+fn meta_with_fns(unit: string, fns: List<FnDeclEntry>) -> UnitMetadata {
+    UnitMetadata {
+        unit_name: unit,
+        fingerprint: fp32(),
+        types: [],
+        fns: fns,
+        consts: [],
+        impls: [],
+        generic_bodies: [],
+        inherent_impls: [],
+    }
+}
+
+// Search result for a synthesized Function stmt, located by name suffix
+// (the synthesized name may be local or qualified — asserting which one
+// is exactly what these specs do).
+type FoundFn = {
+    found: bool,
+    name: string,
+    params: List<ParamEntry>,
+}
+
+fn no_fn() -> FoundFn {
+    let empty: List<ParamEntry> = []
+    FoundFn { found: false, name: "", params: empty }
+}
+
+fn find_fn_by_suffix(store: NodeStore, stmts: List<StmtId>, suffix: string) -> FoundFn {
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(store, store.stmts.get(stmts[i])) {
+            .Function(n, _, params, _, _) -> {
+                if n.ends_with(suffix) {
+                    return FoundFn { found: true, name: n, params: params }
+                }
+            }
+            .Module(_, body) -> {
+                let sub = find_fn_by_suffix(store, body, suffix)
+                if sub.found { return sub }
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    no_fn()
+}
+
+fn extern_fn_shaped(qn: string) -> FnDeclEntry {
+    let no_params: List<ParamEntry> = []
+    let no_tp: List<TypeParamEntry> = []
+    FnDeclEntry {
+        sym_id: sym_id_for(qn),
+        name: qn,
+        exported: true,
+        is_extern: true,
+        is_comptime: false,
+        type_params: no_tp,
+        params: no_params,
+        ret: ValueType.Int,
+    }
+}
+
+fn find_extern_by_suffix(store: NodeStore, stmts: List<StmtId>, suffix: string) -> FoundFn {
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(store, store.stmts.get(stmts[i])) {
+            .ExternFn(n, params, _) -> {
+                if n.ends_with(suffix) {
+                    return FoundFn { found: true, name: n, params: params }
+                }
+            }
+            .Module(_, body) -> {
+                let sub = find_extern_by_suffix(store, body, suffix)
+                if sub.found { return sub }
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    no_fn()
+}
+
+fn callback_param_matches(p: ParamEntry) -> bool {
+    match p.vtype {
+        .FnTyped(ps, ret) -> {
+            if ps.length != 1 { return false }
+            enum_qn_of(ps[0]) == ENUM_QN && enum_qn_of(ret) == ENUM_QN
+        }
+        _ -> false
+    }
+}
+
+fn enum_qn_of(vt: ValueType) -> string {
+    match vt {
+        .Enum(n, _, _) -> n
+        _ -> ""
+    }
+}
+
+spec "metadata synthesis: mangled method fns keep their qualified name" {
+    then "a `Type__method` FNS entry synthesizes under the stored qualified name" {
+        let fns: List<FnDeclEntry> = [walker_shaped_fn("@t::pkg::core::Color__dup")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", fns), store)
+        let f = find_fn_by_suffix(store, synth, "Color__dup")
+        // The resolver never re-qualifies `__`-mangled Function names, so
+        // the local-name strip would leave this fn registered bare —
+        // dispatch (and the producer .o symbol) want the qualified mangle.
+        f.found && f.name == "@t::pkg::core::Color__dup"
+    }
+    then "a plain fn still synthesizes under its local name" {
+        let fns: List<FnDeclEntry> = [plain_fn("@t::pkg::core::mk_color")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", fns), store)
+        let f = find_fn_by_suffix(store, synth, "mk_color")
+        f.found && f.name == "mk_color"
+    }
+    then "the mangled entry's fn-typed callback param survives synthesis intact" {
+        let fns: List<FnDeclEntry> = [walker_shaped_fn("@t::pkg::core::Color__dup")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", fns), store)
+        let f = find_fn_by_suffix(store, synth, "Color__dup")
+        // Param slot 1 is the callback: fn(Color) -> Color against the
+        // qualified enum — what the consumer's call-arg threading reads
+        // (lookup_fn_params) to type a `.map`-style lambda's params.
+        f.found && f.params.length == 2 && callback_param_matches(f.params[1])
+    }
+    then "an extern fn with `__` in its name keeps the LOCAL name (C ABI symbol)" {
+        // `__init_*` deferred-init externs contain `__` but are C ABI —
+        // the symbol is the local name; qualifying it would declare an
+        // extern the linker can never resolve.
+        let fns: List<FnDeclEntry> = [extern_fn_shaped("@t::pkg::runner::__init_dfi_worker")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", fns), store)
+        let f = find_extern_by_suffix(store, synth, "__init_dfi_worker")
+        f.found && f.name == "__init_dfi_worker"
+    }
+}
