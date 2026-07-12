@@ -3561,10 +3561,22 @@ const char* avra_sha256_hex(const char* s) {
 
 // Read mtime + size for a file. Returns 1 on success, 0 on miss.
 // Used by the sha256_file sidecar memo below.
+// pdme.1: the mtime is reported at NANOSECOND granularity. Whole-second
+// mtimes made the sha sidecar trust a stale hash whenever a file was
+// rewritten with the same size within the same second — the exact
+// mtime-tie disease 41ul documented for `find -newer`, resurfacing here
+// as "revert an edit, fingerprints keep the edited value". Sub-second
+// edit→compile cycles are the norm for tooling-driven loops, so ties
+// were common, not exotic. Existing whole-second sidecar envelopes
+// simply mismatch once and re-hash — self-healing.
 static int avra_stat_mtime_size(const char* path, long* mtime_out, long* size_out) {
     struct stat st;
     if (stat(path, &st) != 0) return 0;
-    *mtime_out = (long)st.st_mtime;
+#ifdef __APPLE__
+    *mtime_out = (long)st.st_mtimespec.tv_sec * 1000000000L + (long)st.st_mtimespec.tv_nsec;
+#else
+    *mtime_out = (long)st.st_mtim.tv_sec * 1000000000L + (long)st.st_mtim.tv_nsec;
+#endif
     *size_out = (long)st.st_size;
     return 1;
 }

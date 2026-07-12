@@ -25,6 +25,7 @@ use core.{
     avra_pkg_fp_cache_get,
     avra_pkg_fp_cache_set,
 }
+use build.graph.{build_graph, Unit}
 
 /// A computed fingerprint. Wraps the raw 64-char hex string so the
 /// type signature surfaces "this is a fingerprint, not just any hash"
@@ -191,6 +192,84 @@ export fn fp_short(fp: Fingerprint) -> string {
 /// Per-file metas (emit_per_file_metas) keep their per-file fingerprint
 /// scheme — each sub-mod has its own slot keyed on its own sha256.
 /// This function is exclusively for the package-aggregate slot.
+/// pdme.1: dep-aware whole-package fingerprint — the cargo/go pattern.
+/// `package_source_fingerprint` (fp_own) hashes only the package's OWN
+/// src/ tree, so when P depends on Q and Q's source changes, P's key is
+/// unchanged and consumers silently reuse P's stale aggregated meta
+/// (stubs generated against Q's OLD shape). This composite folds each
+/// direct dep's full fingerprint in, transitively: editing any leaf
+/// changes fp_full for every reverse-dependent, so every reverse-
+/// dependent's cache correctly misses.
+///
+///   fp_full(P) = sha256(fp_own(P) + Σ dep_name=fp_full(dep))
+///
+/// The dep graph comes from the manifests' declared [dependencies]
+/// (build_graph — already transitive, cycle-detecting, topo-sorting),
+/// not from scraping `use` statements: declarations are the contract,
+/// and the graph walk is shared with the build driver.
+///
+/// Returns "" (like fp_own) when pkg_root has no avra.toml — ad-hoc
+/// single-file compiles keep their file-level scheme. A dep-graph
+/// error (cycle, missing dep manifest) also returns "" after
+/// reporting: consumers degrade to fast-path-off/recompute — the
+/// safe direction — rather than silently keying on a partial graph.
+///
+/// Memoised per (process, pkg_root) alongside fp_own under a
+/// namespaced key: source can't change mid-invocation.
+export fn package_full_fingerprint(pkg_root: string) -> string {
+    if pkg_root == "" { return "" }
+    if avra_selfhost_file_exists(pkg_root + "/avra.toml") == 0 { return "" }
+    let memo_key = "full:" + pkg_root
+    let cached = avra_pkg_fp_cache_get(memo_key)
+    if cached != "" { return cached }
+    let root = fp_trailing_slash(pkg_root)
+    let g = build_graph(root)
+    if g.had_error {
+        eprintln("[pkg-fp] dependency graph error under ${pkg_root}: ${g.error} — dep-aware fingerprint unavailable")
+        return ""
+    }
+    // g.units is topo-sorted (deps before dependents), so each unit's
+    // direct-dep fps are already computed when its turn comes.
+    mut names: List<string> = []
+    mut fps: List<string> = []
+    mut root_fp = ""
+    for u in g.units {
+        mut composed = "avra/pkg-full v1\n"
+        composed = composed + "own:" + package_source_fingerprint(u.project_root) + "\n"
+        for d in u.dep_names {
+            composed = composed + "dep:" + d + "=" + full_fp_lookup(names, fps, d) + "\n"
+        }
+        let fp = sha256_hex(composed)
+        names.push(u.name)
+        fps.push(fp)
+        // The root unit is the one rooted at the path we asked about —
+        // matched structurally rather than assuming topo order puts it
+        // last.
+        if u.project_root == root { root_fp = fp }
+    }
+    if root_fp == "" { return "" }
+    avra_pkg_fp_cache_set(memo_key, root_fp)
+    root_fp
+}
+
+/// Positional lookup for the topo-walk's name→fp accumulator. A
+/// missing name folds as "" — deterministic, and unreachable when
+/// build_graph succeeded (every dep_name has a collected unit).
+fn full_fp_lookup(names: List<string>, fps: List<string>, target: string) -> string {
+    mut i = 0
+    while i < names.length {
+        if names[i] == target { return fps[i] }
+        i = i + 1
+    }
+    ""
+}
+
+/// build_graph requires a trailing slash on the root path.
+fn fp_trailing_slash(s: string) -> string {
+    if s.length == 0 { return "/" }
+    if s.substring(s.length - 1, s.length) == "/" { s } else { s + "/" }
+}
+
 export fn package_source_fingerprint(pkg_root: string) -> string {
     if pkg_root == "" { return "" }
     if avra_selfhost_file_exists(pkg_root + "/avra.toml") == 0 { return "" }

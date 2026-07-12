@@ -192,7 +192,11 @@ fn read_dependencies(content: string) -> List<Dep> {
         return []
     }
     let header = "[dependencies]"
-    let header_idx = content.index_of(header)
+    // Anchor the header at LINE START (or file start) — a bare
+    // index_of would match the literal text inside a comment ("# see
+    // [dependencies] below"), start the section body mid-comment, and
+    // silently parse zero deps (pdme.1 hit exactly this).
+    let header_idx = find_section_header_at_line_start(content, header)
     if header_idx < 0 { return [] }
     let body_start = header_idx + header.length
     // Find the next [ at line start, or end of string. Section ends
@@ -201,6 +205,25 @@ fn read_dependencies(content: string) -> List<Dep> {
     let section = content.substring(body_start, body_end)
 
     parse_dep_lines(section)
+}
+
+/// Find `header` occurring at the start of a line (or of the file).
+/// Returns the index of the `[`, or -1 when no line-anchored
+/// occurrence exists. Skips occurrences embedded in comments or
+/// values, which a bare index_of would happily match.
+fn find_section_header_at_line_start(content: string, header: string) -> int {
+    mut from = 0
+    while from < content.length {
+        let rest = content.substring(from, content.length)
+        let rel = rest.index_of(header)
+        if rel < 0 { return 0 - 1 }
+        let idx = from + rel
+        if idx == 0 || content.byte(idx - 1) == 10 {  // file start or \n
+            return idx
+        }
+        from = idx + 1
+    }
+    0 - 1
 }
 
 /// Find the next `\n[` (next section header) starting from `from`.

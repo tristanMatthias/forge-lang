@@ -98,7 +98,7 @@ use @std.avrac.build.{
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
-    package_source_fingerprint,
+    package_full_fingerprint,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -1655,6 +1655,10 @@ fn run_build_command(args: BuildArgs) {
     let compiler_path = resolve_compiler_path(project_dir)
 
     let target_kind = if prefer_lib { "lib" } else { "bin" }
+    // pdme.1: fold the package's dep-aware full fingerprint into the
+    // unit key, so editing any source in the dep closure (not just the
+    // entry file) misses the cache. "" (no manifest) → no dep axis.
+    let full_fp = package_full_fingerprint(project_dir)
     let inputs = BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
@@ -1669,6 +1673,7 @@ fn run_build_command(args: BuildArgs) {
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        dep_fps: if full_fp == "" { [] } else { [full_fp] },
     }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE
@@ -1738,9 +1743,10 @@ fn run_build_command(args: BuildArgs) {
                 if file_exists(cached_meta) != 0 {
                     let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
                     if size_str != "" && size_str != "0" {
-                        // 2wfp: source-keyed slot uses whole-package fp.
+                        // 2wfp/pdme.1: source-keyed slot uses the dep-aware
+                        // whole-package fp.
                         let pkg_root = package_root_for_file(entry_path)
-                        let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                        let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
@@ -1837,9 +1843,10 @@ fn run_build_command(args: BuildArgs) {
             // a colocated mirror for cache hits to copy back without
             // rederiving the source fingerprint.
             if pr.success && args.emit_metadata {
-                // 2wfp: source-keyed slot uses whole-package fp.
+                // 2wfp/pdme.1: source-keyed slot uses the dep-aware
+                // whole-package fp.
                 let pkg_root = package_root_for_file(entry_path)
-                let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
                 let pkg_cache = cache_for(pkg_root)
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {
@@ -2203,6 +2210,10 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         overflow_checks: true,
         coverage: false,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        // Test units carry no dep_fps: `sources` already rolls the whole
+        // @std universe in (append_shared_sources), so dep content is
+        // keyed there.
+        dep_fps: [],
     }
 }
 
@@ -3591,6 +3602,14 @@ fn cmd_compile(args: CliResult) -> int {
             && !cpath.starts_with("/tmp/")
         let dest_ll = "${cpath}.ll"
         let bs2_path = avra_selfhost_get_arg_cstr(0)
+        // pdme.1: key the compile unit on the entry's package full
+        // fingerprint too. sources=[cpath] alone missed every edit to a
+        // NON-entry file in the closure (parse/mod.av, typeck/mod.av, …),
+        // so a plain rebuild served the stale .ll and re-linked the
+        // PREVIOUS compiler — the "stale bs2 masks your change" dev-loop
+        // bug. Ad-hoc compiles (no manifest at pkg_root) get "" → no
+        // dep axis, same file-hash-only behaviour as before.
+        let compile_full_fp = package_full_fingerprint(package_root_for_file(cpath))
         let compile_inputs = BuildInputs {
             project_root: pkg_dir,
             unit_name: "compile:" + cpath,
@@ -3605,6 +3624,7 @@ fn cmd_compile(args: CliResult) -> int {
             overflow_checks: true,
             coverage: false,
             lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+            dep_fps: if compile_full_fp == "" { [] } else { [compile_full_fp] },
         }
         let mut compile_publish_fp: Fingerprint? = null
         if cache_eligible {
@@ -3784,7 +3804,7 @@ fn cmd_compile(args: CliResult) -> int {
             // detected pkg_root) keep the original file-fp scheme.
             let pkg_root = package_root_for_file(cpath)
             let cache = cache_for(pkg_root)
-            let pkg_fp = package_source_fingerprint(pkg_root)
+            let pkg_fp = package_full_fingerprint(pkg_root)
             let source_fp = if pkg_fp != "" {
                 Fingerprint { hex: pkg_fp }
             } else {
