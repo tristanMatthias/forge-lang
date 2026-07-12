@@ -33,6 +33,25 @@ spec "type-param-shadowed annotations are exempt from F1004" {
             "fn main() { println(string(apply(41) + 1)) }\n")
         out.contains("42")
     }
+    then "a nested helper does not leak its scope over the enclosing fn" {
+        // The helper's (empty) type-param scope must be restored on exit —
+        // otherwise the enclosing fn's own `let y: T` after the helper
+        // spuriously F1004s under the helper's scope. Check-level witness:
+        // nested fn DECLARATIONS are typechecked but not yet supported by
+        // codegen (tracked separately), so the leak is observable only in
+        // the checker's output.
+        write_fixture("/tmp/avra_f1004_nested_helper.av",
+            "type T<U> = { val: U }\n" +
+            "fn outer<T>(x: T) -> T {\n" +
+            "    fn helper(n: int) -> int { n + 1 }\n" +
+            "    let y: T = x\n" +
+            "    let _ = helper(1)\n" +
+            "    y\n" +
+            "}\n" +
+            "fn main() { println(string(outer(41) + 1)) }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f1004_nested_helper.av 2>&1 || true")
+        !out.contains("F1004")
+    }
     then "the same bare annotation in a NON-generic fn still F1004s" {
         write_fixture("/tmp/avra_f1004_true_positive.av",
             "type T<U> = { val: U }\n" +

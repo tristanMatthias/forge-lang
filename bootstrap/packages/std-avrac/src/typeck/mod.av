@@ -2319,7 +2319,13 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
-            let result = tc_exit(checked)
+            // Restore the ENCLOSING fn identity + type-param scope alongside
+            // the scope pop — the checked TC flows on to sibling statements,
+            // and without this a nested helper's (empty) scope would leak
+            // into the rest of the enclosing body: annotations using the
+            // enclosing fn's type params would spuriously F1004, and their
+            // diagnostics would be attributed to the helper.
+            let result = tc_exit(checked) with { current_fn: tc.current_fn, current_scope_tp: tc.current_scope_tp }
             avra_ice_pop_fn()
             result
         }
