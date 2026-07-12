@@ -1,0 +1,95 @@
+// A positional declared `arg x { variadic true }` absorbs every remaining
+// positional: parse_tokens stops advancing the positional index at it (all
+// values bind to the one name), the generated run body binds the PLURAL
+// accessor (`let x: List<string> = result_get_args(args, "x")`), and
+// `required true` on a variadic means "at least one value". Exercises all
+// three layers — cmdgen threading the `variadic` config into the ArgDef and
+// the binding, parse_tokens absorbing the values, and result_get_args
+// returning them in argv order — plus the interleavings that matter to the
+// real consumer (`_test_shard`): flags between/after variadic values, the
+// `--key=value` form before them, and the space-separated `--key value` form
+// AFTER them (the orchestrator appends `--filter <f>` after the shard paths).
+//
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
+// @comptime bodies are available. `vrd_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn vrd_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command shard {\n" +
+    "        flag verbose {}\n" +
+    "        option jobs { default \"1\" }\n" +
+    "        arg paths { required true, variadic true }\n" +
+    "        run() {\n" +
+    "            println(\"N=\" + string(paths.length) + \" JOIN=\" + paths.join(\",\"))\n" +
+    "            println(\"JOBS=\" + jobs + \" V=\" + (if verbose { \"y\" } else { \"n\" }))\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "    command opt {\n" +
+    "        arg items { variadic true }\n" +
+    "        run() {\n" +
+    "            println(\"OPTN=\" + string(items.length))\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // one value → a single-element list.
+    "    println(\"A=\" + string(toy.run_argv([\"shard\", \"a.av\"])))\n" +
+    // N values → all bound to `paths`, argv order preserved.
+    "    println(\"B=\" + string(toy.run_argv([\"shard\", \"a.av\", \"b.av\", \"c.av\"])))\n" +
+    // zero values on a REQUIRED variadic → parse error → run_argv returns 1.
+    "    println(\"C=\" + string(toy.run_argv([\"shard\"])))\n" +
+    // `--key=value` before + a flag BETWEEN variadic values: both classified
+    // as non-positionals, so `paths` still collects exactly x.av + y.av.
+    "    println(\"D=\" + string(toy.run_argv([\"shard\", \"--jobs=4\", \"x.av\", \"--verbose\", \"y.av\"])))\n" +
+    // space-separated `--key value` AFTER a variadic positional — the
+    // orchestrator's `_test_shard <paths…> --filter <f>` ordering.
+    "    println(\"E=\" + string(toy.run_argv([\"shard\", \"z.av\", \"--jobs\", \"8\"])))\n" +
+    // an OPTIONAL variadic with zero values is fine (empty list, no error).
+    "    println(\"F=\" + string(toy.run_argv([\"opt\"])))\n" +
+    "}\n"
+}
+
+fn vrd_run() -> string {
+    write_fixture_and_run("/tmp/avra_variadic_arg_test.av", vrd_src())
+}
+
+spec "a variadic positional arg absorbs all remaining positionals" {
+    then "one value yields a single-element list" {
+        let out = vrd_run()
+        out.contains("N=1 JOIN=a.av") && out.contains("A=0")
+    }
+    then "N values all bind to the variadic arg in argv order" {
+        let out = vrd_run()
+        out.contains("N=3 JOIN=a.av,b.av,c.av") && out.contains("B=0")
+    }
+    then "zero values on a required variadic is a usage error (exit 1)" {
+        let out = vrd_run()
+        out.contains("C=1")
+    }
+    then "flags and =-options interleave without joining the variadic list" {
+        let out = vrd_run()
+        out.contains("N=2 JOIN=x.av,y.av") && out.contains("JOBS=4 V=y")
+    }
+    then "a space-separated option AFTER variadic values still parses" {
+        let out = vrd_run()
+        out.contains("N=1 JOIN=z.av") && out.contains("JOBS=8")
+    }
+    then "an optional variadic accepts zero values (empty list, no error)" {
+        let out = vrd_run()
+        out.contains("OPTN=0") && out.contains("F=0")
+    }
+}
