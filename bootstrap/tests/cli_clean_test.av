@@ -61,6 +61,26 @@ spec "bs2 clean --all: removes everything" {
     }
 }
 
+// phx5 Part B: `clean` now dispatches through the declarative App (avra.run()),
+// whose parser REJECTS an undeclared flag instead of silently ignoring it the
+// way the old bespoke argv scan did. A rejected invocation must exit non-zero
+// (so scripts see the failure), name the offending flag, and — because the
+// parse error stops dispatch before the run body — leave build/ untouched.
+spec "bs2 clean: rejects an unknown flag (declarative parse)" {
+    then "`clean --bogus` errors, exits non-zero, and does NOT run the clean" {
+        let project = setup_fixture()
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let probe = avra_shell_exec(
+            "cd " + project + " && (" + bs2 + " clean --bogus 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi) && " +
+            "echo --- && " +
+            "([ -f " + project + "build/junk.bin ] && echo junk=kept || echo junk=gone)")
+        let _ = teardown_fixture(project)
+        // rc=nonzero: the parse error exits non-zero; "unknown flag" names the
+        // offender; junk=kept: a rejected invocation must not run the clean.
+        probe.contains("rc=nonzero") && probe.contains("unknown flag") && probe.contains("junk=kept")
+    }
+}
+
 spec "bs2 cache info: reports the cache state" {
     then "info output mentions the cache path and entry count" {
         let project = setup_fixture()
