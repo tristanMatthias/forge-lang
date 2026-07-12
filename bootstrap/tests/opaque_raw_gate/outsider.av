@@ -1,0 +1,8 @@
+// NOT a friend: this module's peel must be refused (F3106). Handles
+// are compared and looked-up here, never inspected.
+use idlib.{Handle, make}
+
+export fn steal() -> int { make(9).raw() }
+
+// Comparison and pass-through stay legal — only the peel is gated.
+export fn same(a: Handle, b: Handle) -> bool { a == b }

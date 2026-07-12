@@ -611,11 +611,18 @@ fn module_path_to_fqn(path: string) -> string {
 
 /// True when `caller_module` may peel an @opaque newtype declared in
 /// `decl_module` with the given `friends`: the declaring module is
-/// always a friend; everyone else must be named.
+/// always a friend; everyone else must be named. A friend name
+/// matches exactly OR as a `::`-boundary suffix — in library/metadata
+/// builds every module FQN carries the package root
+/// (`@std::avrac::core::arena` vs the whole-program `core::arena`),
+/// and the same declaration must gate identically in both, so a
+/// friend written `core.arena` matches both spellings. The decl-vs-
+/// caller comparison needs no such tolerance: both names come from
+/// the same compile, so they carry the same prefix scheme.
 fn opaque_peel_allowed(caller_module: string, decl_module: string, friends: List<string>) -> bool {
     if caller_module == decl_module { return true }
     for f in friends {
-        if f == caller_module { return true }
+        if f == caller_module || caller_module.ends_with("::${f}") { return true }
     }
     false
 }

@@ -1,0 +1,4 @@
+mod idlib
+mod friendmod
+mod outsider
+fn main() { let _ = 0 }

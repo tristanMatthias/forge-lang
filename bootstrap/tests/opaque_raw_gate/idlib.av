@@ -1,0 +1,9 @@
+// The handle under test: an @opaque newtype whose .raw() peel is
+// legal only here (the declaring module) and in `friendmod`.
+@opaque("friendmod")
+export type Handle = int
+
+export fn make(v: int) -> Handle { Handle(v) }
+
+// Declaring-module peel — always allowed.
+export fn inspect_here(h: Handle) -> int { h.raw() }
