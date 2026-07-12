@@ -1826,9 +1826,18 @@ fn run_build_command(args: BuildArgs) {
             // / CI fall through to silent shell-exec.
             let count_raw = avra_shell_exec("find . -name '*.av' -not -path '*/build/*' -not -path '*/tests/*_fixtures/*' 2>/dev/null | wc -l").trim()
             let total_estimate = avra_parse_int(count_raw)
-            let _ = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
-            let t_after_compile = avra_uptime_ms()
+            // 18z8: the post-compile gate below trusts this path, so a
+            // stale .ll from ANY earlier run must go FIRST — "exists"
+            // may only ever mean "the child just produced it". With the
+            // leftover present, a crashed child sailed through the gate
+            // and its stale IR was published as `Built`.
             let ll_path = "${entry_path}.ll"
+            let _ = avra_remove_file(ll_path)
+            let compile_rc = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
+            let t_after_compile = avra_uptime_ms()
+            if compile_rc != 0 {
+                fail("error: compile failed (rc=${string(compile_rc)}) for ${entry_path}")
+            }
             if !file_exists(ll_path) {
                 fail("error: compile produced no IR (looked for ${ll_path})")
             }

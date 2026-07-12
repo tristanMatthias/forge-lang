@@ -1,0 +1,62 @@
+// 18z8: the `bs2 build` Miss path judged the child compile by
+// `file_exists(entry.ll)` — a stale .ll left by ANY earlier successful
+// run satisfied the gate even when the child just CRASHED (observed
+// live: child died rc=99, parent printed `Built …` and exited 0,
+// publishing the stale IR). Trust-by-existence on a non-atomic,
+// reused path: the zp5b/fxfz/kaux/rrio class.
+//
+// The fix is two-sided and these specs pin both:
+//   1. the parent now checks the child's REAL exit code —
+//      run_with_progress's non-TTY branch used to swallow it and
+//      return 0 unconditionally (every CI/pipe caller was blind);
+//   2. the stale artifact is removed before the child runs, so the
+//      "produced no IR" gate can only be satisfied by a fresh one.
+//
+// Driven end-to-end through a real `bs2 build` against a sandbox
+// package: stale .ll planted + broken source ⇒ the build FAILS and
+// never prints Built; fixed source ⇒ Built again (guards against
+// over-aggressive failure).
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid}
+
+extern fn avra_uptime_ms() -> int
+
+fn mk_pkg(slug: string) -> string {
+    let dir = "/tmp/avra_18z8_${slug}_${string(avra_getpid())}_${string(avra_uptime_ms())}"
+    avra_shell_exec("rm -rf '${dir}'")
+    let _ = avra_mkdir_p("${dir}/src")
+    let manifest = "[package]\nname = \"@fix/stale\"\nversion = \"0.1.0\"\n\n" +
+        "[bin]\nname = \"stale\"\npath = \"src/main.av\"\n"
+    let _ = avra_selfhost_write_file("${dir}/avra.toml", manifest)
+    dir
+}
+
+// Run `bs2 build` from the package dir with the shard env stripped
+// (metadata/lib-objs would change the compile shape) and both the
+// exit code and combined output captured. bs2 resolved to an absolute
+// path first — the command cd's into the sandbox.
+fn run_build(dir: string) -> string {
+    let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+    avra_shell_exec("cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT " +
+        "'${bs2}' build 2>&1; echo \"rc=$?\"")
+}
+
+spec "18z8: a stale entry .ll cannot mask a failed child compile" {
+    then "broken source + planted stale .ll fails the build (no Built)" {
+        let dir = mk_pkg("fail")
+        // Stale artifact from "an earlier successful run".
+        let _ = avra_selfhost_write_file("${dir}/src/main.av.ll", "; stale IR from a previous run\n")
+        // Source the child compile deterministically rejects.
+        let _ = avra_selfhost_write_file("${dir}/src/main.av", "fn main( {{{ this does not parse\n")
+        let out = run_build(dir)
+        avra_shell_exec("rm -rf '${dir}'")
+        !out.contains("Built") && !out.contains("rc=0")
+    }
+    then "valid source still reports Built (gate is not over-aggressive)" {
+        let dir = mk_pkg("ok")
+        let _ = avra_selfhost_write_file("${dir}/src/main.av", "fn main() { println(\"ok\") }\n")
+        let out = run_build(dir)
+        avra_shell_exec("rm -rf '${dir}'")
+        out.contains("Built") && out.contains("rc=0")
+    }
+}

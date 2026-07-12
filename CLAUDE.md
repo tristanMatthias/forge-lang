@@ -162,13 +162,12 @@ now misses the CLI unit cache by construction, and an mtime-only touch
 re-hashes to the same content and stays a cache hit. `make build-quick` on an
 unchanged tree is sub-second.
 
-If behavior still doesn't change after a rebuild, suspect the remaining open
-staleness hole: the lib build's post-compile `file_exists(entry.ll)` gate is
-satisfied by a STALE on-disk `.ll` from an earlier run (ticket 18z8) — `rm`
-the entry `.ll` before using a lib build as a probe (see Silent Failure
-Modes). Mutation→revert cycles are also content-keyed now: a revert restores
-the pre-mutation fingerprints, so the pre-mutation cache slots (correct
-results) are what reruns hit.
+The 18z8 hole is closed too: `bs2 build` now removes any stale entry `.ll`
+before the child compile and fails on the child's real exit code (the
+non-TTY progress runner used to swallow it), so a crashed child can no
+longer report `Built` off a leftover artifact. Mutation→revert cycles are
+also content-keyed now: a revert restores the pre-mutation fingerprints, so
+the pre-mutation cache slots (correct results) are what reruns hit.
 
 **Frozen-FAIL in the fixture-stdout cache (zp5b/fxfz).** Distinct from the
 compile caches above: the test runner also memoises each *fixture's stdout*
@@ -397,8 +396,8 @@ LLDB on the parent sees only SIGCHLDs; reproduce single-process first (below).
 the compiler is broken: comptime macro expansion of component/derive output is
 only consumed on the manifest-driven path. After any compiler change, the probe
 that covers it (this exact shape — cwd at the PACKAGE ROOT so the manifest +
-dep-metadata path engage, and `rm` the entry .ll first so a stale artifact
-can't mask a crashed child, ticket 18z8):
+dep-metadata path engage; the `rm` keeps the probe self-evident even though
+`bs2 build`'s own stale-.ll gate is fixed, 18z8):
 
 ```bash
 cd packages/std-avrac && rm -f src/avrac.av.ll && AVRA_USE_METADATA=1 \
@@ -452,7 +451,7 @@ These bugs build successfully but corrupt memory at runtime.
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 - **Stale seed after a base change → misleading `expects X, got X` errors:** after rebasing/restarting a branch onto a newer integration base, the gitignored local `seed/seed.ll` stays at the OLD version and compiles the newer source with an older compiler — throwing F1000 `expects @…::ExprId, got @…::ExprId` (identical expected/got) that mimics a type-checker bug, not a seed mismatch. Re-fetch the pin first: `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch`.
-- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. Known open instance: the lib build's post-compile `file_exists(entry.ll)` check is satisfied by a STALE .ll from an earlier run, so a crashed child compile still reports `Built` (ticket 18z8) — always `rm` the entry `.ll` before using a lib build as a pass/fail probe.
+- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. The historical instance (18z8 — the lib build's `file_exists(entry.ll)` gate satisfied by a STALE .ll, so a crashed child compile reported `Built`) is FIXED: the stale artifact is removed before the child runs and the child's real exit code gates the result (the non-TTY progress runner used to return 0 unconditionally). Meta reads are validated too (pdme.2 `metadata_slot_matches`): a slot serves only when whole AND stamped with the key it was looked up under.
 - **Unmatched tag `-559038737` / `0xffffffffdeadbeef` = the CLOSURE MARKER, not freed memory.** That constant is `closure_marker()` (codegen/types.av) — the head of a closure array `[MARKER, fn_ptr, captures…]`. Seeing it as an enum tag means a FUNCTION REFERENCE landed where a value belongs. Historically the first suspect was a fn-name/local-name collision, but **that class is now FIXED (ticket zo1a, #667/#691)**: locals AND match-arm pattern bindings reliably shadow same-named fns (the qualifier threads let/loop/pattern bindings), and module-private fns don't leak cross-module (a bare cross-module private ref is F3000, never a silent closure). So a closure marker today points at a genuine codegen/memory bug — a value slot that received a fn reference — NOT a shadow collision; investigate the emitting codegen path directly. Regression guards: `resolve/tests/pattern_var_shadows_fn_test.av`, `resolve/tests/local_value_shadows_import_test.av`, `tests/err_private_cross_module_test.av`. **Caveat:** reproducing the OLD corruption requires a **stale/contaminated `seed/seed.ll`** whose resolver predates the fix — always `sha256sum bootstrap/seed/seed.ll` and confirm it matches `bootstrap/seed/seed.lock` before diagnosing a "shadow" crash; a mismatch IS the bug (`rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch` restores the pin).
 
 ## CLI Commands

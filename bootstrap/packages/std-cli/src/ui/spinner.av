@@ -22,8 +22,9 @@
 // per-call flushed and the parent can tick at any cadence
 // regardless of compile speed.
 //
-// Both fall through to a silent `avra_shell_exec` on a non-TTY so
-// CI logs stay byte-clean.
+// Both fall through to `run_plain` on a non-TTY: no UI, stdout stays
+// quiet on success (CI logs byte-clean), the child's REAL exit code
+// is returned, and its output is surfaced on failure (18z8).
 
 extern fn avra_isatty_stdout() -> int
 extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
@@ -33,6 +34,7 @@ extern fn avra_sleep_ms(ms: int)
 extern fn avra_uptime_ms() -> int
 extern fn avra_stdout_write(s: string)
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_parse_int(s: string) -> int
@@ -58,17 +60,36 @@ fn spinner_frames() -> List<string> {
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 }
 
+/// 18z8: non-TTY / spawn-fallback execution — same child, no UI, REAL
+/// exit code. Both UI fns used to run `avra_shell_exec(cmd)` here and
+/// return 0 unconditionally, so every CI/pipe caller was blind to
+/// child failures (a crashed lib-build child compile reported
+/// `Built`). Output discipline matches the TTY paths: quiet on
+/// success (stdout captured into the wait envelope), surfaced via
+/// emit_failure_output on failure so non-interactive logs carry the
+/// diagnostics.
+fn run_plain(cmd: string) -> int {
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+    if handle < 0 {
+        // Spawn machinery unavailable — degrade to a pass-through
+        // shell that still reports the real rc.
+        return avra_shell_exec_status(cmd)
+    }
+    let final_json = avra_process_wait(handle)
+    let rc = pool_extract_rc(final_json)
+    if rc != 0 { emit_failure_output(final_json) }
+    rc
+}
+
 /// Run `cmd` via `/bin/sh -c <cmd>` while rendering a single-line
 /// `<label>  <spin> <elapsed>s` indicator on stdout.
 export fn run_with_spinner(cmd: string, label: string) -> int {
     if !is_tty() {
-        let _ = avra_shell_exec(cmd)
-        return 0
+        return run_plain(cmd)
     }
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
     if handle < 0 {
-        let _ = avra_shell_exec(cmd)
-        return 0
+        return run_plain(cmd)
     }
     let frames = spinner_frames()
     let t_start = avra_uptime_ms()
@@ -109,16 +130,14 @@ export fn run_with_spinner(cmd: string, label: string) -> int {
 /// line when the package changes).
 export fn run_with_progress(cmd: string, label: string, total: int) -> int {
     if !is_tty() {
-        let _ = avra_shell_exec(cmd)
-        return 0
+        return run_plain(cmd)
     }
     let progress_file = "/tmp/avra_progress_${string(avra_uptime_ms())}.log"
     let _ = avra_shell_exec("rm -f ${progress_file}; touch ${progress_file}")
     let progress_cmd = "AVRA_BUILD_PROGRESS_FILE='${progress_file}' ${cmd}"
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(progress_cmd)}]", "")
     if handle < 0 {
-        let _ = avra_shell_exec(cmd)
-        return 0
+        return run_plain(cmd)
     }
     let t_start = avra_uptime_ms()
     mut active = ""               // currently-parsing module
