@@ -1105,6 +1105,15 @@ ensure_bs2() {
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
     log "compiling packages/cli/src/main.av with seed compiler"
+    # The SEED performs this compile, and the pinned seed can predate
+    # the dep-aware compile-cache key (pdme.1): an older seed keys the
+    # unit on the ENTRY file only, so after a NON-entry edit (the very
+    # situation source_newer_than just detected) it would HIT its stale
+    # slot and silently re-link the previous bs2. We only reach this
+    # branch when a source genuinely changed, so a fresh compile is
+    # owed regardless — drop the unit cache so no seed vintage can
+    # serve stale here.
+    rm -rf "$CLI_SRC_DIR/build/cache"
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"

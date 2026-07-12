@@ -152,15 +152,16 @@ with `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh
 ### Dev-loop build freshness (pdme.1 + 6cks LANDED — the stale-bs2 bug is fixed)
 
 The historical "a plain `make build-quick` re-links the previous bs2 after a
-non-entry edit" bug is FIXED: the compile-cache key now folds the entry
-package's dep-aware full fingerprint (`package_full_fingerprint`, pdme.1 —
-every source in the manifest dep closure participates), and diagnose.sh's
-`source_newer_than` uses a portable stat (6cks — on Linux the BSD `stat -f %m`
-spelling had made the freshness probe rebuild unconditionally or never,
-depending on coreutils version). Editing `parse/mod.av`, `typeck/mod.av`, etc.
-now misses the CLI unit cache by construction, and an mtime-only touch
-re-hashes to the same content and stays a cache hit. `make build-quick` on an
-unchanged tree is sub-second.
+non-entry edit" bug is FIXED, at two layers: (1) the compile-cache key folds
+the entry package's dep-aware full fingerprint (`package_full_fingerprint`,
+pdme.1 — every source in the manifest dep closure participates), and
+diagnose.sh's `source_newer_than` uses a portable stat (6cks); (2) because the
+bs2 rebuild itself is performed by the PINNED SEED — which can predate pdme.1
+and would key entry-only, serving its own stale slot — `ensure_bs2` drops the
+CLI unit cache before the seed compile (a rebuild only triggers when a source
+genuinely changed, so a fresh compile is owed anyway). Editing `parse/mod.av`,
+`typeck/mod.av`, etc. now propagates on a plain `make build-quick` regardless
+of seed vintage, and `make build-quick` on an unchanged tree is sub-second.
 
 The 18z8 hole is closed too: `bs2 build` now removes any stale entry `.ll`
 before the child compile and fails on the child's real exit code (the

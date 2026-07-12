@@ -64,21 +64,15 @@ fn spinner_frames() -> List<string> {
 /// exit code. Both UI fns used to run `avra_shell_exec(cmd)` here and
 /// return 0 unconditionally, so every CI/pipe caller was blind to
 /// child failures (a crashed lib-build child compile reported
-/// `Built`). Output discipline matches the TTY paths: quiet on
-/// success (stdout captured into the wait envelope), surfaced via
-/// emit_failure_output on failure so non-interactive logs carry the
-/// diagnostics.
+/// `Built`). Stream contract is byte-identical to the old path: the
+/// child's stdout is discarded (CI logs stay clean — the redirect
+/// wraps the whole command in a group so `&&` chains can't dodge it)
+/// while its stderr passes through LIVE, so diagnostics, warnings,
+/// and the `[pkg]` banner keep flowing exactly as before. Only the
+/// return value changes: the child's real exit code instead of a
+/// hardcoded 0.
 fn run_plain(cmd: string) -> int {
-    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
-    if handle < 0 {
-        // Spawn machinery unavailable — degrade to a pass-through
-        // shell that still reports the real rc.
-        return avra_shell_exec_status(cmd)
-    }
-    let final_json = avra_process_wait(handle)
-    let rc = pool_extract_rc(final_json)
-    if rc != 0 { emit_failure_output(final_json) }
-    rc
+    avra_shell_exec_status("{ ${cmd} ; } >/dev/null")
 }
 
 /// Run `cmd` via `/bin/sh -c <cmd>` while rendering a single-line
