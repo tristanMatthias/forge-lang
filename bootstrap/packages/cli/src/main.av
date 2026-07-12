@@ -3794,8 +3794,6 @@ fn cmd_compile(args: CliResult) -> int {
             } else {
                 basename_no_ext(cpath)
             }
-            let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
@@ -3810,6 +3808,15 @@ fn cmd_compile(args: CliResult) -> int {
             } else {
                 Fingerprint { hex: sha256_hex(csource) }
             }
+            // pdme.2: the header carries the SLOT KEY (source_fp), not
+            // the entry file's hash — the consumer's read-validation
+            // gate (metadata_slot_matches) compares the stored fp
+            // against the key it looked the slot up under, so producer
+            // and consumer must agree on one notion. Old slots stamped
+            // with the entry hash simply fail the gate once and get
+            // re-emitted — self-healing.
+            let fp = bytes_from_hex(source_fp.hex)
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             let _ = ensure_source_meta_dir(cache, source_fp)
             let cache_meta_path = entry_source_meta_path(cache, source_fp)
             if metadata_write(cache_meta_path, unit_meta) != 1 {

@@ -1513,3 +1513,55 @@ export fn metadata_read(path: string) -> UnitMetadata {
 export fn metadata_file_exists(path: string) -> bool {
     avra_selfhost_file_exists(path) != 0
 }
+
+/// pdme.2: header-only read for cheap validation gates. Unlike
+/// `metadata_read` (which decodes every section, and whose reader
+/// happily overruns a truncated buffer), this bounds-checks every
+/// step and returns a `magic == 0` sentinel for anything that is not
+/// a whole, well-formed header — missing file, 0-byte file, killed
+/// mid-write truncation, or foreign bytes at the path. Callers gate
+/// on `magic == METADATA_MAGIC` before trusting any field.
+export fn metadata_read_header(path: string) -> MetadataHeader {
+    let bad = MetadataHeader {
+        magic: 0, version_major: 0, version_minor: 0,
+        unit_name: "", fingerprint: avra_bytes_make(0), section_count: 0,
+    }
+    let buf = avra_selfhost_read_file_bytes(path)
+    // Fixed prefix: magic(4) + vmaj(2) + vmin(2) + name_len(4).
+    if buf.length < 12 { return bad }
+    let r = reader_new(buf)
+    let magic = r.u32_le()
+    if magic != METADATA_MAGIC { return bad }
+    let vmaj = r.u16_le()
+    let vmin = r.u16_le()
+    let name_len = r.u32_le()
+    // The rest of the header — name bytes + 32-byte fingerprint +
+    // section_count — must fit inside the buffer. A truncated file
+    // fails HERE instead of the reader running off the end.
+    if r.remaining() < name_len + 32 + 4 { return bad }
+    let name_bytes = r.raw(name_len)
+    let name = avra_string_from_bytes(name_bytes)
+    let fp = r.raw(32)
+    let n = r.u32_le()
+    MetadataHeader {
+        magic: magic, version_major: vmaj, version_minor: vmin,
+        unit_name: name, fingerprint: fp, section_count: n,
+    }
+}
+
+/// pdme.2: the read-side validation gate. True only when the slot at
+/// `path` is a whole metadata file whose STORED fingerprint matches
+/// `expected_hex` — the key the caller looked the slot up under. The
+/// content-addressed path already encodes the key, but the path
+/// proves nothing about the BYTES at it: a truncated write, an
+/// orphaned entry from an older key scheme, or foreign bytes would
+/// otherwise be served by mere existence (the zp5b/fxfz/kaux trust-
+/// by-existence class). Major-version drift is rejected too — an
+/// incompatible wire format must recompile, not mis-decode.
+export fn metadata_slot_matches(path: string, expected_hex: string) -> bool {
+    if expected_hex == "" { return false }
+    let hdr = metadata_read_header(path)
+    hdr.magic == METADATA_MAGIC
+        && hdr.version_major == METADATA_VERSION_MAJOR
+        && avra_bytes_to_hex(hdr.fingerprint) == expected_hex
+}
