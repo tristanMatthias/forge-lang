@@ -215,4 +215,23 @@ spec "metadata synthesis: mangled method fns keep their qualified name" {
         let f = find_extern_by_suffix(store, synth, "__init_dfi_worker")
         f.found && f.name == "__init_dfi_worker"
     }
+    then "an unqualified mangled name synthesizes unchanged" {
+        // A producer with no module wrap (single-file unit) stores the
+        // bare mangled name; local == stored, so both branches agree.
+        let fns: List<FnDeclEntry> = [walker_shaped_fn("Color__dup")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("", fns), store)
+        let f = find_fn_by_suffix(store, synth, "Color__dup")
+        f.found && f.name == "Color__dup"
+    }
+    then "a plain fn under a `__`-containing MODULE path keeps its local name" {
+        // The mangled-method check reads the LOCAL segment, not the
+        // whole qualified name — a `__` in a module segment must not
+        // drag the full path into the Function's name.
+        let fns: List<FnDeclEntry> = [plain_fn("@t::pkg::my__mod::mk_color")]
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", fns), store)
+        let f = find_fn_by_suffix(store, synth, "mk_color")
+        f.found && f.name == "mk_color"
+    }
 }
