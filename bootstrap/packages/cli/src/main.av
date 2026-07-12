@@ -331,8 +331,10 @@ component cli {}
 @expand(expand_command)
 component command implements Runnable {}
 
-// Parsed view of `avra docs ...` argv. Keeps the main() handler from
-// drowning in 100+ lines of flag-by-flag if statements.
+// A `avra docs` invocation's parsed arguments. Its fields mirror the
+// declarative `command docs` schema (flags / options / arg) one-to-one; the
+// command's `run()` block builds one from the parsed CliResult and hands it to
+// run_docs_command.
 type DocsArgs = {
     want_symbols: bool,
     want_short: bool,
@@ -348,118 +350,6 @@ type DocsArgs = {
     scope: string,
     format: string,
     query: string,
-}
-
-fn docs_args_default() -> DocsArgs {
-    DocsArgs {
-        want_symbols: false, want_short: false, want_llm: false,
-        want_validate: false, want_callers: false, want_no_cache: false,
-        want_doctest: false, want_gen: false, want_print: false,
-        search_term: "", module_path: "", scope: "project",
-        format: "human", query: "",
-    }
-}
-
-// Apply a pure flag (toggle one bool, no value). matched=false means
-// arg wasn't a recognised pure flag and the caller should keep parsing.
-type FlagApply = { args: DocsArgs, matched: bool }
-
-fn pure_flag_apply(arg: string, a: DocsArgs) -> FlagApply {
-    match arg {
-        "--symbols"  -> matched_flag(a with { want_symbols: true })
-        "--short"    -> matched_flag(a with { want_short: true })
-        "--llm"      -> matched_flag(a with { want_llm: true })
-        "--validate" -> matched_flag(a with { want_validate: true })
-        "--callers"  -> matched_flag(a with { want_callers: true })
-        "--used-by"  -> matched_flag(a with { want_callers: true })
-        "--no-cache" -> matched_flag(a with { want_no_cache: true })
-        "--doctest"  -> matched_flag(a with { want_doctest: true })
-        "--print"    -> matched_flag(a with { want_print: true })
-        _            -> FlagApply { args: a, matched: false }
-    }
-}
-
-fn matched_flag(a: DocsArgs) -> FlagApply { FlagApply { args: a, matched: true } }
-
-// Read the value attached to a `--key` flag at argv[idx]: returns the
-// value plus the number of argv slots consumed (1 for `--key=value`,
-// 2 for `--key value`). The prefix length is computed from `key`
-// rather than passed in — every caller would otherwise risk a
-// hand-counted off-by-one.
-type KvRead = { value: string, consumed: int }
-
-fn read_kv_value(idx: int, key: string) -> KvRead {
-    let arg = avra_selfhost_get_arg_cstr(idx)
-    if arg.starts_with("${key}=") {
-        return KvRead { value: arg.substring(key.length + 1, arg.length), consumed: 1 }
-    }
-    if idx + 1 < avra_selfhost_argc() {
-        return KvRead { value: avra_selfhost_get_arg_cstr(idx + 1), consumed: 2 }
-    }
-    KvRead { value: "", consumed: 1 }
-}
-
-fn matches_kv_flag(arg: string, key: string) -> bool {
-    arg == key || arg.starts_with("${key}=")
-}
-
-fn parse_docs_args() -> DocsArgs {
-    mut a = docs_args_default()
-    mut k = 2
-    while k < avra_selfhost_argc() {
-        let arg = avra_selfhost_get_arg_cstr(k)
-        let pure = pure_flag_apply(arg, a)
-        if pure.matched {
-            a = pure.args
-            k = k + 1
-            continue
-        }
-        // --gen with optional positional symbol name.
-        if arg == "--gen" {
-            a = a with { want_gen: true }
-            if k + 1 < avra_selfhost_argc() {
-                let next = avra_selfhost_get_arg_cstr(k + 1)
-                if !next.starts_with("-") {
-                    a = a with { query: next }
-                    k = k + 2
-                    continue
-                }
-            }
-            k = k + 1
-            continue
-        }
-        // --key value / --key=value pairs.
-        if matches_kv_flag(arg, "--scope") {
-            let r = read_kv_value(k, "--scope")
-            a = a with { scope: r.value }
-            k = k + r.consumed
-            continue
-        }
-        if matches_kv_flag(arg, "--format") {
-            let r = read_kv_value(k, "--format")
-            a = a with { format: r.value }
-            k = k + r.consumed
-            continue
-        }
-        if matches_kv_flag(arg, "--module") {
-            let r = read_kv_value(k, "--module")
-            a = a with { module_path: r.value }
-            k = k + r.consumed
-            continue
-        }
-        if matches_kv_flag(arg, "--search") {
-            let r = read_kv_value(k, "--search")
-            a = a with { search_term: r.value }
-            k = k + r.consumed
-            continue
-        }
-        // Positional symbol query — first non-flag token.
-        if !arg.starts_with("-") && a.query == "" {
-            a = a with { query: arg }
-        }
-        k = k + 1
-    }
-    a
 }
 
 // "No symbol 'foo' found" + optional did-you-mean hint. Centralised
@@ -3358,12 +3248,12 @@ fn resolve_llvm_prefix() -> string {
     llvm_prefix_dir()
 }
 
-// Top-level dispatch for `avra docs`. Pulls argv via parse_docs_args,
-// loads the requested corpus, then routes to the matching renderer.
-// Used to live inline in main(); split out so main()'s body stays
+// Top-level dispatch for `avra docs`. `args` is built from the parsed
+// CliResult by the declarative `command docs` block (its schema mirrors the
+// DocsArgs fields); this loads the requested corpus and routes to the matching
+// renderer. Used to live inline in main(); split out so main()'s body stays
 // readable as the docs surface keeps growing.
-fn run_docs_command() {
-    let args = parse_docs_args()
+fn run_docs_command(args: DocsArgs) {
     let project_dir = avra_process_env_get("PWD")
 
     if args.want_validate {
@@ -4177,10 +4067,33 @@ cli avra {
         flag short { description "Show just the one-liner for a symbol" }
         flag llm { description "Compact LLM-friendly project documentation" }
         flag validate { description "Validate documentation coverage for the project" }
+        flag callers { description "Show the callers of a symbol (reverse call graph)", alias "--used-by" }
+        flag no_cache { description "Bypass the cached symbol index and re-extract" }
+        flag doctest { description "Run doc examples (```avra fences) as tests" }
+        flag gen { description "Generate documentation scaffolding for a symbol" }
+        flag print { description "Print generated output to stdout (with --gen)" }
+        option scope { description "Documentation corpus scope (default: project)", default "project" }
+        option format { description "Output format (default: human)", default "human" }
+        option module { description "Restrict the lookup to a specific module path" }
         option search { description "Search project docs (substring match)" }
         arg query { description "Symbol to look up (function, type, enum name)" }
         run() {
-            run_docs_command()
+            run_docs_command(DocsArgs {
+                want_symbols: symbols,
+                want_short: short,
+                want_llm: llm,
+                want_validate: validate,
+                want_callers: callers,
+                want_no_cache: no_cache,
+                want_doctest: doctest,
+                want_gen: gen,
+                want_print: print,
+                search_term: search,
+                module_path: module,
+                scope: scope,
+                format: format,
+                query: query,
+            })
             0
         }
     }
@@ -4194,27 +4107,24 @@ cli avra {
 fn main() {
     // Dispatch is split in two. The declarative commands (compile, check, run,
     // expr, fmt, fix, program, eval, metadata_show, expand, clean, cache, lsp,
-    // lang) parse via `avra.run()`: it reads the real argv against the matched
-    // command's schema and calls that command's `run(args)` body, which reads
-    // its flags/args off the parsed `CliResult`.
+    // lang, docs) parse via `avra.run()`: it reads the real argv against the
+    // matched command's schema and calls that command's `run(args)` body, which
+    // reads its flags/args off the parsed `CliResult`.
     //
-    // The compiler-internal commands below (build, test, docs, and the internal
+    // The compiler-internal commands below (build, test, and the internal
     // _test_shard) still own bespoke raw-argv parsers and are dispatched here by
     // name. The `App` parser now models every argv shape they use —
     // space-separated `--key value` options, word aliases (`--used-by` for
-    // `--callers`), and option-form flag aliases (`--message-format=json`), all
-    // landed in phx5 A1/A2 — so this guard is being retired one command at a
-    // time: each handler is converted to read from `CliResult` and its branch
-    // dropped here (phx5 Part B → the vez6.12 single-`avra.run()` collapse). The
-    // `command … { run() … }` blocks above already carry the schema + `--help`;
-    // converting a command just moves its dispatch onto that block (see `clean`,
-    // `cache`, `lsp`, `lang`, converted so far).
+    // `--callers`, now live in `docs`), and option-form flag aliases
+    // (`--message-format=json`), all landed in phx5 A1/A2 — so this guard is
+    // being retired one command at a time: each handler is converted to read
+    // from `CliResult` and its branch dropped here (phx5 Part B → the vez6.12
+    // single-`avra.run()` collapse). The `command … { run() … }` blocks above
+    // already carry the schema + `--help`; converting a command just moves its
+    // dispatch onto that block (see `clean`, `cache`, `lsp`, `lang`, `docs`,
+    // converted so far).
     if avra_selfhost_argc() >= 2 {
         let cmd0 = avra_selfhost_get_arg_cstr(1)
-        if cmd0 == "docs" {
-            run_docs_command()
-            return
-        }
         if cmd0 == "test" {
             run_test_command()
             return
