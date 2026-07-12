@@ -1,4 +1,4 @@
-// Slice A3 of the under-determined-layout kill (ps3t.4.5): a lambda
+// The under-determined-layout kill at the return position: a lambda
 // RETURNED from a fn whose declared return is fn-typed must compile its
 // params against the DECLARATION's types, not the body-scan heuristic.
 // Before this threading, `fn mk() -> fn(string) -> int { (s) -> … }`

@@ -102,7 +102,7 @@ fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
 
 /// Emit a function body's statement block, returning the tail value.
 /// A bare tail-lambda under a fn-typed declared return compiles
-/// against the DECLARED param types (ps3t.4.5): resolve_fn_ret
+/// against the DECLARED param types: resolve_fn_ret
 /// rewrote the registered ret to `Closure(-1, ret)`, which drops the
 /// param list, so it rides in the FnRetTypes row instead. Without the
 /// threading the tail lambda falls to the body-scan heuristic and a

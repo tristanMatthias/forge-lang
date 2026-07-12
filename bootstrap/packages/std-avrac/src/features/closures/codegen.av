@@ -551,16 +551,25 @@ export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
 }
 
 /// Emit an expression under a declared/expected type: a `.Lambda` whose
-/// expectation is `.FnTyped` compiles against the expectation's param
-/// types (the layout-totality threading — without it the lambda falls to
-/// the body-scan heuristic, whose unresolved params lay out as i64, so a
-/// pointer-typed param miscompiles silently). Every other expr/expected
-/// combination takes the plain emit path. This is the ONE interception
-/// point shared by every position that knows its declared type
-/// (let annotation, struct field, enum payload, with-override, assign, …).
+/// expectation resolves to `.FnTyped` compiles against the expectation's
+/// param types (the layout-totality threading — without it the lambda
+/// falls to the body-scan heuristic, whose unresolved params lay out as
+/// i64, so a pointer-typed param miscompiles silently). Every other
+/// expr/expected combination takes the plain emit path. This is the ONE
+/// interception point shared by every position that knows its declared
+/// type (let annotation, struct field, enum payload, with-override,
+/// assign, call arg, …). `expected` may be raw or pre-resolved: alias
+/// resolution happens here, and only for Lambda nodes, so non-lambda
+/// args on hot call paths pay nothing.
 export fn emit_expected(ctx: Ctx, env: List<VarBinding>, e: Expr, expected: ValueType) -> Result<EmitValue, string> {
     match e {
-        .Lambda(params, body) if expected is .FnTyped -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(expected))
+        .Lambda(params, body) -> {
+            let resolved = ctx.resolve_codegen_vtype(expected)
+            if resolved is .FnTyped {
+                return emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(resolved))
+            }
+            ctx.emit(env, e)
+        }
         _ -> ctx.emit(env, e)
     }
 }

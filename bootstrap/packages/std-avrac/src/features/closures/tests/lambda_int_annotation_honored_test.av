@@ -1,5 +1,5 @@
 // A declared param annotation is TRUTH at the lambda layout boundary —
-// never overridden by the body-scan heuristic (ps3t.4.5 slice A5). The
+// never overridden by the body-scan heuristic. The
 // old resolver excluded `.Int` from the annotated fast-path, so an
 // annotated int param that appeared next to a float operand was
 // silently PROMOTED to Float: the call site passed a raw i64 which the

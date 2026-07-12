@@ -1,10 +1,10 @@
 // WHY: shared codegen utilities used across features.
 
-use core.{Expr, ExprId, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use core.{Expr, ExprId, VarBinding, ValueType, StmtId, NodeStore, stmt_unwrap, vtype_trait_name}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.{vtype_is_unknown}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
-use features.closures.{emit_lambda_typed, emit_expected}
+use features.closures.{emit_expected}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{needs_optional_box, needs_optional_unbox, emit_optional_some, emit_optional_unwrap, box_into_list, needs_tuple_rebox, emit_tuple_rebox}
 use core.{vtype_strip_optional, vtype_is_list, vtype_is_optional, vtype_list_elem}
@@ -40,8 +40,7 @@ export fn fill_arg_array(ctx: Ctx, env: List<VarBinding>, arr: ptr, args: List<E
     mut i = 0
     let n = args.length
     while i < n {
-        let expected = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, idx + i))
-        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(args[i]), expected)?
+        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(args[i]), param_type_vt_at(ptypes, idx + i))?
         ctx.value_array_set(arr, idx + i, r.value)
         i = i + 1
     }
@@ -86,7 +85,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: List<VarBinding>, arr: ptr, args:
                 // declared fn-typed param (the layout-totality threading —
                 // so e.g. enum matching works inside the closure body);
                 // every other arg is a plain emit.
-                r = emit_expected(ctx, env, ctx.nodes.exprs.get(se), ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, slot)))?
+                r = emit_expected(ctx, env, ctx.nodes.exprs.get(se), param_type_vt_at(ptypes, slot))?
             }
         }
         // Check if the parameter type is a trait and the argument is concrete

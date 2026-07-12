@@ -388,7 +388,7 @@ export fn field_resolved_at(fields: List<FieldEntry>, idx: int) -> ValueType {
 /// fn-typed (`fn f() -> fn(string) -> int`), empty otherwise. It rides
 /// here because resolve_fn_ret's tail-lambda transform rewrites the
 /// registered ret to `Closure(-1, ret)`, which cannot carry the param
-/// list — and returned lambdas need it for param layout (ps3t.4.5).
+/// list — and returned lambdas need it for param layout.
 export type FnRetMeta = { name: string, ret_ty: ValueType, fn_params: List<ValueType> }
 
 /// Function return-type registry — `name → ValueType`. Built once

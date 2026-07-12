@@ -1,6 +1,6 @@
 // WHY: diff-test corpus — standalone (untyped-context) lambda codegen with
 // EXPLICIT param annotations across the pointer/value type split. Guards
-// ps3t.4.5: when codegen stops body-scanning to infer a lambda param's type
+// Guards the era when codegen stops body-scanning to infer a lambda param type
 // and instead consumes the DECLARED type, these shapes must stay
 // byte-identical — a `string` param slotted as a pointer (not i64), an `int`
 // as i64, a `float` as a double, and a float captured through the closure

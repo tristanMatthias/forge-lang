@@ -1496,7 +1496,7 @@ fn resolve_fn_ret(store: NodeStore, regs: TypeRegs, traits: TraitDeclReg, rvt: V
 /// other return shape — consumers use empty as "not fn-typed". Kept
 /// separate from resolve_fn_ret because its tail-lambda transform
 /// rewrites the ret to `Closure(-1, ret)`, which drops the param
-/// list; this preserves it in the FnRetTypes row (ps3t.4.5).
+/// list; this preserves it in the FnRetTypes row.
 fn declared_ret_fn_params(regs: TypeRegs, rvt: ValueType) -> List<ValueType> {
     match rvt {
         .FnTyped(params, _) -> resolve_setup_vt_list(regs, params)

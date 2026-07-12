@@ -266,7 +266,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             let value = ctx.nodes.exprs.get(value_id)
             // A returned lambda under a fn-typed declared return compiles
             // against the DECLARED param types — the same expected-type
-            // threading as the let/struct-field paths (ps3t.4.5). The
+            // threading as the let/struct-field paths. The
             // params ride in the FnRetTypes row (FnRetMeta.fn_params)
             // because resolve_fn_ret's tail-lambda transform drops them
             // from the registered ret type. Empty list = ret not

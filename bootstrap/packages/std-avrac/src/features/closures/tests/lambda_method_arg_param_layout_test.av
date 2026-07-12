@@ -1,0 +1,69 @@
+// Threading coverage for the remaining declared-type positions:
+// inherent-method call args (the callee's declared param types ride the
+// mangled-name registry, self at slot 0), top-level global reassignment,
+// the zero-param edge, and the generic-struct combinatorial (a fn-typed
+// field inside a monomorphized generic). String params are the
+// load-bearing cases — under the body-scan heuristic they laid out as
+// i64 (a pointer in an integer slot).
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "fn-typed inherent-method params thread into lambda args" {
+    then "a string-param lambda arg to a method works" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_method_arg.av",
+            "type Runner = {\n" +
+            "    tag: int\n" +
+            "}\n" +
+            "impl Runner {\n" +
+            "    fn apply(self, g: fn(string) -> int) -> int {\n" +
+            "        g(\"hello\")\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let r = Runner { tag: 1 }\n" +
+            "    println(string(r.apply((s) -> s.length)))\n" +
+            "}\n")
+        out.contains("5")
+    }
+}
+
+spec "fn-typed global reassignment threads the lambda's params" {
+    then "a string-param lambda assigned to a mut global works" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_global_assign.av",
+            "export mut gf: fn(string) -> int = (s: string) -> 0\n" +
+            "fn rebind() {\n" +
+            "    gf = (s) -> s.length + 10\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    rebind()\n" +
+            "    println(string(gf(\"hello\")))\n" +
+            "}\n")
+        out.contains("15")
+    }
+}
+
+spec "a zero-param lambda under a fn-typed annotation still works" {
+    then "fn() -> int annotation with a () -> lambda compiles and runs" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_zero_param.av",
+            "fn main() {\n" +
+            "    let f: fn() -> int = () -> 41 + 1\n" +
+            "    println(string(f()))\n" +
+            "}\n")
+        out.contains("42")
+    }
+}
+
+spec "a fn-typed field in a generic struct threads per instantiation" {
+    then "string and int instantiations each get their own param layout" {
+        let out = write_fixture_and_run("/tmp/avra_lambda_generic_field.av",
+            "type Mapper<T> = {\n" +
+            "    f: fn(T) -> int\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    let ms: Mapper<string> = Mapper { f: (s) -> s.length }\n" +
+            "    let mi: Mapper<int> = Mapper { f: (n) -> n * 2 }\n" +
+            "    println(string(ms.f(\"hello\") + mi.f(10)))\n" +
+            "}\n")
+        out.contains("25")
+    }
+}

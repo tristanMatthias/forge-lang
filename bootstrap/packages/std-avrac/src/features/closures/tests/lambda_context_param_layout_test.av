@@ -1,4 +1,4 @@
-// Slice A4 of the layout-totality threading (ps3t.4.5): every position
+// Layout-totality threading: every position
 // that knows its declared type now emits lambda values through the ONE
 // shared interception point `emit_expected`, so the lambda's params
 // compile against the DECLARED fn type instead of the body-scan
