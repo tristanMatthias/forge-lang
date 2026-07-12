@@ -643,70 +643,6 @@ type BuildArgs = {
     entry: string,
 }
 
-fn parse_build_args() -> BuildArgs {
-    mut release = false
-    mut explain = false
-    mut json = false
-    mut timings = false
-    mut lib = false
-    mut emit_metadata = false
-    mut per_module = false
-    mut entry = ""
-    mut i = 2
-    while i < avra_selfhost_argc() {
-        let arg = avra_selfhost_get_arg_cstr(i)
-        if arg == "--release" {
-            release = true
-            i = i + 1
-            continue
-        }
-        if arg == "--explain" {
-            explain = true
-            i = i + 1
-            continue
-        }
-        if arg == "--json" || arg == "--message-format=json" {
-            json = true
-            i = i + 1
-            continue
-        }
-        if arg == "--timings" {
-            timings = true
-            i = i + 1
-            continue
-        }
-        if arg == "--lib" {
-            lib = true
-            i = i + 1
-            continue
-        }
-        if arg == "--emit-metadata" || arg == "--emit_metadata" {
-            emit_metadata = true
-            i = i + 1
-            continue
-        }
-        if arg == "--per-module" || arg == "--per_module" {
-            per_module = true
-            i = i + 1
-            continue
-        }
-        if !arg.starts_with("-") && entry == "" {
-            entry = arg
-        }
-        i = i + 1
-    }
-    BuildArgs {
-        release: release,
-        explain: explain,
-        json: json,
-        timings: timings,
-        lib: lib,
-        emit_metadata: emit_metadata,
-        per_module: per_module,
-        entry: entry,
-    }
-}
-
 // `avra build` — Phase 1 incremental wrapper around `avra compile`.
 // Reads the project's avra.toml, computes the per-unit fingerprint,
 // consults the @std.avrac.build cache, and:
@@ -1680,9 +1616,10 @@ fn write_dep_paths(deps: List<Dep>, out_path: string) {
     }
 }
 
-fn run_build_command() {
+// `args` is built from the parsed CliResult by the declarative `command build`
+// block; its fields mirror the BuildArgs shape one-to-one.
+fn run_build_command(args: BuildArgs) {
     let project_dir = avra_process_env_get("PWD")
-    let args = parse_build_args()
 
     let manifest = load_manifest("${project_dir}/")
     // --lib picks [lib] over [bin]. Without --lib, [bin] is the
@@ -3964,10 +3901,23 @@ cli avra {
         description "Incremental build via the @std.avrac.build cache (Phase 1: single-unit)"
         flag release { description "Use [profile.release] instead of [profile.dev]" }
         flag explain { description "Print why each unit will rebuild (cargo --explain analogue)" }
+        flag json { description "Emit build diagnostics as JSON, one event per line (for tooling)", alias "--message-format=json" }
+        flag timings { description "Print per-phase timing information" }
+        flag lib { description "Build the manifest's [lib] target instead of [bin]" }
+        flag emit_metadata { description "Emit a .meta.bin sidecar describing the unit's public surface" }
         flag per_module { description "g2eo Phase B: dispatch one bs2 compile per src/ subdirectory in parallel via pool_run; each subdir produces its own .ll + .meta.bin under build/per_mod/. Experimental, opt-in." }
         arg file { description "Entry source file (overrides manifest [bin].path)" }
         run() {
-            run_build_command()
+            run_build_command(BuildArgs {
+                release: release,
+                explain: explain,
+                json: json,
+                timings: timings,
+                lib: lib,
+                emit_metadata: emit_metadata,
+                per_module: per_module,
+                entry: file,
+            })
             0
         }
     }
@@ -4123,26 +4073,23 @@ cli avra {
 }
 
 fn main() {
-    // Dispatch is split in two. The declarative commands (compile, check, run,
-    // expr, fmt, fix, program, eval, metadata_show, expand, clean, cache, lsp,
-    // lang, docs, test) parse via `avra.run()`: it reads the real argv against
-    // the matched command's schema and calls that command's `run(args)` body,
-    // which reads its flags/args off the parsed `CliResult`.
+    // Nearly everything now dispatches declaratively. The user-facing and
+    // compiler-internal commands alike (compile, check, run, expr, fmt, fix,
+    // program, eval, metadata_show, expand, clean, cache, lsp, lang, docs, test,
+    // build) parse via `avra.run()`: it reads the real argv against the matched
+    // command's schema and calls that command's `run(args)` body, which reads
+    // its flags/args off the parsed `CliResult`. The `App` parser models every
+    // argv shape they use — space-separated `--key value` options, word aliases
+    // (`--used-by` for `--callers`, live in `docs`), and option-form flag aliases
+    // (`--message-format=json` for `--json`, live in `build`), all landed in
+    // phx5 A1/A2.
     //
-    // Two compiler-internal commands still own bespoke raw-argv parsers and are
-    // dispatched here by name: `build`, and the internal `_test_shard`. The
-    // `App` parser models every argv shape they use — space-separated
-    // `--key value` options, word aliases (`--used-by` for `--callers`, now live
-    // in `docs`), and option-form flag aliases (`--message-format=json`), all
-    // landed in phx5 A1/A2 — so this guard is being retired one command at a
-    // time: each handler is converted to read from `CliResult` and its branch
-    // dropped here (phx5 Part B → the vez6.12 single-`avra.run()` collapse).
-    // `_test_shard` is last: it takes VARIADIC positional paths
-    // (`bs2 _test_shard a.av b.av …`), which the current single-named-positional
-    // arg schema can't express — it needs variadic-positional support first. The
-    // `command … { run() … }` blocks above already carry the schema + `--help`;
-    // converting a command just moves its dispatch onto that block (see `clean`,
-    // `cache`, `lsp`, `lang`, `docs`, `test`, converted so far).
+    // The single remaining raw-argv holdout is the INTERNAL `_test_shard`: it
+    // takes VARIADIC positional paths (`bs2 _test_shard a.av b.av …`), which the
+    // current single-named-positional arg schema can't express — it needs
+    // variadic-positional support before its dispatch can move onto `avra.run()`
+    // and this guard can be deleted entirely (phx5 Part B → the vez6.12
+    // single-`avra.run()` collapse).
     if avra_selfhost_argc() >= 2 {
         let cmd0 = avra_selfhost_get_arg_cstr(1)
         if cmd0 == "_test_shard" {
@@ -4152,10 +4099,6 @@ fn main() {
             // parallel dispatch via spawn_pool_async + free crash
             // isolation). Not for direct user invocation.
             run_test_shard_command()
-            return
-        }
-        if cmd0 == "build" {
-            run_build_command()
             return
         }
     }
