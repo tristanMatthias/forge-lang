@@ -922,11 +922,11 @@ ensure_seed() {
 
 # Link an LLVM IR file into an executable.
 # rqwh: shared-inputs fingerprint for the link cache. Hashing
-# bs2/runtime.o/llvm_wrapper.o (~5MB each) per fixture would cost
-# ~30ms × 4 = 120ms × 30 fixtures = 3.6s of overhead on every run.
-# Cache the combined hash, invalidate via mtime: if the cache file is
-# newer than every input, reuse; otherwise recompute. Stable across
-# sequential link_ll calls in the same test session.
+# runtime.o/llvm_wrapper.o per fixture would cost ~30ms × N fixtures
+# on every run. Cache the combined hash, invalidate via mtime: if the
+# cache file is newer than every input, reuse; otherwise recompute.
+# Stable across sequential link_ll calls in the same test session.
+# (bs2 itself is deliberately NOT an input — see link_shared_fp.)
 #
 # 0qmm: link-binary cache lives inside the project's build/cache/
 # (under a `link/` sub-namespace alongside `meta/`), so every cached
@@ -937,29 +937,37 @@ LINK_SHARED_FP_FILE="$LINK_CACHE_DIR/.shared-fp"
 
 link_shared_fp() {
   # fxwn: include AVRA_LIB_OBJS in the fingerprint so the link cache
-  # invalidates when the @std .o-path set changes. Producer .o paths
-  # are content-addressed (sha256(meta source)/realobj.o), so the
-  # string proxies for content changes too — when bodies change, paths
-  # change. Bypasses the mtime memo when LIB_OBJS is set since the
-  # sidecar doesn't capture it.
+  # invalidates when the @std producer objects change. uzs9.3: hash the
+  # objects' CONTENT, not the path string — producer paths embed the
+  # unit fingerprint, which embeds the bs2 hash, so path-hashing missed
+  # on every compiler rebuild even when the objects were byte-identical.
+  # Content hashing is strictly more precise (a body change still
+  # changes the hash) and survives fp-slot renames. Bypasses the mtime
+  # memo when LIB_OBJS is set since the sidecar doesn't capture it.
   local libobjs_h=""
   if [ -n "${AVRA_LIB_OBJS:-}" ]; then
-    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | $SHA256_CMD | cut -d' ' -f1)
+    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | tr ':' '\n' \
+      | xargs $SHA256_CMD 2>/dev/null | cut -d' ' -f1 \
+      | $SHA256_CMD | cut -d' ' -f1)
   fi
   if [ -z "$libobjs_h" ] \
      && [ -f "$LINK_SHARED_FP_FILE" ] \
-     && [ "$LINK_SHARED_FP_FILE" -nt "$BS2" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$RUNTIME_O" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$LLVM_WRAPPER_O" ]; then
     cat "$LINK_SHARED_FP_FILE"
     return
   fi
   mkdir -p "$LINK_CACHE_DIR"
-  local bs2_h runtime_h wrapper_h composed
-  bs2_h=$($SHA256_CMD "$BS2" | cut -d' ' -f1)
+  local runtime_h wrapper_h composed
+  # uzs9.3: bs2 is NOT a link input — the linked binary is a function of
+  # (the .ll bytes, runtime.o, llvm_wrapper.o, lib objs, flags), and the
+  # per-link key in link_ll already hashes the .ll content, which captures
+  # the compiler's entire contribution exactly. Hashing the bs2 binary
+  # here only over-invalidated: any bs2 rebuild (even a help-string edit)
+  # evicted every cached link of byte-identical IR.
   runtime_h=$($SHA256_CMD "$RUNTIME_O" | cut -d' ' -f1)
   wrapper_h=$($SHA256_CMD "$LLVM_WRAPPER_O" | cut -d' ' -f1)
-  composed=$(printf '%s:%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" "$libobjs_h" \
+  composed=$(printf '%s:%s:%s' "$runtime_h" "$wrapper_h" "$libobjs_h" \
     | $SHA256_CMD | cut -d' ' -f1)
   # Don't persist when libobjs_h is set — it's per-invocation state,
   # and persisting would make the next call without LIB_OBJS hit

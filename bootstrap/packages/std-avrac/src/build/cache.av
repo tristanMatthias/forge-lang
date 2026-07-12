@@ -30,6 +30,7 @@ use core.{
 }
 use build.fingerprint.{Fingerprint}
 use build.link.{llvm_prefix_dir}
+use @std.crypto.{sha256_file, sha256_hex}
 
 /// Logical layout of the cache directory tree under a project's
 /// `<root>/build/`. The build driver passes the root path; the cache
@@ -256,6 +257,53 @@ export fn cache_publish(
     PublishResult { success: true, error: "" }
 }
 
+/// uzs9.3: content-addressed store for llc outputs, keyed on the exact
+/// IR bytes + llc flags — NOT on the fingerprint that named the slot.
+/// The fp key includes the compiler-binary hash, so ANY bs2 rebuild
+/// (even a help-string edit) mints a fresh slot and would re-pay the
+/// llc of a byte-identical unit.ll (~14s for the std-avrac producer).
+/// llc is a pure function of (IR bytes, flags): identical input ⇒
+/// identical object — the same determinism the selfhost fixed point
+/// and diff-test already rely on. So materialisation first consults
+/// this store; a hit is copied into the slot, a miss llc's then
+/// publishes here for the next slot with the same IR.
+///
+/// The llc toolchain's own identity is deliberately NOT part of the
+/// key — matching the existing discipline everywhere else (fp_for_unit,
+/// toolchain_fp, diagnose.sh's link cache track bs2/runtime/wrapper but
+/// never llc); an LLVM upgrade is a `make clean` event.
+fn obj_store_path(c: Cache, ll_hash: string) -> string {
+    c.cache_dir + "obj/" + ll_hash + ".o"
+}
+
+/// The store key for one llc invocation: flags folded in with the IR
+/// content hash so a future flags change can never serve an object
+/// produced under the old flags.
+fn obj_store_key(llc_flags: string, ll_content_hash: string) -> string {
+    sha256_hex("llc|" + llc_flags + "|" + ll_content_hash)
+}
+
+/// Atomically install `src` at `dest` (cp → per-pid temp → rename).
+/// Returns true when `dest` ends up present and non-empty. Binary-safe
+/// (`cp`, never the NUL-truncating string round-trip). Failure removes
+/// the temp and leaves `dest` untouched.
+fn atomic_install(src: string, dest: string) -> bool {
+    let tmp = dest + ".tmp." + string(avra_getpid())
+    let rc = avra_shell_exec_status("cp '" + src + "' '" + tmp + "'")
+    if rc != 0 || avra_file_size(tmp) <= 0 {
+        let _ = avra_remove_file(tmp)
+        return false
+    }
+    if avra_rename(tmp, dest) == 0 {
+        let _ = avra_remove_file(tmp)
+        // A concurrent installer may have won the rename race — their
+        // copy landed via this same atomic path, so trust a non-empty
+        // final either way.
+        return avra_file_size(dest) > 0
+    }
+    true
+}
+
 /// Lazy read of a cache slot's `unit.o` as a real Mach-O object.
 /// Library-mode callers (P2+) need actual object files for multi-
 /// object linking; cache_publish today stores the .ll text in the
@@ -285,6 +333,18 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     if avra_file_size(real_o) > 0 { return real_o }
     if avra_selfhost_file_exists(real_o) == 1 { let _ = avra_remove_file(real_o) }
     let ll = entry_ll_path(c, fp)
+    // uzs9.3: before paying llc, consult the content-addressed store.
+    // A prior slot with byte-identical IR (the common case after a
+    // codegen-irrelevant bs2 rebuild — new fp, same unit.ll) already
+    // produced this exact object; install it instead of re-lowering.
+    let llc_flags = "-O2 -relocation-model=pic -filetype=obj"
+    let store_key = obj_store_key(llc_flags, sha256_file(ll))
+    let store_o = obj_store_path(c, store_key)
+    if avra_file_size(store_o) > 0 {
+        if atomic_install(store_o, real_o) { return real_o }
+        // Install failure (disk full, races) falls through to llc —
+        // never a correctness event, just the slow path.
+    }
     let llvm_prefix = llvm_prefix_dir()
     // kaux: materialise ATOMICALLY, mirroring cache_publish's discipline.
     // llc writes its object to a process-unique temp sibling; only a
@@ -298,7 +358,7 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     // the per-pid temp keeps concurrent producers (process-level
     // parallelism) from clobbering each other's staging.
     let tmp_o = real_o + ".tmp." + string(avra_getpid())
-    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' -O2 -relocation-model=pic -filetype=obj '${ll}' -o '${tmp_o}' 2>/dev/null")
+    let rc = avra_shell_exec_status("'${llvm_prefix}/bin/llc' ${llc_flags} '${ll}' -o '${tmp_o}' 2>/dev/null")
     if rc != 0 || avra_file_size(tmp_o) <= 0 {
         let _ = avra_remove_file(tmp_o)
         return ""
@@ -310,10 +370,66 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
         // already-materialised final if a concurrent producer left one
         // (it too landed via this atomic path, so it is complete).
         let _ = avra_remove_file(tmp_o)
-        if avra_file_size(real_o) > 0 { return real_o }
+        if avra_file_size(real_o) > 0 {
+            publish_obj_store(c, store_o, real_o)
+            return real_o
+        }
         return ""
     }
+    publish_obj_store(c, store_o, real_o)
     real_o
+}
+
+/// Best-effort publish of a freshly-llc'd object into the content
+/// store (atomic install; a failure just forfeits the next slot's
+/// rescue). Idempotent: identical content under an identical key,
+/// so a concurrent double-publish is harmless.
+fn publish_obj_store(c: Cache, store_o: string, real_o: string) {
+    let _ = avra_mkdir_p(c.cache_dir + "obj")
+    let _ = atomic_install(real_o, store_o)
+}
+
+/// uzs9.3: content-keyed store for LINKED binaries, sharing the
+/// `link/` namespace with diagnose.sh's fixture link cache (its keys
+/// are 16-hex-char, ours 64 — no collision between the schemes). The
+/// key is a pure function of the link's actual inputs: every object's
+/// CONTENT + the flag-relevant options. The unit fingerprint (which
+/// embeds the bs2 hash) deliberately does not participate — a compiler
+/// rebuild that emits byte-identical objects relinks to a byte-identical
+/// binary, so the cached one is exact. cc/ld identity is untracked,
+/// matching the discipline everywhere else in the cache stack.
+export fn linked_bin_key(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
+                         opts_canonical: string) -> string {
+    mut composed = "link v1\n" + "opts:" + opts_canonical + "\n"
+    mut i = 0
+    while i < objs.length {
+        composed = composed + "obj:" + sha256_file(objs[i]) + "\n"
+        i = i + 1
+    }
+    composed = composed + "runtime:" + sha256_file(runtime_o) + "\n"
+    composed = composed + "wrapper:" + sha256_file(llvm_wrapper_o) + "\n"
+    sha256_hex(composed)
+}
+
+/// Path of the content-keyed linked-binary slot for `key`.
+export fn linked_bin_store_path(c: Cache, key: string) -> string {
+    c.cache_dir + "link/" + key + ".bin"
+}
+
+/// Consult the linked-binary store: on a content hit, atomically
+/// install the cached binary at `dest` and return true — the caller
+/// skips the link step entirely. Returns false on miss or any install
+/// failure (the caller just links as usual; never a correctness event).
+export fn linked_bin_lookup(c: Cache, key: string, dest: string) -> bool {
+    let store_bin = linked_bin_store_path(c, key)
+    if avra_file_size(store_bin) <= 0 { return false }
+    atomic_install(store_bin, dest)
+}
+
+/// Best-effort publish of a freshly-linked binary into the store.
+export fn linked_bin_publish(c: Cache, key: string, bin_path: string) {
+    let _ = avra_mkdir_p(c.cache_dir + "link")
+    let _ = atomic_install(bin_path, linked_bin_store_path(c, key))
 }
 
 /// Read a cached unit's IR back. Caller is responsible for checking

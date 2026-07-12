@@ -21,6 +21,7 @@ use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
 use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
+use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
@@ -98,10 +99,28 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
         let obj_path = strip_bin_suffix(target.bin_path) + ".o"
         let _ = codegen_and_emit_object(mono.stmts, obj_path, named.type_reg, target.store)?
         let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
+        let opts = default_link_options()
+        // uzs9.3: content-keyed link rescue. The unit's fp-keyed cache
+        // (which embeds the bs2 hash) missed — that's why we're here —
+        // but when the recompile emitted byte-identical objects (the
+        // common case after a codegen-irrelevant compiler edit), the
+        // link's inputs are unchanged and the previously-linked binary
+        // is exact. Key = content of every object + flag-relevant opts;
+        // hashing ~15MB of .o is ~40ms vs an ~0.5s cc against libLLVM.
+        // Coverage builds skip the store (untracked clang_rt axes +
+        // profraw keyed on the binary identity — mirrors diagnose.sh).
+        let cache = cache_for(target.project_dir)
+        let opts_canonical = "stack=${opts.stack_size_hex}|llvm=${llvm_prefix_dir()}|cov=0"
+        let link_key = linked_bin_key(link_objs, "${build_dir}/runtime.o",
+                                      "${build_dir}/llvm_wrapper.o", opts_canonical)
+        if linked_bin_lookup(cache, link_key, target.bin_path) {
+            return Result.Ok(target.bin_path)
+        }
         if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
-                        target.bin_path, default_link_options()) != 0 {
+                        target.bin_path, opts) != 0 {
             return Result.Err("link failed")
         }
+        linked_bin_publish(cache, link_key, target.bin_path)
         return Result.Ok(target.bin_path)
     }
 

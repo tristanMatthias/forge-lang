@@ -1,0 +1,103 @@
+// uzs9.3: content-keyed linked-binary store. build_binary consults it
+// after emitting the unit's objects: when every link input (each
+// object's CONTENT + the flag-relevant options) matches a previous
+// link, the cached binary is exact and cc is skipped. The unit
+// fingerprint (which embeds the bs2 hash) deliberately does not
+// participate — that key's over-invalidation on codegen-irrelevant
+// compiler rebuilds is the uzs9.3 bug. These specs pin the key's
+// sensitivity (any content or option change MUST change the key — the
+// under-invalidation hazard) and the lookup/publish roundtrip.
+
+use @std.avrac.build.{
+    Cache, cache_for, cache_init,
+    linked_bin_key, linked_bin_lookup, linked_bin_publish, linked_bin_store_path,
+}
+use @std.avrac.core.{
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_file_size, avra_shell_exec, avra_selfhost_file_exists,
+}
+
+fn mk_root(slug: string) -> string {
+    let root = "/tmp/avra_uzs93_linkstore_test_${slug}"
+    avra_shell_exec("rm -rf '${root}' && mkdir -p '${root}'")
+    root
+}
+
+fn mk_cache(root: string) -> Cache {
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+// Write a fake object/binary file and return its path.
+fn mk_file(root: string, name: string, content: string) -> string {
+    let p = "${root}/${name}"
+    let _ = avra_selfhost_write_file(p, content)
+    p
+}
+
+spec "uzs9.3: linked_bin_key is content- and option-sensitive" {
+    then "identical inputs produce an identical key" {
+        let root = mk_root("key_stable")
+        let o1 = mk_file(root, "a.o", "OBJ-A")
+        let rt = mk_file(root, "runtime.o", "RT")
+        let wr = mk_file(root, "wrapper.o", "WR")
+        linked_bin_key([o1], rt, wr, "opts") == linked_bin_key([o1], rt, wr, "opts")
+    }
+    then "the key tracks object CONTENT, not the path" {
+        // Same path, new bytes → new key (under-invalidation gate); a
+        // COPY at a different path with the same bytes → same key
+        // (this is exactly what lets the rescue survive fp-slot renames).
+        let root = mk_root("key_content")
+        let o1 = mk_file(root, "a.o", "OBJ-A")
+        let rt = mk_file(root, "runtime.o", "RT")
+        let wr = mk_file(root, "wrapper.o", "WR")
+        let k_before = linked_bin_key([o1], rt, wr, "opts")
+        let o1_copy = mk_file(root, "renamed-slot.o", "OBJ-A")
+        let k_copy = linked_bin_key([o1_copy], rt, wr, "opts")
+        let _ = avra_selfhost_write_file(o1, "OBJ-A-CHANGED")
+        let k_after = linked_bin_key([o1], rt, wr, "opts")
+        k_copy == k_before && k_after != k_before
+    }
+    then "runtime.o, wrapper.o, opts, and the object SET each change the key" {
+        let root = mk_root("key_axes")
+        let o1 = mk_file(root, "a.o", "OBJ-A")
+        let o2 = mk_file(root, "b.o", "OBJ-B")
+        let rt = mk_file(root, "runtime.o", "RT")
+        let rt2 = mk_file(root, "runtime2.o", "RT-CHANGED")
+        let wr = mk_file(root, "wrapper.o", "WR")
+        let wr2 = mk_file(root, "wrapper2.o", "WR-CHANGED")
+        let base = linked_bin_key([o1], rt, wr, "opts")
+        linked_bin_key([o1], rt2, wr, "opts") != base
+            && linked_bin_key([o1], rt, wr2, "opts") != base
+            && linked_bin_key([o1], rt, wr, "opts2") != base
+            && linked_bin_key([o1, o2], rt, wr, "opts") != base
+    }
+}
+
+spec "uzs9.3: linked-bin store lookup/publish roundtrip" {
+    then "publish then lookup installs the exact cached bytes at dest" {
+        let root = mk_root("roundtrip")
+        let c = mk_cache(root)
+        let bin = mk_file(root, "unit.bin", "LINKED-BINARY-BYTES")
+        linked_bin_publish(c, "1111111111111111111111111111111111111111111111111111111111111111", bin)
+        let dest = "${root}/installed.bin"
+        linked_bin_lookup(c, "1111111111111111111111111111111111111111111111111111111111111111", dest)
+            && avra_selfhost_read_file(dest) == "LINKED-BINARY-BYTES"
+    }
+    then "lookup misses on an unknown key and leaves dest untouched" {
+        let root = mk_root("miss")
+        let c = mk_cache(root)
+        let dest = "${root}/installed.bin"
+        !linked_bin_lookup(c, "2222222222222222222222222222222222222222222222222222222222222222", dest)
+            && avra_selfhost_file_exists(dest) == 0
+    }
+    then "a 0-byte store entry (killed-mid-publish) is a miss" {
+        let root = mk_root("zero")
+        let c = mk_cache(root)
+        let key = "3333333333333333333333333333333333333333333333333333333333333333"
+        let _ = avra_shell_exec("mkdir -p '${c.cache_dir}link'")
+        let _ = avra_selfhost_write_file(linked_bin_store_path(c, key), "")
+        !linked_bin_lookup(c, key, "${root}/installed.bin")
+    }
+}
