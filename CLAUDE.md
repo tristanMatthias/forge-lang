@@ -415,14 +415,20 @@ LLDB on the parent sees only SIGCHLDs; reproduce single-process first (below).
 the compiler is broken: comptime macro expansion of component/derive output is
 only consumed on the manifest-driven path. After any compiler change, the probe
 that covers it (this exact shape — cwd at the PACKAGE ROOT so the manifest +
-dep-metadata path engage, and `rm` the entry .ll first so a stale artifact
-can't mask a crashed child, ticket 18z8):
+dep-metadata path engage; the exit code is the verdict):
 
 ```bash
-cd packages/std-avrac && rm -f src/avrac.av.ll && AVRA_USE_METADATA=1 \
+cd packages/std-avrac && AVRA_USE_METADATA=1 \
   AVRA_LIB_PKG_ROOT='@std::avrac' ../../build/bs2 compile --emit_metadata \
   --module_path='@std::avrac' src/avrac.av; echo "exit: $?"
 ```
+
+The orchestrated form (`bs2 build --lib --emit_metadata` from the package
+root) is equally trustworthy as a pass/fail probe: the parent gates Built on
+the child's exit status and removes any pre-existing entry `.ll` before
+spawning, so a stale artifact can no longer mask a crashed child (the old
+18z8 failure mode; guard: `build/tests/libbuild_stale_ll_test.av`). No
+`rm -f src/avrac.av.ll` prelude is needed on either form.
 
 ### Memory / OOM measurement (READ before diagnosing an OOM)
 
@@ -470,7 +476,7 @@ These bugs build successfully but corrupt memory at runtime.
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 - **Stale seed after a base change → misleading `expects X, got X` errors:** after rebasing/restarting a branch onto a newer integration base, the gitignored local `seed/seed.ll` stays at the OLD version and compiles the newer source with an older compiler — throwing F1000 `expects @…::ExprId, got @…::ExprId` (identical expected/got) that mimics a type-checker bug, not a seed mismatch. Re-fetch the pin first: `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch`.
-- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. Known open instance: the lib build's post-compile `file_exists(entry.ll)` check is satisfied by a STALE .ll from an earlier run, so a crashed child compile still reports `Built` (ticket 18z8) — always `rm` the entry `.ll` before using a lib build as a pass/fail probe.
+- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. FIXED instance of this class (was 18z8): the lib build's post-compile `file_exists(entry.ll)` check used to be satisfied by a STALE .ll from an earlier run, so a crashed child compile still reported `Built` — now the parent removes the pre-existing entry `.ll` before spawning and gates Built on the child's real exit status (`run_with_progress`/`run_silent` never fabricate a 0), with the existence check demoted to a consistency assert; guard test `build/tests/libbuild_stale_ll_test.av`. Lib builds are safe pass/fail probes without any `rm` prelude.
 - **Unmatched tag `-559038737` / `0xffffffffdeadbeef` = the CLOSURE MARKER, not freed memory.** That constant is `closure_marker()` (codegen/types.av) — the head of a closure array `[MARKER, fn_ptr, captures…]`. Seeing it as an enum tag means a FUNCTION REFERENCE landed where a value belongs. Historically the first suspect was a fn-name/local-name collision, but **that class is now FIXED (ticket zo1a, #667/#691)**: locals AND match-arm pattern bindings reliably shadow same-named fns (the qualifier threads let/loop/pattern bindings), and module-private fns don't leak cross-module (a bare cross-module private ref is F3000, never a silent closure). So a closure marker today points at a genuine codegen/memory bug — a value slot that received a fn reference — NOT a shadow collision; investigate the emitting codegen path directly. Regression guards: `resolve/tests/pattern_var_shadows_fn_test.av`, `resolve/tests/local_value_shadows_import_test.av`, `tests/err_private_cross_module_test.av`. **Caveat:** reproducing the OLD corruption requires a **stale/contaminated `seed/seed.ll`** whose resolver predates the fix — always `sha256sum bootstrap/seed/seed.ll` and confirm it matches `bootstrap/seed/seed.lock` before diagnosing a "shadow" crash; a mismatch IS the bug (`rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch` restores the pin).
 
 ## CLI Commands

@@ -21,6 +21,8 @@
 
 // ── Escape / unescape per-char ──────────────────────────────────────
 
+extern fn avra_char_from_hex(hi: string, lo: string) -> string
+
 /// Encode one source char as its JSON escape sequence, or pass it
 /// through unchanged. Handles `"`, `\`, `\n`, `\r`, `\t`. Non-ASCII
 /// passes through (LSP allows utf-8 directly inside JSON strings).
@@ -138,6 +140,18 @@ export fn json_extract_string(body: string, key: string) -> string {
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch == "\\" && i + 1 < body.length {
+            // `\u00XX` — how encoders (ours included) escape control
+            // chars, e.g. ANSI ESC in captured subprocess output.
+            // Decode to the real byte; other \uXXXX code points keep
+            // the legacy literal fallback (we never produce them).
+            if body.substring(i + 1, i + 2) == "u" && i + 5 < body.length
+                && body.substring(i + 2, i + 4) == "00"
+                && is_hex_digit(body.substring(i + 4, i + 5))
+                && is_hex_digit(body.substring(i + 5, i + 6)) {
+                out = "${out}${avra_char_from_hex(body.substring(i + 4, i + 5), body.substring(i + 5, i + 6))}"
+                i = i + 6
+                continue
+            }
             out = "${out}${json_unescape_char(body.substring(i + 1, i + 2))}"
             i = i + 2
             continue
@@ -147,6 +161,13 @@ export fn json_extract_string(body: string, key: string) -> string {
         i = i + 1
     }
     out
+}
+
+/// One char of `0-9a-fA-F`? Guards the `\u00XX` decode above so a
+/// malformed escape falls back to the literal path instead of feeding
+/// garbage to the hex decoder.
+fn is_hex_digit(c: string) -> bool {
+    (c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F")
 }
 
 /// Extract an integer-typed field. Returns 0 if missing or non-numeric.

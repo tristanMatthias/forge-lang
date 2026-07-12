@@ -68,6 +68,16 @@ spec "@std/json: targeted field extraction" {
         then "decodes inline escapes" {
             json_extract_string("{\"k\":\"a\\\"b\\nc\"}", "k") == "a\"b\nc"
         }
+        then "decodes \\u00XX control-char escapes to the real byte" {
+            // The runtime's result-JSON encodes control chars this way
+            // (e.g. ANSI ESC 0x1b in captured subprocess output); the
+            // failure-replay path needs them back as real bytes, not the
+            // literal text `u001b`.
+            json_extract_string("{\"k\":\"a\\u001bb\"}", "k") == "a\x1bb"
+        }
+        then "malformed \\u escape falls back to the literal path" {
+            json_extract_string("{\"k\":\"a\\u00zzb\"}", "k") == "au00zzb"
+        }
         then "missing key returns empty" {
             json_extract_string("{}", "missing") == ""
         }

@@ -1,0 +1,110 @@
+// WHY: `bs2 build` orchestrates the real compile as a CHILD process,
+// and the parent's Built verdict once rested on the mere EXISTENCE of
+// the entry `.ll` — a gate a STALE artifact from ANY earlier run
+// satisfies even when the child just crashed. A failed child compile
+// then reported `Built` (exit 0) and record_build_result published the
+// stale IR into the cache under the fresh fingerprint, poisoning later
+// hits. Same trust-by-existence class as the half-published-slot bugs:
+// materialise atomically, or validate freshness on reuse.
+//
+// The fix is two-sided and these specs pin both halves end to end:
+//   1. the child's REAL exit status is the primary success gate
+//      (run_with_progress / run_silent never fabricate a 0), and
+//   2. the parent removes any pre-existing entry .ll BEFORE spawning
+//      the child, so an artifact after the compile is necessarily the
+//      child's fresh output — the existence check is demoted to a
+//      consistency assert.
+//
+// Each probe drives a real `bs2 build --lib` against a throwaway /tmp
+// package (own avra.toml, no shared build state), with the inherited
+// metadata/lib env stripped so the child compile is hermetic. Raw
+// avra_shell_exec probes only — never the fixture-stdout cache.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_selfhost_file_exists, avra_getpid,
+}
+
+// Recognisable stale-artifact content: if any probe ever sees this
+// after a build, a previous run's artifact was served as fresh output.
+const LIBSTALE_MARKER: string = "; LIBSTALE-MARKER stale artifact from an earlier run\n"
+
+// Deterministic child failure: an undefined name fails resolution, so
+// the child `bs2 compile` exits non-zero long before IR emission.
+const LIBSTALE_BROKEN_SRC: string = "export fn boom() -> int {\n    this_name_does_not_exist(1)\n}\n"
+const LIBSTALE_OK_SRC: string = "export fn fine() -> int { 41 + 1 }\n"
+
+/// Materialise a throwaway [lib] package under /tmp. Fresh dir per
+/// slug+pid, so probes are independent and shard-safe.
+fn libstale_mk_pkg(slug: string, src: string) -> string {
+    let dir = "/tmp/avra_libstale_${slug}_${string(avra_getpid())}"
+    let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/src'")
+    let _ = avra_selfhost_write_file("${dir}/avra.toml",
+        "[package]\nname = \"@test/libstale-${slug}\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"libstale-${slug}\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av", src)
+    dir
+}
+
+/// Everything a spec needs to judge one `bs2 build --lib` run.
+type LibStaleProbe = {
+    rc: int,
+    log: string,       // combined stdout+stderr of the build
+    ll_exists: bool,   // entry .ll present after the build?
+    ll: string,        // its content ("" when absent)
+}
+
+/// Run `bs2 build --lib` inside `dir` and capture verdict + artifacts.
+/// The env strip keeps the probe hermetic under the test runner's
+/// metadata-mode environment; AVRA_COMPILER is stripped so the child
+/// re-exec resolves to this same bs2 via argv[0].
+fn libstale_build(dir: string) -> LibStaleProbe {
+    let root = avra_shell_exec("pwd")
+    let bs2 = "${root}/build/bs2"
+    let log_path = "${dir}/build_probe.log"
+    let rc = avra_shell_exec_status(
+        "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_COMPILER '${bs2}' build --lib > '${log_path}' 2>&1")
+    let ll_path = "${dir}/src/lib.av.ll"
+    let ll_exists = avra_selfhost_file_exists(ll_path) == 1
+    let ll = if ll_exists { avra_selfhost_read_file(ll_path) } else { "" }
+    LibStaleProbe {
+        rc: rc,
+        log: avra_selfhost_read_file(log_path),
+        ll_exists: ll_exists,
+        ll: ll,
+    }
+}
+
+spec "lib build: a crashed child compile can never report Built" {
+    then "broken package with a planted stale entry .ll FAILS — no Built, stale artifact not resurrected" {
+        // The historical bug shape: the stale .ll satisfied the parent's
+        // existence gate, so the failed child still yielded `Built` +
+        // exit 0 and the stale IR was published as this build's output.
+        let dir = libstale_mk_pkg("broken_stale", LIBSTALE_BROKEN_SRC)
+        let _ = avra_selfhost_write_file("${dir}/src/lib.av.ll", LIBSTALE_MARKER)
+        let p = libstale_build(dir)
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        p.rc != 0
+            && !p.log.contains("Built")
+            // The stale artifact must not survive to masquerade as this
+            // build's output for any later consumer.
+            && !p.ll_exists
+    }
+    then "broken package without a stale .ll also FAILS (exit-status gate, not artifact-absence luck)" {
+        let dir = libstale_mk_pkg("broken_clean", LIBSTALE_BROKEN_SRC)
+        let p = libstale_build(dir)
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        p.rc != 0 && !p.log.contains("Built") && !p.ll_exists
+    }
+    then "valid package with a planted stale .ll still Builds — and the artifact is FRESH, not the stale one" {
+        let dir = libstale_mk_pkg("ok_stale", LIBSTALE_OK_SRC)
+        let _ = avra_selfhost_write_file("${dir}/src/lib.av.ll", LIBSTALE_MARKER)
+        let p = libstale_build(dir)
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        p.rc == 0
+            && p.log.contains("Built")
+            && p.ll_exists
+            && !p.ll.contains("LIBSTALE-MARKER")
+            && p.ll.length > 0
+    }
+}

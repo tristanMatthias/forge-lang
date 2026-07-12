@@ -1813,16 +1813,32 @@ fn run_build_command(args: BuildArgs) {
                 ""
             }
             let t_before_compile = avra_uptime_ms()
+            // A stale entry .ll left by ANY earlier run must never stand
+            // in for this compile's output: the artifact check below and
+            // record_build_result's read both trust whatever sits at
+            // ll_path, so a crashed child would report Built off the
+            // previous run's IR — and publish that stale IR into the
+            // cache under the fresh fingerprint. Remove it up front so
+            // an artifact after the compile is necessarily the child's
+            // fresh output. (Materialise-atomically-or-validate-on-reuse
+            // doctrine: this is the validate-freshness half.)
+            let ll_path = "${entry_path}.ll"
+            let _ = avra_remove_file(ll_path)
             // Renders a multi-line sticky progress UI on a TTY:
             // resolver appends per-module timing events to a /tmp file,
             // run_with_progress polls it and shows scrollback (✓ done
             // lines per module) + sticky spinner + progress bar. Pipes
-            // / CI fall through to silent shell-exec.
+            // / CI fall through to a silent captured run. Either way the
+            // child's REAL exit status comes back — it is the primary
+            // success gate; the artifact check is only a consistency
+            // assert behind it.
             let count_raw = avra_shell_exec("find . -name '*.av' -not -path '*/build/*' -not -path '*/tests/*_fixtures/*' 2>/dev/null | wc -l").trim()
             let total_estimate = avra_parse_int(count_raw)
-            let _ = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
+            let compile_rc = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
             let t_after_compile = avra_uptime_ms()
-            let ll_path = "${entry_path}.ll"
+            if compile_rc != 0 {
+                fail("error: compile failed for ${unit_name} (child exit ${string(compile_rc)})")
+            }
             if !file_exists(ll_path) {
                 fail("error: compile produced no IR (looked for ${ll_path})")
             }
