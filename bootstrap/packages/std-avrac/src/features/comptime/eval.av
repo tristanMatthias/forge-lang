@@ -22,6 +22,7 @@
 // fold path (Value → construct-expression source form) and the
 // Stmt→Value encoder used to pass wrapped decls into 1-/2-arg macros.
 
+use core.{expr_id_store_key}
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
 use features.eval.{Runtime, Value, StructField, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
@@ -102,7 +103,7 @@ fn fold_call(reg: CompTimeRegistry, fn_def: CompTimeFn, arg_values: List<Value>)
     }
     let computed = fold_call_compute(reg, fn_def, arg_values)
     if computed != null && key != "" {
-        avra_map_set_cstr(reg.fold_cache, key, reg.runtime.nodes.add_expr_leaf(computed!).raw())
+        avra_map_set_cstr(reg.fold_cache, key, expr_id_store_key(reg.runtime.nodes.add_expr_leaf(computed!)))
     }
     computed
 }

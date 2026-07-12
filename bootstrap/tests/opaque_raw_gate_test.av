@@ -1,0 +1,24 @@
+// The @opaque handle gate: a newtype marked `@opaque("friend", ...)`
+// refuses `.raw()` outside its declaring module + declared friends
+// (F3106) — opaque handles are compared and looked-up, never
+// inspected. The fixture directory has `idlib` declare the handle
+// with `friendmod` as its one friend; `outsider` tries to peel.
+// Declaring-module and friend peels must stay clean, and only the
+// peel is gated — construction, passing, and comparison work
+// everywhere.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "@opaque .raw() is gated to the declaring module + friends" {
+    then "an outsider peel is refused with F3106 naming the offender" {
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        out.contains("F3106") && out.contains("outsider::steal")
+    }
+    then "the declaring module and the declared friend peel clean" {
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        // Exactly the outsider's peel lines mention F3106 — the
+        // idlib/friendmod peels AND the outsider's ungated comparison
+        // must contribute none.
+        !out.contains("inspect_here") && !out.contains("peel_as_friend") && !out.contains("outsider::same")
+    }
+}

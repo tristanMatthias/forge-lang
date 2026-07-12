@@ -652,3 +652,10 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         arg_tys,
     }
 }
+
+/// Store-boundary conversion for typed ids: a C-side map slot holds
+/// only i64, so an id crossing that boundary round-trips through its
+/// raw index HERE — inside the node model, where @opaque permits the
+/// peel — keeping every consumer free of the representation. The
+/// inverse is the id's plain constructor (`ExprId(key)`).
+export fn expr_id_store_key(id: ExprId) -> int { id.raw() }
