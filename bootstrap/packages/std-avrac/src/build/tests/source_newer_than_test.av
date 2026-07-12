@@ -1,0 +1,40 @@
+// 6cks: diagnose.sh's source_newer_than hardcoded the BSD/macOS stat
+// spelling (`stat -f %m`); on Linux (GNU coreutils) `-f` means
+// "filesystem status", so the probe either errored (freshness degraded
+// to "always stale" — every ensure-bs2 paid an unconditional ~40s
+// rebuild) or printed a mount point (non-numeric `-ge` compare —
+// "never stale", silently serving a stale binary), depending on the
+// coreutils version. The fix probes the GNU spelling (`stat -c %Y`)
+// once and falls back to BSD.
+//
+// This spec drives the REAL function (via the AVRA_DIAGNOSE_NO_MAIN
+// sourcing hook) against a sandboxed source tree, on whichever
+// platform the suite runs — so a regression to a non-portable stat
+// spelling fails here on that platform, not silently in the field:
+//   * target strictly newer than every source → NOT stale,
+//   * a source touched afterwards (mtime tie counts) → stale.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "6cks: source_newer_than compares real mtimes on this platform" {
+    then "fresh target is not stale; touching a source flips it" {
+        let script = "set -u\n" +
+            "sandbox=$(mktemp -d)\n" +
+            "mkdir -p \"$sandbox/cli\" \"$sandbox/lib\"\n" +
+            "echo x > \"$sandbox/cli/a.av\"; echo y > \"$sandbox/lib/b.av\"\n" +
+            // Backdate the sources (portable touch -t) so the target is
+            // strictly newer — source_newer_than deliberately treats
+            // same-second ties as stale.
+            "touch -t 202001010000 \"$sandbox/cli/a.av\" \"$sandbox/lib/b.av\"\n" +
+            "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
+            "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+            "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo FRESH_WRONG; else echo FRESH_OK; fi\n" +
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo STALE_OK; else echo STALE_WRONG; fi\n" +
+            "rm -rf \"$sandbox\"\n"
+        let out = avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+        out.contains("FRESH_OK") && out.contains("STALE_OK")
+            && !out.contains("FRESH_WRONG") && !out.contains("STALE_WRONG")
+    }
+}

@@ -200,13 +200,27 @@ die()  { err "$*"; exit 1; }
 # Cost of the false-positive case (no source change but mtimes equal,
 # e.g. after `touch -r`): one extra rebuild. Vastly preferable to a
 # silent stale-binary bug.
+# 6cks: portable epoch-mtime stat. GNU coreutils spells it `stat -c %Y`;
+# BSD/macOS spells it `stat -f %m`. The BSD spelling was hardcoded, so on
+# Linux the probe misbehaved by coreutils version — either `stat -f`
+# errored (freshness degraded to "always stale": every ensure-bs2 paid an
+# unconditional ~40s rebuild) or printed a MOUNT POINT (the `-ge` compare
+# then failed non-numerically: "never stale", silently serving a stale
+# binary). Probe the GNU spelling once against `.`; consumers word-split
+# $STAT_MTIME deliberately.
+if stat -c %Y . >/dev/null 2>&1; then
+  STAT_MTIME="stat -c %Y"
+else
+  STAT_MTIME="stat -f %m"
+fi
+
 source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
   local target_mtime
-  target_mtime=$(stat -f %m "$target" 2>/dev/null) || return 0
+  target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
   local newest_src
-  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
+  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec $STAT_MTIME {} + 2>/dev/null | sort -rn | head -1)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
   [ "$newest_src" -ge "$target_mtime" ]
 }
@@ -3336,5 +3350,12 @@ mode_seed_merge() {
   fi
   return 1
 }
+
+# Function-level testing hook (6cks): `AVRA_DIAGNOSE_NO_MAIN=1 source
+# scripts/diagnose.sh` loads every definition without dispatching, so
+# spec tests can exercise individual helpers (source_newer_than, …)
+# against sandboxed fixtures. A normal execution leaves the var unset
+# and dispatches as always.
+[ -n "${AVRA_DIAGNOSE_NO_MAIN:-}" ] && return 0
 
 main "$@"

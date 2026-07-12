@@ -149,45 +149,26 @@ accident — but your build is now ahead of the pin. Restore the pinned seed
 with `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh
 --seed-fetch` and remove whatever post-seed feature use forced the cycle.
 
-### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
+### Dev-loop build freshness (pdme.1 + 6cks LANDED — the stale-bs2 bug is fixed)
 
-This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
-`source_newer_than` uses macOS `stat -f %m` on Linux), NOT intended
-behavior — when those land, delete this note. Until then, be aware:
-after editing a **non-entry** source file (e.g. `parse/mod.av`,
-`desugar/mod.av`, `typeck/mod.av`), a plain `make build-quick` can re-link
-the **previous** `bs2` (the compile cache keys on the entry file's
-fingerprint, not transitive sources). Your edit then silently does
-nothing.
+The historical "a plain `make build-quick` re-links the previous bs2 after a
+non-entry edit" bug is FIXED: the compile-cache key now folds the entry
+package's dep-aware full fingerprint (`package_full_fingerprint`, pdme.1 —
+every source in the manifest dep closure participates), and diagnose.sh's
+`source_newer_than` uses a portable stat (6cks — on Linux the BSD `stat -f %m`
+spelling had made the freshness probe rebuild unconditionally or never,
+depending on coreutils version). Editing `parse/mod.av`, `typeck/mod.av`, etc.
+now misses the CLI unit cache by construction, and an mtime-only touch
+re-hashes to the same content and stays a cache hit. `make build-quick` on an
+unchanged tree is sub-second.
 
-So: if behavior doesn't change after a rebuild, do NOT conclude your code
-is wrong — first confirm the binary actually recompiled. Verified-needed
-force (keeps the seed binary, so ~60-90s, NOT the 3-min `make clean` seed
-cycle; clearing `build/bs2` alone is insufficient — the CLI unit cache
-must go too):
-
-```bash
-rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick
-```
-
-This is narrow and deliberate (the CLI unit cache only) — it is NOT the
-blanket `find packages -name cache -exec rm` anti-pattern below.
-
-**Mutation-testing corollary (a stale cache can mask your REVERT).** When you
-deliberately build broken code to prove a test fails (the prepare-pr mutation
-check), then revert, the broken-source artifacts can outlive the revert and
-make `bs2 test <file>` keep reporting the *broken* result. The CLI-cache recipe
-above does NOT reach them. The objects that persist are: the edited package's
-own cache `packages/<pkg>/build/cache`, that package's whole-unit IR
-`packages/std-avrac/src/avrac.av.ll`, and — the one that bit hardest — the
-**test-runner compile cache at top-level `build/cache`**. So after a
-mutation→revert cycle, if tests still fail against known-good source, clear
-those too (scoped, not the blanket nuke):
-
-```bash
-rm -rf packages/std-avrac/build/cache packages/cli/src/build/cache build/cache \
-  && rm -f build/bs2 packages/std-avrac/src/avrac.av.ll && make build-quick
-```
+If behavior still doesn't change after a rebuild, suspect the remaining open
+staleness hole: the lib build's post-compile `file_exists(entry.ll)` gate is
+satisfied by a STALE on-disk `.ll` from an earlier run (ticket 18z8) — `rm`
+the entry `.ll` before using a lib build as a probe (see Silent Failure
+Modes). Mutation→revert cycles are also content-keyed now: a revert restores
+the pre-mutation fingerprints, so the pre-mutation cache slots (correct
+results) are what reruns hit.
 
 **Frozen-FAIL in the fixture-stdout cache (zp5b/fxfz).** Distinct from the
 compile caches above: the test runner also memoises each *fixture's stdout*
@@ -227,8 +208,9 @@ check into a ~30s one (that residual ~30s is the selfhost compile itself — the
 decisive oracle, which nothing removes; the corpus is tiny and always runs). Two caveats: (1) it is
 **NON-HERMETIC** (build/bs2's seed/source aren't pinned), so the plain
 `make diff-test` is the authoritative check and the only one CI runs; (2)
-**rebuild `bs2` first** — a stale build/bs2 (the known `pdme.1`/`6cks` cache bug)
-compared against OLD reports a false **PASS**. The two **selfhost** compiles (OLD
+**rebuild `bs2` first** (`make build-quick` — cheap now that freshness is
+content-keyed) so build/bs2 reflects your edits; a stale build/bs2 compared
+against OLD reports a false **PASS**. The two **selfhost** compiles (OLD
 and NEW) run **concurrently** in every mode (via `bs2 compile --output`), so the
 selfhost phase costs ~one compile, not two; the corpus files fan out in parallel
 too — no flag needed.
