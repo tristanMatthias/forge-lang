@@ -506,16 +506,19 @@ fn param_used_with_float_stmts(param_name: string, stmts: List<StmtId>, ctx: Ctx
     false
 }
 
-/// Infer types for unannotated lambda params by scanning the
-/// body. Defaults to Int; promotes to Float when the param is
-/// used alongside another float operand. Result is a
+/// Resolve each lambda param's type: an ANNOTATION is truth and is
+/// never overridden (layout totality — the old `.Int` exclusion let
+/// the float scan silently promote an annotated int param to Float).
+/// Only a genuinely un-annotated param falls to the body scan:
+/// promoted to Float when used alongside a float operand, else
+/// Unknown (i64 at the layout boundary). Result is a
 /// `List<ValueType>` matched 1:1 to the input param list.
 fn infer_param_types(params: List<ParamEntry>, body: Expr, ctx: Ctx, env: List<VarBinding>, captures: List<Capture>) -> List<ValueType> {
     mut out: List<ValueType> = []
     mut i = 0
     while i < params.length {
         let p = params[i]
-        let ty = if !vtype_is_unknown(p.vtype) && !(p.vtype is .Int) {
+        let ty = if !vtype_is_unknown(p.vtype) {
             ctx.resolve_codegen_vtype(p.vtype)
         } else if param_used_with_float(p.name, body, ctx, env, captures, params) {
             ValueType.Float
