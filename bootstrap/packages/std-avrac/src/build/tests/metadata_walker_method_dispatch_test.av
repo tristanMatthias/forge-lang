@@ -1,0 +1,94 @@
+// WHY: the synthesis-level qualification contract (see
+// metadata_mangled_fn_qualification_test.av) has an end-to-end failure mode
+// the unit specs can't see: a consumer compiling against a REAL producer's
+// meta.bin must be able to dispatch a derive_walker-generated method
+// (`vt.map(...)`) — the FNS-section entry is a `__`-mangled fn whose
+// qualified name must survive synthesis + the consumer's resolve pass, or
+// dispatch dies with `undefined method @std::avrac::core::ValueType.map`
+// (the pre-fix witness). diff-test can never catch this class: it compiles
+// from source only, so consume-via-metadata is exercised nowhere else at
+// this altitude (same blind spot the F4d.8 guard closed for plain fns).
+//
+// @std::avrac is the producer because walker-generated methods exist only
+// there — the @expand(derive_walker) output is what mints qualified mangled
+// FNS entries. The producer build is the same idempotent, atomically-cached
+// lib build the metadata smoke runs; on a warm tree it's a cache hit.
+//
+// Compile-only on purpose: dispatch resolution + lambda-param threading are
+// fully decided at compile time, and the .ll assertions below distinguish
+// every failure mode (no meta -> inlined `define`; qualification regression
+// -> compile error; threading regression -> i64 lambda param). Linking the
+// 31MB producer object would add minutes of llc for no additional signal.
+//
+// @@fixture-stateful@@ — probes the shared packages/std-avrac/build cache
+// (the producer lib build), so a transient environment failure must not be
+// frozen as a cached FAIL.
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file, avra_getpid}
+
+// The consumer: a `.map`-style callback on a walker-derived method of a
+// metadata-imported enum. `(c) -> c` compiles only when dispatch finds the
+// qualified `ValueType__map`; the lambda's param type must thread from the
+// entry's `f: fn(ValueType) -> ValueType` (ptr param in the emitted IR).
+const WALKER_CONSUMER_SRC: string = "use @std.avrac.core.{ValueType}\nfn main() {\n    let vt = ValueType.List(ValueType.Int)\n    let vt2 = vt.map((c) -> c)\n    println(\"ok\")\n}\n"
+
+// `@std::avrac::core::ValueType__map` under IR mangling (`@` -> $40,
+// `::` -> $3A$3A).
+const WALKER_MANGLED_MAP: string = "$40std$3A$3Aavrac$3A$3Acore$3A$3AValueType__map"
+
+type DispatchProbe = {
+    compile_ok: bool,
+    declares_qualified_map: bool,
+    inlined_map: bool,
+    lambda_param_is_ptr: bool,
+}
+
+fn run_probe() -> DispatchProbe {
+    let pid = avra_getpid()
+    let dir = "/tmp/avra_walkermeta_${string(pid)}"
+    let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+
+    // 1. PRODUCER: ensure @std::avrac's meta.bin exists at its cache slot.
+    //    Idempotent + atomically cached — a warm tree cache-hits.
+    let _ = avra_shell_exec_status(
+        "(cd packages/std-avrac && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='@std::avrac' ../../build/bs2 build --lib --emit_metadata) >/dev/null 2>&1")
+
+    // 2. CONSUMER under metadata mode. No AVRA_LIB_PKG_ROOT: that names the
+    //    package being BUILT (it would prefix this consumer's lambdas into
+    //    the producer's namespace); consumers set only AVRA_USE_METADATA.
+    let av = "${dir}/consumer.av"
+    let _ = avra_selfhost_write_file(av, WALKER_CONSUMER_SRC)
+    let status = avra_shell_exec_status(
+        "AVRA_USE_METADATA=1 ./build/bs2 compile '${av}' >/dev/null 2>&1")
+
+    let ll = avra_selfhost_read_file("${av}.ll")
+    let probe = DispatchProbe {
+        compile_ok: status == 0,
+        // Metadata genuinely engaged AND the mangled fn kept its qualified
+        // name: the method resolves to an extern declare of the producer's
+        // symbol...
+        declares_qualified_map: ll.contains("declare i64 @\"${WALKER_MANGLED_MAP}\"")
+            || ll.contains("declare ptr @\"${WALKER_MANGLED_MAP}\""),
+        // ...not a source-inlined define (which would mask the metadata
+        // path entirely — the pre-fix bug is unreachable when inlining).
+        inlined_map: ll.contains("define i64 @\"${WALKER_MANGLED_MAP}\"")
+            || ll.contains("define ptr @\"${WALKER_MANGLED_MAP}\""),
+        // The callback lambda's param threads from the entry's fn-typed
+        // param: enum receivers are pointers, so `(c) -> c` must lift to
+        // `define i64 @__lambda_0(ptr %0)` — an i64 param means the type
+        // fell to the Unknown->i64 layout guess the totality rule forbids.
+        lambda_param_is_ptr: ll.contains("define i64 @__lambda_0(ptr %0)"),
+    }
+    let _ = avra_shell_exec("rm -rf '${dir}'")
+    probe
+}
+
+spec "metadata fast path: walker-derived method dispatch on a consumed enum" {
+    then "vt.map compiles via extern declare with a ptr-typed callback param" {
+        let r = run_probe()
+        r.compile_ok
+            && r.declares_qualified_map
+            && !r.inlined_map
+            && r.lambda_param_is_ptr
+    }
+}

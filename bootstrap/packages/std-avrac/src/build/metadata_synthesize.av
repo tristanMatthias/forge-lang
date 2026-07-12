@@ -33,7 +33,7 @@ use core.{
     Stmt,
     Expr,
     Annotation, ParamEntry, ValueType, FieldEntry, Variant, TypeParamEntry,
-    NodeStore, StmtId, SrcPos,
+    NodeStore, StmtId, SrcPos, is_mangled_method,
 }
 use build.metadata.{
     UnitMetadata,
@@ -468,12 +468,27 @@ fn synth_trait_method_stmts(store: NodeStore, ms: List<MetaTraitMethod>) -> List
 // ── FNS ──
 
 fn synth_fn_decl(e: FnDeclEntry, bodies: List<GenericBodyEntry>, store: NodeStore) -> StmtId {
-    let n = local_name(e.name)
+    let local = local_name(e.name)
     if e.is_extern {
         // ExternFn is C ABI; codegen treats it as a forward decl
-        // already, so no extra @external_unit wrapping needed.
-        return store.stmts.add_leaf(wrap_export(store, Stmt.ExternFn(n, e.params, e.ret), e.exported))
+        // already, so no extra @external_unit wrapping needed. The C
+        // symbol IS the local name — `__`-containing externs
+        // (`__init_*` deferred-init units) must never carry the
+        // module qualifier the mangled-method branch below preserves.
+        return store.stmts.add_leaf(wrap_export(store, Stmt.ExternFn(local, e.params, e.ret), e.exported))
     }
+    // Method fns (`Type__method` — e.g. derive_walker's generated
+    // `ValueType__map`) are born fully-qualified: @expand runs
+    // post-resolve, so the producer's AST (and this entry's name)
+    // carries `@pkg::mod::Type__method`. The consumer's resolver
+    // deliberately never re-qualifies a `__`-mangled Function name
+    // (is_mangled_method), so stripping to the local name here would
+    // register + declare the fn BARE while method dispatch looks up
+    // the qualified mangle (and the producer's .o exports the
+    // qualified symbol) — `undefined method Type.map` at compile, an
+    // unlinkable extern after. Keep the stored qualified name; the
+    // mirror of synth_impl_method_stmts' `${qualified_type}__${name}`.
+    let n = if is_mangled_method(local) { e.name } else { local }
     let body_source = lookup_generic_body(bodies, e.name)
     if e.is_comptime && body_source != "" {
         // 9p1d: stash source for lazy parse — the consumer's
