@@ -1,4 +1,6 @@
-// `bs2 build --json` flag. Split from cli_build_flags_test.
+// `bs2 build --json` flag, its `--message-format=json` option-form alias (phx5
+// A2), and unknown-flag rejection — the declarative-parse surface `build` gained
+// when phx5 Part B moved it onto avra.run(). Split from cli_build_flags_test.
 
 extern fn avra_shell_exec(cmd: string) -> string
 
@@ -29,5 +31,31 @@ spec "bs2 build --json: emits one JSON object per line" {
             "cd " + project + " && " + bs2_path() + " build --json 2>&1 || true")
         let _ = teardown_project(project)
         out.contains("{\"event\":") || out.contains("\"event\"")
+    }
+}
+
+// phx5 A2: `--message-format=json` is an option-form alias for the `json` flag
+// (the Cargo-compat spelling). The whole `=json` token is matched before the
+// `--key=value` option classifier, so it sets the flag rather than parsing as an
+// undeclared `message-format` option.
+spec "bs2 build --message-format=json: the A2 alias sets the json flag" {
+    then "output is JSON, same as --json" {
+        let project = setup_project()
+        let out = avra_shell_exec(
+            "cd " + project + " && " + bs2_path() + " build --message-format=json 2>&1 || true")
+        let _ = teardown_project(project)
+        out.contains("{\"event\":") || out.contains("\"event\"")
+    }
+}
+
+// phx5 Part B: dispatched through avra.run(), which rejects an undeclared flag
+// rather than silently ignoring it as the old parse_build_args scan did.
+spec "bs2 build: rejects an unknown flag (declarative parse)" {
+    then "`build --bogus` errors and exits non-zero" {
+        let project = setup_project()
+        let probe = avra_shell_exec(
+            "cd " + project + " && (" + bs2_path() + " build --bogus 2>&1; rc=$?; if [ $rc -eq 0 ]; then echo rc=zero; else echo rc=nonzero; fi)")
+        let _ = teardown_project(project)
+        probe.contains("rc=nonzero") && probe.contains("unknown flag")
     }
 }
