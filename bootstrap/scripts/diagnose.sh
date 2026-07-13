@@ -1158,7 +1158,9 @@ ensure_bs2() {
     # slot and silently re-link the previous bs2. We only reach this
     # branch when a source genuinely changed, so a fresh compile is
     # owed regardless — drop the unit cache so no seed vintage can
-    # serve stale here.
+    # serve stale here. The src/build/cache path is where exactly those
+    # old vintages park compile entries (newer compilers cache at the
+    # package root AND key dep-aware, so they need no drop).
     rm -rf "$CLI_SRC_DIR/build/cache"
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
@@ -2028,7 +2030,11 @@ version = "0.1.0"
 MANIFEST
   FUZZ_ENTRY="$fuzz_root/packages/fuzz-p/src/main.av"
   FUZZ_SIB="$fuzz_root/packages/fuzz-q/src/q.av"
-  FUZZ_CACHE_DIR="$fuzz_root/packages/fuzz-p/src/build/cache"
+  # The compile cache lives at the PACKAGE root (BuildInputs.project_root
+  # = package_root_for_file), not under src/ — keep the chaos agent
+  # aimed at the live slot or the damage kinds silently degrade to
+  # pure-contention rounds.
+  FUZZ_CACHE_DIR="$fuzz_root/packages/fuzz-p/build/cache"
   printf 'use @fuzz.q.{fuzz_value}\n\nfn main() { println(string(fuzz_value())) }\n' > "$FUZZ_ENTRY"
   printf 'export fn fuzz_value() -> int { 1 }\n' > "$FUZZ_SIB"
 }
@@ -2347,6 +2353,18 @@ mode_clean_cache() {
     log "[clean-cache] wiped $root/build/cache"
     wiped=$(( wiped + 1 ))
   fi
+  # Legacy location: older compilers parked `bs2 compile` entries at
+  # <pkg>/src/build/cache (the source-dir foot-gun); current compilers
+  # cache at the package root, so anything here is unreachable junk.
+  # The glob names the exact legacy dir — the .av sources that live
+  # BESIDE it in src/build/ (e.g. std-avrac's build module) are not
+  # touched.
+  for d in "$root"/packages/*/src/build/cache; do
+    [ -d "$d" ] || continue
+    rm -rf "$d"
+    log "[clean-cache] wiped $d (legacy compile-cache location)"
+    wiped=$(( wiped + 1 ))
+  done
   ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
 }
 

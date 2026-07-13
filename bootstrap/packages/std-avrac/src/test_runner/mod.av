@@ -651,8 +651,11 @@ fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string
     // output can't be trusted to correspond to the key — return it live
     // but never memoise it. (Poison from overlapping suite runs used to
     // freeze here and replay as a deterministic no-diff FAIL forever.)
+    // Memoisation also requires the exclusive lock to have been HELD:
+    // an unlocked run raced other writers by definition, so its capture
+    // gets the same live-only treatment.
     let post_h = sha256_file(fixture_path)
-    if post_h == run_h && fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
+    if lock_fd >= 0 && post_h == run_h && fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
         let _ = avra_selfhost_write_file(cache_path, out)
     }
     avra_file_unlock(lock_fd)

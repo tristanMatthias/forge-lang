@@ -1748,8 +1748,16 @@ fn run_build_command(args: BuildArgs) {
     mut outcome = decide_build(inputs)
     match outcome {
         .Hit(_, cached_ll) -> {
-            if avra_file_size(cached_ll) <= 0 {
-                eprintln("[build-cache] stale-read miss — slot emptied mid-read; rebuilding")
+            // Consuming a Hit = validate the slot AND materialise the
+            // artifact, atomically (per-pid tmp + rename; a torn/failed
+            // install must not sit at the destination under a success
+            // verdict). Either failing demotes to an honest Miss and the
+            // build recompiles instead of shipping a 0-byte or stale
+            // artifact.
+            let installed = avra_file_size(cached_ll) > 0
+                && avra_shell_exec_status(atomic_cp_cmd(cached_ll, "${entry_path}.ll", avra_getpid())) == 0
+            if !installed {
+                eprintln("[build-cache] stale-read miss — slot emptied or uninstallable mid-read; rebuilding")
                 outcome = match decide_build(inputs) {
                     .Hit(fp2, _) -> BuildOutcome.Miss(fp2, "", "slot emptied mid-read")
                     .Miss(fp2, pk, reason) -> BuildOutcome.Miss(fp2, pk, reason)
@@ -1762,8 +1770,9 @@ fn run_build_command(args: BuildArgs) {
     let t_after_decide = avra_uptime_ms()
     match outcome {
         .Hit(fp, cached_ll) -> {
+            // The artifact was already installed atomically by the
+            // validation above; this arm only reports and mirrors meta.
             let dst = "${entry_path}.ll"
-            avra_shell_exec("cp '${cached_ll}' '${dst}'")
             // 0qmm: on cache hit, also populate the source-keyed meta
             // slot from the path-keyed cache's colocated metadata.bin.
             // Consumers (resolver fast-path, fixtures) read from the
@@ -3772,9 +3781,18 @@ fn cmd_compile(args: CliResult) -> int {
         // PREVIOUS compiler — the "stale bs2 masks your change" dev-loop
         // bug. Ad-hoc compiles (no manifest at pkg_root) get "" → no
         // dep axis, same file-hash-only behaviour as before.
-        let compile_full_fp = package_full_fingerprint(package_root_for_file(cpath))
+        let compile_project_root = package_root_for_file(cpath)
+        let compile_full_fp = package_full_fingerprint(compile_project_root)
         let compile_inputs = BuildInputs {
-            project_root: pkg_dir,
+            // The PACKAGE root, not the source dir: `pkg_dir` (the entry's
+            // directory) parked compile-cache entries at
+            // packages/<pkg>/src/build/cache — a cache dir under src/ that
+            // the documented clean-cache/cache-gc sweeps over
+            // packages/*/build/cache never visited. package_root_for_file
+            // splits at /src/ (package layout) and degrades to the file's
+            // own directory for flat/ad-hoc entries, so those keep their
+            // colocated cache.
+            project_root: compile_project_root,
             unit_name: "compile:" + cpath,
             kind: "bin",
             sources: [cpath],
@@ -3801,12 +3819,17 @@ fn cmd_compile(args: CliResult) -> int {
                     // 0-byte IR downstream (caught by --cache-fuzz-parallel);
                     // an empty read is a MISS — recompile honestly.
                     let cached_ll = read_file(cached_ll_path)
-                    if cached_ll != "" {
-                        avra_selfhost_write_file(dest_ll, cached_ll)
+                    // The install write is atomic (per-pid tmp + rename in
+                    // the runtime) but can still FAIL outright (disk full,
+                    // unwritable destination) — success may only be
+                    // reported when the artifact provably landed;
+                    // otherwise recompile and let the fresh emit render
+                    // the honest verdict on the destination.
+                    if cached_ll != "" && avra_selfhost_write_file(dest_ll, cached_ll) == 1 {
                         eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
                         return 0
                     }
-                    eprintln("[compile-cache] stale-read miss ${fp_short(fp)} — slot emptied mid-read; recompiling")
+                    eprintln("[compile-cache] stale-read miss ${fp_short(fp)} — slot emptied or uninstallable mid-read; recompiling")
                     compile_publish_fp = fp
                 }
                 .Miss(fp, _, _) -> {

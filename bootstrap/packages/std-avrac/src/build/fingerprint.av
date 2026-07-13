@@ -151,9 +151,11 @@ export fn compiler_hash_for(binary_path: string) -> string {
 /// statically links both, so any runtime.c / llvm_wrapper.c edit
 /// changes the binary bytes. sha256_file rides the .avra-sha256
 /// sidecar (~one stat when warm) and the result is memoised per
-/// process. An unhashable argv[0] folds as "" — degrading to the
-/// pre-pdme.8 source-only key rather than failing the build, matching
-/// how compiler_hash_for callers already behave.
+/// process. An unhashable argv[0] folds as the empty-input hash
+/// (sha256_file hashes a missing file as empty input) — a stable
+/// constant, so the fp degrades to a consistent key rather than
+/// failing the build, matching how compiler_hash_for callers already
+/// behave.
 export fn toolchain_fingerprint() -> string {
     let memo_key = "toolchain:@self"
     let cached = avra_pkg_fp_cache_get(memo_key)

@@ -382,9 +382,19 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     // codegen-irrelevant bs2 rebuild — new fp, same unit.ll) already
     // produced this exact object; install it instead of re-lowering.
     let llc_flags = "-O2 -relocation-model=pic -filetype=obj"
-    let store_key = obj_store_key(llc_flags, sha256_file(ll))
-    let store_o = obj_store_path(c, store_key)
-    if avra_file_size(store_o) > 0 {
+    // Size-probe before hashing: the IR can vanish/empty between the
+    // completeness check above and here (check-then-use over a mutable
+    // slot), and sha256_file hashes a missing file as the EMPTY input
+    // (e3b0…) — so every vanished IR would collapse onto ONE shared
+    // store key, and a later victim could be served THIS unit's object
+    // (cross-IR contamination). With no trustworthy content there is no
+    // key: the store is skipped in BOTH directions (no lookup here, no
+    // publish below — store_o "" gates both) and llc renders the honest
+    // verdict on whatever is on disk.
+    let store_o = if avra_file_size(ll) > 0 {
+        obj_store_path(c, obj_store_key(llc_flags, sha256_file(ll)))
+    } else { "" }
+    if store_o != "" && avra_file_size(store_o) > 0 {
         if atomic_install(store_o, real_o) {
             // pdme.6: a HIT refreshes the store entry's mtime so the
             // age-based prune reads as an LRU — a hot object stays
@@ -433,8 +443,11 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
 /// Best-effort publish of a freshly-llc'd object into the content
 /// store (atomic install; a failure just forfeits the next slot's
 /// rescue). Idempotent: identical content under an identical key,
-/// so a concurrent double-publish is harmless.
+/// so a concurrent double-publish is harmless. `store_o` is "" when
+/// the IR hash was unreadable at key time — no trustworthy key, no
+/// publish.
 fn publish_obj_store(c: Cache, store_o: string, real_o: string) {
+    if store_o == "" { return }
     let _ = avra_mkdir_p(c.cache_dir + "obj")
     let _ = atomic_install(real_o, store_o)
 }
@@ -453,9 +466,17 @@ export fn linked_bin_key(objs: List<string>, runtime_o: string, llvm_wrapper_o: 
     mut composed = "link v1\n" + "opts:" + opts_canonical + "\n"
     mut i = 0
     while i < objs.length {
+        // Size-probe before hashing: sha256_file hashes a missing input
+        // as the EMPTY input, so every unreadable object would share one
+        // hash — and unlike a failed link (loud), a LOOKUP under such a
+        // key silently installs a foreign cached binary without ever
+        // linking. An untrustworthy input yields NO key ("") ⇒ no store
+        // participation (lookup returns false and publish no-ops).
+        if avra_file_size(objs[i]) <= 0 { return "" }
         composed = composed + "obj:" + sha256_file(objs[i]) + "\n"
         i = i + 1
     }
+    if avra_file_size(runtime_o) <= 0 || avra_file_size(llvm_wrapper_o) <= 0 { return "" }
     composed = composed + "runtime:" + sha256_file(runtime_o) + "\n"
     composed = composed + "wrapper:" + sha256_file(llvm_wrapper_o) + "\n"
     sha256_hex(composed)
@@ -471,6 +492,7 @@ export fn linked_bin_store_path(c: Cache, key: string) -> string {
 /// skips the link step entirely. Returns false on miss or any install
 /// failure (the caller just links as usual; never a correctness event).
 export fn linked_bin_lookup(c: Cache, key: string, dest: string) -> bool {
+    if key == "" { return false }
     let store_bin = linked_bin_store_path(c, key)
     if avra_file_size(store_bin) <= 0 { return false }
     if atomic_install(store_bin, dest) {
@@ -482,7 +504,10 @@ export fn linked_bin_lookup(c: Cache, key: string, dest: string) -> bool {
 }
 
 /// Best-effort publish of a freshly-linked binary into the store.
+/// `key` is "" when any link input's hash was unreadable at key time —
+/// no trustworthy key, no publish.
 export fn linked_bin_publish(c: Cache, key: string, bin_path: string) {
+    if key == "" { return }
     let _ = avra_mkdir_p(c.cache_dir + "link")
     let _ = atomic_install(bin_path, linked_bin_store_path(c, key))
 }

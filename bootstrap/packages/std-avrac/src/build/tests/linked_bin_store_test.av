@@ -101,3 +101,29 @@ spec "uzs9.3: linked-bin store lookup/publish roundtrip" {
         !linked_bin_lookup(c, key, "${root}/installed.bin")
     }
 }
+
+spec "linked-bin store: an unreadable link input yields no key and no store traffic" {
+    then "a missing object makes linked_bin_key empty, and empty keys never hit or publish" {
+        let root = mk_root("unreadable")
+        let c = mk_cache(root)
+        let obj = "${root}/present.o"
+        let rt = "${root}/runtime.o"
+        let wrap = "${root}/wrapper.o"
+        let _ = avra_selfhost_write_file(obj, "OBJ")
+        let _ = avra_selfhost_write_file(rt, "RT")
+        let _ = avra_selfhost_write_file(wrap, "WRAP")
+        // Every input readable -> a real 64-hex key.
+        let good_key = linked_bin_key([obj], rt, wrap, "opts")
+        // One input missing -> "": without a trustworthy content hash a
+        // key would collapse every unreadable input onto one slot, and a
+        // LOOKUP under it could install a foreign binary without ever
+        // linking. No key, no store participation.
+        let bad_key = linked_bin_key(["${root}/missing.o"], rt, wrap, "opts")
+        linked_bin_publish(c, bad_key, obj)
+        let no_hit = !linked_bin_lookup(c, bad_key, "${root}/out.bin")
+        let store_empty = avra_shell_exec("ls '${c.cache_dir}link' 2>/dev/null | wc -l").trim()
+        good_key.length == 64 && bad_key == "" && no_hit
+            && avra_selfhost_file_exists("${root}/out.bin") == 0
+            && (store_empty == "0" || store_empty == "")
+    }
+}
