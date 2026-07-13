@@ -6,7 +6,7 @@
 component_decl   = "component" IDENT implements? "{" component_body "}"
 implements       = "implements" ident_list
 
-component_body   = config_block? children_block? init_or_methods
+component_body   = config_block? children_block? method*
 
 config_block     = "config" "{" config_field ("," config_field)* "}"
 config_field     = IDENT ":" type_expr ("=" expression)?
@@ -26,24 +26,26 @@ Components are the declarative-layer primitive of Components V2
 - a typed config schema (with optional defaults),
 - a child-slot schema (which other component types can nest
   inside this one),
-- methods or init logic,
+- methods,
 - optional trait conformances (`implements Display`).
 
 A `component_block` is an instantiation — it provides config
 overrides and child instances, and the expansion pass splices
 the result into the surrounding scope.
 
-## Two flavours of component
+## Expansion
 
-### Data component (no `init`)
-
-A component without an `init` function expands to:
+Every plain component is a **data component**. It expands to:
 
 - A struct type (`type Foo = { name: string, …config fields…,
   …children slot fields… }`).
 - A factory function (`fn foo_new(name: string) -> Foo`) that
   fills in config defaults + zeroed children lists.
-- One impl method per non-init method declared in the body.
+- One prefixed free fn per method declared in the body
+  (`fn describe` in `component user` becomes `fn user_describe`).
+  No method name is special: construction is the factory,
+  cleanup is the `Drop` trait, post-construction work is an
+  explicit method call.
 
 ```avra
 component user {
@@ -61,31 +63,34 @@ let alice = user "alice" { admin: true, role: "admin" }
 println(alice.describe())
 ```
 
-### Template component (with `init`)
+An instantiation `foo inst { … }` becomes
+`let inst = foo_new("inst") with { overrides }` (a `mut` binding
+when the component declares children slots, so auto-push
+compiles), followed by the recursively expanded children and an
+auto-push of each child into its parent's matching slot.
 
-A component with an `init` function expands by inlining the
-init body into the surrounding scope at instantiation sites,
-rewriting `self.config.*` references to the supplied values.
-Templates exist for the declarative-builder pattern (cli
-commands, lsp handlers) where the "object" isn't really an
-object — it's a piece of imperative setup parameterised by
-config.
+Anything richer — per-instance behaviour, generated trait impls,
+custom dispatch — is library-authored via `@expand(macro)`:
+annotated defs and their instance blocks pass through this pass
+untouched and are consumed by the comptime macro pipeline
+(`features/comptime/expand_macro.av`). The `cli`/`command`
+blocks in `packages/cli/src/main.av` (macros in
+`@std.cli.cmdgen`) are the canonical example.
 
-Phase 10 (`vez6.10`) deletes the template path; all current
-template uses migrate to the data + `@expand` macro shape.
+The former **template flavour** — `fn init()` bodies inlined at
+the instantiation site, `self.__parent`/`self.__parent_name`
+accumulator threading, and `on <event>`/`event <name>` hooks —
+is gone (Components V2 design §3.8). Data + `@expand` macros
+cover every former use.
 
-## Self-referenced fields
+## Instance struct fields
 
-Inside a component body, the receiver `self` exposes:
+The synthesized struct exposes:
 
-- `self.name` — the implicit instance-name string (always
-  present).
-- `self.<config_field>` — resolved config value (user override
-  or schema default).
-- `self.<children_slot>` — the list of nested-child instances.
-- (template only) `self.__parent`, `self.__parent_name` — the
-  enclosing accumulator and its instance name. Goes away with
-  vez6.10.
+- `.name` — the implicit instance-name string (always present).
+- `.<config_field>` — resolved config value (user override or
+  schema default).
+- `.<children_slot>` — the list of nested-child instances.
 
 ## Examples
 
@@ -133,11 +138,10 @@ The expansion produces:
      synthesised struct + factory + methods at every def site,
      and the construction sequence at every block site.
 - @expand-annotated component defs (vez6.8.5) are SKIPPED by
-  the legacy expander — their instances route through
+  this pass — their instances route through
   `features/comptime/expand_macro.av` instead.
 
 ## Spec reference
 
 Design doc: `docs/2026_05_08_COMPONENTS_V2_DESIGN.md`. The
-epic `vez6` tracks all component-related work; phases 1–10
-cover the design surface.
+epic `vez6` tracks all component-related work.

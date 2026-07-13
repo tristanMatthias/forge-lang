@@ -1,3 +1,8 @@
+// Config `=` pairs accept arbitrary expressions at instantiation, and
+// absent pairs fall back to the schema defaults — pinned against the
+// data-component expansion (factory fills defaults, `with` applies the
+// user's overrides).
+
 fn ceq_add(a: int, b: int) -> int { a + b }
 
 component widget_eq {
@@ -6,25 +11,27 @@ component widget_eq {
         label: string = ""
         active: bool = false
     }
-    fn init() {
-        println(string(self.config.value))
-        println(self.config.label)
-        if self.config.active { println("true") } else { println("false") }
-    }
 }
 
-fn ceq_run() -> string {
-    avra_test_capture_start()
+fn ceq_overridden() -> bool {
     widget_eq w {
         value = ceq_add(5, 10)
         label = "hello"
         active = true
     }
-    avra_test_capture_stop()
+    w.value == 15 && w.label == "hello" && w.active
+}
+
+fn ceq_defaults() -> bool {
+    widget_eq d {}
+    d.value == 0 && d.label == "" && !d.active
 }
 
 spec "component config eq" {
     then "config pairs with = support arbitrary expressions" {
-        ceq_run() == "15\nhello\ntrue"
+        ceq_overridden()
+    }
+    then "absent config pairs fall back to schema defaults" {
+        ceq_defaults()
     }
 }
