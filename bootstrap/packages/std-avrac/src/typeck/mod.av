@@ -2926,8 +2926,15 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
+    // The statement's own stamp, restored after the loop and reset before
+    // each argument — so a span-less arg (interned leaf) reports at the
+    // call statement, never at a SIBLING argument's position, while a
+    // spanned arg sharpens to its own caret via tc_at_expr.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
         let p = params[i]
+        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
         let param_ty = resolve_vtype(cur, p.vtype)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         if param_ty is .Newtype {
@@ -2951,7 +2958,7 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
         }
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // Extract the first argument's type. Safe to call after check_expr_list
