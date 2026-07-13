@@ -8,6 +8,11 @@
 **/*.bin.o
 **/*.profraw
 **/*.profdata
+# Per-pid atomic-materialise staging (`<artifact>.tmp.<pid>` — the
+# tmp+rename discipline in link.av / llvm_wrapper.c / runtime.c). A
+# killed process orphans its tmp beside tracked fixtures; transient
+# by design, never source.
+**/*.tmp.[0-9]*
 # Ignore any directory named `build/` (catches the top-level artifact
 # dir AND any per-package build/ such as packages/std-lsp/build/),
 # but RE-INCLUDE the legitimate build-driver source module that lives
