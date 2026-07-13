@@ -72,7 +72,7 @@ export fn interner_new() -> StringInterner {
 ///
 /// We have to thread the interner through the call site because Avra
 /// struct fields aren't `mut` from the outside — same pattern the
-/// rest of bootstrap uses for builders (cli_add_*, bag_report, etc).
+/// rest of bootstrap uses for builders (bag_report, set_option, etc).
 export type InternResult = { interner: StringInterner, sym: int }
 
 export fn interner_intern(itn: StringInterner, name: string) -> InternResult {
