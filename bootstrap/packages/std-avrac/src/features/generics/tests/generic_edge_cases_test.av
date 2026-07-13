@@ -30,7 +30,7 @@ spec "generic edge cases" {
         piped == 84
     }
     then "generic with closure" {
-        gec_apply(21, (x) -> x * 2) == 42
+        gec_apply(21, (x: int) -> x * 2) == 42
     }
     then "string interpolation in generic-adjacent fn" {
         gec_show(42) == "value: 42"

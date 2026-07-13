@@ -1,0 +1,146 @@
+// WHY: negative-path spec for the F1006 gate WIDENING (ps3t.4.5 slice B,
+// rows 11-15/19/20/22/23). A lambda in a position that never threads
+// parameter types into codegen — if/match-expr arms, list/map/tuple
+// elements, indirect-call args, bare expression statements, defer
+// bodies, parallel bodies — has no context to resolve an un-annotated
+// parameter from. The old behavior silently laid the parameter out as
+// i64 (the silent-miscompile class); the typeck gate now rejects with
+// F1006, and codegen's F1007 backstop refuses any Unknown that slips
+// past typeck. Every row pairs the rejection with an annotated positive
+// control proving the gate keys on the MISSING ANNOTATION, not the
+// position.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ulr_compile_out(source: string) -> string {
+    let path = "/tmp/avra_ulr_rows.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "un-annotated lambdas in unthreaded positions are rejected (F1006)" {
+    given "if-expression arms (row 11)" {
+        then "a lambda arm with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { let c = true  let f = if c { (x) -> x } else { (x) -> x + 1 }  0 }")
+            out.contains("F1006")
+        }
+        then "annotated lambda arms compile and run through the binding (positive control)" {
+            let out = ulr_compile_out("fn main() { let c = true  let f = if c { (x: int) -> x * 2 } else { (x: int) -> x + 1 }  let r = f(3)  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "match-expression arms (row 12)" {
+        then "a lambda arm with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { let n = 1  let f = match n { 1 -> (x) -> x, _ -> (x) -> x + 1 }  0 }")
+            out.contains("F1006")
+        }
+        then "annotated lambda arms compile (positive control)" {
+            let out = ulr_compile_out("fn main() { let n = 1  let f = match n { 1 -> (x: int) -> x, _ -> (x: int) -> x + 1 }  let r = f(3)  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "list-literal elements (row 13)" {
+        then "a lambda element with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { let fs = [(x) -> x * 2]  0 }")
+            out.contains("F1006")
+        }
+        then "annotated lambda elements compile (positive control)" {
+            let out = ulr_compile_out("fn main() { let fs = [(x: int) -> x * 2]  let n = fs.length  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "map-literal values (row 14)" {
+        then "a lambda value with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { let m = {\"k\": (x) -> x * 2}  0 }")
+            out.contains("F1006")
+        }
+        then "annotated lambda values compile (positive control)" {
+            let out = ulr_compile_out("fn main() { let m = {\"k\": (x: int) -> x * 2}  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "tuple elements (row 15)" {
+        then "a lambda element with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { let t = (1, (x) -> x)  0 }")
+            out.contains("F1006")
+        }
+        then "annotated lambda elements compile (positive control)" {
+            let out = ulr_compile_out("fn main() { let t = (1, (x: int) -> x)  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "indirect-call arguments (row 19)" {
+        then "an un-annotated lambda passed to a closure variable is F1006" {
+            let out = ulr_compile_out("fn main() { let apply = (f: fn(int) -> int, x: int) -> f(x)  let r = apply((v) -> v + 1, 5)  0 }")
+            out.contains("F1006")
+        }
+        then "an annotated lambda passed to a closure variable compiles and runs (positive control)" {
+            let out = ulr_compile_out("fn main() { let apply = (f: fn(int) -> int, x: int) -> f(x)  let r = apply((v: int) -> v + 1, 5)  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "bare statement-position lambdas (row 20)" {
+        then "an expression-statement lambda with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { (x) -> x + 1  0 }")
+            out.contains("F1006")
+        }
+        then "an annotated expression-statement lambda compiles (positive control)" {
+            let out = ulr_compile_out("fn main() { (x: int) -> x + 1  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "defer bodies (row 22)" {
+        then "a defer-body lambda with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { defer (x) -> x + 1  0 }")
+            out.contains("F1006")
+        }
+        then "an annotated defer-body lambda compiles (positive control)" {
+            let out = ulr_compile_out("fn main() { defer (x: int) -> x + 1  0 }")
+            out.contains("__AVRA_COMPILE_OK__")
+        }
+    }
+    given "parallel bodies (row 23 — rides the row-20 statement gate)" {
+        then "a parallel-body statement lambda with a bare parameter is F1006" {
+            let out = ulr_compile_out("fn main() { parallel { (x) -> x + 1 }  0 }")
+            out.contains("F1006")
+        }
+    }
+}
+
+spec "the F1007 layout backstop refuses what typeck cannot see" {
+    then "an `it` projection over an element-untyped List is refused at codegen, not guessed as i64" {
+        let out = ulr_compile_out("fn f(items: List) -> int { let r = items.map(it * 2)  r.length }
+fn main() { let n = f([1, 2])  0 }")
+        out.contains("F1007")
+    }
+    then "typing the collection's element resolves the same shape (positive control)" {
+        let out = ulr_compile_out("fn f(items: List<int>) -> int { let r = items.map(it * 2)  r.length }
+fn main() { let n = f([1, 2])  0 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "declared fn-type returns cascade into nested return-position lambdas" {
+    then "a typed binding threads a block-tail lambda's params through the return type" {
+        let out = ulr_compile_out("fn main() { let make: fn(int) -> fn(int) -> int = (n) -> { (x) -> x + n }  let add5 = make(5)  let r = add5(10)  0 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a fn's declared ret-of-ret threads a doubly-nested tail lambda" {
+        let out = ulr_compile_out("fn mk() -> fn(int) -> fn(int) -> int { (a) -> (b) -> a + b }
+fn main() { let add = mk()  let add3 = add(3)  let r = add3(4)  0 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "threaded positions stay un-gated (canaries)" {
+    then "a method-call lambda argument threads from the element type" {
+        let out = ulr_compile_out("fn main() { let xs = [1, 2, 3].map((x) -> x * 2)  let n = xs.length  0 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a registered-fn call argument threads from the declared param" {
+        let out = ulr_compile_out("fn takes(f: fn(int) -> int) -> int { f(4) }
+fn main() { let r = takes((x) -> x * 2)  0 }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

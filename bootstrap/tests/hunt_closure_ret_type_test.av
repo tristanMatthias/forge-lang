@@ -1,5 +1,5 @@
 fn hunt_make_prefix(prefix: string) -> fn {
-    (name) -> { prefix + " " + name }
+    (name: string) -> { prefix + " " + name }
 }
 
 spec "hunt closure ret type" {

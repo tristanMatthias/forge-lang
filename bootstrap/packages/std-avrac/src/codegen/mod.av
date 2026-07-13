@@ -285,7 +285,9 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
                 .Lambda(lparams, lbody) -> {
                     let declared = ctx.fn_ret_params(ctx.current_fn_name)
                     if declared.length > 0 {
-                        r = emit_lambda_typed(ctx, env, lparams, ctx.nodes.exprs.get(lbody), declared)?
+                        // Slice B: cascade the ret-of-ret so a nested
+                        // return-position lambda threads too.
+                        r = emit_lambda_typed(ctx, env, lparams, ctx.nodes.exprs.get(lbody), declared, vtype_fn_ret(ctx.current_fn_ret()))?
                         lambda_threaded = true
                     }
                 }

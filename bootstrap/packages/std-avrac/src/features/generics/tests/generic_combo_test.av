@@ -28,6 +28,6 @@ spec "generic combo" {
         gc_double_wrap(3) == 3
     }
     then "generic with closure transform" {
-        gc_transform(21, (y) -> y * 2) == 42
+        gc_transform(21, (y: int) -> y * 2) == 42
     }
 }

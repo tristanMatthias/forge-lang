@@ -2,13 +2,38 @@
 // auto-load as siblings and surface flat at `features.parallel_stmt.{...}`.
 // Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
 // scope here without an explicit self-import.
-use core.{feature_new, Feature}
+use core.{feature_new, Feature, stmt_unwrap}
 use resolve.{resolve_stmt_ids}
+use typeck.{TC, check_stmt_ids, tc_enter, tc_exit, tc_gate_unthreaded_lambda}
 
 /// Resolver hook for `parallel { ... }`. Walks the body's statement
 /// list so name resolution still happens inside the parallel block.
 fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Parallel(body) -> resolve_stmt_ids(r, body), _ -> r }
+}
+
+/// Type-check hook for `parallel { ... }`. The body statements were
+/// previously never type-checked at all — every gate (including the
+/// row-20 unthreaded-lambda gate, which covers row 23) was blind to
+/// them. Check them in their own scope like a block.
+fn parallel_check(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Parallel(body) -> {
+            let checked = check_stmt_ids(tc_enter(tc), body)
+            // Row 23 (ps3t.4.5): check_stmt_ids exempts the TAIL
+            // statement from the unthreaded-lambda gate (a fn-body
+            // tail threads from the declared return) — but a parallel
+            // body never threads anything, so gate its tail here.
+            let gated = if body.length == 0 { checked } else {
+                match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(body[body.length - 1])) {
+                    .Expr(e) -> tc_gate_unthreaded_lambda(checked, tc.nodes.exprs.get(e))
+                    _ -> checked
+                }
+            }
+            tc_exit(gated)
+        }
+        _ -> tc
+    }
 }
 
 
@@ -23,5 +48,6 @@ export fn parallel_feature() -> Feature {
         parse_decl: (p: Parser) -> p.parse_parallel_statement(),
         emit_stmt: parallel_emit_stmt,
         resolve_stmt: parallel_resolve,
+        check_stmt: parallel_check,
     }
 }

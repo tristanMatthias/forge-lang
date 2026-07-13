@@ -14,7 +14,8 @@
 
 use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenArm, VarBinding, env_lookup, env_extend, ValueType, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown, vtype_fn_params}
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
-use codegen.{emit_expr}
+use codegen.{emit_expr, emit_block_loop_ctx}
+use core.{stmt_unwrap}
 use codegen.{analyze_releasable_expr}
 use core.{avra_llvm_set_linkonce_odr}
 
@@ -409,6 +410,26 @@ fn resolve_declared_or_unknown(ctx: Ctx, vtype: ValueType) -> ValueType {
     }
 }
 
+/// Annotation-is-truth fill for a caller-supplied param-type list:
+/// an Unknown slot (e.g. the element type threaded from an EMPTY
+/// list's `.map`/`.filter`/`.reduce`) is replaced by the param's
+/// declared annotation when one exists. A concrete caller slot wins
+/// (context and annotation agree on valid programs; context carries
+/// resolved generics), so this only FILLS gaps, never overrides.
+fn fill_unknown_from_declared(ctx: Ctx, params: List<ParamEntry>, supplied: List<ValueType>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < supplied.length {
+        if vtype_is_unknown(supplied[i]) && i < params.length {
+            out.push(resolve_declared_or_unknown(ctx, params[i].vtype))
+        } else {
+            out.push(supplied[i])
+        }
+        i = i + 1
+    }
+    out
+}
+
 // Global lambda counter for unique names.
 // This is the ONE allowed mutable global — it's a monotonic counter
 // Unique lambda ID generation — uses a C-side counter to avoid mutable globals.
@@ -421,7 +442,7 @@ export fn emit_lambda(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
     match expr {
         .Lambda(params, body) -> {
             let empty_types: List<ValueType> = []
-            emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), empty_types)
+            emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), empty_types, ValueType.Unknown)
         }
         _ -> err_emit("expected Lambda")
     }
@@ -443,11 +464,66 @@ export fn emit_expected(ctx: Ctx, env: List<VarBinding>, e: Expr, expected: Valu
         .Lambda(params, body) -> {
             let resolved = ctx.resolve_codegen_vtype(expected)
             if resolved is .FnTyped {
-                return emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(resolved))
+                return emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), vtype_fn_params(resolved), vtype_fn_ret(resolved))
             }
             ctx.emit(env, e)
         }
         _ -> ctx.emit(env, e)
+    }
+}
+
+/// Return-type cascade (ps3t.4.5 slice B): emit a lambda's BODY with
+/// its declared/threaded RETURN fn-type flowing into a nested
+/// return-position lambda. `fn(int) -> fn(int) -> int` shapes —
+/// `(n) -> { (x) -> x + n }` under a typed binding, or
+/// `(a) -> (b) -> a + b` as a fn tail — fully declare the inner
+/// lambda's param types, but without the cascade the inner emit ran
+/// the no-context path and hit the F1007 refusal. Mirrors
+/// fn_decl/codegen.av's emit_body_block prefix+tail threading; a
+/// non-fn `ret_fn_ty` (the common case) takes the plain emit path.
+fn emit_lambda_body_with_ret(ctx: Ctx, env: List<VarBinding>, body: Expr, ret_fn_ty: ValueType) -> Result<EmitValue, string> {
+    if !(ret_fn_ty is .FnTyped) { return emit_expr(ctx, env, body) }
+    match body {
+        .Lambda(p, b) ->
+            emit_lambda_typed(ctx, env, p, ctx.nodes.exprs.get(b), vtype_fn_params(ret_fn_ty), vtype_fn_ret(ret_fn_ty))
+        .Block(stmts) -> {
+            if stmts.length == 0 { return emit_expr(ctx, env, body) }
+            let last_i = stmts.length - 1
+            mut tail_lambda_params: List<ParamEntry> = []
+            mut tail_lambda_body: Expr = Expr.None
+            mut has_tail_lambda = false
+            match stmt_unwrap(ctx.nodes, ctx.nodes.stmts.get(stmts[last_i])) {
+                .Expr(e) -> {
+                    match ctx.nodes.exprs.get(e) {
+                        .Lambda(p, b) -> {
+                            tail_lambda_params = p
+                            tail_lambda_body = ctx.nodes.exprs.get(b)
+                            has_tail_lambda = true
+                        }
+                        _ -> {}
+                    }
+                }
+                _ -> {}
+            }
+            if !has_tail_lambda { return emit_expr(ctx, env, body) }
+            mut prefix: List<StmtId> = []
+            mut pi = 0
+            while pi < last_i {
+                prefix.push(stmts[pi])
+                pi = pi + 1
+            }
+            let pre = emit_block_loop_ctx(ctx, env, prefix, ctx.i64(0), .Unknown)?
+            // emit_block_loop_ctx returns an EMPTY env for an empty stmt
+            // list — fall back to the caller's env so a no-prefix tail
+            // lambda still sees the enclosing params for capture analysis.
+            let pre_env = if last_i == 0 { env } else { pre.env }
+            // Prefix ended in a terminator (early return): the tail
+            // lambda is dead code — don't emit past the terminator
+            // (t-83ja, mirroring emit_body_block).
+            if pre.ctx.has_terminator() { return ok_emit(pre.value, pre.ty) }
+            emit_lambda_typed(pre.ctx, pre_env, tail_lambda_params, tail_lambda_body, vtype_fn_params(ret_fn_ty), vtype_fn_ret(ret_fn_ty))
+        }
+        _ -> emit_expr(ctx, env, body)
     }
 }
 
@@ -460,7 +536,7 @@ export fn emit_expected(ctx: Ctx, env: List<VarBinding>, e: Expr, expected: Valu
 /// array `[TAG, fn_ptr, capture0, capture1, ...]` and returns
 /// it as the call's value. Non-capturing lambdas get a single-
 /// slot closure with the function pointer only.
-export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<ParamEntry>, body: Expr, param_types: List<ValueType>) -> Result<EmitValue, string> {
+export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<ParamEntry>, body: Expr, param_types: List<ValueType>, ret_fn_ty: ValueType) -> Result<EmitValue, string> {
     let id = avra_next_lambda_id()
     // Library-mode: prefix the lambda name with the lib_pkg_root
     // (e.g. `@std::lsp::__lambda_3`) so two different units that
@@ -488,11 +564,30 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
 
     // Compute effective parameter types BEFORE creating the LLVM function,
     // so we can build a properly-typed LLVM function signature.
-    // Empty caller-supplied list means "infer from the body".
+    // Empty caller-supplied list means "read the declared annotations".
+    // A non-empty caller list can still carry Unknown slots (an empty
+    // list's `.map` threads an Unknown element type) — annotation is
+    // truth (A5), so a declared param type fills any Unknown slot
+    // rather than being overridden by it.
     let effective_types = if param_types.length == 0 {
         declared_param_vtypes(ctx, params)
     } else {
-        param_types
+        fill_unknown_from_declared(ctx, params, param_types)
+    }
+    // F1007 (ps3t.4.5 layout totality): a parameter whose type is still
+    // Unknown here has no layout — the old behavior silently laid it out
+    // as i64, reinterpreting pointer params as integers (the
+    // silent-miscompile class). Refuse instead. The typeck F1006 gates
+    // catch every un-annotated unthreaded position with a span first, so
+    // reaching this error means a threading gap (e.g. an un-annotated
+    // lambda handed to an under-applied generic's template dispatch) —
+    // the annotation fix applies either way.
+    mut ti = 0
+    while ti < effective_types.length {
+        if vtype_is_unknown(effective_types[ti]) && ti < params.length {
+            return err_emit("error[F1007]: cannot determine the type of lambda parameter `${params[ti].name}` — annotate it, e.g. `(${params[ti].name}: int) -> …`; a lambda parameter's layout must be fully resolved before code generation")
+        }
+        ti = ti + 1
     }
 
     // Build typed LLVM function: declared params use effective_types, captures use i64.
@@ -514,7 +609,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     // with_fn resets defers/rc_cleanup/rc_releasable to .End, so lambda body starts fresh.
     body_ctx.rc_releasable = analyze_releasable_expr(ctx.nodes, body)
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
-    match emit_expr(body_ctx, body_env, body) {
+    match emit_lambda_body_with_ret(body_ctx, body_env, body, ret_fn_ty) {
         .Ok(v) -> { result = v }
         .Err(e) -> {
             ctx.position(saved_bb)
@@ -600,7 +695,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: List<VarBinding>, args: List<Expr
     if args.length == 0 { return err_emit("expected 1 argument, got 0") }
     let se = args[0]
     match ctx.nodes.exprs.get(se) {
-        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), param_types)
+        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), param_types, ValueType.Unknown)
         _ -> ctx.emit(env, ctx.nodes.exprs.get(se))
     }
 }

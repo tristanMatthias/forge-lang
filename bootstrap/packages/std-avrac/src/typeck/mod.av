@@ -1651,11 +1651,26 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 /// Positions come from the store's position column.
 export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
     mut cur = lint_index_loops(tc, ids)
+    mut i = 0
     for id in ids {
         let pos = tc.nodes.stmt_pos(id)
         avra_ice_at(pos.file, pos.line, pos.col)
-        let with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
+        mut with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
+        // Row 20 (ps3t.4.5): a NON-TAIL expression-statement lambda's
+        // value is discarded — nothing can thread its param types, so
+        // an un-annotated one is F1006. The TAIL statement is exempt
+        // here: as a fn-body tail it threads from the declared fn-type
+        // return, and as a block value its owner decides (the gated
+        // positions peel block tails via tc_gate_unthreaded_lambda;
+        // fn bodies gate the non-fn-return case in tc_check_fn_body).
+        if i < ids.length - 1 {
+            match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
+                .Expr(e) -> { with_pos = tc_gate_unthreaded_lambda(with_pos, tc.nodes.exprs.get(e)) }
+                _ -> {}
+            }
+        }
         cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
+        i = i + 1
     }
     cur
 }
@@ -2260,6 +2275,39 @@ export fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
     ""
 }
 
+/// F1006 widening (ps3t.4.5 slice B): gate a lambda appearing in a
+/// position that never threads parameter types into codegen —
+/// if/match-expr arms, list/map/tuple elements, indirect-call args,
+/// bare expression statements, defer bodies. In those positions an
+/// un-annotated parameter has no context to resolve from, and codegen
+/// refuses an Unknown-typed param at the layout boundary rather than
+/// guessing i64 — so require the annotation here, with a span.
+/// Threaded positions (let annotation, struct field, enum payload,
+/// registered-fn/method call args, fn return) must NOT route through
+/// this gate. Non-lambda expressions pass through untouched.
+export fn tc_gate_unthreaded_lambda(tc: TC, e: Expr) -> TC {
+    match e {
+        .Lambda(params, _) -> {
+            let unresolved = tc_first_unannotated_param(params)
+            if unresolved == "" { return tc }
+            tc_report(tc, DiagCode.UnannotatedLambdaParam, "cannot infer type of lambda parameter `${unresolved}`")
+        }
+        // A block in a gated position yields its tail expression — a
+        // lambda tail (`if c { (x) -> x } …`) is exactly as unthreaded
+        // as a bare lambda arm. Recursion peels nested blocks. Fn
+        // BODIES don't route through this gate, so a returned tail
+        // lambda (threaded via the declared return type) is unaffected.
+        .Block(body) -> {
+            if body.length == 0 { return tc }
+            match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(body[body.length - 1])) {
+                .Expr(tail) -> tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(tail))
+                _ -> tc
+            }
+        }
+        _ -> tc
+    }
+}
+
 fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool, is_mut: bool) -> TC {
     let has_annotation = !vtype_is_unknown(ty_vt)
     // F1006 (ps3t.4.5 totality): a bare `let f = (x) -> …` binds a lambda whose
@@ -2425,12 +2473,26 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Row-20 tail case (ps3t.4.5): a fn-body TAIL lambda threads its
+/// param types from a declared `fn(…)`-typed return (the A3
+/// FnRetMeta threading), so it is exempt from the unthreaded gate —
+/// but under any OTHER return type (Void, scalar, none declared) a
+/// tail lambda has no context and an un-annotated param is F1006.
+fn tc_gate_fn_tail_lambda(tc: TC, ret_vt: ValueType, body: List<StmtId>) -> TC {
+    if body.length == 0 { return tc }
+    if !vtype_is_unknown(ret_vt) && resolve_vtype(tc, ret_vt) is .FnTyped { return tc }
+    match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(body[body.length - 1])) {
+        .Expr(e) -> tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(e))
+        _ -> tc
+    }
+}
+
 // Check that `impl Trait for Type` provides all required methods.
 /// Type-check a function body against its declared return type.
 /// Includes implicit-return checking (the body's tail expression
 /// must match `ret_vt`) and explicit-return path verification.
 fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<StmtId>) -> TC {
-    let checked = check_stmt_ids(tc, body)
+    let checked = tc_gate_fn_tail_lambda(check_stmt_ids(tc, body), ret_vt, body)
     // Skip return type checking for functions without a declared return type.
     if vtype_eq(ret_vt, .Void) {
         return checked
@@ -3309,7 +3371,13 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
     }
     // Check shape and newtype compatibility
     let shape_checked = tc_check_shape_args(checked, rec.params, args)
-    let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args, rec.is_extern)
+    // Slice B (ps3t.4.5): a lambda argument bound to a generic-typed
+    // param (`f: fn(T) -> T`) is NOT threaded at codegen — the
+    // template-dispatch path emits the lambda before any instantiation
+    // pins T, so an un-annotated param would reach the layout boundary
+    // Unknown (the F1007 backstop). Require the annotation here.
+    let lambda_gated = tc_gate_generic_lambda_args(shape_checked, rec.tp, rec.params, args)
+    let newtype_checked = tc_check_newtype_args(lambda_gated, name, rec.params, args, rec.is_extern)
     // Optional strict arg-type warnings: AVRA_STRICT_ARGS=1 surfaces
     // F9004 when a concrete arg type isn't assignable to its concrete
     // param type. Off by default — the existing typeck has gaps in
@@ -3358,6 +3426,27 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
         i = i + 1
     }
     cur_tc
+}
+
+/// Slice B (ps3t.4.5) companion of `tc_gate_unthreaded_lambda`: walk a
+/// call's params/args pairwise and gate every un-annotated lambda arg
+/// whose DECLARED param type mentions one of the callee's type params.
+/// A concrete fn-typed param (`f: fn(int) -> int`) threads its types
+/// into the lambda at codegen and is exempt; a generic one does not —
+/// explicit type-args included (the emit path consults the declared
+/// template signature, never the instantiation, for lambda args).
+fn tc_gate_generic_lambda_args(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    if tp.length == 0 { return tc }
+    mut cur = tc
+    mut i = 0
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        if vtype_mentions_typeparam(params[i].vtype, tp) {
+            cur = tc_gate_unthreaded_lambda(cur, cur.nodes.exprs.get(args[i]))
+        }
+        i = i + 1
+    }
+    cur
 }
 
 /// True iff `ty` (or any inner type it wraps) is a `.Struct(name, _)`
@@ -3853,11 +3942,17 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<
     for i in 0..n {
         bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, vtype_from_name(type_args[i])) })
     }
+    // Slice B (ps3t.4.5): gate un-annotated lambda args on the RAW
+    // params BEFORE substitution — codegen's lambda emit consults the
+    // declared template signature, so explicit type-args don't thread
+    // either; `apply::<int>((x) -> x)` needs the annotation just like
+    // the inferred form.
+    let lambda_gated = tc_gate_generic_lambda_args(checked, r.tp, r.params, args)
     // Gate args against the params INSTANTIATED with the explicit type-args
     // (mirrors the regular call path) so `g<string>([1])` into an int param —
     // and `id<string>(9)` into a `T`-typed param now bound to string — are both
     // caught. Passing raw `r.params` would leave `T` unresolved and slip past.
-    let arg_checked = tc_check_newtype_args(checked, name, subst_param_types(r.params, bindings), args, r.is_extern)
+    let arg_checked = tc_check_newtype_args(lambda_gated, name, subst_param_types(r.params, bindings), args, r.is_extern)
     tc_er(arg_checked, tc_subst_vtype(r.ret_ty, bindings))
 }
 
@@ -3894,12 +3989,15 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             if r.found {
                 return tc_check_fn_call_with_expected(checked, name, args, r, expected)
             }
-            // Variable holding a closure
+            // Variable holding a closure. Row 19 (ps3t.4.5): an indirect
+            // call never threads param types into a lambda argument —
+            // gate un-annotated lambda args before the layout check.
             let var_ty = type_lookup(checked.types, name)
             if vtype_is_unknown(var_ty) {
-                return tc_er(checked, .Unknown)
+                return tc_er(tc_gate_lambda_args(checked, args), .Unknown)
             }
-            tc_er(tc_check_closure_args(checked, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
+            let arg_gated = tc_gate_lambda_args(checked, args)
+            tc_er(tc_check_closure_args(arg_gated, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
@@ -3911,12 +4009,25 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
         }
         .FieldAccess(obj, method) -> check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
         _ -> {
-            // Expression callee (e.g. compose(f,g)(x))
+            // Expression callee (e.g. compose(f,g)(x)). Row 19: same
+            // indirect-call gate as the closure-variable arm above.
             let c = check_expr(tc, callee)
-            let checked = check_expr_list(c.tc, args)
+            let checked = tc_gate_lambda_args(check_expr_list(c.tc, args), args)
             tc_er(tc_check_closure_args(checked, "closure", c.ty, args), vtype_fn_ret(c.ty))
         }
     }
+}
+
+/// Row-19 companion of `tc_gate_unthreaded_lambda`: apply the
+/// unthreaded-position gate to every argument of an indirect call
+/// (closure-variable or expression callee) — those call paths never
+/// thread declared param types into lambda arguments.
+fn tc_gate_lambda_args(tc: TC, args: List<ExprId>) -> TC {
+    mut cur = tc
+    for id in args {
+        cur = tc_gate_unthreaded_lambda(cur, cur.nodes.exprs.get(id))
+    }
+    cur
 }
 
 /// Gate a closure call's arguments against the closure's DECLARED param

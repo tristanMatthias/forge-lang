@@ -142,7 +142,11 @@ fn emit_body_block(body_cg: Ctx, env: List<VarBinding>, body_ids: List<StmtId>, 
                         let pos = body_cg.nodes.stmt_pos(body_ids[last_i])
                         let line_ctx = pre.ctx with { source_line: pos.line, source_file: pos.file }
                         line_ctx.cov_line()
-                        let lam = emit_lambda_typed(line_ctx, pre_env, lparams, body_cg.nodes.exprs.get(lbody), ret_fn_params)?
+                        // Slice B: cascade the ret-of-ret so a nested
+                        // return-position lambda (`fn … -> fn(int) ->
+                        // fn(int) -> int { (a) -> (b) -> … }`) threads
+                        // its params from the declared type too.
+                        let lam = emit_lambda_typed(line_ctx, pre_env, lparams, body_cg.nodes.exprs.get(lbody), ret_fn_params, vtype_fn_ret(ret_ty))?
                         return ok_br(lam.value, lam.ty, pre.ctx, pre_env)
                     }
                     _ -> {}
