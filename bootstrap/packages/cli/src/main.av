@@ -82,7 +82,7 @@ use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names, NameResolveResult}
+use @std.avrac.resolve.{NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -3433,18 +3433,16 @@ fn cmd_run(args: CliResult) -> int {
     0
 }
 
-/// `fix <file>` — parse, resolve, and (for v1.0) report that no auto-fixes are
-/// available yet (ticket 8ym).
+/// `fix <file>` — run the same parse→comptime front `check` gates on, so
+/// name resolution sees the EXPANDED program (a file using quotes or
+/// components previously mis-resolved against the raw tree), then report
+/// that no auto-fixes are available yet. Resolution/comptime failures exit
+/// non-zero with rendered diagnostics.
 fn cmd_fix(args: CliResult) -> int {
     let fa = arg_file_source(args)
     let ctx = render_ctx(false, fa.source, fa.path)
-    let parsed_prog = parse_or_fail(fa.source, ctx)
-    let parsed_stmts = parsed_prog.ids
-    let entry_dir = modules_dirname(fa.path)
-    let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
-    fail_on_module_resolve_error(mod_resolved, ctx)
-    let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
-    render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
+    let front = front_pipeline_or_fail(fa, ctx)
+    render_and_fail_on_errors(front.comptime_bag, ctx, "comptime fold failed")
     println("no auto-fixes available")
     0
 }
