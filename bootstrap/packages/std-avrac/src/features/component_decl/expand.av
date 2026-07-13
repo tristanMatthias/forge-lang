@@ -260,15 +260,7 @@ fn apply_config_pairs(store: NodeStore, base: Expr, config: List<CompConfigPair>
 /// into a FieldInitList for direct splicing into a struct
 /// literal.
 fn config_pairs_to_field_inits(store: NodeStore, pairs: List<CompConfigPair>) -> List<FieldInit> {
-    // List<FieldInit>.push appends forward — walk source order.
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < pairs.length {
-        let pair = pairs[i]
-        out.push(FieldInit { name: pair.key, value_id: store.exprs.add_leaf(pair.value) })
-        i = i + 1
-    }
-    out
+    list_map(pairs, (pair: CompConfigPair) -> FieldInit { name: pair.key, value_id: store.exprs.add_leaf(pair.value) })
 }
 
 // ── ComponentDef splice ──
@@ -282,16 +274,8 @@ fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>
     let type_name = capitalize(name)
     let config_fields = config_to_fields(config)
     let with_children = append_children_fields(config_fields, children)
-    // Prepend the implicit `name: Str` field. List<FieldEntry> uses
-    // forward growth, so build a fresh list starting with `name`,
-    // then push every existing entry.
-    mut name_field: List<FieldEntry> = []
-    name_field.push(FieldEntry { name: "name", resolved: ValueType.Str })
-    mut nf_i = 0
-    while nf_i < with_children.length {
-        name_field.push(with_children[nf_i])
-        nf_i = nf_i + 1
-    }
+    let implicit_name_field: List<FieldEntry> = [FieldEntry { name: "name", resolved: ValueType.Str }]
+    let name_field = list_concat(implicit_name_field, with_children)
 
     let empty_tp: List<TypeParamEntry> = []
     let type_decl = Stmt.TypeDecl(type_name, empty_tp, name_field)
@@ -300,30 +284,16 @@ fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>
     let name_param: List<ParamEntry> = [ParamEntry { name: "name", vtype: ValueType.Str }]
     let config_inits = config_to_factory_inits(store, config)
     let with_child_inits = append_children_inits(store, config_inits, children)
-    // Prepend the implicit `name: name` init. List<FieldInit> grows
-    // forward, so build a fresh list with `name` first, then push
-    // the existing entries.
-    mut name_init: List<FieldInit> = []
-    name_init.push(FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.Ident("name")) })
-    mut ni_i = 0
-    while ni_i < with_child_inits.length {
-        name_init.push(with_child_inits[ni_i])
-        ni_i = ni_i + 1
-    }
+    let implicit_name_init: List<FieldInit> = [FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.Ident("name")) }]
+    let name_init = list_concat(implicit_name_init, with_child_inits)
     let struct_lit = Expr.StructLit(type_name, name_init)
     let factory_body: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(struct_lit)))]
     let factory = Stmt.Function("${name}_new", empty_tp, name_param, vtype_struct(type_name, 0), factory_body)
 
     let methods = extract_methods(store, body, name)
 
-    mut out: List<StmtId> = [synth_row(store, type_decl, line, col), synth_row(store, factory, line, col)]
-    let with_methods = list_concat(methods, rest)
-    mut wi = 0
-    while wi < with_methods.length {
-        out.push(with_methods[wi])
-        wi = wi + 1
-    }
-    out
+    let synthesized: List<StmtId> = [synth_row(store, type_decl, line, col), synth_row(store, factory, line, col)]
+    list_concat(synthesized, list_concat(methods, rest))
 }
 
 // ── vez6.7.6: children-slot fields + auto-push ──
@@ -333,39 +303,17 @@ fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>
 /// fields so the resulting struct carries every list slot the
 /// component declared.
 fn append_children_fields(fields: List<FieldEntry>, children: List<ChildrenSlot>) -> List<FieldEntry> {
-    // Copy `fields` then push each child-slot entry. List<T>.push
-    // appends in O(1) amortised, so the prior linked-list tail-walk
-    // helper (`field_list_append`) is gone — direct push covers it.
-    mut out: List<FieldEntry> = []
-    mut i = 0
-    while i < fields.length {
-        out.push(fields[i])
-        i = i + 1
-    }
-    for slot in children {
-        out.push(FieldEntry { name: slot.slot_name, resolved: slot.child_ty })
-    }
-    out
+    list_concat(fields, list_map(children, (slot: ChildrenSlot) -> FieldEntry { name: slot.slot_name, resolved: slot.child_ty }))
 }
 
 /// Initialize each slot to an empty list literal `[]` in the
 /// factory's struct literal, paired with the slot field added by
-/// `append_children_fields`. Copy + push appends; the prior linked
-/// `field_init_list_append` tail-walker is gone (List<T>.push is
-/// O(1) amortised).
+/// `append_children_fields`.
 fn append_children_inits(store: NodeStore, inits: List<FieldInit>, children: List<ChildrenSlot>) -> List<FieldInit> {
-    mut out: List<FieldInit> = []
-    mut i = 0
-    while i < inits.length {
-        out.push(inits[i])
-        i = i + 1
-    }
-    for slot in children {
+    list_concat(inits, list_map(children, (slot: ChildrenSlot) -> {
         let empty_elems: List<ExprId> = []
-        let empty_list_id = store.exprs.add_leaf(Expr.ListLit(empty_elems))
-        out.push(FieldInit { name: slot.slot_name, value_id: empty_list_id })
-    }
-    out
+        FieldInit { name: slot.slot_name, value_id: store.exprs.add_leaf(Expr.ListLit(empty_elems)) }
+    }))
 }
 
 /// Look up the slot name in `schema` whose element type matches
@@ -543,14 +491,8 @@ fn splice_component_block(store: NodeStore, comp: string, inst: string, config: 
     // accumulator picks it up.
     let push_slot = slot_name_for_child(nest.parent_children, comp)
     let with_push: List<StmtId> = if push_slot != "" && nest.parent_var != "" {
-        mut wp: List<StmtId> = [build_push_stmt(store, nest.parent_var, push_slot, inst, line, col)]
-        let tail = list_concat(stmts, rest)
-        mut wpi = 0
-        while wpi < tail.length {
-            wp.push(tail[wpi])
-            wpi = wpi + 1
-        }
-        wp
+        let push_row: List<StmtId> = [build_push_stmt(store, nest.parent_var, push_slot, inst, line, col)]
+        list_concat(push_row, list_concat(stmts, rest))
     } else {
         list_concat(stmts, rest)
     }
@@ -564,13 +506,8 @@ fn splice_component_block(store: NodeStore, comp: string, inst: string, config: 
     } else {
         Stmt.Let(inst, ValueType.Unknown, store.exprs.add_leaf(init_expr))
     }
-    mut out: List<StmtId> = [synth_row(store, binding, line, col)]
-    mut oi = 0
-    while oi < with_push.length {
-        out.push(with_push[oi])
-        oi = oi + 1
-    }
-    out
+    let binding_row: List<StmtId> = [synth_row(store, binding, line, col)]
+    list_concat(binding_row, with_push)
 }
 
 fn has_any_slot(schema: List<ChildrenSlot>) -> bool {
@@ -600,13 +537,7 @@ fn expand_stmt_list(store: NodeStore, stmts: List<StmtId>, reg: List<CompDefEntr
         let node = store.stmts.get(id)
         let has_expand = find_annotation(store, node, "expand") != null
         if has_expand {
-            mut new_tail: List<StmtId> = [id]
-            mut ti = 0
-            while ti < tail.length {
-                new_tail.push(tail[ti])
-                ti = ti + 1
-            }
-            tail = new_tail
+            tail = prepend_row(id, tail)
             i = i - 1
             continue
         }
@@ -622,13 +553,7 @@ fn expand_stmt_list(store: NodeStore, stmts: List<StmtId>, reg: List<CompDefEntr
                     // Component def absent from registry — either
                     // legitimately undefined (caught later) or
                     // routed through @expand. Pass through.
-                    mut nt: List<StmtId> = [id]
-                    mut ti = 0
-                    while ti < tail.length {
-                        nt.push(tail[ti])
-                        ti = ti + 1
-                    }
-                    nt
+                    prepend_row(id, tail)
                 } else {
                     splice_component_block(store, comp, inst, config, body, p.line, p.col, tail, reg, nest)
                 }
@@ -637,19 +562,19 @@ fn expand_stmt_list(store: NodeStore, stmts: List<StmtId>, reg: List<CompDefEntr
                 // Recurse into nested statement lists. Re-allocate
                 // against the source row so g2eo's per-file metadata
                 // path keeps attributing decls to their origin file.
-                let expanded_stmt = expand_stmt(store, node, reg, nest)
-                mut nt: List<StmtId> = [store.restmt(expanded_stmt, id)]
-                mut ti = 0
-                while ti < tail.length {
-                    nt.push(tail[ti])
-                    ti = ti + 1
-                }
-                nt
+                prepend_row(store.restmt(expand_stmt(store, node, reg, nest), id), tail)
             }
         }
         i = i - 1
     }
     tail
+}
+
+/// Fresh list with `id` ahead of `tail` — the backward walk's
+/// "this statement passes through unchanged" step.
+fn prepend_row(id: StmtId, tail: List<StmtId>) -> List<StmtId> {
+    let head: List<StmtId> = [id]
+    list_concat(head, tail)
 }
 
 /// Per-statement expansion. Recurses into module / fn / impl /
