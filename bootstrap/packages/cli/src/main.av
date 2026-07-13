@@ -98,7 +98,7 @@ use @std.avrac.build.{
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
-    package_source_fingerprint,
+    package_full_fingerprint, source_slot_fp,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -641,12 +641,79 @@ type BuildArgs = {
 // Returns 0 on success; non-zero is xargs's failure exit code.
 //
 // Tracking ticket: forge-crafting-intepreters-2f54 + e20h.
-fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> int {
+// pdme.5: one pre-build's cache accounting, read back from the per-dep
+// child logs. `rc` carries the pool's exit status (the parent's
+// existing hard-fail gate); hits/misses/detail feed the end-of-build
+// `[cache]` summary line so a suspiciously fast or slow build explains
+// itself without --explain re-runs.
+type PreDepOutcome = {
+    rc: int,
+    hits: int,
+    misses: int,
+    detail: string,
+}
+
+fn pre_dep_outcome_empty() -> PreDepOutcome {
+    PreDepOutcome { rc: 0, hits: 0, misses: 0, detail: "" }
+}
+
+// Classify each per-dep child log as cache HIT or MISS, keeping the
+// miss ATTRIBUTION for the summary line. Children run `bs2 build
+// --explain`, so a hit prints `cached <fp> — …` and a miss prints
+// `rebuild <fp> — <reason>` (both line-anchored here so prose like
+// "rebuilding" can't false-match). A log with neither marker counts
+// as a miss with the log's own name as the only attribution — a child
+// that died pre-decision shouldn't inflate the hit count.
+fn tally_dep_logs(log_dir: string) -> PreDepOutcome {
+    let listing = avra_shell_exec("ls '${log_dir}'/*.log 2>/dev/null")
+    mut hits = 0
+    mut misses = 0
+    mut detail = ""
+    for f in split_by_newline(listing) {
+        if f == "" { continue }
+        let content = avra_selfhost_read_file(f)
+        if content.starts_with("cached ") || content.contains("\ncached ")
+            || content.starts_with("Cached ") || content.contains("\nCached ") {
+            hits = hits + 1
+        } else {
+            misses = misses + 1
+            // basename_no_ext: `…/pre_deps.123/std-json.log` → `std-json`.
+            detail = detail + "; " + basename_no_ext(f) + " MISS [" + dep_log_miss_reason(content) + "]"
+        }
+    }
+    PreDepOutcome { rc: 0, hits: hits, misses: misses, detail: detail }
+}
+
+// Pull the attribution out of the child's `rebuild <fp> — <reason>`
+// line (--explain output). Falls back to "rebuilt" when the line is
+// absent (child crashed before the decision, or an older bs2).
+fn dep_log_miss_reason(content: string) -> string {
+    let anchored = "\n" + content
+    let ri = anchored.index_of("\nrebuild ")
+    if ri < 0 { return "rebuilt" }
+    let rest = anchored.substring(ri + 1, anchored.length)
+    let nl = rest.index_of("\n")
+    let line = if nl < 0 { rest } else { rest.substring(0, nl) }
+    let dash = line.index_of(" — ")
+    if dash < 0 { return "rebuilt" }
+    line.substring(dash + " — ".length, line.length)
+}
+
+// Compose the end-of-build summary: root unit outcome + pre-built dep
+// tallies in one greppable line, the lkze.9 "did it really run my new
+// code?" signal. Shape per the pdme.5 ticket:
+//   [cache] 1 hits / 2 misses (cli MISS [package deps changed (…)]; std-json MISS [source changed: …])
+fn cache_summary_line(hits: int, misses: int, detail: string) -> string {
+    let base = "[cache] ${string(hits)} hits / ${string(misses)} misses"
+    if detail == "" { return base }
+    // detail entries arrive "; name MISS [reason]" — strip the leading
+    // separator and parenthesize.
+    base + " (" + detail.substring(2, detail.length) + ")"
+}
+
+fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> PreDepOutcome {
     let path_count = count_path_deps(deps)
-    if path_count == 0 { return 0 }
-    let paths_file = "/tmp/avra_pre_deps.${path_count}.list"
-    avra_shell_exec("rm -f ${paths_file}")
-    write_dep_paths(deps, paths_file)
+    if path_count == 0 { return pre_dep_outcome_empty() }
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs_str = if env_jobs != "" { env_jobs } else { "4" }
     let jobs = avra_parse_int(jobs_str)
@@ -657,14 +724,36 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     // marker-file approach since the pool primitive doesn't surface
     // per-job state).
     if progress_should_render() && !args.json {
-        return run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+        // The dep-paths list feeds ONLY this progress runner (the pool
+        // branch below builds its cmds straight from `deps`), so it is
+        // written here — pid-scoped, so concurrent builds can't append
+        // into one shared list — and removed once its one consumer is
+        // done with it.
+        let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
+        avra_shell_exec("rm -f ${paths_file}")
+        write_dep_paths(deps, paths_file)
+        let out = run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+        avra_shell_exec("rm -f ${paths_file}")
+        return out
     }
     // Pure-Avra worker pool replaces the prior xargs -P invocation
     // (e20h Phase 2). Same parallelism semantics, no shell xargs
     // dependency, hermetic isolation per cmd. Foundation for future
     // topo-aware scheduling (g2eo level-2 per-mod build dispatch).
-    let cmds = build_pre_dep_cmds(deps, compiler_path)
-    pool_run(cmds, jobs)
+    // Per-dep logs (pid-scoped — the orphaned-run lesson): the tally
+    // reads them back for the [cache] summary, and a failed dep's
+    // output stays inspectable instead of vanishing into /dev/null.
+    let log_dir = "${avra_process_env_get("PWD")}/build/pre_deps.${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
+    let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir)
+    let rc = pool_run(cmds, jobs)
+    if rc != 0 {
+        eprintln("pre-build failed — per-dep logs: ${log_dir}/")
+        return PreDepOutcome { rc: rc, hits: 0, misses: 0, detail: "" }
+    }
+    let out = tally_dep_logs(log_dir)
+    avra_shell_exec("rm -rf '${log_dir}'")
+    out
 }
 
 // Build the queue of `cd <path> && bs2 build --lib --emit_metadata`
@@ -679,7 +768,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
 // build's AVRA_LIB_PKG_ROOT would mis-bucket every dep fn as
 // foreign and produce a 3-define truncated .ll; we override
 // per-dep here.
-fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
+fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -> List<string> {
     mut cmds: List<string> = []
     mut i = 0
     while i < deps.length {
@@ -687,7 +776,10 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
         if dep.path != "" {
             let lib_root = derive_lib_root_for(dep.path)
             let env_prefix = if lib_root == "" { "" } else { "AVRA_LIB_PKG_ROOT='${lib_root}' " }
-            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+            // --explain so the log carries the hit/miss line + miss
+            // attribution the parent's tally reads back (pdme.5).
+            let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
+            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata --explain > \"${log_path}\" 2>&1")
         }
         i = i + 1
     }
@@ -1353,7 +1445,7 @@ fn count_lines(s: string) -> int {
 // the dispatcher just changed from xargs to the in-Avra pool. Removes
 // the xargs dependency, removes the worker.sh shim, removes the
 // `__avra_xargs_rc:` exit-code-in-stdout hack.
-fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> int {
+fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> PreDepOutcome {
     let marker_dir = progress_marker_dir()
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
     let dep_paths = read_paths_file_lines(paths_file)
@@ -1361,8 +1453,9 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     mut cmds: List<string> = []
     for (path, slug) in dep_paths.zip(slugs) {
         // Per-job log file makes failures inspectable after the run —
-        // dump_failed_logs walks `${marker_dir}/*.log`.
-        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata) > \"${marker_dir}/${slug}.log\" 2>&1")
+        // dump_failed_logs walks `${marker_dir}/*.log`. --explain so the
+        // log carries the hit/miss attribution the tally reads (pdme.5).
+        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata --explain) > \"${marker_dir}/${slug}.log\" 2>&1")
     }
     let jobs_n = avra_parse_int(jobs)
     // Spawn the pool in the background so the foreground can render
@@ -1371,8 +1464,14 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     let pool_handle = spawn_pool_async(cmds, slugs, jobs_n, marker_dir)
     if pool_handle < 0 {
         // Spawn failure: run synchronously without progress rendering.
+        let sync_rc = pool_run(cmds, jobs_n)
+        if sync_rc != 0 {
+            avra_shell_exec("rm -rf ${marker_dir}")
+            return PreDepOutcome { rc: sync_rc, hits: 0, misses: 0, detail: "" }
+        }
+        let sync_out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
-        return pool_run(cmds, jobs_n)
+        return sync_out
     }
     let t_start = avra_uptime_ms()
     mut prev_lines = 0
@@ -1397,9 +1496,11 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
         dump_failed_logs(marker_dir)
     }
     if exit_code == 0 {
+        let out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
+        return out
     }
-    exit_code
+    PreDepOutcome { rc: exit_code, hits: 0, misses: 0, detail: "" }
 }
 
 // Read a newline-separated path list back into a List<string>. Used
@@ -1588,6 +1689,9 @@ fn write_dep_paths(deps: List<Dep>, out_path: string) {
 // block; its fields mirror the BuildArgs shape one-to-one.
 fn run_build_command(args: BuildArgs) {
     let project_dir = avra_process_env_get("PWD")
+    // pdme.6: once-a-day write-time GC (stamp-gated — two stats on the
+    // common path). Keeps the cache dir bounded without manual prunes.
+    maybe_auto_gc(project_dir)
 
     let manifest = load_manifest("${project_dir}/")
     // --lib picks [lib] over [bin]. Without --lib, [bin] is the
@@ -1623,6 +1727,10 @@ fn run_build_command(args: BuildArgs) {
     let compiler_path = resolve_compiler_path(project_dir)
 
     let target_kind = if prefer_lib { "lib" } else { "bin" }
+    // pdme.1: fold the package's dep-aware full fingerprint into the
+    // unit key, so editing any source in the dep closure (not just the
+    // entry file) misses the cache. "" (no manifest) → no dep axis.
+    let full_fp = package_full_fingerprint(project_dir)
     let inputs = BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
@@ -1637,6 +1745,7 @@ fn run_build_command(args: BuildArgs) {
         overflow_checks: profile.overflow_checks,
         coverage: profile.coverage,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        dep_fps: if full_fp == "" { [] } else { [full_fp] },
     }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE
@@ -1644,9 +1753,10 @@ fn run_build_command(args: BuildArgs) {
     // first. The root then consumes them via the metadata fast-path.
     // Skipped when --emit_metadata is off — the existing
     // single-unit cycle stays the default.
+    mut pre = pre_dep_outcome_empty()
     if args.emit_metadata && manifest.found {
-        let dep_rc = pre_build_path_deps(manifest.deps, compiler_path, args)
-        if dep_rc != 0 {
+        pre = pre_build_path_deps(manifest.deps, compiler_path, args)
+        if pre.rc != 0 {
             fail("error: failed to pre-build a path-dep — see output above")
         }
     }
@@ -1685,12 +1795,39 @@ fn run_build_command(args: BuildArgs) {
     }
 
     let t_start = avra_uptime_ms()
-    let outcome = decide_build(inputs)
+    // pdme.7: re-validate after the decide — the Hit decision and this
+    // consumption are check-then-use over a mutable path (a concurrent
+    // evictor can empty the slot in between). A vanished/empty slot
+    // demotes to a Miss so the build recompiles instead of shipping a
+    // 0-byte artifact. (Same class as the compile-cache read gate.)
+    mut outcome = decide_build(inputs)
+    match outcome {
+        .Hit(_, cached_ll) -> {
+            // Consuming a Hit = validate the slot AND materialise the
+            // artifact, atomically (per-pid tmp + rename; a torn/failed
+            // install must not sit at the destination under a success
+            // verdict). Either failing demotes to an honest Miss and the
+            // build recompiles instead of shipping a 0-byte or stale
+            // artifact.
+            let installed = avra_file_size(cached_ll) > 0
+                && avra_shell_exec_status(atomic_cp_cmd(cached_ll, "${entry_path}.ll", avra_getpid())) == 0
+            if !installed {
+                eprintln("[build-cache] stale-read miss — slot emptied or uninstallable mid-read; rebuilding")
+                outcome = match decide_build(inputs) {
+                    .Hit(fp2, _) -> BuildOutcome.Miss(fp2, "", "slot emptied mid-read")
+                    .Miss(fp2, pk, reason) -> BuildOutcome.Miss(fp2, pk, reason)
+                }
+            }
+        }
+        // A Miss needs no read-validation — there is nothing to consume.
+        .Miss(_, _, _) -> {}
+    }
     let t_after_decide = avra_uptime_ms()
     match outcome {
         .Hit(fp, cached_ll) -> {
+            // The artifact was already installed atomically by the
+            // validation above; this arm only reports and mirrors meta.
             let dst = "${entry_path}.ll"
-            avra_shell_exec("cp '${cached_ll}' '${dst}'")
             // 0qmm: on cache hit, also populate the source-keyed meta
             // slot from the path-keyed cache's colocated metadata.bin.
             // Consumers (resolver fast-path, fixtures) read from the
@@ -1706,9 +1843,12 @@ fn run_build_command(args: BuildArgs) {
                 if file_exists(cached_meta) != 0 {
                     let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
                     if size_str != "" && size_str != "0" {
-                        // 2wfp: source-keyed slot uses whole-package fp.
+                        // 2wfp/pdme.1: source-keyed slot uses the dep-aware
+                        // whole-package fp; ad-hoc entries (no manifest)
+                        // fall back to the entry's file hash — an empty
+                        // key would alias every ad-hoc entry to one slot.
                         let pkg_root = package_root_for_file(entry_path)
-                        let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                        let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
@@ -1730,6 +1870,11 @@ fn run_build_command(args: BuildArgs) {
                 println("cached ${fp_short(fp)} — ${entry_path}")
             } else {
                 println("Cached ${fp_short(fp)}: ${dst}")
+            }
+            // pdme.5: the build's cache accounting as the last line —
+            // this unit's hit + the pre-built deps' tallies.
+            if !args.json {
+                println(cache_summary_line(pre.hits + 1, pre.misses, pre.detail))
             }
             return
         }
@@ -1827,9 +1972,13 @@ fn run_build_command(args: BuildArgs) {
             // a colocated mirror for cache hits to copy back without
             // rederiving the source fingerprint.
             if pr.success && args.emit_metadata {
-                // 2wfp: source-keyed slot uses whole-package fp.
+                // 2wfp/pdme.1: source-keyed slot uses the dep-aware
+                // whole-package fp; ad-hoc entries fall back to the
+                // entry's file hash (must match what the inner
+                // `bs2 compile --emit_metadata` child keyed its sidecar
+                // under — both sides derive via source_slot_fp).
                 let pkg_root = package_root_for_file(entry_path)
-                let source_fp = Fingerprint { hex: package_source_fingerprint(pkg_root) }
+                let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
                 let pkg_cache = cache_for(pkg_root)
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {
@@ -1862,6 +2011,13 @@ fn run_build_command(args: BuildArgs) {
                     eprintln("warning: cache publish failed: ${pr.error}")
                     println("Built (uncached): ${ll_path}")
                 }
+            }
+            // pdme.5: the build's cache accounting as the last line —
+            // pre-built deps' tallies, then this unit's miss with its
+            // attribution (deps first, root last, per the ticket shape).
+            if !args.json {
+                println(cache_summary_line(pre.hits, pre.misses + 1,
+                    pre.detail + "; " + unit_name + " MISS [" + reason + "]"))
             }
             return
         }
@@ -1951,6 +2107,77 @@ fn valid_max_age_days(s: string) -> bool {
 // declarative parser rejects a missing one before this runs. `dry_run` and
 // `max_age_days_str` come from the parsed CliResult; the `max-age-days` default
 // ("30") lives in the command's `option` schema, so it arrives already filled.
+// pdme.6: prune candidate collection, shared by `bs2 cache prune` and
+// the once-a-day auto-GC. mtime approximates last-USE (the cache layer
+// touches entries on HIT), so age-based eviction is an LRU.
+//
+// Two granularities:
+//   * NAMESPACE dirs (meta/, obj/, link/, _tmp/, fixture_stdout/) hold
+//     many independent entries whose ages differ wildly — walk them and
+//     evict PER-ENTRY. Evicting the namespace dir wholesale by its own
+//     mtime (the old behaviour) either killed hot entries or kept dead
+//     ones alive, depending on when the dir last gained a child.
+//   * everything else at the top level is a per-fingerprint slot dir —
+//     wholesale eviction by the slot's mtime, as before.
+// `last/` (tiny --explain attribution sidecars) and the `.last-gc`
+// stamp are never candidates.
+fn collect_prune_candidates(cache_dir: string, cutoff_secs: int) -> List<string> {
+    mut stale: List<string> = []
+    for name in avra_readdir(cache_dir) {
+        let entry = "${cache_dir}/${name}"
+        if avra_is_dir(entry) != 1 { continue }
+        if name == "last" { continue }
+        let per_entry = name == "meta" || name == "obj" || name == "link"
+            || name == "_tmp" || name == "fixture_stdout"
+        if per_entry {
+            for sub in avra_readdir(entry) {
+                let subp = "${entry}/${sub}"
+                if avra_file_mtime(subp) / 1000000000 < cutoff_secs {
+                    stale.push(subp)
+                }
+            }
+        } else if avra_file_mtime(entry) / 1000000000 < cutoff_secs {
+            stale.push(entry)
+        }
+    }
+    stale
+}
+
+/// Evict collected candidates (dirs via remove_tree, files via
+/// remove_file). Returns the number of entries that could not be
+/// fully removed — callers surface a partial prune instead of
+/// claiming success (no silent failures).
+fn evict_prune_candidates(stale: List<string>) -> int {
+    mut failures = 0
+    for p in stale {
+        let removed = if avra_is_dir(p) == 1 { avra_remove_tree(p) } else { avra_remove_file(p) }
+        if removed != 1 { failures = failures + 1 }
+    }
+    failures
+}
+
+// pdme.6: write-time auto-GC — at most once per day, gated on a stamp
+// file so the common path costs two stats. Prunes entries older than
+// 30 days (mtime == last use, so only cold entries go). The stamp is
+// refreshed BEFORE sweeping so concurrent builds don't all sweep.
+// Quiet unless something was evicted; failures are reported but never
+// fail the build (GC is best-effort — the build itself succeeded).
+fn maybe_auto_gc(project_dir: string) {
+    let cache_dir = "${project_dir}/build/cache"
+    if avra_is_dir(cache_dir) != 1 { return }
+    let stamp = "${cache_dir}/.last-gc"
+    let now = avra_datetime_now()
+    if file_exists(stamp) != 0 && avra_file_mtime(stamp) / 1000000000 > now - 86400 {
+        return
+    }
+    let _ = write_file(stamp, "")
+    let stale = collect_prune_candidates(cache_dir, now - 30 * 86400)
+    if stale.length == 0 { return }
+    let failures = evict_prune_candidates(stale)
+    let suffix = if failures > 0 { " (${string(failures)} could not be removed)" } else { "" }
+    eprintln("[cache-gc] evicted ${string(stale.length - failures)} entries older than 30 days${suffix}")
+}
+
 fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string) {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
@@ -1990,13 +2217,7 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
         // avra_file_mtime is epoch NANOSECONDS; avra_datetime_now is epoch
         // SECONDS. Collect candidates first so --dry-run is side-effect-free.
         let cutoff_secs = avra_datetime_now() - avra_parse_int(max_age_days_str) * 86400
-        mut stale: List<string> = []
-        for name in avra_readdir(cache_dir) {
-            let entry = "${cache_dir}/${name}"
-            if avra_is_dir(entry) == 1 && (avra_file_mtime(entry) / 1000000000 < cutoff_secs) {
-                stale.push(entry)
-            }
-        }
+        let stale = collect_prune_candidates(cache_dir, cutoff_secs)
         if stale.length == 0 {
             println("cache prune: no entries older than ${max_age_days_str} days")
             return
@@ -2006,13 +2227,7 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
             for p in stale { println(p) }
             return
         }
-        // avra_remove_tree returns 0 if an entry can't be fully removed
-        // (permissions, OOM, the depth cap) — surface that instead of claiming
-        // a clean prune (no silent failures).
-        mut failures = 0
-        for p in stale {
-            if avra_remove_tree(p) != 1 { failures = failures + 1 }
-        }
+        let failures = evict_prune_candidates(stale)
         if failures > 0 {
             // Exit non-zero (fail) on a partial prune, so a script driving
             // `bs2 cache prune` never treats an incomplete deletion as success.
@@ -2193,6 +2408,10 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         overflow_checks: true,
         coverage: false,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        // Test units carry no dep_fps: `sources` already rolls the whole
+        // @std universe in (append_shared_sources), so dep content is
+        // keyed there.
+        dep_fps: [],
     }
 }
 
@@ -2297,7 +2516,9 @@ fn batch_slug(paths: List<string>) -> string {
 // Returns `Ok(bin_path)` on success or `Err(msg)` after rendering
 // the diagnostic bag inline. The caller picks the exit policy.
 fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestArgs) -> Result<string, string> {
-    compile_test_unit_to(inputs, test_paths, args, "all")
+    // "all.<pid>" not "all": two concurrent bundled runs (or a live one
+    // plus an orphan) must not share _test_all.{ll,o,bin} scratch paths.
+    compile_test_unit_to(inputs, test_paths, args, "all.${string(avra_getpid())}")
 }
 
 // 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
@@ -2442,7 +2663,14 @@ fn run_test_shard_command(paths: List<string>, args: TestArgs) {
         eprintln("[batch] ${string(paths.length)} files: ${paths.join(" ")}")
     }
     let inputs = compute_test_shard_inputs(project_dir, paths, args)
-    let shard_id = batch_slug(paths)
+    // pdme.7 follow-up: fold the pid into the LOCAL artifact slug. The
+    // slug names this shard's pre-publish _test_<slug>.{ll,o,bin} in
+    // the shared build/ dir; slug-only names let an orphaned shard from
+    // a killed run (same files, still compiling) interleave with a live
+    // same-slug compile — and the winner PUBLISHES whatever mixed bytes
+    // survive. Cache slots stay pid-free (keyed on content fps); only
+    // the scratch names are per-process.
+    let shard_id = "${batch_slug(paths)}.${string(avra_getpid())}"
     // uzs9.1: the shard path is the DEFAULT per-file test path, but on a
     // cache hit it silently exec'd the cached binary — so `bs2 test <file>`
     // reruns were fast yet never printed `[test-cache] hit`, leaving cache
@@ -2688,8 +2916,19 @@ impl RunCtx {
     /// linked via AVRA_LIB_OBJS.
     fn shard_for(self, paths: List<string>) -> Shard {
         let slug = batch_slug(paths)
-        let log_path = "${self.log_dir}/${slug}.log"
-        let bin_path = "${self.log_dir}/${slug}.bin"
+        // pdme.7 follow-up: the orchestrator's pid in the sidecar names.
+        // Slug-only paths are DETERMINISTIC across invocations, so an
+        // orphaned shard from a killed run (SIGKILL doesn't reap
+        // grandchildren) finishing late clobbers the LIVE run's results
+        // bin — the orchestrator prefers the bin over the text line, so
+        // a foreign summary silently replaces the real one (observed
+        // 2026-07-13: a walker shard aggregated 30/32 while its own log
+        // said 32/32 — and the same clobber could just as well mask a
+        // real failure). The run-start wipe of log_dir can't defend
+        // against a still-LIVE writer; unique names can.
+        let pid = string(avra_getpid())
+        let log_path = "${self.log_dir}/${slug}.${pid}.log"
+        let bin_path = "${self.log_dir}/${slug}.${pid}.bin"
         // Ownership covers EVERY member module — the codegen emits a
         // fn body iff some root prefixes it, so each member's fns
         // must be rooted or they'd be skipped as external (undefined
@@ -3546,7 +3785,6 @@ fn cmd_compile(args: CliResult) -> int {
             && list_files_path == ""
             && module_path == ""
             && target_module == ""
-            && output_override == ""
             && stop_after == ""
             && !debug_null
             && !enable_coverage
@@ -3566,10 +3804,34 @@ fn cmd_compile(args: CliResult) -> int {
             // caching for sources that produce diagnostics. Until then,
             // /tmp stays excluded.
             && !cpath.starts_with("/tmp/")
-        let dest_ll = "${cpath}.ll"
+        // pdme.7: --output participates in the cache — the output path is
+        // not a compilation input (the fp keys sources + deps + compiler
+        // content, never the destination), so a hit just materialises the
+        // cached IR wherever the caller asked. This also makes per-worker
+        // --output the supported answer to concurrent same-entry compiles:
+        // N processes contend on ONE slot but never on each other's
+        // output file (the shared <entry>.ll was the last data race).
+        let dest_ll = if output_override != "" { output_override } else { "${cpath}.ll" }
         let bs2_path = avra_selfhost_get_arg_cstr(0)
+        // pdme.1: key the compile unit on the entry's package full
+        // fingerprint too. sources=[cpath] alone missed every edit to a
+        // NON-entry file in the closure (parse/mod.av, typeck/mod.av, …),
+        // so a plain rebuild served the stale .ll and re-linked the
+        // PREVIOUS compiler — the "stale bs2 masks your change" dev-loop
+        // bug. Ad-hoc compiles (no manifest at pkg_root) get "" → no
+        // dep axis, same file-hash-only behaviour as before.
+        let compile_project_root = package_root_for_file(cpath)
+        let compile_full_fp = package_full_fingerprint(compile_project_root)
         let compile_inputs = BuildInputs {
-            project_root: pkg_dir,
+            // The PACKAGE root, not the source dir: `pkg_dir` (the entry's
+            // directory) parked compile-cache entries at
+            // packages/<pkg>/src/build/cache — a cache dir under src/ that
+            // the documented clean-cache/cache-gc sweeps over
+            // packages/*/build/cache never visited. package_root_for_file
+            // splits at /src/ (package layout) and degrades to the file's
+            // own directory for flat/ad-hoc entries, so those keep their
+            // colocated cache.
+            project_root: compile_project_root,
             unit_name: "compile:" + cpath,
             kind: "bin",
             sources: [cpath],
@@ -3582,15 +3844,32 @@ fn cmd_compile(args: CliResult) -> int {
             overflow_checks: true,
             coverage: false,
             lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+            dep_fps: if compile_full_fp == "" { [] } else { [compile_full_fp] },
         }
         let mut compile_publish_fp: Fingerprint? = null
         if cache_eligible {
             match decide_build(compile_inputs) {
                 .Hit(fp, cached_ll_path) -> {
+                    // pdme.7: VALIDATE the read — decide_build's completeness
+                    // check and this read are check-then-use over a mutable
+                    // path, so a concurrent evictor (wreck repair, prune,
+                    // external damage) can empty the slot in between. Serving
+                    // the empty read as a "successful" compile propagated
+                    // 0-byte IR downstream (caught by --cache-fuzz-parallel);
+                    // an empty read is a MISS — recompile honestly.
                     let cached_ll = read_file(cached_ll_path)
-                    avra_selfhost_write_file(dest_ll, cached_ll)
-                    eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
-                    return 0
+                    // The install write is atomic (per-pid tmp + rename in
+                    // the runtime) but can still FAIL outright (disk full,
+                    // unwritable destination) — success may only be
+                    // reported when the artifact provably landed;
+                    // otherwise recompile and let the fresh emit render
+                    // the honest verdict on the destination.
+                    if cached_ll != "" && avra_selfhost_write_file(dest_ll, cached_ll) == 1 {
+                        eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
+                        return 0
+                    }
+                    eprintln("[compile-cache] stale-read miss ${fp_short(fp)} — slot emptied or uninstallable mid-read; recompiling")
+                    compile_publish_fp = fp
                 }
                 .Miss(fp, _, _) -> {
                     compile_publish_fp = fp
@@ -3722,7 +4001,7 @@ fn cmd_compile(args: CliResult) -> int {
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
         let t_mono = avra_uptime_ms()
         render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
-        let output = if output_override != "" { output_override } else { "${cpath}.ll" }
+        let output = dest_ll
         // 2f54: when --module_path is set we treat this as a library
         // build — skip the synthetic main() wrapper so multiple
         // unit .o files can link together without _main collisions.
@@ -3752,22 +4031,25 @@ fn cmd_compile(args: CliResult) -> int {
             } else {
                 basename_no_ext(cpath)
             }
-            let fp = bytes_from_hex(sha256_hex(csource))
-            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             // 2wfp: when compiling a real package (avra.toml present),
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
             // source change in the package must invalidate this slot.
-            // For ad-hoc single-file compiles (no avra.toml at the
-            // detected pkg_root) keep the original file-fp scheme.
+            // Ad-hoc single-file compiles key on the entry's file hash
+            // (source_slot_fp centralises the fallback so the parent
+            // build's mirror sites derive the identical key).
             let pkg_root = package_root_for_file(cpath)
             let cache = cache_for(pkg_root)
-            let pkg_fp = package_source_fingerprint(pkg_root)
-            let source_fp = if pkg_fp != "" {
-                Fingerprint { hex: pkg_fp }
-            } else {
-                Fingerprint { hex: sha256_hex(csource) }
-            }
+            let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, cpath) }
+            // pdme.2: the header carries the SLOT KEY (source_fp), not
+            // the entry file's hash — the consumer's read-validation
+            // gate (metadata_slot_matches) compares the stored fp
+            // against the key it looked the slot up under, so producer
+            // and consumer must agree on one notion. Old slots stamped
+            // with the entry hash simply fail the gate once and get
+            // re-emitted — self-healing.
+            let fp = bytes_from_hex(source_fp.hex)
+            let unit_meta = extract_unit_metadata(unit_name, fp, named.stmts, parsed_prog.store)
             let _ = ensure_source_meta_dir(cache, source_fp)
             let cache_meta_path = entry_source_meta_path(cache, source_fp)
             if metadata_write(cache_meta_path, unit_meta) != 1 {

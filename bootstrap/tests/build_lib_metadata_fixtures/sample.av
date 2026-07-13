@@ -40,7 +40,7 @@ fn main() -> int {
     probe("build_rc_zero", rc == 0)
 
     // The produced .meta.bin lands in the content-addressed cache.
-    let meta = package_meta_path_for(pkg)
+    let meta = package_meta_path_for(pkg, bs2_abs)
     let exists_status = avra_shell_exec_status("test -s ${meta}")
     probe("meta_bin_present_and_nonempty", exists_status == 0)
 

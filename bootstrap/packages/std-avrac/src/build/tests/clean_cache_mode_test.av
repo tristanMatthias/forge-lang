@@ -1,0 +1,72 @@
+// pdme.3: `make clean-cache` (= diagnose.sh --clean-cache) — the full
+// cache wipe, guarded against the src/build foot-gun. Contracts:
+//   1. every packages/<pkg>/build/cache goes, plus the top-level
+//      build/cache;
+//   2. SOURCE trees survive — packages/<pkg>/src/** (including a
+//      src/build/ source dir, the historical casualty) is never
+//      touched, and a package literally named "src" is spared by the
+//      sentinel;
+//   3. nothing else under build/ is collateral (only the cache dir
+//      goes, not sibling build artifacts);
+//   4. the LEGACY compile-cache location (<pkg>/src/build/cache — where
+//      older compilers parked `bs2 compile` entries) is swept too, and
+//      ONLY the dir literally named cache: .av sources beside it in
+//      src/build/ survive;
+//   5. end-to-end: a real `bs2 compile` caches at the PACKAGE root
+//      (never under src/), and clean-cache removes that live entry.
+//
+// Specs 1-4 are pure-shell against a sandbox ROOT; spec 5 drives the
+// real toolchain.
+//
+// @@fixture-stateful@@ — spec 5 invokes the SHARED build/bs2; a
+// transient environment hiccup must re-probe, not freeze as a
+// permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid, avra_selfhost_file_exists}
+
+spec "pdme.3: clean-cache wipes caches, never source" {
+    then "package + top-level + legacy caches go; src trees, src-named packages, and build siblings stay" {
+        let root = "/tmp/avra_pdme3_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/packages/aaa/build/cache/slot")
+        let _ = avra_mkdir_p("${root}/packages/aaa/src/build/cache/oldslot")
+        let _ = avra_mkdir_p("${root}/packages/src/build/cache/decoy")
+        let _ = avra_mkdir_p("${root}/build/cache/topslot")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/cache/slot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/src/build/cache.av", "// source")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/src/build/cache/oldslot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/keep.o", "obj")
+        let _ = avra_selfhost_write_file("${root}/packages/src/build/cache/decoy/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/build/cache/topslot/unit.ll", "x")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' 2>&1")
+        let ok = out.contains("clean-cache: 3 cache dir(s) wiped")
+            && avra_selfhost_file_exists("${root}/packages/aaa/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/packages/aaa/src/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/packages/aaa/src/build/cache.av") == 1
+            && avra_selfhost_file_exists("${root}/packages/aaa/build/keep.o") == 1
+            && avra_selfhost_file_exists("${root}/packages/src/build/cache/decoy/unit.ll") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}
+
+spec "pdme.3: the live compile cache lands at the package root and clean-cache reaches it" {
+    then "bs2 compile caches under <pkg>/build/cache (not src/), and the sweep removes it" {
+        let root = avra_shell_exec("pwd").trim() + "/build/spec_pdme3_ee_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let pkg = "${root}/packages/ee"
+        let _ = avra_mkdir_p("${pkg}/src")
+        let _ = avra_selfhost_write_file("${pkg}/avra.toml",
+            "[package]\nname = \"ee\"\nversion = \"0.1.0\"\n\n[bin]\nname = \"ee\"\npath = \"src/main.av\"\n")
+        let _ = avra_selfhost_write_file("${pkg}/src/main.av", "fn main() { println(\"ee\") }\n")
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        avra_shell_exec("cd '${pkg}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS '${bs2}' compile src/main.av >/dev/null 2>&1")
+        let live = avra_shell_exec("ls '${pkg}/build/cache' 2>/dev/null | wc -l").trim()
+        let under_src = avra_selfhost_file_exists("${pkg}/src/build/cache")
+        avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' >/dev/null 2>&1")
+        let swept = avra_selfhost_file_exists("${pkg}/build/cache")
+        avra_shell_exec("rm -rf '${root}'")
+        live != "0" && under_src == 0 && swept == 0
+    }
+}

@@ -426,7 +426,18 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
 /// On Hit: returns the previously-captured stdout. On Miss: runs the
 /// fixture via diagnose.sh, captures stdout, persists, returns.
 export fn cached_fixture_run(fixture_path: string) -> string {
-    cached_fixture_capture(fixture_path, "bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true", "run")
+    cached_fixture_capture(fixture_path, fixture_run_cmd(fixture_path), "run")
+}
+
+/// The two --run command shapes, defined once — cached_fixture_run*
+/// (path-only) and write_fixture_and_run* (write-through) must invoke
+/// byte-identical commands or their captures would diverge.
+fn fixture_run_cmd(fixture_path: string) -> string {
+    "bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true"
+}
+
+fn fixture_run_no_metadata_cmd(fixture_path: string) -> string {
+    "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true"
 }
 
 /// Same content-keyed cache, but runs `./build/bs2 expand <path>`
@@ -458,7 +469,7 @@ export fn write_fixture(path: string, source: string) {
 /// surrounding heredoc.
 export fn write_fixture_and_run(path: string, source: string) -> string {
     write_fixture(path, source)
-    cached_fixture_run(path)
+    cached_fixture_capture_src(path, source, fixture_run_cmd(path), "run")
 }
 
 /// Content-keyed cache for `./build/bs2 check <path>` invocations
@@ -480,9 +491,7 @@ export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
 /// (metadata mode strips them per 9p1d). Required by tests that
 /// exercise derive_walker / quote_expr / other @comptime macros.
 export fn cached_fixture_run_no_metadata(fixture_path: string) -> string {
-    cached_fixture_capture(fixture_path,
-        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true",
-        "run-no-metadata")
+    cached_fixture_capture(fixture_path, fixture_run_no_metadata_cmd(fixture_path), "run-no-metadata")
 }
 
 /// Convenience: write_fixture + cached_fixture_run_no_metadata.
@@ -490,7 +499,7 @@ export fn cached_fixture_run_no_metadata(fixture_path: string) -> string {
 /// decoder tests (8+ inline copies before this helper).
 export fn write_fixture_and_run_no_metadata(path: string, source: string) -> string {
     write_fixture(path, source)
-    cached_fixture_run_no_metadata(path)
+    cached_fixture_capture_src(path, source, fixture_run_no_metadata_cmd(path), "run-no-metadata")
 }
 
 /// 6w6v: content-keyed cache for fixtures that need BOTH bs2 compile
@@ -571,13 +580,42 @@ export fn fixture_is_stateful(fixture_path: string) -> bool {
 /// to persist such outputs makes the next run re-execute the fixture
 /// and pick up a clean stdout.
 fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> string {
+    cached_fixture_capture_src(fixture_path, null, cmd, verb)
+}
+
+/// The capture core. `source`, when non-null, is the fixture body the
+/// caller intends the run to consume (the write_fixture_and_run*
+/// family threads it through); it is REWRITTEN inside the lock so the
+/// run provably executes those bytes even if another process clobbered
+/// the shared path between the caller's write and our lock acquisition.
+///
+/// The 2026-07-13 walker poisoning found the gap the pre-lock write
+/// left open: the per-fixture lock serializes RUNS, but write_fixture
+/// happens OUTSIDE it — a concurrent process (an orphaned shard from a
+/// killed suite run) rewrote the shared /tmp fixture with a DIFFERENT
+/// spec's source mid-run, and the winner memoised output produced from
+/// the overwriter's bytes under its own source's key. That capture
+/// then replayed as a deterministic no-diff FAIL on every serial run.
+/// Two closures for that hole:
+///   1. rewrite-inside-lock (above) — the run consumes the keyed bytes;
+///   2. the post-run TAINT GATE — re-hash the fixture after the run and
+///      refuse to memoise when the bytes changed underneath us: the
+///      output can't be trusted to correspond to the key. The live
+///      caller still gets the (possibly wrong) output — overlapping
+///      suite runs are already operator-forbidden — but the wrongness
+///      can no longer OUTLIVE the overlap.
+fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string, verb: string) -> string {
     let cache_dir = fixture_stdout_cache_dir()
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
+    // Optimistic lock-free fast path: hash the file as-is; a warm hit
+    // returns in ~10ms with no lock traffic. (If a concurrent writer
+    // is mid-clobber this hash keys a slot we simply won't find — the
+    // locked path below re-hashes authoritatively.)
     let fixture_h = sha256_file(fixture_path)
-    let key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
-    let cache_path = "${cache_dir}/${key}.out"
-    if avra_selfhost_file_exists(cache_path) == 1 {
-        return avra_selfhost_read_file(cache_path)
+    let fast_key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
+    let fast_path = "${cache_dir}/${fast_key}.out"
+    if avra_selfhost_file_exists(fast_path) == 1 {
+        return avra_selfhost_read_file(fast_path)
     }
     let _ = avra_mkdir_p(cache_dir)
     // Serialize cold-misses per FIXTURE (not per cache slot): bs2
@@ -589,13 +627,35 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
     // the post-acquire re-check then reuses the winner's published
     // result instead of re-running at all.
     let lock_fd = avra_file_lock_exclusive("${cache_dir}/${sha256_hex(fixture_path)}.lock")
+    // Re-materialise the intended bytes now that we hold the lock; a
+    // predecessor lock-holder may have left a DIFFERENT spec's source
+    // at this shared path (write_fixture historically ran outside the
+    // lock — the 2026-07-13 walker poisoning). sha256_file (not
+    // sha256_hex(source)) keeps the key byte-identical to the
+    // pre-existing scheme, so warm captures stay valid.
+    if source != null {
+        write_fixture(fixture_path, source!)
+    }
+    // The authoritative key: hashed AFTER lock + rewrite, so it names
+    // the bytes the run will actually consume — never a clobberer's.
+    let run_h = sha256_file(fixture_path)
+    let run_key = sha256_hex("${toolchain_fp}:${run_h}:${fixture_path}:${verb}")
+    let cache_path = "${cache_dir}/${run_key}.out"
     if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
         let cached = avra_selfhost_read_file(cache_path)
         avra_file_unlock(lock_fd)
         return cached
     }
     let out = avra_shell_exec(cmd)
-    if fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
+    // TAINT GATE: if the fixture's bytes changed underneath the run, the
+    // output can't be trusted to correspond to the key — return it live
+    // but never memoise it. (Poison from overlapping suite runs used to
+    // freeze here and replay as a deterministic no-diff FAIL forever.)
+    // Memoisation also requires the exclusive lock to have been HELD:
+    // an unlocked run raced other writers by definition, so its capture
+    // gets the same live-only treatment.
+    let post_h = sha256_file(fixture_path)
+    if lock_fd >= 0 && post_h == run_h && fixture_output_is_publishable(out, fixture_is_stateful(fixture_path)) {
         let _ = avra_selfhost_write_file(cache_path, out)
     }
     avra_file_unlock(lock_fd)

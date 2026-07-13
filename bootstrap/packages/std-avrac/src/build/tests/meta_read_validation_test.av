@@ -1,0 +1,90 @@
+// pdme.2: metadata read-side validation. The meta cache slots are
+// content-addressed (the PATH encodes the key), but the path proves
+// nothing about the bytes at it: a truncated write, an orphaned entry
+// from an older key scheme, or foreign bytes were served by mere
+// existence — the zp5b/fxfz/kaux trust-by-existence class. The gate
+// (metadata_slot_matches) serves a slot only when its header is whole
+// AND its STORED fingerprint equals the key the lookup used; the
+// producer stamps that key at emit time. These specs pin the gate and
+// the defensive header reader, including the ticket's literal
+// acceptance criterion: flip one byte of the stored fp → miss.
+
+use @std.avrac.build.{
+    unit_metadata_new, metadata_write, bytes_from_hex,
+    metadata_read_header, metadata_slot_matches, METADATA_MAGIC,
+}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid}
+
+const FP_HEX: string = "ab00000000000000000000000000000000000000000000000000000000000001"
+const OTHER_HEX: string = "cd00000000000000000000000000000000000000000000000000000000000002"
+
+fn mk_dir(slug: string) -> string {
+    let dir = "/tmp/avra_pdme2_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${dir}'")
+    let _ = avra_mkdir_p(dir)
+    dir
+}
+
+// Write a minimal-but-real metadata file: unit name "u" (1 byte, so
+// the stored fp begins at fixed offset 13 = magic 4 + versions 4 +
+// name_len 4 + name 1), empty sections, fingerprint = FP_HEX.
+fn mk_meta(dir: string) -> string {
+    let path = "${dir}/unit.meta.bin"
+    let m = unit_metadata_new("u", bytes_from_hex(FP_HEX))
+    let _ = metadata_write(path, m)
+    path
+}
+
+spec "pdme.2: metadata_slot_matches serves only whole, key-matching slots" {
+    then "a whole slot stamped with the lookup key matches" {
+        let path = mk_meta(mk_dir("match"))
+        metadata_slot_matches(path, FP_HEX)
+    }
+    then "a whole slot stamped with a DIFFERENT key is a miss" {
+        let path = mk_meta(mk_dir("otherkey"))
+        !metadata_slot_matches(path, OTHER_HEX)
+    }
+    then "flipping one byte of the stored fp is a miss (ticket acceptance)" {
+        let path = mk_meta(mk_dir("flip"))
+        // The fp's first byte (0xab) lives at offset 13 for the 1-char
+        // unit name. Overwrite it with 0x00 in place.
+        avra_shell_exec("printf '\\x00' | dd of='${path}' bs=1 seek=13 conv=notrunc 2>/dev/null")
+        !metadata_slot_matches(path, FP_HEX)
+    }
+    then "an empty expected key never matches" {
+        let path = mk_meta(mk_dir("emptykey"))
+        !metadata_slot_matches(path, "")
+    }
+}
+
+spec "pdme.2: metadata_read_header is bounds-safe on damaged slots" {
+    then "a valid header round-trips magic, version, name, and fp" {
+        let path = mk_meta(mk_dir("roundtrip"))
+        let hdr = metadata_read_header(path)
+        hdr.magic == METADATA_MAGIC && hdr.unit_name == "u"
+    }
+    then "a truncated file (killed mid-write) yields the sentinel, no overrun" {
+        let dir = mk_dir("trunc")
+        let path = mk_meta(dir)
+        // Keep only the fixed prefix + part of the name — cuts inside
+        // the region the reader would otherwise run past.
+        avra_shell_exec("head -c 14 '${path}' > '${path}.t' && mv '${path}.t' '${path}'")
+        metadata_read_header(path).magic == 0 && !metadata_slot_matches(path, FP_HEX)
+    }
+    then "a 0-byte file yields the sentinel" {
+        let dir = mk_dir("zero")
+        let path = "${dir}/unit.meta.bin"
+        let _ = avra_selfhost_write_file(path, "")
+        metadata_read_header(path).magic == 0
+    }
+    then "a missing file yields the sentinel" {
+        let dir = mk_dir("missing")
+        metadata_read_header("${dir}/nope.meta.bin").magic == 0
+    }
+    then "foreign bytes at the path (wrong magic) yield the sentinel" {
+        let dir = mk_dir("foreign")
+        let path = "${dir}/unit.meta.bin"
+        let _ = avra_selfhost_write_file(path, "this is not a metadata file at all........")
+        metadata_read_header(path).magic == 0 && !metadata_slot_matches(path, FP_HEX)
+    }
+}

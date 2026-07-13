@@ -1,0 +1,32 @@
+// pdme.5 piece 2: `make cache-stats` (= diagnose.sh --cache-stats) —
+// per-package entry counts at the pruner's granularity (top-level fp
+// slots wholesale, namespace children per-entry, last/ excluded),
+// plus the cold count (mtime older than the threshold — with pdme.6's
+// mtime-as-last-use, cold IS the orphan signal). Pure-shell mode,
+// exercised against a planted sandbox.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid}
+
+spec "pdme.5: cache-stats counts entries at prune granularity and flags cold ones" {
+    then "per-package lines carry entry + cold counts; last/ excluded; totals aggregate" {
+        let root = "/tmp/avra_pdme5_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        // aaa: one fresh fp slot, one backdated fp slot, one fresh
+        // meta child, a last/ dir that must NOT count -> 3 entries, 1 cold.
+        let c = "${root}/packages/aaa/build/cache"
+        let _ = avra_mkdir_p("${c}/slot_fresh")
+        let _ = avra_mkdir_p("${c}/slot_old")
+        let _ = avra_mkdir_p("${c}/meta/m1")
+        let _ = avra_mkdir_p("${c}/last")
+        let _ = avra_selfhost_write_file("${c}/last/u.txt", "x")
+        avra_shell_exec("touch -t 202501010000 '${c}/slot_old'")
+        // top-level: one fresh slot -> 1 entry, 0 cold.
+        let _ = avra_mkdir_p("${root}/build/cache/topslot")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --cache-stats '${root}' 2>&1")
+        let aaa_ok = out.contains("aaa") && out.contains("3 entries") && out.contains("cold: 1")
+        let top_ok = out.contains("(top-level)") && out.contains("1 entries") && out.contains("cold: 0")
+        let total_ok = out.contains("Total: 4 entries, 1 cold")
+        avra_shell_exec("rm -rf '${root}'")
+        aaa_ok && top_ok && total_ok
+    }
+}

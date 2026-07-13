@@ -1,0 +1,116 @@
+// pdme.1: dep-aware package fingerprint (package_full_fingerprint) +
+// the compile-cache acceptance criterion it exists for. fp_own(P)
+// hashed only P's own src/, so editing a dependency Q left P's cache
+// key unchanged and consumers reused P's stale artifacts (the
+// "stale bs2 masks your change" dev-loop bug). fp_full folds every
+// manifest-declared dep transitively.
+//
+// Also pins the manifest-parser regression found while wiring this:
+// read_dependencies anchored `[dependencies]` with a bare index_of,
+// so a leading COMMENT mentioning the section name started the body
+// mid-comment and silently parsed zero deps.
+
+use @std.avrac.build.{package_full_fingerprint, package_source_fingerprint}
+use @std.avrac.features.modules.{load_manifest}
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+}
+
+extern fn avra_uptime_ms() -> int
+
+/// A fresh fixture root per (test, process) — pid+uptime salt keeps a
+/// rerun from inheriting the previous run's cache slots.
+fn mk_fixture_root(slug: string) -> string {
+    let root = "/tmp/avra_pdme1_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p(root)
+    root
+}
+
+/// Materialise a package: <root>/<name>/{avra.toml, src/<entry>.av}.
+/// `deps_toml` is the raw [dependencies] body ("" for none).
+fn mk_pkg(root: string, name: string, toml_name: string, deps_toml: string, src: string) -> string {
+    let dir = "${root}/${name}"
+    let _ = avra_mkdir_p("${dir}/src")
+    mut manifest = "[package]\nname = \"${toml_name}\"\nversion = \"0.1.0\"\n"
+    if deps_toml != "" {
+        manifest = manifest + "\n[dependencies]\n" + deps_toml
+    }
+    let _ = avra_selfhost_write_file("${dir}/avra.toml", manifest)
+    let _ = avra_selfhost_write_file("${dir}/src/main.av", src)
+    dir
+}
+
+spec "pdme.1: package_full_fingerprint gates and shape" {
+    then "a manifest-less directory yields the empty fingerprint" {
+        let root = mk_fixture_root("nomanifest")
+        let _ = avra_mkdir_p("${root}/plain/src")
+        let _ = avra_selfhost_write_file("${root}/plain/src/main.av", "fn main() {}\n")
+        package_full_fingerprint("${root}/plain") == ""
+    }
+    then "a package with deps yields a non-empty fp distinct from its own-src fp" {
+        let root = mk_fixture_root("shape")
+        let _ = mk_pkg(root, "q", "@fix/q", "", "fn q() -> int { 1 }\n")
+        let p = mk_pkg(root, "p", "@fix/p", "\"@fix/q\" = { path = \"../q\" }\n", "fn main() {}\n")
+        let full = package_full_fingerprint(p)
+        let own = package_source_fingerprint(p)
+        full != "" && own != "" && full != own
+    }
+    then "a dependency cycle degrades loudly to the empty fingerprint" {
+        // a → b → a. build_graph reports the cycle; the fingerprint
+        // must come back empty (fast-path off — the safe direction),
+        // never a value computed from a partial graph.
+        let root = mk_fixture_root("cycle")
+        let a = mk_pkg(root, "a", "@fix/a", "\"@fix/b\" = { path = \"../b\" }\n", "fn main() {}\n")
+        let _ = mk_pkg(root, "b", "@fix/b", "\"@fix/a\" = { path = \"../a\" }\n", "fn b() -> int { 2 }\n")
+        package_full_fingerprint(a) == ""
+    }
+}
+
+spec "manifest parser: section headers anchor at line start" {
+    then "a comment mentioning [dependencies] does not hide the real section" {
+        let root = mk_fixture_root("comment")
+        let dir = "${root}/c"
+        let _ = avra_mkdir_p("${dir}/src")
+        let _ = mk_pkg(root, "d", "@fix/d", "", "fn d() -> int { 3 }\n")
+        let manifest = "# see the [dependencies] section below\n" +
+            "[package]\nname = \"@fix/c\"\nversion = \"0.1.0\"\n\n" +
+            "[dependencies]\n\"@fix/d\" = { path = \"../d\" }\n"
+        let _ = avra_selfhost_write_file("${dir}/avra.toml", manifest)
+        let m = load_manifest("${dir}/")
+        m.found && m.deps.length == 1 && m.deps[0].name == "@fix/d"
+    }
+}
+
+spec "pdme.1 acceptance: compile cache tracks dep-package edits" {
+    then "editing a dep's source misses the cache; reverting hits the original slot" {
+        // The live dev-loop repro, self-contained: package P declares a
+        // manifest dep on Q. `bs2 compile P/src/main.av` publishes a
+        // slot; a rerun hits it; editing Q's SOURCE (not P's!) must
+        // miss and republish under a new fp; restoring Q's source must
+        // hit the ORIGINAL slot again. Fixture lives under build/ (not
+        // /tmp — the compile cache deliberately skips /tmp paths) and
+        // strips AVRA_USE_METADATA/AVRA_LIB_OBJS, which disable
+        // cache eligibility inside test shards.
+        let salt = "${string(avra_getpid())}_${string(avra_uptime_ms())}"
+        let root = "build/pdme1_fix_${salt}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p(root)
+        let q = mk_pkg(root, "q", "@fix/q", "", "fn q() -> int { 1 }  // salt ${salt}\n")
+        let p = mk_pkg(root, "p", "@fix/p", "\"@fix/q\" = { path = \"../q\" }\n",
+                       "fn main() { println(\"p ${salt}\") }\n")
+        let cmd = "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT ./build/bs2 compile '${p}/src/main.av' 2>&1"
+        let run1 = avra_shell_exec(cmd)
+        let run2 = avra_shell_exec(cmd)
+        let _ = avra_selfhost_write_file("${q}/src/main.av", "fn q() -> int { 2 }  // salt ${salt}\n")
+        let run3 = avra_shell_exec(cmd)
+        let _ = avra_selfhost_write_file("${q}/src/main.av", "fn q() -> int { 1 }  // salt ${salt}\n")
+        let run4 = avra_shell_exec(cmd)
+        avra_shell_exec("rm -rf '${root}'")
+        run1.contains("[compile-cache] published")
+            && run2.contains("[compile-cache] hit")
+            && run3.contains("[compile-cache] published")
+            && !run3.contains("[compile-cache] hit")
+            && run4.contains("[compile-cache] hit")
+    }
+}

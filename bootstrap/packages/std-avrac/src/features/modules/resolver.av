@@ -6,8 +6,8 @@
 use core.{Stmt, Annotation, NodeStore, SrcPos}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
-use build.{metadata_read, metadata_file_exists, synthesize_unit_body, stamp_stub_spans}
-use build.{cache_for, entry_source_meta_path, Fingerprint, package_source_fingerprint}
+use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
+use build.{cache_for, entry_source_meta_path, cache_touch_source_meta, Fingerprint, package_full_fingerprint, package_full_fingerprint_with_toolchain, compiler_hash_for}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
@@ -38,24 +38,6 @@ fn emit_progress_done(path: string, t_start_ms: int) {
     let _ = avra_selfhost_append_file(pf, "done ${path} ${string(elapsed)}\n")
 }
 
-/// Compare the fingerprint stored in `<src>.meta.bin` with the
-/// current sha256 of `src`. Returns true only when they match —
-/// i.e. the source hasn't changed since the metadata was emitted,
-/// so stubs synthesised from the .meta.bin are safe to substitute
-/// for a fresh parse. The fast path is gated on this so an edit
-/// to a .av file (without re-running the producer) doesn't silently
-/// load stale stubs that elide the user's changes (g2eo).
-///
-/// Uses `avra_bytes_to_hex` to avoid bytes-vs-string comparison
-/// quirks: metadata stores the fp as 32 raw bytes; sha256_file
-/// returns 64-char hex. Both round-trip through hex equality.
-fn meta_fingerprint_matches_source(meta_path: string, src_path: string) -> bool {
-    let m = metadata_read(meta_path)
-    let stored_hex = avra_bytes_to_hex(m.fingerprint)
-    let current_hex = sha256_file(src_path)
-    stored_hex == current_hex
-}
-
 /// 0qmm: locate the meta sidecar for a single source file in the
 /// content-addressed cache slot (build/cache/meta/<sha256(src)>/
 /// unit.meta.bin). Stale hits are impossible — the path itself
@@ -75,24 +57,43 @@ fn source_meta_cache_path(pkg_file: string) -> string {
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
-    if metadata_file_exists(cache_path) { return cache_path }
+    // pdme.2: the path encodes the key, but only the header proves the
+    // BYTES at it are whole and were produced for this key — a
+    // truncated or foreign file at the right path must be a miss.
+    if metadata_slot_matches(cache_path, hex) {
+        // pdme.6: a validated serve is a USE — refresh the slot's
+        // last-use stamp so the age-based GC spares hot meta.
+        cache_touch_source_meta(cache, Fingerprint { hex })
+        return cache_path
+    }
     ""
 }
 
 /// 2wfp: locate the package-aggregated meta sidecar in the
-/// content-addressed cache slot keyed on `package_source_fingerprint`.
-/// Producer writes here when emitting unit-level metadata for a
-/// package; consumer (use @pkg path) reads here. Stale hits impossible
-/// — change ANY .av file under the package's src/, change the
-/// fingerprint, change the path.
+/// content-addressed cache slot keyed on `package_full_fingerprint`
+/// (pdme.1: dep-aware — folds every transitive dep's source in, so a
+/// dep edit invalidates this package's aggregated meta too, not just
+/// its own-src edits). Producer writes here when emitting unit-level
+/// metadata for a package; consumer (use @pkg path) reads here. Stale
+/// hits impossible — change ANY .av file under the package's src/ OR
+/// under any transitive dep's src/, change the fingerprint, change
+/// the path.
 fn package_meta_cache_path(pkg_file: string) -> string {
     let pkg_root = package_root_for_file(pkg_file)
     if pkg_root == "" { return "" }
-    let hex = package_source_fingerprint(pkg_root)
+    let hex = package_full_fingerprint(pkg_root)
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     let cache_path = entry_source_meta_path(cache, Fingerprint { hex })
-    if metadata_file_exists(cache_path) { return cache_path }
+    // pdme.2: as with the per-file slot — existence is not validity.
+    // The stored header fp must equal the fp_full this lookup keyed on
+    // (the producer stamps the slot key at emit time).
+    if metadata_slot_matches(cache_path, hex) {
+        // pdme.6: as with the per-file slot — a validated serve
+        // refreshes the slot's last-use stamp for the LRU GC.
+        cache_touch_source_meta(cache, Fingerprint { hex })
+        return cache_path
+    }
     ""
 }
 
@@ -230,9 +231,15 @@ export fn meta_cache_path_for_source(src_path: string) -> string {
 /// should call this, not meta_cache_path_for_source — the package
 /// slot is keyed on the whole-package fingerprint, not the entry
 /// file's sha256.
-export fn package_meta_path_for(pkg_root: string) -> string {
+///
+/// pdme.8: the fp folds the COMPILER's content hash, so an external
+/// caller (a fixture binary — any process that isn't the bs2 that
+/// stamped the slot) must say WHICH compiler it means: pass the path
+/// of the bs2 it invoked. Deriving from the calling process's own
+/// argv[0] here would name a slot nobody writes.
+export fn package_meta_path_for(pkg_root: string, compiler_path: string) -> string {
     if pkg_root == "" { return "" }
-    let hex = package_source_fingerprint(pkg_root)
+    let hex = package_full_fingerprint_with_toolchain(pkg_root, compiler_hash_for(compiler_path))
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     entry_source_meta_path(cache, Fingerprint { hex })

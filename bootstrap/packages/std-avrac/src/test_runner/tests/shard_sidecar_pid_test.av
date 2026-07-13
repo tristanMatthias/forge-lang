@@ -1,0 +1,35 @@
+// pdme.7 follow-up: shard sidecar names embed the ORCHESTRATOR's pid
+// (<slug>.<pid>.{log,bin}). Slug-only names are deterministic across
+// invocations, so an orphaned shard from a killed run (SIGKILL doesn't
+// reap grandchildren) finishing late clobbered the LIVE run's results
+// bin — and since the orchestrator prefers the bin over the printed
+// [shard-summary] line, a foreign summary silently replaced the real
+// one (observed 2026-07-13: a walker dir aggregated 30/32 "2 failed"
+// while its own shards printed 32/32 — the same clobber could equally
+// mask a real failure as a pass).
+//
+// Self-observing probe: under the per-file orchestrator THIS spec's
+// own shard already has sidecars in build/test_shards, so the live
+// dir witnesses the naming scheme. Under the BUNDLED runner (CI's
+// seed-train verify, coverage) no per-file shards spawn and the dir
+// is empty — the invariant ("no sidecar lacks the pid segment") is
+// then vacuously true, so an empty dir passes; requiring an entry
+// here failed the whole bundled suite. (The orchestrator wipes the
+// dir at run start, so pre-change stale names can't linger either
+// way.)
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "pdme.7: shard sidecars are pid-unique (<slug>.<pid>.{log,bin})" {
+    then "no live .log/.bin in build/test_shards lacks a numeric pid segment" {
+        let names = avra_shell_exec("ls build/test_shards 2>/dev/null")
+        let total = avra_shell_exec("ls build/test_shards 2>/dev/null | grep -cE '\\.(log|bin)$'").trim()
+        let good = avra_shell_exec("ls build/test_shards 2>/dev/null | grep -cE '\\.[0-9]+\\.(log|bin)$'").trim()
+        let bad = avra_shell_exec("ls build/test_shards 2>/dev/null | grep -E '\\.(log|bin)$' | grep -vE '\\.[0-9]+\\.(log|bin)$' | wc -l").trim()
+        let ok = bad == "0" && (total == "0" || (good != "0" && good != ""))
+        if !ok {
+            println("shard_sidecar_pid_test: total=${total} good=${good} bad=${bad} names:\n${names}")
+        }
+        ok
+    }
+}

@@ -1,0 +1,27 @@
+// pdme.7: the CONCURRENCY fuzz net, wired into the suite at a small
+// round count so every run exercises the parallel invariants — J
+// simultaneous cached compiles of the SAME entry (one fingerprint, one
+// slot: the shard/pre-build contention shape) while a seeded chaos
+// agent damages the live slot mid-flight. Per round: every compile
+// must exit 0 (a publish-race loser loses BENIGNLY), every worker's
+// IR must byte-match a cache-bypassed reference, and after one
+// recovery compile the slot must HIT again. The full acceptance run
+// is `diagnose.sh --cache-fuzz-parallel 25 8 <seed>`; this wrapper
+// keeps the suite cost to a few seconds. Detection is proven: the
+// harness caught three real races (LLVMPrintModuleToFile streaming
+// in place, the Hit arm's check-then-use read, and in-place wreck
+// eviction) plus its own shared-output cp race — each failed loudly
+// before its fix.
+//
+// @@fixture-stateful@@ — the net compiles against the SHARED build/bs2
+// via diagnose.sh; a transient environment hiccup (mid-rebuild, OOM
+// kill) must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "pdme.7: cache-fuzz-parallel net is green on the real toolchain" {
+    then "3 rounds x 3 concurrent workers pass with chaos, divergence and liveness checks" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --cache-fuzz-parallel 3 3 99 2>&1 || true")
+        out.contains("cache-fuzz-parallel PASS")
+    }
+}

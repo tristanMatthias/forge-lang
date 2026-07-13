@@ -35,6 +35,7 @@ use core.{
     avra_selfhost_read_file,
     avra_selfhost_write_file,
     avra_mkdir_p,
+    avra_touch,
 }
 use @std.crypto.{sha256_file}
 
@@ -90,6 +91,14 @@ export type BuildInputs = {
     // `.ll` (e.g. a whole-program "" build, or a mistyped root, poisons the
     // lib slot). "" for whole-program builds.
     lib_pkg_root: string,
+    // pdme.1: transitive dep fingerprints. For bin/lib/compile units this
+    // is the entry package's dep-aware full fingerprint
+    // (package_full_fingerprint — folds every transitive dep's source in),
+    // so editing a NON-entry source anywhere in the dep closure misses the
+    // cache instead of serving the stale artifact. Empty for ad-hoc
+    // single-file compiles (no manifest) and for test units, whose
+    // sources list already carries the rolled-up @std universe fp.
+    dep_fps: List<string>,
 }
 
 /// Outcome of consulting the cache for a unit.
@@ -145,15 +154,20 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         profile_key,
         inputs.target_triple,
         inputs.lib_pkg_root,
-        [],
+        inputs.dep_fps,
     )
 
     if inputs.kind == "test" {
         if cache_has_test(cache, fp) {
+            // pdme.6: a HIT refreshes the slot dir's mtime so the
+            // age-based `cache prune` behaves as an LRU — hot slots
+            // stay alive however old their content is.
+            let _ = avra_touch(entry_dir_for(cache, fp))
             return BuildOutcome.Hit(fp, cache_bin_path_for(cache, fp))
         }
     } else {
         if cache_has(cache, fp) {
+            let _ = avra_touch(entry_dir_for(cache, fp))
             // Refresh the `last` sidecar even on a HIT. collect_workspace_lib_objs
             // resolves a package's producer .o through this unit's `last` fp, and the
             // fingerprint is now root-aware (lib_pkg_root) — but `last` was written only
@@ -200,13 +214,30 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
     if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
         return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
     }
+    // Entry-digest check FIRST (pdme.5 attribution fix): the dep-fp
+    // axis folds the package's own full fingerprint (pdme.1), so an
+    // entry-file edit changes BOTH axes — checked in the old order,
+    // every own-edit miss read "package deps changed", sending the
+    // reader hunting through dependencies for their own change. An
+    // entry edit now names the file; the deps axis below covers what
+    // remains (true transitive edits, and non-entry siblings the
+    // entry digest can't see).
     if inputs.sources.length == 1 {
         let entry_digest = sha256_file(inputs.sources[0])
         let prev_entry_digest = read_field(prior, "src_digest:")
         if prev_entry_digest != "" && prev_entry_digest != entry_digest {
             return "source changed: " + inputs.sources[0]
         }
-    } else {
+    }
+    // pdme.1: a dep-fp delta means a source in the dep closure changed
+    // while the entry didn't — a transitive dep's file, or a non-entry
+    // sibling in this package (the package's own full fp participates
+    // in the axis).
+    let prev_deps = read_field(prior, "deps:")
+    if prev_deps != "" && prev_deps != inputs.dep_fps.join(",") {
+        return "package deps changed (a source in the dependency closure was edited)"
+    }
+    if inputs.sources.length != 1 {
         let prev_count = read_field(prior, "src_count:")
         let cur_count = string(inputs.sources.length)
         if prev_count != "" && prev_count != cur_count {
@@ -218,7 +249,11 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
 }
 
 fn last_inputs_path(c: Cache, unit_name: string) -> string {
-    c.cache_dir + "last/" + unit_name + ".txt"
+    // Unit names may embed paths ("compile:/abs/path/main.av") — the
+    // slashes made this a nested path under last/ whose parents never
+    // exist, so write_last_inputs silently failed and every such unit
+    // lost its --explain attribution. Flatten to one path component.
+    c.cache_dir + "last/" + unit_name.replace("/", "_") + ".txt"
 }
 
 /// Pull a single value from the prior-inputs text file. Format is
@@ -319,6 +354,7 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
         + "profile:" + profile_key + "\n"
         + "target:" + inputs.target_triple + "\n"
         + "lib_root:" + inputs.lib_pkg_root + "\n"
+        + "deps:" + inputs.dep_fps.join(",") + "\n"
         + "kind:" + inputs.kind + "\n"
         + "src_count:" + string(inputs.sources.length) + "\n"
     if inputs.sources.length == 1 {

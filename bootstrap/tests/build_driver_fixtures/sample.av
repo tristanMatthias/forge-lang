@@ -38,6 +38,7 @@ fn build_inputs(project: string, entry: string, profile: string, opt: int) -> Bu
         overflow_checks: true,
         coverage: false,
         lib_pkg_root: "",
+        dep_fps: [],
     }
 }
 
@@ -147,6 +148,7 @@ fn main() -> int {
         overflow_checks: true,
         coverage: false,
         lib_pkg_root: "",
+        dep_fps: [],
     }
     let out5 = decide_build(other_unit)
     if is_miss(out5) {

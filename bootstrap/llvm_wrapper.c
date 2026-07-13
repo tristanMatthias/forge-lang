@@ -687,14 +687,34 @@ void avra_llvm_add_incoming(LLVMValueRef phi, LLVMValueRef value, LLVMBasicBlock
 
 // ── Module output ──
 
+// pdme.7: emit ATOMICALLY (print to a pid-scoped temp, then rename).
+// LLVMPrintModuleToFile truncates the destination in place and streams
+// the IR out over milliseconds; a concurrent reader of the same .ll —
+// exactly the shard/pre-build contention shape, where several bs2
+// processes compile one entry — caught it at 0/partial bytes (found by
+// --cache-fuzz-parallel). rename() gives readers whole-old or
+// whole-new, never mid-stream.
 int avra_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
+    char tmp[4096];
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.%d", path, (int)getpid())
+            >= (int)sizeof(tmp)) {
+        return 1;
+    }
     char* error = NULL;
-    int result = LLVMPrintModuleToFile(m, path, &error);
+    int result = LLVMPrintModuleToFile(m, tmp, &error);
     if (error) {
         fprintf(stderr, "LLVM error: %s\n", error);
         LLVMDisposeMessage(error);
     }
-    return result;
+    if (result != 0) {
+        remove(tmp);
+        return result;
+    }
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return 1;
+    }
+    return 0;
 }
 
 int avra_llvm_verify_module_print(LLVMModuleRef m) {

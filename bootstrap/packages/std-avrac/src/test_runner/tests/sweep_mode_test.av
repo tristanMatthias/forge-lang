@@ -1,0 +1,63 @@
+// t-lqzr: `diagnose.sh --sweep` — the OOM-safe sequential full-suite
+// runner, promoted from the CLAUDE.md snippet. These specs drive the
+// REAL mode_sweep (via the AVRA_DIAGNOSE_NO_MAIN sourcing hook) against
+// a stub BS2 whose pass/fail behaviour is keyed on the directory name —
+// a nested real `bs2 test` would clobber the outer suite run's shard
+// state (build/test_shards is per-project-root), and the mode's
+// MECHANICS are what need pinning:
+//   * a green dir logs, tallies, and writes a .ok resume marker,
+//   * a red dir fails LOUDLY, stops the sweep (later dirs never run),
+//     keeps NO marker, and returns non-zero,
+//   * a re-run skips marker-green dirs and picks up where it stopped,
+//   * the final tally aggregates per-dir counts.
+
+use @std.avrac.core.{avra_shell_exec}
+
+fn run_harness(body: string) -> string {
+    let script = "set -u\n" +
+        "sandbox=$(mktemp -d)\n" +
+        "cat > \"$sandbox/fake-bs2\" <<'FAKE'\n" +
+        "#!/bin/bash\n" +
+        "case \"$2\" in\n" +
+        "  *red*) echo '1/2 tests passed in 0.1s (1 failed)'; exit 1 ;;\n" +
+        "  *)     echo '3/3 tests passed in 0.1s'; exit 0 ;;\n" +
+        "esac\n" +
+        "FAKE\n" +
+        "chmod +x \"$sandbox/fake-bs2\"\n" +
+        "mkdir -p \"$sandbox/green_a\" \"$sandbox/green_b\" \"$sandbox/red_c\"\n" +
+        "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+        "BS2=\"$sandbox/fake-bs2\"\n" +
+        "export AVRA_SKIP_ENSURE_BS2=1\n" +
+        "export AVRA_SWEEP_DIR=\"$sandbox/markers\"\n" +
+        body +
+        "rm -rf \"$sandbox\"\n"
+    avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+}
+
+spec "t-lqzr: --sweep mechanics (markers, loud failure, resume, tally)" {
+    then "a red dir stops the sweep loudly, keeps no marker, later dirs never run" {
+        let out = run_harness(
+            "mode_sweep --fresh \"$sandbox/green_a\" \"$sandbox/red_c\" \"$sandbox/green_b\"\n" +
+            "echo \"rc=$?\"\n" +
+            "[ -f \"$sandbox/markers/\"*green_a.log.ok ] && echo A_MARKED\n" +
+            "ls \"$sandbox/markers/\"*red_c.log.ok >/dev/null 2>&1 || echo C_UNMARKED\n" +
+            "ls \"$sandbox/markers/\"*green_b.log >/dev/null 2>&1 || echo B_NEVER_RAN\n")
+        out.contains("FAILED") && out.contains("rc=1")
+            && out.contains("A_MARKED") && out.contains("C_UNMARKED")
+            && out.contains("B_NEVER_RAN")
+    }
+    then "a re-run resumes: marker-green dirs skip, the rest run, tally aggregates" {
+        let out = run_harness(
+            "mode_sweep --fresh \"$sandbox/green_a\" >/dev/null 2>&1\n" +
+            "mode_sweep \"$sandbox/green_a\" \"$sandbox/green_b\"\n" +
+            "echo \"rc=$?\"\n")
+        out.contains("already green") && out.contains("rc=0")
+            && out.contains("sweep green") && out.contains("6/6")
+    }
+    then "--fresh drops markers and re-runs everything" {
+        let out = run_harness(
+            "mode_sweep --fresh \"$sandbox/green_a\" >/dev/null 2>&1\n" +
+            "mode_sweep --fresh \"$sandbox/green_a\"\n")
+        !out.contains("already green") && out.contains("sweep green")
+    }
+}

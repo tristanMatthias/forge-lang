@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep cache-gc clean-cache cache-stats
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -43,6 +43,9 @@ help:
 	@echo "  make test          Run spec tests + self-host fixed-point check."
 	@echo "                     Options: FILTER=<substr>, SKIP_SELFHOST=1."
 	@echo "  make quick         Inner-loop: rebuild bs2 + tests, skip selfhost. FILTER= supported."
+	@echo "  make sweep         OOM-safe full suite: sequential per-dir runs with resume"
+	@echo "                     markers (build/sweep/). FRESH=1 drops the markers. The"
+	@echo "                     sanctioned full-suite runner on a <=16GB box."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
@@ -62,6 +65,11 @@ help:
 	@echo "  make seed-train-verify  PR gate: the train's verify phase (build from pin +"
 	@echo "                     fixed point + suite) WITHOUT publish. Run before a PR."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
+	@echo "  make cache-gc      Prune COLD cache entries repo-wide (mtime == last use;"
+	@echo "                     hits refresh it). DAYS= overrides the 30-day default."
+	@echo "  make cache-stats   Per-package cache entry counts, sizes, ages + cold count."
+	@echo "  make clean-cache   Wipe EVERY cache (per-package + top-level build/cache)."
+	@echo "                     Guarded: never touches src/. Next build is cold."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
 	@echo ""
@@ -138,6 +146,32 @@ test:
 quick:
 	@$(DIAG) --ensure-bs2
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
+
+# OOM-safe full suite: one sequential `bs2 test <dir>` per test dir, with
+# per-dir logs + resume markers under build/sweep/ (kill-safe: a re-run
+# resumes at the failing dir). FRESH=1 drops the markers first.
+sweep:
+	@$(DIAG) --sweep $(if $(FRESH),--fresh)
+
+# Repo-wide cache GC: prune cold entries (mtime == last use; hits refresh
+# it) from the bootstrap root AND every package cache. DAYS= overrides the
+# 30-day default. Builds also auto-GC once a day via a stamp file.
+cache-gc:
+	@$(DIAG) --cache-gc $(if $(DAYS),$(DAYS))
+
+# Full cache wipe (the documented escape hatch): every
+# packages/*/build/cache plus the top-level build/cache — and NOTHING
+# else. Guarded so it can never touch a src/ tree (the
+# packages/<pkg>/src/build/ SOURCE dirs share the name 'build'; ad-hoc
+# find one-liners have eaten them before). Next build is cold.
+clean-cache:
+	@$(DIAG) --clean-cache
+
+# Cache observability: per-package entry counts, sizes, and cold-entry
+# counts (GC candidates; mtime == last use), plus repo totals.
+# DAYS= overrides the 30-day cold threshold.
+cache-stats:
+	@$(DIAG) --cache-stats "$(CURDIR)" $(if $(DAYS),$(DAYS))
 
 # Just the fixed-point check.
 selfhost:

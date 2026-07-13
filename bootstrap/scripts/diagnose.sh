@@ -291,6 +291,45 @@ DIFF & ANALYSIS
                        NEW (skip the cold rebuild; LOCAL, non-hermetic).
                        DIFF_TEST_CORPUS=<glob> overrides the corpus;
                        DIFF_TEST_JOBS=<n> the fan-out width.
+  --cache-fuzz [N] [SEED]
+                       The canonical "is the cache lying to me" check
+                       (pdme.9). N seeded edit/damage iterations against a
+                       sandbox package; every iteration asserts the CACHED
+                       compile's IR is byte-identical to a cache-bypassed
+                       recompute, and a final revert must restore the
+                       golden IR. Default N=20, SEED=42; seconds to run.
+  --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]
+                       CONCURRENCY sibling of --cache-fuzz (pdme.7). Each
+                       round fans out JOBS simultaneous cached compiles of
+                       the same entry (same fingerprint, same slot — the
+                       shard/pre-build contention shape) while a seeded
+                       chaos agent damages the live slot mid-flight.
+                       Asserts: every compile exits 0 (publish-race losers
+                       lose benignly), every worker's IR byte-matches a
+                       bypassed reference, and the slot still HITs after
+                       the melee. Default 8 rounds x 4 jobs, SEED=42.
+  --cache-gc [DAYS]    Age-based cache GC across the bootstrap root AND
+                       every packages/*/ root (`bs2 cache prune` is
+                       per-project-root). mtime == last use (hits touch),
+                       so only cold entries go. Default DAYS=30.
+  --cache-stats [ROOT] [DAYS]
+                       Cache observability: per-package entry counts,
+                       sizes, and cold-entry counts (older than DAYS,
+                       default 30 — GC candidates, since mtime == last
+                       use), plus repo totals.
+  --clean-cache [ROOT] FULL cache wipe (escape hatch): every
+                       packages/*/build/cache + the top-level
+                       build/cache under ROOT (default: the bootstrap
+                       tree) — and nothing else. Guarded so it can
+                       never touch a src/ tree. Next build is cold.
+  --sweep [--fresh] [dir ...]
+                       OOM-safe full-suite runner: one sequential
+                       `bs2 test <dir>` per test directory (default:
+                       tests/ + packages/**/tests) with per-dir logs and
+                       .ok resume markers under build/sweep. Stops LOUDLY
+                       at the first red dir; a re-run resumes there.
+                       --fresh drops the markers. This is the sanctioned
+                       way to run the full suite on a ≤16GB box.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -939,11 +978,11 @@ ensure_seed() {
 
 # Link an LLVM IR file into an executable.
 # rqwh: shared-inputs fingerprint for the link cache. Hashing
-# bs2/runtime.o/llvm_wrapper.o (~5MB each) per fixture would cost
-# ~30ms × 4 = 120ms × 30 fixtures = 3.6s of overhead on every run.
-# Cache the combined hash, invalidate via mtime: if the cache file is
-# newer than every input, reuse; otherwise recompute. Stable across
-# sequential link_ll calls in the same test session.
+# runtime.o/llvm_wrapper.o per fixture would cost ~30ms × N fixtures
+# on every run. Cache the combined hash, invalidate via mtime: if the
+# cache file is newer than every input, reuse; otherwise recompute.
+# Stable across sequential link_ll calls in the same test session.
+# (bs2 itself is deliberately NOT an input — see link_shared_fp.)
 #
 # 0qmm: link-binary cache lives inside the project's build/cache/
 # (under a `link/` sub-namespace alongside `meta/`), so every cached
@@ -954,29 +993,37 @@ LINK_SHARED_FP_FILE="$LINK_CACHE_DIR/.shared-fp"
 
 link_shared_fp() {
   # fxwn: include AVRA_LIB_OBJS in the fingerprint so the link cache
-  # invalidates when the @std .o-path set changes. Producer .o paths
-  # are content-addressed (sha256(meta source)/realobj.o), so the
-  # string proxies for content changes too — when bodies change, paths
-  # change. Bypasses the mtime memo when LIB_OBJS is set since the
-  # sidecar doesn't capture it.
+  # invalidates when the @std producer objects change. uzs9.3: hash the
+  # objects' CONTENT, not the path string — producer paths embed the
+  # unit fingerprint, which embeds the bs2 hash, so path-hashing missed
+  # on every compiler rebuild even when the objects were byte-identical.
+  # Content hashing is strictly more precise (a body change still
+  # changes the hash) and survives fp-slot renames. Bypasses the mtime
+  # memo when LIB_OBJS is set since the sidecar doesn't capture it.
   local libobjs_h=""
   if [ -n "${AVRA_LIB_OBJS:-}" ]; then
-    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | $SHA256_CMD | cut -d' ' -f1)
+    libobjs_h=$(printf '%s' "$AVRA_LIB_OBJS" | tr ':' '\n' \
+      | xargs $SHA256_CMD 2>/dev/null | cut -d' ' -f1 \
+      | $SHA256_CMD | cut -d' ' -f1)
   fi
   if [ -z "$libobjs_h" ] \
      && [ -f "$LINK_SHARED_FP_FILE" ] \
-     && [ "$LINK_SHARED_FP_FILE" -nt "$BS2" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$RUNTIME_O" ] \
      && [ "$LINK_SHARED_FP_FILE" -nt "$LLVM_WRAPPER_O" ]; then
     cat "$LINK_SHARED_FP_FILE"
     return
   fi
   mkdir -p "$LINK_CACHE_DIR"
-  local bs2_h runtime_h wrapper_h composed
-  bs2_h=$($SHA256_CMD "$BS2" | cut -d' ' -f1)
+  local runtime_h wrapper_h composed
+  # uzs9.3: bs2 is NOT a link input — the linked binary is a function of
+  # (the .ll bytes, runtime.o, llvm_wrapper.o, lib objs, flags), and the
+  # per-link key in link_ll already hashes the .ll content, which captures
+  # the compiler's entire contribution exactly. Hashing the bs2 binary
+  # here only over-invalidated: any bs2 rebuild (even a help-string edit)
+  # evicted every cached link of byte-identical IR.
   runtime_h=$($SHA256_CMD "$RUNTIME_O" | cut -d' ' -f1)
   wrapper_h=$($SHA256_CMD "$LLVM_WRAPPER_O" | cut -d' ' -f1)
-  composed=$(printf '%s:%s:%s:%s' "$bs2_h" "$runtime_h" "$wrapper_h" "$libobjs_h" \
+  composed=$(printf '%s:%s:%s' "$runtime_h" "$wrapper_h" "$libobjs_h" \
     | $SHA256_CMD | cut -d' ' -f1)
   # Don't persist when libobjs_h is set — it's per-invocation state,
   # and persisting would make the next call without LIB_OBJS hit
@@ -1104,6 +1151,17 @@ ensure_bs2() {
   if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
     log "compiling packages/cli/src/main.av with seed compiler"
+    # The SEED performs this compile, and the pinned seed can predate
+    # the dep-aware compile-cache key (pdme.1): an older seed keys the
+    # unit on the ENTRY file only, so after a NON-entry edit (the very
+    # situation source_newer_than just detected) it would HIT its stale
+    # slot and silently re-link the previous bs2. We only reach this
+    # branch when a source genuinely changed, so a fresh compile is
+    # owed regardless — drop the unit cache so no seed vintage can
+    # serve stale here. The src/build/cache path is where exactly those
+    # old vintages park compile entries (newer compilers cache at the
+    # package root AND key dep-aware, so they need no drop).
+    rm -rf "$CLI_SRC_DIR/build/cache"
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
@@ -1921,6 +1979,395 @@ mode_bisect_lines() {
 # Dispatch
 # ─────────────────────────────────────────────────────────────────────
 
+# pdme.9: the canonical "is the cache lying to me" check. Fuzzes the
+# build-cache correctness invariant against a sandbox package whose
+# ENTRY stays fixed while a NON-ENTRY sibling mutates — exactly the
+# lkze.9 staleness shape (an edit the entry-keyed cache historically
+# didn't see). Each iteration applies one seeded mutation, then
+# compiles the probe twice:
+#
+#   A = the normal, cache-eligible compile
+#   B = the same compile with the cache BYPASSED (AVRA_TIMINGS=1 is an
+#       existing eligibility gate — timings expect per-invocation
+#       stderr, so the compile cache never engages)
+#
+# and requires A == B byte-for-byte: whatever the cache served must be
+# indistinguishable from recomputing. Mutation kinds:
+#   0  no-op comment appended to the sibling (hash changes, IR must not lie)
+#   1  semantic change to the sibling (IR legitimately changes; A must track)
+#   2  newest cache slot's unit.ll truncated to 0 bytes (slot_complete must reject)
+#   3  newest cache slot's metadata.bin deleted (incomplete slot must miss)
+# After every iteration an identical rerun must be a cache HIT — the
+# liveness invariant (catches publish-death: a cache that silently
+# stops publishing keeps recomputing, so A == B alone can't see it).
+# Finally the sibling is restored to its ORIGINAL bytes and the probe
+# must byte-match the very first golden compile — the revert-restores
+# invariant (a sticky-fingerprint regression like the pre-fix
+# whole-second sidecar mtimes fails here).
+#
+# Usage: --cache-fuzz [N] [SEED]   (default 20 iterations, seed 42)
+# Shared sandbox for the cache fuzz modes. Lives under a literal
+# `packages/` segment so the resolver's find_packages_dir locates it and
+# `use @fuzz.q` resolves — the mutation target is a CROSS-PACKAGE
+# dependency of a fixed entry, the genuine lkze.9 axis (fp_full keys it
+# since pdme.1). Sets FUZZ_ENTRY / FUZZ_SIB / FUZZ_CACHE_DIR.
+cache_fuzz_mk_sandbox() {
+  local fuzz_root="$1"
+  rm -rf "$fuzz_root"
+  mkdir -p "$fuzz_root/packages/fuzz-p/src" "$fuzz_root/packages/fuzz-q/src"
+  cat > "$fuzz_root/packages/fuzz-p/avra.toml" <<'MANIFEST'
+[package]
+name = "@fuzz/p"
+version = "0.1.0"
+
+[dependencies]
+"@fuzz/q" = { path = "../fuzz-q" }
+MANIFEST
+  cat > "$fuzz_root/packages/fuzz-q/avra.toml" <<'MANIFEST'
+[package]
+name = "@fuzz/q"
+version = "0.1.0"
+MANIFEST
+  FUZZ_ENTRY="$fuzz_root/packages/fuzz-p/src/main.av"
+  FUZZ_SIB="$fuzz_root/packages/fuzz-q/src/q.av"
+  # The compile cache lives at the PACKAGE root (BuildInputs.project_root
+  # = package_root_for_file), not under src/ — keep the chaos agent
+  # aimed at the live slot or the damage kinds silently degrade to
+  # pure-contention rounds.
+  FUZZ_CACHE_DIR="$fuzz_root/packages/fuzz-p/build/cache"
+  printf 'use @fuzz.q.{fuzz_value}\n\nfn main() { println(string(fuzz_value())) }\n' > "$FUZZ_ENTRY"
+  printf 'export fn fuzz_value() -> int { 1 }\n' > "$FUZZ_SIB"
+}
+
+mode_cache_fuzz() {
+  local n="${1:-20}" seed="${2:-42}"
+  ensure_bs2
+  local fuzz_root="$BUILD_DIR/cache-fuzz"
+  cache_fuzz_mk_sandbox "$fuzz_root"
+  local entry="$FUZZ_ENTRY" sib="$FUZZ_SIB" cache_dir="$FUZZ_CACHE_DIR"
+  local sib_orig
+  sib_orig=$(cat "$sib")
+
+  # Both compile flavours strip the shard env (metadata/lib-objs flip
+  # eligibility and resolve behaviour); B additionally sets the
+  # cache-bypass gate.
+  fuzz_compile_cached() {
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+      "$BS2" compile "$entry" >/dev/null 2>&1
+  }
+  fuzz_compile_bypass() {
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT AVRA_TIMINGS=1 \
+      "$BS2" compile "$entry" >/dev/null 2>&1
+  }
+
+  fuzz_compile_cached || die "cache-fuzz: golden compile failed"
+  cp "$entry.ll" "$fuzz_root/golden.ll"
+
+  local r="$seed" iter=1 kind
+  while [ "$iter" -le "$n" ]; do
+    r=$(( (r * 1103515245 + 12345) % 2147483648 ))
+    # Kind comes from the LCG's HIGH bits — the low bits of a mod-2^31
+    # LCG cycle with tiny period (r % 4 degenerates to a fixed
+    # 3,0,1,2,… wheel), which is how the net's first defect hid: a
+    # damage kind always ran before the first semantic edit.
+    kind=$(( (r / 65536) % 4 ))
+    case "$kind" in
+      0) printf '// fuzz noop %s\n' "$r" >> "$sib" ;;
+      1) printf 'export fn fuzz_value() -> int { %s }\n' "$(( r % 97 ))" > "$sib" ;;
+      2) local slot_ll
+         slot_ll=$(ls -t "$cache_dir"/*/unit.ll 2>/dev/null | head -1)
+         [ -n "$slot_ll" ] && : > "$slot_ll" ;;
+      3) local slot_meta
+         slot_meta=$(ls -t "$cache_dir"/*/metadata.bin 2>/dev/null | head -1)
+         [ -n "$slot_meta" ] && rm -f "$slot_meta" ;;
+    esac
+    fuzz_compile_cached || die "cache-fuzz iter $iter (kind $kind): cached compile failed"
+    mv "$entry.ll" "$fuzz_root/a.ll"
+    fuzz_compile_bypass || die "cache-fuzz iter $iter (kind $kind): bypass compile failed"
+    mv "$entry.ll" "$fuzz_root/b.ll"
+    cmp -s "$fuzz_root/a.ll" "$fuzz_root/b.ll" \
+      || die "cache-fuzz FAIL iter $iter (kind $kind): cached IR diverges from recompute — the cache lied"
+    # Liveness: an immediate identical rerun must be a cache HIT.
+    # Catches publish-death (the pdme.9-found half-slot poison: after
+    # slot damage, every republish failed forever and the cache
+    # silently died — recompute-always keeps A == B, so only this
+    # assertion sees it). The hit line is on stderr.
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+        "$BS2" compile "$entry" 2>&1 >/dev/null | grep -q 'compile-cache\] hit' \
+      || die "cache-fuzz FAIL iter $iter (kind $kind): rerun did not HIT — publish is dead (cache disabled)"
+    iter=$(( iter + 1 ))
+  done
+
+  # Revert-restores: back to the original sibling bytes, the probe must
+  # byte-match the first golden compile through the cached path.
+  printf '%s' "$sib_orig" > "$sib"
+  fuzz_compile_cached || die "cache-fuzz: post-revert compile failed"
+  cmp -s "$entry.ll" "$fuzz_root/golden.ll" \
+    || die "cache-fuzz FAIL: revert did not restore the golden IR (sticky fingerprint)"
+
+  rm -rf "$fuzz_root"
+  ok "cache-fuzz PASS — $n iterations (seed $seed): cached IR == recomputed IR, revert restores golden"
+}
+
+# t-lqzr: the OOM-safe full-suite runner, promoted from the CLAUDE.md
+# copy-paste snippet (rule 10: dev tooling lives here). One `bs2 test`
+# per directory, strictly sequential — a ≤16GB box survives what a
+# parallel whole-suite invocation has repeatedly OOM'd. Per-dir logs +
+# `.ok` resume markers under $BUILD_DIR/sweep (override: AVRA_SWEEP_DIR),
+# so a killed run resumes at the failing dir instead of restarting, and
+# failure is LOUD (stop at the first red dir, print its tail) — no later
+# dir can mask an earlier one. On a green run the per-dir tallies are
+# aggregated into one suite-wide summary.
+#
+# Usage: --sweep [--fresh] [dir ...]
+#   --fresh    drop resume markers first (full re-run)
+#   dir ...    sweep only these dirs (default: tests/ + packages/**/tests)
+mode_sweep() {
+  local fresh=0
+  if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
+  ensure_bs2
+  local sweep_dir="${AVRA_SWEEP_DIR:-$BUILD_DIR/sweep}"
+  [ "$fresh" = "1" ] && rm -rf "$sweep_dir"
+  mkdir -p "$sweep_dir"
+  local dirs=()
+  if [ $# -gt 0 ]; then
+    dirs=("$@")
+  else
+    dirs=(tests)
+    while IFS= read -r d; do dirs+=("$d"); done < <(find packages -type d -name tests | sort)
+  fi
+  local t_start
+  t_start=$(date +%s)
+  local d slug logf
+  for d in "${dirs[@]}"; do
+    slug=$(printf '%s' "$d" | tr '/' '_')
+    logf="$sweep_dir/$slug.log"
+    if [ -f "$logf.ok" ]; then
+      log "[sweep] $d — already green (resume marker; --fresh re-runs)"
+      continue
+    fi
+    if ! "$BS2" test "$d" > "$logf" 2>&1; then
+      err "[sweep] FAILED: $d — full log: $logf"
+      sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -E '    FAIL|failed|crashed' | head -10 >&2
+      err "[sweep] markers kept — a re-run resumes at this dir"
+      return 1
+    fi
+    touch "$logf.ok"
+    log "[sweep] ok $d ($(sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1))"
+  done
+  local total
+  total=$(for f in "$sweep_dir"/*.log; do
+    [ -f "$f.ok" ] || continue
+    sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1
+  done | awk -F'[/ ]' '{p+=$1; t+=$2} END {print p "/" t}')
+  ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
+}
+
+# pdme.7: CONCURRENCY fuzz — the parallel sibling of --cache-fuzz.
+# Each round mutates the dep package, computes a reference IR via one
+# cache-bypassed compile, then fans out J CONCURRENT cached compiles of
+# the SAME entry (same fingerprint, same slot — the shard/pre-build
+# contention shape) while a seeded chaos agent damages the live slot
+# mid-flight (companion deletion / primary truncation). Invariants per
+# round:
+#   * every concurrent compile exits 0 (a loser of a publish race must
+#     lose BENIGNLY),
+#   * every worker's observed IR is byte-identical to the reference
+#     (no torn, foreign, or stale bytes under contention),
+#   * after one recovery compile, an identical rerun HITs — the slot
+#     survived the melee (publish + wreck-repair work under load).
+#
+# Usage: --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]  (default 8 4 42)
+mode_cache_fuzz_parallel() {
+  local rounds="${1:-8}" jobs="${2:-4}" seed="${3:-42}"
+  ensure_bs2
+  local fuzz_root="$BUILD_DIR/cache-fuzz-par"
+  cache_fuzz_mk_sandbox "$fuzz_root"
+  local entry="$FUZZ_ENTRY" sib="$FUZZ_SIB" cache_dir="$FUZZ_CACHE_DIR"
+
+  # Worker output goes to a per-worker log so a failure names its cause
+  # (an opaque rc/divergence is undebuggable after the processes exit).
+  # Each worker gets its OWN --output ($2): N workers contend on one
+  # cache slot but never on each other's output file. A shared
+  # <entry>.ll is itself a data race (GNU cp aborts with "replaced
+  # while being copied" when a sibling's rename lands mid-copy — a
+  # false FAIL this harness produced before --output became
+  # cache-eligible; pdme.7).
+  par_compile_cached() {
+    local logf="${1:-/dev/null}" outf="${2:-}"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+      "$BS2" compile ${outf:+--output="$outf"} "$entry" >"$logf" 2>&1
+  }
+
+  local r="$seed" round=1 kind w pid fail
+  while [ "$round" -le "$rounds" ]; do
+    r=$(( (r * 1103515245 + 12345) % 2147483648 ))
+    kind=$(( (r / 65536) % 3 ))   # 0 = pure contention, 1/2 = + slot damage
+    printf 'export fn fuzz_value() -> int { %s }\n' "$(( r % 97 ))" > "$sib"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT AVRA_TIMINGS=1 \
+      "$BS2" compile --output="$fuzz_root/ref.ll" "$entry" >/dev/null 2>&1 \
+      || die "cache-fuzz-parallel round $round: reference compile failed"
+
+    local pids=()
+    for w in $(seq 1 "$jobs"); do
+      par_compile_cached "$fuzz_root/w$w.log" "$fuzz_root/w$w.ll" &
+      pids+=($!)
+    done
+    if [ "$kind" -gt 0 ]; then
+      # Chaos agent: hit the newest slot three times while workers fly.
+      local i target
+      for i in 1 2 3; do
+        case "$kind" in
+          1) target=$(ls -t "$cache_dir"/*/metadata.bin 2>/dev/null | head -1)
+             [ -n "$target" ] && rm -f "$target" ;;
+          2) target=$(ls -t "$cache_dir"/*/unit.ll 2>/dev/null | head -1)
+             [ -n "$target" ] && : > "$target" ;;
+        esac
+        sleep 0.02
+      done
+    fi
+    fail=0
+    for pid in "${pids[@]}"; do wait "$pid" || fail=1; done
+    if [ "$fail" != "0" ]; then
+      for w in $(seq 1 "$jobs"); do
+        err "worker $w output:"; tail -5 "$fuzz_root/w$w.log" >&2 2>/dev/null
+      done
+      die "cache-fuzz-parallel FAIL round $round (kind $kind): a concurrent cached compile exited non-zero"
+    fi
+    for w in $(seq 1 "$jobs"); do
+      if ! cmp -s "$fuzz_root/w$w.ll" "$fuzz_root/ref.ll"; then
+        err "worker $w output:"; tail -5 "$fuzz_root/w$w.log" >&2 2>/dev/null
+        err "worker $w .ll: $(wc -c < "$fuzz_root/w$w.ll" 2>/dev/null) bytes vs ref $(wc -c < "$fuzz_root/ref.ll") bytes"
+        die "cache-fuzz-parallel FAIL round $round (kind $kind): worker $w IR diverges from reference — concurrent cache corruption"
+      fi
+    done
+    # Recovery compile (republishes if the chaos agent left a wreck),
+    # then the liveness rerun must HIT.
+    par_compile_cached || die "cache-fuzz-parallel round $round: recovery compile failed"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+        "$BS2" compile "$entry" 2>&1 >/dev/null | grep -q 'compile-cache\] hit' \
+      || die "cache-fuzz-parallel FAIL round $round (kind $kind): post-melee rerun did not HIT — publish died under contention"
+    round=$(( round + 1 ))
+  done
+  rm -rf "$fuzz_root"
+  ok "cache-fuzz-parallel PASS — $rounds rounds x $jobs workers (seed $seed): no divergence, no benign-failure violations, slots survived"
+}
+
+# pdme.6: repo-wide cache GC. `bs2 cache prune` is per-project-root
+# (it reads $PWD), but the heavyweight slots live in the PER-PACKAGE
+# caches (packages/*/build/cache — a single std-avrac producer slot is
+# ~40MB). Sweep the bootstrap root plus every package root in one go.
+# Usage: --cache-gc [DAYS]   (default 30)
+mode_cache_gc() {
+  local days="${1:-30}"
+  ensure_bs2
+  local root
+  for root in "$BOOTSTRAP_DIR" "$BOOTSTRAP_DIR"/packages/*/; do
+    [ -d "$root/build/cache" ] || continue
+    log "[cache-gc] $root"
+    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" )
+  done
+  ok "cache-gc done (max age ${days}d; mtime == last use, so only cold entries went)"
+}
+
+# pdme.3: the FULL cache wipe — the documented escape hatch when the
+# age-based GC isn't enough (suspected cache corruption, forced-cold
+# benchmarking). Wipes every packages/*/build/cache plus the top-level
+# build/cache, and NOTHING else. The foot-gun this guards:
+# packages/<pkg>/src/build/ is a SOURCE directory whose name also
+# contains "build" — ad-hoc `find … -name build` one-liners have eaten
+# it before. Defenses: (1) the fixed one-level glob can only match
+# <root>/packages/<pkg>/build/cache; (2) a sentinel rejects any
+# candidate whose package dir is literally named "src" (a
+# packages/src/ package would make the glob's parent-of-build a src
+# dir). Pure shell — no bs2 needed. ROOT is overridable for the spec
+# suite; defaults to the bootstrap tree.
+#
+# pdme.5: cache observability — per-package entry counts, sizes and
+# ages, plus repo totals and the cold-entry count (GC candidates).
+# "Cold" = mtime older than DAYS (default 30): with pdme.6's
+# mtime-as-last-use semantics (hits touch their entries), cold IS the
+# orphan signal — a live fingerprint keeps getting touched, an
+# orphaned one never is. Entries counted at the same granularity the
+# pruner evicts: top-level fp slots wholesale, namespace dirs (meta/
+# obj/ link/ _tmp/ fixture_stdout/) per-child; last/ is bookkeeping,
+# not an entry. Pure shell — no bs2 needed.
+#
+# Usage: --cache-stats [ROOT] [DAYS]
+mode_cache_stats() {
+  local root="${1:-$BOOTSTRAP_DIR}" days="${2:-30}"
+  [ -d "$root" ] || die "cache-stats: no such root: $root"
+  local cache label size n cold total_n=0 total_cold=0
+  echo "Per-package cache (entries / size / cold>${days}d):"
+  for cache in "$root"/build/cache "$root"/packages/*/build/cache; do
+    [ -d "$cache" ] || continue
+    case "$cache" in
+      "$root"/build/cache) label="(top-level)" ;;
+      *) label=$(basename "$(dirname "$(dirname "$cache")")") ;;
+    esac
+    n=$(cache_stats_entries "$cache" | wc -l)
+    cold=$(cache_stats_entries "$cache" | { local c=0 e; while IFS= read -r e; do
+            [ -n "$(find "$e" -maxdepth 0 -mtime +"$days" 2>/dev/null)" ] && c=$((c+1)); done; echo "$c"; })
+    size=$(du -sh "$cache" 2>/dev/null | cut -f1)
+    printf '  %-14s %4d entries  %6s  cold: %d\n' "$label" "$n" "$size" "$cold"
+    total_n=$(( total_n + n ))
+    total_cold=$(( total_cold + cold ))
+  done
+  echo "Total: $total_n entries, $total_cold cold — 'make cache-gc' reclaims cold (mtime == last use; hits refresh it)"
+}
+
+# One entry path per line, at the pruner's granularity (see
+# mode_cache_stats). Shared shape with `bs2 cache prune`'s
+# collect_prune_candidates so counts and evictions can't drift apart.
+cache_stats_entries() {
+  local cache="$1" d
+  for d in "$cache"/*; do
+    [ -e "$d" ] || continue
+    case "$(basename "$d")" in
+      last|.last-gc) continue ;;
+      meta|obj|link|_tmp|fixture_stdout)
+        find "$d" -mindepth 1 -maxdepth 1 2>/dev/null ;;
+      *) printf '%s\n' "$d" ;;
+    esac
+  done
+}
+
+# Usage: --clean-cache [ROOT]
+mode_clean_cache() {
+  local root="${1:-$BOOTSTRAP_DIR}"
+  [ -d "$root" ] || die "clean-cache: no such root: $root"
+  local d pkg_dir wiped=0
+  for d in "$root"/packages/*/build/cache; do
+    [ -d "$d" ] || continue
+    pkg_dir=$(basename "$(dirname "$(dirname "$d")")")
+    if [ "$pkg_dir" = "src" ]; then
+      log "[clean-cache] SPARED $d — parent is a src dir, refusing"
+      continue
+    fi
+    rm -rf "$d"
+    log "[clean-cache] wiped $d"
+    wiped=$(( wiped + 1 ))
+  done
+  if [ -d "$root/build/cache" ]; then
+    rm -rf "$root/build/cache"
+    log "[clean-cache] wiped $root/build/cache"
+    wiped=$(( wiped + 1 ))
+  fi
+  # Legacy location: older compilers parked `bs2 compile` entries at
+  # <pkg>/src/build/cache (the source-dir foot-gun); current compilers
+  # cache at the package root, so anything here is unreachable junk.
+  # The glob names the exact legacy dir — the .av sources that live
+  # BESIDE it in src/build/ (e.g. std-avrac's build module) are not
+  # touched.
+  for d in "$root"/packages/*/src/build/cache; do
+    [ -d "$d" ] || continue
+    rm -rf "$d"
+    log "[clean-cache] wiped $d (legacy compile-cache location)"
+    wiped=$(( wiped + 1 ))
+  done
+  ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -1970,6 +2417,12 @@ main() {
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
     --slot-exec)          mode_slot_exec "$@" ;;
+    --cache-fuzz)         mode_cache_fuzz "$@" ;;
+    --sweep)              mode_sweep "$@" ;;
+    --cache-gc)           mode_cache_gc "$@" ;;
+    --cache-stats)        mode_cache_stats "$@" ;;
+    --clean-cache)        mode_clean_cache "$@" ;;
+    --cache-fuzz-parallel) mode_cache_fuzz_parallel "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
@@ -3376,5 +3829,12 @@ mode_seed_merge() {
   fi
   return 1
 }
+
+# Function-level testing hook (6cks): `AVRA_DIAGNOSE_NO_MAIN=1 source
+# scripts/diagnose.sh` loads every definition without dispatching, so
+# spec tests can exercise individual helpers (source_newer_than, …)
+# against sandboxed fixtures. A normal execution leaves the var unset
+# and dispatches as always.
+[ -n "${AVRA_DIAGNOSE_NO_MAIN:-}" ] && return 0
 
 main "$@"

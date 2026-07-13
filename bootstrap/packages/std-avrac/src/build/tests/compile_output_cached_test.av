@@ -1,0 +1,50 @@
+// pdme.7: `bs2 compile --output=X` participates in the compile cache.
+// The output path is NOT a compilation input (the fp keys sources +
+// deps + compiler content, never the destination), so a plain compile
+// and an --output compile of the same entry share ONE slot, and a hit
+// materialises the cached IR wherever the caller asked. This is what
+// makes per-consumer --output the supported answer to concurrent
+// same-entry compiles: N processes contend on one slot but never on
+// each other's output file. (--output used to be cache-INELIGIBLE —
+// every build-driver child paid a full recompile, and concurrent
+// same-entry compiles all raced on the shared <entry>.ll, which the
+// parallel fuzz caught as a cp "replaced while being copied" abort.)
+//
+// @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient
+// environment hiccup must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+}
+
+fn mk_pkg() -> string {
+    // NOT under /tmp — the compile cache excludes /tmp entries (the
+    // diagnostics-replay carve-out, j568), which would turn this spec
+    // into a vacuous never-hits.
+    let root = avra_shell_exec("pwd").trim() + "/build/spec_pdme7_out_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p("${root}/src")
+    let _ = avra_selfhost_write_file("${root}/avra.toml",
+        "[package]\nname = \"outp\"\nversion = \"0.1.0\"\n\n[bin]\nname = \"outp\"\npath = \"src/main.av\"\n")
+    let _ = avra_selfhost_write_file("${root}/src/main.av", "fn main() { println(\"out\") }\n")
+    root
+}
+
+fn bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "pdme.7: --output shares the plain compile's cache slot" {
+    then "plain compile publishes; --output compile HITs and lands the IR at the override" {
+        let root = mk_pkg()
+        let envp = "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS"
+        let warm = avra_shell_exec("cd '${root}' && ${envp} '${bs2()}' compile src/main.av 2>&1")
+        let hit = avra_shell_exec("cd '${root}' && ${envp} '${bs2()}' compile --output='${root}/other.ll' src/main.av 2>&1")
+        let same = avra_shell_exec("cmp -s '${root}/src/main.av.ll' '${root}/other.ll' && echo SAME")
+        let ok = warm.contains("[compile-cache] published")
+            && hit.contains("[compile-cache] hit")
+            && same.contains("SAME")
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}

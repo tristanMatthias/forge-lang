@@ -1,0 +1,104 @@
+// uzs9.3: cache_entry_realobj_path consults a content-addressed obj
+// store (build/cache/obj/<key>.o, key = llc flags + IR content hash)
+// before paying llc. The fp that names a slot embeds the bs2 hash, so
+// ANY compiler rebuild mints a fresh slot — but when the recompile
+// emitted byte-identical IR, llc's output is identical by determinism
+// and the store serves it. These specs are the correctness gate the
+// uzs9.3 ticket requires for any fingerprint-narrowing work:
+//
+//   1. identical IR  → the store IS used (witnessed via a sentinel
+//      planted in the store: the slot's realobj comes back as the
+//      sentinel bytes, proving no llc ran),
+//   2. different IR  → the store is NOT used (fresh llc output, not
+//      the sentinel — the under-invalidation hazard class zp5b/fxfz),
+//   3. a 0-byte store entry (killed-mid-publish partial) is ignored.
+//
+// The sentinel trick doubles as drift detection: if the impl's key
+// derivation ever changes without these specs noticing, the sentinel
+// lands at a path the impl no longer reads and spec 1 fails loudly.
+
+use @std.avrac.build.{
+    Cache, cache_for, cache_init, cache_entry_realobj_path,
+    entry_dir_for, entry_metadata_path,
+}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{
+    avra_selfhost_write_file, avra_selfhost_read_file, avra_mkdir_p,
+    avra_file_size, avra_shell_exec,
+}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_uzs93_objstore_test_${slug}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+// A complete build slot (unit.ll + metadata.bin) holding `ll`, so the
+// realobj completeness gate passes.
+fn mk_build_slot(c: Cache, fp: Fingerprint, ll: string) -> string {
+    let dir = entry_dir_for(c, fp)
+    let _ = avra_mkdir_p(dir)
+    let _ = avra_selfhost_write_file(dir + "/unit.ll", ll)
+    let _ = avra_selfhost_write_file(entry_metadata_path(c, fp), "meta\n")
+    dir
+}
+
+// The single store object's path after exactly one materialisation.
+// Listed rather than re-derived so the spec can't silently agree with
+// a drifted key scheme.
+fn sole_store_obj(c: Cache) -> string {
+    avra_shell_exec("ls '${c.cache_dir}obj/'*.o 2>/dev/null | head -1").trim()
+}
+
+const IR_A: string = "define i32 @uzs93_probe_a() {\nentry:\n  ret i32 7\n}\n"
+const IR_B: string = "define i32 @uzs93_probe_b() {\nentry:\n  ret i32 9\n}\n"
+
+spec "uzs9.3: realobj store rescues byte-identical IR across slots" {
+    then "a second slot with IDENTICAL IR installs from the store (llc skipped)" {
+        let c = mk_cache("hit")
+        // Slot A: real llc run populates the store.
+        let dir_a = mk_build_slot(c, mk_fp("4100000000000000000000000000000000000000000000000000000000000000"), IR_A)
+        let ra = cache_entry_realobj_path(c, mk_fp("4100000000000000000000000000000000000000000000000000000000000000"))
+        let store_o = sole_store_obj(c)
+        // Plant a sentinel in the store: if slot B's materialisation
+        // reads the store (and not llc), its realobj IS the sentinel.
+        let _ = avra_selfhost_write_file(store_o, "SENTINEL-OBJ-BYTES")
+        let dir_b = mk_build_slot(c, mk_fp("4200000000000000000000000000000000000000000000000000000000000000"), IR_A)
+        let rb = cache_entry_realobj_path(c, mk_fp("4200000000000000000000000000000000000000000000000000000000000000"))
+        ra != "" && store_o != "" && rb == dir_b + "/unit.realobj.o"
+            && avra_selfhost_read_file(rb) == "SENTINEL-OBJ-BYTES"
+    }
+    then "a slot with DIFFERENT IR does NOT reuse the store entry" {
+        let c = mk_cache("miss")
+        let _ = mk_build_slot(c, mk_fp("4300000000000000000000000000000000000000000000000000000000000000"), IR_A)
+        let ra = cache_entry_realobj_path(c, mk_fp("4300000000000000000000000000000000000000000000000000000000000000"))
+        let store_o = sole_store_obj(c)
+        let _ = avra_selfhost_write_file(store_o, "SENTINEL-OBJ-BYTES")
+        // Different IR → different content key → llc runs, sentinel unseen.
+        let dir_b = mk_build_slot(c, mk_fp("4400000000000000000000000000000000000000000000000000000000000000"), IR_B)
+        let rb = cache_entry_realobj_path(c, mk_fp("4400000000000000000000000000000000000000000000000000000000000000"))
+        ra != "" && rb == dir_b + "/unit.realobj.o"
+            && avra_selfhost_read_file(rb) != "SENTINEL-OBJ-BYTES"
+            && avra_file_size(rb) > 0
+    }
+    then "a 0-byte store entry is ignored and repaired by a fresh llc" {
+        let c = mk_cache("zero")
+        let dir_a = mk_build_slot(c, mk_fp("4500000000000000000000000000000000000000000000000000000000000000"), IR_A)
+        let ra = cache_entry_realobj_path(c, mk_fp("4500000000000000000000000000000000000000000000000000000000000000"))
+        let store_o = sole_store_obj(c)
+        // Truncate the store entry to 0 bytes (killed-mid-publish shape).
+        let _ = avra_selfhost_write_file(store_o, "")
+        let dir_b = mk_build_slot(c, mk_fp("4600000000000000000000000000000000000000000000000000000000000000"), IR_A)
+        let rb = cache_entry_realobj_path(c, mk_fp("4600000000000000000000000000000000000000000000000000000000000000"))
+        // The 0-byte entry must not be installed; llc runs, and its
+        // publish repairs the store entry back to a whole object.
+        ra != "" && rb != "" && avra_file_size(rb) > 0
+            && avra_file_size(store_o) > 0
+    }
+}

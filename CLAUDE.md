@@ -90,6 +90,8 @@ make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-id
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
+make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d.
+make clean-cache           # wipe EVERY cache (per-package + top-level). Guarded: never touches src/.
 make clean                 # remove all build artifacts (3-min seed rebuild on next make)
 make help                  # show all targets
 ```
@@ -149,45 +151,26 @@ accident — but your build is now ahead of the pin. Restore the pinned seed
 with `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh
 --seed-fetch` and remove whatever post-seed feature use forced the cycle.
 
-### Dev-loop gotcha: a stale `bs2` can mask your change (KNOWN BUG — fix, don't build around)
+### Dev-loop build freshness (pdme.1 + 6cks LANDED — the stale-bs2 bug is fixed)
 
-This is a bug to be fixed (tickets `pdme.1` transitive-fingerprint, `6cks`
-`source_newer_than` uses macOS `stat -f %m` on Linux), NOT intended
-behavior — when those land, delete this note. Until then, be aware:
-after editing a **non-entry** source file (e.g. `parse/mod.av`,
-`desugar/mod.av`, `typeck/mod.av`), a plain `make build-quick` can re-link
-the **previous** `bs2` (the compile cache keys on the entry file's
-fingerprint, not transitive sources). Your edit then silently does
-nothing.
+The historical "a plain `make build-quick` re-links the previous bs2 after a
+non-entry edit" bug is FIXED, at two layers: (1) the compile-cache key folds
+the entry package's dep-aware full fingerprint (`package_full_fingerprint`,
+pdme.1 — every source in the manifest dep closure participates), and
+diagnose.sh's `source_newer_than` uses a portable stat (6cks); (2) because the
+bs2 rebuild itself is performed by the PINNED SEED — which can predate pdme.1
+and would key entry-only, serving its own stale slot — `ensure_bs2` drops the
+CLI unit cache before the seed compile (a rebuild only triggers when a source
+genuinely changed, so a fresh compile is owed anyway). Editing `parse/mod.av`,
+`typeck/mod.av`, etc. now propagates on a plain `make build-quick` regardless
+of seed vintage, and `make build-quick` on an unchanged tree is sub-second.
 
-So: if behavior doesn't change after a rebuild, do NOT conclude your code
-is wrong — first confirm the binary actually recompiled. Verified-needed
-force (keeps the seed binary, so ~60-90s, NOT the 3-min `make clean` seed
-cycle; clearing `build/bs2` alone is insufficient — the CLI unit cache
-must go too):
-
-```bash
-rm -rf packages/cli/src/build/cache && rm -f build/bs2 && make build-quick
-```
-
-This is narrow and deliberate (the CLI unit cache only) — it is NOT the
-blanket `find packages -name cache -exec rm` anti-pattern below.
-
-**Mutation-testing corollary (a stale cache can mask your REVERT).** When you
-deliberately build broken code to prove a test fails (the prepare-pr mutation
-check), then revert, the broken-source artifacts can outlive the revert and
-make `bs2 test <file>` keep reporting the *broken* result. The CLI-cache recipe
-above does NOT reach them. The objects that persist are: the edited package's
-own cache `packages/<pkg>/build/cache`, that package's whole-unit IR
-`packages/std-avrac/src/avrac.av.ll`, and — the one that bit hardest — the
-**test-runner compile cache at top-level `build/cache`**. So after a
-mutation→revert cycle, if tests still fail against known-good source, clear
-those too (scoped, not the blanket nuke):
-
-```bash
-rm -rf packages/std-avrac/build/cache packages/cli/src/build/cache build/cache \
-  && rm -f build/bs2 packages/std-avrac/src/avrac.av.ll && make build-quick
-```
+The 18z8 hole is closed too: `bs2 build` now removes any stale entry `.ll`
+before the child compile and fails on the child's real exit code (the
+non-TTY progress runner used to swallow it), so a crashed child can no
+longer report `Built` off a leftover artifact. Mutation→revert cycles are
+also content-keyed now: a revert restores the pre-mutation fingerprints, so
+the pre-mutation cache slots (correct results) are what reruns hit.
 
 **Frozen-FAIL in the fixture-stdout cache (zp5b/fxfz).** Distinct from the
 compile caches above: the test runner also memoises each *fixture's stdout*
@@ -227,8 +210,9 @@ check into a ~30s one (that residual ~30s is the selfhost compile itself — the
 decisive oracle, which nothing removes; the corpus is tiny and always runs). Two caveats: (1) it is
 **NON-HERMETIC** (build/bs2's seed/source aren't pinned), so the plain
 `make diff-test` is the authoritative check and the only one CI runs; (2)
-**rebuild `bs2` first** — a stale build/bs2 (the known `pdme.1`/`6cks` cache bug)
-compared against OLD reports a false **PASS**. The two **selfhost** compiles (OLD
+**rebuild `bs2` first** (`make build-quick` — cheap now that freshness is
+content-keyed) so build/bs2 reflects your edits; a stale build/bs2 compared
+against OLD reports a false **PASS**. The two **selfhost** compiles (OLD
 and NEW) run **concurrently** in every mode (via `bs2 compile --output`), so the
 selfhost phase costs ~one compile, not two; the corpus files fan out in parallel
 too — no flag needed.
@@ -434,18 +418,9 @@ spawning, so a stale artifact can no longer mask a crashed child (the old
 
 **Session-accumulated pressure masquerades as a code bug.** A killed `make test` leaves `bs2`/`llc` procs + page cache resident, so the NEXT memory reading is inflated — a whole session was once spent concluding the std-avrac lib build needs ~15GB (it's ~140MB; the rest was session pressure, which `snw0` already documented and warned about). Before trusting ANY memory number: `free` shows recovered avail AND `pgrep -f 'bs2 build|llc'` is empty. Measure whole-tree/cgroup RSS, not `ps --ppid` (misses the `llc` grandchild that does the heavy lifting). Kill stray runs by PID — `pkill -f '<pat>'` self-matches your own shell command (exit 144). The full-suite OOM on a ≤16GB box is a KNOWN, scoped issue (`snw0`) — don't re-diagnose from scratch.
 
-**On a ≤16GB Claude-Code-Web container, `make test` doesn't just OOM — it takes the whole container down** (three restarts in one 2026-07-12 session, all mid-suite). The pattern that survives: sequential per-directory invocations with per-dir logs, per-dir success markers (so a kill resumes instead of restarting), and loud failure (no later dir masks an earlier one):
+**On a ≤16GB Claude-Code-Web container, `make test` doesn't just OOM — it takes the whole container down** (three restarts in one 2026-07-12 session, all mid-suite). The pattern that survives is now a first-class mode: **`make sweep`** (= `diagnose.sh --sweep`) — one sequential `bs2 test <dir>` per test directory, per-dir logs + `.ok` resume markers under `build/sweep/` (a kill resumes at the failing dir instead of restarting), loud failure at the first red dir (no later dir masks an earlier one), and a suite-wide tally on green. `FRESH=1` (or `--fresh`) drops the markers; extra args scope it to specific dirs. This is the sanctioned full-suite runner on a small box; pair it with `make selfhost` for the full `make test` equivalent.
 
-```bash
-mkdir -p /tmp/sweep && for d in tests packages/std-avrac/src/features/*/tests; do
-  log="/tmp/sweep/$(printf '%s' "$d" | tr '/' '_').log"
-  [ -f "$log.ok" ] && continue
-  ./build/bs2 test "$d" > "$log" 2>&1 || { echo "FAILED: $d ($log)"; exit 1; }
-  touch "$log.ok"
-done && echo "sweep green"
-```
-
-Do NOT rebuild `bs2` (or clear caches) while such a sweep is running; the runner re-invokes `./build/bs2` per compile and a mid-sweep rebuild silently invalidates the run.
+Do NOT rebuild `bs2` (or clear caches) while a sweep is running; the runner re-invokes `./build/bs2` per compile and a mid-sweep rebuild silently invalidates the run.
 
 ### C-side debug tools (runtime.c)
 - `avra_trace_i64(v1, v2)` / `avra_trace_ptr(label, val)` — safe tracing (no string alloc)
@@ -478,7 +453,8 @@ These bugs build successfully but corrupt memory at runtime.
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 - **Stale seed after a base change → misleading `expects X, got X` errors:** after rebasing/restarting a branch onto a newer integration base, the gitignored local `seed/seed.ll` stays at the OLD version and compiles the newer source with an older compiler — throwing F1000 `expects @…::ExprId, got @…::ExprId` (identical expected/got) that mimics a type-checker bug, not a seed mismatch. Re-fetch the pin first: `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch`.
-- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. FIXED instance of this class (was 18z8): the lib build's post-compile `file_exists(entry.ll)` check used to be satisfied by a STALE .ll from an earlier run, so a crashed child compile still reported `Built` — now the parent removes the pre-existing entry `.ll` before spawning and gates Built on the child's real exit status (`run_with_progress`/`run_silent` never fabricate a 0), with the existence check demoted to a consistency assert; guard test `build/tests/libbuild_stale_ll_test.av`. Lib builds are safe pass/fail probes without any `rm` prelude.
+- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. FIXED instance of this class (was 18z8): the lib build's post-compile `file_exists(entry.ll)` check used to be satisfied by a STALE .ll from an earlier run, so a crashed child compile still reported `Built` — now the parent removes the pre-existing entry `.ll` before spawning and gates Built on the child's real exit status (`run_with_progress`/`run_silent` never fabricate a 0), with the existence check demoted to a consistency assert; guard test `build/tests/libbuild_stale_ll_test.av`. Lib builds are safe pass/fail probes without any `rm` prelude. Meta reads are validated too (pdme.2 `metadata_slot_matches`): a slot serves only when whole AND stamped with the key it was looked up under.
+- **Concurrent same-slot compiles are safe LOCK-FREE (pdme.7) — don't add a cache lock.** N bs2 processes compiling the same entry (the shard/pre-build contention shape) contend on one cache slot safely: staging dirs are pid-unique, IR emission itself is atomic (`avra_llvm_print_module_to_file` prints to a per-pid tmp then renames — LLVM's own API truncates in place), wreck-repair renames damaged slots ASIDE into `_tmp` (readers see whole-or-absent, never half-deleted), and every cache-hit read is validated (an emptied-mid-read slot demotes to an honest MISS + recompile). A publish-race loser loses benignly. The regression net is `diagnose.sh --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]` (suite-wired at small rounds): simultaneous same-fp compiles + a chaos agent damaging the live slot, asserting rc=0 everywhere, worker IR == bypassed reference, and post-melee liveness. One rule remains for CALLERS: concurrent same-entry compiles must each pass their own `--output` — the shared `<entry>.ll` is the one path the cache can't defend (and `--output` is compile-cache-eligible now, so per-consumer outputs still share the slot).
 - **Unmatched tag `-559038737` / `0xffffffffdeadbeef` = the CLOSURE MARKER, not freed memory.** That constant is `closure_marker()` (codegen/types.av) — the head of a closure array `[MARKER, fn_ptr, captures…]`. Seeing it as an enum tag means a FUNCTION REFERENCE landed where a value belongs. Historically the first suspect was a fn-name/local-name collision, but **that class is now FIXED (ticket zo1a, #667/#691)**: locals AND match-arm pattern bindings reliably shadow same-named fns (the qualifier threads let/loop/pattern bindings), and module-private fns don't leak cross-module (a bare cross-module private ref is F3000, never a silent closure). So a closure marker today points at a genuine codegen/memory bug — a value slot that received a fn reference — NOT a shadow collision; investigate the emitting codegen path directly. Regression guards: `resolve/tests/pattern_var_shadows_fn_test.av`, `resolve/tests/local_value_shadows_import_test.av`, `tests/err_private_cross_module_test.av`. **Caveat:** reproducing the OLD corruption requires a **stale/contaminated `seed/seed.ll`** whose resolver predates the fix — always `sha256sum bootstrap/seed/seed.ll` and confirm it matches `bootstrap/seed/seed.lock` before diagnosing a "shadow" crash; a mismatch IS the bug (`rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch` restores the pin).
 - **LLVM verifier failures are FATAL (t-83ja).** `verify_fn` (per fn, names it) and `verify_module` results gate the compile: a rejection is an F9999 ICE and NO `.ll` is written — invalid IR can no longer leave codegen. Codegen also drops dead statements past a block terminator (early `return`/`break`/`continue` followed by more statements) instead of emitting into the terminated block; guards live in `emit_stmt_ids`/`emit_block_loop`/`emit_block_loop_ctx`/`emit_body_block`. Two gotchas this surfaced: (1) verifier-invalid IR (e.g. `add ptr`) can still LOWER correctly through the in-memory object path — tests pass while the module is invalid, and only a textual `.ll` reparse (llc) rejects it, so the fatal gate (not llc) is the real guard; (2) an `Integer arithmetic operators only work with integral types!` report means a REPR mismatch — a ptr-typed LLVM value whose EmitValue claims Int (the newtype `.raw()` unwrap was the caught instance; both unwrap sites now canonicalise via `ctx.cast_to`, fn_decl/codegen.av). A `Branch condition is not 'i1' type!` report means an `icmp_eq`/`icmp_ne` result (value-use helpers, zext'd to i64) was fed to `cond_br` — use raw-i1 `eq`/`ne` for branching (the tuple-release emitters were the caught instance).
 

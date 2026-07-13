@@ -56,11 +56,11 @@ fn main() -> int {
     // every meta.bin a downstream consumer might want lands on disk.
     let rc_lib = avra_shell_exec_status("cd ${avrac_dir} && ${bs2} build --lib --emit_metadata > /tmp/cli_meta_lib.log 2>&1")
     probe("avrac_lib_build_rc_zero", rc_lib == 0)
-    probe("avrac_meta_present", avra_selfhost_file_exists(package_meta_path_for(avrac_dir)) != 0)
-    probe("std_lsp_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-lsp")) != 0)
-    probe("std_json_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-json")) != 0)
-    probe("std_cli_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-cli")) != 0)
-    probe("std_crypto_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-crypto")) != 0)
+    probe("avrac_meta_present", avra_selfhost_file_exists(package_meta_path_for(avrac_dir, bs2)) != 0)
+    probe("std_lsp_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-lsp", bs2)) != 0)
+    probe("std_json_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-json", bs2)) != 0)
+    probe("std_cli_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-cli", bs2)) != 0)
+    probe("std_crypto_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-crypto", bs2)) != 0)
 
     // Step 2: compile cli/main.av with AVRA_USE_METADATA=1. Resolver
     // takes the metadata fast-path on every `use @std.<pkg>` import

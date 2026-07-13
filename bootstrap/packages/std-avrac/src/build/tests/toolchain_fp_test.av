@@ -1,0 +1,47 @@
+// pdme.8: the package full fingerprint folds the TOOLCHAIN axis — the
+// running compiler's content hash. The aggregated metadata a package's
+// meta slot holds is a function of the extractor too, not just the
+// source: a bs2 whose metadata emitter changed must not serve slots
+// stamped by the old one. (The unit-level build cache already carried
+// a compiler axis via fp_for_unit's compiler_hash — which is exactly
+// why the META slot is the isolating observable here: pre-pdme.8, two
+// different compiler binaries emitting metadata for the same source
+// wrote ONE shared meta slot; post-pdme.8 they get one slot each.)
+//
+// The probe: emit metadata for a sandbox package with the real bs2,
+// then with a byte-appended COPY of it (trailing bytes don't affect
+// ELF execution but change the content hash). Same source, different
+// toolchain -> a second meta slot must appear. Same toolchain twice
+// -> the slot count must NOT grow.
+//
+// @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient
+// environment hiccup must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+}
+
+spec "pdme.8: package fp folds the running compiler's content hash" {
+    then "same toolchain reuses one meta slot; a byte-different compiler stamps a second" {
+        let root = avra_shell_exec("pwd").trim() + "/build/spec_pdme8_tc_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/src")
+        let _ = avra_selfhost_write_file("${root}/avra.toml",
+            "[package]\nname = \"tcprobe\"\nversion = \"0.1.0\"\n\n[bin]\nname = \"tcprobe\"\npath = \"src/main.av\"\n")
+        let _ = avra_selfhost_write_file("${root}/src/main.av",
+            "export fn probe_value() -> int { 8 }\n\nfn main() { println(string(probe_value())) }\n")
+        let bs2 = avra_shell_exec("pwd").trim() + "/build/bs2"
+        let bs2v = "${root}/bs2_variant"
+        avra_shell_exec("cp '${bs2}' '${bs2v}' && printf 'AVRA-TC-PROBE' >> '${bs2v}'")
+        let envp = "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS"
+        let cmd = "compile --emit_metadata src/main.av >/dev/null 2>&1"
+        avra_shell_exec("cd '${root}' && ${envp} '${bs2}' ${cmd}")
+        let n1 = avra_shell_exec("ls '${root}/build/cache/meta' | wc -l").trim()
+        avra_shell_exec("cd '${root}' && ${envp} '${bs2}' ${cmd}")
+        let n2 = avra_shell_exec("ls '${root}/build/cache/meta' | wc -l").trim()
+        avra_shell_exec("cd '${root}' && ${envp} '${bs2v}' ${cmd}")
+        let n3 = avra_shell_exec("ls '${root}/build/cache/meta' | wc -l").trim()
+        avra_shell_exec("rm -rf '${root}'")
+        n1 == "1" && n2 == "1" && n3 == "2"
+    }
+}

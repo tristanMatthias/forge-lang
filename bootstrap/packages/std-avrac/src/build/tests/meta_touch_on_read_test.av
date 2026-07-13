@@ -1,0 +1,44 @@
+// pdme.6 completeness: meta/ slots must refresh their last-use stamp
+// on a served read, like the obj/ and link/ stores already do —
+// otherwise an actively-read-but-never-rewritten meta slot ages out
+// under the 30-day GC and silently regenerates (self-healing, but a
+// recompute the LRU design never intended). The touch must land on
+// the slot DIRECTORY: collect_prune_candidates walks meta/<hex>/ as
+// the per-entry candidate, and a directory's mtime never advances on
+// reads of an existing child.
+
+use @std.avrac.build.{Cache, cache_for, cache_init, cache_has_source_meta, ensure_source_meta_dir, entry_source_meta_path}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_getpid, avra_file_mtime,
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_meta_touch_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+spec "meta slot reads refresh the slot directory's last-use stamp" {
+    then "a cache_has_source_meta hit advances a backdated slot dir mtime" {
+        let c = mk_cache("hit")
+        let fp = mk_fp("cc00000000000000000000000000000000000000000000000000000000000000")
+        let _ = ensure_source_meta_dir(c, fp)
+        let _ = avra_selfhost_write_file(entry_source_meta_path(c, fp), "meta\n")
+        let dir = c.cache_dir + "meta/" + fp.hex
+        avra_shell_exec("touch -d '2 days ago' '${dir}'")
+        let before = avra_file_mtime(dir)
+        let hit = cache_has_source_meta(c, fp)
+        hit && avra_file_mtime(dir) > before
+    }
+    then "a miss touches nothing — the absent slot stays absent" {
+        let c = mk_cache("miss")
+        !cache_has_source_meta(c, mk_fp("cd00000000000000000000000000000000000000000000000000000000000000"))
+    }
+}

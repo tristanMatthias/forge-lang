@@ -1,0 +1,24 @@
+# The bs2 CLI — the bootstrap compiler's entry package.
+#
+# pdme.1: this manifest exists so the CLI compile unit participates in
+# the dep-aware package fingerprint (package_full_fingerprint). Without
+# it the `bs2 compile main.av` cache slot was keyed on main.av's bytes
+# alone — editing any non-entry compiler source (parse/mod.av,
+# typeck/mod.av, …) left the key unchanged and a plain rebuild silently
+# re-linked the PREVIOUS bs2 (the CLAUDE.md "stale bs2 masks your
+# change" dev-loop bug). The dependency entries below name every
+# package this src/ imports directly; @std/avrac's own manifest
+# carries the rest transitively.
+
+[package]
+name        = "@bootstrap/cli"
+version     = "0.1.0"
+description = "bs2 CLI entry (bootstrap compiler binary)"
+
+[dependencies]
+"@std/avrac"   = { path = "../std-avrac" }
+"@std/cli"     = { path = "../std-cli" }
+"@std/crypto"  = { path = "../std-crypto" }
+"@std/json"    = { path = "../std-json" }
+"@std/lsp"     = { path = "../std-lsp" }
+"@std/process" = { path = "../std-process" }

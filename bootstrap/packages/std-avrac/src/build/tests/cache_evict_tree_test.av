@@ -1,0 +1,49 @@
+// cache_evict must remove the WHOLE entry directory. The old
+// file-by-file enumeration (unit.ll, unit.o, metadata.bin, unit.bin,
+// manifest.txt) silently orphaned any artifact added after the list
+// was written — unit.realobj.o (the lazily-materialised real object,
+// uzs9.3) was leaking exactly that way on every GC pass. Tree removal
+// covers current and future artifacts alike.
+
+use @std.avrac.build.{Cache, cache_for, cache_init, cache_evict, entry_dir_for}
+use @std.avrac.build.fingerprint.{Fingerprint}
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+    avra_selfhost_file_exists,
+}
+
+fn mk_cache(slug: string) -> Cache {
+    let root = "/tmp/avra_evict_tree_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let c = cache_for(root)
+    let _ = cache_init(c)
+    c
+}
+
+fn mk_fp(hex: string) -> Fingerprint {
+    Fingerprint { hex: hex }
+}
+
+/// fopen-based file_exists can open a directory on Linux, so probe
+/// directory existence through the shell instead.
+fn dir_exists(path: string) -> bool {
+    avra_shell_exec("test -d '${path}' && echo yes").trim() == "yes"
+}
+
+spec "cache_evict removes the whole entry directory" {
+    then "unit.realobj.o is gone after evict (the orphaned-object regression)" {
+        let c = mk_cache("realobj")
+        let fp = mk_fp("aa00000000000000000000000000000000000000000000000000000000000000")
+        let dir = entry_dir_for(c, fp)
+        let _ = avra_mkdir_p(dir)
+        let _ = avra_selfhost_write_file(dir + "/unit.ll", "; ir\n")
+        let _ = avra_selfhost_write_file(dir + "/metadata.bin", "meta\n")
+        let _ = avra_selfhost_write_file(dir + "/unit.realobj.o", "obj-bytes\n")
+        let ok = cache_evict(c, fp)
+        ok && avra_selfhost_file_exists(dir + "/unit.realobj.o") == 0 && !dir_exists(dir)
+    }
+    then "evicting an absent entry still reports both sentinels gone" {
+        let c = mk_cache("absent")
+        cache_evict(c, mk_fp("ab00000000000000000000000000000000000000000000000000000000000000"))
+    }
+}
