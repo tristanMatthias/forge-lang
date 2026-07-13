@@ -2275,7 +2275,7 @@ fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: s
 /// First lambda parameter carrying no type annotation (its `vtype` is still
 /// `Unknown`), or "" when every parameter is annotated. Drives the F1006
 /// standalone-lambda gate.
-fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
+export fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
     for p in params {
         if vtype_is_unknown(p.vtype) { return p.name }
     }
@@ -3742,7 +3742,7 @@ fn tc_infer_list_elem(store: NodeStore, elements: List<ExprId>) -> ValueType {
     list_lit_optionalize(store, elements, base)
 }
 
-fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
+export fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
     // Inline loop (vs `list_map`) — current bs2's typeck rejects the
     // generic return inference of `list_map(params, (p) -> p.vtype)`
     // ("returns List, body produces List") because the lambda's
@@ -3971,12 +3971,17 @@ fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<Exp
     mut cur = tc
     mut i = 0
     let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
+    // Per-arg caret (fb = the call head's stamp, restored after), same as
+    // the registered-fn gates.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // ── Method call type inference ──
