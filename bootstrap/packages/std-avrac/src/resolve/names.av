@@ -775,6 +775,7 @@ fn scope_add_local(ctx: NameCtx, name: string) -> NameCtx {
 fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
     match pattern {
         .Wildcard -> ctx
+        .Rest -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)  // ids resolved in the list walker
         .TypePattern(_, binding) -> scope_add_local(ctx, binding)

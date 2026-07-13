@@ -1,0 +1,141 @@
+// WHY: forge-crafting-intepreters-ps3t.7.1 — the explicit `rest ->` remainder
+// arm. `_ ->` is ambiguous: it satisfies exhaustiveness whether the author
+// meant "everything else, deliberately" or forgot a case, which is why F9001
+// lints it when it hides >2 variants. `rest ->` carries the intent: it
+// satisfies exhaustiveness like a wildcard, binds nothing, and is EXEMPT from
+// the F9001 hidden-variants lint — the greppable, sanctioned remainder form
+// (spec Axis 8.7; L5 no-drift).
+//
+// `rest` is CONTEXTUAL, not a reserved keyword: only the whole bare pattern
+// `rest` (not followed by `(`) is the remainder arm. As an expression, a
+// binding name, a payload binding (`.Some(rest)`), or a type pattern
+// (`int(rest)`), `rest` remains an ordinary identifier — no existing code
+// changes meaning (the tree had 35 identifier uses at introduction time).
+
+enum RstColor {
+    Red
+    Green
+    Blue
+    Violet
+}
+
+fn rst_classify(c: RstColor) -> string {
+    match c {
+        .Red -> "red"
+        rest -> "other"
+    }
+}
+
+// A guarded rest arm: guard false falls through to the next arm.
+fn rst_guarded(n: int) -> string {
+    match n {
+        0 -> "zero"
+        rest if n > 100 -> "big"
+        rest -> "small"
+    }
+}
+
+spec "rest matches every variant an earlier arm did not" {
+    given "an enum match with one named arm and a rest arm" {
+        then "the named arm still wins for its variant" {
+            rst_classify(RstColor.Red) == "red"
+        }
+        then "rest takes each remaining variant" {
+            rst_classify(RstColor.Green) == "other" && rst_classify(RstColor.Blue) == "other" && rst_classify(RstColor.Violet) == "other"
+        }
+    }
+    given "a guarded rest arm" {
+        then "the guard gates the rest arm like any other" {
+            rst_guarded(0) == "zero" && rst_guarded(500) == "big" && rst_guarded(5) == "small"
+        }
+    }
+}
+
+// Optional subject: rest covers whichever case the arms leave open.
+fn rst_opt(v: int?) -> int {
+    match v {
+        let x -> x
+        rest -> 0 - 1
+    }
+}
+
+spec "rest satisfies optional exhaustiveness" {
+    then "present binds, rest covers absent" {
+        rst_opt(9) == 9 && rst_opt(null) == (0 - 1)
+    }
+}
+
+// `rest` stays an ordinary identifier everywhere except the bare pattern.
+fn rst_ident_uses() -> int {
+    let rest = 40
+    mut sum = rest
+    let o: int? = 2
+    match o {
+        let rest2 -> sum = sum + rest2
+        none -> sum = sum + 0
+    }
+    sum
+}
+
+// A payload binding NAMED rest is a binding (inside parens ≠ bare pattern).
+enum RstPair {
+    Two(a: int, b: int)
+    Nothing
+}
+
+fn rst_payload_binding() -> int {
+    let p = RstPair.Two(3, 4)
+    match p {
+        .Two(a, rest) -> a + rest
+        .Nothing -> 0
+    }
+}
+
+spec "rest remains an ordinary identifier outside bare pattern position" {
+    then "let-binding, arithmetic, and optional-bind names still work" {
+        rst_ident_uses() == 42
+    }
+    then "a payload binding named `rest` binds the payload field" {
+        rst_payload_binding() == 7
+    }
+}
+
+// ── Lint behavior: F9001 fires for `_` hiding >2 variants, stays silent for
+// `rest` hiding the same variants, and rest satisfies exhaustiveness (no
+// non-exhaustive error). Compile fixtures via a child bs2 and assert on the
+// rendered output.
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn rst_compile_out(source: string) -> string {
+    let path = "/tmp/avra_rst_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "rest is exempt from the F9001 hidden-variants lint" {
+    then "a `_` wildcard hiding 3 variants warns (control: the lint is alive)" {
+        let out = rst_compile_out("enum Four { A, B, C, D }
+fn f(x: Four) -> int { match x { .A -> 1  _ -> 0 } }
+fn main() { let r = f(Four.A) }")
+        out.contains("hides 3 variants")
+    }
+    then "a `rest` arm hiding the SAME 3 variants is silent and compiles" {
+        let out = rst_compile_out("enum Four { A, B, C, D }
+fn f(x: Four) -> int { match x { .A -> 1  rest -> 0 } }
+fn main() { let r = f(Four.A) }")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("hides")
+    }
+    then "rest satisfies exhaustiveness (no F9001 non-exhaustive error)" {
+        let out = rst_compile_out("enum Four { A, B, C, D }
+fn f(x: Four) -> int { match x { rest -> 0 } }
+fn main() { let r = f(Four.A) }")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("non-exhaustive")
+    }
+    then "omitting rest still errors non-exhaustive (control: the check is alive)" {
+        let out = rst_compile_out("enum Four { A, B, C, D }
+fn f(x: Four) -> int { match x { .A -> 1 } }
+fn main() { let r = f(Four.A) }")
+        out.contains("non-exhaustive")
+    }
+}

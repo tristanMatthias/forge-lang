@@ -30,6 +30,7 @@ export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
 fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     match pattern {
         .Wildcard -> r
+        .Rest -> r
         .Variant(_, bindings) -> declare_params(r, bindings)
         .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
         .TypePattern(_, binding) -> define_name(declare_name(r, binding), binding)

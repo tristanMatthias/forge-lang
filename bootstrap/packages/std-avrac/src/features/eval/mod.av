@@ -2868,6 +2868,7 @@ fn value_to_pattern(store: NodeStore, v: Value) -> Result<Pattern, string> {
     let p = v.enum_payload
     match v.enum_variant {
         "Wildcard" -> .Ok(Pattern.Wildcard)
+        "Rest" -> .Ok(Pattern.Rest)
         "Variant" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let name_v: Value = p[0]
