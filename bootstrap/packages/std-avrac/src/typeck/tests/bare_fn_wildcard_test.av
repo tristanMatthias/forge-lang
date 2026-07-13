@@ -1,0 +1,83 @@
+// t-ny3k: a BARE `fn` type annotation is ARITY-UNKNOWN — the legacy
+// `.Fn(ret)` wildcard ("some function, signature unspecified") — NOT
+// the zero-arity `fn()`. The parser used to conflate the two
+// (FnType([], Infer) for both), so once #762 made fully-annotated
+// lambdas type concretely as FnTyped, every bare-`fn` return with an
+// annotated lambda body was rejected with F1000
+// ("returns `fn() -> `, but body produces `fn(string) -> string`") —
+// the #760 × #762 seed-train redness. #767 fixed the parse (bare `fn`
+// → Named("fn") → Fn(Unknown)) but shipped NO spec pinning it; a
+// regression would only resurface as train redness again. These specs
+// are that pin: the wildcard accepts any arity/shape through every
+// consumer position, while explicit parens keep strict arity and the
+// F1006 annotation gate still guards unannotated lambdas in the
+// (unthreaded) bare-`fn` return position.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+fn bare_make_prefix(prefix: string) -> fn {
+    (name: string) -> { prefix + " " + name }
+}
+
+fn bare_make_adder() -> fn {
+    (a: int, b: int) -> { a + b }
+}
+
+fn shout(s: string) -> string { s + "!" }
+
+fn bare_make_named() -> fn {
+    shout
+}
+
+fn typed_taker(f: fn(string) -> string) -> string { f("Ada") }
+
+/// Compile a probe source with the REAL bs2 and return the captured
+/// diagnostics — the established shell-probe pattern for asserting
+/// F-codes on programs that must NOT compile.
+fn check_probe(slug: string, src: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let path = "/tmp/avra_tny3k_${slug}_${string(avra_getpid())}.av"
+    let _ = avra_selfhost_write_file(path, src)
+    avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+}
+
+spec "bare `fn` is the arity-unknown wildcard (the #760 × #762 pin)" {
+    then "an annotated one-param lambda satisfies a bare `fn` return" {
+        let greeter = bare_make_prefix("Hi")
+        greeter("Dave") == "Hi Dave"
+    }
+    then "a two-param lambda satisfies the same bare `fn` shape — arity really is unknown" {
+        let add = bare_make_adder()
+        add(20, 22) == 42
+    }
+    then "a named fn reference flows through a bare `fn` return" {
+        let g = bare_make_named()
+        g("hey") == "hey!"
+    }
+    then "a bare-`fn` value satisfies a fully-typed `let` annotation" {
+        let g: fn(string) -> string = bare_make_prefix("Yo")
+        g("Ada") == "Yo Ada"
+    }
+    then "a bare-`fn` value satisfies a fully-typed fn param" {
+        typed_taker(bare_make_prefix("Hei")) == "Hei Ada"
+    }
+}
+
+spec "explicit parens keep strict arity; the F1006 gate still guards" {
+    then "explicit `fn()` rejects a one-param lambda body as F1000" {
+        let out = check_probe("zero_arity",
+            "fn make(p: string) -> fn() {\n" +
+            "    (name: string) -> { p + name }\n" +
+            "}\n" +
+            "fn main() { let _ = make(\"x\") }\n")
+        out.contains("F1000")
+    }
+    then "an UNANNOTATED lambda under a bare `fn` return still gates as F1006 (nothing threads its params)" {
+        let out = check_probe("unannot_gate",
+            "fn make(p: string) -> fn {\n" +
+            "    (name) -> { p + name }\n" +
+            "}\n" +
+            "fn main() { let _ = make(\"x\") }\n")
+        out.contains("F1006")
+    }
+}
