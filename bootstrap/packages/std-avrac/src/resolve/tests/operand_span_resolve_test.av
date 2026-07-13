@@ -1,10 +1,10 @@
-// The resolve-pass mirror of typeck's operand-span sharpening (703y.1.15):
-// an undefined name inside a call ARGUMENT or struct-literal FIELD INIT is
-// reported at that operand's own source position (rs_at_expr / rs_at_operand),
-// not at the enclosing call/literal head. Interned leaves carry no span —
-// a shared leaf has no single source occurrence — so a bare undefined ident
-// falls back to the nearest sharpened ancestor (statement or operand walk),
-// never a SIBLING operand's position. `rsspan_`-prefixed fixtures against
+// The resolve-pass mirror of typeck's operand-span sharpening: an undefined
+// name inside a call ARGUMENT or struct-literal FIELD INIT is reported at
+// that operand's own source position (rs_at_expr / rs_at_operand), not at
+// the enclosing call/literal head. Interned leaves carry no span — a shared
+// leaf has no single source occurrence — so a bare undefined ident falls
+// back to the nearest sharpened ancestor (statement or operand walk), never
+// a SIBLING operand's position. `rsspan_`-prefixed fixtures against
 // cross-shard collisions.
 
 extern fn avra_shell_exec(cmd: string) -> string
@@ -25,6 +25,16 @@ spec "resolver diagnostics point at the offending operand" {
             "        no_such_var + 1)\n" +
             "}\n")
         out.contains("F3000") && out.contains(":4:9")
+    }
+    then "an undefined name inside a struct-literal field init carets the init" {
+        let out = rsspan_check_out("fieldinit",
+            "type P = { x: int, y: int }\n" +
+            "fn main() {\n" +
+            "    let p = P { x: 1,\n" +
+            "        y: no_such + 1 }\n" +
+            "    println(string(p.x))\n" +
+            "}\n")
+        out.contains("F3000") && out.contains(":4:12")
     }
     then "a top-level const's leaf init keeps the statement position (arena_root_walk parity)" {
         let out = rsspan_check_out("leaf",
