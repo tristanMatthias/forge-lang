@@ -1,6 +1,9 @@
 // Module A of the const-scoping fixture: declares the SAME const name
 // as consts_b with a DIFFERENT value. Each module must read its own.
 export const SCOPED_PROBE_VAL: string = "from_a"
+// Deliberately lowercase (naming lint notwithstanding): uppercase refs
+// qualify through the resolver's SCREAMING_SNAKE const index, lowercase
+// refs through the general use-import path — this probes the latter.
 export const scoped_lower_val: int = 4
 
 export fn a_read() -> string { SCOPED_PROBE_VAL }
