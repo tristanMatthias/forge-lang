@@ -5,7 +5,7 @@
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
-use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
@@ -703,6 +703,12 @@ type TC = {
     current_fn: string,
     current_line: int,
     current_col: int,
+    // File attribution for the position above (F3a `SrcPos.file`, threaded
+    // from the stmt walk). Empty for entry-file rows — the renderer then
+    // falls back to the compile's own filename; non-empty for module-file
+    // rows so their diagnostics render against the RIGHT file's path and
+    // source snippet instead of the entry file's.
+    current_file: string,
     // The enclosing function's type parameters, in scope while its body
     // is checked. Set on `.Function` entry (alongside `current_fn`) so a
     // type argument written in EXPRESSION position — a `channel<T>` element
@@ -787,6 +793,7 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: Nod
         current_fn: "",
         current_line: 0,
         current_col: 0,
+        current_file: "",
         current_scope_tp: empty_type_params(),
         traits: trait_registry_new(),
         trait_impls: empty_impls,
@@ -969,7 +976,7 @@ fn tc_decorate_span(tc: TC, fallback_sp: Span) -> Span {
 /// differs from the TC's "current" position.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
     if !tc.reporting { return tc }
-    let fallback = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
+    let fallback = if line > 0 { span_at(0, len, line, col, tc.current_file) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     tc with { bag: bag_report(tc.bag, diag_error(code, tc_decorate_msg(tc, msg), sp)) }
 }
@@ -988,11 +995,28 @@ export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
     if !tc.reporting { return tc }
-    let fallback = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
+    let fallback = if tc.current_line > 0 { span_at(0, 0, tc.current_line, tc.current_col, tc.current_file) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     let primary = diag_error(code, tc_decorate_msg(tc, msg), sp)
     let cause = diag_error(code, cause_msg, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
+}
+
+/// Sharpen the TC's caret to `id`'s own byte span when the row carries one
+/// (ps3t.3.9 gave bare compound exprs real spans) — an error inside the
+/// expression then carets the expression, not the enclosing statement.
+/// Two deliberate fallbacks keep this total:
+///   - span-free rows (interned leaves, synthesized nodes) keep the stmt
+///     position;
+///   - module-file rows (current_file != "") keep the stmt position too —
+///     the store's LineIndex belongs to the ENTRY file, so a module row's
+///     byte offsets cannot be converted through it (the F0 multi-file
+///     constraint that gave stmts their own pos column).
+export fn tc_at_expr(tc: TC, id: ExprId) -> TC {
+    if tc.current_file != "" { return tc }
+    let lc = tc.nodes.expr_linecol(id)
+    if lc.line == 0 { return tc }
+    tc with { current_line: lc.line, current_col: lc.col }
 }
 
 /// Build an ExprResult — convenience constructor used pervasively
@@ -1630,7 +1654,7 @@ export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
     for id in ids {
         let pos = tc.nodes.stmt_pos(id)
         avra_ice_at(pos.file, pos.line, pos.col)
-        let with_pos = cur with { current_line: pos.line, current_col: pos.col }
+        let with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
         cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
     }
     cur
@@ -2318,15 +2342,15 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
 /// recurse into their bodies and registries.
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, false)
-        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, true)
-        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), true, false)
+        .Let(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), false, false)
+        .Mut(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), false, true)
+        .Const(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), true, false)
         .Expr(e) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(e))
+            let r = check_expr(tc_at_expr(tc, e), tc.nodes.exprs.get(e))
             r.tc
         }
         .Return(value) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(value))
+            let r = check_expr(tc_at_expr(tc, value), tc.nodes.exprs.get(value))
             r.tc
         }
         .ReturnEmpty -> tc
