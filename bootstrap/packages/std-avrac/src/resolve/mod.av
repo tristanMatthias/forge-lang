@@ -187,12 +187,11 @@ fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
 }
 
 /// Sharpen the resolver's caret to `id`'s own byte span when the row
-/// carries one — the resolve-pass mirror of typeck's `tc_at_expr`
-/// (703y.1.15), with the same two fallbacks: span-free rows (interned
-/// leaves, synthesized nodes) keep the statement position, and
-/// module-file rows keep it too (the store's LineIndex belongs to the
-/// ENTRY file, so a module row's byte offsets cannot be converted
-/// through it).
+/// carries one — the resolve-pass mirror of typeck's `tc_at_expr`, with
+/// the same two fallbacks: span-free rows (interned leaves, synthesized
+/// nodes) keep the statement position, and module-file rows keep it too
+/// (the store's LineIndex belongs to the ENTRY file, so a module row's
+/// byte offsets cannot be converted through it).
 fn rs_at_expr(r: Resolver, id: ExprId) -> Resolver {
     if r.source_file != "" { return r }
     let lc = r.nodes.expr_linecol(id)
