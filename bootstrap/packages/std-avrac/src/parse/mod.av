@@ -2408,6 +2408,14 @@ impl Parser {
         // fn(T, T) -> T
         if self.check(Tk.KwFn) {
             self.advance()
+            // A completely BARE `fn` (no parens, no arrow) is the
+            // under-determined function type `Fn(Unknown)` — "some function,
+            // signature unspecified". Mapping it to `FnType([], Infer)` would
+            // claim EXACTLY zero parameters (`fn()`), so any real closure
+            // value fails the param-arity compare against it.
+            if !self.check(Tk.LeftParen) && !self.check(Tk.Arrow) {
+                return .Ok(TypeExpr.Named("fn"))
+            }
             mut params: List<TypeExpr> = []
             if self.check(Tk.LeftParen) {
                 self.advance()

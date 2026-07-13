@@ -1,0 +1,137 @@
+// WHY: regression for forge-crafting-intepreters-ps3t.7.2 — typeck's two
+// coverage-critical walkers (`annotate_stmt`, `tc_check_type_applied`) each
+// carried a `_ ->` wildcard that silently swallowed variants, and every hole
+// this produced was found by a segfault or a false F1002 instead of a compile
+// error (SpecBlock/GivenBlock/Select were three separate such holes on one
+// line). Both matches are now EXHAUSTIVE — every Stmt / ValueType variant is
+// named — so adding a variant forces a compile error at the walker instead of
+// a silent skip. The exhaustiveness itself is compiler-self-guarding (a
+// missing arm no longer compiles); these specs pin the BEHAVIOR around it:
+//   * a bare generic behind `Task<…>` in an annotation is F1004 — via the
+//     nominal-Enum recursion (`Task<X>` parses as a plain nominal), pinned
+//     here so carrier-position gating can't regress. The rewrite's explicit
+//     .Task/.Channel/.Fn/.Closure arms recurse for the STRUCTURAL vt kinds,
+//     which today's annotation pipeline doesn't deliver to the gate
+//     (`Channel<…>` enforcement hole: ps3t.4.7) — they arm the gate for when
+//     it does, rather than silently skipping as the wildcard did.
+//   * annotate_stmt descends into Errdefer (symmetry with Defer) and
+//     TraitDecl default-method bodies (symmetry with Impl), so generic
+//     constructions inside them get their SExprs stamped for mono.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ewc_compile_out(source: string) -> string {
+    let path = "/tmp/avra_ewc_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a bare generic behind Task is F1004 (nested-type carriers recurse)" {
+    then "let t: Task<GenOpt> is F1004" {
+        let out = ewc_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn work() -> int { 9 }
+fn main() { let t: Task<GenOpt> = spawn { work() } }")
+        out.contains("F1004")
+    }
+    then "the fully-applied Task<GenOpt<int>> compiles (positive control)" {
+        let out = ewc_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn work() -> GenOpt<int> { GenOpt.Some(9) }
+fn main() { let t: Task<GenOpt<int>> = spawn { work() } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic behind Task in a RETURN type is F1004" {
+        let out = ewc_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn work() -> int { 9 }
+fn mk() -> Task<GenOpt> { spawn { work() } }
+fn main() { let t = mk() }")
+        out.contains("F1004")
+    }
+}
+
+// The annotate pass must descend into errdefer bodies exactly as it does for
+// defer: both carry an expression whose nested SExprs mono's generic
+// inference reads. The defer probe observes the success path; the errdefer
+// probe takes a REAL error path (`?` on an Err) and proves the generic
+// construction inside the errdefer body actually EXECUTES, using a channel
+// as the observation side-channel.
+type EwcBox<T> = { val: T }
+
+impl EwcBox<T> {
+    fn get(self) -> T {
+        self.val
+    }
+}
+
+fn ewc_defer_probe() -> int {
+    mut seen = 0
+    defer {
+        let b = EwcBox { val: 41 }
+        seen = b.get()
+    }
+    7
+}
+
+fn ewc_err() -> Result<int, string> {
+    Result.Err("boom")
+}
+
+fn ewc_fail_with_errdefer(ch: Channel<int>) -> Result<int, string> {
+    errdefer {
+        let b = EwcBox { val: 42 }
+        ch.send(b.get())
+    }
+    let v = ewc_err()?
+    Result.Ok(v)
+}
+
+fn ewc_errdefer_probe() -> int {
+    let ch = channel<int>(1)
+    let r = ewc_fail_with_errdefer(ch)
+    let got = ch.try_recv()
+    if got == null {
+        0 - 1
+    } else {
+        got!
+    }
+}
+
+spec "generic constructions inside defer/errdefer bodies annotate + execute" {
+    then "a generic ctor + method call inside DEFER compiles and runs" {
+        ewc_defer_probe() == 7
+    }
+    then "the ERRDEFER body's generic ctor EXECUTES on the error path" {
+        ewc_errdefer_probe() == 42
+    }
+}
+
+// Trait decls carry DEFAULT method bodies; the annotate pass descends into
+// them like Impl methods so generic constructions inside a default body get
+// stamped. What this asserts: the default body (with its generic ctor)
+// COMPILES as part of the trait decl, and an overriding impl behaves
+// correctly. It cannot assert the INHERITED default's runtime value: an impl
+// that omits the method ICEs at codegen today (`undefined method`) — default
+// METHOD INHERITANCE is unimplemented (filed separately); when it lands, add
+// a non-overriding impl here and assert `describe() == 5`.
+trait EwcDescribe {
+    fn describe(self) -> int {
+        let b = EwcBox { val: 5 }
+        b.get()
+    }
+}
+
+type EwcThing = { n: int }
+
+impl EwcDescribe for EwcThing {
+    fn describe(self) -> int {
+        let b = EwcBox { val: self.n }
+        b.get()
+    }
+}
+
+spec "trait default-method bodies annotate (generic ctor inside)" {
+    then "an impl overriding the default still constructs generics correctly" {
+        let t = EwcThing { n: 3 }
+        t.describe() == 3
+    }
+}
