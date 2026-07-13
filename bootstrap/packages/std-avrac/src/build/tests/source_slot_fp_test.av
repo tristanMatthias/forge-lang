@@ -1,0 +1,52 @@
+// source_slot_fp is the ONE key derivation for source-keyed metadata
+// slots (2wfp/0qmm). A real package keys on the dep-aware
+// whole-package fingerprint; an ad-hoc entry (no avra.toml at the
+// detected pkg_root) keys on the entry file's content hash. Before
+// this helper, the --entry build's meta-mirror sites keyed ad-hoc
+// entries on package_full_fingerprint's "" — every ad-hoc entry
+// aliased onto ONE shared slot, so one entry's metadata could be
+// mirrored into another entry's path-keyed cache slot (cross-entry
+// contamination). Producers and consumers must all derive through
+// this function so both sides agree by construction.
+
+use @std.avrac.build.{package_full_fingerprint, source_slot_fp}
+use @std.crypto.{sha256_file}
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+}
+
+/// A fresh fixture root per (test, process) so a rerun never inherits
+/// the previous run's files.
+fn mk_root(slug: string) -> string {
+    let root = "/tmp/avra_srcslot_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p(root)
+    root
+}
+
+spec "source_slot_fp: package vs ad-hoc key derivation" {
+    then "an ad-hoc entry keys on its file hash, never the empty string" {
+        let root = mk_root("adhoc")
+        let f = "${root}/a.av"
+        let _ = avra_selfhost_write_file(f, "fn main() {}\n")
+        let key = source_slot_fp(root, f)
+        key != "" && key == sha256_file(f)
+    }
+    then "two ad-hoc entries never alias onto one slot (the contamination regression)" {
+        let root = mk_root("noalias")
+        let a = "${root}/a.av"
+        let b = "${root}/b.av"
+        let _ = avra_selfhost_write_file(a, "fn main() {}\n")
+        let _ = avra_selfhost_write_file(b, "fn main() { let x = 1 }\n")
+        source_slot_fp(root, a) != source_slot_fp(root, b)
+    }
+    then "a real package keys on the whole-package fingerprint" {
+        let root = mk_root("pkg")
+        let dir = "${root}/p"
+        let _ = avra_mkdir_p("${dir}/src")
+        let _ = avra_selfhost_write_file("${dir}/avra.toml", "[package]\nname = \"@fix/p\"\nversion = \"0.1.0\"\n")
+        let _ = avra_selfhost_write_file("${dir}/src/main.av", "fn main() {}\n")
+        let key = source_slot_fp(dir, "${dir}/src/main.av")
+        key != "" && key == package_full_fingerprint(dir)
+    }
+}

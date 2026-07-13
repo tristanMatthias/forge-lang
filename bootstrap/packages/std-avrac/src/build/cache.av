@@ -600,22 +600,14 @@ export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
 
 /// Evict a cache entry. Used by `avra cache prune` to GC stale
 /// entries. Returns true when both kinds of sentinel (build .ll and
-/// test .bin) are gone after the call. Cleans up every artifact
-/// that any kind of entry might have produced; an entry with only
-/// a subset is still fully removed.
+/// test .bin) are gone after the call. Removes the WHOLE entry
+/// directory — enumerating files here silently orphaned every
+/// artifact added later (unit.realobj.o was leaking exactly that
+/// way), so the tree removal covers current and future artifacts
+/// alike. Error reporting belongs at the GC driver level.
 export fn cache_evict(c: Cache, fp: Fingerprint) -> bool {
     let entry = entry_dir_for(c, fp)
-    // Best-effort: remove individual files first, ignore individual
-    // failures (the directory rmdir is what determines overall
-    // success). Error reporting belongs at the GC driver level.
-    let _l = avra_remove_file(entry + "/unit.ll")
-    let _o = avra_remove_file(entry + "/unit.o")
-    let _m = avra_remove_file(entry + "/metadata.bin")
-    let _b = avra_remove_file(entry + "/unit.bin")
-    let _mf = avra_remove_file(entry + "/manifest.txt")
-    // Directory removal is currently best-effort via the runtime —
-    // we model success as "neither sentinel file exists." When a
-    // runtime hook for rmdir lands, evolve this.
+    let _ = avra_remove_tree(entry)
     !cache_has(c, fp) && !cache_has_test(c, fp)
 }
 

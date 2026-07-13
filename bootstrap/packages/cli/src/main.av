@@ -98,7 +98,7 @@ use @std.avrac.build.{
     cache_for, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
-    package_full_fingerprint,
+    package_full_fingerprint, source_slot_fp,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -666,7 +666,10 @@ fn cache_summary_line(hits: int, misses: int, detail: string) -> string {
 fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> PreDepOutcome {
     let path_count = count_path_deps(deps)
     if path_count == 0 { return pre_dep_outcome_empty() }
-    let paths_file = "/tmp/avra_pre_deps.${path_count}.list"
+    // PID-scoped: two concurrent `avra build` runs with the same dep
+    // count would otherwise append into ONE shared list (write_dep_paths
+    // appends) and each pre-build the other's dependency set.
+    let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
     avra_shell_exec("rm -f ${paths_file}")
     write_dep_paths(deps, paths_file)
     let env_jobs = avra_process_env_get("AVRA_JOBS")
@@ -1789,9 +1792,11 @@ fn run_build_command(args: BuildArgs) {
                     let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
                     if size_str != "" && size_str != "0" {
                         // 2wfp/pdme.1: source-keyed slot uses the dep-aware
-                        // whole-package fp.
+                        // whole-package fp; ad-hoc entries (no manifest)
+                        // fall back to the entry's file hash — an empty
+                        // key would alias every ad-hoc entry to one slot.
                         let pkg_root = package_root_for_file(entry_path)
-                        let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
+                        let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
                         let pkg_cache = cache_for(pkg_root)
                         let _ = ensure_source_meta_dir(pkg_cache, source_fp)
                         let dest = entry_source_meta_path(pkg_cache, source_fp)
@@ -1916,9 +1921,12 @@ fn run_build_command(args: BuildArgs) {
             // rederiving the source fingerprint.
             if pr.success && args.emit_metadata {
                 // 2wfp/pdme.1: source-keyed slot uses the dep-aware
-                // whole-package fp.
+                // whole-package fp; ad-hoc entries fall back to the
+                // entry's file hash (must match what the inner
+                // `bs2 compile --emit_metadata` child keyed its sidecar
+                // under — both sides derive via source_slot_fp).
                 let pkg_root = package_root_for_file(entry_path)
-                let source_fp = Fingerprint { hex: package_full_fingerprint(pkg_root) }
+                let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
                 let pkg_cache = cache_for(pkg_root)
                 let sidecar = entry_source_meta_path(pkg_cache, source_fp)
                 if file_exists(sidecar) != 0 {
@@ -3995,16 +4003,12 @@ fn cmd_compile(args: CliResult) -> int {
             // key the unit-level meta on the whole-package fingerprint
             // — the aggregated meta covers every file's surface, so any
             // source change in the package must invalidate this slot.
-            // For ad-hoc single-file compiles (no avra.toml at the
-            // detected pkg_root) keep the original file-fp scheme.
+            // Ad-hoc single-file compiles key on the entry's file hash
+            // (source_slot_fp centralises the fallback so the parent
+            // build's mirror sites derive the identical key).
             let pkg_root = package_root_for_file(cpath)
             let cache = cache_for(pkg_root)
-            let pkg_fp = package_full_fingerprint(pkg_root)
-            let source_fp = if pkg_fp != "" {
-                Fingerprint { hex: pkg_fp }
-            } else {
-                Fingerprint { hex: sha256_hex(csource) }
-            }
+            let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, cpath) }
             // pdme.2: the header carries the SLOT KEY (source_fp), not
             // the entry file's hash — the consumer's read-validation
             // gate (metadata_slot_matches) compares the stored fp

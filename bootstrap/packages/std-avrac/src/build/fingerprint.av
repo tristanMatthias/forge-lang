@@ -305,6 +305,22 @@ export fn package_full_fingerprint_with_toolchain(pkg_root: string, toolchain_ha
     root_fp
 }
 
+/// Slot key for a unit's SOURCE-KEYED metadata (the 2wfp/0qmm slots
+/// under build/cache/source_meta): a real package keys on the
+/// dep-aware whole-package fingerprint; an ad-hoc entry (no avra.toml
+/// at `pkg_root`, so package_full_fingerprint returns "") keys on the
+/// entry file's content hash instead — NEVER the empty string, which
+/// would collapse every ad-hoc entry onto ONE shared slot and let one
+/// entry's metadata be served for another (cross-entry contamination).
+/// Every producer AND consumer of a source-meta slot must derive its
+/// key through this one function so the two sides agree by
+/// construction.
+export fn source_slot_fp(pkg_root: string, entry_path: string) -> string {
+    let pkg_fp = package_full_fingerprint(pkg_root)
+    if pkg_fp != "" { return pkg_fp }
+    sha256_file(entry_path)
+}
+
 /// Positional lookup for the topo-walk's name→fp accumulator. A
 /// missing name folds as "" — deterministic, and unreachable when
 /// build_graph succeeded (every dep_name has a collected unit).
