@@ -1,0 +1,16 @@
+// Entry of the qualified-fn-as-value fixture (driven by
+// qualified_fn_value_test.av). A use-imported fn reference resolves to
+// a QualifiedIdent; binding it and calling through the binding must
+// recover the fn's return type and run correctly.
+mod helper
+use helper.{make_greeting, double_it}
+
+fn apply_twice(f: fn(int) -> int, x: int) -> int { f(f(x)) }
+
+fn main() -> int {
+    let g = make_greeting
+    let s = g()
+    println("call-through-binding: ${s}")
+    println("callback: ${apply_twice(double_it, 3)}")
+    0
+}

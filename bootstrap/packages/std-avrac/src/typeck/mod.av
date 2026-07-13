@@ -2849,12 +2849,14 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             return tc_er(check_assign_layout(v.tc, v.ty, var_ty, "assignment to `${name}`"), v.ty)
         }
         .QualifiedIdent(path) -> {
-            // A qualified reference is either a module fn (yields its
-            // return type when materialised as a value) or a module-
-            // level binding — a qualified `const`, whose declaration
-            // bound its type under the same canonical path.
+            // A qualified reference is either a module fn — a VALUE use
+            // (callback arg, `let g = mod::f`) types as `.Fn(ret)`,
+            // exactly like the bare `.Ident` arm above, so calls through
+            // the binding recover the return type — or a module-level
+            // binding: a qualified `const`, whose declaration bound its
+            // type under the same canonical path.
             let r = fn_type_get(tc.fns, path)
-            if r.found { return tc_er(tc, r.ret_ty) }
+            if r.found { return tc_er(tc, .Fn(r.ret_ty)) }
             tc_er(tc, type_lookup(tc.types, path))
         }
         // Enum constructor — `Status.Active`, `Status.Pending(count)`.

@@ -1,0 +1,15 @@
+// Negative fixture: calling through a binding of a use-imported fn
+// reference must recover the fn's RETURN type, so annotating the call
+// result with the wrong primitive is a type error. Before the
+// QualifiedIdent arm wrapped fn values as `.Fn(ret)`, `g` was typed as
+// the bare return type and `g()` collapsed to Unknown — this mismatch
+// compiled silently.
+mod helper
+use helper.{make_greeting}
+
+fn main() -> int {
+    let g = make_greeting
+    let s: int = g()
+    println("s: ${s}")
+    0
+}
