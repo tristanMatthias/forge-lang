@@ -75,7 +75,7 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: List<VarBinding>, list_val: ptr,
             mut reduce_param_types: List<ValueType> = []
             reduce_param_types.push(init_r.ty)
             reduce_param_types.push(elem_ty)
-            fn_r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), reduce_param_types)?
+            fn_r = emit_lambda_typed(ctx, env, params, ctx.nodes.exprs.get(body), reduce_param_types, ValueType.Unknown)?
         }
         _ -> {
             fn_r = ctx.emit(env, ctx.nodes.exprs.get(fn_id))?

@@ -1,7 +1,7 @@
 // WHY: type checking for list literals and list method calls.
 
 use core.{Expr, ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
-use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_report, nested_layout_conflict}
+use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
 /// Type-check a list literal. Empty literals get `List<Unknown>`
@@ -18,7 +18,14 @@ export fn check_list_lit(tc: TC, elements: List<ExprId>) -> ExprResult {
 /// so07.4 (T4).
 export fn check_list_lit_with_expected(tc: TC, elements: List<ExprId>, expected_elem: ValueType) -> ExprResult {
     if elements.length == 0 { return tc_er(tc, .List(expected_elem)) }
-    let lr = check_expr_list_types(tc, elements)
+    // Row 13 (ps3t.4.5): list elements never thread param types into a
+    // lambda (codegen emits elements with no expected type, even under
+    // a `List<fn(…)>` annotation) — annotate or F1006.
+    mut gated = tc
+    for id in elements {
+        gated = tc_gate_unthreaded_lambda(gated, gated.nodes.exprs.get(id))
+    }
+    let lr = check_expr_list_types(gated, elements)
     // An element whose layout is incompatible with the expected element type must
     // be rejected: BOTH the bare scalar↔ptr case (`[9]` for `List<string>`) and a
     // generic struct-literal element whose args mismatch (`[Box { val: 9 }]` for

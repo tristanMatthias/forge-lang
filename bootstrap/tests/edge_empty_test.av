@@ -11,15 +11,15 @@ spec "edge empty" {
         "".length == 0
     }
     then "filter empty list" {
-        let filtered = [].filter((x) -> x > 0)
+        let filtered = [].filter((x: int) -> x > 0)
         filtered.length == 0
     }
     then "map empty list" {
-        let mapped = [].map((x) -> x * 2)
+        let mapped = [].map((x: int) -> x * 2)
         mapped.length == 0
     }
     then "reduce empty list" {
-        let reduced = [].reduce(99, (a, b) -> a + b)
+        let reduced = [].reduce(99, (a: int, b: int) -> a + b)
         reduced == 99
     }
     then "slice empty list" {

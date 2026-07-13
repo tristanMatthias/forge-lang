@@ -81,17 +81,17 @@ spec "stress lists" {
     }
     then "empty map length" {
         let empty2 = []
-        let mapped_empty = empty2.map((x) -> x * 2)
+        let mapped_empty = empty2.map((x: int) -> x * 2)
         mapped_empty.length == 0
     }
     then "empty filter length" {
         let empty3 = []
-        let filtered_empty = empty3.filter((x) -> x > 0)
+        let filtered_empty = empty3.filter((x: int) -> x > 0)
         filtered_empty.length == 0
     }
     then "empty reduce default" {
         let empty4 = []
-        let reduced_empty = empty4.reduce(42, (acc, x) -> acc + x)
+        let reduced_empty = empty4.reduce(42, (acc: int, x: int) -> acc + x)
         reduced_empty == 42
     }
 }

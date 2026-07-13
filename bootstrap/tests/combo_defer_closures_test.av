@@ -1,4 +1,4 @@
-fn cdc_process(items: List) -> string {
+fn cdc_process(items: List<int>) -> string {
     let results = items.map(it * 2)
     if results.length == 0 { return "empty" }
     string(results[0])
@@ -12,9 +12,9 @@ fn cdc_classify(n: int) -> string {
     "zero"
 }
 
-fn cdc_join_with(items: List, sep: string) -> string {
+fn cdc_join_with(items: List<int>, sep: string) -> string {
     defer println("join done")
-    items.reduce("", (acc, x) -> {
+    items.reduce("", (acc: string, x: int) -> {
         if acc == "" { return string(x) }
         acc + sep + string(x)
     })
