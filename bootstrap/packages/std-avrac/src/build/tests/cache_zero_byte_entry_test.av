@@ -67,13 +67,13 @@ spec "378k: cache_publish symmetrically refuses empty content" {
     then "empty content fails the publish-time guard" {
         let c = mk_cache("publish_empty")
         let fp = mk_fp("3333333333333333333333333333333333333333333333333333333333333333")
-        let pr = cache_publish(c, fp, "", "", "metadata", "pid42")
+        let pr = cache_publish(c, fp, "", "", "metadata", "", "pid42")
         !pr.success && pr.error.contains("empty")
     }
     then "non-empty content publishes and cache_has finds it" {
         let c = mk_cache("publish_good")
         let fp = mk_fp("4444444444444444444444444444444444444444444444444444444444444444")
-        let pr = cache_publish(c, fp, "; real ll content\n", "", "metadata", "pid42")
+        let pr = cache_publish(c, fp, "; real ll content\n", "", "metadata", "", "pid42")
         pr.success && cache_has(c, fp)
     }
 }

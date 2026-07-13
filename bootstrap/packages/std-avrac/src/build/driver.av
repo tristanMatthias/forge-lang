@@ -306,6 +306,7 @@ export fn record_build_result(
     o_path: string,
     metadata: string,
     bin_path: string,
+    diag_content: string,       // j568: captured compile diagnostics ("" = none / N/A)
     staging_id: string,
 ) -> PublishResult {
     let cache = cache_for(inputs.project_root)
@@ -313,7 +314,7 @@ export fn record_build_result(
         let manifest = render_unit_manifest(inputs, fp)
         cache_publish_test(cache, fp, bin_path, manifest, staging_id)
     } else {
-        cache_publish(cache, fp, ll_content, o_path, metadata, staging_id)
+        cache_publish(cache, fp, ll_content, o_path, metadata, diag_content, staging_id)
     }
     if pr.success {
         // Write the per-unit "last inputs" sidecar used by --explain
