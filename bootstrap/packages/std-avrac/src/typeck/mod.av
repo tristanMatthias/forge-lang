@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
@@ -2360,8 +2360,17 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(checked)
         }
         .Function(name, tp, params, ret_vt, body) -> {
+            // Nested NON-generic fns were desugared to let-bound closures
+            // before this pass, so an in-body `fn` reaching the checker
+            // with type params is the one shape with no valid lowering:
+            // closures take no type params. Report it here (F1044) instead
+            // of letting it fall through to codegen as an undefined fn.
+            let gated_tc = if tc.current_fn != "" && tp.length > 0 {
+                tc_report(tc, DiagCode.NestedGenericFnDecl,
+                    "generic fn `${name}` cannot be declared inside `${tc.current_fn}` — nested fns become closures, which take no type parameters")
+            } else { tc }
             avra_ice_push_fn(name)
-            let inner = tc_enter(tc) with { current_fn: name, current_scope_tp: tp }
+            let inner = tc_enter(gated_tc) with { current_fn: name, current_scope_tp: tp }
             let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
@@ -3865,7 +3874,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             if vtype_is_unknown(var_ty) {
                 return tc_er(checked, .Unknown)
             }
-            tc_er(checked, vtype_fn_ret(var_ty))
+            tc_er(tc_check_closure_args(checked, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
@@ -3880,9 +3889,31 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             // Expression callee (e.g. compose(f,g)(x))
             let c = check_expr(tc, callee)
             let checked = check_expr_list(c.tc, args)
-            tc_er(checked, vtype_fn_ret(c.ty))
+            tc_er(tc_check_closure_args(checked, "closure", c.ty, args), vtype_fn_ret(c.ty))
         }
     }
+}
+
+/// Gate a closure call's arguments against the closure's DECLARED param
+/// types. Closure calls (a local `let f = (s: string) -> …`, a nested-fn
+/// desugar, an expression callee) bypass the registered-fn gates, so
+/// without this `f(123)` into a string param compiled unchecked — the
+/// same wild-store class the fn-arg gates close. Only FnTyped callees
+/// gate (an untyped `Fn`/Unknown callee has no declared params to check);
+/// Unknown param or arg types skip, mirroring every other assignability
+/// site.
+fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<ExprId>) -> TC {
+    if !(fn_ty is .FnTyped) { return tc }
+    let param_vts = vtype_fn_params(fn_ty)
+    mut cur = tc
+    mut i = 0
+    let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
+    while i < limit {
+        let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
+        cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
+        i = i + 1
+    }
+    cur
 }
 
 // ── Method call type inference ──

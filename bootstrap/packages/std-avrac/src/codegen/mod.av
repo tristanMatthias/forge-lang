@@ -369,7 +369,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             if has_stmt_emit(ctx.features, tag) {
                 return dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
             }
-            err_sr("codegen error: unsupported statement type (tag=${string(tag)})")
+            err_sr("internal codegen error (ICE): no emitter for statement kind (tag=${string(tag)}) — every statement kind should be desugared, feature-dispatched, or rejected with an F-code before codegen; a tag reaching this fallthrough is a compiler bug")
         }
     }
 }

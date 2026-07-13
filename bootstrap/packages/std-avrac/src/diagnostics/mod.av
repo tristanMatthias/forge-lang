@@ -228,6 +228,11 @@ export enum DiagCode {
     /// declared type (`let xs: List<RowStruct> = ...`, a fn return type,
     /// etc.). Without either, the rows have no type.
     TableRowTypeMissing
+    /// F1044 — a GENERIC `fn` declared inside a function body. Nested
+    /// fns desugar to let-bound closures, and closures take no type
+    /// parameters, so a generic nested fn has no valid lowering — it
+    /// must be lifted to the top level (where monomorphization sees it).
+    NestedGenericFnDecl
     /// F1202 — the `?` (try) operator was applied to an optional `T?`.
     /// `?` is for error propagation on `Result`; absence is handled with
     /// `??`, `?.`, force-unwrap `!`, or `match`. Part of the Zig-style
@@ -445,6 +450,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnannotatedLambdaParam -> ErrorDef { code: "F1006", help: "annotate the parameter, e.g. `(x: int)` — a standalone lambda's parameter types are only inferred from a contextual call argument, an `fn(…)`-typed binding, a struct field, or a typed function return" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
+        .NestedGenericFnDecl -> ErrorDef { code: "F1044", help: "lift the generic fn to the top level — nested fns become closures, and closures cannot take type parameters" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
         .LetElseMustDiverge  -> ErrorDef { code: "F1203", help: "a `let … else` block must exit the scope (`return` / `break` / `continue` / `panic`) — for a same-type fallback that continues, use `?? default`" }
         .OrderOnOptional     -> ErrorDef { code: "F1204", help: "a `none` has no position in an ordering — unwrap first (`a!`), default the gap (`a ?? 0`), or compare presence with `match` / `if let`" }
