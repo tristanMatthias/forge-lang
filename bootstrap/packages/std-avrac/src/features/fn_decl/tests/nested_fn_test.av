@@ -1,0 +1,116 @@
+// Nested `fn` declarations are closure sugar: a `fn name(params) { body }`
+// in statement position inside a function/lambda body desugars (pre-resolve)
+// to `let name = (params) -> { body }`, typed FnTyped so call-site argument
+// gates fire. Captures behave like any closure, and `return` inside the body
+// returns from the nested fn only. v1 limits, by design: the name is not in
+// scope inside its own body (self/mutual recursion resolve as undefined —
+// F3000), and GENERIC nested fns have no closure lowering — the checker
+// rejects them with F1044 instead of codegen falling over.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+fn check_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_nested_fn_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "nested fn declarations desugar to let-bound closures" {
+    then "a nested fn is callable and computes through" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_basic.av",
+            "fn outer() -> int {\n" +
+            "    fn helper(n: int) -> int { n + 1 }\n" +
+            "    helper(41)\n" +
+            "}\n" +
+            "fn main() { println(string(outer())) }\n")
+        out.contains("42")
+    }
+    then "a nested fn captures enclosing locals like a closure" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_capture.av",
+            "fn main() {\n" +
+            "    let base = 10\n" +
+            "    fn add_base(n: int) -> int { n + base }\n" +
+            "    println(string(add_base(32)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "return inside a nested fn returns from the nested fn only" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_return.av",
+            "fn main() {\n" +
+            "    fn h(n: int) -> int { return n + 1 }\n" +
+            "    println(string(h(41)))\n" +
+            "    println(\"after\")\n" +
+            "}\n")
+        out.contains("42") && out.contains("after")
+    }
+    then "a nested fn declared inside an if-branch body works" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_branch.av",
+            "fn main() {\n" +
+            "    let flag = true\n" +
+            "    if flag {\n" +
+            "        fn twice(n: int) -> int { n * 2 }\n" +
+            "        println(string(twice(21)))\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "a fn nested inside another nested fn works (two levels)" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_two_level.av",
+            "fn main() {\n" +
+            "    fn outer_h(n: int) -> int {\n" +
+            "        fn inner_h(m: int) -> int { m + 2 }\n" +
+            "        inner_h(n) + 10\n" +
+            "    }\n" +
+            "    println(string(outer_h(30)))\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "a nested fn declared inside a lambda body works" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_in_lambda.av",
+            "fn main() {\n" +
+            "    let run = () -> {\n" +
+            "        fn bump(n: int) -> int { n + 1 }\n" +
+            "        bump(41)\n" +
+            "    }\n" +
+            "    println(string(run()))\n" +
+            "}\n")
+        out.contains("42")
+    }
+    then "a wrong-typed argument to a nested fn is gated at check time" {
+        let out = check_out("arg_gate",
+            "fn main() {\n" +
+            "    fn want_str(s: string) -> int { 1 }\n" +
+            "    let _ = want_str(123)\n" +
+            "}\n")
+        out.contains("F1000")
+    }
+}
+
+spec "nested fn v1 limits are enforced with real diagnostics" {
+    then "self-recursion resolves as an undefined name (F3000), never a crash" {
+        let out = check_out("recursion",
+            "fn main() {\n" +
+            "    fn fact(n: int) -> int {\n" +
+            "        if n <= 1 { return 1 }\n" +
+            "        n * fact(n - 1)\n" +
+            "    }\n" +
+            "    println(string(fact(5)))\n" +
+            "}\n")
+        out.contains("F3000")
+    }
+    then "a generic nested fn is rejected with F1044 at check time" {
+        let out = check_out("generic",
+            "fn main() {\n" +
+            "    fn idg<T>(x: T) -> T { x }\n" +
+            "    println(string(idg(41)))\n" +
+            "}\n")
+        out.contains("F1044")
+    }
+    then "top-level fns are untouched by the nested-fn desugar" {
+        let out = write_fixture_and_run("/tmp/avra_nested_fn_toplevel.av",
+            "fn plain(n: int) -> int { n + 1 }\n" +
+            "fn main() { println(string(plain(41))) }\n")
+        out.contains("42")
+    }
+}
