@@ -107,7 +107,7 @@ use @std.avrac.build.{
 }
 use @std.avrac.typeck.{typecheck_program}
 use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
-use @std.avrac.features.quote_expr.{lower_quotes_via_store}
+use @std.avrac.features.quote_expr.{lower_quotes_via_store, report_runtime_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
 use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
@@ -173,6 +173,15 @@ fn render_bag_if_nonempty(ctx: RenderContext, bag: DiagnosticBag) {
 fn render_and_fail_on_errors(bag: DiagnosticBag, ctx: RenderContext, msg: string) {
     render_bag_if_nonempty(ctx, bag)
     if bag_has_errors(bag) { fail(msg) }
+}
+
+/// Gate a `quote { ... }` used outside `@comptime`/`@expand` (i0yg): reported
+/// on the PRE-lowering `ids` (each quote is still one node with its own span)
+/// and hard-stopped BEFORE `lower_quotes` explodes it into `synth_*` shims that
+/// would otherwise abort at run time. Every pipeline front that lowers quotes
+/// runs this first.
+fn fail_on_runtime_quotes(store: NodeStore, ids: List<StmtId>, ctx: RenderContext) {
+    render_and_fail_on_errors(report_runtime_quotes(store, ids), ctx, "runtime quote error")
 }
 
 /// Wrap a codegen-side error string as an ICE diagnostic, render it,
@@ -330,6 +339,7 @@ type FrontEndResult = {
 /// rendered diagnostics.
 fn front_pipeline_or_fail(fa: FileArg, ctx: RenderContext) -> FrontEndResult {
     let parsed_prog = parse_or_fail(fa.source, ctx)
+    fail_on_runtime_quotes(parsed_prog.store, parsed_prog.ids, ctx)
     let post_quote = lower_quotes_via_store(parsed_prog.ids, parsed_prog.store)
     let desugared = desugar_program(post_quote, parsed_prog.store)
     let mod_resolved = resolve_module_files(desugared, modules_dirname(fa.path), empty_loaded_list(), parsed_prog.store)
@@ -3661,6 +3671,7 @@ fn cmd_compile(args: CliResult) -> int {
         // single-store invariant), so the flat store scan sees their
         // quotes too — the boxed fallback the pre-F0 pipeline needed
         // here is gone.
+        fail_on_runtime_quotes(parsed_prog.store, pre_desugar_stmts, ctx)
         let post_quote_stmts = lower_quotes_via_store(pre_desugar_stmts, parsed_prog.store)
         // Desugar pass: rewrite syntactic sugar to simpler AST forms.
         let desugared = desugar_program(post_quote_stmts, parsed_prog.store)

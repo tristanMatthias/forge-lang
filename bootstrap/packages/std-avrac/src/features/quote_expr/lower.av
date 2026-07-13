@@ -17,6 +17,7 @@
 use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
+use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, diag_error, span_at}
 
 // ── Public entry ──
 
@@ -188,6 +189,162 @@ fn any_quote_in_match_arms(store: NodeStore, arms: List<MatchArm>) -> bool {
         i = i + 1
     }
     false
+}
+
+// ── Runtime-quote gate (i0yg) ──
+//
+// A `quote { ... }` is a compile-time metaprogramming construct: it lowers to
+// the comptime-only `synth_*` node-id shims, which the comptime evaluator
+// intercepts and which have NO compiled body — so a quote reached by COMPILED
+// (non-`@comptime`) code would hit the `exit(99)` synth guard at run time. This
+// pass runs BEFORE `lower_quotes`, while each quote is still one `Expr.Quote`
+// node carrying its real span, and reports F4009 for every quote reached in a
+// NON-`@comptime` function. `@comptime` fns — and `@expand` macros, which ARE
+// `@comptime` fns — are exempt: their bodies run only at compile time and
+// legitimately build AST. Reporting here (one node ⇒ one diagnostic at the
+// quote's own span) is why the gate is NOT in a post-lowering pass: by then a
+// single quote has exploded into a tree of `synth_*` leaves with synthetic
+// spans. The walk mirrors `lower_expr`/`lower_stmt` exactly, so it flags
+// precisely the quotes the lowering would lower (and no more).
+
+/// True iff `annots` carries `@comptime` (marks a compile-time-only decl).
+fn annots_have_comptime(annots: List<Annotation>) -> bool {
+    mut i = 0
+    while i < annots.length {
+        if annots[i].name == "comptime" { return true }
+        i = i + 1
+    }
+    false
+}
+
+/// Report F4009 for every runtime (non-`@comptime`) `quote { ... }` under
+/// `ids`. Returns a fresh bag — empty when every quote sits in comptime code
+/// (the common case), so the shared no-quote fast-path returns it untouched.
+export fn report_runtime_quotes(store: NodeStore, ids: List<StmtId>) -> DiagnosticBag {
+    if !any_quote_in_stmt_ids(store, ids) { return bag_new() }
+    rq_stmt_ids(store, ids, false, bag_new())
+}
+
+fn rq_stmt_ids(store: NodeStore, ids: List<StmtId>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    mut cur = bag
+    for id in ids { cur = rq_stmt(store, store.stmts.get(id), in_ct, cur) }
+    cur
+}
+
+fn rq_stmt(store: NodeStore, stmt: Stmt, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    match stmt {
+        .Let(_, _, init) -> rq_expr(store, init, in_ct, bag)
+        .Mut(_, _, init) -> rq_expr(store, init, in_ct, bag)
+        .Const(_, _, init) -> rq_expr(store, init, in_ct, bag)
+        .Expr(e) -> rq_expr(store, e, in_ct, bag)
+        .Return(e) -> rq_expr(store, e, in_ct, bag)
+        .Block(body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .If(cond, then_b, else_b) -> {
+            let b2 = rq_stmt(store, store.stmts.get(then_b), in_ct, rq_expr(store, cond, in_ct, bag))
+            if else_b != null { rq_stmt(store, store.stmts.get(else_b!), in_ct, b2) } else { b2 }
+        }
+        .While(cond, body) -> rq_stmt(store, store.stmts.get(body), in_ct, rq_expr(store, cond, in_ct, bag))
+        .For(_, start, end, body) -> rq_stmt(store, store.stmts.get(body), in_ct, rq_expr(store, end, in_ct, rq_expr(store, start, in_ct, bag)))
+        .ForIn(_, coll, body) -> rq_stmt(store, store.stmts.get(body), in_ct, rq_expr(store, coll, in_ct, bag))
+        // A plain `fn` keeps the enclosing comptime context; a `@comptime` fn
+        // gets `in_ct = true` via its `.Annotated` wrapper below.
+        .Function(_, _, _, _, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .Impl(_, methods) -> rq_stmt_ids(store, methods, in_ct, bag)
+        .Annotated(annots, inner) -> rq_stmt(store, store.stmts.get(inner), in_ct || annots_have_comptime(annots), bag)
+        .Module(_, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .ComponentDef(_, _, _, _, _, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .ComponentBlock(_, _, _, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .SpecBlock(_, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .GivenBlock(_, body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .ThenBlock(_, cond) -> rq_expr(store, cond, in_ct, bag)
+        .Match(subj, arms) -> rq_match_arms(store, arms, in_ct, rq_expr(store, subj, in_ct, bag))
+        .Defer(body) -> rq_expr(store, body, in_ct, bag)
+        .Errdefer(body) -> rq_expr(store, body, in_ct, bag)
+        .LetDestructure(_, init) -> rq_expr(store, init, in_ct, bag)
+        .TraitDecl(_, methods) -> rq_stmt_ids(store, methods, in_ct, bag)
+        .Parallel(body) -> rq_stmt_ids(store, body, in_ct, bag)
+        _ -> bag
+    }
+}
+
+fn rq_expr(store: NodeStore, id: ExprId, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    match store.exprs.get(id) {
+        // The quote itself: legal in comptime code (lowers to synth shims the
+        // evaluator handles), F4009 in runtime code. Reported ONCE at the
+        // quote's own node — the body is NOT walked (a nested quote collapses,
+        // and the whole quote is a single error).
+        .Quote(_, _) -> if in_ct { bag } else { rq_report(store, id, bag) }
+        .Splice(target) -> rq_expr(store, target, in_ct, bag)
+        .Binary(l, _, r) -> rq_expr(store, r, in_ct, rq_expr(store, l, in_ct, bag))
+        .Unary(_, r) -> rq_expr(store, r, in_ct, bag)
+        .Logical(l, _, r) -> rq_expr(store, r, in_ct, rq_expr(store, l, in_ct, bag))
+        .Call(callee, args) -> rq_expr_ids(store, args, in_ct, rq_expr(store, callee, in_ct, bag))
+        .GenericCall(callee, _, args) -> rq_expr_ids(store, args, in_ct, rq_expr(store, callee, in_ct, bag))
+        .Grouping(inner) -> rq_expr(store, inner, in_ct, bag)
+        .Block(body) -> rq_stmt_ids(store, body, in_ct, bag)
+        .IfExpr(c, t, e) -> rq_expr(store, e, in_ct, rq_expr(store, t, in_ct, rq_expr(store, c, in_ct, bag)))
+        .Assign(_, v) -> rq_expr(store, v, in_ct, bag)
+        .StructLit(_, inits) -> rq_field_inits(store, inits, in_ct, bag)
+        .FieldAccess(obj, _) -> rq_expr(store, obj, in_ct, bag)
+        .FieldAssign(obj, _, v) -> rq_expr(store, v, in_ct, rq_expr(store, obj, in_ct, bag))
+        .EnumCtor(_, _, args) -> rq_expr_ids(store, args, in_ct, bag)
+        .Index(obj, idx) -> rq_expr(store, idx, in_ct, rq_expr(store, obj, in_ct, bag))
+        .NullCoalesce(l, r) -> rq_expr(store, r, in_ct, rq_expr(store, l, in_ct, bag))
+        .OptionalChain(obj, _) -> rq_expr(store, obj, in_ct, bag)
+        .OptionalMethodCall(obj, _, args) -> rq_expr_ids(store, args, in_ct, rq_expr(store, obj, in_ct, bag))
+        .Try(inner) -> rq_expr(store, inner, in_ct, bag)
+        .Tuple(elems) -> rq_expr_ids(store, elems, in_ct, bag)
+        .TupleIndex(obj, _) -> rq_expr(store, obj, in_ct, bag)
+        .With(obj, overrides) -> rq_field_inits(store, overrides, in_ct, rq_expr(store, obj, in_ct, bag))
+        .ListLit(elems) -> rq_expr_ids(store, elems, in_ct, bag)
+        .Lambda(_, body) -> rq_expr(store, body, in_ct, bag)
+        .MapLit(entries) -> rq_expr_ids(store, entries, in_ct, bag)
+        .Slice(obj, s, e) -> rq_expr(store, e, in_ct, rq_expr(store, s, in_ct, rq_expr(store, obj, in_ct, bag)))
+        .IsCheck(subj, _) -> rq_expr(store, subj, in_ct, bag)
+        .InCheck(needle, items) -> rq_expr_ids(store, items, in_ct, rq_expr(store, needle, in_ct, bag))
+        .Spawn(body) -> rq_expr(store, body, in_ct, bag)
+        .Isolated(body) -> rq_expr(store, body, in_ct, bag)
+        .MatchExpr(subj, arms) -> rq_match_arms(store, arms, in_ct, rq_expr(store, subj, in_ct, bag))
+        _ -> bag
+    }
+}
+
+fn rq_expr_ids(store: NodeStore, ids: List<ExprId>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    mut cur = bag
+    for id in ids { cur = rq_expr(store, id, in_ct, cur) }
+    cur
+}
+
+fn rq_field_inits(store: NodeStore, list: List<FieldInit>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    mut cur = bag
+    mut i = 0
+    while i < list.length {
+        cur = rq_expr(store, list[i].value_id, in_ct, cur)
+        i = i + 1
+    }
+    cur
+}
+
+fn rq_match_arms(store: NodeStore, arms: List<MatchArm>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    mut cur = bag
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.guard_id != null { cur = rq_expr(store, arm.guard_id!, in_ct, cur) }
+        cur = rq_expr(store, arm.body_id, in_ct, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// One F4009 at the quote node's own line/col. Entry-file rows carry no
+/// file here (`expr_linecol` gives line/col only) — the renderer then
+/// falls back to the compile's filename, exactly as the parser's own
+/// expr-span diagnostics do.
+fn rq_report(store: NodeStore, id: ExprId, bag: DiagnosticBag) -> DiagnosticBag {
+    let lc = store.expr_linecol(id)
+    let msg = "`quote { ... }` can only be used inside a `@comptime` fn or an `@expand` macro"
+    bag_report(bag, diag_error(DiagCode.QuoteOutsideComptime, msg, span_at(0, 0, lc.line, lc.col, "")))
 }
 
 // ── Top-level walker (mirrors comptime/rewrite.av structure) ──

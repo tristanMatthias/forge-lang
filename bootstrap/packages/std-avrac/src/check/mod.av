@@ -20,7 +20,7 @@
 
 use parse.{parse_program_source}
 use diagnostics.{DiagnosticBag, bag_merge, bag_has_errors}
-use features.quote_expr.{lower_quotes}
+use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use features.comptime.{resolve_and_expand_program, run_comptime}
@@ -64,6 +64,14 @@ export fn typecheck_source(source: string) -> TypecheckSourceResult {
     if parsed.had_error || parsed.ids == null {
         let empty_stmts: List<StmtId> = []
         return TypecheckSourceResult { bag: parsed.bag, stmts: empty_stmts, type_reg: type_registry_new(), store: parsed.store }
+    }
+    // i0yg: a `quote { ... }` outside `@comptime`/`@expand` is F4009, gated on
+    // the pre-lowering AST (one node per quote, real span) before it lowers to
+    // run-time-aborting `synth_*` shims.
+    let rq_bag = report_runtime_quotes(parsed.store, parsed.ids!)
+    if bag_has_errors(rq_bag) {
+        let empty_stmts: List<StmtId> = []
+        return TypecheckSourceResult { bag: rq_bag, stmts: empty_stmts, type_reg: type_registry_new(), store: parsed.store }
     }
     let post_quote = lower_quotes(parsed.ids!, parsed.store)
     let desugared = desugar_program(post_quote, parsed.store)
