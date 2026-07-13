@@ -1,0 +1,98 @@
+// pdme.6: age-based cache GC with mtime-as-last-use (LRU) semantics.
+// Three cooperating pieces, each pinned here:
+//   1. `bs2 cache prune` walks NAMESPACE dirs (meta/, obj/, link/,
+//      _tmp/, fixture_stdout/) per-entry — the old wholesale-by-dir-
+//      mtime eviction either killed hot entries or kept dead ones,
+//      depending on when the dir last gained a child. Top-level fp
+//      slots stay wholesale; last/ is never a candidate.
+//   2. cache HITs refresh the entry's mtime (avra_touch), so age-based
+//      eviction only ever takes COLD entries.
+//   3. `bs2 build` auto-GCs at most once per day via a stamp file.
+
+use @std.avrac.build.{
+    Cache, cache_for, cache_init,
+    linked_bin_publish, linked_bin_lookup, linked_bin_store_path,
+}
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p,
+    avra_file_mtime, avra_getpid, avra_selfhost_file_exists, avra_datetime_now,
+}
+
+fn mk_root(slug: string) -> string {
+    let root = "/tmp/avra_pdme6_${slug}_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p(root)
+    root
+}
+
+fn bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "pdme.6: prune is namespace-aware and spares last/" {
+    then "old namespace entries and old fp slots go; young entries and last/ stay" {
+        let root = mk_root("prune")
+        let c = "${root}/build/cache"
+        let _ = avra_mkdir_p("${c}/old_slot")
+        let _ = avra_mkdir_p("${c}/meta/old_meta")
+        let _ = avra_mkdir_p("${c}/link")
+        let _ = avra_mkdir_p("${c}/last")
+        let _ = avra_selfhost_write_file("${c}/link/old.bin", "x")
+        let _ = avra_selfhost_write_file("${c}/link/new.bin", "x")
+        let _ = avra_selfhost_write_file("${c}/last/u.txt", "x")
+        avra_shell_exec("touch -t 202501010000 '${c}/old_slot' '${c}/meta/old_meta' '${c}/link/old.bin' '${c}/last'")
+        let out = avra_shell_exec("cd '${root}' && '${bs2()}' cache prune --max_age_days=30 2>&1")
+        let ok = out.contains("evicted 3 entries")
+            && avra_selfhost_file_exists("${c}/old_slot") == 0
+            && avra_selfhost_file_exists("${c}/meta/old_meta") == 0
+            && avra_selfhost_file_exists("${c}/link/old.bin") == 0
+            && avra_selfhost_file_exists("${c}/link/new.bin") == 1
+            && avra_selfhost_file_exists("${c}/last/u.txt") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}
+
+spec "pdme.6: a store HIT refreshes mtime (LRU, not pure age)" {
+    then "linked_bin_lookup touches the store entry" {
+        let root = mk_root("touch")
+        let c = cache_for(root)
+        let _ = cache_init(c)
+        let bin = "${root}/some.bin"
+        let _ = avra_selfhost_write_file(bin, "BIN")
+        let key = "6100000000000000000000000000000000000000000000000000000000000000"
+        linked_bin_publish(c, key, bin)
+        let store = linked_bin_store_path(c, key)
+        avra_shell_exec("touch -t 202501010000 '${store}'")
+        let backdated = avra_file_mtime(store)
+        let hit = linked_bin_lookup(c, key, "${root}/out.bin")
+        let refreshed = avra_file_mtime(store)
+        avra_shell_exec("rm -rf '${root}'")
+        hit && refreshed > backdated
+    }
+}
+
+spec "pdme.6: bs2 build auto-GCs at most once per day (stamp-gated)" {
+    then "first build sweeps a cold entry and stamps; second build leaves the bait alone" {
+        let root = mk_root("autogc")
+        let _ = avra_mkdir_p("${root}/src")
+        let _ = avra_selfhost_write_file("${root}/avra.toml",
+            "[package]\nname = \"gcfix\"\nversion = \"0.1.0\"\n\n[bin]\nname = \"gcfix\"\npath = \"src/main.av\"\n")
+        let _ = avra_selfhost_write_file("${root}/src/main.av", "fn main() { println(\"gc\") }\n")
+        let c = "${root}/build/cache"
+        let _ = avra_mkdir_p("${c}/old_junk")
+        avra_shell_exec("touch -t 202501010000 '${c}/old_junk'")
+        let cmd = "cd '${root}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT '${bs2()}' build 2>&1"
+        let out1 = avra_shell_exec(cmd)
+        let swept = avra_selfhost_file_exists("${c}/old_junk") == 0
+        let stamped = avra_selfhost_file_exists("${c}/.last-gc") == 1
+        // Re-plant the bait: with a fresh stamp the second build must
+        // NOT sweep it.
+        let _ = avra_mkdir_p("${c}/old_junk")
+        avra_shell_exec("touch -t 202501010000 '${c}/old_junk'")
+        let _out2 = avra_shell_exec(cmd)
+        let spared = avra_selfhost_file_exists("${c}/old_junk") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        out1.contains("[cache-gc] evicted") && swept && stamped && spared
+    }
+}

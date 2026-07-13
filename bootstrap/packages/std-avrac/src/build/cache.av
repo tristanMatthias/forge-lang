@@ -24,6 +24,7 @@ use core.{
     avra_rename,
     avra_remove_file,
     avra_remove_tree,
+    avra_touch,
     avra_is_dir,
     avra_shell_exec_status,
     avra_file_size,
@@ -356,7 +357,13 @@ export fn cache_entry_realobj_path(c: Cache, fp: Fingerprint) -> string {
     let store_key = obj_store_key(llc_flags, sha256_file(ll))
     let store_o = obj_store_path(c, store_key)
     if avra_file_size(store_o) > 0 {
-        if atomic_install(store_o, real_o) { return real_o }
+        if atomic_install(store_o, real_o) {
+            // pdme.6: a HIT refreshes the store entry's mtime so the
+            // age-based prune reads as an LRU — a hot object stays
+            // alive however long ago it was first lowered.
+            let _ = avra_touch(store_o)
+            return real_o
+        }
         // Install failure (disk full, races) falls through to llc —
         // never a correctness event, just the slow path.
     }
@@ -438,7 +445,12 @@ export fn linked_bin_store_path(c: Cache, key: string) -> string {
 export fn linked_bin_lookup(c: Cache, key: string, dest: string) -> bool {
     let store_bin = linked_bin_store_path(c, key)
     if avra_file_size(store_bin) <= 0 { return false }
-    atomic_install(store_bin, dest)
+    if atomic_install(store_bin, dest) {
+        // pdme.6: mtime-as-last-use for the LRU prune (see obj store).
+        let _ = avra_touch(store_bin)
+        return true
+    }
+    false
 }
 
 /// Best-effort publish of a freshly-linked binary into the store.

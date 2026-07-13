@@ -35,6 +35,7 @@ use core.{
     avra_selfhost_read_file,
     avra_selfhost_write_file,
     avra_mkdir_p,
+    avra_touch,
 }
 use @std.crypto.{sha256_file}
 
@@ -158,10 +159,15 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
 
     if inputs.kind == "test" {
         if cache_has_test(cache, fp) {
+            // pdme.6: a HIT refreshes the slot dir's mtime so the
+            // age-based `cache prune` behaves as an LRU — hot slots
+            // stay alive however old their content is.
+            let _ = avra_touch(entry_dir_for(cache, fp))
             return BuildOutcome.Hit(fp, cache_bin_path_for(cache, fp))
         }
     } else {
         if cache_has(cache, fp) {
+            let _ = avra_touch(entry_dir_for(cache, fp))
             // Refresh the `last` sidecar even on a HIT. collect_workspace_lib_objs
             // resolves a package's producer .o through this unit's `last` fp, and the
             // fingerprint is now root-aware (lib_pkg_root) — but `last` was written only

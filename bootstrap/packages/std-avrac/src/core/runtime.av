@@ -85,6 +85,10 @@ extern fn avra_bytes_empty() -> bytes
 extern fn avra_readdir(path: string) -> List<string>
 extern fn avra_is_dir(path: string) -> int
 extern fn avra_file_mtime(path: string) -> int
+/// Refresh a path's mtime to now (files and dirs). Cache layers call
+/// this on HIT so mtime approximates last-use — the age-based prune
+/// then behaves as an LRU instead of evicting hot-but-old entries.
+extern fn avra_touch(path: string) -> int
 /// Return the on-disk file size in bytes for `path`, or -1 when the
 /// file is missing/inaccessible. Lets callers ask "is this file
 /// non-empty?" without reading the whole content (hkms.1.1 perf

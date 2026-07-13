@@ -1620,6 +1620,9 @@ fn write_dep_paths(deps: List<Dep>, out_path: string) {
 // block; its fields mirror the BuildArgs shape one-to-one.
 fn run_build_command(args: BuildArgs) {
     let project_dir = avra_process_env_get("PWD")
+    // pdme.6: once-a-day write-time GC (stamp-gated — two stats on the
+    // common path). Keeps the cache dir bounded without manual prunes.
+    maybe_auto_gc(project_dir)
 
     let manifest = load_manifest("${project_dir}/")
     // --lib picks [lib] over [bin]. Without --lib, [bin] is the
@@ -1977,6 +1980,77 @@ fn valid_max_age_days(s: string) -> bool {
 // declarative parser rejects a missing one before this runs. `dry_run` and
 // `max_age_days_str` come from the parsed CliResult; the `max-age-days` default
 // ("30") lives in the command's `option` schema, so it arrives already filled.
+// pdme.6: prune candidate collection, shared by `bs2 cache prune` and
+// the once-a-day auto-GC. mtime approximates last-USE (the cache layer
+// touches entries on HIT), so age-based eviction is an LRU.
+//
+// Two granularities:
+//   * NAMESPACE dirs (meta/, obj/, link/, _tmp/, fixture_stdout/) hold
+//     many independent entries whose ages differ wildly — walk them and
+//     evict PER-ENTRY. Evicting the namespace dir wholesale by its own
+//     mtime (the old behaviour) either killed hot entries or kept dead
+//     ones alive, depending on when the dir last gained a child.
+//   * everything else at the top level is a per-fingerprint slot dir —
+//     wholesale eviction by the slot's mtime, as before.
+// `last/` (tiny --explain attribution sidecars) and the `.last-gc`
+// stamp are never candidates.
+fn collect_prune_candidates(cache_dir: string, cutoff_secs: int) -> List<string> {
+    mut stale: List<string> = []
+    for name in avra_readdir(cache_dir) {
+        let entry = "${cache_dir}/${name}"
+        if avra_is_dir(entry) != 1 { continue }
+        if name == "last" { continue }
+        let per_entry = name == "meta" || name == "obj" || name == "link"
+            || name == "_tmp" || name == "fixture_stdout"
+        if per_entry {
+            for sub in avra_readdir(entry) {
+                let subp = "${entry}/${sub}"
+                if avra_file_mtime(subp) / 1000000000 < cutoff_secs {
+                    stale.push(subp)
+                }
+            }
+        } else if avra_file_mtime(entry) / 1000000000 < cutoff_secs {
+            stale.push(entry)
+        }
+    }
+    stale
+}
+
+/// Evict collected candidates (dirs via remove_tree, files via
+/// remove_file). Returns the number of entries that could not be
+/// fully removed — callers surface a partial prune instead of
+/// claiming success (no silent failures).
+fn evict_prune_candidates(stale: List<string>) -> int {
+    mut failures = 0
+    for p in stale {
+        let removed = if avra_is_dir(p) == 1 { avra_remove_tree(p) } else { avra_remove_file(p) }
+        if removed != 1 { failures = failures + 1 }
+    }
+    failures
+}
+
+// pdme.6: write-time auto-GC — at most once per day, gated on a stamp
+// file so the common path costs two stats. Prunes entries older than
+// 30 days (mtime == last use, so only cold entries go). The stamp is
+// refreshed BEFORE sweeping so concurrent builds don't all sweep.
+// Quiet unless something was evicted; failures are reported but never
+// fail the build (GC is best-effort — the build itself succeeded).
+fn maybe_auto_gc(project_dir: string) {
+    let cache_dir = "${project_dir}/build/cache"
+    if avra_is_dir(cache_dir) != 1 { return }
+    let stamp = "${cache_dir}/.last-gc"
+    let now = avra_datetime_now()
+    if file_exists(stamp) != 0 && avra_file_mtime(stamp) / 1000000000 > now - 86400 {
+        return
+    }
+    let _ = write_file(stamp, "")
+    let stale = collect_prune_candidates(cache_dir, now - 30 * 86400)
+    if stale.length == 0 { return }
+    let failures = evict_prune_candidates(stale)
+    let suffix = if failures > 0 { " (${string(failures)} could not be removed)" } else { "" }
+    eprintln("[cache-gc] evicted ${string(stale.length - failures)} entries older than 30 days${suffix}")
+}
+
 fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string) {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
@@ -2016,13 +2090,7 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
         // avra_file_mtime is epoch NANOSECONDS; avra_datetime_now is epoch
         // SECONDS. Collect candidates first so --dry-run is side-effect-free.
         let cutoff_secs = avra_datetime_now() - avra_parse_int(max_age_days_str) * 86400
-        mut stale: List<string> = []
-        for name in avra_readdir(cache_dir) {
-            let entry = "${cache_dir}/${name}"
-            if avra_is_dir(entry) == 1 && (avra_file_mtime(entry) / 1000000000 < cutoff_secs) {
-                stale.push(entry)
-            }
-        }
+        let stale = collect_prune_candidates(cache_dir, cutoff_secs)
         if stale.length == 0 {
             println("cache prune: no entries older than ${max_age_days_str} days")
             return
@@ -2032,13 +2100,7 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
             for p in stale { println(p) }
             return
         }
-        // avra_remove_tree returns 0 if an entry can't be fully removed
-        // (permissions, OOM, the depth cap) — surface that instead of claiming
-        // a clean prune (no silent failures).
-        mut failures = 0
-        for p in stale {
-            if avra_remove_tree(p) != 1 { failures = failures + 1 }
-        }
+        let failures = evict_prune_candidates(stale)
         if failures > 0 {
             // Exit non-zero (fail) on a partial prune, so a script driving
             // `bs2 cache prune` never treats an incomplete deletion as success.

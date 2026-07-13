@@ -153,6 +153,12 @@ quick:
 sweep:
 	@$(DIAG) --sweep $(if $(FRESH),--fresh)
 
+# Repo-wide cache GC: prune cold entries (mtime == last use; hits refresh
+# it) from the bootstrap root AND every package cache. DAYS= overrides the
+# 30-day default. Builds also auto-GC once a day via a stamp file.
+cache-gc:
+	@$(DIAG) --cache-gc $(if $(DAYS),$(DAYS))
+
 # Just the fixed-point check.
 selfhost:
 	@$(DIAG) --check-fixedpoint

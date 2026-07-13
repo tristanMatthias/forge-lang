@@ -2093,6 +2093,23 @@ mode_sweep() {
   ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
 }
 
+# pdme.6: repo-wide cache GC. `bs2 cache prune` is per-project-root
+# (it reads $PWD), but the heavyweight slots live in the PER-PACKAGE
+# caches (packages/*/build/cache — a single std-avrac producer slot is
+# ~40MB). Sweep the bootstrap root plus every package root in one go.
+# Usage: --cache-gc [DAYS]   (default 30)
+mode_cache_gc() {
+  local days="${1:-30}"
+  ensure_bs2
+  local root
+  for root in "$BOOTSTRAP_DIR" "$BOOTSTRAP_DIR"/packages/*/; do
+    [ -d "$root/build/cache" ] || continue
+    log "[cache-gc] $root"
+    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" )
+  done
+  ok "cache-gc done (max age ${days}d; mtime == last use, so only cold entries went)"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -2143,6 +2160,7 @@ main() {
     --slot-exec)          mode_slot_exec "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
+    --cache-gc)           mode_cache_gc "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }

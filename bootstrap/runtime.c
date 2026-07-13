@@ -1597,6 +1597,17 @@ int64_t avra_file_mtime(const char* path) {
 #endif
 }
 
+// pdme.6: refresh a path's mtime to now (works on files and dirs).
+// The cache layer calls this on HIT so mtime approximates last-USE,
+// turning the age-based `cache prune` into an LRU: hot entries stay
+// fresh however old their content is. Native (no `touch` fork, and no
+// $PWD-derived path ever reaches a shell — the ohyd injection class).
+// Returns 1 on success, 0 on failure (missing path, permissions).
+int64_t avra_touch(const char* path) {
+    if (!path) return 0;
+    return utimensat(AT_FDCWD, path, NULL, 0) == 0 ? 1 : 0;
+}
+
 // Create a directory and every missing parent (mkdir -p semantics).
 // Returns 1 on success or when the directory already exists, 0 on
 // failure. The build system uses this to lay out the cache directory
