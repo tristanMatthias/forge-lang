@@ -206,11 +206,20 @@ impl Parser {
                 let ret_line = self.current_line
                 let ret_col = self.current_column
                 self.advance()
-                let rv_id = self.parse_expression()?
+                // Bare `-> return` (no value on the same line) is Stmt.ReturnEmpty,
+                // mirroring parse_return_statement's newline-sensitivity (t-uv1n).
+                // Without this the arm folds the NEXT arm's pattern into the
+                // return value and fails to parse. `Tk.Comma` is the arm
+                // separator; `}` ends the match; a later line is a new arm.
+                let ret_id = if self.current_kind in [Tk.RightBrace, Tk.Comma, Tk.Eof] || self.current_line != ret_line {
+                    self.store.stmts.add_leaf(Stmt.ReturnEmpty)
+                } else {
+                    let rv_id = self.parse_expression()?
+                    self.store.stmts.add_leaf(Stmt.Return(rv_id))
+                }
                 // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf).
-                // Allocate the synthesized return row directly and stamp it
-                // with the `return` position + originating file.
-                let ret_id = self.store.stmts.add_leaf(Stmt.Return(rv_id))
+                // Stamp the synthesized return row with the `return` position +
+                // originating file (not the post-advance cursor).
                 self.store.set_stmt_pos(ret_id, ret_line, ret_col, self.file)
                 let body_stmts: List<StmtId> = [ret_id]
                 body_id = self.alloc_leaf(Expr.Block(body_stmts))
