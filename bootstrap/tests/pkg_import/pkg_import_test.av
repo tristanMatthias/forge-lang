@@ -1,8 +1,8 @@
-use @std.cli.{cli_new}
+use @std.cli.{CommandSpec}
 
 spec "pkg import" {
-    then "@std.cli package import provides cli_new" {
-        let c = cli_new("app", "desc", "1.0")
+    then "@std.cli package import provides CommandSpec" {
+        let c = CommandSpec { name: "app", description: "desc", hidden: false, flags: [], args: [], options: [] }
         c.name == "app"
     }
 }

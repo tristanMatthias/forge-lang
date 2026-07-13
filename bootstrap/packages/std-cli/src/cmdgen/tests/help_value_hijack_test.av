@@ -1,0 +1,62 @@
+// The per-command help pre-scan must agree with the classifier about where
+// a literal `--help` is a VALUE rather than a help request: as the consumed
+// value of a space-form option (`cmd --filter --help` sets filter), and
+// after the `--` terminator (covered in dash_terminator_test). It must also
+// respect the flag-before-option precedence: a token naming a FLAG consumes
+// nothing, so `--help` after a flag is still a help request.
+//
+// Source-compiled (write_fixture_and_run). `hvh_`-prefixed against collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn hvh_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command go {\n" +
+    "        flag verbose {}\n" +
+    "        option filter {}\n" +
+    "        run() {\n" +
+    "            println(\"FILTER=[\" + filter + \"]\")\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // `--help` as a space-form option VALUE: the command runs with
+    // filter == "--help"; no help page.
+    "    println(\"A=\" + string(toy.run_argv([\"go\", \"--filter\", \"--help\"])))\n" +
+    // `--help` after a FLAG (flags consume nothing): help renders, body
+    // does not run.
+    "    println(\"B=\" + string(toy.run_argv([\"go\", \"--verbose\", \"--help\"])))\n" +
+    // plain `--help` still helps.
+    "    println(\"C=\" + string(toy.run_argv([\"go\", \"--help\"])))\n" +
+    "}\n"
+}
+
+fn hvh_run() -> string {
+    write_fixture_and_run("/tmp/avra_help_value_hijack_test.av", hvh_src())
+}
+
+spec "the help pre-scan is option-aware (no value hijack)" {
+    then "`--help` as an option value reaches the run body verbatim" {
+        let out = hvh_run()
+        out.contains("FILTER=[--help]") && out.contains("A=0")
+    }
+    then "`--help` after a flag is still a help request (body not run)" {
+        let out = hvh_run()
+        out.contains("toy go") && out.contains("B=0") && !out.contains("FILTER=[]")
+    }
+    then "plain `--help` renders the command help" {
+        let out = hvh_run()
+        out.contains("USAGE:") && out.contains("C=0")
+    }
+}

@@ -1,0 +1,24 @@
+// The spinner wrappers' `-> int` contract is "the wrapped command's exit
+// code" on EVERY path. The non-TTY fallback (what CI and this captured test
+// run exercise) once returned a hardcoded 0 — a failed wrapped command
+// reported success to any caller that trusted the code. Pin the contract:
+// success is 0, failure is the command's real rc, on both wrappers. (On a
+// TTY the spawn+wait path extracts the same rc, so the assertions are
+// path-independent.) `spn_`-prefixed against cross-shard collisions.
+
+use @std.cli.ui.{run_with_spinner, run_with_progress}
+
+spec "spinner wrappers return the wrapped command's real exit code" {
+    then "run_with_spinner: success is 0" {
+        run_with_spinner("true", "spn probe") == 0
+    }
+    then "run_with_spinner: failure is the command's rc" {
+        run_with_spinner("exit 3", "spn probe") == 3
+    }
+    then "run_with_progress: success is 0" {
+        run_with_progress("true", "spn probe", 1) == 0
+    }
+    then "run_with_progress: failure is the command's rc" {
+        run_with_progress("exit 5", "spn probe", 1) == 5
+    }
+}

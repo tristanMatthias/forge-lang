@@ -3920,6 +3920,7 @@ cli avra {
 
     command _test_shard {
         description "INTERNAL: compile + run one test-shard binary (forked per batch by `avra test`)"
+        hidden true
         option filter { short "-f", description "Test-name filter (appended by the orchestrator after the shard paths)" }
         flag coverage { short "-c", description "Enable coverage instrumentation" }
         option lcov { description "Enable coverage and write an LCOV report to this path" }

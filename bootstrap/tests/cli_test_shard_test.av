@@ -41,4 +41,8 @@ spec "vez6.12: `_test_shard` dispatches declaratively via avra.run()" {
         let out = avra_shell_exec("./build/bs2 _test_shard --help 2>&1")
         out.contains("<paths>...")
     }
+    then "the app-level --help hides the internal command (`hidden true`)" {
+        let out = avra_shell_exec("./build/bs2 --help 2>&1")
+        !out.contains("_test_shard") && out.contains("compile")
+    }
 }
