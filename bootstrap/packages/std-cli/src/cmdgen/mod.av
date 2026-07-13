@@ -507,11 +507,6 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
             // literal from a SINGLE walk of its own children
             // (build_command_gen — a re-walk once tripped the evaluator).
             // Globals thread in as inherited flags.
-
-            // Each command generates its behaviour decls + its Subcommand
-            // literal from a SINGLE walk of its own children
-            // (build_command_gen — a re-walk once tripped the evaluator).
-            // Globals thread in as inherited flags.
             for child in command_blocks {
                 let gen = build_command_gen(child, global_flags, global_flag_defs)
                 for d in gen.decls { out.push(d) }
