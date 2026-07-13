@@ -282,6 +282,7 @@ fn fmt_variant_fields(fields: List<FieldEntry>) -> string {
 fn fmt_pattern(store: NodeStore, p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
+        .Rest -> "rest"
         .Variant(name, bindings) -> {
             let bindings_str = fmt_param_list_comma(bindings)
             if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }

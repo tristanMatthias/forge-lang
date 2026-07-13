@@ -134,7 +134,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
                     ctx.br(body_bb)
                     is_catch_all = true
                 }
-            } else if p is .Wildcard {
+            } else if (p is .Wildcard) || (p is .Rest) {
                 if arm.guard_id != null {
                     let gr = ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!))?
                     ctx.cond_br(ctx.truthy(emit_value_ptr(gr), "optm_swg"), body_bb, next_bb)
@@ -182,7 +182,7 @@ fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>
     while i < arms.length {
         let arm = arms[i]
         let p = arm.pattern
-        if pattern_is_optional_absent(p) || (p is .Wildcard) {
+        if pattern_is_optional_absent(p) || (p is .Wildcard) || (p is .Rest) {
             let body_bb = ctx.bb("optm_none_body")
             let next_bb = ctx.bb("optm_none_next")
             mut is_catch_all = false
@@ -313,8 +313,8 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                     }
                 }
             }
-            .Wildcard -> {
-                // Wildcard matches everything — emit body directly,
+            .Wildcard or .Rest -> {
+                // Wildcard/rest matches everything — emit body directly,
                 // no branch needed. Subsequent arms are unreachable.
                 match ctx.emit(env, body) {
                     .Err(msg) -> return err_match_ty(msg)
@@ -655,6 +655,7 @@ fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: V
 fn bind_pattern_payload(ctx: Ctx, env: List<VarBinding>, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: List<Variant>) -> List<VarBinding> {
     match pattern {
         .Wildcard -> env
+        .Rest -> env
         .Variant(vname, bindings) -> {
             let v = variant_lookup(variants, vname)
             if !v.found { return env }
@@ -725,6 +726,7 @@ fn bind_nested_patterns(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, subj_ptr: p
 fn bind_single_sub_pattern(ctx: Ctx, env: List<VarBinding>, pat: Pattern, value: ptr, ty: ValueType) -> List<VarBinding> {
     match pat {
         .Wildcard -> env
+        .Rest -> env
         .Variant(vname, bindings) -> {
             // Inner variant: extract its payload. The value is an i64
             // holding a pointer to the inner enum struct.
@@ -882,7 +884,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
             } else {
                 ctx.cond_br(cmp, body_bb, next_bb)
             }
-        } else if arm.pattern is .Wildcard {
+        } else if (arm.pattern is .Wildcard) || (arm.pattern is .Rest) {
             if arm.guard_id != null {
                 // Guarded wildcard: if guard { body } else { next arm }.
                 match ctx.emit(env, ctx.nodes.exprs.get(arm.guard_id!)) {

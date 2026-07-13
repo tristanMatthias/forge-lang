@@ -190,6 +190,7 @@ fn eval_match_body(rt: Runtime, body_id: ExprId) -> StepResult {
 fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttempt {
     match pattern {
         .Wildcard -> MatchAttempt { matched: true, runtime: rt }
+        .Rest -> MatchAttempt { matched: true, runtime: rt }
         .LitString(s) -> {
             if value.kind == "string" && value.text == s {
                 MatchAttempt { matched: true, runtime: rt }

@@ -234,6 +234,14 @@ impl Parser {
             self.advance()
             return .Ok(self.alloc_pat_leaf(Pattern.Wildcard))
         }
+        // `rest` is CONTEXTUAL: only the whole bare pattern `rest` is the
+        // explicit remainder arm (ps3t.7.1). Everywhere else — bindings,
+        // type patterns `rest(n)`, expression position — `rest` stays an
+        // ordinary identifier, so no existing code changes meaning.
+        if self.check(Tk.Identifier) && self.current_lexeme == "rest" && !self.peek_after_ident_is_paren() {
+            self.advance()
+            return .Ok(self.alloc_pat_leaf(Pattern.Rest))
+        }
         // Optional-match surface (spec Axis 10.4). One rule everywhere:
         // `let <name>` binds the present value — here it lowers to the
         // present arm `.Some(name)`; `none` matches absence as `.None`.

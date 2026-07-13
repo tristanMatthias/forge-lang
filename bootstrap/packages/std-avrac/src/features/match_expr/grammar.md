@@ -7,6 +7,7 @@ MatchExpr    ::= 'match' Expr '{' MatchArm* '}'    (* in expression position *)
 MatchArm     ::= Pattern '->' Expr ','?
 
 Pattern      ::= '_'                               (* wildcard *)
+               | 'rest'                            (* explicit remainder — contextual, ps3t.7.1 *)
                | 'let' Ident                       (* optional present-bind -> .Some(Ident) *)
                | 'none'                             (* optional absence       -> .None *)
                | '.' Ident                         (* nullary variant *)
@@ -28,6 +29,12 @@ match x {            // x : T?
     none  -> absent  // absence          (lowers to `.None`)
 }
 ```
+
+`rest` (bare, contextual) is the explicit remainder arm: it matches anything
+and binds nothing, exactly like `_`, but is exempt from the F9001
+hidden-variants lint — the deliberate, greppable catch-all. Inside parens
+(`.Two(a, rest)`, `int(rest)`) and everywhere else, `rest` stays an ordinary
+identifier.
 
 A `_` wildcard covers the absent (or otherwise-unmatched) case. Arms are
 walked in order within each branch, so **guards** and **literal patterns**

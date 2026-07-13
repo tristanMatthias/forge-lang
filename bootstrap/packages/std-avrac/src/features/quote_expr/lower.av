@@ -594,6 +594,7 @@ fn struct_lit_3(store: NodeStore, type_name: string, k1: string, v1: Expr, k2: s
 fn construct_pattern(store: NodeStore, p: Pattern) -> Expr {
     match p {
         .Wildcard -> pattern_ctor(store, "Wildcard", [])
+        .Rest -> pattern_ctor(store, "Rest", [])
         .Variant(name, bindings) -> {
             let args: List<Expr> = [
                 string_lit_expr(name),

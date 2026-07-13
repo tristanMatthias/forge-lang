@@ -61,6 +61,23 @@ fn arms_has_wildcard(arms: List<MatchArm>) -> bool {
     false
 }
 
+/// True when any arm is the explicit `rest` remainder (ps3t.7.1). Like a
+/// wildcard it satisfies exhaustiveness unconditionally — but it never
+/// triggers the F9001 hidden-variants lint: `rest` IS the author saying
+/// "everything else, deliberately", which is exactly the information `_`
+/// can't carry.
+fn arms_has_rest(arms: List<MatchArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        match arms[i].pattern {
+            .Rest -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
+}
+
 /// Build a comma-separated list of variant names covered by
 /// the arms' patterns. Used by `find_missing_variants` to
 /// compute the difference against the enum's full set.
@@ -172,6 +189,8 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
         }
         return tc
     }
+    // Explicit `rest` remainder: exhaustive by declaration, no lint (ps3t.7.1)
+    if arms_has_rest(arms) { return tc }
     // No wildcard and missing variants = error (spec Axis 8.4)
     let msg = "non-exhaustive match on `${enum_name}` — missing: ${missing}"
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
@@ -185,7 +204,7 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm
 /// they never satisfy the present case on their own (a `let v` / `_` is still
 /// required for the other present values).
 fn tc_check_optional_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) -> TC {
-    if arms_has_wildcard(arms) { return tc }
+    if arms_has_wildcard(arms) || arms_has_rest(arms) { return tc }
     mut has_present = false
     mut has_absent = false
     mut i = 0
@@ -240,6 +259,8 @@ fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: List<MatchArm>
         }
         return tc
     }
+    // Explicit `rest` remainder: exhaustive by declaration, no lint (ps3t.7.1)
+    if arms_has_rest(arms) { return tc }
     let type_str = vtype_render_full(subject_ty)
     let msg = "non-exhaustive match on `${type_str}` — missing: ${missing}"
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
@@ -283,6 +304,7 @@ fn count_missing_union_members(types: List<ValueType>, matched: string) -> int {
 fn tc_bind_pattern(tc: TC, pattern: Pattern, subject_ty: ValueType) -> TC {
     match pattern {
         .Wildcard -> tc
+        .Rest -> tc
         .Variant(variant_name, bindings) -> {
             // An optional `T?` subject carries no enum tag, so the present-bind
             // arm (`let v ->`, lowered to `.Some(v)`) has no variant field to

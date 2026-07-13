@@ -746,6 +746,7 @@ export fn expr_intern_key(node: Expr) -> string {
 export fn pat_intern_key(node: Pattern) -> string {
     match node {
         .Wildcard -> "_"
+        .Rest -> "rest"
         .LitString(v) -> "str:${v}"
         .LitInt(v) -> "int:${string(v)}"
         .LitBool(v) -> "bool:${string(v)}"

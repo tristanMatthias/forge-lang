@@ -251,6 +251,11 @@ export type Variant = { name: string, fields: List<FieldEntry> }
 export enum Pattern {
     /// `_` — matches anything, binds nothing.
     Wildcard
+    /// `rest` — the DELIBERATE remainder arm (ps3t.7.1): matches anything,
+    /// binds nothing, and is exempt from the F9001 hidden-variants lint.
+    /// `_` reads as "forgot a case"; `rest` reads as "everything else, on
+    /// purpose" — greppable, and the sanctioned form once F9001 hardens.
+    Rest
     /// `.Variant(a, b)` — positional payload bindings into `bindings`.
     /// Bare `.Variant` (no payload) shows up here with empty bindings.
     Variant(name: string, bindings: List<ParamEntry>)
@@ -2747,6 +2752,7 @@ export fn render_variant_list(variants: List<Variant>) -> string {
 export fn render_pattern(store: NodeStore, p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
+        .Rest -> "rest"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
         .LitString(value) -> "\"${value}\""
         .LitInt(value) -> string(value)
