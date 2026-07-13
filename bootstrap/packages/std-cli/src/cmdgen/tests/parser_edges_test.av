@@ -1,0 +1,105 @@
+// Edge-case battery for the argv classifier (parse_tokens), pinning the
+// contract at its boundaries: a bare `-` is a positional (the stdin
+// convention — the flag gate needs length > 1); a dash-prefixed value
+// without `--` is rejected (use the terminator); short-flag clustering is
+// unsupported (whole-token matching only); `--=x` names the real problem;
+// on multiple errors the FIRST is reported; `--key=` is an explicit empty
+// value (distinct from the default); repeated options are last-wins and
+// repeated flags are idempotent; only the first `--` terminates (a second
+// is a literal positional).
+//
+// Source-compiled (write_fixture_and_run, which captures stderr too, so
+// parse-error messages are assertable). `pe_`-prefixed against collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn pe_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command go {\n" +
+    "        flag verbose { short \"-v\" }\n" +
+    "        option out { default \"dflt\" }\n" +
+    "        arg items { variadic true }\n" +
+    "        run() {\n" +
+    "            println(\"OUT=\" + out + \" V=\" + (if verbose { \"y\" } else { \"n\" }) + \" N=\" + string(items.length) + \" J=\" + items.join(\",\"))\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // a bare `-` is a positional (stdin convention), not a flag.
+    "    println(\"A=\" + string(toy.run_argv([\"go\", \"-\"])))\n" +
+    // a dash-prefixed value without `--` is rejected as an unknown flag.
+    "    println(\"B=\" + string(toy.run_argv([\"go\", \"-5\"])))\n" +
+    // short-flag clustering is unsupported: `-abc` is one unknown token.
+    "    println(\"C=\" + string(toy.run_argv([\"go\", \"-abc\"])))\n" +
+    // `--=x` reports the empty option name, not a confusing `--` key.
+    "    println(\"D=\" + string(toy.run_argv([\"go\", \"--=x\"])))\n" +
+    // two errors: the FIRST is the one reported.
+    "    println(\"E=\" + string(toy.run_argv([\"go\", \"--bogus1\", \"--bogus2\"])))\n" +
+    // `--out=` is an explicit empty value, overriding the default.
+    "    println(\"F=\" + string(toy.run_argv([\"go\", \"--out=\", \"x\"])))\n" +
+    // repeated option: last one wins.
+    "    println(\"G=\" + string(toy.run_argv([\"go\", \"--out=a\", \"--out=b\", \"x\"])))\n" +
+    // repeated flag (short + long spellings): still just set.
+    "    println(\"H=\" + string(toy.run_argv([\"go\", \"-v\", \"--verbose\", \"x\"])))\n" +
+    // only the FIRST `--` terminates; the second is a literal positional.
+    "    println(\"I=\" + string(toy.run_argv([\"go\", \"--\", \"--\"])))\n" +
+    "}\n"
+}
+
+fn pe_run() -> string {
+    write_fixture_and_run("/tmp/avra_parser_edges_test.av", pe_src())
+}
+
+spec "argv classifier edge cases hold their documented contract" {
+    then "a bare `-` is a positional, not a flag" {
+        let out = pe_run()
+        out.contains("N=1 J=-") && out.contains("A=0")
+    }
+    then "a dash-prefixed value without `--` is rejected" {
+        let out = pe_run()
+        out.contains("unknown flag: -5") && out.contains("B=1")
+    }
+    then "short-flag clustering is unsupported (whole-token match)" {
+        let out = pe_run()
+        out.contains("unknown flag: -abc") && out.contains("C=1")
+    }
+    then "`--=x` names the empty option name" {
+        let out = pe_run()
+        out.contains("empty option name in \"--=x\"") && out.contains("D=1")
+    }
+    then "on multiple errors the first is reported" {
+        let out = pe_run()
+        out.contains("unknown flag: --bogus1") && !out.contains("--bogus2'") && out.contains("E=1")
+    }
+    then "`--key=` is an explicit empty value, not the default" {
+        let out = pe_run()
+        out.contains("OUT= V=n N=1 J=x") && out.contains("F=0")
+    }
+    then "a repeated option is last-wins" {
+        let out = pe_run()
+        out.contains("OUT=b") && out.contains("G=0")
+    }
+    then "a repeated flag stays simply set" {
+        let out = pe_run()
+        out.contains("V=y N=1 J=x") && out.contains("H=0")
+    }
+    then "a second `--` after the terminator is a literal positional" {
+        let out = pe_run()
+        out.contains("N=1 J=--") && out.contains("I=0")
+    }
+    then "every parse error points at the command's --help" {
+        let out = pe_run()
+        out.contains("Try 'toy go --help'.")
+    }
+}
