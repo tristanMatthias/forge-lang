@@ -194,8 +194,10 @@ export type PublishResult = {
 /// atomic on the same filesystem so concurrent readers cannot
 /// observe a partially-populated entry.
 ///
-/// `staging_id` is a per-build-process discriminator (e.g. PID) so
-/// concurrent build drivers do not collide on the same staging path.
+/// `staging_id` is a human-readable discriminator for the staging
+/// path (unit + fp short). Process uniqueness is guaranteed HERE —
+/// the pid is folded in below — so callers cannot re-create the
+/// shared-staging collision (pdme.7).
 export fn cache_publish(
     c: Cache,
     fp: Fingerprint,
@@ -214,7 +216,14 @@ export fn cache_publish(
     if ll_content == "" {
         return PublishResult { success: false, error: "refusing to publish empty .ll (likely killed mid-compile)" }
     }
-    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    // pdme.7: fold the pid in HERE rather than trusting callers — the
+    // docstring always promised a per-process discriminator, but every
+    // call site passed a deterministic "<unit>.<fp>" id, so two
+    // concurrent builds of the same unit shared ONE staging dir: the
+    // loser's writes landed in a directory the winner renamed away
+    // (spurious publish failures under exactly the shard/pre-build
+    // contention the staging scheme exists for).
+    let staging = c.tmp_dir + fp.hex + "." + staging_id + "." + string(avra_getpid())
     if avra_mkdir_p(staging) == 0 {
         return PublishResult { success: false, error: "mkdir failed: " + staging }
     }
@@ -259,8 +268,13 @@ export fn cache_publish(
         // a non-empty directory, so without repair this fingerprint
         // is PERMANENTLY unpublishable: every later build recompiles,
         // re-fails the publish, and the cache silently dies for the
-        // unit. Evict the wreck and retry once.
-        let _ = avra_remove_tree(final_dir)
+        // unit. Evict the wreck and retry once — by RENAMING IT ASIDE
+        // (atomic), never deleting in place: a file-by-file
+        // remove_tree on the live path exposed concurrent readers to
+        // a half-deleted slot mid-read (caught by
+        // --cache-fuzz-parallel). The corpse is deleted from _tmp,
+        // where no reader ever looks.
+        evict_wreck_aside(c, final_dir)
         if avra_rename(staging, final_dir) == 0 {
             // A concurrent publisher may have raced the retry — their
             // content-addressed slot is equally good.
@@ -271,6 +285,20 @@ export fn cache_publish(
         }
     }
     PublishResult { success: true, error: "" }
+}
+
+/// pdme.7: atomically move half-slot wreckage out of the live cache
+/// path (into _tmp, pid-discriminated), then delete the corpse
+/// offline. Readers either see the wreck (incomplete ⇒ miss) or
+/// nothing (⇒ miss) — never a directory mid-deletion. Best-effort:
+/// if the aside-rename loses a race (a concurrent repairer moved it
+/// first, or a concurrent publisher already landed a fresh slot),
+/// the caller's retry-rename + completeness check decide the outcome.
+fn evict_wreck_aside(c: Cache, final_dir: string) {
+    let corpse = c.tmp_dir + "wreck." + string(avra_getpid())
+    if avra_rename(final_dir, corpse) != 0 {
+        let _ = avra_remove_tree(corpse)
+    }
 }
 
 /// uzs9.3: content-addressed store for llc outputs, keyed on the exact
@@ -493,7 +521,8 @@ export fn cache_publish_test(
     manifest: string,
     staging_id: string,
 ) -> PublishResult {
-    let staging = c.tmp_dir + fp.hex + "." + staging_id
+    // pdme.7: pid folded in at this chokepoint — see cache_publish.
+    let staging = c.tmp_dir + fp.hex + "." + staging_id + "." + string(avra_getpid())
     if avra_mkdir_p(staging) == 0 {
         return PublishResult { success: false, error: "mkdir failed: " + staging }
     }
@@ -519,8 +548,8 @@ export fn cache_publish_test(
         if cache_has_test(c, fp) {
             return PublishResult { success: true, error: "" }
         }
-        // Half-slot wreckage — same repair as cache_publish above.
-        let _ = avra_remove_tree(final_dir)
+        // Half-slot wreckage — same rename-aside repair as cache_publish.
+        evict_wreck_aside(c, final_dir)
         if avra_rename(staging, final_dir) == 0 {
             if cache_has_test(c, fp) {
                 return PublishResult { success: true, error: "" }

@@ -295,6 +295,20 @@ DIFF & ANALYSIS
                        compile's IR is byte-identical to a cache-bypassed
                        recompute, and a final revert must restore the
                        golden IR. Default N=20, SEED=42; seconds to run.
+  --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]
+                       CONCURRENCY sibling of --cache-fuzz (pdme.7). Each
+                       round fans out JOBS simultaneous cached compiles of
+                       the same entry (same fingerprint, same slot — the
+                       shard/pre-build contention shape) while a seeded
+                       chaos agent damages the live slot mid-flight.
+                       Asserts: every compile exits 0 (publish-race losers
+                       lose benignly), every worker's IR byte-matches a
+                       bypassed reference, and the slot still HITs after
+                       the melee. Default 8 rounds x 4 jobs, SEED=42.
+  --cache-gc [DAYS]    Age-based cache GC across the bootstrap root AND
+                       every packages/*/ root (`bs2 cache prune` is
+                       per-project-root). mtime == last use (hits touch),
+                       so only cold entries go. Default DAYS=30.
   --sweep [--fresh] [dir ...]
                        OOM-safe full-suite runner: one sequential
                        `bs2 test <dir>` per test directory (default:
@@ -1947,15 +1961,14 @@ mode_bisect_lines() {
 # whole-second sidecar mtimes fails here).
 #
 # Usage: --cache-fuzz [N] [SEED]   (default 20 iterations, seed 42)
-mode_cache_fuzz() {
-  local n="${1:-20}" seed="${2:-42}"
-  ensure_bs2
-  local fuzz_root="$BUILD_DIR/cache-fuzz"
+# Shared sandbox for the cache fuzz modes. Lives under a literal
+# `packages/` segment so the resolver's find_packages_dir locates it and
+# `use @fuzz.q` resolves — the mutation target is a CROSS-PACKAGE
+# dependency of a fixed entry, the genuine lkze.9 axis (fp_full keys it
+# since pdme.1). Sets FUZZ_ENTRY / FUZZ_SIB / FUZZ_CACHE_DIR.
+cache_fuzz_mk_sandbox() {
+  local fuzz_root="$1"
   rm -rf "$fuzz_root"
-  # Sandbox lives under a literal `packages/` segment so the resolver's
-  # find_packages_dir locates it and `use @fuzz.q` resolves — the
-  # mutation target is a CROSS-PACKAGE dependency of a fixed entry,
-  # the genuine lkze.9 axis (fp_full keys it since pdme.1).
   mkdir -p "$fuzz_root/packages/fuzz-p/src" "$fuzz_root/packages/fuzz-q/src"
   cat > "$fuzz_root/packages/fuzz-p/avra.toml" <<'MANIFEST'
 [package]
@@ -1970,13 +1983,21 @@ MANIFEST
 name = "@fuzz/q"
 version = "0.1.0"
 MANIFEST
-  local entry="$fuzz_root/packages/fuzz-p/src/main.av"
-  local sib="$fuzz_root/packages/fuzz-q/src/q.av"
-  printf 'use @fuzz.q.{fuzz_value}\n\nfn main() { println(string(fuzz_value())) }\n' > "$entry"
-  printf 'export fn fuzz_value() -> int { 1 }\n' > "$sib"
+  FUZZ_ENTRY="$fuzz_root/packages/fuzz-p/src/main.av"
+  FUZZ_SIB="$fuzz_root/packages/fuzz-q/src/q.av"
+  FUZZ_CACHE_DIR="$fuzz_root/packages/fuzz-p/src/build/cache"
+  printf 'use @fuzz.q.{fuzz_value}\n\nfn main() { println(string(fuzz_value())) }\n' > "$FUZZ_ENTRY"
+  printf 'export fn fuzz_value() -> int { 1 }\n' > "$FUZZ_SIB"
+}
+
+mode_cache_fuzz() {
+  local n="${1:-20}" seed="${2:-42}"
+  ensure_bs2
+  local fuzz_root="$BUILD_DIR/cache-fuzz"
+  cache_fuzz_mk_sandbox "$fuzz_root"
+  local entry="$FUZZ_ENTRY" sib="$FUZZ_SIB" cache_dir="$FUZZ_CACHE_DIR"
   local sib_orig
   sib_orig=$(cat "$sib")
-  local cache_dir="$fuzz_root/packages/fuzz-p/src/build/cache"
 
   # Both compile flavours strip the shard env (metadata/lib-objs flip
   # eligibility and resolve behaviour); B additionally sets the
@@ -2093,6 +2114,96 @@ mode_sweep() {
   ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
 }
 
+# pdme.7: CONCURRENCY fuzz — the parallel sibling of --cache-fuzz.
+# Each round mutates the dep package, computes a reference IR via one
+# cache-bypassed compile, then fans out J CONCURRENT cached compiles of
+# the SAME entry (same fingerprint, same slot — the shard/pre-build
+# contention shape) while a seeded chaos agent damages the live slot
+# mid-flight (companion deletion / primary truncation). Invariants per
+# round:
+#   * every concurrent compile exits 0 (a loser of a publish race must
+#     lose BENIGNLY),
+#   * every worker's observed IR is byte-identical to the reference
+#     (no torn, foreign, or stale bytes under contention),
+#   * after one recovery compile, an identical rerun HITs — the slot
+#     survived the melee (publish + wreck-repair work under load).
+#
+# Usage: --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]  (default 8 4 42)
+mode_cache_fuzz_parallel() {
+  local rounds="${1:-8}" jobs="${2:-4}" seed="${3:-42}"
+  ensure_bs2
+  local fuzz_root="$BUILD_DIR/cache-fuzz-par"
+  cache_fuzz_mk_sandbox "$fuzz_root"
+  local entry="$FUZZ_ENTRY" sib="$FUZZ_SIB" cache_dir="$FUZZ_CACHE_DIR"
+
+  # Worker output goes to a per-worker log so a failure names its cause
+  # (an opaque rc/divergence is undebuggable after the processes exit).
+  # Each worker gets its OWN --output ($2): N workers contend on one
+  # cache slot but never on each other's output file. A shared
+  # <entry>.ll is itself a data race (GNU cp aborts with "replaced
+  # while being copied" when a sibling's rename lands mid-copy — a
+  # false FAIL this harness produced before --output became
+  # cache-eligible; pdme.7).
+  par_compile_cached() {
+    local logf="${1:-/dev/null}" outf="${2:-}"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+      "$BS2" compile ${outf:+--output="$outf"} "$entry" >"$logf" 2>&1
+  }
+
+  local r="$seed" round=1 kind w pid fail
+  while [ "$round" -le "$rounds" ]; do
+    r=$(( (r * 1103515245 + 12345) % 2147483648 ))
+    kind=$(( (r / 65536) % 3 ))   # 0 = pure contention, 1/2 = + slot damage
+    printf 'export fn fuzz_value() -> int { %s }\n' "$(( r % 97 ))" > "$sib"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT AVRA_TIMINGS=1 \
+      "$BS2" compile --output="$fuzz_root/ref.ll" "$entry" >/dev/null 2>&1 \
+      || die "cache-fuzz-parallel round $round: reference compile failed"
+
+    local pids=()
+    for w in $(seq 1 "$jobs"); do
+      par_compile_cached "$fuzz_root/w$w.log" "$fuzz_root/w$w.ll" &
+      pids+=($!)
+    done
+    if [ "$kind" -gt 0 ]; then
+      # Chaos agent: hit the newest slot three times while workers fly.
+      local i target
+      for i in 1 2 3; do
+        case "$kind" in
+          1) target=$(ls -t "$cache_dir"/*/metadata.bin 2>/dev/null | head -1)
+             [ -n "$target" ] && rm -f "$target" ;;
+          2) target=$(ls -t "$cache_dir"/*/unit.ll 2>/dev/null | head -1)
+             [ -n "$target" ] && : > "$target" ;;
+        esac
+        sleep 0.02
+      done
+    fi
+    fail=0
+    for pid in "${pids[@]}"; do wait "$pid" || fail=1; done
+    if [ "$fail" != "0" ]; then
+      for w in $(seq 1 "$jobs"); do
+        err "worker $w output:"; tail -5 "$fuzz_root/w$w.log" >&2 2>/dev/null
+      done
+      die "cache-fuzz-parallel FAIL round $round (kind $kind): a concurrent cached compile exited non-zero"
+    fi
+    for w in $(seq 1 "$jobs"); do
+      if ! cmp -s "$fuzz_root/w$w.ll" "$fuzz_root/ref.ll"; then
+        err "worker $w output:"; tail -5 "$fuzz_root/w$w.log" >&2 2>/dev/null
+        err "worker $w .ll: $(wc -c < "$fuzz_root/w$w.ll" 2>/dev/null) bytes vs ref $(wc -c < "$fuzz_root/ref.ll") bytes"
+        die "cache-fuzz-parallel FAIL round $round (kind $kind): worker $w IR diverges from reference — concurrent cache corruption"
+      fi
+    done
+    # Recovery compile (republishes if the chaos agent left a wreck),
+    # then the liveness rerun must HIT.
+    par_compile_cached || die "cache-fuzz-parallel round $round: recovery compile failed"
+    env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_TIMINGS \
+        "$BS2" compile "$entry" 2>&1 >/dev/null | grep -q 'compile-cache\] hit' \
+      || die "cache-fuzz-parallel FAIL round $round (kind $kind): post-melee rerun did not HIT — publish died under contention"
+    round=$(( round + 1 ))
+  done
+  rm -rf "$fuzz_root"
+  ok "cache-fuzz-parallel PASS — $rounds rounds x $jobs workers (seed $seed): no divergence, no benign-failure violations, slots survived"
+}
+
 # pdme.6: repo-wide cache GC. `bs2 cache prune` is per-project-root
 # (it reads $PWD), but the heavyweight slots live in the PER-PACKAGE
 # caches (packages/*/build/cache — a single std-avrac producer slot is
@@ -2161,6 +2272,7 @@ main() {
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
+    --cache-fuzz-parallel) mode_cache_fuzz_parallel "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }

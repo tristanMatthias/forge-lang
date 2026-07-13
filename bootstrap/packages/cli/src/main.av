@@ -1725,7 +1725,24 @@ fn run_build_command(args: BuildArgs) {
     }
 
     let t_start = avra_uptime_ms()
-    let outcome = decide_build(inputs)
+    // pdme.7: re-validate after the decide — the Hit decision and this
+    // consumption are check-then-use over a mutable path (a concurrent
+    // evictor can empty the slot in between). A vanished/empty slot
+    // demotes to a Miss so the build recompiles instead of shipping a
+    // 0-byte artifact. (Same class as the compile-cache read gate.)
+    mut outcome = decide_build(inputs)
+    match outcome {
+        .Hit(_, cached_ll) -> {
+            if avra_file_size(cached_ll) <= 0 {
+                eprintln("[build-cache] stale-read miss — slot emptied mid-read; rebuilding")
+                outcome = match decide_build(inputs) {
+                    .Hit(fp2, _) -> BuildOutcome.Miss(fp2, "", "slot emptied mid-read")
+                    .Miss(fp2, pk, reason) -> BuildOutcome.Miss(fp2, pk, reason)
+                }
+            }
+        }
+        _ -> {}
+    }
     let t_after_decide = avra_uptime_ms()
     match outcome {
         .Hit(fp, cached_ll) -> {
@@ -3651,7 +3668,6 @@ fn cmd_compile(args: CliResult) -> int {
             && list_files_path == ""
             && module_path == ""
             && target_module == ""
-            && output_override == ""
             && stop_after == ""
             && !debug_null
             && !enable_coverage
@@ -3671,7 +3687,14 @@ fn cmd_compile(args: CliResult) -> int {
             // caching for sources that produce diagnostics. Until then,
             // /tmp stays excluded.
             && !cpath.starts_with("/tmp/")
-        let dest_ll = "${cpath}.ll"
+        // pdme.7: --output participates in the cache — the output path is
+        // not a compilation input (the fp keys sources + deps + compiler
+        // content, never the destination), so a hit just materialises the
+        // cached IR wherever the caller asked. This also makes per-worker
+        // --output the supported answer to concurrent same-entry compiles:
+        // N processes contend on ONE slot but never on each other's
+        // output file (the shared <entry>.ll was the last data race).
+        let dest_ll = if output_override != "" { output_override } else { "${cpath}.ll" }
         let bs2_path = avra_selfhost_get_arg_cstr(0)
         // pdme.1: key the compile unit on the entry's package full
         // fingerprint too. sources=[cpath] alone missed every edit to a
@@ -3701,10 +3724,21 @@ fn cmd_compile(args: CliResult) -> int {
         if cache_eligible {
             match decide_build(compile_inputs) {
                 .Hit(fp, cached_ll_path) -> {
+                    // pdme.7: VALIDATE the read — decide_build's completeness
+                    // check and this read are check-then-use over a mutable
+                    // path, so a concurrent evictor (wreck repair, prune,
+                    // external damage) can empty the slot in between. Serving
+                    // the empty read as a "successful" compile propagated
+                    // 0-byte IR downstream (caught by --cache-fuzz-parallel);
+                    // an empty read is a MISS — recompile honestly.
                     let cached_ll = read_file(cached_ll_path)
-                    avra_selfhost_write_file(dest_ll, cached_ll)
-                    eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
-                    return 0
+                    if cached_ll != "" {
+                        avra_selfhost_write_file(dest_ll, cached_ll)
+                        eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
+                        return 0
+                    }
+                    eprintln("[compile-cache] stale-read miss ${fp_short(fp)} — slot emptied mid-read; recompiling")
+                    compile_publish_fp = fp
                 }
                 .Miss(fp, _, _) -> {
                     compile_publish_fp = fp
@@ -3835,7 +3869,7 @@ fn cmd_compile(args: CliResult) -> int {
         let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, parsed_prog.store)
         let t_mono = avra_uptime_ms()
         render_and_fail_on_errors(mono.bag, ctx, "monomorphization failed")
-        let output = if output_override != "" { output_override } else { "${cpath}.ll" }
+        let output = dest_ll
         // 2f54: when --module_path is set we treat this as a library
         // build — skip the synthetic main() wrapper so multiple
         // unit .o files can link together without _main collisions.
