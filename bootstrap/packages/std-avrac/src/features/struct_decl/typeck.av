@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full}
+use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot}
 use diagnostics.{DiagCode}
 
@@ -31,6 +31,17 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         _ -> ""
     }
     if struct_name.length > 0 {
+        // An in-scope type param that SHADOWS a same-named global struct
+        // stays opaque: `fn f<T>(x: T)` under a global `type T<U>` must
+        // not typecheck `x.val` against the GLOBAL's fields — the param
+        // and the global only collide in the flat namespace (module
+        // scope already qualifies them apart), and the leak stamps the
+        // global's field type onto an unrelated value. Mirror of the
+        // F1004 gate's in-scope-param exemption; monomorphization
+        // re-checks the access per concrete instantiation.
+        if type_param_has(o.tc.current_scope_tp, struct_name) {
+            return tc_er(o.tc, .Unknown)
+        }
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         // Skip field check for generic type parameters (not in struct registry)
         if fields.length == 0 { return tc_er(o.tc, .Unknown) }
