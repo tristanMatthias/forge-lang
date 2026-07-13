@@ -1,4 +1,4 @@
-fn hunt_make_prefix(prefix: string) -> fn {
+fn hunt_make_prefix(prefix: string) -> fn(string) -> string {
     (name: string) -> { prefix + " " + name }
 }
 
