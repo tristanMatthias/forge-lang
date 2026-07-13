@@ -64,6 +64,17 @@ export type ComponentExpandResult = {
 /// ids). The empty-registry fast-path returns the original `ids`
 /// unchanged (identity); the spliced path allocates rewritten/synthesized
 /// rows into the store.
+///
+/// PERF ENVELOPE (measured post-template-deletion): a 60-def +
+/// 60-instance synthetic compiles in ~55ms end-to-end — expansion is
+/// noise against parse/codegen. The block splice does ZERO def-body
+/// scans (the template flavour cost 3 O(body) has_fn probes + hook
+/// rewrites per instance). Considered and deliberately NOT taken
+/// further: comp_reg_lookup stays a linear scan (registries are ~1-10
+/// entries; a map costs more to build than it saves); the backward
+/// walk's prepend-onto-tail is O(N²) worst-case but only inside
+/// component-USING scopes, which the fast-path already limits to the
+/// rare program that declares components at all.
 export fn expand_components(ids: List<StmtId>, store: NodeStore) -> ComponentExpandResult {
     let reg = collect_component_defs(store, ids)
     if reg.length == 0 { return ComponentExpandResult { stmts: ids, bag: bag_new() } }
