@@ -1,0 +1,50 @@
+// A leading `self` receiver in a component method is stamped to the
+// synthesized struct type — a bare `self` otherwise parses with the
+// untyped-param default (Int) and codegen ICEd on field access.
+// Also pins that `init` is an ORDINARY method name: no hook
+// semantics, just the same prefixed free fn every method gets.
+
+component acct_sr {
+    config {
+        balance: int = 100
+    }
+
+    fn describe(self) -> int {
+        self.balance
+    }
+
+    fn top_up(self, amount: int) -> int {
+        self.balance + amount
+    }
+
+    fn init(self) -> int {
+        self.balance * 2
+    }
+}
+
+fn sr_read_override() -> bool {
+    acct_sr a { balance = 40 }
+    acct_sr_describe(a) == 40
+}
+
+fn sr_self_with_params() -> bool {
+    acct_sr b {}
+    acct_sr_top_up(b, 5) == 105
+}
+
+fn sr_init_is_ordinary() -> bool {
+    acct_sr c {}
+    acct_sr_init(c) == 200
+}
+
+spec "component method self receiver" {
+    then "self.field reads the instance's config value" {
+        sr_read_override()
+    }
+    then "self coexists with further params" {
+        sr_self_with_params()
+    }
+    then "a fn named init is an ordinary method (no hook semantics)" {
+        sr_init_is_ordinary()
+    }
+}

@@ -360,8 +360,6 @@ fn front_pipeline_or_fail(fa: FileArg, ctx: RenderContext) -> FrontEndResult {
 
 
 // ── CLI component definitions ──
-// Match the Rust std-cli component pattern exactly.
-// Template components: init hooks use self.__parent to thread builder calls.
 
 // Components V2: `cli`/`command` are data components whose expansion
 // is library-authored in `@std.cli.cmdgen`. `@expand(expand_cli)` turns the

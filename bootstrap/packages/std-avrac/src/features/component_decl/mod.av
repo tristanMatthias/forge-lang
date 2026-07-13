@@ -2,9 +2,9 @@
 // auto-load as siblings, surface flat at `features.component_decl.{...}`.
 use core.{feature_new, Feature}
 
-/// Register the `component` declaration feature. Components
-/// expand into struct + impl + factory at the desugar pass —
-/// see `expand.av`. Spec Axis 28 (templates).
+/// Register the `component` declaration feature. Data components
+/// expand into struct + factory + method fns — see `expand.av`;
+/// @expand-annotated defs route through the comptime macro pipeline.
 export fn component_decl_feature() -> Feature {
     feature_new("component_decl") with {
         decl_keyword: "kw_component",
