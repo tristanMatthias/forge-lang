@@ -455,6 +455,8 @@ Do NOT rebuild `bs2` (or clear caches) while such a sweep is running; the runner
 
 **NEVER use `eprintln("text" + string(val))` in hot paths** — causes infinite recursion. Use C-side trace functions.
 
+**A per-fn/per-inst `eprintln` trace in compiler passes can DEADLOCK the orchestrated `bs2 build --lib`** (t-gnnj): the parent spawns the real compile as a child and does not continuously drain its stderr, so a chatty child blocks on a full pipe forever (observed: the test runner's @std prebuild hung 2h+ at static RSS). Debug-trace a compiler pass only via targeted single-file `bs2 compile` runs, and remove the trace before running `bs2 test` (whose cold-cache path triggers the prebuild).
+
 ### Pointer address ranges (for LLDB)
 - `0x100000000-0x200000000` → bump arena (valid)
 - `0x600000000000` range → system heap (valid)

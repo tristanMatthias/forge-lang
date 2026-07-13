@@ -21,33 +21,60 @@
 // FILL only the params the payload left unresolved — never overriding a
 // payload-bound param — so collect and rewrite mangle identically.
 //
-// These `then` blocks run the constructed values, so a regression fails at
-// compile time (F1002 returns) OR at runtime (a wrong match arm), never
-// silently.
+// MUTATION-DETECTABILITY NOTE: each positive runtime case below uses its OWN
+// enum, with the "other" variant never constructed anywhere in this file.
+// Cross-site merging (merge_across_scopes) completes a shared enum's type args
+// from sibling ctor sites, which would let these tests pass even with the
+// expected-fill deleted — a dedicated enum makes the annotation genuinely
+// load-bearing, so breaking the fill breaks the test.
 
-// The ticket's exact shape: two params, each in only ONE variant's payload —
-// constructing either variant leaves the other param annotation-only.
+// The ticket's exact shape, one enum per binding form under test.
+enum EieLet<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieRSide<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieMut<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieRet<A, B> {
+    L(a: A)
+    R(b: B)
+}
+
+// Bare-variant shapes: `Some` is never constructed in this file, so `None`'s
+// type args can only come from the annotation.
+enum EieBare<T> {
+    Some(v: T)
+    None
+}
+
+// Shared enum for the annotation-free MERGE control — both variants
+// constructed, no annotations anywhere.
 enum EiePair<A, B> {
     L(a: A)
     R(b: B)
 }
 
-// A bare variant alongside a payload variant — `None` binds T solely from the
-// annotation.
-enum EieOpt<T> {
+// Nested-construction shapes (their own enum so no sibling site interferes).
+enum EieNest<T> {
     Some(v: T)
     None
 }
 
 // Return-position annotation: the tail expression is a bare ctor whose
 // second param comes only from the declared return type.
-fn eie_make_l() -> EiePair<int, string> {
-    EiePair.L(7)
+fn eie_make_l() -> EieRet<int, string> {
+    EieRet.L(7)
 }
 
 // Return-position annotation on a payload-less variant.
-fn eie_make_none() -> EieOpt<int> {
-    EieOpt.None
+fn eie_make_none() -> EieBare<int> {
+    EieBare.None
 }
 
 // No annotation anywhere — both params bind purely from the two ctor payloads
@@ -64,43 +91,44 @@ fn eie_merge_control() -> int {
 }
 
 // A NESTED generic enum whose inner ctor is a BARE variant — the only ctor
-// site for both levels, so the outer T fills from the return annotation and
-// the payload arg types as Unknown. This once collided with the legacy
-// annotation-string channel (scope_insts_for_ret): the same specialization
-// registered under two type-arg representations (pre-mangled `Maybe__int<int>`
-// vs structural `mod::Maybe<int>`), and the specialized enum decl emitted from
-// the structural rep kept a BARE payload type name → codegen "unknown enum".
-// Cured by finalize dedup-by-mangled + the EnumDecl arm of the rewrite pass
-// (rewrite_variant_field_types). This test file runs module-wrapped by the
-// test runner, which is exactly the shape that exposed it.
-fn eie_nested_inner_bare() -> EieOpt<EieOpt<int>> {
-    EieOpt.Some(EieOpt.None)
+// sites for both levels live here, so the outer T fills from the return
+// annotation while the payload arg types as Unknown. This once collided with
+// the legacy annotation-string channel (scope_insts_for_ret): the same
+// specialization registered under two type-arg representations (pre-mangled
+// `Nest__int<int>` vs structural `mod::Nest<int>`), and the specialized enum
+// decl emitted from the structural rep kept a BARE payload type name →
+// codegen "unknown enum". Cured by finalize dedup-by-mangled + the EnumDecl
+// arm of the rewrite pass (rewrite_variant_field_types). This test file runs
+// module-wrapped by the test runner, which is exactly the shape that exposed
+// it.
+fn eie_nested_inner_bare() -> EieNest<EieNest<int>> {
+    EieNest.Some(EieNest.None)
 }
 
 // The two-level nested ctor with a concrete innermost payload, single site.
-fn eie_nested_full() -> EieOpt<EieOpt<int>> {
-    EieOpt.Some(EieOpt.Some(5))
+fn eie_nested_full() -> EieNest<EieNest<int>> {
+    EieNest.Some(EieNest.Some(5))
 }
 
 spec "generic enum infers type params from the expected type" {
     given "a ctor whose payload pins only one of two params" {
         then "a let annotation supplies the payload-absent param (the ps3t.3.8 repro)" {
-            let p: EiePair<int, string> = EiePair.L(7)
+            let p: EieLet<int, string> = EieLet.L(7)
             match p {
                 .L(a) -> a == 7
                 .R(_) -> false
             }
         }
         then "the payload-bound param stays ground truth (annotation fills, never overrides)" {
-            let p: EiePair<int, string> = EiePair.R("hello")
+            let p: EieRSide<int, string> = EieRSide.R("hello")
             match p {
                 .L(_) -> false
                 .R(b) -> b == "hello"
             }
         }
         then "a mut binding threads its annotation exactly like let (collect .Mut arm)" {
-            mut p: EiePair<int, string> = EiePair.L(3)
-            p = EiePair.L(4)
+            mut p: EieMut<int, string> = EieMut.L(3)
+            p = EieMut.L(4)
             match p {
                 .L(a) -> a == 4
                 .R(_) -> false
@@ -117,7 +145,7 @@ spec "generic enum infers type params from the expected type" {
     }
     given "a bare (payload-less) variant" {
         then "a let annotation alone drives the instantiation" {
-            let o: EieOpt<int> = EieOpt.None
+            let o: EieBare<int> = EieBare.None
             match o {
                 .Some(_) -> false
                 .None -> true
@@ -130,7 +158,7 @@ spec "generic enum infers type params from the expected type" {
             }
         }
         then "a nested generic arg in the annotation binds too" {
-            let o: EieOpt<List<int>> = EieOpt.None
+            let o: EieBare<List<int>> = EieBare.None
             match o {
                 .Some(v) -> false
                 .None -> true
