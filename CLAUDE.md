@@ -90,6 +90,8 @@ make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-id
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
+make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d.
+make clean-cache           # wipe EVERY cache (per-package + top-level). Guarded: never touches src/.
 make clean                 # remove all build artifacts (3-min seed rebuild on next make)
 make help                  # show all targets
 ```

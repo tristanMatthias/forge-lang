@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep cache-gc clean-cache cache-stats
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -65,6 +65,10 @@ help:
 	@echo "  make seed-train-verify  PR gate: the train's verify phase (build from pin +"
 	@echo "                     fixed point + suite) WITHOUT publish. Run before a PR."
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
+	@echo "  make cache-gc      Prune COLD cache entries repo-wide (mtime == last use;"
+	@echo "                     hits refresh it). DAYS= overrides the 30-day default."
+	@echo "  make clean-cache   Wipe EVERY cache (per-package + top-level build/cache)."
+	@echo "                     Guarded: never touches src/. Next build is cold."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
 	@echo ""
@@ -153,6 +157,14 @@ sweep:
 # 30-day default. Builds also auto-GC once a day via a stamp file.
 cache-gc:
 	@$(DIAG) --cache-gc $(if $(DAYS),$(DAYS))
+
+# Full cache wipe (the documented escape hatch): every
+# packages/*/build/cache plus the top-level build/cache — and NOTHING
+# else. Guarded so it can never touch a src/ tree (the
+# packages/<pkg>/src/build/ SOURCE dirs share the name 'build'; ad-hoc
+# find one-liners have eaten them before). Next build is cold.
+clean-cache:
+	@$(DIAG) --clean-cache
 
 # Just the fixed-point check.
 selfhost:

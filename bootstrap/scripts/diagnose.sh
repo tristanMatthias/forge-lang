@@ -312,6 +312,11 @@ DIFF & ANALYSIS
                        every packages/*/ root (`bs2 cache prune` is
                        per-project-root). mtime == last use (hits touch),
                        so only cold entries go. Default DAYS=30.
+  --clean-cache [ROOT] FULL cache wipe (escape hatch): every
+                       packages/*/build/cache + the top-level
+                       build/cache under ROOT (default: the bootstrap
+                       tree) — and nothing else. Guarded so it can
+                       never touch a src/ tree. Next build is cold.
   --sweep [--fresh] [dir ...]
                        OOM-safe full-suite runner: one sequential
                        `bs2 test <dir>` per test directory (default:
@@ -2254,6 +2259,43 @@ mode_cache_gc() {
   ok "cache-gc done (max age ${days}d; mtime == last use, so only cold entries went)"
 }
 
+# pdme.3: the FULL cache wipe — the documented escape hatch when the
+# age-based GC isn't enough (suspected cache corruption, forced-cold
+# benchmarking). Wipes every packages/*/build/cache plus the top-level
+# build/cache, and NOTHING else. The foot-gun this guards:
+# packages/<pkg>/src/build/ is a SOURCE directory whose name also
+# contains "build" — ad-hoc `find … -name build` one-liners have eaten
+# it before. Defenses: (1) the fixed one-level glob can only match
+# <root>/packages/<pkg>/build/cache; (2) a sentinel rejects any
+# candidate whose package dir is literally named "src" (a
+# packages/src/ package would make the glob's parent-of-build a src
+# dir). Pure shell — no bs2 needed. ROOT is overridable for the spec
+# suite; defaults to the bootstrap tree.
+#
+# Usage: --clean-cache [ROOT]
+mode_clean_cache() {
+  local root="${1:-$BOOTSTRAP_DIR}"
+  [ -d "$root" ] || die "clean-cache: no such root: $root"
+  local d pkg_dir wiped=0
+  for d in "$root"/packages/*/build/cache; do
+    [ -d "$d" ] || continue
+    pkg_dir=$(basename "$(dirname "$(dirname "$d")")")
+    if [ "$pkg_dir" = "src" ]; then
+      log "[clean-cache] SPARED $d — parent is a src dir, refusing"
+      continue
+    fi
+    rm -rf "$d"
+    log "[clean-cache] wiped $d"
+    wiped=$(( wiped + 1 ))
+  done
+  if [ -d "$root/build/cache" ]; then
+    rm -rf "$root/build/cache"
+    log "[clean-cache] wiped $root/build/cache"
+    wiped=$(( wiped + 1 ))
+  fi
+  ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -2306,6 +2348,7 @@ main() {
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
+    --clean-cache)        mode_clean_cache "$@" ;;
     --cache-fuzz-parallel) mode_cache_fuzz_parallel "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac

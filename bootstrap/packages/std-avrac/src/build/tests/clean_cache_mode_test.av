@@ -1,0 +1,39 @@
+// pdme.3: `make clean-cache` (= diagnose.sh --clean-cache) — the full
+// cache wipe, guarded against the src/build foot-gun. Three contracts:
+//   1. every packages/<pkg>/build/cache goes, plus the top-level
+//      build/cache;
+//   2. SOURCE trees survive — packages/<pkg>/src/** (including a
+//      src/build/ source dir, the historical casualty) is never
+//      touched, and a package literally named "src" is spared by the
+//      sentinel;
+//   3. nothing else under build/ is collateral (only the cache dir
+//      goes, not sibling build artifacts).
+//
+// Pure-shell mode (no bs2), exercised against a sandbox ROOT.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid, avra_selfhost_file_exists}
+
+spec "pdme.3: clean-cache wipes caches, never source" {
+    then "package + top-level caches go; src trees, src-named packages, and build siblings stay" {
+        let root = "/tmp/avra_pdme3_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/packages/aaa/build/cache/slot")
+        let _ = avra_mkdir_p("${root}/packages/aaa/src/build")
+        let _ = avra_mkdir_p("${root}/packages/src/build/cache/decoy")
+        let _ = avra_mkdir_p("${root}/build/cache/topslot")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/cache/slot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/src/build/cache.av", "// source")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/keep.o", "obj")
+        let _ = avra_selfhost_write_file("${root}/packages/src/build/cache/decoy/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/build/cache/topslot/unit.ll", "x")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' 2>&1")
+        let ok = out.contains("clean-cache: 2 cache dir(s) wiped")
+            && avra_selfhost_file_exists("${root}/packages/aaa/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/packages/aaa/src/build/cache.av") == 1
+            && avra_selfhost_file_exists("${root}/packages/aaa/build/keep.o") == 1
+            && avra_selfhost_file_exists("${root}/packages/src/build/cache/decoy/unit.ll") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}
