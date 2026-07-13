@@ -51,8 +51,10 @@ fn main() { let t = mk() }")
 
 // The annotate pass must descend into errdefer bodies exactly as it does for
 // defer: both carry an expression whose nested SExprs mono's generic
-// inference reads. These run the construction, so a regression fails at
-// compile time or with a wrong value — never silently.
+// inference reads. The defer probe observes the success path; the errdefer
+// probe takes a REAL error path (`?` on an Err) and proves the generic
+// construction inside the errdefer body actually EXECUTES, using a channel
+// as the observation side-channel.
 type EwcBox<T> = { val: T }
 
 impl EwcBox<T> {
@@ -70,29 +72,47 @@ fn ewc_defer_probe() -> int {
     7
 }
 
-fn ewc_errdefer_probe() -> int {
-    // errdefer only runs on the error path; the construction inside still
-    // must annotate + monomorphize — this asserts COMPILATION of the generic
-    // construction in errdefer position, plus the success-path value.
-    errdefer {
-        let b = EwcBox { val: 42 }
-        println("unreachable ${b.get()}")
-    }
-    7
+fn ewc_err() -> Result<int, string> {
+    Result.Err("boom")
 }
 
-spec "generic constructions inside defer/errdefer bodies annotate + compile" {
+fn ewc_fail_with_errdefer(ch: Channel<int>) -> Result<int, string> {
+    errdefer {
+        let b = EwcBox { val: 42 }
+        ch.send(b.get())
+    }
+    let v = ewc_err()?
+    Result.Ok(v)
+}
+
+fn ewc_errdefer_probe() -> int {
+    let ch = channel<int>(1)
+    let r = ewc_fail_with_errdefer(ch)
+    let got = ch.try_recv()
+    if got == null {
+        0 - 1
+    } else {
+        got!
+    }
+}
+
+spec "generic constructions inside defer/errdefer bodies annotate + execute" {
     then "a generic ctor + method call inside DEFER compiles and runs" {
         ewc_defer_probe() == 7
     }
-    then "a generic ctor + method call inside ERRDEFER compiles and runs" {
-        ewc_errdefer_probe() == 7
+    then "the ERRDEFER body's generic ctor EXECUTES on the error path" {
+        ewc_errdefer_probe() == 42
     }
 }
 
 // Trait decls carry DEFAULT method bodies; the annotate pass descends into
 // them like Impl methods so generic constructions inside a default body get
-// stamped.
+// stamped. What this asserts: the default body (with its generic ctor)
+// COMPILES as part of the trait decl, and an overriding impl behaves
+// correctly. It cannot assert the INHERITED default's runtime value: an impl
+// that omits the method ICEs at codegen today (`undefined method`) — default
+// METHOD INHERITANCE is unimplemented (filed separately); when it lands, add
+// a non-overriding impl here and assert `describe() == 5`.
 trait EwcDescribe {
     fn describe(self) -> int {
         let b = EwcBox { val: 5 }
