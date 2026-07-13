@@ -1,0 +1,131 @@
+// WHY: regression for forge-crafting-intepreters-ps3t.4.7 — Channel- and
+// Task-typed annotations flowed through typeck UNENFORCED. Wild-store holes, all
+// compiling clean before the fix (each reads a pointer's bits as an integer, or
+// vice-versa — memory-unsafe):
+//   (1) int-literal INTO a Channel slot       — `let x: Channel<int> = 42`
+//   (2) a Channel/Task VALUE into an int slot — `fn f(x: int); f(ch)`
+//   (3) a bare generic BEHIND a Channel/Task  — `fn f(c: Channel<GenOpt>)`
+//       (the F1004 under-applied-generic gate never fired)
+//
+// Root causes + fixes (all in typeck/mod.av; the ps3t.4.5 totality program):
+//   * (3) resolve_vtype had no `.Channel`/`.Task` arm (it had List/Map/Optional/
+//     Tuple), so the inner `GenOpt` behind a structural `Channel<…>` stayed an
+//     unresolved `Struct("GenOpt")` shell — looked up as a STRUCT (no type
+//     params found) — so F1004 couldn't fire. Added the two recursion arms; the
+//     `.Channel` arm already present in tc_check_type_applied (ps3t.7.2) then
+//     gates correctly. (Task<GenOpt> as an annotation is nominal `Enum("Task")`
+//     and already gated via the Enum arg recursion, so it worked before too.)
+//   * (2) added channel_into_value_scalar_slot, the `.Channel` sibling of
+//     enum_into_value_scalar_slot. Safe by the SAME reasoning: `.Channel` is a
+//     distinct ValueType kind, never an inference artifact and never a bare
+//     type-param (those surface as `.Struct`-form), so no false positives. A
+//     Task VALUE into an int slot is caught too, but via the enum check — a
+//     `Task<int>` binding is nominal `Enum("Task")` — not this Channel arm.
+//   * (1) extended int_into_pointer_slot's slot set from {Str,Bytes} to add
+//     `.Channel`. Kept OUT of the broad heap set (Struct/List/Map/Enum) on
+//     purpose: those are where the ~140 `.Int` inference-artifact fallbacks land
+//     in the compiler's own source, so gating them would mass-false-positive
+//     (the an9 Int-vs-Unknown limitation). `.Channel` slots are rare (~16 sites)
+//     and never an artifact target.
+//
+// SCOPE: the int → {Struct,List,Map,Enum}-slot holes (`let x: S = 42`,
+// `let x: Task<int> = 42` — a Task ANNOTATION is nominal Enum) remain, genuinely
+// blocked on an9 (typeck can't distinguish a real `.Int` from the unresolved
+// fallback that lands in those slots). This ticket fixes the CHANNEL surface end
+// to end (structural, artifact-free) plus the two Task directions that ride
+// artifact-free paths (value→int, bare-generic). Follow-up ps3t.4.8 filed to
+// make Task<T> annotations STRUCTURAL (a `"Task"` arm in type_expr_to_vtype,
+// mirroring Channel), which would close int→Task-annotation without an9.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Shell out to a child bs2 so the wild store is compiled in an observable
+// process: capture combined output, assert the rendered F-code. `|| true` keeps
+// the non-zero compile exit from aborting the capture; the __AVRA_COMPILE_OK__
+// sentinel is emitted ONLY on a clean (exit-0) compile so positive controls
+// assert real success.
+fn cte_out(source: string) -> string {
+    let path = "/tmp/avra_cte_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a bare generic behind Channel/Task is F1004 (resolve_vtype recurses)" {
+    then "a bare generic-enum behind a Channel PARAMETER is F1004" {
+        let out = cte_out("enum GenOpt<T> { None, Some(value: T) }
+fn consume(c: Channel<GenOpt>) -> int { 1 }
+fn main() { let r = consume(channel<GenOpt<int>>(1)) }")
+        out.contains("F1004")
+    }
+    then "the fully-applied Channel<GenOpt<int>> parameter compiles (positive control)" {
+        let out = cte_out("enum GenOpt<T> { None, Some(value: T) }
+fn consume(c: Channel<GenOpt<int>>) -> int { 1 }
+fn main() { let r = consume(channel<GenOpt<int>>(1)) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare generic behind a Channel LET annotation is F1004" {
+        let out = cte_out("enum GenOpt<T> { None, Some(value: T) }
+fn main() { let c: Channel<GenOpt> = channel<GenOpt<int>>(1) }")
+        out.contains("F1004")
+    }
+    then "a bare generic behind a Task RETURN type is F1004" {
+        let out = cte_out("enum GenOpt<T> { None, Some(value: T) }
+fn work() -> int { 1 }
+fn mk() -> Task<GenOpt> { spawn { work() } }
+fn main() { let t = mk() }")
+        out.contains("F1004")
+    }
+}
+
+spec "a Channel/Task VALUE into an int slot is a layout conflict (F1000)" {
+    then "passing a Channel<int> where an int param is expected is F1000" {
+        let out = cte_out("fn want(x: int) -> int { x }
+fn main() { let c: Channel<int> = channel<int>(1)
+  let r = want(c) }")
+        out.contains("F1000")
+    }
+    // Task VALUE → int is caught too, but via enum_into_value_scalar_slot, not
+    // the new channel check: a `Task<int>` binding is the nominal `Enum("Task")`,
+    // so the value types as an enum. Kept here as a behavior guard for the Task
+    // surface; when ps3t.4.8 makes Task structural, it shifts to the channel path.
+    then "passing a Task<int> where an int param is expected is F1000" {
+        let out = cte_out("fn work() -> int { 1 }
+fn want(x: int) -> int { x }
+fn main() { let t: Task<int> = spawn { work() }
+  let r = want(t) }")
+        out.contains("F1000")
+    }
+    then "passing the Channel to a Channel<int> param still compiles (positive control)" {
+        let out = cte_out("fn consume(c: Channel<int>) -> int { 1 }
+fn main() { let r = consume(channel<int>(1)) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+spec "an int VALUE into a Channel slot is a layout conflict (F1000)" {
+    then "binding an int literal to a Channel<int> annotation is F1000" {
+        let out = cte_out("fn main() { let x: Channel<int> = 42
+  let y = x }")
+        out.contains("F1000")
+    }
+    then "binding a real channel to a Channel<int> annotation still compiles (positive control)" {
+        let out = cte_out("fn main() { let x: Channel<int> = channel<int>(1)
+  let y = x }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    // SCOPE: `let x: Task<int> = 42` is NOT caught here and intentionally so —
+    // `Task<int>` as an ANNOTATION parses to the nominal `Enum("Task", [int])`
+    // (Task has no structural `type_expr_to_vtype` arm, unlike Channel), so it is
+    // the general `int → Enum-slot` wild store, which rides an9 (typeck can't
+    // tell a real `.Int` from the unresolved fallback that lands in enum slots).
+    // The Task VALUE → int-slot direction (below) IS caught; only the int → Task
+    // ANNOTATION direction waits on an9. See the header SCOPE NOTE.
+    then "an int into a Task<int> annotation is NOT yet caught (an9-blocked, documented)" {
+        let out = cte_out("fn main() { let x: Task<int> = 42
+  let y = x }")
+        // Asserting the CURRENT behavior so a future an9 fix that closes this
+        // hole trips this test as the signal to promote it to an F1000 assert.
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
