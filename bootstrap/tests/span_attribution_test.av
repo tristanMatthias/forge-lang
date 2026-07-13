@@ -1,0 +1,33 @@
+// WHY: diagnostics consume node spans + file attribution (ps3t.3.10) — the
+// consumer half of the parser span threading. Two contracts:
+//   1. FILE ATTRIBUTION: a module-file row's diagnostic renders against the
+//      module file's own path and source snippet (the stmt walk threads
+//      SrcPos.file into the reported span; the renderer's span-file fallback
+//      does the rest). Previously every diagnostic rendered against the
+//      ENTRY file's path — the wrong file with a wrong-or-missing snippet.
+//   2. EXPRESSION-PRECISE CARETS: for entry-file rows, an error inside a
+//      statement carets the offending expression's own span (tc_at_expr),
+//      not the statement keyword. Span-free rows (interned leaves) and
+//      module-file rows (whose byte offsets index their own source, not the
+//      store's entry LineIndex) deliberately keep the statement position.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "diagnostics read node spans (ps3t.3.10)" {
+    then "module-file errors render against the module file's path and line" {
+        let out = avra_shell_exec("./build/bs2 check tests/span_attribution/main.av 2>&1 || true")
+        // The bad `let` is helper.av line 4 col 5 — and the snippet shown
+        // must be the helper's source line, proving the renderer read the
+        // module file rather than slicing the entry source.
+        // The caret highlight colorizes the first spanned character, so the
+        // snippet assertion starts past it (ANSI codes split the line there).
+        out.contains("helper.av:4:5") && out.contains("x: string = 5")
+    }
+    then "entry-file errors caret the offending expression, not the statement" {
+        let out = avra_shell_exec("./build/bs2 check tests/span_attribution/entry_caret.av 2>&1 || true")
+        // `f()` begins at line 2 col 29; the statement's `let` sits at col 13.
+        // The init is a compound (Call) with its own span, so the caret
+        // sharpens to the expression.
+        out.contains("entry_caret.av:2:29")
+    }
+}

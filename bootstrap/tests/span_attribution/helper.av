@@ -1,0 +1,6 @@
+// A module-file body with a type error — its diagnostic must render
+// against THIS file's path and source snippet, not the entry file's.
+export fn bad() -> int {
+    let x: string = 5
+    7
+}
