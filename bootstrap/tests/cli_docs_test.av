@@ -5,11 +5,12 @@
 // word alias (phx5 A2). run() builds a DocsArgs from the parsed CliResult.
 //
 // We drive the real bs2 binary against a tiny temp project (one .av file with a
-// documented `bar` and a `baz` that calls it) and probe the rendered output:
-//   1. `docs bar`        : positional query resolves to the symbol lookup
-//   2. `docs --used-by bar` : the A2 alias routes to the callers (reverse) path
-//   3. `docs --callers bar` : the canonical spelling does the same
-//   4. `docs --bogus`    : the declarative parser rejects the unknown flag
+// documented `bar` and a `baz` that calls it) and probe the rendered output of
+// the FULL declared schema: the positional query, every flag (used-by/callers,
+// symbols, short, llm, validate, doctest, gen+print, no_cache), every option
+// (format, search, module, scope), and unknown-flag rejection — each spec
+// asserts an output signature only its path produces, so a schema entry
+// silently falling off the command block fails its spec.
 
 extern fn avra_shell_exec(cmd: string) -> string
 
@@ -24,33 +25,119 @@ fn docs_fixture(project: string) -> string {
         "printf '/// Adds one to n.\\nfn bar(n: int) -> int { n + 1 }\\n\\nfn baz() -> int { bar(2) }\\n' > " + project + "foo.av")
 }
 
+// Run one `docs <argv>` invocation against a fresh fixture project and hand
+// back the combined output — every spec below is this one dance with a
+// different argv, so the fixture/cleanup shuffle lives in one place.
+fn docs_probe(slug: string, argv: string) -> string {
+    let project = "/tmp/avra_docs_${slug}_fixture/"
+    let _ = docs_fixture(project)
+    let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs " + argv + " 2>&1")
+    let _ = avra_shell_exec("rm -rf " + project)
+    out
+}
+
 spec "bs2 docs <symbol>: the positional query resolves to the symbol" {
     then "`docs bar` renders bar's signature" {
-        let project = "/tmp/avra_docs_lookup_fixture/"
-        let _ = docs_fixture(project)
-        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs bar 2>&1")
-        let _ = avra_shell_exec("rm -rf " + project)
+        let out = docs_probe("lookup", "bar")
         out.contains("fn bar") && out.contains("n: int")
     }
 }
 
 spec "bs2 docs --used-by <symbol>: the A2 alias routes to the callers path" {
     then "`docs --used-by bar` lists baz as a caller" {
-        let project = "/tmp/avra_docs_usedby_fixture/"
-        let _ = docs_fixture(project)
-        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs --used-by bar 2>&1")
-        let _ = avra_shell_exec("rm -rf " + project)
+        let out = docs_probe("usedby", "--used-by bar")
         out.contains("Used by") && out.contains("baz")
     }
 }
 
 spec "bs2 docs --callers <symbol>: the canonical spelling does the same" {
     then "`docs --callers bar` lists baz as a caller" {
-        let project = "/tmp/avra_docs_callers_fixture/"
-        let _ = docs_fixture(project)
-        let out = avra_shell_exec("cd " + project + " && " + docs_bs2() + " docs --callers bar 2>&1")
-        let _ = avra_shell_exec("rm -rf " + project)
+        let out = docs_probe("callers", "--callers bar")
         out.contains("Used by") && out.contains("baz")
+    }
+}
+
+spec "bs2 docs --symbols: project-wide symbol reference" {
+    then "`docs --symbols` renders the reference with bar's signature" {
+        let out = docs_probe("symbols", "--symbols")
+        out.contains("Symbol Reference") && out.contains("fn bar(n: int) -> int")
+    }
+}
+
+spec "bs2 docs --short <symbol>: one-line summary" {
+    then "`docs --short bar` renders just the name + doc one-liner" {
+        let out = docs_probe("short", "--short bar")
+        out.contains("bar: Adds one to n.")
+    }
+}
+
+spec "bs2 docs --llm: compact LLM-friendly rendering" {
+    then "`docs --llm` renders the LLM header with bar's signature" {
+        let out = docs_probe("llm", "--llm")
+        out.contains("LLM-friendly") && out.contains("fn bar(n: int) -> int")
+    }
+}
+
+spec "bs2 docs --validate: documentation-coverage report" {
+    then "`docs --validate` renders the coverage report" {
+        let out = docs_probe("validate", "--validate")
+        out.contains("Documentation Coverage")
+    }
+}
+
+spec "bs2 docs --doctest: doc-example runner path engages" {
+    then "`docs --doctest` renders the doctest section (no fences → no failures)" {
+        let out = docs_probe("doctest", "--doctest")
+        out.contains("Doctests")
+    }
+}
+
+spec "bs2 docs --gen <symbol> --print: scaffolding to stdout" {
+    then "`docs --gen bar --print` prints a docstring skeleton with bar's param" {
+        let out = docs_probe("gen", "--gen bar --print")
+        out.contains("/// summary") && out.contains("@param n")
+    }
+}
+
+spec "bs2 docs --no_cache <symbol>: bypasses the index cache, same render" {
+    then "`docs --no_cache bar` still renders bar's signature" {
+        let out = docs_probe("nocache", "--no_cache bar")
+        out.contains("fn bar(n: int) -> int")
+    }
+}
+
+spec "bs2 docs --format json: machine-readable dump" {
+    then "`docs --format json` emits the SymList as JSON" {
+        let out = docs_probe("json", "--format json")
+        out.contains("\"name\":\"bar\"") && out.contains("\"kind\":\"fn\"")
+    }
+}
+
+spec "bs2 docs --format markdown: GitHub-style rendering" {
+    then "`docs --format=markdown` (option-form value) emits the markdown header" {
+        let out = docs_probe("md", "--format=markdown")
+        out.contains("# Project Documentation") && out.contains("fn bar")
+    }
+}
+
+spec "bs2 docs --search <term>: docstring substring search" {
+    then "`docs --search Adds` finds bar via its doc text" {
+        let out = docs_probe("search", "--search Adds")
+        out.contains("Search results for") && out.contains("bar")
+    }
+}
+
+spec "bs2 docs --module <path>: restricts the lookup to one module" {
+    then "`docs --module nope` reports the module as absent (value reached show_module)" {
+        let out = docs_probe("module", "--module nope")
+        out.contains("No module 'nope' found")
+    }
+}
+
+spec "bs2 docs --scope <s>: scope option parses on the query path" {
+    then "`docs --scope project bar` still resolves the symbol" {
+        let out = docs_probe("scope", "--scope project bar")
+        out.contains("fn bar(n: int) -> int")
     }
 }
 

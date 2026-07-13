@@ -196,19 +196,23 @@ fn optiondef_lit(name: string, short: ExprId, default_val: ExprId, desc: ExprId)
     synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [n, sh, d, dv]))
 }
 
-/// A `@std::cli::CommandSpec { name, description, flags, args, options }`
-/// literal — the command's identity + parse schema as DATA. The `*_defs` are
-/// already-built `FlagDef`/`ArgDef`/`OptionDef` literal ExprIds (carrying each
-/// leaf's `short` / `default` config), assembled by `build_command_gen` where
-/// the leaf configs are in scope; this fn just wraps them in the spec.
+/// A `@std::cli::CommandSpec { name, description, hidden, flags, args,
+/// options }` literal — the command's identity + parse schema as DATA. The
+/// `*_defs` are already-built `FlagDef`/`ArgDef`/`OptionDef` literal ExprIds
+/// (carrying each leaf's `short` / `default` config), assembled by
+/// `build_command_gen` where the leaf configs are in scope; this fn just
+/// wraps them in the spec. `hidden` is the command's `hidden true` config
+/// (read via config_bool — a comptime-known literal), which keeps the
+/// command out of the app-level help's COMMANDS list.
 @comptime
-fn command_spec_lit(name: string, desc: ExprId, flag_defs: List<ExprId>, arg_defs: List<ExprId>, opt_defs: List<ExprId>) -> ExprId {
+fn command_spec_lit(name: string, desc: ExprId, hidden: bool, flag_defs: List<ExprId>, arg_defs: List<ExprId>, opt_defs: List<ExprId>) -> ExprId {
     let f_name = FieldInit { name: "name", value_id: str_lit(name) }
     let f_desc = FieldInit { name: "description", value_id: desc }
+    let f_hidden = FieldInit { name: "hidden", value_id: bool_lit(hidden) }
     let f_flags = FieldInit { name: "flags", value_id: synth_expr_id(Expr.ListLit(flag_defs)) }
     let f_args = FieldInit { name: "args", value_id: synth_expr_id(Expr.ListLit(arg_defs)) }
     let f_opts = FieldInit { name: "options", value_id: synth_expr_id(Expr.ListLit(opt_defs)) }
-    synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [f_name, f_desc, f_flags, f_args, f_opts]))
+    synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [f_name, f_desc, f_hidden, f_flags, f_args, f_opts]))
 }
 
 /// The set of flags a command accepts: its own flags plus inherited global
@@ -271,10 +275,13 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
     // of result_get_arg → string) as well as the ArgDef literal.
     mut arg_variadics: List<bool> = []
     mut desc = str_lit("")
+    // The command's `hidden true` config — display-only (see CommandSpec).
+    mut hidden = false
     match s {
         .ComponentBlock(_, instance, cfg, body) -> {
             inst = instance
             desc = config_value_or_empty(cfg, "description")
+            hidden = config_bool(cfg, "hidden")
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
@@ -390,7 +397,7 @@ fn build_command_gen(s: Stmt, extra_flags: List<string>, extra_flag_defs: List<E
 
     // The Subcommand literal: schema (CommandSpec, from the SAME collected
     // data) paired with a fresh behaviour instance.
-    let spec_expr = command_spec_lit(inst, desc, schema_flag_defs, arg_defs, opt_defs)
+    let spec_expr = command_spec_lit(inst, desc, hidden, schema_flag_defs, arg_defs, opt_defs)
     let subcommand = subcommand_lit(inst, spec_expr)
 
     CommandGen { decls: [type_decl, impl_stmt], subcommand: subcommand }

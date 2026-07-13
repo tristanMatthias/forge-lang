@@ -45,10 +45,15 @@ export type ArgDef = { name: string, description: string, required: bool, variad
 /// `dyn Runnable` it is paired with in a `Subcommand`. Homogeneous data, so
 /// `App.run` reads its fields DIRECTLY (`c.meta.name`, `c.meta.flags`) — no
 /// vtable, no accessor methods. expand_cli builds one per command; a
-/// hand-written command supplies its own.
+/// hand-written command supplies its own. `hidden: true` keeps the command
+/// out of the app-level `--help` COMMANDS list (for internal commands like
+/// `_test_shard` that users never invoke directly); it still dispatches
+/// normally and its own `<cmd> --help` still renders — hiding is
+/// display-only.
 export type CommandSpec = {
     name: string,
     description: string,
+    hidden: bool,
     flags: List<FlagDef>,
     args: List<ArgDef>,
     options: List<OptionDef>
@@ -239,7 +244,8 @@ impl App {
 
 /// App-level `--help`: name/version, optional description, usage, and
 /// the command list with each command's one-line description (read
-/// directly from each `Subcommand`'s `meta`).
+/// directly from each `Subcommand`'s `meta`). Commands marked `hidden`
+/// are omitted — they still dispatch, they just aren't advertised.
 fn app_print_help(app: App) {
     println("${app.name} v${app.version}")
     if app.description != "" {
@@ -251,7 +257,9 @@ fn app_print_help(app: App) {
     println("")
     println("COMMANDS:")
     for c in app.commands {
-        println("  ${c.meta.name}  ${c.meta.description}")
+        if !c.meta.hidden {
+            println("  ${c.meta.name}  ${c.meta.description}")
+        }
     }
 }
 
@@ -302,9 +310,18 @@ fn cmd_usage_tail(meta: CommandSpec) -> string {
     s
 }
 
-/// Left-column text for a flag in `--help` — `--name` or `--name, -s`.
+/// Left-column text for a flag in `--help` — `--name`, then the `-s` short,
+/// then each alias, comma-separated. Every listed spelling is a LITERAL
+/// whole token that sets this flag, which is what makes showing an
+/// option-form alias (`--message-format=json`) alongside a bare one
+/// (`--used-by`) honest: the column reads as "type any of these".
 fn flag_display(f: FlagDef) -> string {
-    if f.short != "" { "${f.name}, ${f.short}" } else { f.name }
+    mut s = f.name
+    if f.short != "" { s = "${s}, ${f.short}" }
+    for al in f.aliases {
+        s = "${s}, ${al}"
+    }
+    s
 }
 
 /// Left-column text for an option — same shape as a flag.

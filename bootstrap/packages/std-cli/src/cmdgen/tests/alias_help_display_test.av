@@ -1,0 +1,56 @@
+// A flag's aliases render in its `--help` line: `--name, -s, <alias>, …`.
+// Every listed spelling is a LITERAL whole token that sets the flag, so both
+// a bare alias (`--used-by`) and an option-form alias
+// (`--message-format=json`) display verbatim — the column reads as "type any
+// of these". Flags without aliases keep their existing `--name[, -s]`
+// formatting. Exercises flag_display (cli.av) fed by cmdgen's alias config.
+//
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
+// @comptime bodies are available. `ahd_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn ahd_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command go {\n" +
+    "        flag callers { alias \"--used-by\", description \"reverse graph\" }\n" +
+    "        flag json { alias \"--message-format=json\" }\n" +
+    "        flag plain { short \"-p\", description \"no aliases\" }\n" +
+    "        run() {\n" +
+    "            return 0\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    let _ = toy.run_argv([\"go\", \"--help\"])\n" +
+    "}\n"
+}
+
+fn ahd_run() -> string {
+    write_fixture_and_run("/tmp/avra_alias_help_display_test.av", ahd_src())
+}
+
+spec "flag aliases surface in the --help FLAGS section" {
+    then "a bare word alias displays after the canonical spelling" {
+        let out = ahd_run()
+        out.contains("--callers, --used-by")
+    }
+    then "an option-form alias displays verbatim (it IS a typable token)" {
+        let out = ahd_run()
+        out.contains("--json, --message-format=json")
+    }
+    then "an alias-less flag keeps the `--name, -s` formatting" {
+        let out = ahd_run()
+        out.contains("--plain, -p")
+    }
+}
