@@ -1,0 +1,108 @@
+// WHY: t-83ja — statements after an early terminator (return / break /
+// continue) used to be emitted PAST the block's terminator, producing
+// invalid LLVM IR ("Terminator found in the middle of a basic block!")
+// that the compiler shipped anyway: the LLVM verifier was called but its
+// result discarded, so the breakage surfaced only at llc. Two fixes pin
+// this class shut: (1) the block walkers (emit_stmt_ids, emit_block_loop,
+// emit_block_loop_ctx, emit_body_block's tail-lambda path) drop dead
+// statements once the current block is terminated; (2) verify_fn /
+// verify_module results are FATAL — a broken function fails the compile
+// as an ICE instead of writing a bad .ll. Every fn below would previously
+// brick this whole test binary at llc, so merely compiling+running this
+// file exercises the fix; the assertions pin the dead code stays dead.
+
+// The t-83ja mutation shape verbatim: bare return first, then an if, lets,
+// and a `with` tail over a struct.
+type DcrBox = { line: int, col: int }
+
+fn dcr_with_shape(b: DcrBox, flag: bool) -> DcrBox {
+    return b
+    if flag { return b }
+    let lc = b.line + 1
+    if lc == 0 { return b }
+    b with { line: lc, col: 9 }
+}
+
+fn dcr_top_level(n: int) -> int {
+    return n + 1
+    if n > 0 { return 99 }
+    let x = n * 2
+    x + 7
+}
+
+fn dcr_after_break(limit: int) -> int {
+    mut total = 0
+    mut i = 0
+    while i < limit {
+        if i == 3 {
+            break
+            total = total + 1000
+        }
+        total = total + i
+        i = i + 1
+    }
+    total
+}
+
+fn dcr_after_continue(limit: int) -> int {
+    mut total = 0
+    mut i = 0
+    while i < limit {
+        i = i + 1
+        if i % 2 == 0 {
+            continue
+            total = total + 1000
+        }
+        total = total + i
+    }
+    total
+}
+
+fn dcr_match_arm(n: int) -> int {
+    match n {
+        0 -> {
+            return 100
+            let dead = n + 1
+        }
+        _ -> {}
+    }
+    n + 5
+}
+
+// Dead TAIL LAMBDA under a fn-typed declared return — exercises
+// emit_body_block's special-cased tail-lambda path, not the plain loop.
+fn dcr_dead_tail_lambda() -> fn(int) -> int {
+    return (x) -> x + 1
+    (x) -> x - 1
+}
+
+spec "dead code after early terminators (t-83ja)" {
+    given "a fn whose body continues after a bare early return" {
+        then "the early return wins and the dead tail is dropped" {
+            dcr_top_level(41) == 42
+        }
+        then "the exact t-83ja shape (dead if/let/with tail) returns the early value" {
+            let b = dcr_with_shape(DcrBox { line: 5, col: 2 }, true)
+            b.line == 5 && b.col == 2
+        }
+    }
+    given "dead statements after break and continue in a loop" {
+        then "break exits before the dead statement runs" {
+            dcr_after_break(10) == 3
+        }
+        then "continue skips the dead statement" {
+            dcr_after_continue(4) == 4
+        }
+    }
+    given "a match arm that returns before more statements" {
+        then "the taken arm returns early; other inputs fall through" {
+            dcr_match_arm(0) == 100 && dcr_match_arm(7) == 12
+        }
+    }
+    given "a dead tail lambda after an early return of a closure" {
+        then "the returned closure is the live one" {
+            let f = dcr_dead_tail_lambda()
+            f(41) == 42
+        }
+    }
+}

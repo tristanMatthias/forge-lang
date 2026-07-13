@@ -133,6 +133,10 @@ fn emit_body_block(body_cg: Ctx, env: List<VarBinding>, body_ids: List<StmtId>, 
                         // param env so a no-prefix tail lambda still sees
                         // the enclosing fn's params for capture analysis.
                         let pre_env = if last_i == 0 { env } else { pre.env }
+                        // Prefix ended in a terminator (early return): the
+                        // tail lambda is dead code — don't emit past the
+                        // terminator (t-83ja).
+                        if pre.ctx.has_terminator() { return ok_br(pre.value, pre.ty, pre.ctx, pre_env) }
                         // Mirror emit_block_loop_ctx's tail handling:
                         // position + coverage line before the emit.
                         let pos = body_cg.nodes.stmt_pos(body_ids[last_i])
@@ -250,7 +254,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
         }
     }
     body_cg.cov_finalize_fn()
-    ctx.verify_fn(fn_val)
+    if !ctx.verify_fn(fn_val) {
+        return err_stmt("internal compiler error (ICE): LLVM verification failed for function `${name}` — codegen produced invalid IR (verifier report above)")
+    }
     let e: List<VarBinding> = []
     ok_stmt(e)
 }

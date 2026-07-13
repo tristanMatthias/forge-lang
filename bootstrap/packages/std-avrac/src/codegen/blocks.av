@@ -146,6 +146,8 @@ export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, 
     mut i = 0
     let last = stmts.length - 1
     while i < last {
+        // Dead code past a terminator: skip — see emit_stmt_ids (t-83ja).
+        if cur_ctx.has_terminator() { return ok_emit(last_val, last_ty) }
         let sid = stmts[i]
         let pos = cur_ctx.nodes.stmt_pos(sid)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
@@ -154,6 +156,7 @@ export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, 
         cur_env = sr.env
         i = i + 1
     }
+    if cur_ctx.has_terminator() { return ok_emit(last_val, last_ty) }
     let sid = stmts[last]
     let pos = cur_ctx.nodes.stmt_pos(sid)
     let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
@@ -174,6 +177,8 @@ export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtI
     mut i = 0
     let last = stmts.length - 1
     while i < last {
+        // Dead code past a terminator: skip — see emit_stmt_ids (t-83ja).
+        if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
         let sid = stmts[i]
         let pos = cur_ctx.nodes.stmt_pos(sid)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
@@ -182,6 +187,7 @@ export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtI
         cur_env = sr.env
         i = i + 1
     }
+    if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
     let sid = stmts[last]
     let pos = cur_ctx.nodes.stmt_pos(sid)
     let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }

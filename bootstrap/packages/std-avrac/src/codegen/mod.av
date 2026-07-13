@@ -66,6 +66,11 @@ export fn emit_stmt_ids(ctx: Ctx, env: List<VarBinding>, ids: List<StmtId>) -> R
     mut cur_env = env
     mut i = 0
     while i < ids.length {
+        // Dead code past a terminator (early return/break/continue): a
+        // basic block holds exactly one terminator, so emitting further
+        // statements would append past it — invalid IR that only llc
+        // rejects (t-83ja). Drop the unreachable tail instead.
+        if cur_ctx.has_terminator() { break }
         let id = ids[i]
         let pos = ctx.nodes.stmt_pos(id)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
