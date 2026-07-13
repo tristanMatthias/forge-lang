@@ -24,6 +24,7 @@ use core.{
     avra_shell_exec,
     avra_pkg_fp_cache_get,
     avra_pkg_fp_cache_set,
+    avra_selfhost_get_arg_cstr,
 }
 use build.graph.{build_graph, Unit}
 
@@ -141,6 +142,27 @@ export fn compiler_hash_for(binary_path: string) -> string {
     sha256_file(binary_path)
 }
 
+/// pdme.8: the RUNNING compiler's content hash — the toolchain axis of
+/// package_full_fingerprint. Reads argv[0], the same trust the unit
+/// cache's compiler_hash axis has always placed in it (BuildInputs.
+/// compiler_path = argv[0]); the hash is of CONTENT, not path, so the
+/// fp stays pure/machine-portable. One binary hash subsumes the
+/// runtime.o/llvm_wrapper.o inputs the pdme.8 ticket lists — bs2
+/// statically links both, so any runtime.c / llvm_wrapper.c edit
+/// changes the binary bytes. sha256_file rides the .avra-sha256
+/// sidecar (~one stat when warm) and the result is memoised per
+/// process. An unhashable argv[0] folds as "" — degrading to the
+/// pre-pdme.8 source-only key rather than failing the build, matching
+/// how compiler_hash_for callers already behave.
+export fn toolchain_fingerprint() -> string {
+    let memo_key = "toolchain:@self"
+    let cached = avra_pkg_fp_cache_get(memo_key)
+    if cached != "" { return cached }
+    let fp = sha256_file(avra_selfhost_get_arg_cstr(0))
+    if fp != "" { avra_pkg_fp_cache_set(memo_key, fp) }
+    fp
+}
+
 /// Canonical profile key. Order-stable and human-readable so that:
 ///   1. A different opt_level forces a rebuild.
 ///   2. Two equivalent profiles hash to the same key (e.g. order
@@ -201,12 +223,23 @@ export fn fp_short(fp: Fingerprint) -> string {
 /// changes fp_full for every reverse-dependent, so every reverse-
 /// dependent's cache correctly misses.
 ///
-///   fp_full(P) = sha256(fp_own(P) + Σ dep_name=fp_full(dep))
+///   fp_full(P) = sha256(fp_own(P) + toolchain_fp + Σ dep_name=fp_full(dep))
 ///
 /// The dep graph comes from the manifests' declared [dependencies]
 /// (build_graph — already transitive, cycle-detecting, topo-sorting),
 /// not from scraping `use` statements: declarations are the contract,
 /// and the graph walk is shared with the build driver.
+///
+/// pdme.8: `toolchain_fp` (the running compiler's content hash) is an
+/// input because the aggregated metadata this fp keys is a function of
+/// the EXTRACTOR too, not just the source — a bs2 whose metadata
+/// emitter changed must not serve slots stamped by the old one. The
+/// unit-level build cache already carried a compiler axis
+/// (fp_for_unit's compiler_hash); this closes the same hole at the
+/// package level. Deliberately NOT folded into the uzs9.3 content
+/// stores (obj/, link/) — those key on artifact CONTENT (same IR ⇒
+/// same object regardless of which bs2 produced it), and adding a
+/// toolchain axis there would kill their cross-toolchain reuse.
 ///
 /// Returns "" (like fp_own) when pkg_root has no avra.toml — ad-hoc
 /// single-file compiles keep their file-level scheme. A dep-graph
@@ -230,12 +263,19 @@ export fn package_full_fingerprint(pkg_root: string) -> string {
     }
     // g.units is topo-sorted (deps before dependents), so each unit's
     // direct-dep fps are already computed when its turn comes.
+    //
+    // pdme.8: the toolchain axis folds into EVERY unit's composed
+    // string (not just the queried root), so a package's fp is
+    // identical whether it's computed as the root or reached as a
+    // dep in someone else's walk — one fp per (package, toolchain).
+    let tc = toolchain_fingerprint()
     mut names: List<string> = []
     mut fps: List<string> = []
     mut root_fp = ""
     for u in g.units {
-        mut composed = "avra/pkg-full v1\n"
+        mut composed = "avra/pkg-full v2\n"
         composed = composed + "own:" + package_source_fingerprint(u.project_root) + "\n"
+        composed = composed + "toolchain:" + tc + "\n"
         for d in u.dep_names {
             composed = composed + "dep:" + d + "=" + full_fp_lookup(names, fps, d) + "\n"
         }
