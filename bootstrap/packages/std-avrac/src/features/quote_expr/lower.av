@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, diag_error, span_at}
@@ -151,8 +151,30 @@ fn any_quote_in_expr(store: NodeStore, expr: Expr) -> bool {
         .Spawn(body) -> any_quote_in_expr(store, store.exprs.get(body))
         .Isolated(body) -> any_quote_in_expr(store, store.exprs.get(body))
         .MatchExpr(subj, arms) -> any_quote_in_expr(store, store.exprs.get(subj)) || any_quote_in_match_arms(store, arms)
+        // Subjectless-match / catch / comprehension / channel-capacity bodies
+        // are expression positions too — a `quote { }` nested in one must be
+        // seen by the presence scan (else the fast-path skips lowering and the
+        // quote survives to codegen as an F9999 ICE). Kept presence-equivalent
+        // with lower_expr's arms below.
+        .When(arms) -> any_quote_in_when_arms(store, arms)
+        .Catch(inner, _, body, _, _) -> any_quote_in_expr(store, store.exprs.get(inner)) || any_quote_in_expr(store, store.exprs.get(body))
+        .ListComp(body, _, collection, filter) -> any_quote_in_expr(store, store.exprs.get(body)) || any_quote_in_expr(store, store.exprs.get(collection)) || (filter != null && any_quote_in_expr(store, store.exprs.get(filter!)))
+        .ChannelNew(_, capacity) -> capacity != null && any_quote_in_expr(store, store.exprs.get(capacity!))
         _ -> false
     }
+}
+
+/// Presence-scan sibling of `any_quote_in_match_arms` for `when` arms
+/// (WhenArm: nullable `cond_id`, non-null `body_id`).
+fn any_quote_in_when_arms(store: NodeStore, arms: List<WhenArm>) -> bool {
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond_id != null && any_quote_in_expr(store, store.exprs.get(arm.cond_id!)) { return true }
+        if any_quote_in_expr(store, store.exprs.get(arm.body_id)) { return true }
+        i = i + 1
+    }
+    false
 }
 
 
@@ -305,8 +327,30 @@ fn rq_expr(store: NodeStore, id: ExprId, in_ct: bool, bag: DiagnosticBag) -> Dia
         .Spawn(body) -> rq_expr(store, body, in_ct, bag)
         .Isolated(body) -> rq_expr(store, body, in_ct, bag)
         .MatchExpr(subj, arms) -> rq_match_arms(store, arms, in_ct, rq_expr(store, subj, in_ct, bag))
+        // Same expression positions lower_expr now recurses into — a runtime
+        // quote nested in a `when`/`catch`/comprehension/channel-capacity body
+        // must be gated here too (else it lowers to run-time-aborting shims).
+        .When(arms) -> rq_when_arms(store, arms, in_ct, bag)
+        .Catch(inner, _, body, _, _) -> rq_expr(store, body, in_ct, rq_expr(store, inner, in_ct, bag))
+        .ListComp(body, _, collection, filter) -> {
+            let b1 = rq_expr(store, body, in_ct, rq_expr(store, collection, in_ct, bag))
+            if filter != null { rq_expr(store, filter!, in_ct, b1) } else { b1 }
+        }
+        .ChannelNew(_, capacity) -> if capacity != null { rq_expr(store, capacity!, in_ct, bag) } else { bag }
         _ -> bag
     }
+}
+
+fn rq_when_arms(store: NodeStore, arms: List<WhenArm>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
+    mut cur = bag
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        if arm.cond_id != null { cur = rq_expr(store, arm.cond_id!, in_ct, cur) }
+        cur = rq_expr(store, arm.body_id, in_ct, cur)
+        i = i + 1
+    }
+    cur
 }
 
 fn rq_expr_ids(store: NodeStore, ids: List<ExprId>, in_ct: bool, bag: DiagnosticBag) -> DiagnosticBag {
@@ -444,8 +488,30 @@ fn lower_expr(store: NodeStore, expr: Expr) -> Expr {
         .Isolated(body) -> .Isolated(lower_expr_id(store, body))
         .MatchExpr(subj, arms) -> .MatchExpr(lower_expr_id(store, subj), lower_match_arms(store, arms))
         .Splice(target) -> .Splice(lower_expr_id(store, target))
+        // A `quote { }` nested in a subjectless-match / catch / comprehension /
+        // channel-capacity body was previously left un-lowered (these fell to
+        // the `_` arm), surviving to codegen as an F9999 ICE. Recurse into
+        // them like every other expression container.
+        .When(arms) -> .When(lower_when_arms(store, arms))
+        .Catch(inner, binding, body, line, col) -> .Catch(lower_expr_id(store, inner), binding, lower_expr_id(store, body), line, col)
+        .ListComp(body, variable, collection, filter) -> {
+            let lf = if filter == null { null } else { lower_expr_id(store, filter!) }
+            .ListComp(lower_expr_id(store, body), variable, lower_expr_id(store, collection), lf)
+        }
+        .ChannelNew(elem, capacity) -> {
+            let lc = if capacity == null { null } else { lower_expr_id(store, capacity!) }
+            .ChannelNew(elem, lc)
+        }
         _ -> expr
     }
+}
+
+/// Lower quotes in `when` arms — the WhenArm sibling of `lower_match_arms`.
+fn lower_when_arms(store: NodeStore, arms: List<WhenArm>) -> List<WhenArm> {
+    list_map(arms, (arm: WhenArm) -> {
+        let lc = if arm.cond_id == null { null } else { lower_expr_id(store, arm.cond_id!) }
+        WhenArm { cond_id: lc, body_id: lower_expr_id(store, arm.body_id) }
+    })
 }
 
 /// Lower quotes over a flipped `List<ExprId>` (call args) — the id twin of

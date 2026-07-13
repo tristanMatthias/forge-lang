@@ -69,6 +69,35 @@ spec "a runtime quote is rejected at compile time (i0yg)" {
             "}\n")
         out.contains("F4009")
     }
+    then "a quote in a `catch` body is caught (was an un-lowered F9999 ICE)" {
+        // catch/when/comprehension/channel bodies are expression positions the
+        // quote lowering must recurse into — before this a quote there survived
+        // un-lowered to codegen and ICE'd (F9999) instead of a clean F4009.
+        let out = rqg_check_out("catch",
+            CORE_IMPORT +
+            "fn risky() -> int { 1 }\n" +
+            "fn main() {\n" +
+            "    let r = risky() catch (e) {\n" +
+            "        let q = quote { 1 + 2 }\n" +
+            "        0\n" +
+            "    }\n" +
+            "    let _ = r\n" +
+            "}\n")
+        out.contains("F4009") && !out.contains("F9999")
+    }
+    then "a quote in a subjectless-match (`when`) arm is caught" {
+        let out = rqg_check_out("whenarm",
+            CORE_IMPORT +
+            "fn main() {\n" +
+            "    let n = 5\n" +
+            "    let q = when {\n" +
+            "        n > 0 -> quote { 1 }\n" +
+            "        else -> quote { 2 }\n" +
+            "    }\n" +
+            "    let _ = q\n" +
+            "}\n")
+        out.contains("F4009") && !out.contains("F9999")
+    }
 }
 
 spec "legitimate comptime quotes are NOT flagged" {
@@ -81,5 +110,17 @@ spec "legitimate comptime quotes are NOT flagged" {
             "}\n" +
             "fn main() { println(\"ok\") }\n")
         !out.contains("F4009")
+    }
+    then "a `quote` inside a `catch` body of a `@comptime` fn checks clean" {
+        let out = rqg_check_out("comptime_catch_ok",
+            CORE_IMPORT +
+            "fn risky() -> int { 1 }\n" +
+            "@comptime\n" +
+            "fn make() -> Expr {\n" +
+            "    let r = risky() catch (e) { 0 }\n" +
+            "    quote { 1 + 2 }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+        !out.contains("F4009") && !out.contains("F9999")
     }
 }
