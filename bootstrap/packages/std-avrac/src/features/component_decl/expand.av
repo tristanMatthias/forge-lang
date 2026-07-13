@@ -15,7 +15,7 @@
 // construction is the factory, post-construction work is an explicit
 // method call, and children land in typed list fields.
 
-use core.{Expr, Stmt, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct}
+use core.{Expr, Stmt, FieldEntry, FieldInit, ParamEntry, ValueType, CompConfig, CompConfigPair, ChildrenSlot, TypeParamEntry, find_annotation, vtype_struct, body_declares_token_stream}
 use core.{NodeStore, StmtId, ExprId, SrcPos}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, diag_error, span_at}
 use list_ops.{list_concat, list_map}
@@ -384,7 +384,21 @@ fn validate_stmt(store: NodeStore, id: StmtId, reg: List<CompDefEntry>, in_bag: 
                 bag = validate_stmt(store, child, reg, bag)
             }
         }
-        .ComponentDef(_, _, _, _, _, body) -> {
+        .ComponentDef(name, _, _, _, _, body) -> {
+            // A def declaring `body: TokenStream` without `@expand` has
+            // no macro to parse its instances' raw text — the data
+            // splice cannot consume a token body (F4101). @expand'd
+            // defs never land in `reg`, but this walker sees every def,
+            // so gate on the annotation directly.
+            let has_expand = find_annotation(store, store.stmts.get(id), "expand") != null
+            if !has_expand && body_declares_token_stream(store, body) {
+                let p = store.stmt_pos(id)
+                bag = bag_report(bag, diag_error(
+                    DiagCode.ComponentTokenBodyNeedsMacro,
+                    "component `${name}` declares `body: TokenStream` but has no `@expand(macro)` to parse it",
+                    span_at(0, 0, p.line, p.col, p.file)
+                ))
+            }
             for child in body {
                 bag = validate_stmt(store, child, reg, bag)
             }

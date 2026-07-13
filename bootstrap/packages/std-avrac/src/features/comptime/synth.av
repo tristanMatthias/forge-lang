@@ -98,3 +98,17 @@ export fn synth_deref_stmt_ids(ids: List<StmtId>) -> List<Stmt> {
     synth_shim_unreachable("synth_deref_stmt_ids")
     []
 }
+
+/// Raw text of a `body: TokenStream` instance body (vez6.9) — the
+/// single TokenBody row's verbatim source, or "" when the body isn't a
+/// raw token body. @comptime (unlike the name-intercepted shims): the
+/// evaluator interprets this body, and the deref inside resolves
+/// through the same intercepts every macro uses.
+@comptime
+export fn token_body_text(body: List<StmtId>) -> string {
+    if body.length != 1 { return "" }
+    match synth_deref_stmt(body[0]) {
+        .TokenBody(text) -> text
+        _ -> ""
+    }
+}

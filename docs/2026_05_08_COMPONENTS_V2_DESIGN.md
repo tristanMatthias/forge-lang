@@ -50,7 +50,7 @@ Feature status against §3:
 | 3.3 / 3.4 quote / splice | ✅ shipped — repeating `~list` (#722), computed `~(expr)` (#723); evaluator `{}` map-lit gap fixed (rmzs) |
 | 3.2 rich inspection (`children_of_type` / `method_body` / `parent_chain_flags`) | ❌ macros walk manually via `comp_children` / `match` |
 | 3.7 hygiene / `@unhygienic` | ❌ not implemented |
-| 3.6.4 `body: TokenStream` | ❌ not implemented |
+| 3.6.4 `body: TokenStream` | ✅ shipped (vez6.9) — token-balanced raw capture to `Stmt.TokenBody`, macro reads via `token_body_text`; children-conflict + missing-@expand (F4101) diagnostics |
 
 Beyond §4.2, flag `short` + option `default` config are read into the schema (`-v` dispatches, defaults apply). Proven at scale: a 16-command CLI mirroring `main.av` expands + dispatches correctly. Phase 12 (main.av migration) is the remaining consumer work.
 

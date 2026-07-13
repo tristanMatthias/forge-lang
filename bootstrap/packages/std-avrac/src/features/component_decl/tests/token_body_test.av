@@ -1,0 +1,122 @@
+// `body: TokenStream` (Components V2 §3.6.4): a component whose
+// instance blocks are RAW token bodies, captured verbatim between
+// balanced braces and handed to the @expand macro to parse as it sees
+// fit. These specs pin the whole pipeline: raw capture (incl. nested
+// braces, braces inside strings, empty bodies), the token_body_text
+// macro accessor, the children-conflict and missing-@expand
+// diagnostics, and the fmt fixed point.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{cached_fixture_run, write_fixture}
+
+// The sql-ish macro shared by the run fixtures: expands each instance
+// to `let <inst> = "<raw text>"`.
+const TB_MACRO: string =
+    "use @std.avrac.core.{Stmt, Expr, ValueType}\n" +
+    "use @std.avrac.features.comptime.{synth_expr_id, token_body_text}\n" +
+    "\n" +
+    "@comptime\n" +
+    "fn parse_sql(s: Stmt) -> List<Stmt> {\n" +
+    "    match s {\n" +
+    "        .ComponentBlock(_, inst, _, body) -> {\n" +
+    "            let text = token_body_text(body)\n" +
+    "            [Stmt.Let(inst, ValueType.Unknown, synth_expr_id(Expr.String(\"\\\"\" + text + \"\\\"\")))]\n" +
+    "        }\n" +
+    "        _ -> []\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "@expand(parse_sql)\n" +
+    "component sql {\n" +
+    "    body: TokenStream\n" +
+    "}\n"
+
+fn tb_run(path: string, block_and_main: string) -> string {
+    write_fixture(path, TB_MACRO + "\n" + block_and_main)
+    cached_fixture_run(path)
+}
+
+fn tb_compile_out(path: string, src: string) -> string {
+    write_fixture(path, src)
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "body: TokenStream captures raw source for the macro" {
+    then "the macro receives the verbatim token text" {
+        let out = tb_run("/tmp/avra_tb_happy.av",
+            "sql q { SELECT * FROM users WHERE age > 18 }\n" +
+            "fn main() { println(q) }\n")
+        out.contains("SELECT * FROM users WHERE age > 18")
+    }
+    then "nested balanced braces stay inside the body" {
+        let out = tb_run("/tmp/avra_tb_nested.av",
+            "sql q { outer { inner } tail }\n" +
+            "fn main() { println(q) }\n")
+        out.contains("outer { inner } tail")
+    }
+    then "a brace inside a string literal does not close the body" {
+        let out = tb_run("/tmp/avra_tb_strbrace.av",
+            "sql q { left \"}\" right }\n" +
+            "fn main() { println(q) }\n")
+        out.contains("left") && out.contains("right")
+    }
+    then "an empty body yields the empty string" {
+        let out = tb_run("/tmp/avra_tb_empty.av",
+            "sql q {}\n" +
+            "fn main() { println(\"[\" + q + \"]\") }\n")
+        out.contains("[]")
+    }
+}
+
+spec "body: TokenStream misuse errors" {
+    then "children + body: TokenStream in one def is a parse error" {
+        let out = tb_compile_out("/tmp/avra_tb_conflict.av",
+            "component both_kinds {\n" +
+            "    children { items: List<both_kinds> }\n" +
+            "    body: TokenStream\n" +
+            "}\n" +
+            "fn main() {}\n")
+        out.contains("declares both")
+    }
+    then "body: TokenStream without @expand is F4101" {
+        let out = tb_compile_out("/tmp/avra_tb_nomacro.av",
+            "component orphan_raw {\n" +
+            "    body: TokenStream\n" +
+            "}\n" +
+            "orphan_raw x { SELECT 1 }\n" +
+            "fn main() {}\n")
+        out.contains("F4101")
+    }
+    then "an unbalanced body is a named parse error" {
+        let out = tb_compile_out("/tmp/avra_tb_unbalanced.av",
+            TB_MACRO +
+            "sql q { SELECT { FROM\n" +
+            "fn main() {}\n")
+        out.contains("unterminated `body: TokenStream` block")
+    }
+}
+
+spec "body: TokenStream formatting is a fixed point" {
+    then "fmt renders the raw body verbatim and re-fmt agrees" {
+        write_fixture("/tmp/avra_tb_fmt.av", TB_MACRO +
+            "sql q { SELECT * FROM users }\n" +
+            "fn main() { println(q) }\n")
+        let once = avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 fmt /tmp/avra_tb_fmt.av 2>/dev/null")
+        write_fixture("/tmp/avra_tb_fmt2.av", once)
+        let twice = avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 fmt /tmp/avra_tb_fmt2.av 2>/dev/null")
+        once.contains("sql q { SELECT * FROM users }") && once == twice
+    }
+}
+
+spec "the let spelling declares a token body too" {
+    then "`let body: TokenStream` routes instances to raw capture" {
+        let out = tb_run("/tmp/avra_tb_letform.av",
+            "@expand(parse_sql)\n" +
+            "component sql2 {\n" +
+            "    let body: TokenStream\n" +
+            "}\n" +
+            "sql2 r { DROP TABLE ghosts }\n" +
+            "fn main() { println(r) }\n")
+        out.contains("DROP TABLE ghosts")
+    }
+}

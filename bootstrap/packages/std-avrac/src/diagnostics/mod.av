@@ -407,6 +407,10 @@ export enum DiagCode {
     /// `children { ... }` schema. The compiler refuses to splice
     /// the mismatched child.
     ComponentChildInvalid
+    /// F4101 — a component declares `body: TokenStream` but carries no
+    /// `@expand(macro)` annotation. Raw token bodies exist for macros
+    /// to parse; the data-component splice cannot consume one.
+    ComponentTokenBodyNeedsMacro
     // ── Internal (F9999) ────────────────────────────────────────────
     /// F9999 — internal compiler error. Compiler invariant violated;
     /// the bug is in the compiler, not the user's code. Report.
@@ -503,6 +507,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ComptimeImpureCall  -> ErrorDef { code: "F4008", help: "a @comptime fn may only do pure compile-time compute — it (or a fn it transitively calls) reaches an impure extern (IO/filesystem/process/clock/stdin); remove the effectful call from the comptime path" }
         .QuoteOutsideComptime -> ErrorDef { code: "F4009", help: "`quote { ... }` builds AST for macros and only works inside a `@comptime` fn or an `@expand` macro; move it into comptime code, or drop the quote if you meant a normal expression" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
+        .ComponentTokenBodyNeedsMacro -> ErrorDef { code: "F4101", help: "a raw token body needs a macro to parse it — annotate the component definition with `@expand(<macro_fn>)`" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
         .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "guard the divisor: `if denom != 0 { num / denom } else { default }`" }

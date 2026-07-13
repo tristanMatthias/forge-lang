@@ -4611,6 +4611,10 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         // system); their bodies never reach this pass.
         .ComponentDef(_, _, _, _, _, _) -> stmt
         .ComponentBlock(_, _, _, _) -> stmt
+        // Raw token body — lives only inside a TokenStream component's
+        // block, which the macro pipeline replaces wholesale; a leftover
+        // is caught by the expansion-gate diagnostics before this pass.
+        .TokenBody(_) -> stmt
         // Parser error-tolerance sentinels — nothing to annotate.
         .Error -> stmt
         .Missing -> stmt

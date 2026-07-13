@@ -2100,6 +2100,12 @@ export enum Stmt {
     ComponentDef(name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, implements: List<string>, body: List<StmtId>)
     /// Component instantiation: `component Foo as bar { config; body }`.
     ComponentBlock(comp_name: string, instance: string, config: List<CompConfigPair>, body: List<StmtId>)
+    /// Raw token body of a `body: TokenStream` component (vez6.9). In a
+    /// DEF body, an empty-text row marks the declaration; in an INSTANCE
+    /// block, the single body row carries the verbatim source between the
+    /// braces for the @expand macro to parse as it sees fit. Never
+    /// survives expansion — typeck rejects a leftover.
+    TokenBody(text: string)
     /// Error placeholder — the parser emits this on a syntax error and
     /// resyncs (spine §14.5) so a broken source still yields a partial
     /// tree. The diagnostic + bad span live in the arena's error
@@ -2679,6 +2685,7 @@ export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
         .ComponentDef(name, params, _, _, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_ids(store, body)})"
         .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_ids(store, body)})"
+        .TokenBody(text) -> "(token-body ${text})"
         .Error -> "(error)"
         .Missing -> "(missing)"
     }
