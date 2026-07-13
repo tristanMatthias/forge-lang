@@ -42,10 +42,11 @@ Every plain component is a **data component**. It expands to:
 - A factory function (`fn foo_new(name: string) -> Foo`) that
   fills in config defaults + zeroed children lists.
 - One prefixed free fn per method declared in the body
-  (`fn describe` in `component user` becomes `fn user_describe`).
-  No method name is special: construction is the factory,
-  cleanup is the `Drop` trait, post-construction work is an
-  explicit method call.
+  (`fn describe` in `component user` becomes `fn user_describe`,
+  called free-fn style). A leading `self` receiver is stamped to
+  the synthesized struct type. No method name is special:
+  construction is the factory, cleanup is the `Drop` trait,
+  post-construction work is an explicit method call.
 
 ```avra
 component user {
@@ -59,8 +60,8 @@ component user {
     }
 }
 
-let alice = user "alice" { admin: true, role: "admin" }
-println(alice.describe())
+user alice { admin = true, role = "admin" }
+println(user_describe(alice))
 ```
 
 An instantiation `foo inst { … }` becomes

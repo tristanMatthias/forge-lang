@@ -204,10 +204,11 @@ fn config_to_factory_inits(store: NodeStore, config: List<CompConfig>) -> List<F
 }
 
 /// Walk a component body collecting every fn declaration into a
-/// prefixed free function (`fn describe` in `component user` becomes
-/// `fn user_describe`). No name is special: `init`/`drop` receive no
-/// hook treatment — construction is the factory, cleanup is the Drop
-/// trait, post-construction work is an explicit method call.
+/// prefixed free function (`fn describe(self)` in `component user`
+/// becomes `fn user_describe(self: User)`, called as
+/// `user_describe(alice)`). No name is special: `init`/`drop` receive
+/// no hook treatment — construction is the factory, cleanup is the
+/// Drop trait, post-construction work is an explicit method call.
 fn extract_methods(store: NodeStore, body: List<StmtId>, comp_name: string) -> List<StmtId> {
     mut out: List<StmtId> = []
     mut i = 0
@@ -215,13 +216,33 @@ fn extract_methods(store: NodeStore, body: List<StmtId>, comp_name: string) -> L
         let id = body[i]
         match store.stmts.get(id) {
             .Function(fn_name, tp, params, rvt, fn_body) -> {
-                let new_fn = Stmt.Function("${comp_name}_${fn_name}", tp, params, rvt, fn_body)
+                let stamped = stamp_self_receiver(params, capitalize(comp_name))
+                let new_fn = Stmt.Function("${comp_name}_${fn_name}", tp, stamped, rvt, fn_body)
                 let p = store.stmt_pos(id)
                 out.push(synth_row(store, new_fn, p.line, p.col))
             }
             _ -> {}
         }
         i = i + 1
+    }
+    out
+}
+
+/// Stamp a leading `self` receiver to the component's synthesized
+/// struct type. Methods are extracted verbatim into free fns, and a
+/// bare `self` parses with the untyped-param default (Int) — field
+/// access on it would then ICE in codegen as an int. Mirrors
+/// impl-block semantics: the receiver is always the component's type.
+/// The ty_id is left null so downstream resolves through the vtype,
+/// exactly like the factory's synthesized params.
+fn stamp_self_receiver(params: List<ParamEntry>, type_name: string) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for (i, p) in params.enumerate() {
+        if i == 0 && p.name == "self" {
+            out.push(ParamEntry { name: "self", vtype: vtype_struct(type_name, 0) })
+        } else {
+            out.push(p)
+        }
     }
     out
 }

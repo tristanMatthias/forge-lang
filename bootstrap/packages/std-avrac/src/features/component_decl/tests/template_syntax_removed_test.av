@@ -1,0 +1,38 @@
+// The template flavour is gone: its surface syntax must FAIL to
+// compile, not silently do nothing. `on <event>` no longer parses
+// inside a component body, and `self.__parent` in a method body is
+// an unknown struct field — both former template idioms now error.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn tsr_compile(path: string, src: string) -> string {
+    write_fixture(path, src)
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "template syntax is rejected" {
+    then "`on <event>` in a component body is a parse error (F0001)" {
+        let out = tsr_compile("/tmp/avra_tsr_on_event.av",
+            "component tsr_probe {\n" +
+            "    config { port: int = 1 }\n" +
+            "    on after_children {\n" +
+            "        println(\"x\")\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { tsr_probe p {} }\n")
+        out.contains("F0001")
+    }
+    then "`self.__parent` in a method body is not a field (compile error)" {
+        let out = tsr_compile("/tmp/avra_tsr_parent_field.av",
+            "component tsr_child {\n" +
+            "    config { n: int = 1 }\n" +
+            "    fn hop(self) -> int { self.__parent }\n" +
+            "}\n" +
+            "fn main() {\n" +
+            "    tsr_child c {}\n" +
+            "    println(string(tsr_child_hop(c)))\n" +
+            "}\n")
+        out.contains("error")
+    }
+}
