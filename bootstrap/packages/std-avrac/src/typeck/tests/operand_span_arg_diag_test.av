@@ -1,0 +1,46 @@
+// A wrong-typed call argument must be reported AT THE ARGUMENT's own
+// source position, not at the call statement's head — the arena records
+// a byte span per expression id (span_of + expr_linecol), so the checker
+// repositions itself at each argument before gating it. Hash-consed
+// leaves (bare literals/idents) deliberately carry no span — a shared
+// leaf has no single source occurrence — so they fall back to the
+// statement's stamp instead of inheriting a sibling argument's position.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn check_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_operand_span_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "call-arg diagnostics point at the offending argument" {
+    then "a composite arg on its own line carets that line, not the call head" {
+        let out = check_out("composite",
+            "fn want(s: string) { println(s) }\n" +
+            "fn main() {\n" +
+            "    want(\n" +
+            "        1 + 2)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+    then "the second of two args carets its own position, not the first's" {
+        let out = check_out("second",
+            "fn two(a: int, b: string) { println(b) }\n" +
+            "fn main() {\n" +
+            "    two(1 + 1,\n" +
+            "        2 + 3)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+    then "a span-less leaf arg falls back to the statement head, never a sibling" {
+        let out = check_out("leaf",
+            "fn want(s: string) { println(s) }\n" +
+            "fn main() {\n" +
+            "    want(\n" +
+            "        123)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":3:5")
+    }
+}
