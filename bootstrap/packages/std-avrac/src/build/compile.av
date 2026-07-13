@@ -11,7 +11,7 @@
 
 use core.{avra_process_forward, avra_shell_exec}
 use core.{NodeStore}
-use features.quote_expr.{lower_quotes}
+use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use features.marshal.{derive_marshal}
@@ -68,6 +68,10 @@ fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Re
 }
 
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
+    // i0yg: reject a `quote { ... }` used outside `@comptime`/`@expand` BEFORE
+    // lowering explodes it into `synth_*` shims that abort at run time. Run on
+    // the pre-lowering program so each quote is one node with its own span.
+    let _ = guard_bag(report_runtime_quotes(target.store, target.program), target.diag_filename, "runtime quote error")?
     let post_quote = lower_quotes(target.program, target.store)
     let desugared = desugar_program(post_quote, target.store)
     let with_intrinsics = inject_intrinsics(desugared, target.store)

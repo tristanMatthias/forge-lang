@@ -1,0 +1,85 @@
+// A `quote { ... }` is a compile-time metaprogramming construct: it lowers to
+// the comptime-only `synth_*` node-id shims (features/comptime/synth.av), which
+// the comptime evaluator intercepts and which have NO compiled body. So a quote
+// reached by COMPILED (non-`@comptime`) code used to compile fine and then abort
+// at run time with `internal error: synth_expr_id is comptime-only` (exit 99) —
+// a ZERO-RAW-ERRORS violation (i0yg). It is now rejected at compile time with
+// F4009 by a pre-lowering pass (features/quote_expr `report_runtime_quotes`)
+// that walks the AST tracking `@comptime` context while each quote is still one
+// node carrying its own span. Legitimate quotes inside `@comptime` fns and
+// `@expand` macros stay untouched — they run only at compile time.
+//
+// `rqg_`-prefixed fixtures against cross-shard filename collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn rqg_check_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_runtime_quote_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+fn rqg_compile_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_runtime_quote_c_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+let CORE_IMPORT = "use @std.avrac.core.{Expr, Stmt, ExprId, StmtId}\n"
+
+spec "a runtime quote is rejected at compile time (i0yg)" {
+    then "a `quote` in a plain fn is F4009, at the quote's own span" {
+        let out = rqg_check_out("plain",
+            CORE_IMPORT +
+            "fn main() {\n" +
+            "    let q = quote { let x = 1 }\n" +
+            "}\n")
+        out.contains("F4009") && out.contains(":3:13")
+    }
+    then "the compile path rejects it too (no binary crash at run time)" {
+        // Before i0yg this compiled and aborted at run time (exit 99). The
+        // gate must stop it at compile time — the F4009 is the whole point.
+        let out = rqg_compile_out("plain",
+            CORE_IMPORT +
+            "fn main() {\n" +
+            "    let q = quote { 1 + 2 }\n" +
+            "}\n")
+        out.contains("F4009")
+    }
+    then "an expr quote reports ONCE, not once per lowered synth leaf" {
+        // A single `quote { 1 + 2 }` lowers to a tree of `synth_*` calls; a
+        // per-leaf gate would fire many times (and at synthetic spans). The
+        // pre-lowering gate reports exactly one F4009 at the quote node.
+        let out = rqg_check_out("once",
+            CORE_IMPORT +
+            "fn main() {\n" +
+            "    let q = quote { 1 + 2 }\n" +
+            "}\n")
+        let first = out.index_of("F4009")
+        let after = out.substring(first + 5, out.length)
+        first >= 0 && !after.contains("F4009")
+    }
+    then "a quote nested in a call argument is still caught" {
+        let out = rqg_check_out("nested",
+            CORE_IMPORT +
+            "fn take(e: Expr) -> int { 0 }\n" +
+            "fn main() {\n" +
+            "    let n = take(quote { 5 })\n" +
+            "}\n")
+        out.contains("F4009")
+    }
+}
+
+spec "legitimate comptime quotes are NOT flagged" {
+    then "a `quote` inside a `@comptime` fn checks clean" {
+        let out = rqg_check_out("comptime_ok",
+            CORE_IMPORT +
+            "@comptime\n" +
+            "fn make() -> Expr {\n" +
+            "    quote { 1 + 2 }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+        !out.contains("F4009")
+    }
+}

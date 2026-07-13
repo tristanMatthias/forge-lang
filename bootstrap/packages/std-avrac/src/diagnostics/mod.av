@@ -392,6 +392,16 @@ export enum DiagCode {
     /// evaluation must be a pure sandbox, so the fn is rejected before it
     /// runs. Fix by removing the effectful call from the comptime path.
     ComptimeImpureCall
+    /// F4009 — a `quote { ... }` used OUTSIDE a `@comptime`/`@expand`
+    /// context. Quote builds AST for macros; its lowering (the
+    /// `synth_*` node-id shims) is eval-intercepted by the comptime
+    /// evaluator and has no compiled implementation, so a runtime
+    /// quote would abort at run time. Detected by a pre-lowering pass
+    /// (features/quote_expr `report_runtime_quotes`) that walks the AST
+    /// tracking `@comptime` context — while each `quote` is still one
+    /// node with its real span — and rejects any quote reached in a
+    /// non-comptime function.
+    QuoteOutsideComptime
     /// F4100 — a `component` instance's body contains a nested
     /// `ComponentBlock` whose type isn't declared in the parent's
     /// `children { ... }` schema. The compiler refuses to splice
@@ -491,6 +501,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ExpandUndecodableReturn -> ErrorDef { code: "F4006", help: "macros must return Stmt, List<Stmt>, or ResolvedDecls — check the return type and shape" }
         .ComptimeFoldFailed  -> ErrorDef { code: "F4007", help: "the @comptime fn errored while folding at compile time — see the evaluator message; if the loop budget tripped, the fn likely doesn't terminate for these arguments" }
         .ComptimeImpureCall  -> ErrorDef { code: "F4008", help: "a @comptime fn may only do pure compile-time compute — it (or a fn it transitively calls) reaches an impure extern (IO/filesystem/process/clock/stdin); remove the effectful call from the comptime path" }
+        .QuoteOutsideComptime -> ErrorDef { code: "F4009", help: "`quote { ... }` builds AST for macros and only works inside a `@comptime` fn or an `@expand` macro; move it into comptime code, or drop the quote if you meant a normal expression" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
