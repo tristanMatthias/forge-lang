@@ -546,10 +546,15 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     if tn != "" {
         return emit_trait_dispatch(ctx, env, r.value, tn, method, args)
     }
-    // Newtype .raw() → zero-cost access to inner value
+    // Newtype .raw() → zero-cost access to inner value. Canonicalise the
+    // repr to the INNER type's (cast_to is identity when it already
+    // matches): a receiver that travelled through a ptr-repr'd slot must
+    // not hand downstream arithmetic a ptr-typed value claiming Int —
+    // the verifier rejects `add ptr` (t-83ja's gate caught this live).
     if vtype_is_newtype(r.ty) {
         if method == "raw" {
-            return ok_emit(r.value, vtype_newtype_inner(r.ty))
+            let inner = vtype_newtype_inner(r.ty)
+            return ok_emit(ctx.cast_to(r.value, inner), inner)
         }
         // Forward other methods to the inner type's methods
         let nt_name = vtype_newtype_name(r.ty)
@@ -608,7 +613,11 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
         if method == "raw" {
             let nt_inner = newtype_inner_via_registry(ctx, owner, r.ty)
             if nt_inner != null {
-                return ok_emit(r.value, nt_inner!)
+                // Same repr canonicalisation as the Newtype-kind unwrap
+                // above — this Struct-kind receiver came through a fn
+                // return whose slot repr is ptr, so an int-backed inner
+                // MUST be ptrtoint'd back before arithmetic touches it.
+                return ok_emit(ctx.cast_to(r.value, nt_inner!), nt_inner!)
             }
         }
         return err_emit("undefined method `${owner}.${method}`")

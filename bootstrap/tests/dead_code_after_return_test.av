@@ -76,6 +76,33 @@ fn dcr_dead_tail_lambda() -> fn(int) -> int {
     (x) -> x - 1
 }
 
+// Defers must STILL run on the early return while the dead statements
+// after it are dropped — the return arm's defer emission precedes the
+// terminator, so the guard must not disturb it.
+fn dcr_defer_inner() -> int {
+    defer println("cleanup")
+    return 7
+    println("dead")
+    8
+}
+
+fn dcr_defer_capture() -> string {
+    avra_test_capture_start()
+    let r = dcr_defer_inner()
+    println(string(r))
+    avra_test_capture_stop()
+}
+
+fn dcr_for_early(xs: List<int>) -> int {
+    for x in xs {
+        if x > 2 {
+            return x * 10
+            println("dead")
+        }
+    }
+    0 - 1
+}
+
 spec "dead code after early terminators (t-83ja)" {
     given "a fn whose body continues after a bare early return" {
         then "the early return wins and the dead tail is dropped" {
@@ -103,6 +130,16 @@ spec "dead code after early terminators (t-83ja)" {
         then "the returned closure is the live one" {
             let f = dcr_dead_tail_lambda()
             f(41) == 42
+        }
+    }
+    given "a defer above an early return with dead statements below" {
+        then "the defer runs, the dead print does not, the value is the early one" {
+            dcr_defer_capture() == "cleanup\n7"
+        }
+    }
+    given "an early return inside a for body with dead code after it" {
+        then "the loop exits with the early value" {
+            dcr_for_early([1, 2, 3]) == 30
         }
     }
 }
