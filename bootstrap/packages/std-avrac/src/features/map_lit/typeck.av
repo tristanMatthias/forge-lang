@@ -1,8 +1,24 @@
 // WHY: type checking for map method calls + map-literal value-type checking.
 
 use core.{ExprId, ValueType, vtype_render_full}
-use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_report, nested_layout_conflict}
+use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
+
+/// Row 14 (ps3t.4.5): map values never thread param types into a
+/// lambda (codegen emits entries with no expected type, even under a
+/// `Map<string, fn(…)>` annotation) — annotate or F1006. Entries are
+/// [k0, v0, k1, v1, …]; only the value slots (odd indices) are gated.
+/// Shared by the annotated (`check_map_lit_with_expected`) and
+/// unannotated (`map_lit_check_expr`) paths.
+export fn gate_map_value_lambdas(tc: TC, entries: List<ExprId>) -> TC {
+    mut cur = tc
+    mut i = 1
+    while i < entries.length {
+        cur = tc_gate_unthreaded_lambda(cur, cur.nodes.exprs.get(entries[i]))
+        i = i + 2
+    }
+    cur
+}
 
 /// Map a method name to its result ValueType for type-checking.
 /// Returns `.Unknown` for methods the typeck doesn't track yet —
@@ -30,7 +46,7 @@ export fn check_map_method(tc: TC, method: string) -> ExprResult {
 /// `expected_value`.
 export fn check_map_lit_with_expected(tc: TC, entries: List<ExprId>, expected_value: ValueType) -> ExprResult {
     if entries.length == 0 { return tc_er(tc, ValueType.Map(ValueType.Str, expected_value)) }
-    let lr = check_expr_list_types(tc, entries)
+    let lr = check_expr_list_types(gate_map_value_lambdas(tc, entries), entries)
     let after = check_map_values_against(lr.tc, lr.types, expected_value)
     let v_ty = if lr.types.length >= 2 { lr.types[1] } else { ValueType.Unknown }
     tc_er(after, ValueType.Map(ValueType.Str, v_ty))

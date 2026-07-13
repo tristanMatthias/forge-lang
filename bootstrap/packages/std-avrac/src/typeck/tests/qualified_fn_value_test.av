@@ -1,0 +1,29 @@
+// WHY: a use-imported fn reference resolves to a QualifiedIdent, and
+// check_expr's QualifiedIdent arm must type a fn used as a VALUE as
+// `.Fn(ret)` — exactly like the bare `.Ident` arm — not as the bare
+// return type (t-pjtf). With the bare return type, `let g = mod::f`
+// bound `g` to f's RESULT type, so `g()` fell through the closure-call
+// path with an unknown return and downstream mismatches compiled
+// silently; wrapping restores the return type at the call-through site.
+//
+// Fixture: qualified_fn_value/{main,bad_main,helper}.av — main.av
+// binds + calls a use-imported fn and passes one as a callback (must
+// compile AND run); bad_main.av annotates the call-through result with
+// the wrong primitive (must be rejected with F1000).
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "qualified fn used as a value types as Fn(ret), matching bare Ident" {
+    given "a use-imported fn bound to a local and called through the binding" {
+        then "the binding call-through and callback pass both compile and run" {
+            let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/typeck/tests/qualified_fn_value/main.av 2>&1 || true")
+            out.contains("call-through-binding: hello-from-helper")
+                && out.contains("callback: 12")
+        }
+        then "annotating the call-through result with the wrong primitive is F1000" {
+            let out = avra_shell_exec("./build/bs2 check packages/std-avrac/src/typeck/tests/qualified_fn_value/bad_main.av 2>&1 || true")
+            out.contains("F1000")
+                && out.contains("expected `int`, got `string`")
+        }
+    }
+}

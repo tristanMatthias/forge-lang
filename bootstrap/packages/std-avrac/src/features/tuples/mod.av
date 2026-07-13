@@ -3,7 +3,7 @@
 use core.{vtype_tuple_at}
 use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr, resolve_expr_list_ids}
-use typeck.{check_expr, check_expr_list_types, tc_er}
+use typeck.{check_expr, check_expr_list_types, tc_er, tc_gate_unthreaded_lambda}
 use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
 
 /// Register the `(a, b, c)` tuple literal feature. Wires up
@@ -64,7 +64,13 @@ fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
 fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
-            let pair = check_expr_list_types(tc, elements)
+            // Row 15 (ps3t.4.5): tuple elements never thread param
+            // types into a lambda — annotate or F1006.
+            mut gated = tc
+            for id in elements {
+                gated = tc_gate_unthreaded_lambda(gated, gated.nodes.exprs.get(id))
+            }
+            let pair = check_expr_list_types(gated, elements)
             tc_er(pair.tc, .Tuple(pair.types))
         }
         _ -> tc_er(tc, .Unknown)

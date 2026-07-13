@@ -8,7 +8,7 @@ use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_erro
 use features.eval.{eval_expr, execute_stmt}
 use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
-use typeck.{check_expr, check_stmt, tc_er, tc_report, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
+use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
 
 /// Register the `if` feature for both statement (`if cond { ... }`)
 /// and expression (`let x = if cond a else b`) positions. Wires
@@ -200,18 +200,21 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
+            // Row 11 (ps3t.4.5): if-expr branches never thread param
+            // types into a lambda — annotate or F1006.
+            let branch_gated = tc_gate_unthreaded_lambda(tc_gate_unthreaded_lambda(after_cond, then_e), else_e)
             let guard = narrow_guard_of(tc.nodes, cond_e)
             // Fast path: no `none`-guard → check both arms directly, no
             // env reconstruction.
             if guard.var == "" {
-                let t = check_expr(after_cond, then_e)
+                let t = check_expr(branch_gated, then_e)
                 let e = check_expr(t.tc, else_e)
                 return unify_if_expr_branches(e.tc, t.ty, e.ty)
             }
             // Narrowing path: narrow the present arm, resetting the env
             // to `baseline` after each so narrowing stays branch-local.
-            let baseline = after_cond.types
-            let t = check_expr(tc_narrow_true_branch(after_cond, guard), then_e)
+            let baseline = branch_gated.types
+            let t = check_expr(tc_narrow_true_branch(branch_gated, guard), then_e)
             let e = check_expr(tc_narrow_false_branch(t.tc with { types: baseline }, guard), else_e)
             unify_if_expr_branches(e.tc with { types: baseline }, t.ty, e.ty)
         }

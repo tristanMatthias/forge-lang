@@ -219,6 +219,14 @@ export enum DiagCode {
     /// stored in a struct field takes its parameter types from that context
     /// and is NOT gated.
     UnannotatedLambdaParam
+    /// F1007 — a lambda parameter whose type is still Unknown at the
+    /// codegen layout boundary. The typeck F1006 gates catch every
+    /// un-annotated unthreaded position first, so this fires only on a
+    /// threading gap (e.g. an un-annotated lambda handed to an
+    /// under-applied generic's template dispatch) — codegen REFUSES
+    /// rather than guessing i64 (the silent-miscompile class). The
+    /// user-side fix is the same: annotate the parameter.
+    LambdaParamLayoutUnresolved
     /// F1043 — method call on a receiver whose type has no such
     /// method. The message lists the receiver's available methods.
     UnknownMethod
@@ -448,6 +456,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnderAppliedGeneric -> ErrorDef { code: "F1004", help: "apply the type's arguments (`Foo<int>`), or make the function generic over the missing parameter (`fn f<T>(x: Foo<T>)`)" }
         .MissingStructFields -> ErrorDef { code: "F1005", help: "give every declared field a value — Avra has no silent zero-fill; for a partial change to an existing value use `x with { field: … }`" }
         .UnannotatedLambdaParam -> ErrorDef { code: "F1006", help: "annotate the parameter, e.g. `(x: int)` — a standalone lambda's parameter types are only inferred from a contextual call argument, an `fn(…)`-typed binding, a struct field, or a typed function return" }
+        .LambdaParamLayoutUnresolved -> ErrorDef { code: "F1007", help: "annotate the lambda parameter, e.g. `(x: int)` — its type reached code generation unresolved, and a parameter's layout is never guessed" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
         .NestedGenericFnDecl -> ErrorDef { code: "F1044", help: "lift the generic fn to the top level — nested fns become closures, and closures cannot take type parameters" }

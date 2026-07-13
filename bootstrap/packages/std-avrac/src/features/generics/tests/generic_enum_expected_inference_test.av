@@ -1,0 +1,275 @@
+// WHY: regression for forge-crafting-intepreters-ps3t.3.8 — a generic enum
+// constructor that pins only SOME type params from its payload must still
+// construct when the remaining params are supplied by the EXPECTED type (a
+// `let`/`mut`/return annotation). Two shapes the payload alone can't solve:
+//   * a PAYLOAD-ABSENT param — `B` in `Pair<A,B> = Pair.L(7)`: the constructed
+//     variant's payload never mentions it, so no ctor arg can ever bind it;
+//   * a BARE VARIANT — `Opt<T> = Opt.None`: no payload at all, so EVERY param
+//     must come from the annotation (or another ctor site).
+// Before the fix both raised `F1002: cannot infer type parameter` even though
+// the annotation named every arg. This is the enum analog of qcvb (StructLit
+// expected-type inference — see generic_struct_expected_inference_test.av).
+//
+// Root cause in features/generics/mono.av: enum-ctor inference
+// (resolve_enum_type_args) only unified the variant's declared fields against
+// the ctor args — it never looked at the construction's expected type, and the
+// bare-variant FieldAccess path merged an EMPTY partial unconditionally. The
+// fix threads `expected` through the SAME two-pass channel structs use:
+// collect_inst_expr_with_expected + rewrite_expr_with_expected now have
+// `.EnumCtor` and `.FieldAccess` arms whose shared workers
+// (resolve_enum_type_args_with_expected / bare_variant_type_args_from_expected)
+// FILL only the params the payload left unresolved — never overriding a
+// payload-bound param — so collect and rewrite mangle identically.
+//
+// MUTATION-DETECTABILITY NOTE: each positive runtime case below uses its OWN
+// enum, with the "other" variant never constructed anywhere in this file.
+// Cross-site merging (merge_across_scopes) completes a shared enum's type args
+// from sibling ctor sites, which would let these tests pass even with the
+// expected-fill deleted — a dedicated enum makes the annotation genuinely
+// load-bearing, so breaking the fill breaks the test.
+
+// The ticket's exact shape, one enum per binding form under test.
+enum EieLet<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieRSide<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieMut<A, B> {
+    L(a: A)
+    R(b: B)
+}
+enum EieRet<A, B> {
+    L(a: A)
+    R(b: B)
+}
+
+// Bare-variant shapes: `Some` is never constructed in this file, so `None`'s
+// type args can only come from the annotation.
+enum EieBare<T> {
+    Some(v: T)
+    None
+}
+
+// Shared enum for the annotation-free MERGE control — both variants
+// constructed, no annotations anywhere.
+enum EiePair<A, B> {
+    L(a: A)
+    R(b: B)
+}
+
+// Nested-construction shapes (their own enum so no sibling site interferes).
+enum EieNest<T> {
+    Some(v: T)
+    None
+}
+
+// Return-position annotation: the tail expression is a bare ctor whose
+// second param comes only from the declared return type.
+fn eie_make_l() -> EieRet<int, string> {
+    EieRet.L(7)
+}
+
+// Return-position annotation on a payload-less variant.
+fn eie_make_none() -> EieBare<int> {
+    EieBare.None
+}
+
+// No annotation anywhere — both params bind purely from the two ctor payloads
+// via cross-site merging. This is the pre-existing inference path; it must not
+// regress. (Two sites in ONE fn so the merge happens within the fn's local
+// inst scope.)
+fn eie_merge_control() -> int {
+    let l = EiePair.L(11)
+    let r = EiePair.R("x")
+    match l {
+        .L(a) -> a
+        .R(_) -> 0
+    }
+}
+
+// A NESTED generic enum whose inner ctor is a BARE variant — the only ctor
+// sites for both levels live here, so the outer T fills from the return
+// annotation while the payload arg types as Unknown. This once collided with
+// the legacy annotation-string channel (scope_insts_for_ret): the same
+// specialization registered under two type-arg representations (pre-mangled
+// `Nest__int<int>` vs structural `mod::Nest<int>`), and the specialized enum
+// decl emitted from the structural rep kept a BARE payload type name →
+// codegen "unknown enum". Cured by finalize dedup-by-mangled + the EnumDecl
+// arm of the rewrite pass (rewrite_variant_field_types). This test file runs
+// module-wrapped by the test runner, which is exactly the shape that exposed
+// it.
+fn eie_nested_inner_bare() -> EieNest<EieNest<int>> {
+    EieNest.Some(EieNest.None)
+}
+
+// The two-level nested ctor with a concrete innermost payload, single site.
+fn eie_nested_full() -> EieNest<EieNest<int>> {
+    EieNest.Some(EieNest.Some(5))
+}
+
+spec "generic enum infers type params from the expected type" {
+    given "a ctor whose payload pins only one of two params" {
+        then "a let annotation supplies the payload-absent param (the ps3t.3.8 repro)" {
+            let p: EieLet<int, string> = EieLet.L(7)
+            match p {
+                .L(a) -> a == 7
+                .R(_) -> false
+            }
+        }
+        then "the payload-bound param stays ground truth (annotation fills, never overrides)" {
+            let p: EieRSide<int, string> = EieRSide.R("hello")
+            match p {
+                .L(_) -> false
+                .R(b) -> b == "hello"
+            }
+        }
+        then "a mut binding threads its annotation exactly like let (collect .Mut arm)" {
+            mut p: EieMut<int, string> = EieMut.L(3)
+            p = EieMut.L(4)
+            match p {
+                .L(a) -> a == 4
+                .R(_) -> false
+            }
+        }
+    }
+    given "a return-type annotation" {
+        then "the tail ctor binds the payload-absent param from the return type" {
+            match eie_make_l() {
+                .L(a) -> a == 7
+                .R(_) -> false
+            }
+        }
+    }
+    given "a bare (payload-less) variant" {
+        then "a let annotation alone drives the instantiation" {
+            let o: EieBare<int> = EieBare.None
+            match o {
+                .Some(_) -> false
+                .None -> true
+            }
+        }
+        then "a return-type annotation alone drives the instantiation" {
+            match eie_make_none() {
+                .Some(_) -> false
+                .None -> true
+            }
+        }
+        then "a nested generic arg in the annotation binds too" {
+            let o: EieBare<List<int>> = EieBare.None
+            match o {
+                .Some(v) -> false
+                .None -> true
+            }
+        }
+    }
+    given "the annotation-free cross-site merge path" {
+        then "two ctor sites still complete each other WITHOUT an annotation (no regression)" {
+            eie_merge_control() == 11
+        }
+    }
+    given "a nested generic enum in return position (module-wrapped by the runner)" {
+        then "an inner BARE variant payload reads through both levels" {
+            match eie_nested_inner_bare() {
+                .Some(i) -> match i {
+                    .Some(_) -> false
+                    .None -> true
+                }
+                .None -> false
+            }
+        }
+        then "a concrete innermost payload reads through both levels" {
+            match eie_nested_full() {
+                .Some(i) -> match i {
+                    .Some(n) -> n == 5
+                    .None -> false
+                }
+                .None -> false
+            }
+        }
+    }
+}
+
+// Precision guard: the expected-type channel may only RESOLVE a real
+// annotation — it must never paper over a genuinely unconstrained param. With
+// NO annotation, a payload-absent (or bare-variant) param must STILL fail
+// F1002. This locks in the `vtype_is_unknown(expected)` short-circuit; deleting
+// it would silently start accepting un-inferrable constructions.
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Shell out to a fresh bs2 so the construction is compiled in a child process
+// whose failure we can observe: capture its combined output and assert on the
+// rendered F-code. `|| true` keeps the non-zero compile exit from aborting the
+// capture. Emit a success sentinel ONLY on a clean (exit-0) compile, so
+// positive controls assert real success — not merely the absence of one F-code.
+fn eie_compile_out(source: string) -> string {
+    let path = "/tmp/avra_eie_expected_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "an unconstrained enum type param without an annotation still errors" {
+    then "no annotation + single ctor site is F1002 on the payload-absent param" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { let p = Pair.L(7) }")
+        out.contains("F1002") && out.contains("B")
+    }
+    then "the SAME construction with an annotation compiles (positive control)" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { let p: Pair<int, string> = Pair.L(7) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "no annotation + a lone bare variant is F1002" {
+        let out = eie_compile_out("enum Opt<T> { Some(v: T)
+None }
+fn main() { let o = Opt.None }")
+        out.contains("F1002")
+    }
+    then "the SAME bare variant with an annotation compiles (positive control)" {
+        let out = eie_compile_out("enum Opt<T> { Some(v: T)
+None }
+fn main() { let o: Opt<int> = Opt.None }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+// Memory-safety guard: the expected-type channel resolves params the PAYLOAD
+// can't, but it must never OVERRIDE a param the payload bound concretely. An
+// annotation whose generic arg conflicts with the ctor payload
+// (`Pair<string,string>` with `L(7)`) is an invalid program — it must be
+// rejected loudly, NOT constructed with a swapped layout.
+spec "an enum annotation that conflicts with the ctor payload is rejected" {
+    then "Pair<string,string> = Pair.L(7) is a type error, not a silent mis-layout" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { let p: Pair<string, string> = Pair.L(7) }")
+        out.contains("F1000")
+    }
+    then "the payload-matching annotation still compiles (positive control)" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { let p: Pair<int, string> = Pair.L(7) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
+
+// Const-binding coverage: the `.Const` collect/rewrite arms thread the
+// annotation for symmetry with let/mut, but the path is unreachable end-to-end
+// today — typeck's const-evaluable gate rejects an enum-ctor initializer as
+// F1000 BEFORE mono runs, so no runtime const case is expressible. This case
+// pins that gate: if it ever widens to allow const enum construction, this
+// test starts failing, which is the signal to add a runtime const case
+// mirroring the let/mut ones above.
+spec "a const with a generic enum ctor initializer is gated before mono" {
+    then "const p: Pair<int,string> = Pair.L(7) is the F1000 const-expression error" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { const p: Pair<int, string> = Pair.L(7) }")
+        out.contains("F1000") && out.contains("compile-time constant")
+    }
+}

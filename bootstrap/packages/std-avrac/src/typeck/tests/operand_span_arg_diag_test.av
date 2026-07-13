@@ -1,0 +1,181 @@
+// A wrong-typed OPERAND must be reported AT THE OPERAND's own source
+// position, not at the head of the enclosing call/ctor/binary — the arena
+// records a byte span per expression id, so the checker repositions itself
+// at each operand before gating it (tc_at_operand for sibling walks,
+// tc_report_at_expr for one-shot blame). Hash-consed leaves (bare
+// literals/idents) deliberately carry no span — a shared leaf has no
+// single source occurrence — so they fall back to the enclosing head's
+// stamp instead of inheriting a sibling operand's position.
+// `opspan_`-prefixed fixtures against cross-shard collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn opspan_check_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_operand_span_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "call-arg diagnostics point at the offending argument" {
+    then "a composite arg on its own line carets that line, not the call head" {
+        let out = opspan_check_out("composite",
+            "fn want(s: string) { println(s) }\n" +
+            "fn main() {\n" +
+            "    want(\n" +
+            "        1 + 2)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+    then "the second of two args carets its own position, not the first's" {
+        let out = opspan_check_out("second",
+            "fn two(a: int, b: string) { println(b) }\n" +
+            "fn main() {\n" +
+            "    two(1 + 1,\n" +
+            "        2 + 3)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+    then "a span-less leaf arg falls back to the statement head, never a sibling" {
+        let out = opspan_check_out("leaf",
+            "fn want(s: string) { println(s) }\n" +
+            "fn main() {\n" +
+            "    want(\n" +
+            "        123)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":3:5")
+    }
+    then "a method-call arg carets its own position, not the receiver" {
+        let out = opspan_check_out("method",
+            "type Pt = { x: int }\n" +
+            "impl Pt { fn shift(self, d: string) -> int { self.x } }\n" +
+            "fn main() {\n" +
+            "    let p = Pt { x: 1 }\n" +
+            "    let _ = p.shift(\n" +
+            "        1 + 2)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":6:9")
+    }
+}
+
+spec "ctor payload diagnostics point at the offending payload" {
+    then "a newtype ctor's composite payload carets its own line, not the ctor head" {
+        let out = opspan_check_out("ntctor",
+            "type UserId = string\n" +
+            "fn main() {\n" +
+            "    let u = UserId(\n" +
+            "        1 + 2)\n" +
+            "    let _ = u\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+}
+
+spec "enum-ctor payload diagnostics point at the offending payload" {
+    then "a composite payload on its own line carets that line, not the ctor head" {
+        let out = opspan_check_out("enumctor",
+            "enum Holder { One(s: string) }\n" +
+            "fn main() {\n" +
+            "    let h = Holder.One(\n" +
+            "        1 + 2)\n" +
+            "    match h { .One(v) -> println(v) }\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+}
+
+spec "binary gates blame the offending side" {
+    then "optional arithmetic carets the optional operand, not the binary head" {
+        let out = opspan_check_out("optarith",
+            "fn f() -> int? { 5 }\n" +
+            "fn main() {\n" +
+            "    let x = 1 +\n" +
+            "        f()\n" +
+            "    println(string(x ?? 0))\n" +
+            "}\n")
+        out.contains("cannot do arithmetic on an optional") && out.contains(":4:9")
+    }
+    then "a span-less optional leaf keeps the binary's own stamp" {
+        let out = opspan_check_out("optleaf",
+            "fn main() {\n" +
+            "    let a: int? = 5\n" +
+            "    let x = 1 +\n" +
+            "        a\n" +
+            "    println(string(x ?? 0))\n" +
+            "}\n")
+        out.contains("cannot do arithmetic on an optional") && out.contains(":3:13")
+    }
+    then "optional ordering carets the optional operand" {
+        let out = opspan_check_out("ordering",
+            "fn f() -> int? { 5 }\n" +
+            "fn main() {\n" +
+            "    let ok = 1 <\n" +
+            "        f()\n" +
+            "    println(string(ok))\n" +
+            "}\n")
+        out.contains("F1204") && out.contains(":4:9")
+    }
+    then "a none-compare carets the non-none side (the operand whose type must change)" {
+        let out = opspan_check_out("nonecmp",
+            "fn main() {\n" +
+            "    let n = 5\n" +
+            "    let ok = none ==\n" +
+            "        (n + 1)\n" +
+            "    println(string(ok))\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":4:9")
+    }
+}
+
+spec "the remaining argument gates caret their operands too" {
+    then "a wrong-typed enum-ctor payload on its own line carets the payload" {
+        let out = opspan_check_out("enum_payload",
+            "enum Holder {\n" +
+            "    Wrap(items: List<int>)\n" +
+            "}\n" +
+            "type Node = { v: int }\n" +
+            "fn main() {\n" +
+            "    let h = Holder.Wrap(\n" +
+            "        [Node { v: 1 }])\n" +
+            "    let _ = h\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":7:9")
+    }
+    then "a wrong-typed closure-call argument on its own line carets the argument" {
+        // The closure gate keys on the binding's FnTyped type. A nested fn
+        // is one source of that (its desugar annotates the let); a plain
+        // annotated-param lambda binding is another (see the specs below).
+        // This case uses the nested fn; the plain-lambda binding is covered
+        // by "annotated plain-lambda bindings carry FnTyped to the closure
+        // gate".
+        let out = opspan_check_out("closure_arg",
+            "fn main() {\n" +
+            "    fn f(s: string) -> string { s }\n" +
+            "    let x = 1\n" +
+            "    let _ = f(\n" +
+            "        x + 1)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":5:9")
+    }
+}
+
+spec "annotated plain-lambda bindings carry FnTyped to the closure gate" {
+    then "a wrong-typed arg through an un-annotated binding is F1000, at the arg" {
+        let out = opspan_check_out("plain_lambda",
+            "fn main() {\n" +
+            "    let f = (s: string) -> s\n" +
+            "    let x = 1\n" +
+            "    let _ = f(\n" +
+            "        x + 1)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":5:9")
+    }
+    then "a correct-typed call through the same binding still passes clean" {
+        let out = opspan_check_out("plain_lambda_ok",
+            "fn main() {\n" +
+            "    let f = (s: string) -> s\n" +
+            "    println(f(\"hi\"))\n" +
+            "}\n")
+        !out.contains("F1000") && !out.contains("error[")
+    }
+}

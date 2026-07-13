@@ -4,7 +4,7 @@
 use core.{PatId, Expr, Pattern, MatchArm, WhenArm, ParamEntry, Stmt, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use core.{type_short_name}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use core.{vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
 
 // ── Arm type skip logic ──
@@ -509,6 +509,9 @@ export fn check_match_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>) 
     mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
     mut i = 0
     while i < arms.length {
+        // Row 12 (ps3t.4.5): a match arm body never threads param
+        // types into a lambda — annotate or F1006.
+        acc = tc_gate_unthreaded_lambda(acc, acc.nodes.exprs.get(arms[i].body_id))
         let b = check_expr(enter_arm_with_guard(acc, arms[i], subject_ty), acc.nodes.exprs.get(arms[i].body_id))
         acc = tc_exit(b.tc)
         i = i + 1
@@ -586,6 +589,9 @@ export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchA
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
+        // Row 12 (ps3t.4.5): match-expr arms never thread param types
+        // into a lambda — annotate or F1006.
+        acc = tc_gate_unthreaded_lambda(acc, acc.nodes.exprs.get(arm.body_id))
         let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), acc.nodes.exprs.get(arm.body_id), first_ty)
         acc = unify_arm_types(tc_exit(b.tc), first_ty, acc.nodes.exprs.get(arm.body_id), b.ty)
         i = i + 1
@@ -603,6 +609,8 @@ export fn check_match_expr_infer(tc: TC, subject_ty: ValueType, arms: List<Match
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
+        // Row 12 (ps3t.4.5): same unthreaded-arm gate as the seeded path.
+        acc = tc_gate_unthreaded_lambda(acc, acc.nodes.exprs.get(arm.body_id))
         let with_guard = enter_arm_with_guard(acc, arm, subject_ty)
         // so07.4 (T4): once a seed is set, thread it as the expected
         // type so subsequent ListLit arms inherit the element type.
@@ -679,7 +687,9 @@ export fn check_when_expr(tc: TC, arms: List<WhenArm>) -> ExprResult {
     if arms.length == 0 { return tc_er(tc, .Unknown) }
     let first = arms[0]
     let after_cond = if first.cond_id == null { tc } else { check_expr(tc, tc.nodes.exprs.get(first.cond_id!)).tc }
-    let b = check_expr(after_cond, tc.nodes.exprs.get(first.body_id))
+    // Row 12 (ps3t.4.5): when-arms are match-expr arms — same gate.
+    let first_gated = tc_gate_unthreaded_lambda(after_cond, tc.nodes.exprs.get(first.body_id))
+    let b = check_expr(first_gated, tc.nodes.exprs.get(first.body_id))
     check_when_arms(b.tc, arms, 1, b.ty)
 }
 
@@ -691,8 +701,10 @@ fn check_when_arms(tc: TC, arms: List<WhenArm>, start_idx: int, first_ty: ValueT
     while i < arms.length {
         let arm = arms[i]
         let after_cond = if arm.cond_id == null { cur } else { check_expr(cur, tc.nodes.exprs.get(arm.cond_id!)).tc }
+        // Row 12 (ps3t.4.5): when-arms are match-expr arms — same gate.
+        let gated = tc_gate_unthreaded_lambda(after_cond, tc.nodes.exprs.get(arm.body_id))
         // so07.4 (T4): thread first_ty so ListLit arms inherit the element type.
-        let b = check_expr_expected(after_cond, tc.nodes.exprs.get(arm.body_id), first_ty)
+        let b = check_expr_expected(gated, tc.nodes.exprs.get(arm.body_id), first_ty)
         cur = unify_arm_types(b.tc, first_ty, tc.nodes.exprs.get(arm.body_id), b.ty)
         i = i + 1
     }

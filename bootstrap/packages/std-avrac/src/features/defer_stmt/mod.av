@@ -7,7 +7,7 @@ use core.{feature_new, Feature}
 use resolve.{resolve_expr}
 use codegen.{DeferEntry}
 use list_ops.{list_push_copy}
-use typeck.{check_expr}
+use typeck.{check_expr, tc_gate_unthreaded_lambda}
 
 // All handlers are private.
 
@@ -37,7 +37,10 @@ fn defer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 fn defer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Defer(body) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(body))
+            // Row 22 (ps3t.4.5): a defer body never threads param types
+            // into a lambda — annotate or F1006.
+            let gated = tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(body))
+            let r = check_expr(gated, tc.nodes.exprs.get(body))
             r.tc
         }
         _ -> tc
@@ -76,7 +79,9 @@ fn errdefer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
 fn errdefer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Errdefer(body) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(body))
+            // Row 22 (ps3t.4.5): same unthreaded-body gate as defer.
+            let gated = tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(body))
+            let r = check_expr(gated, tc.nodes.exprs.get(body))
             r.tc
         }
         _ -> tc

@@ -1019,6 +1019,28 @@ export fn tc_at_expr(tc: TC, id: ExprId) -> TC {
     tc with { current_line: lc.line, current_col: lc.col }
 }
 
+/// Loop-iteration sibling of `tc_at_expr` for walks over SIBLING operands
+/// (call args, list/map/tuple elements): RESET the caret to the walk's own
+/// fallback stamp (`fb_line`/`fb_col`, captured before the loop) before
+/// sharpening. Without the reset, a span-less operand (interned leaf,
+/// synthesized node) would inherit the PREVIOUS sibling's position through
+/// tc_at_expr's keep-current fallback — and a sibling argument is never
+/// the right caret.
+fn tc_at_operand(tc: TC, id: ExprId, fb_line: int, fb_col: int) -> TC {
+    tc_at_expr(tc with { current_line: fb_line, current_col: fb_col }, id)
+}
+
+/// `tc_report` sharpened to `id`'s own span for THIS ONE diagnostic:
+/// reposition (tc_at_expr rules — interned leaves and module-file rows
+/// keep the current stamp), report, then restore the caller's stamp so
+/// the sharpening can't shift any later report in the same walk. The
+/// chokepoint for one-shot "blame the offending operand" reports (e.g.
+/// a Binary gate blaming one side).
+fn tc_report_at_expr(tc: TC, id: ExprId, code: DiagCode, msg: string) -> TC {
+    let r = tc_report(tc_at_expr(tc, id), code, msg)
+    r with { current_line: tc.current_line, current_col: tc.current_col }
+}
+
 /// Build an ExprResult — convenience constructor used pervasively
 /// by the per-expression checker arms.
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
@@ -1651,11 +1673,26 @@ fn rewrite_param_list_vts(tc: TC, params: List<ParamEntry>) -> List<ParamEntry> 
 /// Positions come from the store's position column.
 export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
     mut cur = lint_index_loops(tc, ids)
+    mut i = 0
     for id in ids {
         let pos = tc.nodes.stmt_pos(id)
         avra_ice_at(pos.file, pos.line, pos.col)
-        let with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
+        mut with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
+        // Row 20 (ps3t.4.5): a NON-TAIL expression-statement lambda's
+        // value is discarded — nothing can thread its param types, so
+        // an un-annotated one is F1006. The TAIL statement is exempt
+        // here: as a fn-body tail it threads from the declared fn-type
+        // return, and as a block value its owner decides (the gated
+        // positions peel block tails via tc_gate_unthreaded_lambda;
+        // fn bodies gate the non-fn-return case in tc_check_fn_body).
+        if i < ids.length - 1 {
+            match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
+                .Expr(e) -> { with_pos = tc_gate_unthreaded_lambda(with_pos, tc.nodes.exprs.get(e)) }
+                _ -> {}
+            }
+        }
         cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
+        i = i + 1
     }
     cur
 }
@@ -2253,11 +2290,44 @@ fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: s
 /// First lambda parameter carrying no type annotation (its `vtype` is still
 /// `Unknown`), or "" when every parameter is annotated. Drives the F1006
 /// standalone-lambda gate.
-fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
+export fn tc_first_unannotated_param(params: List<ParamEntry>) -> string {
     for p in params {
         if vtype_is_unknown(p.vtype) { return p.name }
     }
     ""
+}
+
+/// F1006 widening (ps3t.4.5 slice B): gate a lambda appearing in a
+/// position that never threads parameter types into codegen —
+/// if/match-expr arms, list/map/tuple elements, indirect-call args,
+/// bare expression statements, defer bodies. In those positions an
+/// un-annotated parameter has no context to resolve from, and codegen
+/// refuses an Unknown-typed param at the layout boundary rather than
+/// guessing i64 — so require the annotation here, with a span.
+/// Threaded positions (let annotation, struct field, enum payload,
+/// registered-fn/method call args, fn return) must NOT route through
+/// this gate. Non-lambda expressions pass through untouched.
+export fn tc_gate_unthreaded_lambda(tc: TC, e: Expr) -> TC {
+    match e {
+        .Lambda(params, _) -> {
+            let unresolved = tc_first_unannotated_param(params)
+            if unresolved == "" { return tc }
+            tc_report(tc, DiagCode.UnannotatedLambdaParam, "cannot infer type of lambda parameter `${unresolved}`")
+        }
+        // A block in a gated position yields its tail expression — a
+        // lambda tail (`if c { (x) -> x } …`) is exactly as unthreaded
+        // as a bare lambda arm. Recursion peels nested blocks. Fn
+        // BODIES don't route through this gate, so a returned tail
+        // lambda (threaded via the declared return type) is unaffected.
+        .Block(body) -> {
+            if body.length == 0 { return tc }
+            match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(body[body.length - 1])) {
+                .Expr(tail) -> tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(tail))
+                _ -> tc
+            }
+        }
+        _ -> tc
+    }
 }
 
 fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool, is_mut: bool) -> TC {
@@ -2425,12 +2495,26 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+/// Row-20 tail case (ps3t.4.5): a fn-body TAIL lambda threads its
+/// param types from a declared `fn(…)`-typed return (the A3
+/// FnRetMeta threading), so it is exempt from the unthreaded gate —
+/// but under any OTHER return type (Void, scalar, none declared) a
+/// tail lambda has no context and an un-annotated param is F1006.
+fn tc_gate_fn_tail_lambda(tc: TC, ret_vt: ValueType, body: List<StmtId>) -> TC {
+    if body.length == 0 { return tc }
+    if !vtype_is_unknown(ret_vt) && resolve_vtype(tc, ret_vt) is .FnTyped { return tc }
+    match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(body[body.length - 1])) {
+        .Expr(e) -> tc_gate_unthreaded_lambda(tc, tc.nodes.exprs.get(e))
+        _ -> tc
+    }
+}
+
 // Check that `impl Trait for Type` provides all required methods.
 /// Type-check a function body against its declared return type.
 /// Includes implicit-return checking (the body's tail expression
 /// must match `ret_vt`) and explicit-return path verification.
 fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: List<StmtId>) -> TC {
-    let checked = check_stmt_ids(tc, body)
+    let checked = tc_gate_fn_tail_lambda(check_stmt_ids(tc, body), ret_vt, body)
     // Skip return type checking for functions without a declared return type.
     if vtype_eq(ret_vt, .Void) {
         return checked
@@ -2787,9 +2871,9 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let right_e = tc.nodes.exprs.get(right)
             let l = check_expr(tc, left_e)
             let r = check_expr(l.tc, right_e)
-            let tc2 = check_none_compare(r.tc, left_e, op, l.ty, right_e, r.ty)
-            let tc3 = check_optional_ordering(tc2, op, l.ty, r.ty)
-            let tc4 = check_optional_arithmetic(tc3, op, l.ty, r.ty)
+            let tc2 = check_none_compare(r.tc, left, left_e, op, l.ty, right, right_e, r.ty)
+            let tc3 = check_optional_ordering(tc2, op, left, l.ty, right, r.ty)
+            let tc4 = check_optional_arithmetic(tc3, op, left, l.ty, right, r.ty)
             check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
@@ -2849,12 +2933,14 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             return tc_er(check_assign_layout(v.tc, v.ty, var_ty, "assignment to `${name}`"), v.ty)
         }
         .QualifiedIdent(path) -> {
-            // A qualified reference is either a module fn (yields its
-            // return type when materialised as a value) or a module-
-            // level binding — a qualified `const`, whose declaration
-            // bound its type under the same canonical path.
+            // A qualified reference is either a module fn — a VALUE use
+            // (callback arg, `let g = mod::f`) types as `.Fn(ret)`,
+            // exactly like the bare `.Ident` arm above, so calls through
+            // the binding recover the return type — or a module-level
+            // binding: a qualified `const`, whose declaration bound its
+            // type under the same canonical path.
             let r = fn_type_get(tc.fns, path)
-            if r.found { return tc_er(tc, r.ret_ty) }
+            if r.found { return tc_er(tc, .Fn(r.ret_ty)) }
             tc_er(tc, type_lookup(tc.types, path))
         }
         // Enum constructor — `Status.Active`, `Status.Pending(count)`.
@@ -2907,15 +2993,21 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Verify that each arg passed to a shape-typed parameter has all
 /// the required fields (width-subtype check).
 fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    // Per-arg caret: each iteration repositions at the argument (fb = the
+    // call head's stamp, restored after), so a width-subtype rejection
+    // points at the offending argument, not the call.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = tc_check_shape_compat(cur, vtype_display(params[i].vtype), arg_ty)
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // Check that newtype arguments match — UserId != OrderId even if both wrap string
@@ -2923,11 +3015,17 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> 
 /// accept a bare `UUID` — the wrapper has to be explicit at the
 /// call site.
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<ExprId>, is_extern: bool) -> TC {
+    // Per-arg caret: the mismatch/layout reports below then point at the
+    // offending argument (fb = the call head's stamp, restored after) —
+    // not the call statement's head.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
         let p = params[i]
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let param_ty = resolve_vtype(cur, p.vtype)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         if param_ty is .Newtype {
@@ -2951,7 +3049,7 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
         }
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // Extract the first argument's type. Safe to call after check_expr_list
@@ -3005,10 +3103,16 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
     if v == null { return tc }
     let fields = v!.fields
     let tp = enum_type_params(tc.enums, tn)
+    // Per-payload caret: the field-type reports below point at the
+    // offending payload argument (fb = the ctor head's stamp, restored
+    // after), not the `Type.Variant(` head.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if fields.length < args.length { fields.length } else { args.length }
     while i < limit {
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let fty = resolve_vtype(cur, fields[i].resolved)
         let aty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         // A bare `null`/`none` literal (`Expr.None`) is valid for ANY optional
@@ -3066,7 +3170,7 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
         }
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // enwi: infer a generic enum's type-args from the constructor's payload args, so
@@ -3112,12 +3216,18 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
 /// the newtype's own name) — an ordinary fn that merely RETURNS the
 /// newtype (e.g. `expr_ref_id(r: NodeRef) -> ExprId`) constrains its
 /// args by its own param types, not by the newtype's payload.
-fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
+fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, args: List<ExprId>) -> TC {
     match ret_ty {
         .Newtype(nt_name, inner_ty, _) -> {
             if !tc_callee_names_type(name, nt_name) { return tc }
+            let arg_ty = tc_first_arg_type(tc, args)
             if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
                 let msg = "`${name}()` expects `${vtype_render_full(inner_ty)}`, got `${vtype_render_full(arg_ty)}`"
+                // Caret the payload argument itself (args is non-empty here:
+                // an empty args list types as Void, which is Unknown-free and
+                // only reaches this report through a genuinely-wrong arity
+                // that the arity gate already rejected).
+                if args.length > 0 { return tc_report_at_expr(tc, args[0], DiagCode.TypeMismatch, msg) }
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
             tc
@@ -3204,27 +3314,31 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 /// operand. A `none` has no value, so silently computing would corrupt
 /// (both-optional operates on box pointers; a none side traps). Sibling of
 /// check_optional_ordering; equality stays permissive.
-fn check_optional_arithmetic(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+fn check_optional_arithmetic(tc: TC, op: BinOp, left: ExprId, l_ty: ValueType, right: ExprId, r_ty: ValueType) -> TC {
     if !binop_is_arithmetic(op) { return tc }
     if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
-    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let l_off = vtype_is_optional(l_ty)
+    let which = if l_off { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
     let msg = "cannot do arithmetic on an optional `${which}` with `${binop_str(op)}` — a `none` has no value to compute with"
-    tc_report(tc, DiagCode.ArithOnOptional, msg)
+    // Caret the optional OPERAND, not the whole Binary.
+    tc_report_at_expr(tc, if l_off { left } else { right }, DiagCode.ArithOnOptional, msg)
 }
 
 /// Reject an ordering comparison (`<` `<=` `>` `>=`) on an optional operand.
 /// `none` has no position in an ordering, so silently answering would defeat
 /// the purpose of `T?` (and is where strict non-null-by-default is headed).
 /// Equality (`==`/`!=`) stays permissive — it IS well-defined on optionals.
-fn check_optional_ordering(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+fn check_optional_ordering(tc: TC, op: BinOp, left: ExprId, l_ty: ValueType, right: ExprId, r_ty: ValueType) -> TC {
     if !binop_is_ordering(op) { return tc }
     if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
-    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let l_off = vtype_is_optional(l_ty)
+    let which = if l_off { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
     let msg = "cannot order an optional `${which}` with `${binop_str(op)}` — a `none` has no position in an ordering"
-    tc_report(tc, DiagCode.OrderOnOptional, msg)
+    // Caret the optional OPERAND, not the whole Binary.
+    tc_report_at_expr(tc, if l_off { left } else { right }, DiagCode.OrderOnOptional, msg)
 }
 
-fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Expr, r_ty: ValueType) -> TC {
+fn check_none_compare(tc: TC, left_id: ExprId, left: Expr, op: BinOp, l_ty: ValueType, right_id: ExprId, right: Expr, r_ty: ValueType) -> TC {
     if !(op is .Eq) && !(op is .Ne) { return tc }
     let l_none = left is .None
     let r_none = right is .None
@@ -3234,7 +3348,9 @@ fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Exp
     if !vtype_is_value_scalar(other) { return tc }
     let always = if op is .Eq { "false" } else { "true" }
     let msg = "comparing a non-optional `${vtype_render_full(other)}` to `none` is always ${always} — `none` only inhabits an optional `T?`. Make the type `T?`, or drop the comparison (an `if let` / `let-else` here needs an optional subject)."
-    tc_report(tc, DiagCode.TypeMismatch, msg)
+    // Caret the NON-none side — the operand whose type the message asks
+    // the user to change (`none` is an interned leaf with no span anyway).
+    tc_report_at_expr(tc, if l_none { right_id } else { left_id }, DiagCode.TypeMismatch, msg)
 }
 
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
@@ -3289,7 +3405,13 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
     }
     // Check shape and newtype compatibility
     let shape_checked = tc_check_shape_args(checked, rec.params, args)
-    let newtype_checked = tc_check_newtype_args(shape_checked, name, rec.params, args, rec.is_extern)
+    // Slice B (ps3t.4.5): a lambda argument bound to a generic-typed
+    // param (`f: fn(T) -> T`) is NOT threaded at codegen — the
+    // template-dispatch path emits the lambda before any instantiation
+    // pins T, so an un-annotated param would reach the layout boundary
+    // Unknown (the F1007 backstop). Require the annotation here.
+    let lambda_gated = tc_gate_generic_lambda_args(shape_checked, rec.tp, rec.params, args)
+    let newtype_checked = tc_check_newtype_args(lambda_gated, name, rec.params, args, rec.is_extern)
     // Optional strict arg-type warnings: AVRA_STRICT_ARGS=1 surfaces
     // F9004 when a concrete arg type isn't assignable to its concrete
     // param type. Off by default — the existing typeck has gaps in
@@ -3302,8 +3424,7 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
     } else {
         newtype_checked
     }
-    let first_arg_ty = tc_first_arg_type(strict_checked, args)
-    let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, first_arg_ty)
+    let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, args)
     // For generic fns: infer T from the call's arg types AND the
     // caller's expected return type (so07.7.15), substitute into ret_ty
     // so downstream typeck sees `Int` for `first(nums)` instead of the
@@ -3321,11 +3442,16 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
 /// stays quiet; turn on for refactor sessions that need fail-fast on
 /// silent ptr-shape coercions.
 fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    // Per-arg caret, same as the always-on gates (fb = the call head's
+    // stamp, restored after) — an F9004 points at the offending argument.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur_tc = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
         let p = params[i]
+        cur_tc = tc_at_operand(cur_tc, args[i], fb_line, fb_col)
         let arg_ty = tc_arg_concrete_ty(cur_tc, args[i])
         let skip_unknown = vtype_is_unknown(p.vtype) || vtype_is_unknown(arg_ty)
         let skip_generic = vtype_mentions_typeparam(p.vtype, tp)
@@ -3337,7 +3463,28 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
         }
         i = i + 1
     }
-    cur_tc
+    cur_tc with { current_line: fb_line, current_col: fb_col }
+}
+
+/// Slice B (ps3t.4.5) companion of `tc_gate_unthreaded_lambda`: walk a
+/// call's params/args pairwise and gate every un-annotated lambda arg
+/// whose DECLARED param type mentions one of the callee's type params.
+/// A concrete fn-typed param (`f: fn(int) -> int`) threads its types
+/// into the lambda at codegen and is exempt; a generic one does not —
+/// explicit type-args included (the emit path consults the declared
+/// template signature, never the instantiation, for lambda args).
+fn tc_gate_generic_lambda_args(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    if tp.length == 0 { return tc }
+    mut cur = tc
+    mut i = 0
+    let limit = if params.length < args.length { params.length } else { args.length }
+    while i < limit {
+        if vtype_mentions_typeparam(params[i].vtype, tp) {
+            cur = tc_gate_unthreaded_lambda(cur, cur.nodes.exprs.get(args[i]))
+        }
+        i = i + 1
+    }
+    cur
 }
 
 /// True iff `ty` (or any inner type it wraps) is a `.Struct(name, _)`
@@ -3684,7 +3831,7 @@ fn tc_infer_list_elem(store: NodeStore, elements: List<ExprId>) -> ValueType {
     list_lit_optionalize(store, elements, base)
 }
 
-fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
+export fn tc_param_types(params: List<ParamEntry>) -> List<ValueType> {
     // Inline loop (vs `list_map`) — current bs2's typeck rejects the
     // generic return inference of `list_map(params, (p) -> p.vtype)`
     // ("returns List, body produces List") because the lambda's
@@ -3833,11 +3980,17 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<
     for i in 0..n {
         bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, vtype_from_name(type_args[i])) })
     }
+    // Slice B (ps3t.4.5): gate un-annotated lambda args on the RAW
+    // params BEFORE substitution — codegen's lambda emit consults the
+    // declared template signature, so explicit type-args don't thread
+    // either; `apply::<int>((x) -> x)` needs the annotation just like
+    // the inferred form.
+    let lambda_gated = tc_gate_generic_lambda_args(checked, r.tp, r.params, args)
     // Gate args against the params INSTANTIATED with the explicit type-args
     // (mirrors the regular call path) so `g<string>([1])` into an int param —
     // and `id<string>(9)` into a `T`-typed param now bound to string — are both
     // caught. Passing raw `r.params` would leave `T` unresolved and slip past.
-    let arg_checked = tc_check_newtype_args(checked, name, subst_param_types(r.params, bindings), args, r.is_extern)
+    let arg_checked = tc_check_newtype_args(lambda_gated, name, subst_param_types(r.params, bindings), args, r.is_extern)
     tc_er(arg_checked, tc_subst_vtype(r.ret_ty, bindings))
 }
 
@@ -3874,12 +4027,15 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             if r.found {
                 return tc_check_fn_call_with_expected(checked, name, args, r, expected)
             }
-            // Variable holding a closure
+            // Variable holding a closure. Row 19 (ps3t.4.5): an indirect
+            // call never threads param types into a lambda argument —
+            // gate un-annotated lambda args before the layout check.
             let var_ty = type_lookup(checked.types, name)
             if vtype_is_unknown(var_ty) {
-                return tc_er(checked, .Unknown)
+                return tc_er(tc_gate_lambda_args(checked, args), .Unknown)
             }
-            tc_er(tc_check_closure_args(checked, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
+            let arg_gated = tc_gate_lambda_args(checked, args)
+            tc_er(tc_check_closure_args(arg_gated, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
@@ -3891,12 +4047,25 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
         }
         .FieldAccess(obj, method) -> check_method_call(tc, tc.nodes.exprs.get(obj), method, args)
         _ -> {
-            // Expression callee (e.g. compose(f,g)(x))
+            // Expression callee (e.g. compose(f,g)(x)). Row 19: same
+            // indirect-call gate as the closure-variable arm above.
             let c = check_expr(tc, callee)
-            let checked = check_expr_list(c.tc, args)
+            let checked = tc_gate_lambda_args(check_expr_list(c.tc, args), args)
             tc_er(tc_check_closure_args(checked, "closure", c.ty, args), vtype_fn_ret(c.ty))
         }
     }
+}
+
+/// Row-19 companion of `tc_gate_unthreaded_lambda`: apply the
+/// unthreaded-position gate to every argument of an indirect call
+/// (closure-variable or expression callee) — those call paths never
+/// thread declared param types into lambda arguments.
+fn tc_gate_lambda_args(tc: TC, args: List<ExprId>) -> TC {
+    mut cur = tc
+    for id in args {
+        cur = tc_gate_unthreaded_lambda(cur, cur.nodes.exprs.get(id))
+    }
+    cur
 }
 
 /// Gate a closure call's arguments against the closure's DECLARED param
@@ -3913,12 +4082,17 @@ fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<Exp
     mut cur = tc
     mut i = 0
     let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
+    // Per-arg caret (fb = the call head's stamp, restored after), same as
+    // the registered-fn gates.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // ── Method call type inference ──
@@ -4248,14 +4422,20 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<ExprId>) -> TC {
 }
 
 export fn check_expr_list_types(tc: TC, exprs: List<ExprId>) -> ExprListResult {
+    // Caret each element's OWN span while it is checked (fb = the enclosing
+    // expression's stamp, restored after) — an error inside element N then
+    // carets element N, not the call/list head, and never a sibling.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur_tc = tc
     mut types: List<ValueType> = []
     for id in exprs {
+        cur_tc = tc_at_operand(cur_tc, id, fb_line, fb_col)
         let r = check_expr(cur_tc, cur_tc.nodes.exprs.get(id))
         cur_tc = r.tc
         types.push(r.ty)
     }
-    ExprListResult { tc: cur_tc, types }
+    ExprListResult { tc: cur_tc with { current_line: fb_line, current_col: fb_col }, types }
 }
 
 // ── Pass 3: Type annotation ──
