@@ -176,6 +176,49 @@ fn global_item_lookup(reg: GlobalItemReg, name: string) -> string {
     reg.canonicals[i]
 }
 
+/// Membership set of canonical module-level `const` names, cstr-map-
+/// backed for O(1) lookups during the ident rewrite. Built once per
+/// resolve pass by `const_index_build`. The uppercase-ident rewrite
+/// consults it to qualify SCREAMING_SNAKE const references without
+/// touching type/enum names (which must stay bare for codegen).
+type ConstIndex = { idx: ptr }
+
+fn const_index_build(store: NodeStore, ids: List<StmtId>) -> ConstIndex {
+    let ci = ConstIndex { idx: avra_map_new_cstr() }
+    collect_module_consts(store, ids, "", ci)
+    ci
+}
+
+fn const_index_has(ci: ConstIndex, canonical: string) -> bool {
+    avra_map_has_cstr(ci.idx, canonical) != 0
+}
+
+/// Walk every module-level `const` (recursing into Module bodies and
+/// Annotated wrappers only — fn/block bodies declare LOCAL consts, not
+/// items) and record its canonical qualified name. Program-root consts
+/// (mod_path == "") are skipped: they compile as root-scope bindings
+/// and are never qualified.
+fn collect_module_consts(store: NodeStore, ids: List<StmtId>, mod_path: string, ci: ConstIndex) {
+    for id in ids {
+        collect_module_const_stmt(store, store.stmts.get(id), mod_path, ci)
+    }
+}
+
+fn collect_module_const_stmt(store: NodeStore, stmt: Stmt, mod_path: string, ci: ConstIndex) {
+    match stmt {
+        .Const(name, _, _) -> {
+            if mod_path != "" {
+                // Already-qualified names (re-resolve passes) register as-is.
+                let canonical = if name.contains("::") { name } else { type_qualified_name(mod_path, name) }
+                avra_map_set_cstr(ci.idx, canonical, 1)
+            }
+        }
+        .Module(name, body) -> collect_module_consts(store, body, type_qualified_name(mod_path, name), ci)
+        .Annotated(_, inner) -> collect_module_const_stmt(store, store.stmts.get(inner), mod_path, ci)
+        _ -> {}
+    }
+}
+
 /// True iff `name` is declared in `items` AND marked `export`.
 fn item_is_exported(items: List<ModuleItemEntry>, name: string) -> bool {
     mut i = 0
@@ -579,6 +622,18 @@ type NameCtx = {
     // field's `T` stays bare — a spurious return-type mismatch. rewrite_impl_stmt
     // recovers the target's type-params from here and threads them into scope.
     type_decl_tps: List<TypeDeclTpEntry>,
+    // True while rewriting a Module body's DIRECT children — the only
+    // position where a `const` declares a module ITEM (qualified name,
+    // one global per module) rather than a local binding. Set by
+    // ctx_with_module, cleared on every descent into a fn / lambda /
+    // block / spec / parallel body. Without the decl-side qualification
+    // two modules' same-named consts collapsed into ONE flat LLVM
+    // global and silently read each other's value (first-match-wins) —
+    // the batched-test-file const collision.
+    module_top: bool,
+    // Canonical names of every module-level const declaration; lets the
+    // uppercase-ident rewrite qualify const references specifically.
+    const_index: ConstIndex,
 }
 
 /// One generic type declaration's type-params, indexed for impl-method
@@ -663,9 +718,18 @@ fn type_decl_tp_lookup(list: List<TypeDeclTpEntry>, qualified: string, short: st
 }
 
 /// Functional update: enter a new module by swapping the active path
-/// and alias chain.
+/// and alias chain. The module body's direct children are module-top
+/// statements — a `const` there is a module item (see NameCtx.module_top).
 fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBinding>) -> NameCtx {
-    ctx with { aliases, current_module }
+    ctx with { aliases, current_module, module_top: true }
+}
+
+/// Enter a nested statement scope (block / spec / given / parallel /
+/// trait body): a `const` declared there is a local binding, not a
+/// module item. No-op when already outside module-top position.
+fn ctx_nested_scope(ctx: NameCtx) -> NameCtx {
+    if !ctx.module_top { return ctx }
+    ctx with { module_top: false }
 }
 
 /// Push every parameter name onto the local scope as a defined
@@ -680,6 +744,15 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: List<AliasBind
 /// module — undefined-variable errors fire in random downstream
 /// fns whose locals had nothing to do with the leaked name.
 fn bind_params_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
+    // Every caller (fn / lambda / catch / select / list-comp body) is a
+    // nested value scope — consts declared inside are locals, never
+    // module items, even when the param list is empty.
+    bind_names_ctx(ctx_nested_scope(ctx), params)
+}
+
+/// Add each entry's name to the local scope WITHOUT entering a nested
+/// scope — for bindings (destructures) that live at the current level.
+fn bind_names_ctx(ctx: NameCtx, params: List<ParamEntry>) -> NameCtx {
     mut acc = ctx
     mut i = 0
     while i < params.length {
@@ -820,6 +893,8 @@ export fn rewrite_uses(ids: List<StmtId>, state: ResolverState) -> List<StmtId> 
         nodes: state.nodes,
         type_params: [],
         type_decl_tps: tps,
+        module_top: false,
+        const_index: const_index_build(state.nodes, ids),
     }
     rewrite_stmt_ids(ctx, ids)
 }
@@ -847,6 +922,8 @@ export fn rewrite_uses_macro_only(ids: List<StmtId>, state: ResolverState) -> Li
         nodes: state.nodes,
         type_params: [],
         type_decl_tps: tps,
+        module_top: false,
+        const_index: const_index_build(state.nodes, ids),
     }
     rewrite_macro_stmts(ctx, ids)
 }
@@ -861,7 +938,7 @@ fn rewrite_macro_stmts(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
             // inside a Module wrapper are still picked up.
             match ctx.nodes.stmts.get(id) {
                 .Module(name, body) -> {
-                    let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name) }
+                    let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name), module_top: true }
                     let new_body = rewrite_macro_stmts(mod_ctx, body)
                     out.push(ctx.nodes.restmt(Stmt.Module(name, new_body), id))
                 }
@@ -1089,8 +1166,15 @@ fn bind_stmt_locals(ctx: NameCtx, stmt: Stmt) -> NameCtx {
     match stmt {
         .Let(name, _, _) -> scope_add_local(ctx, name)
         .Mut(name, _, _) -> scope_add_local(ctx, name)
-        .Const(name, _, _) -> scope_add_local(ctx, name)
-        .LetDestructure(names, _) -> bind_params_ctx(ctx, names)
+        // A module-top `const` is a module ITEM, not a local — later
+        // references qualify through the sibling item lookup (order-
+        // independent, exactly like fn items). Fn-body / block consts
+        // keep the local-binding behavior.
+        .Const(name, _, _) -> if ctx.module_top { ctx } else { scope_add_local(ctx, name) }
+        // Destructure names bind at the CURRENT level (no nested scope
+        // entered — the siblings that follow must keep module-top
+        // status when this list is a module body).
+        .LetDestructure(names, _) -> bind_names_ctx(ctx, names)
         .Annotated(_, inner) -> bind_stmt_locals(ctx, ctx.nodes.stmts.get(inner))
         _ -> ctx
     }
@@ -1105,7 +1189,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Mut(name, vt, init) -> .Mut(name, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
         .Expr(e) -> .Expr(rewrite_expr_id(ctx, e))
         .Return(e) -> .Return(rewrite_expr_id(ctx, e))
-        .Block(body) -> .Block(rewrite_stmt_ids(ctx, body))
+        .Block(body) -> .Block(rewrite_stmt_ids(ctx_nested_scope(ctx), body))
         .If(cond, then_b, else_b) -> {
             let new_else = if else_b != null { rewrite_stmt_id(ctx, else_b!) } else { null }
             Stmt.If(rewrite_expr_id(ctx, cond), rewrite_stmt_id(ctx, then_b), new_else)
@@ -1162,7 +1246,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // `c = e.cause()`) misses the qualified trait registration
             // and falls through to the type-name dispatch
             // (forge-crafting-intepreters-q3gp).
-            Stmt.TraitDecl(qn, rewrite_stmt_ids(ctx, body))
+            Stmt.TraitDecl(qn, rewrite_stmt_ids(ctx_nested_scope(ctx), body))
         }
         .ShapeDecl(name, fields) -> {
             let qn = declared_type_name(ctx, name)
@@ -1191,12 +1275,21 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Errdefer(body) -> .Errdefer(rewrite_expr_id(ctx, body))
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr_id(ctx, init))
         .ExternFn(name, params, rvt) -> .ExternFn(name, rewrite_param_types(ctx, params), rewrite_vtype(ctx, rvt))
-        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_ids(ctx, body))
-        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_ids(ctx, body))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_ids(ctx_nested_scope(ctx), body))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_ids(ctx_nested_scope(ctx), body))
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(ctx, cond))
-        .Parallel(body) -> .Parallel(rewrite_stmt_ids(ctx, body))
+        .Parallel(body) -> .Parallel(rewrite_stmt_ids(ctx_nested_scope(ctx), body))
         .Select(arms) -> .Select(rewrite_select_arms(ctx, arms))
-        .Const(name, vt, init) -> .Const(name, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
+        // A module-top `const` is a module ITEM — qualify its declared
+        // name like fn / type declarations so each module's consts get
+        // their own LLVM global. Without this, same-named consts from
+        // sibling modules (batched test files) collapsed into one flat
+        // global and silently read each other's value. Fn-body / block
+        // consts (module_top cleared) keep their local names.
+        .Const(name, vt, init) -> {
+            let qn = if ctx.module_top { declared_type_name(ctx, name) } else { name }
+            Stmt.Const(qn, rewrite_vtype(ctx, vt), rewrite_expr_id(ctx, init))
+        }
         .UnionAliasDecl(name, vt) -> {
             let qn = declared_type_name(ctx, name)
             let rvt = rewrite_vtype(ctx, vt)
@@ -1525,7 +1618,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
         .Assign(name, val) -> .Assign(name, rewrite_expr_id(ctx, val))
         .Index(obj, idx) -> .Index(rewrite_expr_id(ctx, obj), rewrite_expr_id(ctx, idx))
         .Try(inner) -> .Try(rewrite_expr_id(ctx, inner))
-        .Block(body) -> .Block(rewrite_stmt_ids(ctx, body))
+        .Block(body) -> .Block(rewrite_stmt_ids(ctx_nested_scope(ctx), body))
         _ -> rewrite_expr_compound(ctx, expr)
     }
 }
@@ -1626,8 +1719,16 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     if scope_has(ctx.locals, name) { return original }
     // 2. Builtin function — don't rewrite
     if is_builtin_name(name) { return original }
-    // 3. Uppercase = type/enum name — leave for codegen (StructLit/EnumCtor handled separately)
-    if name.length > 0 && name[0] in "A".."Z" { return original }
+    // 3. Uppercase — usually a type/enum name, left bare for codegen
+    //    (StructLit/EnumCtor handled separately). The exception is a
+    //    SCREAMING_SNAKE module const: a module ITEM whose declaration
+    //    is qualified, so its references must qualify too (current-
+    //    module sibling first, then `use` alias — see resolve_const_ref).
+    if name.length > 0 && name[0] in "A".."Z" {
+        let const_canonical = resolve_const_ref(ctx, name)
+        if const_canonical != "" { return Expr.QualifiedIdent(const_canonical) }
+        return original
+    }
     // 4. Use alias (from `use path.{name}`)
     let from_alias = alias_lookup(ctx.aliases, name)
     if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
@@ -1643,6 +1744,31 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     // No global fallback. Names must be imported via `use` or defined
     // in the current module. Unresolved names stay as Expr.Ident.
     original
+}
+
+/// Resolve an UPPERCASE identifier to a module-level const's canonical
+/// path — a sibling of the current module first, then a `use` alias —
+/// returning "" when the name doesn't refer to a known const. Type /
+/// enum names (the other uppercase idents) fall through to "" because
+/// only Const declarations populate the const index; no global
+/// fallback, mirroring `rewrite_ident`'s lowercase path.
+///
+/// Sibling-before-alias mirrors `resolve_type_in_ctx`'s current-
+/// module-first rule (yx7b): the entry file's `use` aliases are merged
+/// into every module's ctx, so alias-first would let a ROOT import of
+/// `mod_a.{X}` hijack `mod_b`'s reference to its OWN const `X`.
+fn resolve_const_ref(ctx: NameCtx, name: string) -> string {
+    if ctx.current_module != "" {
+        let mod_node = module_find(ctx.tree, ctx.current_module)
+        let from_sibling = match mod_node {
+            .End -> ""
+            .Node(_, _, items, _, _) -> item_lookup(items, name)
+        }
+        if from_sibling != "" && const_index_has(ctx.const_index, from_sibling) { return from_sibling }
+    }
+    let from_alias = alias_lookup(ctx.aliases, name)
+    if from_alias != "" && const_index_has(ctx.const_index, from_alias) { return from_alias }
+    ""
 }
 
 /// Map `rewrite_expr` over a flipped `List<ExprId>` (call args); rewrites

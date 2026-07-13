@@ -1,0 +1,6 @@
+// Module B of the const-scoping fixture: same const name as consts_a,
+// different value. Pre-scoping both collapsed into one flat global and
+// BOTH readers returned whichever module's init stored last.
+export const SCOPED_PROBE_VAL: string = "from_b"
+
+export fn b_read() -> string { SCOPED_PROBE_VAL }

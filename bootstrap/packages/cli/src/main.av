@@ -2736,7 +2736,16 @@ fn read_listing_file_paths(listing_file: string) -> List<string> {
 // AVRA_USE_METADATA_LIB=0 (or AVRA_SKIP_PREBUILD=1) to opt out.
 fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let compiler_path = resolve_compiler_path(project_dir)
-    let log_dir = "${project_dir}/build/test_shards"
+    // Per-run (pid-scoped) log dir. A single shared `build/test_shards`
+    // was wiped by the `rm -rf` below at EVERY run start, so a nested
+    // `bs2 test` (a spec fixture driving the runner end-to-end) or a
+    // concurrent run in the same tree deleted the outer run's shard
+    // logs mid-flight — the outer aggregate then misread every live
+    // shard as jetsam-killed ("no log produced"). Scoping the dir by
+    // pid and cleaning only OUR OWN slot makes runs independent; stale
+    // slots from crashed runs are tiny text logs reclaimed by the next
+    // `make clean`.
+    let log_dir = "${project_dir}/build/test_shards/${string(avra_getpid())}"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
     let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
