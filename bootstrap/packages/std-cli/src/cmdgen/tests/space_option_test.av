@@ -1,8 +1,8 @@
 // An option declared in a command schema is settable by BOTH the inline
 // `--key=value` form AND the space-separated `--key value` form (two tokens).
-// A single `parse_tokens` classifier serves App.run_argv and the legacy
-// cli_parse; supporting the space form there lets commands that historically
-// hand-rolled it (via read_kv_value, e.g. `docs --search foo`) share it.
+// The single `parse_tokens` classifier behind App.run_argv supports the
+// space form so commands that historically hand-rolled it (via
+// read_kv_value, e.g. `docs --search foo`) share one code path.
 //
 // The value after a bare `--key` is consumed verbatim — even if it looks like a
 // flag — matching read_kv_value. A trailing `--key` with no following token is a
