@@ -39,7 +39,7 @@ fn main() -> int {
     let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
     probe("std_avrac_build_rc_zero", rc == 0)
 
-    probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac)) != 0)
+    probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac, bs2)) != 0)
     probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
 
     // Symbols are qualified with @std::avrac::, which the object-file

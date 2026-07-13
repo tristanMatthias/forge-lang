@@ -79,7 +79,7 @@ fn main() -> int {
 
     // The producer's .meta.bin was pre-built (the fast path has something
     // to read).
-    probe("producer_meta_pre_built", avra_selfhost_file_exists(package_meta_path_for("${root}/packages/test-geo")) != 0)
+    probe("producer_meta_pre_built", avra_selfhost_file_exists(package_meta_path_for("${root}/packages/test-geo", bs2)) != 0)
 
     // The consumer build did NOT crash. This is the core guard: the
     // reverted flip SIGSEGV'd right here (raw StmtId deref'd as an SStmt

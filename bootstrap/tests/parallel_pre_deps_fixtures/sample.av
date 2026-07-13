@@ -40,9 +40,9 @@ fn main() -> int {
     let rc = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=3 ${bs2} build --emit_metadata")
     probe("parallel_build_rc_zero", rc == 0)
 
-    probe("a_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/a")) != 0)
-    probe("b_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/b")) != 0)
-    probe("c_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/c")) != 0)
+    probe("a_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/a", bs2)) != 0)
+    probe("b_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/b", bs2)) != 0)
+    probe("c_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/c", bs2)) != 0)
 
     // AVRA_JOBS=1 (sequential) — second run hits the cache for each
     // dep so .meta.bin from the first run is preserved. Just verify
