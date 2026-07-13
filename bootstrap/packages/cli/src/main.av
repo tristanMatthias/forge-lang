@@ -666,12 +666,6 @@ fn cache_summary_line(hits: int, misses: int, detail: string) -> string {
 fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> PreDepOutcome {
     let path_count = count_path_deps(deps)
     if path_count == 0 { return pre_dep_outcome_empty() }
-    // PID-scoped: two concurrent `avra build` runs with the same dep
-    // count would otherwise append into ONE shared list (write_dep_paths
-    // appends) and each pre-build the other's dependency set.
-    let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
-    avra_shell_exec("rm -f ${paths_file}")
-    write_dep_paths(deps, paths_file)
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     let jobs_str = if env_jobs != "" { env_jobs } else { "4" }
     let jobs = avra_parse_int(jobs_str)
@@ -682,7 +676,17 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     // marker-file approach since the pool primitive doesn't surface
     // per-job state).
     if progress_should_render() && !args.json {
-        return run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+        // The dep-paths list feeds ONLY this progress runner (the pool
+        // branch below builds its cmds straight from `deps`), so it is
+        // written here — pid-scoped, so concurrent builds can't append
+        // into one shared list — and removed once its one consumer is
+        // done with it.
+        let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
+        avra_shell_exec("rm -f ${paths_file}")
+        write_dep_paths(deps, paths_file)
+        let out = run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+        avra_shell_exec("rm -f ${paths_file}")
+        return out
     }
     // Pure-Avra worker pool replaces the prior xargs -P invocation
     // (e20h Phase 2). Same parallelism semantics, no shell xargs

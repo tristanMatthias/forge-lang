@@ -112,9 +112,24 @@ export fn entry_source_meta_path(c: Cache, source_fp: Fingerprint) -> string {
     c.cache_dir + "meta/" + source_fp.hex + "/unit.meta.bin"
 }
 
-/// True when the source-keyed metadata slot is populated.
+/// True when the source-keyed metadata slot is populated. A hit
+/// refreshes the slot's last-use stamp (see cache_touch_source_meta).
 export fn cache_has_source_meta(c: Cache, source_fp: Fingerprint) -> bool {
-    avra_selfhost_file_exists(entry_source_meta_path(c, source_fp)) == 1
+    if avra_selfhost_file_exists(entry_source_meta_path(c, source_fp)) == 0 { return false }
+    cache_touch_source_meta(c, source_fp)
+    true
+}
+
+/// pdme.6: refresh a meta slot's last-use stamp so the age-based GC
+/// reads as an LRU for meta/ too, matching the obj/ and link/ stores.
+/// The touch lands on the slot DIRECTORY — collect_prune_candidates
+/// walks meta/<hex>/ as the per-entry candidate, and a directory's
+/// mtime never advances on reads of an existing child, so touching
+/// only unit.meta.bin would still let a hot slot age out. Every
+/// consumer that serves from the slot (cache_has_source_meta here,
+/// the resolver's validated fast-path lookups) routes through this.
+export fn cache_touch_source_meta(c: Cache, source_fp: Fingerprint) {
+    let _ = avra_touch(c.cache_dir + "meta/" + source_fp.hex)
 }
 
 /// Materialise the source-keyed metadata entry directory so a

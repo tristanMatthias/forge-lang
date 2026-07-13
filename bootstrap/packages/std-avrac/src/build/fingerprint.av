@@ -316,7 +316,17 @@ export fn package_full_fingerprint_with_toolchain(pkg_root: string, toolchain_ha
 /// key through this one function so the two sides agree by
 /// construction.
 export fn source_slot_fp(pkg_root: string, entry_path: string) -> string {
-    let pkg_fp = package_full_fingerprint(pkg_root)
+    source_slot_fp_with_toolchain(pkg_root, entry_path, toolchain_fingerprint())
+}
+
+/// The explicit-toolchain variant, mirroring
+/// `package_full_fingerprint_with_toolchain`: an EXTERNAL process
+/// validating a slot bs2 wrote must pass the hash of the bs2 it
+/// invoked — its own argv[0] is not a compiler and would derive a
+/// slot nobody writes. Ad-hoc entries key on content alone, so the
+/// toolchain axis only engages for real packages.
+export fn source_slot_fp_with_toolchain(pkg_root: string, entry_path: string, toolchain_hash: string) -> string {
+    let pkg_fp = package_full_fingerprint_with_toolchain(pkg_root, toolchain_hash)
     if pkg_fp != "" { return pkg_fp }
     sha256_file(entry_path)
 }

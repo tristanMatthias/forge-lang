@@ -9,7 +9,7 @@
 // contamination). Producers and consumers must all derive through
 // this function so both sides agree by construction.
 
-use @std.avrac.build.{package_full_fingerprint, source_slot_fp}
+use @std.avrac.build.{package_full_fingerprint, package_full_fingerprint_with_toolchain, source_slot_fp, source_slot_fp_with_toolchain}
 use @std.crypto.{sha256_file}
 use @std.avrac.core.{
     avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
@@ -48,5 +48,27 @@ spec "source_slot_fp: package vs ad-hoc key derivation" {
         let _ = avra_selfhost_write_file("${dir}/src/main.av", "fn main() {}\n")
         let key = source_slot_fp(dir, "${dir}/src/main.av")
         key != "" && key == package_full_fingerprint(dir)
+    }
+}
+
+spec "source_slot_fp_with_toolchain: the external-consumer variant" {
+    then "package keys fold the caller-named toolchain (distinct hashes, distinct keys)" {
+        let root = mk_root("tc_pkg")
+        let dir = "${root}/p"
+        let _ = avra_mkdir_p("${dir}/src")
+        let _ = avra_selfhost_write_file("${dir}/avra.toml", "[package]\nname = \"@fix/p\"\nversion = \"0.1.0\"\n")
+        let _ = avra_selfhost_write_file("${dir}/src/main.av", "fn main() {}\n")
+        let entry = "${dir}/src/main.av"
+        let ka = source_slot_fp_with_toolchain(dir, entry, "aaaa")
+        let kb = source_slot_fp_with_toolchain(dir, entry, "bbbb")
+        ka != "" && kb != "" && ka != kb && ka == package_full_fingerprint_with_toolchain(dir, "aaaa")
+    }
+    then "ad-hoc entries key on content alone — the toolchain axis is inert" {
+        let root = mk_root("tc_adhoc")
+        let f = "${root}/a.av"
+        let _ = avra_selfhost_write_file(f, "fn main() {}\n")
+        let ka = source_slot_fp_with_toolchain(root, f, "aaaa")
+        let kb = source_slot_fp_with_toolchain(root, f, "bbbb")
+        ka != "" && ka == kb && ka == sha256_file(f)
     }
 }
