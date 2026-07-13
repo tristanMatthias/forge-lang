@@ -295,6 +295,14 @@ DIFF & ANALYSIS
                        compile's IR is byte-identical to a cache-bypassed
                        recompute, and a final revert must restore the
                        golden IR. Default N=20, SEED=42; seconds to run.
+  --sweep [--fresh] [dir ...]
+                       OOM-safe full-suite runner: one sequential
+                       `bs2 test <dir>` per test directory (default:
+                       tests/ + packages/**/tests) with per-dir logs and
+                       .ok resume markers under build/sweep. Stops LOUDLY
+                       at the first red dir; a re-run resumes there.
+                       --fresh drops the markers. This is the sanctioned
+                       way to run the full suite on a ≤16GB box.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2031,6 +2039,60 @@ MANIFEST
   ok "cache-fuzz PASS — $n iterations (seed $seed): cached IR == recomputed IR, revert restores golden"
 }
 
+# t-lqzr: the OOM-safe full-suite runner, promoted from the CLAUDE.md
+# copy-paste snippet (rule 10: dev tooling lives here). One `bs2 test`
+# per directory, strictly sequential — a ≤16GB box survives what a
+# parallel whole-suite invocation has repeatedly OOM'd. Per-dir logs +
+# `.ok` resume markers under $BUILD_DIR/sweep (override: AVRA_SWEEP_DIR),
+# so a killed run resumes at the failing dir instead of restarting, and
+# failure is LOUD (stop at the first red dir, print its tail) — no later
+# dir can mask an earlier one. On a green run the per-dir tallies are
+# aggregated into one suite-wide summary.
+#
+# Usage: --sweep [--fresh] [dir ...]
+#   --fresh    drop resume markers first (full re-run)
+#   dir ...    sweep only these dirs (default: tests/ + packages/**/tests)
+mode_sweep() {
+  local fresh=0
+  if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
+  ensure_bs2
+  local sweep_dir="${AVRA_SWEEP_DIR:-$BUILD_DIR/sweep}"
+  [ "$fresh" = "1" ] && rm -rf "$sweep_dir"
+  mkdir -p "$sweep_dir"
+  local dirs=()
+  if [ $# -gt 0 ]; then
+    dirs=("$@")
+  else
+    dirs=(tests)
+    while IFS= read -r d; do dirs+=("$d"); done < <(find packages -type d -name tests | sort)
+  fi
+  local t_start
+  t_start=$(date +%s)
+  local d slug logf
+  for d in "${dirs[@]}"; do
+    slug=$(printf '%s' "$d" | tr '/' '_')
+    logf="$sweep_dir/$slug.log"
+    if [ -f "$logf.ok" ]; then
+      log "[sweep] $d — already green (resume marker; --fresh re-runs)"
+      continue
+    fi
+    if ! "$BS2" test "$d" > "$logf" 2>&1; then
+      err "[sweep] FAILED: $d — full log: $logf"
+      sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -E '    FAIL|failed|crashed' | head -10 >&2
+      err "[sweep] markers kept — a re-run resumes at this dir"
+      return 1
+    fi
+    touch "$logf.ok"
+    log "[sweep] ok $d ($(sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1))"
+  done
+  local total
+  total=$(for f in "$sweep_dir"/*.log; do
+    [ -f "$f.ok" ] || continue
+    sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1
+  done | awk -F'[/ ]' '{p+=$1; t+=$2} END {print p "/" t}')
+  ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -2080,6 +2142,7 @@ main() {
     --seed-merge-classify) seed_merge_classify "$@" ;;
     --slot-exec)          mode_slot_exec "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
+    --sweep)              mode_sweep "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }

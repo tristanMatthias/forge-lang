@@ -43,6 +43,9 @@ help:
 	@echo "  make test          Run spec tests + self-host fixed-point check."
 	@echo "                     Options: FILTER=<substr>, SKIP_SELFHOST=1."
 	@echo "  make quick         Inner-loop: rebuild bs2 + tests, skip selfhost. FILTER= supported."
+	@echo "  make sweep         OOM-safe full suite: sequential per-dir runs with resume"
+	@echo "                     markers (build/sweep/). FRESH=1 drops the markers. The"
+	@echo "                     sanctioned full-suite runner on a <=16GB box."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
@@ -143,6 +146,12 @@ test:
 quick:
 	@$(DIAG) --ensure-bs2
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
+
+# OOM-safe full suite: one sequential `bs2 test <dir>` per test dir, with
+# per-dir logs + resume markers under build/sweep/ (kill-safe: a re-run
+# resumes at the failing dir). FRESH=1 drops the markers first.
+sweep:
+	@$(DIAG) --sweep $(if $(FRESH),--fresh)
 
 # Just the fixed-point check.
 selfhost:
