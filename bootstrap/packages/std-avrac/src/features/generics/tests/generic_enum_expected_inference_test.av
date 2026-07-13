@@ -257,3 +257,19 @@ fn main() { let p: Pair<int, string> = Pair.L(7) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
 }
+
+// Const-binding coverage: the `.Const` collect/rewrite arms thread the
+// annotation for symmetry with let/mut, but the path is unreachable end-to-end
+// today — typeck's const-evaluable gate rejects an enum-ctor initializer as
+// F1000 BEFORE mono runs, so no runtime const case is expressible. This case
+// pins that gate: if it ever widens to allow const enum construction, this
+// test starts failing, which is the signal to add a runtime const case
+// mirroring the let/mut ones above.
+spec "a const with a generic enum ctor initializer is gated before mono" {
+    then "const p: Pair<int,string> = Pair.L(7) is the F1000 const-expression error" {
+        let out = eie_compile_out("enum Pair<A, B> { L(a: A)
+R(b: B) }
+fn main() { const p: Pair<int, string> = Pair.L(7) }")
+        out.contains("F1000") && out.contains("compile-time constant")
+    }
+}

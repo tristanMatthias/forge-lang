@@ -2555,7 +2555,12 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(cond, regs, insts))
         .Parallel(body) -> .Parallel(rewrite_stmt_ids(body, regs, insts))
         .Select(arms) -> .Select(rewrite_select_arms_mono(arms, regs, insts))
-        .Const(n, vt, init) -> .Const(n, vt, regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init))
+        // Const mirrors rewrite_let_binding: mangle the declared type through
+        // the structural rewriter AND thread the ORIGINAL vt as the init's
+        // expected type. Latent today — typeck's const-evaluable gate rejects
+        // generic constructions before mono — but the symmetry means consts
+        // can't silently diverge from let/mut if that gate ever widens.
+        .Const(n, vt, init) -> .Const(n, rewrite_instance_vtype(vt, regs, insts), regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init))
         _ -> stmt
     }
 }
