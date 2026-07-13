@@ -75,3 +75,24 @@ spec "the remaining argument gates caret their operands too" {
         out.contains("F1000") && out.contains(":5:9")
     }
 }
+
+spec "annotated plain-lambda bindings carry FnTyped to the closure gate" {
+    then "a wrong-typed arg through an un-annotated binding is F1000, at the arg" {
+        let out = check_out("plain_lambda",
+            "fn main() {\n" +
+            "    let f = (s: string) -> s\n" +
+            "    let x = 1\n" +
+            "    let _ = f(\n" +
+            "        x + 1)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":5:9")
+    }
+    then "a correct-typed call through the same binding still passes clean" {
+        let out = check_out("plain_lambda_ok",
+            "fn main() {\n" +
+            "    let f = (s: string) -> s\n" +
+            "    println(f(\"hi\"))\n" +
+            "}\n")
+        !out.contains("F1000") && !out.contains("error[")
+    }
+}

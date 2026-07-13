@@ -3,7 +3,7 @@
 // `emit_lambda` and parser helpers are in scope without self-imports.
 use core.{feature_new, Feature, ExprId}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
-use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit}
+use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit, tc_first_unannotated_param, tc_param_types}
 
 /// Register the `(x, y) -> body` lambda + closure feature.
 /// Captures referenced bindings from the enclosing scope; spec
@@ -35,7 +35,15 @@ fn closure_resolve(r: Resolver, expr: Expr) -> Resolver {
 
 /// Type-check hook for `Lambda`. Type-checks the body in a
 /// fresh scope with each param bound to its declared type.
-/// Result type is `Fn<Ret>` where `Ret` is the body's type.
+/// A lambda whose params are ALL annotated types as
+/// `FnTyped(param-types, ret)` — the declared params are truth, so a
+/// binding that holds it carries them to the closure-call argument
+/// gate (a wrong-typed `f(123)` into a `(s: string) -> …` closure is
+/// F1000 at check time, not a wild store at runtime). A lambda with
+/// any un-annotated param keeps the param-less `Fn<Ret>` shape: its
+/// param types come from CONTEXT (call-arg, fn-typed binding, struct
+/// field), and claiming Unknown params here would shadow that
+/// context-driven typing.
 fn closure_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Lambda(params, body) -> {
@@ -47,6 +55,9 @@ fn closure_check(tc: TC, expr: Expr) -> ExprResult {
             let with_params = tc_bind_params(gated, params)
             let b = check_expr(with_params, with_params.nodes.exprs.get(body))
             let after = tc_exit(b.tc)
+            if tc_first_unannotated_param(params) == "" {
+                return tc_er(after, ValueType.FnTyped(tc_param_types(params), b.ty))
+            }
             tc_er(after, ValueType.Fn(b.ty))
         }
         _ -> tc_er(tc, .Unknown)
