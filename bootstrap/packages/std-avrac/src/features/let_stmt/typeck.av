@@ -29,6 +29,10 @@ export fn is_const_expr(store: NodeStore, expr: Expr) -> bool {
         .Binary(left, _, right) -> is_const_expr(store, store.exprs.get(left)) && is_const_expr(store, store.exprs.get(right))
         .Grouping(inner) -> is_const_expr(store, store.exprs.get(inner))
         .Ident(_) -> true  // could be another const — resolver ensures it's defined
+        // Module-level const references arrive QUALIFIED from the
+        // resolver (`mod::NAME`) — the same "could be another const"
+        // case as the bare Ident above.
+        .QualifiedIdent(_) -> true
         _ -> false
     }
 }

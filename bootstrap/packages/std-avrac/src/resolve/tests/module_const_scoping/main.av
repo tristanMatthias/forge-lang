@@ -1,0 +1,15 @@
+// Entry of the const-scoping fixture (driven by
+// module_const_scoping_test.av). Prints each module's view of its own
+// same-named const plus two use-imported consts from module A.
+mod consts_a
+mod consts_b
+use consts_a.{a_read, scoped_lower_val, SCOPED_PROBE_VAL}
+use consts_b.{b_read}
+
+fn main() -> int {
+    println("a: ${a_read()}")
+    println("b: ${b_read()}")
+    println("lower: ${scoped_lower_val}")
+    println("upper: ${SCOPED_PROBE_VAL}")
+    0
+}

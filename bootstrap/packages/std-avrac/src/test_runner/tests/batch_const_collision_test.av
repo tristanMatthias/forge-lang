@@ -1,0 +1,81 @@
+// WHY: when several `*_test.av` files are batched into ONE shard
+// binary, each file is assembled as its own `@deferred_init` module
+// and the units run CONCURRENTLY on worker threads. A file-level
+// `const` used to land in a flat, bare-name LLVM global namespace
+// shared by the whole shard: two batch members declaring the same
+// const name silently shared ONE global (first-match-wins, no
+// duplicate diagnostic — unlike fns, which FATAL), and each unit's
+// init re-stored it. Any unit that read the const after a sibling
+// unit's init had run got the SIBLING's value — a test that passed
+// standalone failed bundled, with another test's data (the
+// CONSUMER_SRC incident: a walker fixture compiled the guard test's
+// consumer source).
+//
+// The resolver now scopes module-level consts per module (qualified
+// declarations + references, like fns/types), so the two units below
+// keep their own values no matter how their inits interleave.
+//
+// This test drives the REAL collision shape end to end: two generated
+// test files, each declaring `const BATCH_PROBE_SHARED` with its own
+// value, forced into one batch (both files ride one `bs2 test <dir>`
+// invocation; the batch size is 8) with AVRA_TEST_JOBS=2 so the units
+// genuinely overlap. The interleaving is pinned, not left to chance:
+//   - alpha stores its const at unit start, holds its spec open for
+//     2s (shell sleep), THEN asserts its own value;
+//   - beta delays 500ms at init (top-level sleep BEFORE its const
+//     decl), stores, and asserts immediately.
+// Under the old flat global that guarantees beta's store lands inside
+// alpha's 2s window, so alpha reads "beta" and the inner run reports
+// a failure; with per-module scoping both pass. The inner run is a
+// fresh `bs2 test` each time (raw avra_shell_exec, never the
+// fixture-stdout cache), so no transient result is ever frozen.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+use @std.avrac.test_runner.{write_fixture}
+
+fn alpha_src() -> string {
+    "extern fn avra_shell_exec(cmd: string) -> string\n" +
+    "\n" +
+    "const BATCH_PROBE_SHARED: string = \"alpha\"\n" +
+    "\n" +
+    "spec \"alpha batch member const\" {\n" +
+    "    given \"a sibling batch member declaring the same const name\" {\n" +
+    "        then \"alpha still sees its own value after the sibling's init ran\" {\n" +
+    "            let _ = avra_shell_exec(\"sleep 2\")\n" +
+    "            BATCH_PROBE_SHARED == \"alpha\"\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n"
+}
+
+fn beta_src() -> string {
+    "extern fn avra_shell_exec(cmd: string) -> string\n" +
+    "\n" +
+    "let _delay = avra_shell_exec(\"sleep 0.5\")\n" +
+    "const BATCH_PROBE_SHARED: string = \"beta\"\n" +
+    "\n" +
+    "spec \"beta batch member const\" {\n" +
+    "    given \"a sibling batch member declaring the same const name\" {\n" +
+    "        then \"beta sees its own value\" {\n" +
+    "            BATCH_PROBE_SHARED == \"beta\"\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n"
+}
+
+spec "batched test files with same-named file-level consts stay isolated" {
+    then "both units pass in one batch with overlapping inits" {
+        let dir = "/tmp/avra_batch_const_probe_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        write_fixture("${dir}/alpha_batch_probe_test.av", alpha_src())
+        write_fixture("${dir}/beta_batch_probe_test.av", beta_src())
+        let out = avra_shell_exec("AVRA_TEST_JOBS=2 ./build/bs2 test '${dir}' 2>&1 || true")
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        // Preconditions first, so a runner-shape change can't make the
+        // probe vacuous: both files must ride ONE shard...
+        out.contains("[batch] 2 files")
+            // ...and the shard must report both units green — the old
+            // flat global turns alpha's assert red (`fail=1`).
+            && out.contains("pass=2 fail=0 total=2")
+    }
+}
