@@ -1,0 +1,35 @@
+// WHY: module-level `const` declarations are module ITEMS — the
+// resolver qualifies each declaration with its module path (exactly
+// like fn/type decls) so every module gets its OWN global. Before that,
+// codegen dropped every module's consts into ONE flat LLVM namespace
+// keyed by the bare name: two modules declaring the same const name
+// silently shared the FIRST global (first-match-wins, no diagnostic),
+// so each module could read the OTHER module's value. Batched test
+// shards hit exactly this — each *_test.av is assembled as its own
+// module, so a test passed standalone but read a sibling batch
+// member's const when bundled (the CONSUMER_SRC collision).
+//
+// The reference side was ALREADY qualified for `use`-imported and
+// lowercase sibling consts, so before the declaration side matched it
+// a lowercase const import died at codegen with `undefined name
+// mod::x` — the `lower:` probe pins that decl/ref agreement, and the
+// `upper:` probe pins the uppercase (SCREAMING_SNAKE) reference path,
+// which used to bypass qualification entirely.
+//
+// Fixture: module_const_scoping/{main,consts_a,consts_b}.av —
+// consts_a and consts_b both declare `export const SCOPED_PROBE_VAL`
+// with different values; readers must each see their own module's
+// value. A regressed resolver either fails the compile (undefined
+// qualified name) or prints `a: from_b` (shared global) — both red.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "module-level consts are scoped per module (no flat-namespace collision)" {
+    then "each module's reader sees its own const; imported consts resolve to their declaring module" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/resolve/tests/module_const_scoping/main.av 2>&1 || true")
+        out.contains("a: from_a")
+            && out.contains("b: from_b")
+            && out.contains("lower: 4")
+            && out.contains("upper: from_a")
+    }
+}

@@ -49,12 +49,12 @@ jobs:
       fp: ${{ steps.fp.outputs.fp }}
     steps:
       # Pinned to a commit (what @v4 resolves to at pin time): tags are
-      # mutable and this workflow is a trust gate. Full history (depth 0,
-      # matching seed-train.yml and the window/diff-test gates): the build
-      # itself needs none, but the SPEC SUITE does — e.g. the pre-push relay
-      # test (beads_hook_stdin_relay_test) walks `git rev-list HEAD -- bootstrap`
-      # then `${head}^`, which a shallow clone can't resolve. Running what the
-      # train runs means running it in the train's environment.
+      # mutable and this workflow is a trust gate. Full history (depth 0):
+      # the build itself needs none, but this gate re-runs what the train
+      # runs, and the train's environment (seed-train.yml, plus the
+      # window/diff-test gates whose merge-base and ref walks need real
+      # history) fetches depth 0 — matching it is what makes a green here
+      # meaningful there.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Read-only workflow — never let the token outlive checkout.

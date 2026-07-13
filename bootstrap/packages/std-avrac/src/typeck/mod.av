@@ -3,9 +3,9 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
-use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
@@ -13,7 +13,8 @@ use features.channels.{check_channel_method}
 use features.list_lit.{check_list_method, check_list_lit_with_expected}
 use features.map_lit.{check_map_method, check_map_lit_with_expected}
 use features.let_stmt.{is_const_expr, bind_destructure}
-use core.{method_mangled_name, type_short_name, is_result_enum_name}
+use core.{method_mangled_name, type_short_name, is_result_enum_name, qualified_module_of}
+use core.{find_annotation, annotation_string_args}
 use core.{variant_is_optional_present, variant_is_optional_absent}
 use core.{TypeRegistry, type_registry_id_for, type_registry_has_name, collect_id_zero_names_stmt_ids, stamp_ids_stmt_ids}
 use core.{exit}
@@ -546,8 +547,13 @@ fn is_shape(set: List<string>, name: string) -> bool {
     list_any(set, (n: string) -> n == name)
 }
 
-/// One newtype's metadata in NewtypeReg's `ord` list.
-type NewtypeMeta = { name: string, inner_vt: ValueType }
+/// One newtype's metadata in NewtypeReg's `ord` list. `opaque` marks
+/// an `@opaque`-annotated newtype: its `.raw()` peel is legal only in
+/// the declaring module (derived from the qualified `name`) and the
+/// `friends` modules named as the annotation's string args. Handles
+/// stay opaque everywhere else — compared and looked-up, never
+/// inspected (the L3 typed-identity rule).
+type NewtypeMeta = { name: string, inner_vt: ValueType, opaque: bool, friends: List<string> }
 
 /// Newtype-name → inner-type table. Populated by `collect_decls`,
 /// consulted by `resolve_vtype` to peel newtype wrappers when
@@ -561,10 +567,10 @@ fn newtype_reg_new() -> NewtypeReg {
     NewtypeReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-fn newtype_reg_register(reg: NewtypeReg, name: string, inner_vt: ValueType) -> NewtypeReg {
+fn newtype_reg_register(reg: NewtypeReg, name: string, inner_vt: ValueType, opaque: bool, friends: List<string>) -> NewtypeReg {
     mut ord = reg.ord
     let new_idx = ord.length
-    ord.push(NewtypeMeta { name, inner_vt })
+    ord.push(NewtypeMeta { name, inner_vt, opaque, friends })
     avra_map_set_cstr(reg.idx, name, new_idx)
     NewtypeReg { ord, idx: reg.idx }
 }
@@ -574,6 +580,51 @@ fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
     if avra_map_has_cstr(reg.idx, name) == 0 { return ValueType.Unknown }
     let i = avra_map_get_cstr(reg.idx, name)
     reg.ord[i].inner_vt
+}
+
+/// Full-row lookup for the `.raw()` opaque gate. Null when the name
+/// isn't a registered newtype.
+fn newtype_meta_lookup(reg: NewtypeReg, name: string) -> NewtypeMeta? {
+    if avra_map_has_cstr(reg.idx, name) == 0 { return null }
+    let i = avra_map_get_cstr(reg.idx, name)
+    reg.ord[i]
+}
+
+/// Normalize a module path to its FQN spelling: dots become `::`
+/// ("core.arena" → "core::arena"); an already-`::` path is unchanged.
+/// Friend-module names in `@opaque` args accept the `use`-path
+/// spelling, but module comparisons happen in `::` form.
+fn module_path_to_fqn(path: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < path.length {
+        let c = path.substring(i, i + 1)
+        if c == "." {
+            out = out + "::"
+        } else {
+            out = out + c
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// True when `caller_module` may peel an @opaque newtype declared in
+/// `decl_module` with the given `friends`: the declaring module is
+/// always a friend; everyone else must be named. A friend name
+/// matches exactly OR as a `::`-boundary suffix — in library/metadata
+/// builds every module FQN carries the package root
+/// (`@std::avrac::core::arena` vs the whole-program `core::arena`),
+/// and the same declaration must gate identically in both, so a
+/// friend written `core.arena` matches both spellings. The decl-vs-
+/// caller comparison needs no such tolerance: both names come from
+/// the same compile, so they carry the same prefix scheme.
+fn opaque_peel_allowed(caller_module: string, decl_module: string, friends: List<string>) -> bool {
+    if caller_module == decl_module { return true }
+    for f in friends {
+        if f == caller_module || caller_module.ends_with("::${f}") { return true }
+    }
+    false
 }
 
 /// One union-alias's metadata in UnionAliasReg's `ord` list.
@@ -635,9 +686,29 @@ type TC = {
     union_aliases: UnionAliasReg,
     depth: int,
     bag: DiagnosticBag,
+    // Diagnostic gate honored by every report chokepoint (tc_report_at,
+    // tc_warn, tc_report_with_cause, and feature-side bag writers).
+    // Pass 2 (check) runs with this true and owns ALL diagnostics.
+    // Pass 3 (annotate) re-runs check_expr purely to EXTRACT types and
+    // runs with this false: its TC context (current_fn / current_line /
+    // current_col) is terminally stale by then — the walk never re-enters
+    // fn contexts — so anything it reported would misattribute to the
+    // last-checked fn, and a context-SENSITIVE check (the @opaque
+    // `.raw()` module gate, which passes on legal code only under the
+    // right current_fn) would false-fire on legal code. The bag is a
+    // shared mutable structure, so a report fired during annotate DOES
+    // surface even though annotate's TC is discarded — this flag is what
+    // enforces the "annotate never reports" contract.
+    reporting: bool,
     current_fn: string,
     current_line: int,
     current_col: int,
+    // File attribution for the position above (F3a `SrcPos.file`, threaded
+    // from the stmt walk). Empty for entry-file rows — the renderer then
+    // falls back to the compile's own filename; non-empty for module-file
+    // rows so their diagnostics render against the RIGHT file's path and
+    // source snippet instead of the entry file's.
+    current_file: string,
     // The enclosing function's type parameters, in scope while its body
     // is checked. Set on `.Function` entry (alongside `current_fn`) so a
     // type argument written in EXPRESSION position — a `channel<T>` element
@@ -718,9 +789,11 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: Nod
         union_aliases: union_alias_reg_new(),
         depth: 0,
         bag: bag_new(),
+        reporting: true,
         current_fn: "",
         current_line: 0,
         current_col: 0,
+        current_file: "",
         current_scope_tp: empty_type_params(),
         traits: trait_registry_new(),
         trait_impls: empty_impls,
@@ -902,7 +975,8 @@ fn tc_decorate_span(tc: TC, fallback_sp: Span) -> Span {
 /// Used when the offending expression has a known span that
 /// differs from the TC's "current" position.
 export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int, len: int) -> TC {
-    let fallback = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
+    if !tc.reporting { return tc }
+    let fallback = if line > 0 { span_at(0, len, line, col, tc.current_file) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     tc with { bag: bag_report(tc.bag, diag_error(code, tc_decorate_msg(tc, msg), sp)) }
 }
@@ -912,6 +986,7 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
 /// strict-mode checks that want to surface signal without blocking
 /// the build (e.g. AVRA_STRICT_ARGS).
 export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
+    if !tc.reporting { return tc }
     let sp = tc_decorate_span(tc, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_warning(code, tc_decorate_msg(tc, msg), sp)) }
 }
@@ -919,11 +994,29 @@ export fn tc_warn(tc: TC, code: DiagCode, msg: string) -> TC {
 /// Append a diagnostic with a dedicated cause message — surfaced
 /// indented under the primary by the renderer.
 export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
-    let fallback = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
+    if !tc.reporting { return tc }
+    let fallback = if tc.current_line > 0 { span_at(0, 0, tc.current_line, tc.current_col, tc.current_file) } else { span_dummy() }
     let sp = tc_decorate_span(tc, fallback)
     let primary = diag_error(code, tc_decorate_msg(tc, msg), sp)
     let cause = diag_error(code, cause_msg, span_dummy())
     tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
+}
+
+/// Sharpen the TC's caret to `id`'s own byte span when the row carries one
+/// (ps3t.3.9 gave bare compound exprs real spans) — an error inside the
+/// expression then carets the expression, not the enclosing statement.
+/// Two deliberate fallbacks keep this total:
+///   - span-free rows (interned leaves, synthesized nodes) keep the stmt
+///     position;
+///   - module-file rows (current_file != "") keep the stmt position too —
+///     the store's LineIndex belongs to the ENTRY file, so a module row's
+///     byte offsets cannot be converted through it (the F0 multi-file
+///     constraint that gave stmts their own pos column).
+export fn tc_at_expr(tc: TC, id: ExprId) -> TC {
+    if tc.current_file != "" { return tc }
+    let lc = tc.nodes.expr_linecol(id)
+    if lc.line == 0 { return tc }
+    tc with { current_line: lc.line, current_col: lc.col }
 }
 
 /// Build an ExprResult — convenience constructor used pervasively
@@ -1098,10 +1191,13 @@ fn tc_check_signature_arity(tc: TC, params: List<ParamEntry>, ret_vt: ValueType,
     cur
 }
 
-/// No-type-param entry point for callers with no enclosing generic context
-/// (lambdas, externs). Exported for the closures feature.
+/// Signature-arity entry point for callers without their OWN type params
+/// (lambdas, externs). The ENCLOSING fn's params still apply — a lambda
+/// inside `fn f<T>` may annotate `(x: T)` — so the scope comes from TC
+/// state (empty at top level, where externs live). Exported for the
+/// closures feature.
 export fn tc_check_signature_arity_top(tc: TC, params: List<ParamEntry>, ret_vt: ValueType) -> TC {
-    tc_check_signature_arity(tc, params, ret_vt, empty_type_params())
+    tc_check_signature_arity(tc, params, ret_vt, tc.current_scope_tp)
 }
 
 /// Run the F1004 gate over a struct/shape's fields (or an enum variant's
@@ -1216,8 +1312,12 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // Pass 2.5: naming convention warnings
     let tc3 = check_naming_stmt_ids(tc2, ids)
     let t_naming = avra_uptime_ms()
-    // Pass 3: annotate AST — uses fast paths for leaf expressions
-    let annotated = annotate_stmt_ids(tc3, ids)
+    // Pass 3: annotate AST — uses fast paths for leaf expressions.
+    // Silent by contract (see TC.reporting): annotate re-runs check_expr
+    // only to extract types; its context is stale, so reporting here
+    // would misattribute diagnostics and false-fire context-sensitive
+    // checks on legal code.
+    let annotated = annotate_stmt_ids(tc3 with { reporting: false }, ids)
     let t_annotate = avra_uptime_ms()
     if timings_on {
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")
@@ -1384,8 +1484,20 @@ fn collect_decls(tc: TC, stmts: List<StmtId>) -> TC {
                 } else {
                     let inner_ty = resolve_vtype(cur, inner_vt)
                     let ctor_params: List<ParamEntry> = [ParamEntry { name: "value", vtype: inner_ty }]
+                    // `@opaque` (read off the un-peeled stmt so the Annotated
+                    // wrapper is visible) marks the handle: its string args
+                    // name friend modules, accepted in `use`-path spelling
+                    // ("core.arena") or FQN spelling ("core::arena") — both
+                    // normalize to the `::` form current_fn modules use.
+                    let opaque_ann = find_annotation(tc.nodes, tc.nodes.stmts.get(id), "opaque")
+                    mut friends: List<string> = []
+                    if opaque_ann != null {
+                        for f in annotation_string_args(tc.nodes, opaque_ann!) {
+                            friends.push(module_path_to_fqn(f))
+                        }
+                    }
                     cur with {
-                        newtypes: newtype_reg_register(cur.newtypes, name, inner_vt),
+                        newtypes: newtype_reg_register(cur.newtypes, name, inner_vt, opaque_ann != null, friends),
                         fns: fn_type_reg_register(cur.fns, name, empty_type_params(), ctor_params, ValueType.Newtype(name, inner_ty, type_registry_id_for(cur.type_reg, name)), false),
                     }
                 }
@@ -1542,7 +1654,7 @@ export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
     for id in ids {
         let pos = tc.nodes.stmt_pos(id)
         avra_ice_at(pos.file, pos.line, pos.col)
-        let with_pos = cur with { current_line: pos.line, current_col: pos.col }
+        let with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
         cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
     }
     cur
@@ -2174,10 +2286,12 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // through to check_expr for them.
     let pre_declared = if has_annotation { resolve_vtype(tc, ty_vt) } else { ValueType.Unknown }
     // F1004: a bare/under-applied generic annotation (`let x: GenOpt = …`)
-    // determines no layout — reject before it reaches codegen. (No enclosing
-    // type params threaded to bindings; a type-param-shadowed local annotation
-    // is the residual tracked under the totality lint.)
-    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, empty_type_params()) } else { tc }
+    // determines no layout — reject before it reaches codegen. The enclosing
+    // fn's type params ride TC state (current_scope_tp, set on Function
+    // entry), so a type-param-shadowed local annotation (`fn f<T>` +
+    // `let y: T` under a global generic `type T<U>`) is exempt, same as
+    // signature/field positions.
+    let gated = if has_annotation { tc_check_type_applied(tc, pre_declared, tc.current_scope_tp) } else { tc }
     let r = if has_annotation { check_expr_expected(gated, init, pre_declared) } else { check_expr(gated, init) }
     let declared_ty = if has_annotation { pre_declared } else { r.ty }
     // An int bound to a pointer-layout annotation is a wild store (ry1a/w0kt; see
@@ -2228,15 +2342,15 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
 /// recurse into their bodies and registries.
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, false)
-        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), false, true)
-        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, tc.nodes.exprs.get(init), true, false)
+        .Let(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), false, false)
+        .Mut(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), false, true)
+        .Const(name, ty_vt, init) -> check_binding(tc_at_expr(tc, init), name, ty_vt, tc.nodes.exprs.get(init), true, false)
         .Expr(e) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(e))
+            let r = check_expr(tc_at_expr(tc, e), tc.nodes.exprs.get(e))
             r.tc
         }
         .Return(value) -> {
-            let r = check_expr(tc, tc.nodes.exprs.get(value))
+            let r = check_expr(tc_at_expr(tc, value), tc.nodes.exprs.get(value))
             r.tc
         }
         .ReturnEmpty -> tc
@@ -2246,12 +2360,27 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(checked)
         }
         .Function(name, tp, params, ret_vt, body) -> {
+            // Nested NON-generic fns were desugared to let-bound closures
+            // before this pass, so an in-body `fn` reaching the checker
+            // with type params is the one shape with no valid lowering:
+            // closures take no type params. Report it here (F1044) instead
+            // of letting it fall through to codegen as an undefined fn.
+            let gated_tc = if tc.current_fn != "" && tp.length > 0 {
+                tc_report(tc, DiagCode.NestedGenericFnDecl,
+                    "generic fn `${name}` cannot be declared inside `${tc.current_fn}` — nested fns become closures, which take no type parameters")
+            } else { tc }
             avra_ice_push_fn(name)
-            let inner = tc_enter(tc) with { current_fn: name, current_scope_tp: tp }
+            let inner = tc_enter(gated_tc) with { current_fn: name, current_scope_tp: tp }
             let gated = tc_check_signature_arity(inner, params, ret_vt, tp)
             let with_params = tc_bind_params(gated, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
-            let result = tc_exit(checked)
+            // Restore the ENCLOSING fn identity + type-param scope alongside
+            // the scope pop — the checked TC flows on to sibling statements,
+            // and without this a nested helper's (empty) scope would leak
+            // into the rest of the enclosing body: annotations using the
+            // enclosing fn's type params would spuriously F1004, and their
+            // diagnostics would be attributed to the helper.
+            let result = tc_exit(checked) with { current_fn: tc.current_fn, current_scope_tp: tc.current_scope_tp }
             avra_ice_pop_fn()
             result
         }
@@ -2332,7 +2461,15 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     // lie like `-> List<Box<string>> { [Box { val: 9 }] }` is caught here. A
     // type-only query (the old tc_body_tail_type) silently dropped those.
     let tail = tc_tail_expr(tc, stmts)
-    let tr = if tail != null { check_expr_expected(tc, tail!, declared) } else { tc_er(tc, ValueType.Void) }
+    // RE-WALK DISCIPLINE (see the .Return arm of tc_check_stmt_returns):
+    // the tail was already checked by the body walk; this expected-threaded
+    // re-check collects into a fresh bag and merges back only unseen
+    // diagnostics, so the so07.7.15 layout conflicts land once and the
+    // re-fired context-free diagnostics don't duplicate.
+    let tr = if tail != null {
+        let probe = check_expr_expected(tc with { bag: bag_new() }, tail!, declared)
+        tc_er(probe.tc with { bag: bag_merge_unseen(tc.bag, probe.tc.bag) }, probe.ty)
+    } else { tc_er(tc, ValueType.Void) }
     mut after = tr.tc
     let body_ty = tr.ty
     // A tail `match` STATEMENT carries the fn's return value in its expression
@@ -2401,7 +2538,14 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             // for the returned expression. Empty `[]` literals + generic
             // calls in return position pick up the fn's declared return
             // type instead of decaying to List<Unknown> / unresolved T.
-            let r = check_expr_expected(tc, tc.nodes.exprs.get(value), declared)
+            //
+            // RE-WALK DISCIPLINE: the check pass already checked this
+            // expression once (without the expected type). Collect this
+            // expected-threaded re-check into a fresh bag and merge back
+            // only unseen diagnostics — the expected-dependent findings
+            // land, the re-fires don't duplicate.
+            let probe = check_expr_expected(tc with { bag: bag_new() }, tc.nodes.exprs.get(value), declared)
+            let r = tc_er(probe.tc with { bag: bag_merge_unseen(tc.bag, probe.tc.bag) }, probe.ty)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but return produces `${vtype_render_full(r.ty)}`"
                 let cause = "declared return type is `${vtype_render_full(declared)}`"
@@ -2705,8 +2849,13 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             return tc_er(check_assign_layout(v.tc, v.ty, var_ty, "assignment to `${name}`"), v.ty)
         }
         .QualifiedIdent(path) -> {
-            let fn_ty = fn_type_get(tc.fns, path).ret_ty
-            tc_er(tc, fn_ty)
+            // A qualified reference is either a module fn (yields its
+            // return type when materialised as a value) or a module-
+            // level binding — a qualified `const`, whose declaration
+            // bound its type under the same canonical path.
+            let r = fn_type_get(tc.fns, path)
+            if r.found { return tc_er(tc, r.ret_ty) }
+            tc_er(tc, type_lookup(tc.types, path))
         }
         // Enum constructor — `Status.Active`, `Status.Pending(count)`.
         // Returns the enum type so callers (let-bindings, fn args,
@@ -3730,7 +3879,7 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             if vtype_is_unknown(var_ty) {
                 return tc_er(checked, .Unknown)
             }
-            tc_er(checked, vtype_fn_ret(var_ty))
+            tc_er(tc_check_closure_args(checked, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
@@ -3745,9 +3894,31 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             // Expression callee (e.g. compose(f,g)(x))
             let c = check_expr(tc, callee)
             let checked = check_expr_list(c.tc, args)
-            tc_er(checked, vtype_fn_ret(c.ty))
+            tc_er(tc_check_closure_args(checked, "closure", c.ty, args), vtype_fn_ret(c.ty))
         }
     }
+}
+
+/// Gate a closure call's arguments against the closure's DECLARED param
+/// types. Closure calls (a local `let f = (s: string) -> …`, a nested-fn
+/// desugar, an expression callee) bypass the registered-fn gates, so
+/// without this `f(123)` into a string param compiled unchecked — the
+/// same wild-store class the fn-arg gates close. Only FnTyped callees
+/// gate (an untyped `Fn`/Unknown callee has no declared params to check);
+/// Unknown param or arg types skip, mirroring every other assignability
+/// site.
+fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<ExprId>) -> TC {
+    if !(fn_ty is .FnTyped) { return tc }
+    let param_vts = vtype_fn_params(fn_ty)
+    mut cur = tc
+    mut i = 0
+    let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
+    while i < limit {
+        let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
+        cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
+        i = i + 1
+    }
+    cur
 }
 
 // ── Method call type inference ──
@@ -3817,6 +3988,27 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
     // Channel methods — dispatched to features/channels/typeck.av
     match o.ty {
         .Channel(elem) -> return check_channel_method(checked_args, elem, method, args)
+        _ -> {}
+    }
+
+    // Newtype `.raw()` — the zero-cost inner-value peel. Typed as the
+    // declared inner type (previously fell through to Unknown, hiding
+    // every downstream misuse). An `@opaque` newtype refuses the peel
+    // outside the declaring module + its declared friends: opaque
+    // handles are compared and looked-up, never inspected.
+    match o.ty {
+        .Newtype(nt_name, nt_inner, _) if method == "raw" -> {
+            let meta = newtype_meta_lookup(checked_args.newtypes, nt_name)
+            if meta != null && meta!.opaque {
+                let caller_module = qualified_module_of(checked_args.current_fn)
+                let decl_module = qualified_module_of(nt_name)
+                if !opaque_peel_allowed(caller_module, decl_module, meta!.friends) {
+                    let msg = "`${nt_name}` is an @opaque handle — `.raw()` is only allowed in its declaring module `${decl_module}` (and declared friends)"
+                    return tc_er(tc_report(checked_args, DiagCode.OpaqueRawOutsideFriends, msg), nt_inner)
+                }
+            }
+            return tc_er(checked_args, nt_inner)
+        }
         _ -> {}
     }
 
@@ -4081,7 +4273,13 @@ fn annotate_enter_fn(tc: TC, params: List<ParamEntry>) -> TC {
 /// (mostly free since the check pass already did the work) and
 /// register the binding for downstream lookups.
 fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
-    let r = check_expr(tc, init)
+    // Pure type EXTRACTION: the check pass already checked (and reported on)
+    // this initializer — this re-inference exists only to recover the
+    // binding's type, and its checked TC is discarded below (only r.ty is
+    // read). Run it silent, or its re-fired diagnostics land in the shared
+    // bag as duplicates (both the annotate pass and pass 2's return-analysis
+    // let-threading route through here).
+    let r = check_expr(tc with { reporting: false }, init)
     let declared_ty = if !vtype_is_unknown(ty_vt) { resolve_vtype(tc, ty_vt) } else { r.ty }
     tc_bind(tc, name, declared_ty)
 }
@@ -4627,7 +4825,9 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
             }
         }
         .Const(name, _, _) -> {
-            if !is_screaming_snake(name) {
+            // Module-level consts arrive qualified (`mod::NAME`) from
+            // the resolver — lint the declared short name only.
+            if !is_screaming_snake(type_short_name(name)) {
                 naming_warn(tc, "constant `${name}` should be SCREAMING_SNAKE_CASE")
             } else {
                 tc

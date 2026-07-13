@@ -31,8 +31,13 @@ export type FlagDef = { name: string, short: string, description: string, aliase
 export type OptionDef = { name: string, short: string, description: string, default_val: string }
 
 /// Positional argument declaration. `required: true` means the
-/// parser fails when the user doesn't supply it.
-export type ArgDef = { name: string, description: string, required: bool }
+/// parser fails when the user doesn't supply it (for a variadic arg:
+/// when fewer than one value is supplied). `variadic: true` makes the
+/// arg absorb every remaining positional (`bs2 _test_shard a.av b.av …`)
+/// — all of them bind to this arg's name, retrievable as a group via
+/// `result_get_args`. A variadic arg is naturally declared last: the
+/// positional index stops advancing at it.
+export type ArgDef = { name: string, description: string, required: bool, variadic: bool }
 
 /// A subcommand's full parse schema — its name, one-line description, and
 /// declared flags / positional args / options. This is the DATA half of a
@@ -285,14 +290,14 @@ fn cmd_print_help(app: App, meta: CommandSpec) {
 }
 
 /// The trailing part of a command's USAGE line: `[FLAGS]`/`[OPTIONS]` markers
-/// when the command has any, then each positional as `<name>` (required) or
-/// `[name]` (optional), in declaration order.
+/// when the command has any, then each positional (via `arg_display`, so the
+/// USAGE line and the ARGS section can't drift), in declaration order.
 fn cmd_usage_tail(meta: CommandSpec) -> string {
     mut s = ""
     if meta.flags.length > 0 { s = "${s} [FLAGS]" }
     if meta.options.length > 0 { s = "${s} [OPTIONS]" }
     for a in meta.args {
-        s = if a.required { "${s} <${a.name}>" } else { "${s} [${a.name}]" }
+        s = "${s} ${arg_display(a)}"
     }
     s
 }
@@ -307,9 +312,12 @@ fn option_display(o: OptionDef) -> string {
     if o.short != "" { "${o.name}, ${o.short}" } else { o.name }
 }
 
-/// Left-column text for a positional — `<name>` required, `[name]` optional.
+/// Left-column text for a positional — `<name>` required, `[name]` optional,
+/// with a trailing `...` when the arg is variadic (the getopt convention for
+/// "one or more" / "zero or more").
 fn arg_display(a: ArgDef) -> string {
-    if a.required { "<${a.name}>" } else { "[${a.name}]" }
+    let base = if a.required { "<${a.name}>" } else { "[${a.name}]" }
+    if a.variadic { "${base}..." } else { base }
 }
 
 /// Widest left-column across a command's flags, options, and args, so every
@@ -422,7 +430,7 @@ export fn cli_add_option(cli: Cli, name: string, short: string, description: str
 /// Register a top-level positional argument. `required: true`
 /// makes the parser produce an error when the user omits it.
 export fn cli_add_arg(cli: Cli, name: string, description: string, required: bool) -> Cli {
-    let a = ArgDef { name, description, required }
+    let a = ArgDef { name, description, required, variadic: false }
     mut args = cli.args
     args.push(a)
     cli with { args: args }
@@ -458,7 +466,7 @@ export fn cli_command_add_option(cli: Cli, cmd_name: string, name: string, short
 
 /// Register a positional arg scoped to a specific subcommand.
 export fn cli_command_add_arg(cli: Cli, cmd_name: string, name: string, description: string, required: bool) -> Cli {
-    let a = ArgDef { name, description, required }
+    let a = ArgDef { name, description, required, variadic: false }
     mut cmds = cli.commands
     for (i, cmd) in cmds.enumerate() {
         if cmd.name == cmd_name {
@@ -612,7 +620,13 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
             let arg_def = arg_at(args, positional_idx)
             let arg_name = if arg_def != null { arg_def!.name } else { "arg${string(positional_idx)}" }
             parsed_args.push(ParsedArg { name: arg_name, value: arg })
-            positional_idx = positional_idx + 1
+            // Variadic clamp: the index stops advancing at a variadic arg, so
+            // it absorbs every remaining positional under its own name (all
+            // retrievable via result_get_args). Beyond the schema (null def)
+            // the historic `arg{idx}` capture continues to advance per token.
+            if arg_def == null || !arg_def!.variadic {
+                positional_idx = positional_idx + 1
+            }
             ti = ti + 1
         }
     }
@@ -635,7 +649,8 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
 /// The name of the first declared arg with `required: true` that has no parsed
 /// value, or "" when every required positional was supplied. Positionals are
 /// recorded under their declaration-order arg name (see parse_tokens), so a
-/// name lookup answers "was this required slot filled?".
+/// name lookup answers "was this required slot filled?" — which for a required
+/// VARIADIC arg is exactly the "≥1 value" rule (zero values ⇔ name absent).
 fn first_missing_required_arg(args: List<ArgDef>, parsed: List<ParsedArg>) -> string {
     for a in args {
         if a.required {
@@ -807,6 +822,21 @@ export fn result_get_arg(result: CliResult, name: string) -> string {
         i = i + 1
     }
     ""
+}
+
+/// EVERY value bound to the named positional, in argv order — the plural
+/// accessor for a `variadic` arg (parse_tokens binds all the positionals it
+/// absorbs under the one name). On a non-variadic name this yields the same
+/// 0-or-1 values `result_get_arg` sees. Empty list when the arg was omitted.
+export fn result_get_args(result: CliResult, name: string) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i < result.args.length {
+        let a = result.args[i]
+        if a.name == name { out.push(a.value) }
+        i = i + 1
+    }
+    out
 }
 
 /// True iff the parser reported an error (unknown flag etc).

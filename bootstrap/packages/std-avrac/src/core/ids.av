@@ -9,13 +9,21 @@
 // typeck keeps them nominally distinct — passing a StmtId where an
 // ExprId is wanted is a type error (arena_test.av) — and each side-table
 // is keyed by its own id kind. Construct `StmtId(i)`, peel with `.raw()`
-// inside the node-model modules only.
+// inside the node model only — COMPILER-ENFORCED: @opaque gates `.raw()`
+// to the declaring module (F3106 anywhere else; `core/` is one module, so
+// arena.av and side_table.av are covered), and store boundaries that must
+// round-trip an id through i64 go through arena.av's expr_id_store_key —
+// the handle representation can change without hunting stray inspections.
 
 /// Index into the Expr arena — nominally distinct from StmtId/PatId/TypeId/int.
+@opaque
 export type ExprId = int
 /// Index into the Stmt arena.
+@opaque
 export type StmtId = int
 /// Index into the Pattern arena.
+@opaque
 export type PatId = int
 /// Index into the ValueType arena.
+@opaque
 export type TypeId = int

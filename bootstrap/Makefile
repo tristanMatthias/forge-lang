@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify next work epic coverage coverage-lcov
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -67,11 +67,6 @@ help:
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
-	@echo ""
-	@echo "Workflow:"
-	@echo "  make next              Show next work item (highest priority open ticket)."
-	@echo "  make work TICKET=x EPIC=y  Work a ticket using the 9-step inner formula."
-	@echo "  make epic EPIC=x       Show epic status and open items."
 	@echo ""
 	@echo "Anything not listed: bash scripts/diagnose.sh --help"
 
@@ -283,10 +278,7 @@ verify-seed:
 seed-sigs:
 	@$(DIAG) --seed-sigs
 
-# Install the pre-commit + pre-push hooks (idempotent). Note: on
-# checkouts where beads set core.hooksPath=.beads/hooks, git ignores
-# .git/hooks entirely — the committed .beads/hooks/* chain to these
-# scripts instead, so both wirings stay live.
+# Install the pre-commit + pre-push hooks (idempotent).
 install-hooks:
 	@ln -sf ../../bootstrap/scripts/pre-commit ../.git/hooks/pre-commit
 	@ln -sf ../../bootstrap/scripts/pre-push ../.git/hooks/pre-push
@@ -322,75 +314,3 @@ grammar:
 	@echo "" >> GRAMMAR.md
 	@for f in $(LIB_SRC_DIR)/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
 	@echo "assembled GRAMMAR.md ($$(wc -l < GRAMMAR.md | tr -d ' ') lines)"
-
-# ── Workflow commands ──
-
-# Show the next ticket to work on (highest priority open item in current epic).
-next:
-	@echo "=== Next work item ==="
-	@bd ready -n 5 2>/dev/null || echo "Run 'bd prime' for setup"
-
-# Work a ticket using the inner formula process (9 steps).
-# Usage: make work TICKET=<id> EPIC=<epic-id>
-work:
-ifndef TICKET
-	@echo "usage: make work TICKET=<bead-id> EPIC=<epic-id>" >&2
-	@echo "  Runs the ticket-inner formula (implement → check → cleanup → break → polish)" >&2
-	@echo "" >&2
-	@echo "Current epic children:" >&2
-	@bd show $(EPIC) 2>/dev/null | grep "↑.*○" || echo "  (no EPIC specified or no open items)"
-	@exit 1
-endif
-	@echo "=== Working ticket $(TICKET) under epic $(EPIC) ==="
-	@echo "Formula: ticket-inner (9 steps)"
-	@echo ""
-	@bd formula show ticket-inner 2>/dev/null
-	@echo ""
-	@echo "Starting..."
-	@bd update $(TICKET) --claim 2>/dev/null
-
-# Run the full epic workflow (outer formula).
-# Usage: make epic EPIC=<epic-id>
-epic:
-ifndef EPIC
-	@echo "usage: make epic EPIC=<epic-id>" >&2
-	@echo "  Runs the epic-outer formula (select → work all tickets → review → close)" >&2
-	@echo "" >&2
-	@echo "Available epics:" >&2
-	@bd list --type epic 2>/dev/null || echo "  (none found)"
-	@exit 1
-endif
-	@echo "=== Working epic $(EPIC) ==="
-	@echo "Formula: epic-outer (4 steps)"
-	@echo ""
-	@bd show $(EPIC) 2>/dev/null
-	@echo ""
-	@echo "Open items:"
-	@bd show $(EPIC) 2>/dev/null | grep "↑.*○"
-	@echo ""
-	@echo "Run 'make work TICKET=<id> EPIC=$(EPIC)' for each ticket."
-
-# Automated work loop: pick next ticket from current epic, or switch epics.
-# Usage: make loop EPIC=<id>
-# If all tickets in EPIC are done, shows next epic to switch to.
-loop:
-ifndef EPIC
-	@echo "usage: make loop EPIC=<epic-id>" >&2
-	@echo "" >&2
-	@echo "Available epics:" >&2
-	@bd list --type epic --status open 2>/dev/null
-	@exit 1
-endif
-	@NEXT=$$(bd show $(EPIC) 2>/dev/null | grep "↑.*○" | head -1 | grep -o 'forge-crafting-intepreters-[a-z0-9]*' | sed 's/forge-crafting-intepreters-//'); \
-	if [ -z "$$NEXT" ]; then \
-		echo "=== Epic $(EPIC) complete! ==="; \
-		echo ""; \
-		echo "Next epics to work on:"; \
-		bd list --type epic --status open 2>/dev/null | grep -v "$(EPIC)"; \
-	else \
-		echo "=== Working ticket $$NEXT in epic $(EPIC) ==="; \
-		bd update $$NEXT --claim 2>/dev/null; \
-		bd mol pour ticket-inner --var ticket_id=$$NEXT --var epic_id=$(EPIC) 2>/dev/null; \
-		echo ""; \
-		bd show $$NEXT 2>/dev/null; \
-	fi

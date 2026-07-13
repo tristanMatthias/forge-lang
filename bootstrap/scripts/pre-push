@@ -9,8 +9,7 @@
 # change). See CLAUDE.md "Bootstrap window & seed train".
 #
 # Install: ln -sf ../../bootstrap/scripts/pre-push .git/hooks/pre-push
-#          (or `make install-hooks` from bootstrap/). On checkouts with
-#          core.hooksPath=.beads/hooks, .beads/hooks/pre-push chains here.
+#          (or `make install-hooks` from bootstrap/).
 # Skip once: AVRA_SKIP_WINDOW_CHECK=1 git push   (or git push --no-verify)
 #            — use sparingly; an unmergeable seed state lands exactly this way.
 

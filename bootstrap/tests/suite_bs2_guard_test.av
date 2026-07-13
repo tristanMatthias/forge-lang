@@ -1,0 +1,30 @@
+// t-gv3n: mid-suite bs2 rebuilds are forbidden — the bs2 executing the
+// suite IS the compiler under test. Two invariants guard that:
+//
+//   1. The orchestrator stamps AVRA_SKIP_ENSURE_BS2=1 into the suite's
+//      process env (run_test_command), so any test's shell-out to
+//      scripts/diagnose.sh short-circuits ensure_bs2 outright.
+//   2. Even without the stamp, ensure_bs2's staleness check must be
+//      HONEST: source_newer_than once hardcoded BSD `stat -f %m`, which
+//      fails on Linux and fell back to "stale" — so every diagnose.sh
+//      invocation rebuilt + relinked build/bs2, concurrently, while
+//      live shards exec'd it (the 4009/4010 comptime_jit_string flake).
+//
+// The second spec asserts the honest check via the read-only
+// --bs2-stale-check probe (env -u strips the stamp so the real check
+// runs). If this spec fails with `stale`, your build/bs2 genuinely
+// predates a compiler-source edit — rebuild it; every other test in
+// the run is testing a stale compiler.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(key: string) -> string
+
+spec "the suite forbids mid-run bs2 rebuilds (t-gv3n)" {
+    then "the orchestrator stamped AVRA_SKIP_ENSURE_BS2 into the test env" {
+        avra_process_env_get("AVRA_SKIP_ENSURE_BS2") == "1"
+    }
+    then "the un-stamped staleness probe reports a fresh bs2 (portable stat)" {
+        let out = avra_shell_exec("env -u AVRA_SKIP_ENSURE_BS2 bash scripts/diagnose.sh --bs2-stale-check 2>&1 || true")
+        out.contains("fresh")
+    }
+}

@@ -2331,6 +2331,23 @@ fn annotation_first_string(store: NodeStore, a: Annotation) -> string {
     }
 }
 
+/// Every string-literal argument of an annotation, quotes stripped,
+/// in declaration order. Non-string args are skipped. `[]` when the
+/// annotation has no args. The general sibling of
+/// `annotation_first_string` for annotations whose args form a list
+/// (e.g. `@opaque("core.arena", "core.side_table")`).
+export fn annotation_string_args(store: NodeStore, a: Annotation) -> List<string> {
+    mut out: List<string> = []
+    if a.arg_ids == none { return out }
+    for id in a.arg_ids! {
+        match store.exprs.get(id) {
+            .String(literal) -> out.push(strip_quotes(literal))
+            _ -> {}
+        }
+    }
+    out
+}
+
 /// Drop matching `"…"` outer quotes if present. Returns input
 /// unchanged when there's nothing to strip.
 fn strip_quotes(s: string) -> string {

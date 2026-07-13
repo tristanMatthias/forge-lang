@@ -211,6 +211,21 @@ export fn type_qualified_name(module: string, name: string) -> string {
     if module == "" { name } else { "${module}::${name}" }
 }
 
+/// Inverse of `type_qualified_name`: the module part of a qualified
+/// name — everything before the LAST `::`. A bare (top-level) name
+/// yields `""`. Example: `"core::arena::node_get" → "core::arena"`.
+export fn qualified_module_of(fqn: string) -> string {
+    mut last = -1
+    mut i = fqn.index_of("::")
+    while i >= 0 {
+        last = i
+        let rest = fqn.substring(i + 2, fqn.length)
+        let next = rest.index_of("::")
+        i = if next >= 0 { i + 2 + next } else { -1 }
+    }
+    if last < 0 { "" } else { fqn.substring(0, last) }
+}
+
 /// Mangle a method into its dispatch symbol. Example:
 /// `("Point", "distance") → "Point__distance"`. The double underscore
 /// avoids collisions with user identifiers (Avra forbids `__` in

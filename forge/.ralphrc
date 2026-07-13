@@ -30,10 +30,9 @@ SESSION_CONTINUITY=true
 SESSION_EXPIRY_HOURS=24
 
 # Task sources (for ralph enable --sync)
-# Options: local, beads, github (comma-separated for multiple)
+# Options: local, github (comma-separated for multiple)
 TASK_SOURCES="local"
 GITHUB_TASK_LABEL="ralph-task"
-BEADS_FILTER="status:open"
 
 # Circuit breaker thresholds
 CB_NO_PROGRESS_THRESHOLD=3

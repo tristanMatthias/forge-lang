@@ -60,6 +60,17 @@ use core.{ExprId, StmtId, PatId, TypeId}
 use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index, SrcPos, src_pos_none}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
+use core.{content_id_for}
+
+/// The C int-keyed map primitive (int -> int), declared per-module the same
+/// way side_table.av / registry.av declare it (extern decls don't cross
+/// modules). The intern maps below use it as a `content-key hash -> raw row
+/// id` index; the language-level `Map<int, V>` is avoided deliberately (it
+/// SIGSEGVs on int keys today — bug g9o9).
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
 
 // The four typed id newtypes (ExprId/StmtId/PatId/TypeId) live in
 // core/ids.av so ast.av can carry id fields without a core-file cycle.
@@ -432,6 +443,22 @@ export type NodeStore = {
     // entry. This is the arena home for what used to live on the boxed arg's
     // `.ty` field.
     arg_tys: SparseTable<ExprId, ValueType>,
+    // ── Pure-leaf hash-consing (§14.4, ps3t.3.5) ──
+    // Intern maps: variant-qualified content-key hash (`expr_intern_key` /
+    // `pat_intern_key` through `content_id_for`) -> the raw row id first
+    // allocated for that content — one map per interned arena kind. Only the
+    // PARSER's leaf allocations consult these (via `intern_expr_leaf` /
+    // `intern_pat_leaf`); transform passes (comptime expand, typeck
+    // annotate/reexpr, desugar, mono) keep allocating per-occurrence rows, so
+    // the occurrence-keyed side-facts they write (`arg_tys`, `provenance`)
+    // stay collision-free by construction. Entries are validated on every hit
+    // (in-bounds + content-equal) rather than evicted on rollback — see
+    // `intern_expr_leaf` for why that is sound.
+    expr_interns: ptr,
+    pat_interns: ptr,
+    // Dedup hits the intern maps served — an observability counter surfaced
+    // by the AVRA_L1_INGEST probe (main.av) and asserted by intern_test.av.
+    intern_hits: int,
 }
 
 impl NodeStore {
@@ -466,6 +493,52 @@ impl NodeStore {
     /// Transform-alloc: append a `Pattern` LEAF row (no node children).
     fn add_pat_leaf(self, node: Pattern) -> PatId {
         self.pats.add_leaf(node)
+    }
+    /// Parser-side leaf allocation with pure-leaf INTERNING (hash-consing,
+    /// §14.4 / ps3t.3.5): structurally-identical pure leaves share ONE row,
+    /// so structural equality within this class is an id compare and repeat
+    /// occurrences cost no memory. Only content whose sharing can never be
+    /// observed is eligible (see `expr_intern_key`); everything else falls
+    /// through to a plain per-occurrence `add_leaf`.
+    ///
+    /// STALE-HIT SAFETY (speculative parses). `truncate_to_mark` drops rows
+    /// but deliberately NOT intern entries, so an entry can point past the
+    /// arena (row rolled back) or at a row since REUSED by different content.
+    /// Both are caught here — a hit is served only when in-bounds AND
+    /// content-equal — and repaired by overwriting the entry with the fresh
+    /// row. A genuine FNV-64 collision between two live keys degrades the
+    /// same way (the entry thrashes between them): still correct, merely a
+    /// lost dedup — the same validate-don't-trust discipline as `cache_publish`.
+    fn intern_expr_leaf(self, node: Expr) -> ExprId {
+        let key = expr_intern_key(node)
+        if key == "" { return self.exprs.add_leaf(node) }
+        let h = content_id_for(key)
+        if avra_intmap_has(self.expr_interns, h) != 0 {
+            let raw = avra_intmap_get(self.expr_interns, h)
+            if raw >= 1 && raw <= self.exprs.count() && expr_intern_key(self.exprs.get(ExprId(raw))) == key {
+                self.intern_hits = self.intern_hits + 1
+                return ExprId(raw)
+            }
+        }
+        let id = self.exprs.add_leaf(node)
+        avra_intmap_set(self.expr_interns, h, id.raw())
+        id
+    }
+    /// Pattern twin of `intern_expr_leaf` (eligibility: `pat_intern_key`).
+    fn intern_pat_leaf(self, node: Pattern) -> PatId {
+        let key = pat_intern_key(node)
+        if key == "" { return self.pats.add_leaf(node) }
+        let h = content_id_for(key)
+        if avra_intmap_has(self.pat_interns, h) != 0 {
+            let raw = avra_intmap_get(self.pat_interns, h)
+            if raw >= 1 && raw <= self.pats.count() && pat_intern_key(self.pats.get(PatId(raw))) == key {
+                self.intern_hits = self.intern_hits + 1
+                return PatId(raw)
+            }
+        }
+        let id = self.pats.add_leaf(node)
+        avra_intmap_set(self.pat_interns, h, id.raw())
+        id
     }
     /// Ingest one boxed child into the arena that owns its kind, returning the
     /// cross-type `NodeRef`. The dispatch that fuses the four arenas into one
@@ -635,6 +708,52 @@ impl NodeStore {
     }
 }
 
+// ── Pure-leaf intern keys (§14.4, ps3t.3.5) ──
+//
+// A node is INTERNABLE when sharing one row across every occurrence can never
+// be observed: no child ids in the payload (the whole subtree IS the payload),
+// no span (parser leaves carry none — `add_leaf` writes no span row, and expr
+// spans are only ever written at allocation time), and no per-occurrence
+// side-data keyed by its id (`Expr.Error`/`Missing` ids identify individual
+// syntax errors, so they stay per-occurrence; `arg_tys`/`provenance` key
+// POST-parse ids only). The key doubles as the whitelist: "" = not internable.
+//
+// The key is VARIANT-QUALIFIED rather than the render-based content hash
+// (content_hash.av) because leaf renders are ambiguous ACROSS variants —
+// `Ident("x")` and `QualifiedIdent("x")` both render `x`, and a synthesized
+// `Number`/`FloatLit` pair could share payload text — and a cross-variant
+// merge would change program meaning. (`QualifiedIdent` is additionally
+// excluded outright: it is resolver-produced, never parsed, and the resolver
+// allocates per-occurrence via `reexpr`.)
+
+/// Variant-qualified content key of an internable pure `Expr` leaf, or ""
+/// when the node must stay per-occurrence.
+export fn expr_intern_key(node: Expr) -> string {
+    match node {
+        .Ident(name) -> "id:${name}"
+        .Number(v) -> "int:${v}"
+        .FloatLit(v) -> "float:${v}"
+        .String(v) -> "str:${v}"
+        .Bool(v) -> "bool:${v}"
+        .None -> "none"
+        _ -> ""
+    }
+}
+
+/// Variant-qualified content key of an internable pure `Pattern` leaf, or ""
+/// when the pattern must stay per-occurrence (`Variant`/`NestedVariant`/`Or`/
+/// `TypePattern` carry bindings or child ids).
+export fn pat_intern_key(node: Pattern) -> string {
+    match node {
+        .Wildcard -> "_"
+        .LitString(v) -> "str:${v}"
+        .LitInt(v) -> "int:${string(v)}"
+        .LitBool(v) -> "bool:${string(v)}"
+        .LitFloat(v) -> "float:${v}"
+        _ -> ""
+    }
+}
+
 /// Construct an empty store carrying `lines` (the per-file LineIndex used to
 /// turn spans back into line/col on demand).
 export fn new_node_store(lines: LineIndex) -> NodeStore {
@@ -650,5 +769,15 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         roots,
         provenance,
         arg_tys,
+        expr_interns: avra_intmap_new(),
+        pat_interns: avra_intmap_new(),
+        intern_hits: 0,
     }
 }
+
+/// Store-boundary conversion for typed ids: a C-side map slot holds
+/// only i64, so an id crossing that boundary round-trips through its
+/// raw index HERE — inside the node model, where @opaque permits the
+/// peel — keeping every consumer free of the representation. The
+/// inverse is the id's plain constructor (`ExprId(key)`).
+export fn expr_id_store_key(id: ExprId) -> int { id.raw() }

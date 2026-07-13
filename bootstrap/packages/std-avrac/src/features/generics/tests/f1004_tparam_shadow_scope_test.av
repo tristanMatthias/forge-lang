@@ -1,0 +1,66 @@
+// The F1004 under-applied-generic gate must EXEMPT a name that is an
+// in-scope type param shadowing a global generic — at EVERY annotation
+// position. Signature/field/payload positions were already scope-aware;
+// let/mut/const bindings and lambda params gated with an empty scope, so
+// `fn f<T>` + `let y: T` under a global `type T<U>` false-positived
+// F1004 on valid code. The enclosing fn's params ride TC state
+// (current_scope_tp), so no signature threading is involved. The gate
+// still fires where the SAME annotation is genuinely under-applied (a
+// non-generic fn, where `T` can only mean the global generic).
+
+use @std.avrac.test_runner.{write_fixture_and_run, write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "type-param-shadowed annotations are exempt from F1004" {
+    then "a shadowed let annotation checks and computes through" {
+        let out = write_fixture_and_run("/tmp/avra_f1004_shadow_let.av",
+            "type T<U> = { val: U }\n" +
+            "fn f<T>(x: T) -> T {\n" +
+            "    let y: T = x\n" +
+            "    y\n" +
+            "}\n" +
+            "fn main() { println(string(f(41) + 1)) }\n")
+        out.contains("42")
+    }
+    then "a shadowed lambda param annotation checks and computes through" {
+        let out = write_fixture_and_run("/tmp/avra_f1004_shadow_lambda.av",
+            "type T<U> = { val: U }\n" +
+            "fn apply<T>(x: T) -> T {\n" +
+            "    let f = (v: T) -> v\n" +
+            "    f(x)\n" +
+            "}\n" +
+            "fn main() { println(string(apply(41) + 1)) }\n")
+        out.contains("42")
+    }
+    then "a nested helper does not leak its scope over the enclosing fn" {
+        // The helper's (empty) type-param scope must be restored on exit —
+        // otherwise the enclosing fn's own `let y: T` after the helper
+        // spuriously F1004s under the helper's scope. Check-level witness:
+        // nested fn DECLARATIONS are typechecked but not yet supported by
+        // codegen (tracked separately), so the leak is observable only in
+        // the checker's output.
+        write_fixture("/tmp/avra_f1004_nested_helper.av",
+            "type T<U> = { val: U }\n" +
+            "fn outer<T>(x: T) -> T {\n" +
+            "    fn helper(n: int) -> int { n + 1 }\n" +
+            "    let y: T = x\n" +
+            "    let _ = helper(1)\n" +
+            "    y\n" +
+            "}\n" +
+            "fn main() { println(string(outer(41) + 1)) }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f1004_nested_helper.av 2>&1 || true")
+        !out.contains("F1004")
+    }
+    then "the same bare annotation in a NON-generic fn still F1004s" {
+        write_fixture("/tmp/avra_f1004_true_positive.av",
+            "type T<U> = { val: U }\n" +
+            "fn not_generic() {\n" +
+            "    let y: T = T { val: 1 }\n" +
+            "    let _ = y\n" +
+            "}\n" +
+            "fn main() { not_generic() }\n")
+        let out = avra_shell_exec("./build/bs2 check /tmp/avra_f1004_true_positive.av 2>&1 || true")
+        out.contains("F1004")
+    }
+}

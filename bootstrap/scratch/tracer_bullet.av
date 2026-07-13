@@ -1,4 +1,4 @@
-// WHY: L0 tracer bullet for bd ps3t.1.1 (epic ps3t — "AST as the single
+// WHY: L0 tracer bullet for ps3t.1.1 (epic ps3t — "AST as the single
 // source of truth"). THROWAWAY scaffolding. Its only job is to prove the
 // L1→L6 architecture composes end-to-end AND that the perf story holds,
 // BEFORE we farm out the layer epics. It is NOT wired into the real

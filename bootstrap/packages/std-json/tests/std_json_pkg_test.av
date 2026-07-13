@@ -68,6 +68,28 @@ spec "@std/json: targeted field extraction" {
         then "decodes inline escapes" {
             json_extract_string("{\"k\":\"a\\\"b\\nc\"}", "k") == "a\"b\nc"
         }
+        then "decodes \\u00XX control-char escapes to the real byte" {
+            // The runtime's result-JSON encodes control chars this way
+            // (e.g. ANSI ESC 0x1b in captured subprocess output); the
+            // failure-replay path needs them back as real bytes, not the
+            // literal text `u001b`.
+            json_extract_string("{\"k\":\"a\\u001bb\"}", "k") == "a\x1bb"
+        }
+        then "malformed \\u escape falls back to the literal path" {
+            json_extract_string("{\"k\":\"a\\u00zzb\"}", "k") == "au00zzb"
+        }
+        then "\\u0000 stays literal (a NUL byte cannot ride a C string)" {
+            // Decoding NUL would append an empty string and silently
+            // drop the information; the literal fallback keeps it
+            // visible.
+            json_extract_string("{\"k\":\"a\\u0000b\"}", "k") == "au0000b"
+        }
+        then "\\u00e9 stays literal (non-control latin-1 would break UTF-8)" {
+            // Only 0x01-0x1F decodes; a bare 0xE9 byte is not valid
+            // UTF-8 for é, so non-control code points keep the legacy
+            // literal fallback.
+            json_extract_string("{\"k\":\"caf\\u00e9\"}", "k") == "cafu00e9"
+        }
         then "missing key returns empty" {
             json_extract_string("{}", "missing") == ""
         }

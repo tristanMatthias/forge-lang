@@ -6,7 +6,7 @@
 # language features land, the body of every function in this package
 # moves to pure Avra without changing the surface.
 #
-# Tracking ticket: search beads for "in-language crypto".
+# Tracking ticket: search Agent Tasks for "in-language crypto".
 
 [package]
 name        = "@std/crypto"

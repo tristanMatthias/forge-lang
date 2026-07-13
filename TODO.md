@@ -45,7 +45,7 @@ Key remaining P1 items:
 - `forge-crafting-intepreters-bkn` — P3-6: Drop trait + LIFO ordering
 - `forge-crafting-intepreters-bj7` — P4-1: Green-thread scheduler
 
-Run `bd ready` for available work.
+Run `mcp__Agent_Tasks__ready` for available work.
 
 ## Critical Things To Know
 

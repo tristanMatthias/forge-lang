@@ -15,7 +15,7 @@ cannot regress silently.
 - **Multiple rounds, not one pass.** Each section below says "round 1 / round 2 / …" for a reason. One sweep finds the obvious stuff; the third sweep finds the bugs and the duplication that hide behind the obvious stuff. Do not collapse rounds.
 - **Zero tolerance for "good enough."** Every CLAUDE.md ABSOLUTE RULE applies here: no hack survives a commit (rule 14), no workaround (rule 4), no "known limitation" for a bug (rule 2), fix the foundation not the symptom (rule 16).
 - **No workarounds, no building on sand.** This is the load-bearing principle and it gets its own gate (Phase 1). If the layer beneath you is wrong, you fix *it* before building on top — you never route around it, special-case past it, or pile a second layer on a broken first one. A PR that ships a feature by stepping around a foundational gap is not ready, no matter how green the tests are.
-- **Fix-or-file, never skip.** Anything you find and don't fix in this PR becomes a `bd` ticket *now*, with a real priority. "I'll come back to it" is banned.
+- **Fix-or-file, never skip.** Anything you find and don't fix in this PR becomes an Agent Tasks ticket *now*, with a real priority. "I'll come back to it" is banned.
 - **Commit each pass separately.** Perf fixes, DRY consolidations, and red-team fixes each land as their own commit so a reviewer can verify them independently.
 - **The diff is the deliverable.** A reviewer reads the diff, not your intent. Every line must justify itself.
 
@@ -31,7 +31,7 @@ This skill drives toward a hard terminal state (Phase 9). You are done when ever
    git diff --stat $BASE..HEAD
    ```
    Everything below operates on *this* diff. Skim it once end-to-end before touching anything — you cannot clean what you haven't read.
-2. **Confirm the ticket is 100% done** (CLAUDE.md rule 19). Re-read every `bd` ticket this PR claims to address. If any described work is partial, it is NOT ready — finish it or split the ticket. "Partially done" is not done.
+2. **Confirm the ticket is 100% done** (CLAUDE.md rule 19). Re-read every Agent Tasks ticket this PR claims to address. If any described work is partial, it is NOT ready — finish it or split the ticket. "Partially done" is not done.
 3. **Confirm the branch is rebased on fresh upstream.** A stale base hides conflicts and review noise:
    ```bash
    git fetch origin && git log --oneline origin/feat/crafting-intepreters..HEAD
@@ -72,7 +72,7 @@ Also hunt the structural tells (no keyword to grep — you have to read for them
 - A new parameter / flag added solely to thread around an abstraction that should have been changed.
 - Duplicated logic created *because* the shared path was inconvenient to fix.
 
-**For each finding: fix the root cause now, or — only if truly out of scope — file a `bd` ticket AND make sure this PR does not silently depend on the unfixed gap.** "It works around it for now" is not an acceptable end state (rule 14: no hack survives a commit).
+**For each finding: fix the root cause now, or — only if truly out of scope — file an Agent Tasks ticket AND make sure this PR does not silently depend on the unfixed gap.** "It works around it for now" is not an acceptable end state (rule 14: no hack survives a commit).
 
 ### 1b — Correctness (the logic itself)
 
@@ -87,7 +87,7 @@ Re-derive from the spec (`docs/2026_04_18_FULL_SPEC.md`) what the code should do
 - **Raw errors** — no `eprintln` for errors; everything through `CompileError` with a specific F-code in the right range (no `Other`).
 - **Memory** — rc leaks (cycle analysis on Tuple/Union/List element types), escape analysis, Drop/defer/errdefer LIFO ordering.
 
-For each issue: fix now, or file a `bd` ticket with repro.
+For each issue: fix now, or file an Agent Tasks ticket with repro.
 
 ---
 
@@ -108,7 +108,7 @@ The bar is not "tests pass." The bar is "these tests would *catch* the bug if it
 ## Phase 3 — Perf pass (MULTIPLE ROUNDS)
 
 Run the full performance contract from
-`.claude/skills/cleanup-epic-children/cleanup_pass_1.md` over every new code
+`perf_pass.md` (in this skill directory) over every new code
 path (complexity audit, allocation audit, hot-path fast-paths, empty-input
 short-circuits, pre-built state, bypass abstraction overhead, mature
 compiler techniques). Do not restate it — that file IS the bar.
@@ -123,7 +123,7 @@ PR-specific additions:
 ## Phase 4 — DRY / centralize (MULTIPLE ROUNDS)
 
 Run the full DRY + readability contract from
-`.claude/skills/cleanup-epic-children/cleanup_pass_2.md` (duplication audit,
+`dry_pass.md` (in this skill directory — duplication audit,
 use-the-language, beauty, centralize, missed-abstraction audit, consolidate
 similar APIs, eliminate redundant types, doc accuracy, API surface). That
 file IS the bar.
@@ -210,7 +210,7 @@ Read the **entire** diff line by line one more time:
 - **No unrelated/accidental changes** — every hunk maps to the PR's purpose. Revert drive-by edits or split them out.
 - **No build artifacts or junk:** `build/`, `*.ll`, `*.meta.bin`, cache dirs, editor files, `/tmp` fixtures. Confirm `.gitignore` covers them.
 - **Unused imports** (`F9002`) and **unused vars** (`F0801`) cleared — check `bs2 build` output.
-- **`.beads/issues.jsonl`** re-exported (`bd export`) and committed if any ticket state changed; no stray Dolt artifacts.
+- **Task state** recorded in Agent Tasks (`mcp__Agent_Tasks__*`) if any ticket changed.
 - **Seed** (`seed/seed.ll`) only changed if you intentionally cycled it, with the cycle documented.
 
 ---
@@ -229,7 +229,7 @@ Read the **entire** diff line by line one more time:
 cd bootstrap && make test        # spec suite green AND selfhost fixed point byte-identical
 ```
 - Warning count did not regress (`bs2 build` / `make build`).
-- `bd` tickets: close only what is 100% done (rule 19); never close a parent over open children (rule 20); cleanup children addressed or filed.
+- Agent Tasks tickets: close only what is 100% done (rule 19); never close a parent over open children (rule 20); cleanup children addressed or filed.
 - Commits are conventional and clear (`feat:` / `fix:` / `chore:`), each cleanup pass its own commit, messages end with the required session link.
 - Branch rebased on fresh base, **pushed**, and `git status` shows "up to date with origin" with a clean tree.
 - PR body (only when the user explicitly asks for a PR): what + why, linked issues, test evidence/output, no model identifier.

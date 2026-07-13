@@ -1,0 +1,53 @@
+// The @opaque handle gate: a newtype marked `@opaque("friend", ...)`
+// refuses `.raw()` outside its declaring module + declared friends
+// (F3106) — opaque handles are compared and looked-up, never
+// inspected. The fixture directory has `idlib` declare the handle
+// with `friendmod` as its one friend; `outsider` tries to peel.
+// Declaring-module and friend peels must stay clean, and only the
+// peel is gated — construction, passing, and comparison work
+// everywhere.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+
+spec "@opaque .raw() is gated to the declaring module + friends" {
+    then "an outsider peel is refused with F3106 naming the offender" {
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        out.contains("F3106") && out.contains("outsider::steal")
+    }
+    then "each illegal peel reports exactly once across the return-analysis re-walks" {
+        // outsider has exactly THREE illegal peels, one per shape the pass-2
+        // return analysis re-walks (tail, mid-block let, explicit return).
+        // A re-fired diagnostic from any of those walks would push the
+        // count past three — the historic duplicate-F3106 bug.
+        // The renderer interleaves ANSI codes into the "Found N errors"
+        // footer, so count the per-error title marker instead: three
+        // errors produce exactly three `error[F3106]` titles (the code
+        // string appears nowhere else in the render).
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        out.split("error[F3106]").length == 4
+    }
+    then "the declaring module and the declared friend peel clean" {
+        let out = avra_shell_exec("./build/bs2 check tests/opaque_raw_gate/main.av 2>&1 || true")
+        // Exactly the outsider's peel lines mention F3106 — the
+        // idlib/friendmod peels AND the outsider's ungated comparison
+        // must contribute none.
+        !out.contains("inspect_here") && !out.contains("peel_as_friend") && !out.contains("outsider::same")
+    }
+    then "legal @std-internal peels never false-fire when @std is inlined (annotate is silent)" {
+        // This program contains NO .raw() of its own — but the whole-program
+        // compile INLINES @std sources (walker -> core), and core legally
+        // peels ExprId/PatId in positions the typeck ANNOTATE pass re-runs
+        // check_expr on (call args, let inits). Annotate runs with stale fn
+        // context (the last user fn — a DIFFERENT module than core), so a
+        // report fired during annotate false-fires the context-sensitive
+        // @opaque gate on legal code and misattributes it to the user fn.
+        // The TC.reporting gate keeps annotate silent; any F3106 here is
+        // that regression returning.
+        let fixture = "build/_opaque_annotate_inline_fixture.av"
+        let _ = avra_selfhost_write_file(fixture,
+            "use @std.avrac.features.walker.{derive_walker}\nfn main() -> int { 0 }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA ./build/bs2 check ${fixture} 2>&1 || true")
+        !out.contains("F3106")
+    }
+}

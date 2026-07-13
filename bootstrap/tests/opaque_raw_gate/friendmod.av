@@ -1,0 +1,5 @@
+// A declared friend: the peel is allowed here by the @opaque(...)
+// friend list on the declaration.
+use idlib.{Handle, make}
+
+export fn peel_as_friend() -> int { make(5).raw() }

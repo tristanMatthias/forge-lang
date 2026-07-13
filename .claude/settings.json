@@ -12,35 +12,15 @@
         "matcher": "Bash"
       }
     ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "command": "bd prime",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
           {
-            "command": "echo '{\"systemMessage\":\"SESSION START CHECKLIST — READ BEFORE DOING ANYTHING:\\n\\n1. Run: cd bootstrap \u0026\u0026 make test — verify spec tests + selfhost fixed point\\n2. Run: bd ready -n 10 — see current tickets\\n3. NEVER close a ticket without 100% completion (CLAUDE.md rule 19)\\n4. NEVER defer work. Do it or leave the ticket open.\\n5. When adding new enum variants to ValueType/Expr/Stmt: run make seed-patch-traps FIRST\\n6. When make build fails: STOP. Answer 4 questions before retrying.\\n7. When make build fails with undefined variable after seed changes: the seed is stale. Run make seed-patch-traps \u0026\u0026 make clean \u0026\u0026 make build\\n8. After every successful change: git add + commit + push. Do NOT batch.\\n9. translate_type_ctx has a string fallback in resolve_param_vt. To remove it, ALL parser sites must populate ValueType (not Unknown). Check with: grep ValueType.Unknown src/ -r\"}'",
+            "command": "echo '{\"systemMessage\":\"SESSION START CHECKLIST — READ BEFORE DOING ANYTHING:\\n\\n1. Run: cd bootstrap \u0026\u0026 make test — verify spec tests + selfhost fixed point\\n2. Task tracking is the Agent Tasks MCP (mcp__Agent_Tasks__ready / show / update)\\n3. NEVER close a ticket without 100% completion (CLAUDE.md rule 19)\\n4. NEVER defer work. Do it or leave the ticket open.\\n5. When adding new enum variants to ValueType/Expr/Stmt: run make seed-patch-traps FIRST\\n6. When make build fails: STOP. Answer 4 questions before retrying.\\n7. When make build fails with undefined variable after seed changes: the seed is stale. Run make seed-patch-traps \u0026\u0026 make clean \u0026\u0026 make build\\n8. After every successful change: git add + commit + push. Do NOT batch.\\n9. translate_type_ctx has a string fallback in resolve_param_vt. To remove it, ALL parser sites must populate ValueType (not Unknown). Check with: grep ValueType.Unknown src/ -r\"}'",
             "timeout": 5,
             "type": "command"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "command": "bd prime",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
       }
     ],
     "Stop": [

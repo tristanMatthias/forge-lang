@@ -228,6 +228,11 @@ export enum DiagCode {
     /// declared type (`let xs: List<RowStruct> = ...`, a fn return type,
     /// etc.). Without either, the rows have no type.
     TableRowTypeMissing
+    /// F1044 — a GENERIC `fn` declared inside a function body. Nested
+    /// fns desugar to let-bound closures, and closures take no type
+    /// parameters, so a generic nested fn has no valid lowering — it
+    /// must be lifted to the top level (where monomorphization sees it).
+    NestedGenericFnDecl
     /// F1202 — the `?` (try) operator was applied to an optional `T?`.
     /// `?` is for error propagation on `Result`; absence is handled with
     /// `??`, `?.`, force-unwrap `!`, or `match`. Part of the Zig-style
@@ -283,6 +288,12 @@ export enum DiagCode {
     /// of producing differently-laid-out structs that share a
     /// name.
     DuplicateDecl
+    /// F3106 — `.raw()` on an `@opaque` newtype outside its declaring
+    /// module and declared friend modules. Opaque handles (AST ids,
+    /// registry keys) are compared and looked-up, never inspected —
+    /// peeling one elsewhere couples the caller to the handle's
+    /// representation (the L3 typed-identity rule).
+    OpaqueRawOutsideFriends
     // ── Warnings (F9000-9998) ───────────────────────────────────────
     // ── Spec-test failures (F0900-0999) ─────────────────────────────
     /// F0900 — a spec/given/then assertion evaluated to false at run
@@ -439,6 +450,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .UnannotatedLambdaParam -> ErrorDef { code: "F1006", help: "annotate the parameter, e.g. `(x: int)` — a standalone lambda's parameter types are only inferred from a contextual call argument, an `fn(…)`-typed binding, a struct field, or a typed function return" }
         .UnknownMethod       -> ErrorDef { code: "F1043", help: "check the receiver type's method list — the diagnostic names the available methods" }
         .TableRowTypeMissing -> ErrorDef { code: "F1042", help: "give the table a row type: `table<RowStruct> { ... }`, or annotate the binding `: List<RowStruct>`" }
+        .NestedGenericFnDecl -> ErrorDef { code: "F1044", help: "lift the generic fn to the top level — nested fns become closures, and closures cannot take type parameters" }
         .TryOnOptional       -> ErrorDef { code: "F1202", help: "`?` is for `Result` error propagation, not absence — use `?? default`, `?.field`, force-unwrap `!`, or `match` on the optional" }
         .LetElseMustDiverge  -> ErrorDef { code: "F1203", help: "a `let … else` block must exit the scope (`return` / `break` / `continue` / `panic`) — for a same-type fallback that continues, use `?? default`" }
         .OrderOnOptional     -> ErrorDef { code: "F1204", help: "a `none` has no position in an ordering — unwrap first (`a!`), default the gap (`a ?? 0`), or compare presence with `match` / `if let`" }
@@ -452,6 +464,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
         .DuplicateDecl       -> ErrorDef { code: "F3105", help: "rename one of the duplicates, or remove the redundant declaration" }
+        .OpaqueRawOutsideFriends -> ErrorDef { code: "F3106", help: "use the handle's lookup/compare API instead, or add this module to the @opaque(\"...\") friend list on the newtype declaration" }
         .SpecTestFailed      -> ErrorDef { code: "F0900", help: "the assertion expression evaluated to false — fix the implementation or update the expectation" }
         .ReturnInSpecBlock   -> ErrorDef { code: "F0901", help: "a `return` here exits the whole test file's initializer and silently drops this and every later test — move the early exit into a helper fn, or let the block's final expression be the result" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
@@ -614,6 +627,36 @@ export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
         error_count: new_errors,
         warning_count: new_warnings,
     }
+}
+
+/// True iff `bag` already holds a diagnostic equivalent to `d` — same
+/// severity, code, and message. Span is deliberately EXCLUDED: a re-walk's
+/// position state drifts, so the same diagnostic re-fired by a second walk
+/// carries a different span while saying exactly the same thing.
+fn bag_contains_equivalent(bag: DiagnosticBag, d: Diagnostic) -> bool {
+    for e in bag.diagnostics {
+        if severity_str(e.severity) == severity_str(d.severity)
+            && diag_code_str(e.code) == diag_code_str(d.code)
+            && e.message == d.message {
+            return true
+        }
+    }
+    false
+}
+
+/// Append every diagnostic from `fresh` that `primary` holds no equivalent
+/// of (see `bag_contains_equivalent`). The merge half of the RE-WALK
+/// discipline: typeck's return analysis re-runs check_expr_expected over
+/// ALREADY-CHECKED code purely to thread the declared type through it — its
+/// expected-DEPENDENT findings are new information and must land, while its
+/// re-fires of the primary walk's diagnostics must not duplicate. The
+/// re-walk collects into a fresh bag and merges back through here.
+export fn bag_merge_unseen(primary: DiagnosticBag, fresh: DiagnosticBag) -> DiagnosticBag {
+    mut cur = primary
+    for d in fresh.diagnostics {
+        if !bag_contains_equivalent(cur, d) { cur = bag_report(cur, d) }
+    }
+    cur
 }
 
 /// True iff at least one Error-severity diagnostic has been reported.

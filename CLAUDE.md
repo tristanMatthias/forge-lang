@@ -135,7 +135,7 @@ Concretely:
   branch's compiler source AT HEAD (what a push ships — untracked or
   uncommitted files don't count; commit first) from the integration seed in
   an isolated tree (cold unit cache) and smoke-runs the result. Wired into the pre-push hook
-  (`bootstrap/scripts/pre-push`, chained from `.beads/hooks/pre-push`) and
+  (`bootstrap/scripts/pre-push`, installed at `.git/hooks/pre-push` via `make install-hooks`) and
   CI (`.github/workflows/bootstrap-window.yml`, every PR into the
   integration branch). Green results are cached (keyed on integration seed
   + compiler sources), so a clean push is seconds. Escape hatch for genuine
@@ -285,7 +285,7 @@ When any command fails with ENOSPC / "no space left on device" / similar disk-fu
 ## Adding a Feature — MANDATORY PROCESS
 
 ### Phase 1: Plan
-1. Check the TRD (`docs/TRD_V1.md`) and beads (`bd ready`) for related tickets
+1. Check the TRD (`docs/TRD_V1.md`) and Agent Tasks (`mcp__Agent_Tasks__ready`) for related tickets
 2. Identify seed impact — new keywords need a seed cycle. So does any **new surface syntax the current seed's parser cannot produce**, even when it reuses existing tokens (e.g. a new literal form like `table<Row> { … }`): the checked-in seed is an older compiler, so you must `make update-seed` BEFORE that syntax appears anywhere in compiler `src/` — otherwise `make build` fails parsing it (often as a misleading `undefined variable` / parse error). This is inherent to self-hosting, not a bug. Order: implement + land the feature without using it in `src/` → `make update-seed` → then dogfood the new syntax in `src/`. New enum VARIANTS on types the seed processes (ValueType, Expr, Stmt) DO need seed patching: run `make seed-patch-traps` before `make build` to convert the seed's match traps to safe fallthrough. Then `make update-seed` after the build succeeds. Adding fields to existing variants also needs this treatment.
 
 ### Phase 2: Two-Phase Bootstrap (only if adding new keywords)
@@ -397,14 +397,20 @@ LLDB on the parent sees only SIGCHLDs; reproduce single-process first (below).
 the compiler is broken: comptime macro expansion of component/derive output is
 only consumed on the manifest-driven path. After any compiler change, the probe
 that covers it (this exact shape — cwd at the PACKAGE ROOT so the manifest +
-dep-metadata path engage; the `rm` keeps the probe self-evident even though
-`bs2 build`'s own stale-.ll gate is fixed, 18z8):
+dep-metadata path engage; the exit code is the verdict):
 
 ```bash
-cd packages/std-avrac && rm -f src/avrac.av.ll && AVRA_USE_METADATA=1 \
+cd packages/std-avrac && AVRA_USE_METADATA=1 \
   AVRA_LIB_PKG_ROOT='@std::avrac' ../../build/bs2 compile --emit_metadata \
   --module_path='@std::avrac' src/avrac.av; echo "exit: $?"
 ```
+
+The orchestrated form (`bs2 build --lib --emit_metadata` from the package
+root) is equally trustworthy as a pass/fail probe: the parent gates Built on
+the child's exit status and removes any pre-existing entry `.ll` before
+spawning, so a stale artifact can no longer mask a crashed child (the old
+18z8 failure mode; guard: `build/tests/libbuild_stale_ll_test.av`). No
+`rm -f src/avrac.av.ll` prelude is needed on either form.
 
 ### Memory / OOM measurement (READ before diagnosing an OOM)
 
@@ -443,7 +449,7 @@ These bugs build successfully but corrupt memory at runtime.
 - **-O0 works, -O2 crashes:** alignment mismatch. Check LLVM type consistency.
 - **Seed contamination:** auto-cycle overwrote seed.ll. Default `NO_AUTOCYCLE=1` is set.
 - **Stale seed after a base change → misleading `expects X, got X` errors:** after rebasing/restarting a branch onto a newer integration base, the gitignored local `seed/seed.ll` stays at the OLD version and compiles the newer source with an older compiler — throwing F1000 `expects @…::ExprId, got @…::ExprId` (identical expected/got) that mimics a type-checker bug, not a seed mismatch. Re-fetch the pin first: `rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch`.
-- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. The historical instance (18z8 — the lib build's `file_exists(entry.ll)` gate satisfied by a STALE .ll, so a crashed child compile reported `Built`) is FIXED: the stale artifact is removed before the child runs and the child's real exit code gates the result (the non-TTY progress runner used to return 0 unconditionally). Meta reads are validated too (pdme.2 `metadata_slot_matches`): a slot serves only when whole AND stamped with the key it was looked up under.
+- **Materialise atomically, or validate completeness on reuse.** Any artifact written straight to a final path that a *later run* reuses (cache-hit, mtime-freshness, existence gate) can be served half-written if the writer is killed mid-materialise — the zp5b/fxfz/kaux/rrio bug class. Produce to a per-pid temp then rename (`build/link.av` `atomic_obj_llc_cmd` / `atomic_cp_cmd`; `cache_publish` staging), and gate reuse on completeness (`slot_complete`). A validation gate with a bypass path is worse than none. FIXED instance of this class (was 18z8): the lib build's post-compile `file_exists(entry.ll)` check used to be satisfied by a STALE .ll from an earlier run, so a crashed child compile still reported `Built` — now the parent removes the pre-existing entry `.ll` before spawning and gates Built on the child's real exit status (`run_with_progress`/`run_silent` never fabricate a 0), with the existence check demoted to a consistency assert; guard test `build/tests/libbuild_stale_ll_test.av`. Lib builds are safe pass/fail probes without any `rm` prelude. Meta reads are validated too (pdme.2 `metadata_slot_matches`): a slot serves only when whole AND stamped with the key it was looked up under.
 - **Concurrent same-slot compiles are safe LOCK-FREE (pdme.7) — don't add a cache lock.** N bs2 processes compiling the same entry (the shard/pre-build contention shape) contend on one cache slot safely: staging dirs are pid-unique, IR emission itself is atomic (`avra_llvm_print_module_to_file` prints to a per-pid tmp then renames — LLVM's own API truncates in place), wreck-repair renames damaged slots ASIDE into `_tmp` (readers see whole-or-absent, never half-deleted), and every cache-hit read is validated (an emptied-mid-read slot demotes to an honest MISS + recompile). A publish-race loser loses benignly. The regression net is `diagnose.sh --cache-fuzz-parallel [ROUNDS] [JOBS] [SEED]` (suite-wired at small rounds): simultaneous same-fp compiles + a chaos agent damaging the live slot, asserting rc=0 everywhere, worker IR == bypassed reference, and post-melee liveness. One rule remains for CALLERS: concurrent same-entry compiles must each pass their own `--output` — the shared `<entry>.ll` is the one path the cache can't defend (and `--output` is compile-cache-eligible now, so per-consumer outputs still share the slot).
 - **Unmatched tag `-559038737` / `0xffffffffdeadbeef` = the CLOSURE MARKER, not freed memory.** That constant is `closure_marker()` (codegen/types.av) — the head of a closure array `[MARKER, fn_ptr, captures…]`. Seeing it as an enum tag means a FUNCTION REFERENCE landed where a value belongs. Historically the first suspect was a fn-name/local-name collision, but **that class is now FIXED (ticket zo1a, #667/#691)**: locals AND match-arm pattern bindings reliably shadow same-named fns (the qualifier threads let/loop/pattern bindings), and module-private fns don't leak cross-module (a bare cross-module private ref is F3000, never a silent closure). So a closure marker today points at a genuine codegen/memory bug — a value slot that received a fn reference — NOT a shadow collision; investigate the emitting codegen path directly. Regression guards: `resolve/tests/pattern_var_shadows_fn_test.av`, `resolve/tests/local_value_shadows_import_test.av`, `tests/err_private_cross_module_test.av`. **Caveat:** reproducing the OLD corruption requires a **stale/contaminated `seed/seed.ll`** whose resolver predates the fix — always `sha256sum bootstrap/seed/seed.ll` and confirm it matches `bootstrap/seed/seed.lock` before diagnosing a "shadow" crash; a mismatch IS the bug (`rm bootstrap/seed/seed.ll && bash bootstrap/scripts/diagnose.sh --seed-fetch` restores the pin).
 
@@ -483,6 +489,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **Walkers that rebuild stmts MUST preserve `Annotated` wrappers.** Match on `stmt_unwrap`/peeled nodes for dispatch, but emit rebuilt nodes via `rewrap_annotations` (core/ast.av) — pushing a bare rebuilt `Stmt.Module` silently strips the module's annotations (the @deferred_init-eating bug class, d4jv). `expand_stmt_list` + `derive_marshal` were both guilty.
 - **In-process test parallelism (d4jv):** every assembled test binary runs its test FILES as `@deferred_init` units across `AVRA_TEST_JOBS` worker threads (default: cpu count; coverage pins 1). Per-unit output is grouped via per-thread runtime sinks (`avra_sink_push/pop` — `println` lowers to `avra_puts`, NOT libc puts). Capture (`avra_test_capture_*`) is sink-based, per-thread, nestable — no dup2. Channel surface: `channel<T>(cap)`, `.send/.recv/.try_recv/.close`, recv → `T?` null ⇔ closed+drained. `AVRA_TEST_STALL_MS` shrinks the stall-detector window (testing). `bs2 test <dir>` scopes discovery to that directory.
 - **Test counts:** specs registered per spec/given/then live in atomic C counters; intmap-backed registries grow (the historic 256-slot intmap silently dropped insert #257 — see intmap_growth_test).
+- **File-level consts are scoped per module (t-5vze — FIXED):** module-level `const` declarations are qualified by the resolver (`mod::NAME`, one LLVM global per module — exactly like fns/types), so same-named consts in batched test files can no longer silently read each other's value. Historically every module's consts shared ONE flat bare-name global (first-match-wins, no duplicate error — the `CONSUMER_SRC` incident: a fixture passed standalone but compiled a sibling batch member's source when bundled). Regression guards: `resolve/tests/module_const_scoping_test.av` (deterministic per-module readers + lowercase/uppercase `use` imports) and `test_runner/tests/batch_const_collision_test.av` (the real two-files-one-shard shape with overlapping unit inits). Consequences to know: const references arrive as `QualifiedIdent` downstream (is_const_expr, typeck's QualifiedIdent arm, and the naming lint all handle the qualified form), and nested/concurrent `bs2 test` runs no longer clobber each other's shard logs (per-pid `build/test_shards/<pid>` dirs — the shared dir used to be `rm -rf`'d by every run start; coverage runs still share `build/coverage/_test.profraw`/`.profdata`, so don't run two `make coverage` concurrently). Module-level `let`/`mut` globals intentionally stay flat/bare — `export mut` cross-module globals depend on it.
 - **Test-suite OOM / @std metadata fast-path (snw0, 08ro, pdme — don't refile):** the per-file runner pre-builds each `@std/*` package into a producer `.o` + `meta.bin`; shards then STUB `@std` and link the producer obj (lightweight). When the pre-build fails it DEGRADES to whole-program shards that each inline ALL of `@std` (~10GiB) → parallel OOM on a ≤16GB box. Three gotchas that disable the fast-path: (1) the pre-build's `> ${pkg}build/prebuild.log` redirect needs the pkg `build/` dir, which std-process/std-test lack on a cold tree (`mkdir -p` first); (2) the lib-build unit cache MUST key on `AVRA_LIB_PKG_ROOT` (a wrong root — `@std.avrac` vs the correct `@std::avrac` from `derive_lib_root_for` — caches a symbol-less `.ll` that poisons a later correct-root consumer → `undefined symbol` at link); (3) degraded-shard compile concurrency is capped (`prepare_test_run`: jobs=2 when `!lib.want_meta`) so the fallback can't OOM.
 
 ## ABSOLUTE RULES
@@ -508,28 +515,22 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 19. NEVER close or defer a ticket without 100% of the work being done. "Partially done" is NOT done. "Deferred" is NOT done. "Acceptable for bootstrap" is NOT done. If a ticket says "implement X" and X is not fully implemented per the spec, the ticket stays OPEN. If you can't finish it now, leave it open and move to the next one — do NOT close it with excuses. The only valid close reason is "all work described in this ticket is complete, tested, and committed." Adding a test without implementing the feature is NOT closing the ticket. Adding scaffolding without the logic is NOT closing the ticket. Workarounds are NOT closing the ticket.
 20. NEVER close a parent ticket (epic) until ALL child tickets are genuinely closed with real completed work. "All sub-tasks resolved" means nothing if those sub-tasks were themselves closed without doing the work.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Beads Issue Tracker
+## Task Tracking — USE AGENT TASKS (`mcp__Agent_Tasks__*`)
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+All work is tracked in the **Agent Tasks MCP**. Use it for ALL task tracking —
+`mcp__Agent_Tasks__create` / `update` / `close` / `comment` / `ready` / `search`
+/ `show` / `list` / `tree` / `dep`. Do NOT use TodoWrite or markdown TODO lists.
+Persistent knowledge goes in CLAUDE.md or project docs — never a MEMORY.md file.
 
-### Quick Reference
+Task IDs use the `forge-crafting-intepreters-*` scheme, so ticket references
+throughout the codebase and these docs still resolve via `mcp__Agent_Tasks__show`.
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-- **SEARCH before you FILE.** Before opening a ticket for a perf / test-runner / compiler-memory / OOM symptom, `bd search` it and skim the epics `4apk` (COMPILER-FAST) and `uzs9` (test cycle speed) — that area is already densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel tickets (and re-diagnosing what they already document) burns a session; the existing ones often already hold the answer + a warning you're about to ignore.
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+**SEARCH before you FILE.** Before opening a ticket for a perf / test-runner /
+compiler-memory / OOM symptom, `mcp__Agent_Tasks__search` it and skim the epics
+`4apk` (COMPILER-FAST) and `uzs9` (test cycle speed) — that area is already
+densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel
+tickets (and re-diagnosing what they already document) burns a session; the
+existing ones often already hold the answer.
 
 ## Session Completion
 
@@ -555,33 +556,3 @@ bd close <id>         # Complete work
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
-
-## Beads sync on Claude Code Web (this repo) — READ THIS
-
-This **overrides** the generic "issues.jsonl is a passive export" line in the
-bd-managed block above. On Claude Code Web, beads sync is automatic and you do
-**not** manage it manually:
-
-- **Just use beads normally** — `bd create` / `bd update` / `bd close`. A `bd`
-  wrapper (installed by `scripts/bootstrap.sh`) **auto-pushes** after every
-  mutating command, so changes reach GitHub with no manual `bd dolt push`.
-- **Source of truth is `refs/dolt/data`** (the Dolt DB ref), **not**
-  `.beads/issues.jsonl` — which is **gitignored here and no longer committed**.
-- On container start, `bootstrap.sh` hydrates the DB from `refs/dolt/data`.
-
-Why it's non-standard (three Claude-Code-Web constraints, handled in
-`bootstrap.sh::setup_beads_sync`):
-1. the GitHub proxy only allows pushing the *working branch*, so `refs/dolt/data`
-   is pushed **direct to github.com** via a fine-grained PAT in `$GH_TOKEN`
-   (Contents:write, this repo only); reads/hydration go through the proxy (no token);
-2. Dolt's data commits run with `commit.gpgsign=false` (the env's sign-server
-   rejects them) — scoped to bd only, so your *source* commits keep signing.
-
-Caveats: auto-push is **best-effort** — a failed push (network blip / expired
-token) leaves the write local until the next successful push. Requires `GH_TOKEN`
-in the environment; without it, beads is **read-only** (hydrate works, writes
-won't sync). The token is fed via `GIT_ASKPASS` and never stored on disk or in
-the repo. Beads' own general model is at
-https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md — this repo
-intentionally diverges from it for the reasons above.

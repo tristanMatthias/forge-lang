@@ -22,9 +22,13 @@
 // per-call flushed and the parent can tick at any cadence
 // regardless of compile speed.
 //
-// Both fall through to `run_plain` on a non-TTY: no UI, stdout stays
-// quiet on success (CI logs byte-clean), the child's REAL exit code
-// is returned, and its output is surfaced on failure (18z8).
+// Both fall through to a silent captured run on a non-TTY (stderr
+// replayed always, stdout only on failure) so CI stdout stays
+// byte-clean on success —
+// and BOTH paths return the child's REAL exit status. Callers gate
+// build success on this rc; an unconditional 0 here once let a
+// crashed child compile masquerade as a successful build whenever a
+// stale artifact satisfied the caller's existence check.
 
 extern fn avra_isatty_stdout() -> int
 extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int
@@ -39,8 +43,25 @@ extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_parse_int(s: string) -> int
 
-use @std.json.{json_str}
+use @std.json.{json_str, json_extract_string}
 use @std.avrac.build.{pool_extract_rc}
+
+/// Silent (non-TTY / spawn-failure) execution shared by
+/// run_with_spinner and run_with_progress: run `cmd` captured and
+/// return the child's REAL exit status. Stream replay policy lives
+/// in `replay_child_output`.
+fn run_silent(cmd: string) -> int {
+    let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
+    if handle < 0 {
+        // Spawn machinery unavailable: system(3)-style execution still
+        // surfaces the real rc (child output passes straight through).
+        return avra_shell_exec_status(cmd)
+    }
+    let final_json = avra_process_wait(handle)
+    let rc = pool_extract_rc(final_json)
+    replay_child_output(final_json, rc)
+    rc
+}
 
 /// True when stdout is an interactive terminal — gates spinner /
 /// progress rendering so CI logs (which pipe stdout) stay byte-clean.
@@ -60,30 +81,15 @@ fn spinner_frames() -> List<string> {
     ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 }
 
-/// 18z8: non-TTY / spawn-fallback execution — same child, no UI, REAL
-/// exit code. Both UI fns used to run `avra_shell_exec(cmd)` here and
-/// return 0 unconditionally, so every CI/pipe caller was blind to
-/// child failures (a crashed lib-build child compile reported
-/// `Built`). Stream contract is byte-identical to the old path: the
-/// child's stdout is discarded (CI logs stay clean — the redirect
-/// wraps the whole command in a group so `&&` chains can't dodge it)
-/// while its stderr passes through LIVE, so diagnostics, warnings,
-/// and the `[pkg]` banner keep flowing exactly as before. Only the
-/// return value changes: the child's real exit code instead of a
-/// hardcoded 0.
-fn run_plain(cmd: string) -> int {
-    avra_shell_exec_status("{ ${cmd} ; } >/dev/null")
-}
-
 /// Run `cmd` via `/bin/sh -c <cmd>` while rendering a single-line
 /// `<label>  <spin> <elapsed>s` indicator on stdout.
 export fn run_with_spinner(cmd: string, label: string) -> int {
     if !is_tty() {
-        return run_plain(cmd)
+        return run_silent(cmd)
     }
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
     if handle < 0 {
-        return run_plain(cmd)
+        return run_silent(cmd)
     }
     let frames = spinner_frames()
     let t_start = avra_uptime_ms()
@@ -110,8 +116,8 @@ export fn run_with_spinner(cmd: string, label: string) -> int {
         println("${label} done in ${string(secs)}.${string(tenths)}s")
     } else {
         println("${label} failed (rc=${string(rc)} after ${string(secs)}.${string(tenths)}s)")
-        emit_failure_output(final_json)
     }
+    replay_child_output(final_json, rc)
     rc
 }
 
@@ -124,14 +130,14 @@ export fn run_with_spinner(cmd: string, label: string) -> int {
 /// line when the package changes).
 export fn run_with_progress(cmd: string, label: string, total: int) -> int {
     if !is_tty() {
-        return run_plain(cmd)
+        return run_silent(cmd)
     }
     let progress_file = "/tmp/avra_progress_${string(avra_uptime_ms())}.log"
     let _ = avra_shell_exec("rm -f ${progress_file}; touch ${progress_file}")
     let progress_cmd = "AVRA_BUILD_PROGRESS_FILE='${progress_file}' ${cmd}"
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(progress_cmd)}]", "")
     if handle < 0 {
-        return run_plain(cmd)
+        return run_silent(cmd)
     }
     let t_start = avra_uptime_ms()
     mut active = ""               // currently-parsing module
@@ -176,8 +182,8 @@ export fn run_with_progress(cmd: string, label: string, total: int) -> int {
         println("${label} done · ${string(count)} modules · ${string(tsec)}.${string(ttenths)}s")
     } else {
         println("${label} failed (rc=${string(rc)} after ${string(tsec)}.${string(ttenths)}s · ${string(count)} modules)")
-        emit_failure_output(final_json)
     }
+    replay_child_output(final_json, rc)
     rc
 }
 
@@ -365,14 +371,23 @@ fn pad_right(s: string, width: int) -> string {
     out
 }
 
-fn emit_failure_output(final_json: string) {
-    let stdout_marker = "\"stdout\":\""
-    let sidx = final_json.index_of(stdout_marker)
-    if sidx < 0 { return }
-    let from = sidx + stdout_marker.length
-    let stderr_marker = "\",\"stderr\":\""
-    let to = final_json.index_of(stderr_marker)
-    if to > from {
-        println(final_json.substring(from, to))
+/// Replay a failed child's captured output. Both streams matter: bs2
+/// renders compile diagnostics on stderr while orchestration chatter
+/// lands on stdout — swallowing either hides WHY a build failed.
+/// json_extract_string unescapes the runtime's result-JSON encoding,
+/// so multi-line diagnostics render as emitted, not as one \n-escaped
+/// line.
+/// Replay a finished child's captured streams. Stderr replays ALWAYS:
+/// it is the compiler's human channel — the `[pkg]` banner, F9xxx
+/// warnings, diagnostics — and it passed straight through before
+/// execution became capture-based, so swallowing it on success would
+/// silently lose a build's warnings. Stdout (the chatter) replays only
+/// when the child failed, keeping success logs byte-clean.
+fn replay_child_output(final_json: string, rc: int) {
+    let err = json_extract_string(final_json, "stderr")
+    if err != "" { eprintln(err) }
+    if rc != 0 {
+        let out = json_extract_string(final_json, "stdout")
+        if out != "" { println(out) }
     }
 }
