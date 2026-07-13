@@ -1,0 +1,5 @@
+// Helper module for the qualified-fn-as-value fixture: exports fns
+// whose REFERENCES (not calls) main.av binds and passes around.
+export fn make_greeting() -> string { "hello-from-helper" }
+
+export fn double_it(x: int) -> int { x * 2 }

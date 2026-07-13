@@ -133,6 +133,10 @@ fn emit_body_block(body_cg: Ctx, env: List<VarBinding>, body_ids: List<StmtId>, 
                         // param env so a no-prefix tail lambda still sees
                         // the enclosing fn's params for capture analysis.
                         let pre_env = if last_i == 0 { env } else { pre.env }
+                        // Prefix ended in a terminator (early return): the
+                        // tail lambda is dead code — don't emit past the
+                        // terminator (t-83ja).
+                        if pre.ctx.has_terminator() { return ok_br(pre.value, pre.ty, pre.ctx, pre_env) }
                         // Mirror emit_block_loop_ctx's tail handling:
                         // position + coverage line before the emit.
                         let pos = body_cg.nodes.stmt_pos(body_ids[last_i])
@@ -250,7 +254,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
         }
     }
     body_cg.cov_finalize_fn()
-    ctx.verify_fn(fn_val)
+    if !ctx.verify_fn(fn_val) {
+        return err_stmt("internal compiler error (ICE): LLVM verification failed for function `${name}` — codegen produced invalid IR (verifier report above)")
+    }
     let e: List<VarBinding> = []
     ok_stmt(e)
 }
@@ -540,10 +546,15 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     if tn != "" {
         return emit_trait_dispatch(ctx, env, r.value, tn, method, args)
     }
-    // Newtype .raw() → zero-cost access to inner value
+    // Newtype .raw() → zero-cost access to inner value. Canonicalise the
+    // repr to the INNER type's (cast_to is identity when it already
+    // matches): a receiver that travelled through a ptr-repr'd slot must
+    // not hand downstream arithmetic a ptr-typed value claiming Int —
+    // the verifier rejects `add ptr` (t-83ja's gate caught this live).
     if vtype_is_newtype(r.ty) {
         if method == "raw" {
-            return ok_emit(r.value, vtype_newtype_inner(r.ty))
+            let inner = vtype_newtype_inner(r.ty)
+            return ok_emit(ctx.cast_to(r.value, inner), inner)
         }
         // Forward other methods to the inner type's methods
         let nt_name = vtype_newtype_name(r.ty)
@@ -602,7 +613,11 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
         if method == "raw" {
             let nt_inner = newtype_inner_via_registry(ctx, owner, r.ty)
             if nt_inner != null {
-                return ok_emit(r.value, nt_inner!)
+                // Same repr canonicalisation as the Newtype-kind unwrap
+                // above — this Struct-kind receiver came through a fn
+                // return whose slot repr is ptr, so an int-backed inner
+                // MUST be ptrtoint'd back before arithmetic touches it.
+                return ok_emit(ctx.cast_to(r.value, nt_inner!), nt_inner!)
             }
         }
         return err_emit("undefined method `${owner}.${method}`")

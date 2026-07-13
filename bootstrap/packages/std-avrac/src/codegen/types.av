@@ -934,7 +934,9 @@ impl Ctx {
     fn fn_type(self, ret: ptr, params: ptr, count: int) -> ptr { avra_llvm_function_type(ret, params, count, 0) }
     fn add_function(self, name: string, ty: ptr) -> ptr { avra_llvm_add_function(self.module, name, ty) }
     fn get_param(self, fn_val: ptr, idx: int) -> ptr { avra_llvm_get_param(fn_val, idx) }
-    fn verify_fn(self, fn_val: ptr) { avra_llvm_verify_function(fn_val) }
+    // False = the verifier rejected the function (report already on stderr).
+    // Callers MUST fail the compile — invalid IR must never reach the .ll.
+    fn verify_fn(self, fn_val: ptr) -> bool { avra_llvm_verify_function(fn_val) == 0 }
 
     // Query: is this LLVM value a pointer type?
     fn is_ptr_value(self, val: ptr) -> bool { avra_llvm_is_ptr_value(val) != 0 }
@@ -1200,7 +1202,9 @@ impl Ctx {
     }
 
     // ── Module lifecycle ──
-    fn verify_module(self) { avra_llvm_verify_module_print(self.module) }
+    // False = the verifier rejected the module (report already on stderr).
+    // Callers MUST fail the compile — invalid IR must never reach the .ll.
+    fn verify_module(self) -> bool { avra_llvm_verify_module_print(self.module) == 0 }
     fn write_ir(self, path: string) -> int { avra_llvm_print_module_to_file(self.module, path) }
     fn dispose(self) {
         avra_llvm_dispose_builder(self.builder)
