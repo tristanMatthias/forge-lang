@@ -306,6 +306,9 @@ export fn package_full_fingerprint_with_toolchain(pkg_root: string, toolchain_ha
 /// Positional lookup for the topo-walk's name→fp accumulator. A
 /// missing name folds as "" — deterministic, and unreachable when
 /// build_graph succeeded (every dep_name has a collected unit).
+/// Linear scan considered fine: the walk is memoised per (toolchain,
+/// root), unit counts are single digits, and a Map here would cost
+/// more to build than the scans it saves.
 fn full_fp_lookup(names: List<string>, fps: List<string>, target: string) -> string {
     mut i = 0
     while i < names.length {

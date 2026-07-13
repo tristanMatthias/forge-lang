@@ -629,16 +629,11 @@ fn tally_dep_logs(log_dir: string) -> PreDepOutcome {
             hits = hits + 1
         } else {
             misses = misses + 1
-            detail = detail + "; " + dep_log_name(f) + " MISS [" + dep_log_miss_reason(content) + "]"
+            // basename_no_ext: `…/pre_deps.123/std-json.log` → `std-json`.
+            detail = detail + "; " + basename_no_ext(f) + " MISS [" + dep_log_miss_reason(content) + "]"
         }
     }
     PreDepOutcome { rc: 0, hits: hits, misses: misses, detail: detail }
-}
-
-// `…/pre_deps.123/std-json.log` → `std-json`.
-fn dep_log_name(path: string) -> string {
-    let base = basename_no_ext(path)
-    base
 }
 
 // Pull the attribution out of the child's `rebuild <fp> — <reason>`
@@ -701,7 +696,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
         eprintln("pre-build failed — per-dep logs: ${log_dir}/")
         return PreDepOutcome { rc: rc, hits: 0, misses: 0, detail: "" }
     }
-    mut out = tally_dep_logs(log_dir)
+    let out = tally_dep_logs(log_dir)
     avra_shell_exec("rm -rf '${log_dir}'")
     out
 }
@@ -1419,7 +1414,7 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
             avra_shell_exec("rm -rf ${marker_dir}")
             return PreDepOutcome { rc: sync_rc, hits: 0, misses: 0, detail: "" }
         }
-        mut sync_out = tally_dep_logs(marker_dir)
+        let sync_out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
         return sync_out
     }
@@ -1446,7 +1441,7 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
         dump_failed_logs(marker_dir)
     }
     if exit_code == 0 {
-        mut out = tally_dep_logs(marker_dir)
+        let out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
         return out
     }
@@ -1761,7 +1756,8 @@ fn run_build_command(args: BuildArgs) {
                 }
             }
         }
-        _ -> {}
+        // A Miss needs no read-validation — there is nothing to consume.
+        .Miss(_, _, _) -> {}
     }
     let t_after_decide = avra_uptime_ms()
     match outcome {
