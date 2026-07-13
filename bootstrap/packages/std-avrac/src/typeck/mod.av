@@ -1019,6 +1019,28 @@ export fn tc_at_expr(tc: TC, id: ExprId) -> TC {
     tc with { current_line: lc.line, current_col: lc.col }
 }
 
+/// Loop-iteration sibling of `tc_at_expr` for walks over SIBLING operands
+/// (call args, list/map/tuple elements): RESET the caret to the walk's own
+/// fallback stamp (`fb_line`/`fb_col`, captured before the loop) before
+/// sharpening. Without the reset, a span-less operand (interned leaf,
+/// synthesized node) would inherit the PREVIOUS sibling's position through
+/// tc_at_expr's keep-current fallback — and a sibling argument is never
+/// the right caret.
+fn tc_at_operand(tc: TC, id: ExprId, fb_line: int, fb_col: int) -> TC {
+    tc_at_expr(tc with { current_line: fb_line, current_col: fb_col }, id)
+}
+
+/// `tc_report` sharpened to `id`'s own span for THIS ONE diagnostic:
+/// reposition (tc_at_expr rules — interned leaves and module-file rows
+/// keep the current stamp), report, then restore the caller's stamp so
+/// the sharpening can't shift any later report in the same walk. The
+/// chokepoint for one-shot "blame the offending operand" reports (e.g.
+/// a Binary gate blaming one side).
+fn tc_report_at_expr(tc: TC, id: ExprId, code: DiagCode, msg: string) -> TC {
+    let r = tc_report(tc_at_expr(tc, id), code, msg)
+    r with { current_line: tc.current_line, current_col: tc.current_col }
+}
+
 /// Build an ExprResult — convenience constructor used pervasively
 /// by the per-expression checker arms.
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
@@ -2849,9 +2871,9 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let right_e = tc.nodes.exprs.get(right)
             let l = check_expr(tc, left_e)
             let r = check_expr(l.tc, right_e)
-            let tc2 = check_none_compare(r.tc, left_e, op, l.ty, right_e, r.ty)
-            let tc3 = check_optional_ordering(tc2, op, l.ty, r.ty)
-            let tc4 = check_optional_arithmetic(tc3, op, l.ty, r.ty)
+            let tc2 = check_none_compare(r.tc, left, left_e, op, l.ty, right, right_e, r.ty)
+            let tc3 = check_optional_ordering(tc2, op, left, l.ty, right, r.ty)
+            let tc4 = check_optional_arithmetic(tc3, op, left, l.ty, right, r.ty)
             check_binary_type(tc4, l.ty, op, r.ty)
         }
         .Unary(_, right) -> {
@@ -2971,16 +2993,16 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// Verify that each arg passed to a shape-typed parameter has all
 /// the required fields (width-subtype check).
 fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    // Per-arg caret: each iteration repositions at the argument (fb = the
+    // call head's stamp, restored after), so a width-subtype rejection
+    // points at the offending argument, not the call.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
-    // Reset-then-sharpen per argument (see tc_check_newtype_args): a shape
-    // mismatch carets the offending argument; span-less args keep the
-    // statement stamp instead of inheriting a sibling's caret.
-    let fb_line = tc.current_line
-    let fb_col = tc.current_col
     while i < limit {
-        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = tc_check_shape_compat(cur, vtype_display(params[i].vtype), arg_ty)
         i = i + 1
@@ -2993,18 +3015,17 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> 
 /// accept a bare `UUID` — the wrapper has to be explicit at the
 /// call site.
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<ExprId>, is_extern: bool) -> TC {
+    // Per-arg caret: the mismatch/layout reports below then point at the
+    // offending argument (fb = the call head's stamp, restored after) —
+    // not the call statement's head.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
-    // The statement's own stamp, restored after the loop and reset before
-    // each argument — so a span-less arg (interned leaf) reports at the
-    // call statement, never at a SIBLING argument's position, while a
-    // spanned arg sharpens to its own caret via tc_at_expr.
-    let fb_line = tc.current_line
-    let fb_col = tc.current_col
     while i < limit {
         let p = params[i]
-        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let param_ty = resolve_vtype(cur, p.vtype)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         if param_ty is .Newtype {
@@ -3082,15 +3103,16 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
     if v == null { return tc }
     let fields = v!.fields
     let tp = enum_type_params(tc.enums, tn)
+    // Per-payload caret: the field-type reports below point at the
+    // offending payload argument (fb = the ctor head's stamp, restored
+    // after), not the `Type.Variant(` head.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur = tc
     mut i = 0
     let limit = if fields.length < args.length { fields.length } else { args.length }
-    // Reset-then-sharpen per payload arg (see tc_check_newtype_args): a
-    // wrong-typed payload carets the payload expression itself.
-    let fb_line = tc.current_line
-    let fb_col = tc.current_col
     while i < limit {
-        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let fty = resolve_vtype(cur, fields[i].resolved)
         let aty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         // A bare `null`/`none` literal (`Expr.None`) is valid for ANY optional
@@ -3194,12 +3216,18 @@ fn tc_infer_enum_ctor_type_args(tc: TC, tn: string, variant: string, args: List<
 /// the newtype's own name) — an ordinary fn that merely RETURNS the
 /// newtype (e.g. `expr_ref_id(r: NodeRef) -> ExprId`) constrains its
 /// args by its own param types, not by the newtype's payload.
-fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
+fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, args: List<ExprId>) -> TC {
     match ret_ty {
         .Newtype(nt_name, inner_ty, _) -> {
             if !tc_callee_names_type(name, nt_name) { return tc }
+            let arg_ty = tc_first_arg_type(tc, args)
             if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
                 let msg = "`${name}()` expects `${vtype_render_full(inner_ty)}`, got `${vtype_render_full(arg_ty)}`"
+                // Caret the payload argument itself (args is non-empty here:
+                // an empty args list types as Void, which is Unknown-free and
+                // only reaches this report through a genuinely-wrong arity
+                // that the arity gate already rejected).
+                if args.length > 0 { return tc_report_at_expr(tc, args[0], DiagCode.TypeMismatch, msg) }
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
             tc
@@ -3286,27 +3314,31 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
 /// operand. A `none` has no value, so silently computing would corrupt
 /// (both-optional operates on box pointers; a none side traps). Sibling of
 /// check_optional_ordering; equality stays permissive.
-fn check_optional_arithmetic(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+fn check_optional_arithmetic(tc: TC, op: BinOp, left: ExprId, l_ty: ValueType, right: ExprId, r_ty: ValueType) -> TC {
     if !binop_is_arithmetic(op) { return tc }
     if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
-    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let l_off = vtype_is_optional(l_ty)
+    let which = if l_off { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
     let msg = "cannot do arithmetic on an optional `${which}` with `${binop_str(op)}` — a `none` has no value to compute with"
-    tc_report(tc, DiagCode.ArithOnOptional, msg)
+    // Caret the optional OPERAND, not the whole Binary.
+    tc_report_at_expr(tc, if l_off { left } else { right }, DiagCode.ArithOnOptional, msg)
 }
 
 /// Reject an ordering comparison (`<` `<=` `>` `>=`) on an optional operand.
 /// `none` has no position in an ordering, so silently answering would defeat
 /// the purpose of `T?` (and is where strict non-null-by-default is headed).
 /// Equality (`==`/`!=`) stays permissive — it IS well-defined on optionals.
-fn check_optional_ordering(tc: TC, op: BinOp, l_ty: ValueType, r_ty: ValueType) -> TC {
+fn check_optional_ordering(tc: TC, op: BinOp, left: ExprId, l_ty: ValueType, right: ExprId, r_ty: ValueType) -> TC {
     if !binop_is_ordering(op) { return tc }
     if !vtype_is_optional(l_ty) && !vtype_is_optional(r_ty) { return tc }
-    let which = if vtype_is_optional(l_ty) { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
+    let l_off = vtype_is_optional(l_ty)
+    let which = if l_off { vtype_render_full(l_ty) } else { vtype_render_full(r_ty) }
     let msg = "cannot order an optional `${which}` with `${binop_str(op)}` — a `none` has no position in an ordering"
-    tc_report(tc, DiagCode.OrderOnOptional, msg)
+    // Caret the optional OPERAND, not the whole Binary.
+    tc_report_at_expr(tc, if l_off { left } else { right }, DiagCode.OrderOnOptional, msg)
 }
 
-fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Expr, r_ty: ValueType) -> TC {
+fn check_none_compare(tc: TC, left_id: ExprId, left: Expr, op: BinOp, l_ty: ValueType, right_id: ExprId, right: Expr, r_ty: ValueType) -> TC {
     if !(op is .Eq) && !(op is .Ne) { return tc }
     let l_none = left is .None
     let r_none = right is .None
@@ -3316,7 +3348,9 @@ fn check_none_compare(tc: TC, left: Expr, op: BinOp, l_ty: ValueType, right: Exp
     if !vtype_is_value_scalar(other) { return tc }
     let always = if op is .Eq { "false" } else { "true" }
     let msg = "comparing a non-optional `${vtype_render_full(other)}` to `none` is always ${always} — `none` only inhabits an optional `T?`. Make the type `T?`, or drop the comparison (an `if let` / `let-else` here needs an optional subject)."
-    tc_report(tc, DiagCode.TypeMismatch, msg)
+    // Caret the NON-none side — the operand whose type the message asks
+    // the user to change (`none` is an interned leaf with no span anyway).
+    tc_report_at_expr(tc, if l_none { right_id } else { left_id }, DiagCode.TypeMismatch, msg)
 }
 
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
@@ -3390,8 +3424,7 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
     } else {
         newtype_checked
     }
-    let first_arg_ty = tc_first_arg_type(strict_checked, args)
-    let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, first_arg_ty)
+    let ctor_checked = tc_check_newtype_ctor(strict_checked, name, rec.ret_ty, args)
     // For generic fns: infer T from the call's arg types AND the
     // caller's expected return type (so07.7.15), substitute into ret_ty
     // so downstream typeck sees `Int` for `first(nums)` instead of the
@@ -3409,11 +3442,16 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
 /// stays quiet; turn on for refactor sessions that need fail-fast on
 /// silent ptr-shape coercions.
 fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>) -> TC {
+    // Per-arg caret, same as the always-on gates (fb = the call head's
+    // stamp, restored after) — an F9004 points at the offending argument.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur_tc = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
     while i < limit {
         let p = params[i]
+        cur_tc = tc_at_operand(cur_tc, args[i], fb_line, fb_col)
         let arg_ty = tc_arg_concrete_ty(cur_tc, args[i])
         let skip_unknown = vtype_is_unknown(p.vtype) || vtype_is_unknown(arg_ty)
         let skip_generic = vtype_mentions_typeparam(p.vtype, tp)
@@ -3425,7 +3463,7 @@ fn tc_strict_arg_types(tc: TC, name: string, tp: List<TypeParamEntry>, params: L
         }
         i = i + 1
     }
-    cur_tc
+    cur_tc with { current_line: fb_line, current_col: fb_col }
 }
 
 /// Slice B (ps3t.4.5) companion of `tc_gate_unthreaded_lambda`: walk a
@@ -4044,11 +4082,12 @@ fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<Exp
     mut cur = tc
     mut i = 0
     let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
-    // Reset-then-sharpen per argument (see tc_check_newtype_args).
+    // Per-arg caret (fb = the call head's stamp, restored after), same as
+    // the registered-fn gates.
     let fb_line = tc.current_line
     let fb_col = tc.current_col
     while i < limit {
-        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
+        cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
         i = i + 1
@@ -4383,14 +4422,20 @@ fn display_check_arg(tc: TC, types: List<ValueType>, args: List<ExprId>) -> TC {
 }
 
 export fn check_expr_list_types(tc: TC, exprs: List<ExprId>) -> ExprListResult {
+    // Caret each element's OWN span while it is checked (fb = the enclosing
+    // expression's stamp, restored after) — an error inside element N then
+    // carets element N, not the call/list head, and never a sibling.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     mut cur_tc = tc
     mut types: List<ValueType> = []
     for id in exprs {
+        cur_tc = tc_at_operand(cur_tc, id, fb_line, fb_col)
         let r = check_expr(cur_tc, cur_tc.nodes.exprs.get(id))
         cur_tc = r.tc
         types.push(r.ty)
     }
-    ExprListResult { tc: cur_tc, types }
+    ExprListResult { tc: cur_tc with { current_line: fb_line, current_col: fb_col }, types }
 }
 
 // ── Pass 3: Type annotation ──

@@ -186,6 +186,28 @@ fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
     }
 }
 
+/// Sharpen the resolver's caret to `id`'s own byte span when the row
+/// carries one — the resolve-pass mirror of typeck's `tc_at_expr`, with
+/// the same two fallbacks: span-free rows (interned leaves, synthesized
+/// nodes) keep the statement position, and module-file rows keep it too
+/// (the store's LineIndex belongs to the ENTRY file, so a module row's
+/// byte offsets cannot be converted through it).
+fn rs_at_expr(r: Resolver, id: ExprId) -> Resolver {
+    if r.source_file != "" { return r }
+    let lc = r.nodes.expr_linecol(id)
+    if lc.line == 0 { return r }
+    r with { source_line: lc.line, source_col: lc.col }
+}
+
+/// Loop-iteration sibling of `rs_at_expr` for walks over SIBLING
+/// operands (call args, struct-literal field inits): RESET to the
+/// walk's own fallback stamp before sharpening, so a span-less operand
+/// falls back to the enclosing head — never the previous sibling's
+/// position.
+fn rs_at_operand(r: Resolver, id: ExprId, fb_line: int, fb_col: int) -> Resolver {
+    rs_at_expr(r with { source_line: fb_line, source_col: fb_col }, id)
+}
+
 /// Bump scope depth — a fresh inner block. Bindings declared at the
 /// new depth get popped on `exit_resolve_scope`.
 export fn enter_resolve_scope(r: Resolver) -> Resolver {
@@ -333,10 +355,10 @@ fn lookup_fn(fns: List<string>, name: string) -> bool {
 /// (`let`/`mut`/`const`/`Function`) declare names in scope.
 export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .Let(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), false)
-        .Mut(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), true)
-        .Const(name, _, init) -> resolve_binding(r, name, r.nodes.exprs.get(init), false)
-        .Expr(expr) -> resolve_expr(r, r.nodes.exprs.get(expr))
+        .Let(name, _, init) -> resolve_binding(rs_at_expr(r, init), name, r.nodes.exprs.get(init), false)
+        .Mut(name, _, init) -> resolve_binding(rs_at_expr(r, init), name, r.nodes.exprs.get(init), true)
+        .Const(name, _, init) -> resolve_binding(rs_at_expr(r, init), name, r.nodes.exprs.get(init), false)
+        .Expr(expr) -> resolve_expr(rs_at_expr(r, expr), r.nodes.exprs.get(expr))
         .Block(body) -> {
             let entered = enter_resolve_scope(r)
             let after = resolve_stmt_ids(entered, body)
@@ -350,7 +372,7 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_body = resolve_stmt_ids(with_params, body)
             exit_resolve_scope(after_body)
         }
-        .Return(value) -> resolve_expr(r, r.nodes.exprs.get(value))
+        .Return(value) -> resolve_expr(rs_at_expr(r, value), r.nodes.exprs.get(value))
         .ReturnEmpty or .NoOp or .Break or .Continue -> r
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _) -> r
         .Impl(_, methods) -> resolve_stmt_ids(r, methods)
@@ -546,24 +568,38 @@ export fn starts_with_upper(name: string) -> bool {
 /// names themselves are not in scope (they're members of the type,
 /// not bindings).
 export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolver {
+    // Per-init caret (fb = the literal head's stamp, restored after): an
+    // undefined name inside init N carets init N, never a sibling.
+    let fb_line = r.source_line
+    let fb_col = r.source_col
     mut res = r
     mut i = 0
     while i < inits.length {
-        if res.had_error { return res }
+        // break (not return) so the error path exits through the same
+        // stamp restore as the happy path.
+        if res.had_error { break }
+        res = rs_at_operand(res, inits[i].value_id, fb_line, fb_col)
         res = resolve_expr(res, res.nodes.exprs.get(inits[i].value_id))
         i = i + 1
     }
-    res
+    res with { source_line: fb_line, source_col: fb_col }
 }
 
 /// Resolve every Expr behind a flipped `List<ExprId>` (call args).
 export fn resolve_expr_list_ids(r: Resolver, ids: List<ExprId>) -> Resolver {
+    // Per-arg caret (fb = the call head's stamp, restored after): an
+    // undefined name inside arg N carets arg N, never a sibling.
+    let fb_line = r.source_line
+    let fb_col = r.source_col
     mut res = r
     mut i = 0
     while i < ids.length {
-        if res.had_error { return res }
+        // break (not return) so the error path exits through the same
+        // stamp restore as the happy path.
+        if res.had_error { break }
+        res = rs_at_operand(res, ids[i], fb_line, fb_col)
         res = resolve_expr(res, res.nodes.exprs.get(ids[i]))
         i = i + 1
     }
-    res
+    res with { source_line: fb_line, source_col: fb_col }
 }
