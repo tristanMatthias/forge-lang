@@ -34,6 +34,19 @@
 // would double-register with main.av's inline `component command`).
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
+//
+// PERF ENVELOPE (measured; see the cleanup-pass commit): expansion is
+// linear in commands × children and interpreter-bound — a synthetic
+// 100-command cli adds ≲1s to a compile whose @std baseline is ~17s, so
+// at real scale (avra: 17 commands) the whole expansion is sub-second
+// noise. Consequences, considered and deliberately NOT taken further:
+// config lookups stay linear scans (≤4 pairs per leaf — a comptime map
+// costs more to build than it saves); name-shadow checks stay
+// O(globals × children) (globals ≈ 1); no memoization/hash-consing (each
+// node is constructed exactly once, nothing repeats); the generated App
+// literal builds every CommandSpec at process start (hundreds of small
+// allocations once per invocation — lazy per-command construction would
+// complicate dispatch for no observable gain).
 
 use @std.avrac.core.{Stmt, Expr, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
@@ -48,15 +61,30 @@ fn str_lit(s: string) -> ExprId {
     synth_expr_id(Expr.String("\"" + s + "\""))
 }
 
+/// One struct-literal field init — the atom every generated
+/// FlagDef/ArgDef/OptionDef/CommandSpec/Subcommand literal is built from.
+@comptime
+fn field(name: string, value_id: ExprId) -> FieldInit {
+    FieldInit { name: name, value_id: value_id }
+}
+
+/// The `key` config pair's value re-emitted as an ExprId, or `dflt` when the
+/// key is absent. The single scan behind config_value_or_empty (string
+/// default) and config_flag_or_false (bool default).
+@comptime
+fn config_value_or(config: List<CompConfigPair>, key: string, dflt: ExprId) -> ExprId {
+    for pair in config {
+        if pair.key == key { return synth_expr_id(pair.value) }
+    }
+    dflt
+}
+
 /// The `value` expr of the `key` config pair (`description "…"` →
 /// key="description"), re-emitted as an ExprId; an empty-string literal when
 /// the key is absent.
 @comptime
 fn config_value_or_empty(config: List<CompConfigPair>, key: string) -> ExprId {
-    for pair in config {
-        if pair.key == key { return synth_expr_id(pair.value) }
-    }
-    str_lit("")
+    config_value_or(config, key, str_lit(""))
 }
 
 /// A boolean leaf config (`required true`) as an ExprId, defaulting to `false`
@@ -64,10 +92,7 @@ fn config_value_or_empty(config: List<CompConfigPair>, key: string) -> ExprId {
 /// config (whose absent default is `false`, not the empty string).
 @comptime
 fn config_flag_or_false(config: List<CompConfigPair>, key: string) -> ExprId {
-    for pair in config {
-        if pair.key == key { return synth_expr_id(pair.value) }
-    }
-    synth_expr_id(Expr.Bool("false"))
+    config_value_or(config, key, synth_expr_id(Expr.Bool("false")))
 }
 
 /// The literal truth of a boolean leaf config (`variadic true`) AT EXPANSION
@@ -147,11 +172,12 @@ fn global_shadowed(gname: string, flag_names: List<string>, arg_names: List<stri
 /// whole-token spellings the classifier also resolves to this flag.
 @comptime
 fn flagdef_lit(name: string, short: ExprId, desc: ExprId, aliases: ExprId) -> ExprId {
-    let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
-    let sh = FieldInit { name: "short", value_id: short }
-    let d = FieldInit { name: "description", value_id: desc }
-    let al = FieldInit { name: "aliases", value_id: aliases }
-    synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [n, sh, d, al]))
+    synth_expr_id(Expr.StructLit("@std::cli::FlagDef", [
+        field("name", str_lit("--" + name)),
+        field("short", short),
+        field("description", desc),
+        field("aliases", aliases),
+    ]))
 }
 
 /// A bool-literal expr as an ExprId — sibling of str_lit for the fields whose
@@ -171,11 +197,12 @@ fn bool_lit(b: bool) -> ExprId {
 /// accessor can't disagree.
 @comptime
 fn argdef_lit(name: string, desc: ExprId, required: ExprId, variadic: bool) -> ExprId {
-    let n = FieldInit { name: "name", value_id: str_lit(name) }
-    let d = FieldInit { name: "description", value_id: desc }
-    let req = FieldInit { name: "required", value_id: required }
-    let v = FieldInit { name: "variadic", value_id: bool_lit(variadic) }
-    synth_expr_id(Expr.StructLit("@std::cli::ArgDef", [n, d, req, v]))
+    synth_expr_id(Expr.StructLit("@std::cli::ArgDef", [
+        field("name", str_lit(name)),
+        field("description", desc),
+        field("required", required),
+        field("variadic", bool_lit(variadic)),
+    ]))
 }
 
 /// A `@std::cli::OptionDef { name: "--<n>", short: <short>, description: <desc>,
@@ -189,11 +216,12 @@ fn argdef_lit(name: string, desc: ExprId, required: ExprId, variadic: bool) -> E
 /// OPTIONS section.
 @comptime
 fn optiondef_lit(name: string, short: ExprId, default_val: ExprId, desc: ExprId) -> ExprId {
-    let n = FieldInit { name: "name", value_id: str_lit("--" + name) }
-    let sh = FieldInit { name: "short", value_id: short }
-    let d = FieldInit { name: "description", value_id: desc }
-    let dv = FieldInit { name: "default_val", value_id: default_val }
-    synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [n, sh, d, dv]))
+    synth_expr_id(Expr.StructLit("@std::cli::OptionDef", [
+        field("name", str_lit("--" + name)),
+        field("short", short),
+        field("description", desc),
+        field("default_val", default_val),
+    ]))
 }
 
 /// A `@std::cli::CommandSpec { name, description, hidden, flags, args,
@@ -206,13 +234,14 @@ fn optiondef_lit(name: string, short: ExprId, default_val: ExprId, desc: ExprId)
 /// command out of the app-level help's COMMANDS list.
 @comptime
 fn command_spec_lit(name: string, desc: ExprId, hidden: bool, flag_defs: List<ExprId>, arg_defs: List<ExprId>, opt_defs: List<ExprId>) -> ExprId {
-    let f_name = FieldInit { name: "name", value_id: str_lit(name) }
-    let f_desc = FieldInit { name: "description", value_id: desc }
-    let f_hidden = FieldInit { name: "hidden", value_id: bool_lit(hidden) }
-    let f_flags = FieldInit { name: "flags", value_id: synth_expr_id(Expr.ListLit(flag_defs)) }
-    let f_args = FieldInit { name: "args", value_id: synth_expr_id(Expr.ListLit(arg_defs)) }
-    let f_opts = FieldInit { name: "options", value_id: synth_expr_id(Expr.ListLit(opt_defs)) }
-    synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [f_name, f_desc, f_hidden, f_flags, f_args, f_opts]))
+    synth_expr_id(Expr.StructLit("@std::cli::CommandSpec", [
+        field("name", str_lit(name)),
+        field("description", desc),
+        field("hidden", bool_lit(hidden)),
+        field("flags", synth_expr_id(Expr.ListLit(flag_defs))),
+        field("args", synth_expr_id(Expr.ListLit(arg_defs))),
+        field("options", synth_expr_id(Expr.ListLit(opt_defs))),
+    ]))
 }
 
 /// The set of flags a command accepts: its own flags plus inherited global
@@ -421,11 +450,13 @@ export fn expand_command(s: Stmt) -> List<Stmt> {
 /// codegen path 7io4).
 @comptime
 fn subcommand_lit(inst: string, spec_expr: ExprId) -> ExprId {
-    let marker = FieldInit { name: "marker", value_id: synth_expr_id(Expr.Number("0")) }
-    let body = synth_expr_id(Expr.StructLit("Command_" + inst, [marker]))
-    let f_meta = FieldInit { name: "meta", value_id: spec_expr }
-    let f_body = FieldInit { name: "body", value_id: body }
-    synth_expr_id(Expr.StructLit("@std::cli::Subcommand", [f_meta, f_body]))
+    let body = synth_expr_id(Expr.StructLit("Command_" + inst, [
+        field("marker", synth_expr_id(Expr.Number("0"))),
+    ]))
+    synth_expr_id(Expr.StructLit("@std::cli::Subcommand", [
+        field("meta", spec_expr),
+        field("body", body),
+    ]))
 }
 
 /// Expand a `cli <inst> { command <c> { … } … }` instance into the
@@ -444,16 +475,21 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut global_flag_defs: List<ExprId> = []
     mut sub_lits: List<ExprId> = []
 
+    // Command child blocks, collected during the single body walk and
+    // expanded AFTER it — every global flag must be known before any
+    // command's schema is built (a `flag <g>` may be declared below a
+    // command in source), and holding the already-deref'd nodes means no
+    // child is deref'd twice.
+    mut command_blocks: List<Stmt> = []
     match s {
         .ComponentBlock(_, instance, cliconfig, body) -> {
             inst = instance
             app_desc = config_value_or_empty(cliconfig, "description")
             app_ver = config_value_or_empty(cliconfig, "version")
-            // First pass over the cli's direct children: collect global flags
-            // (a `flag <g> {}` in the cli block is inherited into every command,
-            // so every command's schema needs them). Capture each global's
-            // FlagDef (with its `short`) here where the cli-level config is in
-            // scope, index-aligned with the names.
+            // ONE walk over the cli's direct children: a `flag <g> {}` is a
+            // GLOBAL flag inherited into every command (capture its FlagDef
+            // here, where the cli-level config is in scope, index-aligned
+            // with the names); a `command` block is held for expansion below.
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
@@ -462,26 +498,19 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
                             global_flags.push(cinst)
                             global_flag_defs.push(flagdef_lit(cinst, config_value_or_empty(gcfg, "short"), config_value_or_empty(gcfg, "description"), config_values_list(gcfg, "alias")))
                         }
+                        if cn == "command" { command_blocks.push(child) }
                     }
                     _ -> {}
                 }
             }
-            // Second pass: each command generates its behaviour decls + its
-            // Subcommand literal from a SINGLE walk (build_command_gen), so a cli
-            // never re-walks a command's children (the re-walk trips the
-            // evaluator). Globals thread in as inherited flags.
-            for id in body {
-                let child = synth_deref_stmt(id)
-                match child {
-                    .ComponentBlock(cn, _, _, _) -> {
-                        if cn == "command" {
-                            let gen = build_command_gen(child, global_flags, global_flag_defs)
-                            for d in gen.decls { out.push(d) }
-                            sub_lits.push(gen.subcommand)
-                        }
-                    }
-                    _ -> {}
-                }
+            // Each command generates its behaviour decls + its Subcommand
+            // literal from a SINGLE walk of its own children
+            // (build_command_gen — a re-walk once tripped the evaluator).
+            // Globals thread in as inherited flags.
+            for child in command_blocks {
+                let gen = build_command_gen(child, global_flags, global_flag_defs)
+                for d in gen.decls { out.push(d) }
+                sub_lits.push(gen.subcommand)
             }
         }
         _ -> {}
@@ -492,11 +521,12 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     // `List<Subcommand>` field; each `body` boxes to `dyn Runnable` there.
     let empty_vt: List<ValueType> = []
     let app_vt = ValueType.Struct("App", empty_vt, 0)
-    let f_name = FieldInit { name: "name", value_id: str_lit(inst) }
-    let f_desc = FieldInit { name: "description", value_id: app_desc }
-    let f_ver = FieldInit { name: "version", value_id: app_ver }
-    let f_cmds = FieldInit { name: "commands", value_id: synth_expr_id(Expr.ListLit(sub_lits)) }
-    let app_lit = synth_expr_id(Expr.StructLit("@std::cli::App", [f_name, f_desc, f_ver, f_cmds]))
+    let app_lit = synth_expr_id(Expr.StructLit("@std::cli::App", [
+        field("name", str_lit(inst)),
+        field("description", app_desc),
+        field("version", app_ver),
+        field("commands", synth_expr_id(Expr.ListLit(sub_lits))),
+    ]))
     out.push(Stmt.Let(inst, app_vt, app_lit))
     out
 }

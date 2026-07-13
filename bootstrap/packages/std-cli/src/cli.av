@@ -176,7 +176,11 @@ impl App {
                 return self.run_matched(c, argv)
             }
         }
-        app_print_help(self)
+        // An unmatched command NAMES the problem (the same two-line shape
+        // parse errors use) instead of silently dumping the full help — a
+        // typo'd `avra chek` should say so, not scroll the usage past it.
+        eprintln("unknown command: ${first}")
+        eprintln("Try '${self.name} --help'.")
         1
     }
 

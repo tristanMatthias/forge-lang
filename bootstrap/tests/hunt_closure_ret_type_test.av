@@ -1,4 +1,8 @@
-fn hunt_make_prefix(prefix: string) -> fn {
+// The returned lambda is fully annotated (param AND the fn's declared
+// return type): an annotated lambda types as FnTyped, and a bare `fn`
+// return (which parses as the ZERO-arity `fn() -> _`) no longer matches
+// it — the declared type must state the real shape.
+fn hunt_make_prefix(prefix: string) -> fn(string) -> string {
     (name: string) -> { prefix + " " + name }
 }
 

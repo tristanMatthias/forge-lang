@@ -39,6 +39,26 @@ spec "bs2 fix exits non-zero on resolve errors" {
             "fn main() {\n    println(undefined_var)\n}\n")
         avra_shell_exec_status("./build/bs2 fix /tmp/avra_cli_exit_fix_bad.av > /dev/null 2>&1") != 0
     }
+    then "exit 0 on a name a MACRO generates (fix resolves the EXPANDED tree)" {
+        // `fixapp` is declared by nothing in the raw parse tree — expand_cli
+        // generates its `let` at expansion. A fix that resolves names before
+        // expansion reports F3000 here; fix must run the same parse→comptime
+        // front check gates on, so the expanded declaration is visible.
+        write_fixture("/tmp/avra_cli_exit_fix_macro.av",
+            "use @std.cli.{Runnable, CliResult, App}\n" +
+            "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+            "@expand(expand_cli)\n" +
+            "component cli {}\n" +
+            "@expand(expand_command)\n" +
+            "component command implements Runnable {}\n" +
+            "cli fixapp {\n" +
+            "    command go {\n" +
+            "        fn run(args: CliResult) -> int { 0 }\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() {\n    exit(fixapp.run())\n}\n")
+        avra_shell_exec_status("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 fix /tmp/avra_cli_exit_fix_macro.av > /dev/null 2>&1") == 0
+    }
 }
 
 spec "bs2 run renders structured F-code diagnostics on parse error" {

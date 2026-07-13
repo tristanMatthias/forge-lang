@@ -143,6 +143,34 @@ fn eg_count(haystack: string, needle: string) -> int {
     n
 }
 
+/// A cli whose ONLY global flag is declared BELOW its command — pins that
+/// global-flag inheritance is declaration-order independent (expand_cli
+/// collects every global from the whole block before any command's schema
+/// is built, so a `flag` under a `command` in source still inherits).
+fn eg_expand_cli_late_global() -> string {
+    let path = "/tmp/avra_expand_cli_late_global_test.av"
+    write_fixture(path,
+        "use @std.cli.{Runnable, CliResult, App}\n" +
+        "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+        "\n" +
+        "@expand(expand_cli)\n" +
+        "component cli {}\n" +
+        "@expand(expand_command)\n" +
+        "component command implements Runnable {}\n" +
+        "component flag {}\n" +
+        "\n" +
+        "cli avra {\n" +
+        "    command first {\n" +
+        "        fn run(args: CliResult) -> int { return 1 }\n" +
+        "    }\n" +
+        "    flag glate {}\n" +
+        "}\n" +
+        "\n" +
+        EG_MAIN + " {\n" +
+        "}\n")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>&1 || true")
+}
+
 // Expand a `cli` with one global `flag` and two commands (one of which
 // re-declares a flag by the same name as the global, to exercise dedup).
 fn eg_expand_cli_globals() -> string {
@@ -262,6 +290,15 @@ spec "expand_cli inherits the cli's global flags into every command (Components 
         // cli block is consumed by @expand).
         let out = eg_expand_cli_globals()
         eg_count(out, "result_has_flag(args, \"gverbose\")") == 2
+    }
+    then "a global flag declared BELOW a command still inherits into it" {
+        // The cli's only global (`flag glate`) sits AFTER `command first` in
+        // source. Inheritance must not depend on declaration order: the
+        // binding `result_has_flag(args, "glate")` must appear in first's
+        // generated run. An expansion that built each command's schema as it
+        // walked (before seeing later globals) would emit zero bindings.
+        let out = eg_expand_cli_late_global()
+        eg_count(out, "result_has_flag(args, \"glate\")") == 1
     }
 }
 
