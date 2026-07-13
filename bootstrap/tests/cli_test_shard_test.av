@@ -1,0 +1,44 @@
+// WHY: vez6.12 — the internal `_test_shard` was the LAST command on main()'s
+// raw-argv guard; it now dispatches declaratively through `avra.run()` via a
+// `command _test_shard { arg paths { variadic true, required true } … }`
+// block. This drives the real binary through the shapes the per-file
+// orchestrator uses: a multi-file batch (variadic paths), the trailing
+// `--filter <f>` the orchestrator appends AFTER the paths, and the parse-level
+// rejection of a pathless invocation (previously a hand-rolled usage fail).
+//
+// AVRA_TEST_RESULTS_BIN_PATH is unset for the nested shard calls so the probe
+// can't write its TestResults over THIS shard's result bin; the metadata
+// fast-path env is inherited so the nested compile stays cheap (the uzs9
+// cache-probe idiom).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cts_batch_output() -> string {
+    let p1 = "/tmp/avra_cli_test_shard_a.av"
+    let p2 = "/tmp/avra_cli_test_shard_b.av"
+    write_fixture(p1, "spec \"cts a\" {\n    then \"a holds\" { 1 + 1 == 2 }\n}\n")
+    write_fixture(p2, "spec \"cts b\" {\n    then \"b holds\" { 2 + 2 == 4 }\n}\n")
+    // Paths first, `--filter` after — the orchestrator's exact token order
+    // (an option following variadic positionals must parse, not error).
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 _test_shard '${p1}' '${p2}' --filter 'unused' 2>&1")
+}
+
+spec "vez6.12: `_test_shard` dispatches declaratively via avra.run()" {
+    then "a pathless invocation is a parse error naming the variadic arg" {
+        let out = avra_shell_exec("./build/bs2 _test_shard 2>&1")
+        out.contains("missing required argument: paths")
+    }
+    then "a nonexistent path fails with file-not-found before any compile" {
+        let out = avra_shell_exec("./build/bs2 _test_shard /nonexistent_cts_probe.av 2>&1")
+        out.contains("error: file not found: /nonexistent_cts_probe.av")
+    }
+    then "a two-file batch binds both variadic paths and runs both specs" {
+        let out = cts_batch_output()
+        out.contains("[batch] 2 files:") && out.contains("2/2 tests passed")
+    }
+    then "the command's --help renders the variadic positional as <paths>..." {
+        let out = avra_shell_exec("./build/bs2 _test_shard --help 2>&1")
+        out.contains("<paths>...")
+    }
+}

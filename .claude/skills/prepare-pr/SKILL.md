@@ -108,7 +108,7 @@ The bar is not "tests pass." The bar is "these tests would *catch* the bug if it
 ## Phase 3 — Perf pass (MULTIPLE ROUNDS)
 
 Run the full performance contract from
-`.claude/skills/cleanup-epic-children/cleanup_pass_1.md` over every new code
+`perf_pass.md` (in this skill directory) over every new code
 path (complexity audit, allocation audit, hot-path fast-paths, empty-input
 short-circuits, pre-built state, bypass abstraction overhead, mature
 compiler techniques). Do not restate it — that file IS the bar.
@@ -123,7 +123,7 @@ PR-specific additions:
 ## Phase 4 — DRY / centralize (MULTIPLE ROUNDS)
 
 Run the full DRY + readability contract from
-`.claude/skills/cleanup-epic-children/cleanup_pass_2.md` (duplication audit,
+`dry_pass.md` (in this skill directory — duplication audit,
 use-the-language, beauty, centralize, missed-abstraction audit, consolidate
 similar APIs, eliminate redundant types, doc accuracy, API surface). That
 file IS the bar.

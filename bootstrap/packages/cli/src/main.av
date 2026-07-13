@@ -29,7 +29,7 @@
 // Pull every compiler-pipeline symbol from the @std.avrac library.
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
-use @std.avrac.core.{avra_selfhost_argc, avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, avra_process_env_set, exit, avra_char_from_hex}
+use @std.avrac.core.{avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, avra_process_env_set, exit, avra_char_from_hex}
 use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_remove_tree, avra_dir_size, avra_datetime_now, avra_str_ends_with, avra_getpid}
 
 // Convenience aliases so handler bodies stay readable.
@@ -393,90 +393,9 @@ fn run_lang_command(print_flag: bool) {
 // by file-name substring; -c/--coverage enables instrumentation;
 // --lcov path turns on coverage AND writes an LCOV report there;
 // --list (hkms.4) prints discovered tests and exits without compile.
+// Built from the parsed CliResult by the declarative `command test` /
+// `command _test_shard` run() bodies — no raw-argv scanning remains.
 type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool, path_filter: string }
-
-fn parse_test_args() -> TestArgs {
-    mut filter_arg = ""
-    mut coverage_flag = false
-    mut lcov_path = ""
-    // ioth: per-file is the default. Bundled mode jetsam-thrashes on
-    // 2257 tests in one process (~10GB working set, fails on
-    // memory-pressured machines) and accumulates spec-to-spec state
-    // pollution that produces ~14 flaky failures. --per_file isolates
-    // each test in its own subprocess, parallelises 8-wide, and runs
-    // the full suite in 11s warm vs >2min bundled (when it doesn't
-    // get killed by jetsam first). Bundled stays reachable via
-    // --bundled for coverage + legacy callers.
-    mut per_file_flag = true
-    mut list_only_flag = false
-    // so07.7.12: positional path filter. `bs2 test <path>` scopes
-    // discovery to test files matching <path> (exact match or
-    // path-suffix), instead of running the whole suite. Multiple
-    // positionals are joined with the last one winning — matches CLI
-    // convention.
-    mut path_filter_arg = ""
-    mut i = 2
-    while i < avra_selfhost_argc() {
-        let arg = avra_selfhost_get_arg_cstr(i)
-        if arg == "-f" || arg == "--filter" {
-            if i + 1 < avra_selfhost_argc() {
-                filter_arg = avra_selfhost_get_arg_cstr(i + 1)
-            }
-            i = i + 2
-            continue
-        }
-        if arg == "-c" || arg == "--coverage" {
-            coverage_flag = true
-            i = i + 1
-            continue
-        }
-        if arg == "--lcov" {
-            coverage_flag = true
-            if i + 1 < avra_selfhost_argc() {
-                lcov_path = avra_selfhost_get_arg_cstr(i + 1)
-            }
-            i = i + 2
-            continue
-        }
-        // --per_file is the default now, but still accepted explicitly.
-        if arg == "--per_file" {
-            per_file_flag = true
-            i = i + 1
-            continue
-        }
-        // ioth: opt out to the bundled path (legacy; coverage uses
-        // it implicitly since coverage doesn't yet support per-file).
-        if arg == "--bundled" {
-            per_file_flag = false
-            i = i + 1
-            continue
-        }
-        // hkms.4: structural-discovery dry-run. Prints one line per
-        // discovered test (`<file>:<line>: spec "name"` or
-        // `<file>:<line>: @test fn name`) and exits — no compile,
-        // no shard fan-out, no cache hit. Useful both as a sanity
-        // check after a discovery-rule change and as an IDE
-        // integration point.
-        if arg == "--list" {
-            list_only_flag = true
-            i = i + 1
-            continue
-        }
-        // Positional path filter (so07.7.12): treat any non-flag
-        // arg as a path to scope the test run to. Only honoured in
-        // the orchestrator entry (`bs2 test`); the shard subcommand
-        // `bs2 _test_shard <path>` reads path from argv[2] directly
-        // and reads args via parse_test_args afterwards, so the
-        // shard's path_filter gets set here but is never consumed.
-        if arg.length > 0 && arg[0] != "-" {
-            path_filter_arg = arg
-            i = i + 1
-            continue
-        }
-        i = i + 1
-    }
-    TestArgs { filter: filter_arg, coverage: coverage_flag, lcov_path, per_file: per_file_flag, list_only: list_only_flag, path_filter: path_filter_arg }
-}
 
 extern fn avra_uptime_ms() -> int
 
@@ -2289,23 +2208,6 @@ fn batch_slug(paths: List<string>) -> string {
     "${basename_no_ext(paths[0])}_x${string(paths.length)}_${digest}"
 }
 
-/// Positional paths of the `_test_shard` invocation: argv[2..] up to
-/// the first flag (orchestrator appends `--filter …` after paths).
-fn collect_shard_paths() -> List<string> {
-    mut paths: List<string> = []
-    mut i = 2
-    while i < avra_selfhost_argc() {
-        let a = avra_selfhost_get_arg_cstr(i)
-        if a.length > 0 && a[0] == "-" { break }
-        if !avra_selfhost_file_exists(a) {
-            fail("error: file not found: ${a}")
-        }
-        paths.push(a)
-        i = i + 1
-    }
-    paths
-}
-
 // Compile a test unit end-to-end and return the linked binary path.
 // Mirrors the in-process pipeline run_build_command would use, but
 // specialised for the test mode: parses each `*_test.av` as a
@@ -2453,13 +2355,14 @@ fn extract_kv_int(line: string, key: string) -> int {
 // down the others. With several paths, the shard binary's in-process
 // runner executes them as parallel units — process isolation
 // BETWEEN batches, thread-level unit isolation WITHIN one.
-fn run_test_shard_command() {
-    if avra_selfhost_argc() < 3 {
-        fail("usage: bs2 _test_shard <test_file.av> [more files…]")
-    }
-    let paths = collect_shard_paths()
-    if paths.length == 0 {
-        fail("usage: bs2 _test_shard <test_file.av> [more files…]")
+// `paths` + `args` arrive from the parsed CliResult of the declarative
+// `command _test_shard` block (its variadic `paths` positional), so the
+// missing-paths case is already a parse error before this runs.
+fn run_test_shard_command(paths: List<string>, args: TestArgs) {
+    for p in paths {
+        if !avra_selfhost_file_exists(p) {
+            fail("error: file not found: ${p}")
+        }
     }
     let project_dir = avra_process_env_get("PWD")
     // Batch attribution: the slug alone doesn't reveal membership;
@@ -2468,9 +2371,6 @@ fn run_test_shard_command() {
     if paths.length > 1 {
         eprintln("[batch] ${string(paths.length)} files: ${paths.join(" ")}")
     }
-    // Reuse the same TestArgs shape so coverage / per-file flags
-    // propagate from the orchestrator's parent test invocation.
-    let args = parse_test_args()
     let inputs = compute_test_shard_inputs(project_dir, paths, args)
     let shard_id = batch_slug(paths)
     // uzs9.1: the shard path is the DEFAULT per-file test path, but on a
@@ -3032,9 +2932,8 @@ fn format_elapsed_seconds(elapsed_ms: int) -> string {
 // discovery + filtering, cache lookup/publish, exec, and the
 // coverage-only post-run profdata/render steps.
 // `args` is built from the parsed CliResult by the declarative `command test`
-// block. The shard subcommand (`_test_shard`, still on the guarded raw-argv
-// path) builds the same TestArgs via parse_test_args, so that parser stays until
-// _test_shard is converted too (it needs variadic-positional schema support).
+// block; the shard subcommand's `command _test_shard` block builds the same
+// TestArgs shape from its own CliResult (variadic `paths` positional).
 fn run_test_command(args: TestArgs) {
     // The bs2 executing this suite IS the compiler under test — current
     // by construction. Stamp the guard diagnose.sh's ensure_bs2 honors
@@ -3988,6 +3887,28 @@ cli avra {
         }
     }
 
+    command _test_shard {
+        description "INTERNAL: compile + run one test-shard binary (forked per batch by `avra test`)"
+        option filter { short "-f", description "Test-name filter (appended by the orchestrator after the shard paths)" }
+        flag coverage { short "-c", description "Enable coverage instrumentation" }
+        option lcov { description "Enable coverage and write an LCOV report to this path" }
+        arg paths { description "Test files compiled into this shard", required true, variadic true }
+        run() {
+            // per_file / list_only / path_filter are orchestrator-level
+            // concerns (`avra test` consumed them before forking this shard)
+            // with no meaning inside one shard — zeroed, not parsed.
+            run_test_shard_command(paths, TestArgs {
+                filter: filter,
+                coverage: coverage || lcov != "",
+                lcov_path: lcov,
+                per_file: false,
+                list_only: false,
+                path_filter: "",
+            })
+            0
+        }
+    }
+
     command expr {
         description "Parse and display an expression"
         arg file { description "Source file", required true }
@@ -4093,37 +4014,15 @@ cli avra {
 }
 
 fn main() {
-    // Nearly everything now dispatches declaratively. The user-facing and
-    // compiler-internal commands alike (compile, check, run, expr, fmt, fix,
-    // program, eval, metadata_show, expand, clean, cache, lsp, lang, docs, test,
-    // build) parse via `avra.run()`: it reads the real argv against the matched
-    // command's schema and calls that command's `run(args)` body, which reads
-    // its flags/args off the parsed `CliResult`. The `App` parser models every
-    // argv shape they use — space-separated `--key value` options, word aliases
-    // (`--used-by` for `--callers`, live in `docs`), and option-form flag aliases
-    // (`--message-format=json` for `--json`, live in `build`), all landed in
-    // phx5 A1/A2.
-    //
-    // The single remaining raw-argv holdout is the INTERNAL `_test_shard`: it
-    // takes VARIADIC positional paths (`bs2 _test_shard a.av b.av …`), which the
-    // current single-named-positional arg schema can't express — it needs
-    // variadic-positional support before its dispatch can move onto `avra.run()`
-    // and this guard can be deleted entirely (phx5 Part B → the vez6.12
-    // single-`avra.run()` collapse).
-    if avra_selfhost_argc() >= 2 {
-        let cmd0 = avra_selfhost_get_arg_cstr(1)
-        if cmd0 == "_test_shard" {
-            // 05yc: internal subcommand — the per-file orchestrator
-            // forks `bs2 _test_shard <path>` per shard so each
-            // compile + run lives in its own process (the prereq for
-            // parallel dispatch via spawn_pool_async + free crash
-            // isolation). Not for direct user invocation.
-            run_test_shard_command()
-            return
-        }
-    }
-
-    // Everything else dispatches declaratively; the exit code is the matched
-    // command's return.
+    // EVERY command — user-facing and compiler-internal alike — dispatches
+    // declaratively (the vez6.12 single-`avra.run()` collapse): `avra.run()`
+    // reads the real argv against the matched command's schema and calls that
+    // command's `run(args)` body, which reads its flags/args off the parsed
+    // `CliResult`. The `App` parser models every argv shape the commands use —
+    // space-separated `--key value` options, word aliases (`--used-by` for
+    // `--callers`, live in `docs`), option-form flag aliases
+    // (`--message-format=json` for `--json`, live in `build`), and variadic
+    // positionals (the shard paths of the internal `_test_shard`) — all landed
+    // in phx5 A1/A2/B. The exit code is the matched command's return.
     exit(avra.run())
 }
