@@ -482,8 +482,12 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     }
 
     ctx.cov_finalize_fn()
-    ctx.verify_module()
+    let module_ok = ctx.verify_module()
     if coverage { avra_covmap_end() }
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("internal compiler error (ICE): LLVM module verification failed — codegen produced invalid IR (verifier report above); refusing to emit the module")
+    }
 
     // rcsf.2: machine-check the alloca zero-init invariant on the
     // finished module (every ptr alloca must carry its entry null
