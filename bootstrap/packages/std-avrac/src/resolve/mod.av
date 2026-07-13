@@ -575,7 +575,9 @@ export fn resolve_field_init_list(r: Resolver, inits: List<FieldInit>) -> Resolv
     mut res = r
     mut i = 0
     while i < inits.length {
-        if res.had_error { return res }
+        // break (not return) so the error path exits through the same
+        // stamp restore as the happy path.
+        if res.had_error { break }
         res = rs_at_operand(res, inits[i].value_id, fb_line, fb_col)
         res = resolve_expr(res, res.nodes.exprs.get(inits[i].value_id))
         i = i + 1
@@ -592,7 +594,9 @@ export fn resolve_expr_list_ids(r: Resolver, ids: List<ExprId>) -> Resolver {
     mut res = r
     mut i = 0
     while i < ids.length {
-        if res.had_error { return res }
+        // break (not return) so the error path exits through the same
+        // stamp restore as the happy path.
+        if res.had_error { break }
         res = rs_at_operand(res, ids[i], fb_line, fb_col)
         res = resolve_expr(res, res.nodes.exprs.get(ids[i]))
         i = i + 1
