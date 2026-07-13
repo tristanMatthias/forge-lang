@@ -140,14 +140,19 @@ export fn json_extract_string(body: string, key: string) -> string {
     while i < body.length {
         let ch = body.substring(i, i + 1)
         if ch == "\\" && i + 1 < body.length {
-            // `\u00XX` — how encoders (ours included) escape control
-            // chars, e.g. ANSI ESC in captured subprocess output.
-            // Decode to the real byte; other \uXXXX code points keep
-            // the legacy literal fallback (we never produce them).
+            // `\u00XX` CONTROL chars (0x01-0x1F) — how encoders (ours
+            // included) escape e.g. ANSI ESC in captured subprocess
+            // output. Only that range decodes: avra_char_from_hex
+            // returns a NUL-terminated single byte, so \u0000 would
+            // vanish into an empty append (keep it literal instead),
+            // and \u0020-\u00ff (e.g. \u00e9 é) would decode to a
+            // bare latin-1 byte that breaks UTF-8 — those keep the
+            // legacy literal fallback along with all other \uXXXX.
             if body.substring(i + 1, i + 2) == "u" && i + 5 < body.length
                 && body.substring(i + 2, i + 4) == "00"
-                && is_hex_digit(body.substring(i + 4, i + 5))
-                && is_hex_digit(body.substring(i + 5, i + 6)) {
+                && (body.substring(i + 4, i + 5) == "0" || body.substring(i + 4, i + 5) == "1")
+                && is_hex_digit(body.substring(i + 5, i + 6))
+                && !(body.substring(i + 4, i + 6) == "00") {
                 out = "${out}${avra_char_from_hex(body.substring(i + 4, i + 5), body.substring(i + 5, i + 6))}"
                 i = i + 6
                 continue

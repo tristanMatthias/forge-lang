@@ -1823,7 +1823,13 @@ fn run_build_command(args: BuildArgs) {
             // fresh output. (Materialise-atomically-or-validate-on-reuse
             // doctrine: this is the validate-freshness half.)
             let ll_path = "${entry_path}.ll"
-            let _ = avra_remove_file(ll_path)
+            // avra_remove_file returns 1 on unlink success AND on
+            // already-absent; 0 only when a stale file genuinely
+            // survives — which would void the freshness guarantee, so
+            // fail loudly like the file's other load-bearing deletions.
+            if avra_remove_file(ll_path) != 1 {
+                fail("error: could not remove stale artifact ${ll_path} before compile")
+            }
             // Renders a multi-line sticky progress UI on a TTY:
             // resolver appends per-module timing events to a /tmp file,
             // run_with_progress polls it and shows scrollback (✓ done

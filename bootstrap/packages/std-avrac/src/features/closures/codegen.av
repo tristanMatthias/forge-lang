@@ -392,16 +392,21 @@ fn declared_param_vtypes(ctx: Ctx, params: List<ParamEntry>) -> List<ValueType> 
     mut out: List<ValueType> = []
     mut i = 0
     while i < params.length {
-        let p = params[i]
-        let ty = if !vtype_is_unknown(p.vtype) {
-            ctx.resolve_codegen_vtype(p.vtype)
-        } else {
-            ValueType.Unknown
-        }
-        out.push(ty)
+        out.push(resolve_declared_or_unknown(ctx, params[i].vtype))
         i = i + 1
     }
     out
+}
+
+/// Resolve one declared param type, or Unknown when un-annotated.
+/// Shared by `declared_param_vtypes` and `bind_lambda_params_typed`
+/// so the annotation-is-truth branch exists exactly once.
+fn resolve_declared_or_unknown(ctx: Ctx, vtype: ValueType) -> ValueType {
+    if !vtype_is_unknown(vtype) {
+        ctx.resolve_codegen_vtype(vtype)
+    } else {
+        ValueType.Unknown
+    }
 }
 
 // Global lambda counter for unique names.
@@ -780,10 +785,8 @@ fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamE
             // registry's module-qualified entry. resolve_codegen_vtype
             // is idempotent on already-qualified types.
             ctx.resolve_codegen_vtype(types[type_idx])
-        } else if !vtype_is_unknown(p.vtype) {
-            ctx.resolve_codegen_vtype(p.vtype)
         } else {
-            ValueType.Unknown
+            resolve_declared_or_unknown(ctx, p.vtype)
         }
         cur_env = ctx.bind(cur_env, p.name, param_val, ty)
         i = i + 1
