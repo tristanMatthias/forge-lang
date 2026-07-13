@@ -67,6 +67,7 @@ help:
 	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make cache-gc      Prune COLD cache entries repo-wide (mtime == last use;"
 	@echo "                     hits refresh it). DAYS= overrides the 30-day default."
+	@echo "  make cache-stats   Per-package cache entry counts, sizes, ages + cold count."
 	@echo "  make clean-cache   Wipe EVERY cache (per-package + top-level build/cache)."
 	@echo "                     Guarded: never touches src/. Next build is cold."
 	@echo "  make clean         Remove all build artifacts."
@@ -165,6 +166,12 @@ cache-gc:
 # find one-liners have eaten them before). Next build is cold.
 clean-cache:
 	@$(DIAG) --clean-cache
+
+# Cache observability: per-package entry counts, sizes, and cold-entry
+# counts (GC candidates; mtime == last use), plus repo totals.
+# DAYS= overrides the 30-day cold threshold.
+cache-stats:
+	@$(DIAG) --cache-stats "$(CURDIR)" $(if $(DAYS),$(DAYS))
 
 # Just the fixed-point check.
 selfhost:

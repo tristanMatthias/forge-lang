@@ -214,21 +214,30 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
     if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
         return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
     }
-    // pdme.1: a dep-fp delta means some transitive dep's source changed
-    // while this unit's own entry didn't — the axis the composite key
-    // exists to catch. Checked before the source axes so the
-    // attribution names the real cause.
-    let prev_deps = read_field(prior, "deps:")
-    if prev_deps != "" && prev_deps != inputs.dep_fps.join(",") {
-        return "package deps changed (a transitive dependency's source was edited)"
-    }
+    // Entry-digest check FIRST (pdme.5 attribution fix): the dep-fp
+    // axis folds the package's own full fingerprint (pdme.1), so an
+    // entry-file edit changes BOTH axes — checked in the old order,
+    // every own-edit miss read "package deps changed", sending the
+    // reader hunting through dependencies for their own change. An
+    // entry edit now names the file; the deps axis below covers what
+    // remains (true transitive edits, and non-entry siblings the
+    // entry digest can't see).
     if inputs.sources.length == 1 {
         let entry_digest = sha256_file(inputs.sources[0])
         let prev_entry_digest = read_field(prior, "src_digest:")
         if prev_entry_digest != "" && prev_entry_digest != entry_digest {
             return "source changed: " + inputs.sources[0]
         }
-    } else {
+    }
+    // pdme.1: a dep-fp delta means a source in the dep closure changed
+    // while the entry didn't — a transitive dep's file, or a non-entry
+    // sibling in this package (the package's own full fp participates
+    // in the axis).
+    let prev_deps = read_field(prior, "deps:")
+    if prev_deps != "" && prev_deps != inputs.dep_fps.join(",") {
+        return "package deps changed (a source in the dependency closure was edited)"
+    }
+    if inputs.sources.length != 1 {
         let prev_count = read_field(prior, "src_count:")
         let cur_count = string(inputs.sources.length)
         if prev_count != "" && prev_count != cur_count {

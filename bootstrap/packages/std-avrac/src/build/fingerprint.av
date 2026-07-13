@@ -250,9 +250,21 @@ export fn fp_short(fp: Fingerprint) -> string {
 /// Memoised per (process, pkg_root) alongside fp_own under a
 /// namespaced key: source can't change mid-invocation.
 export fn package_full_fingerprint(pkg_root: string) -> string {
+    package_full_fingerprint_with_toolchain(pkg_root, toolchain_fingerprint())
+}
+
+/// The explicit-toolchain variant: `toolchain_hash` names the COMPILER
+/// whose slots the caller is deriving. Inside bs2 the default wrapper
+/// above passes the running binary's own hash; an EXTERNAL process
+/// (a test fixture probing "did bs2 stamp the meta slot?") must pass
+/// the hash of the bs2 it invoked — its own argv[0] is not a compiler
+/// and would derive a slot nobody writes. See package_meta_path_for.
+export fn package_full_fingerprint_with_toolchain(pkg_root: string, toolchain_hash: string) -> string {
     if pkg_root == "" { return "" }
     if avra_selfhost_file_exists(pkg_root + "/avra.toml") == 0 { return "" }
-    let memo_key = "full:" + pkg_root
+    // The memo key folds the toolchain hash: one process can derive
+    // fps for MORE than one compiler (its own + an invoked bs2's).
+    let memo_key = "full:" + toolchain_hash + ":" + pkg_root
     let cached = avra_pkg_fp_cache_get(memo_key)
     if cached != "" { return cached }
     let root = fp_trailing_slash(pkg_root)
@@ -268,14 +280,13 @@ export fn package_full_fingerprint(pkg_root: string) -> string {
     // string (not just the queried root), so a package's fp is
     // identical whether it's computed as the root or reached as a
     // dep in someone else's walk — one fp per (package, toolchain).
-    let tc = toolchain_fingerprint()
     mut names: List<string> = []
     mut fps: List<string> = []
     mut root_fp = ""
     for u in g.units {
         mut composed = "avra/pkg-full v2\n"
         composed = composed + "own:" + package_source_fingerprint(u.project_root) + "\n"
-        composed = composed + "toolchain:" + tc + "\n"
+        composed = composed + "toolchain:" + toolchain_hash + "\n"
         for d in u.dep_names {
             composed = composed + "dep:" + d + "=" + full_fp_lookup(names, fps, d) + "\n"
         }

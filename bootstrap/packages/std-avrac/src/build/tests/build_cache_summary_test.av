@@ -1,0 +1,37 @@
+// pdme.5 piece 1: every `bs2 build` ends with a greppable
+// `[cache] N hits / M misses (…)` accounting line — the lkze.9
+// "did it really run my new code?" signal, without needing an
+// --explain re-run. Misses carry the driver's attribution (which
+// axis invalidated), so a suspiciously fast/slow build explains
+// itself.
+//
+// @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient
+// environment hiccup must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+}
+
+fn bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "pdme.5: bs2 build ends with the [cache] accounting line" {
+    then "cold build: 0 hits / 1 miss with attribution; warm: 1 hits / 0 misses; edit: attributed miss" {
+        let root = "/tmp/avra_pdme5_sum_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/src")
+        let _ = avra_selfhost_write_file("${root}/avra.toml",
+            "[package]\nname = \"sump\"\nversion = \"0.1.0\"\n\n[bin]\nname = \"sump\"\npath = \"src/main.av\"\n")
+        let _ = avra_selfhost_write_file("${root}/src/main.av", "fn main() { println(\"s1\") }\n")
+        let cmd = "cd '${root}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT '${bs2()}' build 2>&1"
+        let cold = avra_shell_exec(cmd)
+        let warm = avra_shell_exec(cmd)
+        let _ = avra_selfhost_write_file("${root}/src/main.av", "fn main() { println(\"s2\") }\n")
+        let edited = avra_shell_exec(cmd)
+        avra_shell_exec("rm -rf '${root}'")
+        cold.contains("[cache] 0 hits / 1 misses (sump MISS [no previous build")
+            && warm.contains("[cache] 1 hits / 0 misses")
+            && edited.contains("[cache] 0 hits / 1 misses (sump MISS [")
+    }
+}

@@ -7,7 +7,7 @@ use core.{Stmt, Annotation, NodeStore, SrcPos}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
-use build.{cache_for, entry_source_meta_path, Fingerprint, package_full_fingerprint}
+use build.{cache_for, entry_source_meta_path, Fingerprint, package_full_fingerprint, package_full_fingerprint_with_toolchain, compiler_hash_for}
 use @std.crypto.{sha256_hex, sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
@@ -221,9 +221,15 @@ export fn meta_cache_path_for_source(src_path: string) -> string {
 /// should call this, not meta_cache_path_for_source — the package
 /// slot is keyed on the whole-package fingerprint, not the entry
 /// file's sha256.
-export fn package_meta_path_for(pkg_root: string) -> string {
+///
+/// pdme.8: the fp folds the COMPILER's content hash, so an external
+/// caller (a fixture binary — any process that isn't the bs2 that
+/// stamped the slot) must say WHICH compiler it means: pass the path
+/// of the bs2 it invoked. Deriving from the calling process's own
+/// argv[0] here would name a slot nobody writes.
+export fn package_meta_path_for(pkg_root: string, compiler_path: string) -> string {
     if pkg_root == "" { return "" }
-    let hex = package_full_fingerprint(pkg_root)
+    let hex = package_full_fingerprint_with_toolchain(pkg_root, compiler_hash_for(compiler_path))
     if hex == "" { return "" }
     let cache = cache_for(pkg_root)
     entry_source_meta_path(cache, Fingerprint { hex })

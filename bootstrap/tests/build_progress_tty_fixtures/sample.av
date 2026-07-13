@@ -44,8 +44,8 @@ fn main() -> int {
     let pipe_log = "/tmp/avra_5gvp_pipe.log"
     let rc_pipe = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata > ${pipe_log} 2>&1")
     probe("pipe_build_rc_zero", rc_pipe == 0)
-    probe("pipe_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1")) != 0)
-    probe("pipe_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2")) != 0)
+    probe("pipe_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1", bs2)) != 0)
+    probe("pipe_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2", bs2)) != 0)
     // The inner `bs2 build` may emit colored diagnostic warnings, so a
     // bare \x1b grep over-matches. Look for the progress bar's unique
     // header instead — that string only ever lands when the bar runs.
@@ -67,8 +67,8 @@ fn main() -> int {
     }
     let rc_tty = avra_shell_exec_status(tty_cmd)
     probe("tty_build_rc_zero", rc_tty == 0)
-    probe("tty_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1")) != 0)
-    probe("tty_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2")) != 0)
+    probe("tty_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1", bs2)) != 0)
+    probe("tty_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2", bs2)) != 0)
     // Portable ESC-`[` search: `$'…'` ANSI-C quoting is a bashism that
     // breaks under dash (/bin/sh on many Linuxes). Generate the CSI bytes
     // with printf and match them as a fixed string instead.

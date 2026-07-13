@@ -593,9 +593,84 @@ type BuildArgs = {
 // Returns 0 on success; non-zero is xargs's failure exit code.
 //
 // Tracking ticket: forge-crafting-intepreters-2f54 + e20h.
-fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> int {
+// pdme.5: one pre-build's cache accounting, read back from the per-dep
+// child logs. `rc` carries the pool's exit status (the parent's
+// existing hard-fail gate); hits/misses/detail feed the end-of-build
+// `[cache]` summary line so a suspiciously fast or slow build explains
+// itself without --explain re-runs.
+type PreDepOutcome = {
+    rc: int,
+    hits: int,
+    misses: int,
+    detail: string,
+}
+
+fn pre_dep_outcome_empty() -> PreDepOutcome {
+    PreDepOutcome { rc: 0, hits: 0, misses: 0, detail: "" }
+}
+
+// Classify each per-dep child log as cache HIT or MISS, keeping the
+// miss ATTRIBUTION for the summary line. Children run `bs2 build
+// --explain`, so a hit prints `cached <fp> — …` and a miss prints
+// `rebuild <fp> — <reason>` (both line-anchored here so prose like
+// "rebuilding" can't false-match). A log with neither marker counts
+// as a miss with the log's own name as the only attribution — a child
+// that died pre-decision shouldn't inflate the hit count.
+fn tally_dep_logs(log_dir: string) -> PreDepOutcome {
+    let listing = avra_shell_exec("ls '${log_dir}'/*.log 2>/dev/null")
+    mut hits = 0
+    mut misses = 0
+    mut detail = ""
+    for f in split_by_newline(listing) {
+        if f == "" { continue }
+        let content = avra_selfhost_read_file(f)
+        if content.starts_with("cached ") || content.contains("\ncached ")
+            || content.starts_with("Cached ") || content.contains("\nCached ") {
+            hits = hits + 1
+        } else {
+            misses = misses + 1
+            detail = detail + "; " + dep_log_name(f) + " MISS [" + dep_log_miss_reason(content) + "]"
+        }
+    }
+    PreDepOutcome { rc: 0, hits: hits, misses: misses, detail: detail }
+}
+
+// `…/pre_deps.123/std-json.log` → `std-json`.
+fn dep_log_name(path: string) -> string {
+    let base = basename_no_ext(path)
+    base
+}
+
+// Pull the attribution out of the child's `rebuild <fp> — <reason>`
+// line (--explain output). Falls back to "rebuilt" when the line is
+// absent (child crashed before the decision, or an older bs2).
+fn dep_log_miss_reason(content: string) -> string {
+    let anchored = "\n" + content
+    let ri = anchored.index_of("\nrebuild ")
+    if ri < 0 { return "rebuilt" }
+    let rest = anchored.substring(ri + 1, anchored.length)
+    let nl = rest.index_of("\n")
+    let line = if nl < 0 { rest } else { rest.substring(0, nl) }
+    let dash = line.index_of(" — ")
+    if dash < 0 { return "rebuilt" }
+    line.substring(dash + " — ".length, line.length)
+}
+
+// Compose the end-of-build summary: root unit outcome + pre-built dep
+// tallies in one greppable line, the lkze.9 "did it really run my new
+// code?" signal. Shape per the pdme.5 ticket:
+//   [cache] 1 hits / 2 misses (cli MISS [package deps changed (…)]; std-json MISS [source changed: …])
+fn cache_summary_line(hits: int, misses: int, detail: string) -> string {
+    let base = "[cache] ${string(hits)} hits / ${string(misses)} misses"
+    if detail == "" { return base }
+    // detail entries arrive "; name MISS [reason]" — strip the leading
+    // separator and parenthesize.
+    base + " (" + detail.substring(2, detail.length) + ")"
+}
+
+fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> PreDepOutcome {
     let path_count = count_path_deps(deps)
-    if path_count == 0 { return 0 }
+    if path_count == 0 { return pre_dep_outcome_empty() }
     let paths_file = "/tmp/avra_pre_deps.${path_count}.list"
     avra_shell_exec("rm -f ${paths_file}")
     write_dep_paths(deps, paths_file)
@@ -615,8 +690,20 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     // (e20h Phase 2). Same parallelism semantics, no shell xargs
     // dependency, hermetic isolation per cmd. Foundation for future
     // topo-aware scheduling (g2eo level-2 per-mod build dispatch).
-    let cmds = build_pre_dep_cmds(deps, compiler_path)
-    pool_run(cmds, jobs)
+    // Per-dep logs (pid-scoped — the orphaned-run lesson): the tally
+    // reads them back for the [cache] summary, and a failed dep's
+    // output stays inspectable instead of vanishing into /dev/null.
+    let log_dir = "${avra_process_env_get("PWD")}/build/pre_deps.${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
+    let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir)
+    let rc = pool_run(cmds, jobs)
+    if rc != 0 {
+        eprintln("pre-build failed — per-dep logs: ${log_dir}/")
+        return PreDepOutcome { rc: rc, hits: 0, misses: 0, detail: "" }
+    }
+    mut out = tally_dep_logs(log_dir)
+    avra_shell_exec("rm -rf '${log_dir}'")
+    out
 }
 
 // Build the queue of `cd <path> && bs2 build --lib --emit_metadata`
@@ -631,7 +718,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
 // build's AVRA_LIB_PKG_ROOT would mis-bucket every dep fn as
 // foreign and produce a 3-define truncated .ll; we override
 // per-dep here.
-fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
+fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -> List<string> {
     mut cmds: List<string> = []
     mut i = 0
     while i < deps.length {
@@ -639,7 +726,10 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string) -> List<string> {
         if dep.path != "" {
             let lib_root = derive_lib_root_for(dep.path)
             let env_prefix = if lib_root == "" { "" } else { "AVRA_LIB_PKG_ROOT='${lib_root}' " }
-            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata > /dev/null 2>&1")
+            // --explain so the log carries the hit/miss line + miss
+            // attribution the parent's tally reads back (pdme.5).
+            let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
+            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata --explain > \"${log_path}\" 2>&1")
         }
         i = i + 1
     }
@@ -1305,7 +1395,7 @@ fn count_lines(s: string) -> int {
 // the dispatcher just changed from xargs to the in-Avra pool. Removes
 // the xargs dependency, removes the worker.sh shim, removes the
 // `__avra_xargs_rc:` exit-code-in-stdout hack.
-fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> int {
+fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> PreDepOutcome {
     let marker_dir = progress_marker_dir()
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
     let dep_paths = read_paths_file_lines(paths_file)
@@ -1313,8 +1403,9 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     mut cmds: List<string> = []
     for (path, slug) in dep_paths.zip(slugs) {
         // Per-job log file makes failures inspectable after the run —
-        // dump_failed_logs walks `${marker_dir}/*.log`.
-        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata) > \"${marker_dir}/${slug}.log\" 2>&1")
+        // dump_failed_logs walks `${marker_dir}/*.log`. --explain so the
+        // log carries the hit/miss attribution the tally reads (pdme.5).
+        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata --explain) > \"${marker_dir}/${slug}.log\" 2>&1")
     }
     let jobs_n = avra_parse_int(jobs)
     // Spawn the pool in the background so the foreground can render
@@ -1323,8 +1414,14 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     let pool_handle = spawn_pool_async(cmds, slugs, jobs_n, marker_dir)
     if pool_handle < 0 {
         // Spawn failure: run synchronously without progress rendering.
+        let sync_rc = pool_run(cmds, jobs_n)
+        if sync_rc != 0 {
+            avra_shell_exec("rm -rf ${marker_dir}")
+            return PreDepOutcome { rc: sync_rc, hits: 0, misses: 0, detail: "" }
+        }
+        mut sync_out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
-        return pool_run(cmds, jobs_n)
+        return sync_out
     }
     let t_start = avra_uptime_ms()
     mut prev_lines = 0
@@ -1349,9 +1446,11 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
         dump_failed_logs(marker_dir)
     }
     if exit_code == 0 {
+        mut out = tally_dep_logs(marker_dir)
         avra_shell_exec("rm -rf ${marker_dir}")
+        return out
     }
-    exit_code
+    PreDepOutcome { rc: exit_code, hits: 0, misses: 0, detail: "" }
 }
 
 // Read a newline-separated path list back into a List<string>. Used
@@ -1604,9 +1703,10 @@ fn run_build_command(args: BuildArgs) {
     // first. The root then consumes them via the metadata fast-path.
     // Skipped when --emit_metadata is off — the existing
     // single-unit cycle stays the default.
+    mut pre = pre_dep_outcome_empty()
     if args.emit_metadata && manifest.found {
-        let dep_rc = pre_build_path_deps(manifest.deps, compiler_path, args)
-        if dep_rc != 0 {
+        pre = pre_build_path_deps(manifest.deps, compiler_path, args)
+        if pre.rc != 0 {
             fail("error: failed to pre-build a path-dep — see output above")
         }
     }
@@ -1708,6 +1808,11 @@ fn run_build_command(args: BuildArgs) {
                 println("cached ${fp_short(fp)} — ${entry_path}")
             } else {
                 println("Cached ${fp_short(fp)}: ${dst}")
+            }
+            // pdme.5: the build's cache accounting as the last line —
+            // this unit's hit + the pre-built deps' tallies.
+            if !args.json {
+                println(cache_summary_line(pre.hits + 1, pre.misses, pre.detail))
             }
             return
         }
@@ -1841,6 +1946,13 @@ fn run_build_command(args: BuildArgs) {
                     eprintln("warning: cache publish failed: ${pr.error}")
                     println("Built (uncached): ${ll_path}")
                 }
+            }
+            // pdme.5: the build's cache accounting as the last line —
+            // pre-built deps' tallies, then this unit's miss with its
+            // attribution (deps first, root last, per the ticket shape).
+            if !args.json {
+                println(cache_summary_line(pre.hits, pre.misses + 1,
+                    pre.detail + "; " + unit_name + " MISS [" + reason + "]"))
             }
             return
         }

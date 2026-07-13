@@ -312,6 +312,11 @@ DIFF & ANALYSIS
                        every packages/*/ root (`bs2 cache prune` is
                        per-project-root). mtime == last use (hits touch),
                        so only cold entries go. Default DAYS=30.
+  --cache-stats [ROOT] [DAYS]
+                       Cache observability: per-package entry counts,
+                       sizes, and cold-entry counts (older than DAYS,
+                       default 30 — GC candidates, since mtime == last
+                       use), plus repo totals.
   --clean-cache [ROOT] FULL cache wipe (escape hatch): every
                        packages/*/build/cache + the top-level
                        build/cache under ROOT (default: the bootstrap
@@ -2272,6 +2277,55 @@ mode_cache_gc() {
 # dir). Pure shell — no bs2 needed. ROOT is overridable for the spec
 # suite; defaults to the bootstrap tree.
 #
+# pdme.5: cache observability — per-package entry counts, sizes and
+# ages, plus repo totals and the cold-entry count (GC candidates).
+# "Cold" = mtime older than DAYS (default 30): with pdme.6's
+# mtime-as-last-use semantics (hits touch their entries), cold IS the
+# orphan signal — a live fingerprint keeps getting touched, an
+# orphaned one never is. Entries counted at the same granularity the
+# pruner evicts: top-level fp slots wholesale, namespace dirs (meta/
+# obj/ link/ _tmp/ fixture_stdout/) per-child; last/ is bookkeeping,
+# not an entry. Pure shell — no bs2 needed.
+#
+# Usage: --cache-stats [ROOT] [DAYS]
+mode_cache_stats() {
+  local root="${1:-$BOOTSTRAP_DIR}" days="${2:-30}"
+  [ -d "$root" ] || die "cache-stats: no such root: $root"
+  local cache label size n cold total_n=0 total_cold=0
+  echo "Per-package cache (entries / size / cold>${days}d):"
+  for cache in "$root"/build/cache "$root"/packages/*/build/cache; do
+    [ -d "$cache" ] || continue
+    case "$cache" in
+      "$root"/build/cache) label="(top-level)" ;;
+      *) label=$(basename "$(dirname "$(dirname "$cache")")") ;;
+    esac
+    n=$(cache_stats_entries "$cache" | wc -l)
+    cold=$(cache_stats_entries "$cache" | { local c=0 e; while IFS= read -r e; do
+            [ -n "$(find "$e" -maxdepth 0 -mtime +"$days" 2>/dev/null)" ] && c=$((c+1)); done; echo "$c"; })
+    size=$(du -sh "$cache" 2>/dev/null | cut -f1)
+    printf '  %-14s %4d entries  %6s  cold: %d\n' "$label" "$n" "$size" "$cold"
+    total_n=$(( total_n + n ))
+    total_cold=$(( total_cold + cold ))
+  done
+  echo "Total: $total_n entries, $total_cold cold — 'make cache-gc' reclaims cold (mtime == last use; hits refresh it)"
+}
+
+# One entry path per line, at the pruner's granularity (see
+# mode_cache_stats). Shared shape with `bs2 cache prune`'s
+# collect_prune_candidates so counts and evictions can't drift apart.
+cache_stats_entries() {
+  local cache="$1" d
+  for d in "$cache"/*; do
+    [ -e "$d" ] || continue
+    case "$(basename "$d")" in
+      last|.last-gc) continue ;;
+      meta|obj|link|_tmp|fixture_stdout)
+        find "$d" -mindepth 1 -maxdepth 1 2>/dev/null ;;
+      *) printf '%s\n' "$d" ;;
+    esac
+  done
+}
+
 # Usage: --clean-cache [ROOT]
 mode_clean_cache() {
   local root="${1:-$BOOTSTRAP_DIR}"
@@ -2348,6 +2402,7 @@ main() {
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
+    --cache-stats)        mode_cache_stats "$@" ;;
     --clean-cache)        mode_clean_cache "$@" ;;
     --cache-fuzz-parallel) mode_cache_fuzz_parallel "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
