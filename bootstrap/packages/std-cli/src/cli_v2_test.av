@@ -30,7 +30,7 @@ fn empty_cli_result() -> CliResult {
 }
 
 fn named_spec(name: string) -> CommandSpec {
-    CommandSpec { name: name, description: "", flags: [], args: [], options: [] }
+    CommandSpec { name: name, description: "", hidden: false, flags: [], args: [], options: [] }
 }
 
 spec "vez6.11 slice A: Runnable behaviour + Subcommand data/behaviour split" {

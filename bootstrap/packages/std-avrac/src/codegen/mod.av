@@ -66,6 +66,11 @@ export fn emit_stmt_ids(ctx: Ctx, env: List<VarBinding>, ids: List<StmtId>) -> R
     mut cur_env = env
     mut i = 0
     while i < ids.length {
+        // Dead code past a terminator (early return/break/continue): a
+        // basic block holds exactly one terminator, so emitting further
+        // statements would append past it — invalid IR that only llc
+        // rejects (t-83ja). Drop the unreachable tail instead.
+        if cur_ctx.has_terminator() { break }
         let id = ids[i]
         let pos = ctx.nodes.stmt_pos(id)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
@@ -212,7 +217,9 @@ export fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
 /// 3. Otherwise: nothing more to do (refcount was just decremented).
 fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: List<ValueType>) {
     let should = ctx.call("avra_rc_should_free", [val])
-    let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
+    // ne (raw i1), NOT icmp_ne (zext'd to i64 for value use): cond_br
+    // requires an i1 condition — the verifier rejects `br i64`.
+    let cond = ctx.ne(should, ctx.i64(0), "tup_should_free")
     let free_bb = ctx.bb("tup_free")
     let done_bb = ctx.bb("tup_done")
     ctx.cond_br(cond, free_bb, done_bb)
@@ -234,7 +241,8 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: 
         if vtype_is_ptr_type(elem_ty) {
             let loaded = ctx.load_slot(buf, i, "trel_${i}")
             let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${i}")
-            let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${i}")
+            // eq (raw i1) — see the cond_br note above.
+            let is_null = ctx.eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${i}")
             let skip_bb = ctx.bb("trel_skip_${i}")
             let do_bb = ctx.bb("trel_do_${i}")
             ctx.cond_br(is_null, skip_bb, do_bb)

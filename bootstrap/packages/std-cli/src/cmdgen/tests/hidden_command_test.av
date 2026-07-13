@@ -1,0 +1,74 @@
+// A command declared `hidden true` is omitted from the app-level `--help`
+// COMMANDS list but is otherwise a full citizen: it dispatches normally and
+// its own `<cmd> --help` still renders. Exercises cmdgen reading the
+// command-level `hidden` config (config_bool) into the CommandSpec, and
+// app_print_help skipping hidden entries. The real consumer is the internal
+// `_test_shard` (forked by `avra test`, never typed by users).
+//
+// Source-compiled (write_fixture_and_run) so cmdgen's cross-package
+// @comptime bodies are available. `hid_`-prefixed to avoid fn/local collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+fn hid_src() -> string {
+    "use @std.cli.{Runnable, CliResult, App}\n" +
+    "use @std.cli.cmdgen.{expand_cli, expand_command}\n" +
+    "\n" +
+    "@expand(expand_cli)\n" +
+    "component cli {}\n" +
+    "@expand(expand_command)\n" +
+    "component command implements Runnable {}\n" +
+    "\n" +
+    "cli toy {\n" +
+    "    command visible {\n" +
+    "        description \"a normal command\"\n" +
+    "        run() {\n" +
+    "            return 3\n" +
+    "        }\n" +
+    "    }\n" +
+    "    command ghost {\n" +
+    "        description \"internal helper\"\n" +
+    "        hidden true\n" +
+    "        arg what {}\n" +
+    "        run() {\n" +
+    "            println(\"GHOST=\" + what)\n" +
+    "            return 7\n" +
+    "        }\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "fn main() {\n" +
+    // app-level help: visible listed, ghost omitted.
+    "    let _ = toy.run_argv([\"--help\"])\n" +
+    // the hidden command still dispatches (hiding is display-only).
+    "    println(\"RC=\" + string(toy.run_argv([\"ghost\", \"boo\"])))\n" +
+    // its own per-command help still renders.
+    "    let _ = toy.run_argv([\"ghost\", \"--help\"])\n" +
+    "}\n"
+}
+
+fn hid_run() -> string {
+    write_fixture_and_run("/tmp/avra_hidden_command_test.av", hid_src())
+}
+
+spec "a `hidden true` command is unlisted but fully functional" {
+    then "the app help lists the visible command" {
+        let out = hid_run()
+        out.contains("  visible  a normal command")
+    }
+    then "the app help omits the hidden command" {
+        let out = hid_run()
+        // The COMMANDS-list line format is `  <name>  <description>`; the
+        // per-command help line ("toy ghost  internal helper") is distinct.
+        !out.contains("  ghost  internal helper")
+    }
+    then "the hidden command still dispatches with its args bound" {
+        let out = hid_run()
+        out.contains("GHOST=boo") && out.contains("RC=7")
+    }
+    then "the hidden command's own --help still renders" {
+        let out = hid_run()
+        out.contains("toy ghost  internal helper")
+    }
+}

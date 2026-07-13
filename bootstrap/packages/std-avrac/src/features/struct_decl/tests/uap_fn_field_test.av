@@ -52,9 +52,32 @@ spec "UAP: multi-arg fn field" {
     }
 }
 
-// Method-vs-field precedence: when a struct has BOTH an impl method
-// and a fn-typed field of the same name, the impl method wins.
-// (Tested via separate type defs since some test runners can't have
-// a single field + same-named impl method on the same type — the
-// parser/typeck would need a separate ticket to disambiguate the
-// shape. Filed if encountered in CLI rewrite.)
+// Method-vs-field precedence: a struct with BOTH an impl method and a
+// fn-typed field of the same name disambiguates by POSITION — the field
+// initializer resolves to the field (this once failed codegen with
+// "unknown field"), method-CALL position prefers the impl method, and
+// field-ACCESS position (bare or paren-grouped) reaches the stored fn.
+
+type Counter = { tick: fn() -> int }
+
+fn shared_tick() -> int { 99 }
+
+impl Counter {
+    fn tick(self) -> int { 7 }
+}
+
+spec "UAP: same-name impl method + fn-typed field disambiguate by position" {
+    then "method-call position prefers the impl method" {
+        let c = Counter { tick: shared_tick }
+        c.tick() == 7
+    }
+    then "field-access position reaches the stored fn" {
+        let c = Counter { tick: shared_tick }
+        let f = c.tick
+        f() == 99
+    }
+    then "paren-grouped access is field-access, not a method call" {
+        let c = Counter { tick: shared_tick }
+        (c.tick)() == 99
+    }
+}

@@ -39,6 +39,7 @@ extern fn avra_uptime_ms() -> int
 extern fn avra_stdout_write(s: string)
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_getpid() -> int
 extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_parse_int(s: string) -> int
@@ -132,11 +133,16 @@ export fn run_with_progress(cmd: string, label: string, total: int) -> int {
     if !is_tty() {
         return run_silent(cmd)
     }
-    let progress_file = "/tmp/avra_progress_${string(avra_uptime_ms())}.log"
+    // pid + uptime so two builds starting the same millisecond (or two
+    // processes with equal uptime) can't share a progress file.
+    let progress_file = "/tmp/avra_progress_${string(avra_getpid())}_${string(avra_uptime_ms())}.log"
     let _ = avra_shell_exec("rm -f ${progress_file}; touch ${progress_file}")
     let progress_cmd = "AVRA_BUILD_PROGRESS_FILE='${progress_file}' ${cmd}"
     let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(progress_cmd)}]", "")
     if handle < 0 {
+        // Nothing will ever write the file the touch above created —
+        // remove it instead of orphaning one /tmp entry per failed spawn.
+        let _ = avra_shell_exec("rm -f ${progress_file}")
         return run_silent(cmd)
     }
     let t_start = avra_uptime_ms()
@@ -311,7 +317,7 @@ fn package_of(path: string) -> string {
         while end > 0 && p.byte(end - 1) != 0x2F { end = end - 1 }
         if end == 0 { return "(root)" }
         let dir = p.substring(0, end - 1)
-        let mut s = dir.length
+        mut s = dir.length
         while s > 0 && dir.byte(s - 1) != 0x2F { s = s - 1 }
         return dir.substring(s, dir.length)
     }
@@ -371,18 +377,14 @@ fn pad_right(s: string, width: int) -> string {
     out
 }
 
-/// Replay a failed child's captured output. Both streams matter: bs2
-/// renders compile diagnostics on stderr while orchestration chatter
-/// lands on stdout — swallowing either hides WHY a build failed.
-/// json_extract_string unescapes the runtime's result-JSON encoding,
-/// so multi-line diagnostics render as emitted, not as one \n-escaped
-/// line.
 /// Replay a finished child's captured streams. Stderr replays ALWAYS:
 /// it is the compiler's human channel — the `[pkg]` banner, F9xxx
 /// warnings, diagnostics — and it passed straight through before
 /// execution became capture-based, so swallowing it on success would
 /// silently lose a build's warnings. Stdout (the chatter) replays only
 /// when the child failed, keeping success logs byte-clean.
+/// json_extract_string unescapes the runtime's result-JSON encoding, so
+/// multi-line diagnostics render as emitted, not as one \n-escaped line.
 fn replay_child_output(final_json: string, rc: int) {
     let err = json_extract_string(final_json, "stderr")
     if err != "" { eprintln(err) }
