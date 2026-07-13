@@ -250,6 +250,20 @@ fn is_help_flag(s: string) -> bool {
     s == "--help" || s == "-h"
 }
 
+/// The canonical name of the declared SPACE-FORM option `arg` names —
+/// the `--key value` shape that consumes the NEXT token verbatim as its
+/// value — or "" when it doesn't: a flag spelling wins a name collision
+/// (consuming nothing), an inline `--key=value` carries its own value,
+/// and an undeclared token consumes nothing. The single source of truth
+/// for "does this token eat the next one": tokens_have_help's pre-scan
+/// and parse_tokens' bare-`--key` arm both key off it, so the two can't
+/// drift apart (a desync hijacks a valid `cmd --opt --help` invocation).
+fn space_option_canonical(flags: List<FlagDef>, options: List<OptionDef>, arg: string) -> string {
+    if flag_canonical_name(flags, arg) != "" { return "" }
+    if arg.contains("=") { return "" }
+    option_canonical_name(options, arg)
+}
+
 /// True iff the help flag appears among a command's argv tokens IN A FLAG
 /// POSITION. Two places a literal `--help` is a VALUE, not a help request —
 /// the pre-scan must agree with parse_tokens on both or it hijacks a valid
@@ -262,11 +276,9 @@ fn tokens_have_help(tokens: List<string>, flags: List<FlagDef>, options: List<Op
         let t = tokens[ti]
         if t == "--" { return false }
         if is_help_flag(t) { return true }
-        // A declared space-form option consumes the NEXT token verbatim —
-        // skip it, exactly as parse_tokens will. Flag matching takes
-        // precedence there too, so a flag-and-option name collision still
-        // classifies as a flag (consuming nothing).
-        if flag_canonical_name(flags, t) == "" && !t.contains("=") && option_canonical_name(options, t) != "" {
+        // A space-form option consumes the NEXT token — skip it, exactly
+        // as parse_tokens will (shared classifier, shared verdict).
+        if space_option_canonical(flags, options, t) != "" {
             ti = ti + 2
         } else {
             ti = ti + 1
@@ -448,9 +460,11 @@ fn parse_tokens(cmd_name: string, flags: List<FlagDef>, options: List<OptionDef>
             // A bare `--key` that names a declared option takes the next token
             // as its value (`--key value`). The value is consumed verbatim —
             // even if it looks like a flag — matching read_kv_value. A trailing
-            // `--key` with no following token is a usage error.
+            // `--key` with no following token is a usage error. Classified by
+            // the same space_option_canonical the help pre-scan uses (the
+            // flag/= exclusions it re-checks are already false on this arm).
             else {
-                let ocanon = option_canonical_name(options, arg)
+                let ocanon = space_option_canonical(flags, options, arg)
                 if ocanon != "" {
                     if ti + 1 < tokens.length {
                         parsed_options = set_option(parsed_options, ocanon, tokens[ti + 1])
