@@ -2912,12 +2912,18 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> 
     mut cur = tc
     mut i = 0
     let limit = if params.length < args.length { params.length } else { args.length }
+    // Reset-then-sharpen per argument (see tc_check_newtype_args): a shape
+    // mismatch carets the offending argument; span-less args keep the
+    // statement stamp instead of inheriting a sibling's caret.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
+        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = tc_check_shape_compat(cur, vtype_display(params[i].vtype), arg_ty)
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // Check that newtype arguments match — UserId != OrderId even if both wrap string
@@ -3017,7 +3023,12 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
     mut cur = tc
     mut i = 0
     let limit = if fields.length < args.length { fields.length } else { args.length }
+    // Reset-then-sharpen per payload arg (see tc_check_newtype_args): a
+    // wrong-typed payload carets the payload expression itself.
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
+        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
         let fty = resolve_vtype(cur, fields[i].resolved)
         let aty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         // A bare `null`/`none` literal (`Expr.None`) is valid for ANY optional
@@ -3075,7 +3086,7 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
         }
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // enwi: infer a generic enum's type-args from the constructor's payload args, so
@@ -3922,12 +3933,16 @@ fn tc_check_closure_args(tc: TC, label: string, fn_ty: ValueType, args: List<Exp
     mut cur = tc
     mut i = 0
     let limit = if param_vts.length < args.length { param_vts.length } else { args.length }
+    // Reset-then-sharpen per argument (see tc_check_newtype_args).
+    let fb_line = tc.current_line
+    let fb_col = tc.current_col
     while i < limit {
+        cur = tc_at_expr(cur with { current_line: fb_line, current_col: fb_col }, args[i])
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
         cur = check_assign_layout(cur, arg_ty, resolve_vtype(cur, param_vts[i]), "${label} argument ${string(i + 1)}")
         i = i + 1
     }
-    cur
+    cur with { current_line: fb_line, current_col: fb_col }
 }
 
 // ── Method call type inference ──

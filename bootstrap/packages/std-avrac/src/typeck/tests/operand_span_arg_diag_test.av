@@ -44,3 +44,34 @@ spec "call-arg diagnostics point at the offending argument" {
         out.contains("F1000") && out.contains(":3:5")
     }
 }
+
+spec "the remaining argument gates caret their operands too" {
+    then "a wrong-typed enum-ctor payload on its own line carets the payload" {
+        let out = check_out("enum_payload",
+            "enum Holder {\n" +
+            "    Wrap(items: List<int>)\n" +
+            "}\n" +
+            "type Node = { v: int }\n" +
+            "fn main() {\n" +
+            "    let h = Holder.Wrap(\n" +
+            "        [Node { v: 1 }])\n" +
+            "    let _ = h\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":7:9")
+    }
+    then "a wrong-typed closure-call argument on its own line carets the argument" {
+        // The binding must be FnTyped for the closure gate to see declared
+        // params — a nested fn guarantees that (its desugar annotates the
+        // let). An UN-annotated `let f = (s: string) -> s` binding does not
+        // yet infer FnTyped, so its calls are ungated entirely — a separate
+        // inference gap, tracked independently of caret placement.
+        let out = check_out("closure_arg",
+            "fn main() {\n" +
+            "    fn f(s: string) -> string { s }\n" +
+            "    let x = 1\n" +
+            "    let _ = f(\n" +
+            "        x + 1)\n" +
+            "}\n")
+        out.contains("F1000") && out.contains(":5:9")
+    }
+}
