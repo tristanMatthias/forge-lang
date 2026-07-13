@@ -2423,7 +2423,9 @@ fn collect_shard_paths() -> List<string> {
 // Returns `Ok(bin_path)` on success or `Err(msg)` after rendering
 // the diagnostic bag inline. The caller picks the exit policy.
 fn compile_test_unit(inputs: BuildInputs, test_paths: List<string>, args: TestArgs) -> Result<string, string> {
-    compile_test_unit_to(inputs, test_paths, args, "all")
+    // "all.<pid>" not "all": two concurrent bundled runs (or a live one
+    // plus an orphan) must not share _test_all.{ll,o,bin} scratch paths.
+    compile_test_unit_to(inputs, test_paths, args, "all.${string(avra_getpid())}")
 }
 
 // 05yc: shard-scoped wrapper. `shard_id` distinguishes the staging
@@ -2570,7 +2572,14 @@ fn run_test_shard_command() {
     // propagate from the orchestrator's parent test invocation.
     let args = parse_test_args()
     let inputs = compute_test_shard_inputs(project_dir, paths, args)
-    let shard_id = batch_slug(paths)
+    // pdme.7 follow-up: fold the pid into the LOCAL artifact slug. The
+    // slug names this shard's pre-publish _test_<slug>.{ll,o,bin} in
+    // the shared build/ dir; slug-only names let an orphaned shard from
+    // a killed run (same files, still compiling) interleave with a live
+    // same-slug compile — and the winner PUBLISHES whatever mixed bytes
+    // survive. Cache slots stay pid-free (keyed on content fps); only
+    // the scratch names are per-process.
+    let shard_id = "${batch_slug(paths)}.${string(avra_getpid())}"
     // uzs9.1: the shard path is the DEFAULT per-file test path, but on a
     // cache hit it silently exec'd the cached binary — so `bs2 test <file>`
     // reruns were fast yet never printed `[test-cache] hit`, leaving cache
@@ -2816,8 +2825,19 @@ impl RunCtx {
     /// linked via AVRA_LIB_OBJS.
     fn shard_for(self, paths: List<string>) -> Shard {
         let slug = batch_slug(paths)
-        let log_path = "${self.log_dir}/${slug}.log"
-        let bin_path = "${self.log_dir}/${slug}.bin"
+        // pdme.7 follow-up: the orchestrator's pid in the sidecar names.
+        // Slug-only paths are DETERMINISTIC across invocations, so an
+        // orphaned shard from a killed run (SIGKILL doesn't reap
+        // grandchildren) finishing late clobbers the LIVE run's results
+        // bin — the orchestrator prefers the bin over the text line, so
+        // a foreign summary silently replaces the real one (observed
+        // 2026-07-13: a walker shard aggregated 30/32 while its own log
+        // said 32/32 — and the same clobber could just as well mask a
+        // real failure). The run-start wipe of log_dir can't defend
+        // against a still-LIVE writer; unique names can.
+        let pid = string(avra_getpid())
+        let log_path = "${self.log_dir}/${slug}.${pid}.log"
+        let bin_path = "${self.log_dir}/${slug}.${pid}.bin"
         // Ownership covers EVERY member module — the codegen emits a
         // fn body iff some root prefixes it, so each member's fns
         // must be rooted or they'd be skipped as external (undefined

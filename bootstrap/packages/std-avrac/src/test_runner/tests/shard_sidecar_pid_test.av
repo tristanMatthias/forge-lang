@@ -1,0 +1,31 @@
+// pdme.7 follow-up: shard sidecar names embed the ORCHESTRATOR's pid
+// (<slug>.<pid>.{log,bin}). Slug-only names are deterministic across
+// invocations, so an orphaned shard from a killed run (SIGKILL doesn't
+// reap grandchildren) finishing late clobbered the LIVE run's results
+// bin — and since the orchestrator prefers the bin over the printed
+// [shard-summary] line, a foreign summary silently replaced the real
+// one (observed 2026-07-13: a walker dir aggregated 30/32 "2 failed"
+// while its own shards printed 32/32 — the same clobber could equally
+// mask a real failure as a pass).
+//
+// Self-observing probe: THIS spec is itself running under a per-file
+// orchestrator that already created its own sidecars in
+// build/test_shards — so assert on the live dir: at least one
+// pid-suffixed .log exists, and no .log/.bin lacks the pid segment.
+// (The orchestrator wipes the dir at run start, so pre-change stale
+// names can't linger and turn this vacuous.)
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "pdme.7: shard sidecars are pid-unique (<slug>.<pid>.{log,bin})" {
+    then "every live .log/.bin in build/test_shards carries a numeric pid segment" {
+        let names = avra_shell_exec("ls build/test_shards 2>/dev/null")
+        let good = avra_shell_exec("ls build/test_shards 2>/dev/null | grep -cE '\\.[0-9]+\\.(log|bin)$'").trim()
+        let bad = avra_shell_exec("ls build/test_shards 2>/dev/null | grep -E '\\.(log|bin)$' | grep -vE '\\.[0-9]+\\.(log|bin)$' | wc -l").trim()
+        let ok = good != "0" && good != "" && bad == "0"
+        if !ok {
+            println("shard_sidecar_pid_test: good=${good} bad=${bad} names:\n${names}")
+        }
+        ok
+    }
+}

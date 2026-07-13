@@ -1,0 +1,40 @@
+// pdme.7 follow-up: the fixture-stdout TAINT GATE. A capture may only
+// be memoised when the fixture's bytes after the run still match the
+// bytes the key was computed from — otherwise a concurrent writer
+// (the 2026-07-13 walker poisoning: an orphaned shard from a killed
+// suite run rewriting the shared /tmp fixture mid-run) influenced the
+// run, and caching the output would freeze a wrong result under an
+// honest key, replaying as a deterministic no-diff FAIL forever.
+//
+// Probe: a fixture that CLOBBERS ITS OWN FILE while running, plus a
+// side-effect counter. Every capture of it is tainted, so it must
+// NEVER be served from cache — the counter must advance on each call.
+// With the gate broken, call 1 memoises and call 2 replays: the
+// counter freezes at 1 and this spec fails (mutation-verifiable).
+//
+// @@fixture-stateful@@ — runs against the SHARED build/bs2 via
+// diagnose.sh; a transient environment hiccup must re-probe, not
+// freeze as a permanent FAIL.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+
+spec "pdme.7: a mid-run fixture clobber taints the capture (never memoised)" {
+    then "the self-clobbering fixture runs live on every call — the side-effect counter advances" {
+        let pid = string(avra_getpid())
+        let fixture = "/tmp/avra_taint_probe_${pid}.av"
+        let counter = "/tmp/avra_taint_counter_${pid}.txt"
+        avra_shell_exec("rm -f '${fixture}' '${counter}'")
+        let src = "extern fn avra_shell_exec(cmd: string) -> string\n" +
+            "fn main() {\n" +
+            "    let _ = avra_shell_exec(\"echo x >> ${counter}\")\n" +
+            "    let _ = avra_shell_exec(\"echo clobbered > ${fixture}\")\n" +
+            "    println(\"A-mark\")\n" +
+            "}\n"
+        let out1 = write_fixture_and_run_no_metadata(fixture, src)
+        let out2 = write_fixture_and_run_no_metadata(fixture, src)
+        let runs = avra_shell_exec("grep -c x '${counter}'").trim()
+        avra_shell_exec("rm -f '${fixture}' '${fixture}.ll' '${fixture}.o' '${fixture}.bin' '${counter}'")
+        out1.contains("A-mark") && out2.contains("A-mark") && runs == "2"
+    }
+}
