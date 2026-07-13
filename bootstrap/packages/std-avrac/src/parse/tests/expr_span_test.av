@@ -1,0 +1,101 @@
+// WHY: §14.2's missing half — BARE children get real byte spans (ps3t.3.9).
+// The A2 increment spanned WRAPPED nested nodes; bare compound nodes (Binary
+// operands, sub-exprs, call-shaped rows, literals' containers) kept the
+// byte_span_none() sentinel because their productions never threaded a start
+// offset. The parser now captures each production's start byte and stamps
+// [start, next-token-start) at allocation — the same convention Stmt.Error
+// spans established.
+//
+// Contract pinned here:
+//   1. Compound expr rows carry REAL spans with exact [lo, hi) bytes.
+//   2. Nested compounds get their OWN start (a sub-production's span begins
+//      at its first token, not the enclosing expression's).
+//   3. Interned pure leaves stay span-free BY DESIGN: their rows are shared
+//      across occurrences (§14.4 pure-leaf hash-consing), so no single
+//      occurrence's position may be stamped on them; diagnostics fall back
+//      to the enclosing compound's span. This is load-bearing for interning
+//      safety — see intern_test.av's rollback family.
+
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{Expr, NodeStore, ExprId, byte_span_is_none}
+
+/// The probe's root span, or a [-1, -1) marker when the parse failed —
+/// keeps each then-body a single boolean expression.
+fn root_span_of(source: string) -> List<int> {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return [0 - 1, 0 - 1] }
+    let sp = probe.store.exprs.span_of(probe.root)
+    if byte_span_is_none(sp) { return [0 - 1, 0 - 1] }
+    [sp.lo, sp.hi]
+}
+
+
+/// Early returns live in helpers — a bare `return` inside a `then` body
+/// returns out of the synthesized unit fn and drops registrations.
+
+/// In `1 + 2 * 3` the Mul sub-production begins at byte 4 (`2`); the Add
+/// root begins at 0. Distinct per-occurrence starts are the point of
+/// threading — a shared/none span would collapse them.
+fn nested_compound_own_start() -> bool {
+    let probe = parse_expression_native_probe("1 + 2 * 3")
+    if probe.had_error != 0 { return false }
+    let root_sp = probe.store.exprs.span_of(probe.root)
+    let mul_sp = match probe.store.exprs.get(probe.root) {
+        .Binary(_, _, right) -> probe.store.exprs.span_of(right)
+        _ -> root_sp
+    }
+    root_sp.lo == 0 && !byte_span_is_none(mul_sp) && mul_sp.lo == 4
+}
+
+/// Both operands of `a OP a` intern to ONE row (§14.4); a per-occurrence
+/// span on it would lie about one of the two positions, so the leaf
+/// deliberately carries none — the enclosing Binary's span attributes.
+fn interned_operands_span_free(source: string) -> bool {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return false }
+    match probe.store.exprs.get(probe.root) {
+        .Binary(left, _, right) ->
+            left == right && byte_span_is_none(probe.store.exprs.span_of(left))
+        _ -> false
+    }
+}
+
+spec "bare compound exprs carry real byte spans (ps3t.3.9)" {
+    then "a Binary row spans its whole expression" {
+        // [start, next-token) — at EOF the hi is the source end.
+        let sp = root_span_of("1 + 2")
+        sp[0] == 0 && sp[1] >= 5
+    }
+    then "a Call row spans callee through args" {
+        let sp = root_span_of("f(x, 2)")
+        sp[0] == 0 && sp[1] >= 7
+    }
+    then "a Grouping row spans its parens" {
+        let sp = root_span_of("(a)")
+        sp[0] == 0 && sp[1] >= 3
+    }
+    then "an if-expression row spans the construct" {
+        let sp = root_span_of("if c { 1 } else { 2 }")
+        sp[0] == 0 && sp[1] >= 21
+    }
+    then "a list literal row spans its brackets" {
+        let sp = root_span_of("[1, 2]")
+        sp[0] == 0 && sp[1] >= 6
+    }
+    then "a postfix chain row spans from the receiver" {
+        let sp = root_span_of("obj.field.method(1)")
+        sp[0] == 0 && sp[1] >= 19
+    }
+    then "a nested compound gets its OWN start, not the enclosing expression's" {
+        nested_compound_own_start()
+    }
+}
+
+spec "interned pure leaves stay span-free by design" {
+    then "a repeated ident dedups to one row and that row has no span" {
+        interned_operands_span_free("x + x")
+    }
+    then "number literals stay span-free too" {
+        interned_operands_span_free("7 * 7")
+    }
+}

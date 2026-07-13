@@ -10,6 +10,7 @@ use core.{Tk}
 
 impl Parser {
     fn parse_list_elements(self) -> Result<ArgListIds, string> {
+        let sp_start = self.current_start
         mut ids: List<ExprId> = []
         let expr_id = self.parse_expression()?
 
@@ -27,7 +28,7 @@ impl Parser {
                 filter = self.parse_expression()?
             }
             let comp = Expr.ListComp(expr_id, var_name, collection_id, filter)
-            let comp_id = self.alloc_leaf(comp)
+            let comp_id = self.alloc_at(comp, sp_start)
             ids.push(comp_id)
             return .Ok(ArgListIds { ids: ids })
         }

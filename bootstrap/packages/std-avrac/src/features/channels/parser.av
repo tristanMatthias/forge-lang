@@ -7,6 +7,7 @@ use core.{Expr, Tk, type_expr_to_vtype, NodeRef, byte_span_none}
 
 impl Parser {
     fn parse_channel_expression(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
         self.advance()  // consume `channel`
         if !self.consume(Tk.Less, "expected `<` after `channel` — write `channel<T>()` or `channel<T>(cap)`") {
             return .Err("parse error")
@@ -23,7 +24,7 @@ impl Parser {
             self.advance()
             // Walker order: the bare element-type field contributes a
             // TypeRef; an absent capacity contributes nothing.
-            return .Ok(self.alloc_expr(Expr.ChannelNew(elem, null), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
+            return .Ok(self.alloc_expr(Expr.ChannelNew(elem, null), self.span_from(sp_start), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
         }
         let cap_id = self.parse_expression()?
         if !self.consume(Tk.RightParen, "expected `)` after channel capacity") {
@@ -31,6 +32,6 @@ impl Parser {
         }
         // Flipped capacity is an ExprId scalar (walker-opaque) — only the element
         // type's TypeRef is a child edge; the capacity id is the structure itself.
-        .Ok(self.alloc_expr(Expr.ChannelNew(elem, cap_id), byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
+        .Ok(self.alloc_expr(Expr.ChannelNew(elem, cap_id), self.span_from(sp_start), [NodeRef.TypeRef(self.glue_ingest_type(elem))]))
     }
 }
