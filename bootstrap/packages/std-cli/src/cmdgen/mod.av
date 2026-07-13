@@ -34,6 +34,19 @@
 // would double-register with main.av's inline `component command`).
 //
 // Directory-as-module (g2eo.1): exports surface at @std.cli.cmdgen.{...}.
+//
+// PERF ENVELOPE (measured; see the cleanup-pass commit): expansion is
+// linear in commands × children and interpreter-bound — a synthetic
+// 100-command cli adds ≲1s to a compile whose @std baseline is ~17s, so
+// at real scale (avra: 17 commands) the whole expansion is sub-second
+// noise. Consequences, considered and deliberately NOT taken further:
+// config lookups stay linear scans (≤4 pairs per leaf — a comptime map
+// costs more to build than it saves); name-shadow checks stay
+// O(globals × children) (globals ≈ 1); no memoization/hash-consing (each
+// node is constructed exactly once, nothing repeats); the generated App
+// literal builds every CommandSpec at process start (hundreds of small
+// allocations once per invocation — lazy per-command construction would
+// complicate dispatch for no observable gain).
 
 use @std.avrac.core.{Stmt, Expr, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, CompConfigPair}
 use @std.avrac.features.comptime.{synth_deref_stmt, synth_stmt_ids, synth_expr_id}
@@ -444,16 +457,21 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
     mut global_flag_defs: List<ExprId> = []
     mut sub_lits: List<ExprId> = []
 
+    // Command child blocks, collected during the single body walk and
+    // expanded AFTER it — every global flag must be known before any
+    // command's schema is built (a `flag <g>` may be declared below a
+    // command in source), and holding the already-deref'd nodes means no
+    // child is deref'd twice.
+    mut command_blocks: List<Stmt> = []
     match s {
         .ComponentBlock(_, instance, cliconfig, body) -> {
             inst = instance
             app_desc = config_value_or_empty(cliconfig, "description")
             app_ver = config_value_or_empty(cliconfig, "version")
-            // First pass over the cli's direct children: collect global flags
-            // (a `flag <g> {}` in the cli block is inherited into every command,
-            // so every command's schema needs them). Capture each global's
-            // FlagDef (with its `short`) here where the cli-level config is in
-            // scope, index-aligned with the names.
+            // ONE walk over the cli's direct children: a `flag <g> {}` is a
+            // GLOBAL flag inherited into every command (capture its FlagDef
+            // here, where the cli-level config is in scope, index-aligned
+            // with the names); a `command` block is held for expansion below.
             for id in body {
                 let child = synth_deref_stmt(id)
                 match child {
@@ -462,26 +480,24 @@ export fn expand_cli(s: Stmt) -> List<Stmt> {
                             global_flags.push(cinst)
                             global_flag_defs.push(flagdef_lit(cinst, config_value_or_empty(gcfg, "short"), config_value_or_empty(gcfg, "description"), config_values_list(gcfg, "alias")))
                         }
+                        if cn == "command" { command_blocks.push(child) }
                     }
                     _ -> {}
                 }
             }
-            // Second pass: each command generates its behaviour decls + its
-            // Subcommand literal from a SINGLE walk (build_command_gen), so a cli
-            // never re-walks a command's children (the re-walk trips the
-            // evaluator). Globals thread in as inherited flags.
-            for id in body {
-                let child = synth_deref_stmt(id)
-                match child {
-                    .ComponentBlock(cn, _, _, _) -> {
-                        if cn == "command" {
-                            let gen = build_command_gen(child, global_flags, global_flag_defs)
-                            for d in gen.decls { out.push(d) }
-                            sub_lits.push(gen.subcommand)
-                        }
-                    }
-                    _ -> {}
-                }
+            // Each command generates its behaviour decls + its Subcommand
+            // literal from a SINGLE walk of its own children
+            // (build_command_gen — a re-walk once tripped the evaluator).
+            // Globals thread in as inherited flags.
+
+            // Each command generates its behaviour decls + its Subcommand
+            // literal from a SINGLE walk of its own children
+            // (build_command_gen — a re-walk once tripped the evaluator).
+            // Globals thread in as inherited flags.
+            for child in command_blocks {
+                let gen = build_command_gen(child, global_flags, global_flag_defs)
+                for d in gen.decls { out.push(d) }
+                sub_lits.push(gen.subcommand)
             }
         }
         _ -> {}
