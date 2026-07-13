@@ -1,0 +1,66 @@
+// The avra CLI's DISPATCH-layer contracts, probed against the real binary:
+// what happens before any command's run() body executes. The declarative
+// App owns this surface (argv → help/version/unknown/parse-error routing),
+// so these pin the behavior a shell script or CI harness relies on.
+// `dsp_`-prefixed fixtures against cross-shard collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+fn dsp_out(argv: string) -> string {
+    avra_shell_exec("./build/bs2 ${argv} 2>&1 || true")
+}
+
+spec "the app-level dispatch names its refusals" {
+    then "an unknown command says WHICH command and hints --help, exit 1" {
+        let out = dsp_out("frobnicate_nope")
+        avra_shell_exec_status("./build/bs2 frobnicate_nope > /dev/null 2>&1") == 1
+            && out.contains("unknown command: frobnicate_nope")
+            && out.contains("Try 'avra --help'.")
+    }
+    then "an unknown command does NOT dump the full usage wall" {
+        let out = dsp_out("frobnicate_nope")
+        !out.contains("COMMANDS:")
+    }
+    then "no arguments at all prints the full help and exits 1" {
+        let out = dsp_out("")
+        avra_shell_exec_status("./build/bs2 > /dev/null 2>&1") == 1
+            && out.contains("USAGE:") && out.contains("COMMANDS:")
+    }
+    then "--version prints the version line alone and exits 0" {
+        let out = dsp_out("--version")
+        avra_shell_exec_status("./build/bs2 --version > /dev/null 2>&1") == 0
+            && out.contains("avra v") && !out.contains("USAGE:")
+    }
+    then "a missing required positional is a named parse error with the per-command hint" {
+        let out = dsp_out("compile")
+        avra_shell_exec_status("./build/bs2 compile > /dev/null 2>&1") == 1
+            && out.contains("missing required argument: file")
+            && out.contains("Try 'avra compile --help'.")
+    }
+    then "a dash-prefixed path after `--` reaches the command as a positional" {
+        // The end-of-options terminator must deliver `-weird.av` to the
+        // file arg — the command then reports it missing on disk, proving
+        // the token was treated as a path, not rejected as a flag.
+        let out = dsp_out("check -- -weird.av")
+        out.contains("file not found: -weird.av")
+    }
+}
+
+spec "variadic positional parsing holds at stress width" {
+    then "500 shard paths all land under the variadic arg (first missing file named)" {
+        // _test_shard declares `arg paths { variadic true }`. 500 positional
+        // tokens must parse without truncation or misclassification; the
+        // command then fails on the FIRST nonexistent path, proving the
+        // parse delivered the full ordered list, not a prefix.
+        mut argv = "_test_shard"
+        mut i = 0
+        while i < 500 {
+            argv = argv + " /tmp/dsp_no_such_${string(i)}.av"
+            i = i + 1
+        }
+        let out = dsp_out(argv)
+        avra_shell_exec_status("./build/bs2 ${argv} > /dev/null 2>&1") != 0
+            && out.contains("dsp_no_such_0.av")
+    }
+}

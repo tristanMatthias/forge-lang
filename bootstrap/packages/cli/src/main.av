@@ -82,7 +82,7 @@ use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_prog
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.features.marshal.{derive_marshal}
-use @std.avrac.resolve.{resolve_names, NameResolveResult}
+use @std.avrac.resolve.{NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
@@ -306,6 +306,44 @@ fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: Nod
     render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
     named
+}
+
+/// What the parse→comptime FRONT of the pipeline hands to a subcommand:
+/// the post-comptime statements (with their store), the comptime fold's
+/// diagnostic bag, and the name resolution's registries. The bag rides
+/// along UNRENDERED because the callers disagree on it: `check` gates on
+/// it, `expand` formats best-effort (an unfoldable @comptime call keeps
+/// its source form; its F4007 surfaces on check/compile/run).
+type FrontEndResult = {
+    store: NodeStore,
+    stmts: List<StmtId>,
+    comptime_bag: DiagnosticBag,
+    resolved: NameResolveResult,
+}
+
+/// The pipeline front shared by `check` and `expand`: parse, lower
+/// quotes, desugar, resolve module files, inject intrinsics (AFTER
+/// module resolution so stdlib's Result is visible to
+/// program_declares_enum — avoids synthesizing a duplicate that dkfa
+/// would flag), expand components, marshal + resolve names, run
+/// comptime. Every stage up to comptime fails here with its own
+/// rendered diagnostics.
+fn front_pipeline_or_fail(fa: FileArg, ctx: RenderContext) -> FrontEndResult {
+    let parsed_prog = parse_or_fail(fa.source, ctx)
+    let post_quote = lower_quotes_via_store(parsed_prog.ids, parsed_prog.store)
+    let desugared = desugar_program(post_quote, parsed_prog.store)
+    let mod_resolved = resolve_module_files(desugared, modules_dirname(fa.path), empty_loaded_list(), parsed_prog.store)
+    fail_on_module_resolve_error(mod_resolved, ctx)
+    let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
+    let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
+    let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+    let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
+    FrontEndResult {
+        store: parsed_prog.store,
+        stmts: post_comptime.stmts,
+        comptime_bag: post_comptime.bag,
+        resolved: named,
+    }
 }
 
 // Module file resolution and name resolution live in features/modules/.
@@ -3559,12 +3597,21 @@ fn gen_for_symbol(query: string, docs_set: List<Sym>, want_print: bool) -> bool 
 /// one place.
 type FileArg = { path: string, source: string }
 
-/// Resolve the `file` positional to (path, source), failing clearly when it is
-/// missing or unreadable.
-fn arg_file_source(args: CliResult) -> FileArg {
+/// Resolve the `file` positional to an EXISTING path, failing clearly when it
+/// is missing or absent on disk. The path-only tier of `arg_file_source`, for
+/// subcommands that read the file through their own machinery (`metadata_show`
+/// decodes binary; `compile` routes through its cache).
+fn arg_file_path(args: CliResult) -> string {
     let path = result_get_arg(args, "file")
     if path == "" { fail("error: this command requires a file argument") }
     if !file_exists(path) { fail("error: file not found: ${path}") }
+    path
+}
+
+/// Resolve the `file` positional to (path, source), failing clearly when it is
+/// missing or unreadable.
+fn arg_file_source(args: CliResult) -> FileArg {
+    let path = arg_file_path(args)
     FileArg { path, source: read_file(path) }
 }
 
@@ -3587,8 +3634,7 @@ fn cmd_program(args: CliResult) -> int {
 /// `metadata_show <file>` — read a `.meta.bin`, synthesize its arena rows, and
 /// print them with the same id-native renderer `program` uses (xtvc).
 fn cmd_metadata_show(args: CliResult) -> int {
-    let path = result_get_arg(args, "file")
-    if !file_exists(path) { fail("error: file not found: ${path}") }
+    let path = arg_file_path(args)
     let m = metadata_read(path)
     if m.unit_name == "" {
         fail("error: ${path} is empty or unreadable")
@@ -3626,18 +3672,16 @@ fn cmd_run(args: CliResult) -> int {
     0
 }
 
-/// `fix <file>` — parse, resolve, and (for v1.0) report that no auto-fixes are
-/// available yet (ticket 8ym).
+/// `fix <file>` — run the same parse→comptime front `check` gates on, so
+/// name resolution sees the EXPANDED program (a file using quotes or
+/// components previously mis-resolved against the raw tree), then report
+/// that no auto-fixes are available yet. Resolution/comptime failures exit
+/// non-zero with rendered diagnostics.
 fn cmd_fix(args: CliResult) -> int {
     let fa = arg_file_source(args)
     let ctx = render_ctx(false, fa.source, fa.path)
-    let parsed_prog = parse_or_fail(fa.source, ctx)
-    let parsed_stmts = parsed_prog.ids
-    let entry_dir = modules_dirname(fa.path)
-    let mod_resolved = resolve_module_files(parsed_stmts, entry_dir, empty_loaded_list(), parsed_prog.store)
-    fail_on_module_resolve_error(mod_resolved, ctx)
-    let named = resolve_names(mod_resolved.stmts, parsed_prog.store)
-    render_and_fail_on_errors(named.bag, ctx, "resolve errors — fix the source then re-run")
+    let front = front_pipeline_or_fail(fa, ctx)
+    render_and_fail_on_errors(front.comptime_bag, ctx, "comptime fold failed")
     println("no auto-fixes available")
     0
 }
@@ -3656,55 +3700,28 @@ fn cmd_fmt(args: CliResult) -> int {
 /// valid Avra that compiles to the same program.
 fn cmd_expand(args: CliResult) -> int {
     let fa = arg_file_source(args)
-    let ctx = render_ctx(false, fa.source, fa.path)
-    let parsed_prog = parse_or_fail(fa.source, ctx)
-    let parsed_stmts = parsed_prog.ids
-    let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-    let desugared = desugar_program(post_quote, parsed_prog.store)
-    let entry_dir = modules_dirname(fa.path)
-    let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
-    fail_on_module_resolve_error(mod_resolved, ctx)
-    let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
-    let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
-    let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-    let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
+    let front = front_pipeline_or_fail(fa, render_ctx(false, fa.source, fa.path))
     // fmt is best-effort — an unfoldable @comptime call formats as its source
-    // form and its F4007 (if any) surfaces on check/compile/run, so drop the bag.
-    println(fmt_stmt_ids(parsed_prog.store, post_comptime.stmts, 0))
+    // form and its F4007 (if any) surfaces on check/compile/run, so the
+    // comptime bag is deliberately dropped.
+    println(fmt_stmt_ids(front.store, front.stmts, 0))
     0
 }
 
 fn cmd_check(args: CliResult) -> int {
-            let check_json = result_has_flag(args, "json")
-            let check_path = result_get_arg(args, "file")
-            if !file_exists(check_path) { fail("error: file not found: ${check_path}") }
-            let check_source = read_file(check_path)
-            let ctx = render_ctx(check_json, check_source, check_path)
-
-            let parsed_prog = parse_or_fail(check_source, ctx)
-            let parsed_stmts = parsed_prog.ids
-            let check_dir = modules_dirname(check_path)
-            let check_pkg = load_package_config(check_dir)
-            if check_pkg.found && !check_json {
-                eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
-            }
-            let post_quote = lower_quotes_via_store(parsed_stmts, parsed_prog.store)
-            let desugared = desugar_program(post_quote, parsed_prog.store)
-            let entry_dir = modules_dirname(check_path)
-            let mod_resolved = resolve_module_files(desugared, entry_dir, empty_loaded_list(), parsed_prog.store)
-            fail_on_module_resolve_error(mod_resolved, ctx)
-            // Inject intrinsics AFTER module resolution so stdlib's
-            // Result is visible to program_declares_enum — avoids
-            // synthesizing a duplicate that dkfa would flag.
-            let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
-            let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
-            let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-            let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
-            render_and_fail_on_errors(post_comptime.bag, ctx, "comptime fold failed")
-            let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed_prog.store)
-            render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
-            if !check_json { println("ok") }
-            0
+    let check_json = result_has_flag(args, "json")
+    let fa = arg_file_source(args)
+    let ctx = render_ctx(check_json, fa.source, fa.path)
+    let check_pkg = load_package_config(modules_dirname(fa.path))
+    if check_pkg.found && !check_json {
+        eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
+    }
+    let front = front_pipeline_or_fail(fa, ctx)
+    render_and_fail_on_errors(front.comptime_bag, ctx, "comptime fold failed")
+    let tc_result = typecheck_program(front.stmts, front.resolved.type_reg, front.resolved.macro_origins, front.store)
+    render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
+    if !check_json { println("ok") }
+    0
 }
 
 fn cmd_compile(args: CliResult) -> int {
