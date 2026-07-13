@@ -344,7 +344,17 @@ fn finalize_insts(insts: List<Inst>, regs: GenRegs, bag: DiagnosticBag, ti: List
         let tp = lookup_type_params(e.orig_name, regs)
         acc_bag = check_resolved(tp, e.type_args, e.orig_name, 0, 0, acc_bag, ti)
         let mangled = mangle_name_ordered(e.orig_name, tp, e.type_args, regs.ambig)
-        out.push(Inst { orig_name: e.orig_name, mangled, type_args: e.type_args })
+        // Two collection channels can register the SAME specialization under
+        // different type-arg representations: the annotation string path
+        // (scope_insts_for_ret → split_annotation_args) binds pre-mangled
+        // names (`Maybe__int<int>`) while the structural expected-fill path
+        // (ps3t.3.8) binds the raw nominal (`mod::Maybe<int>`). They don't
+        // merge (`vtype_eq_deep` can't see through the mangled rep) but
+        // mangle identically — emitting both would double-emit the
+        // specialized decl. Keep the first.
+        if !inst_has(out, mangled) {
+            out.push(Inst { orig_name: e.orig_name, mangled, type_args: e.type_args })
+        }
         i = i + 1
     }
     CollectState { insts: out, bag: acc_bag, line: 0, col: 0, trait_impls: ti }
@@ -997,6 +1007,33 @@ fn resolve_enum_type_args(store: NodeStore, tp: List<TypeParamEntry>, variants: 
     infer_from_fields(store, tp, vl.fields, args, empty)
 }
 
+/// Variant of `resolve_enum_type_args` that ALSO consults the construction's
+/// `expected` type (a `let`/return annotation) — but ONLY to supply params the
+/// ctor payload left unresolved: a param in no field of THIS variant (`B` in
+/// `Pair<int,string> = Pair.L(7)`), or one behind an empty-collection arg. The
+/// annotation is a fallback for those, never an override of a param the payload
+/// bound concretely (see `fill_unresolved_from_expected`). Enum mirror of the
+/// struct-side `infer_from_field_inits_with_expected` (ps3t.3.8). Guarded on
+/// `expected` naming THIS enum, so an unrelated/`Unknown` annotation can never
+/// mis-bind.
+fn resolve_enum_type_args_with_expected(store: NodeStore, tp: List<TypeParamEntry>, variants: List<Variant>, name: string, variant: string, args: List<ExprId>, expected: ValueType) -> List<TypeArg> {
+    let from_payload = resolve_enum_type_args(store, tp, variants, variant, args)
+    if vtype_is_unknown(expected) { return from_payload }
+    if vtype_nominal_name(expected) != name { return from_payload }
+    fill_unresolved_from_expected(tp, vtype_type_args(expected), from_payload)
+}
+
+/// Type args for a PAYLOAD-LESS bare variant access (`Opt.None`): there are no
+/// ctor args to unify, so the site's `expected` type is the only local source —
+/// empty (a merge_partial no-op) when there is no expectation or it names a
+/// different type. Positional, like `fill_unresolved_from_expected` (ps3t.3.8).
+fn bare_variant_type_args_from_expected(tp: List<TypeParamEntry>, name: string, expected: ValueType) -> List<TypeArg> {
+    let empty: List<TypeArg> = []
+    if vtype_is_unknown(expected) { return empty }
+    if vtype_nominal_name(expected) != name { return empty }
+    fill_unresolved_from_expected(tp, vtype_type_args(expected), empty)
+}
+
 /// Rewrite a type-name string by replacing every generic
 /// reference with its mangled specialisation name. Handles
 /// both bare names (`Option`) and angle-bracket forms
@@ -1177,6 +1214,26 @@ fn rewrite_field_types(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst
     out
 }
 
+/// Enum mirror of `rewrite_field_types`: rewrite generic-instance references
+/// in a specialised enum's variant payload types to their monomorphized
+/// names — `Just(v: Maybe<int>)` becomes `Just(v: Maybe__int)`. A specialised
+/// enum (`Maybe__Maybe__int`) has its `T` substituted to the concrete
+/// `Maybe<int>`, but when the type-arg came through the structural channel
+/// (an expected-type fill, ps3t.3.8) it carries the BARE generic name;
+/// without mangling it here codegen looks up `Maybe` and fails
+/// ("unknown enum `Maybe`"). Idempotent for args that arrived pre-mangled
+/// via the annotation string path.
+fn rewrite_variant_field_types(variants: List<Variant>, regs: GenRegs, insts: List<Inst>) -> List<Variant> {
+    mut out: List<Variant> = []
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        out.push(Variant { name: v.name, fields: rewrite_field_types(v.fields, regs, insts) })
+        i = i + 1
+    }
+    out
+}
+
 // ── Pass 1: Collect generic declarations ──
 
 /// Pass 1 entry: walk the AST collecting every generic decl
@@ -1294,7 +1351,10 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .ThenBlock(_, cond) -> collect_inst_expr(regs.store.exprs.get(cond), regs, st)
         .Parallel(body) -> collect_inst_stmt_ids(body, regs, st)
         .Select(arms) -> collect_inst_select_arms(arms, regs, st)
-        .Const(_, _, init) -> collect_inst_expr(regs.store.exprs.get(init), regs, st)
+        // Const threads its annotation like Let/Mut — the rewrite-side `.Const`
+        // already does, and an asymmetry here would register an inst the
+        // rewriter then can't find.
+        .Const(_, vt, init) -> collect_inst_expr_with_expected(regs.store.exprs.get(init), vt, regs, st)
         .Errdefer(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         _ -> st
     }
@@ -1346,11 +1406,12 @@ fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st
     }
 }
 
-/// Variant of `collect_inst_expr` that threads an expected
-/// return type into a top-level Call dispatch. Other arms recurse
-/// via the unspecialised entry — the expected propagates only
-/// across .Grouping / .Try wrappers that don't alter the value's
-/// type position.
+/// Variant of `collect_inst_expr` that threads an expected type
+/// (a `let`/`mut`/`const`/return annotation) into every construction
+/// that can bind type params from it: generic-fn Calls, StructLits,
+/// EnumCtors and bare enum variants. The expected propagates across
+/// .Grouping / .Try wrappers that don't alter the value's type
+/// position; other arms recurse via the unspecialised entry.
 fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .Call(callee, args) -> {
@@ -1371,19 +1432,33 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
         .Try(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, st)
         // A struct literal in expected-type position (let/return annotation):
         // thread the annotation in so a phantom or empty-collection-only param
-        // binds from it. Recurse into the field inits first (matching the
-        // unexpected `.StructLit` arm in collect_inst_expr_inner).
+        // binds from it. Recurse into the field inits first.
         .StructLit(name, inits) ->
             try_add_struct_inst_with_expected(name, inits, expected, regs, collect_inst_field_inits(inits, regs, st))
+        // An enum ctor in expected-type position: thread the annotation so a
+        // payload-absent param (`B` in `Pair<int,string> = Pair.L(7)`) binds
+        // from it. Recurse into the ctor args first.
+        .EnumCtor(tn, variant, args) ->
+            try_add_enum_inst_with_expected(tn, variant, args, expected, regs, collect_inst_exprs(args, regs, st))
+        // A bare generic-enum variant (`Opt.None`) — payload-less, so the
+        // annotation is the only local source of type args.
+        .FieldAccess(obj, _) -> match regs.store.exprs.get(obj) {
+            .Ident(ename) -> collect_bare_variant(obj, ename, expected, regs, st)
+            // Module-qualified bare variant access (resolver rewrote
+            // `RgmList.End` → `mod::RgmList.End`).
+            .QualifiedIdent(ename) -> collect_bare_variant(obj, ename, expected, regs, st)
+            _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
+        }
         _ -> collect_inst_expr_inner(expr, regs, st)
     }
 }
 
-/// Body of the original `collect_inst_expr` — non-Call,
-/// non-Grouping/Try arms. The Call/Grouping/Try cases are
-/// handled in `collect_inst_expr_with_expected` (they propagate
-/// expected) — by the time control reaches this function those
-/// arms are already dispatched, so we don't re-list them here.
+/// Body of the original `collect_inst_expr` — the arms that don't
+/// consume an expected type. Call/Grouping/Try/StructLit/EnumCtor/
+/// FieldAccess are handled in `collect_inst_expr_with_expected`
+/// (they propagate expected) — by the time control reaches this
+/// function those arms are already dispatched, so we don't re-list
+/// them here.
 fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .GenericCall(callee, type_names, args) -> {
@@ -1399,37 +1474,6 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
                 }
                 _ -> collect_inst_expr(regs.store.exprs.get(callee), regs, s)
             }
-        }
-        .EnumCtor(tn, variant, args) -> {
-            try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
-        }
-        .StructLit(name, inits) ->
-            try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
-        .FieldAccess(obj, variant_name) -> match regs.store.exprs.get(obj) {
-            // Bare variant access (e.g. Option.None) — no args to infer from.
-            // Valid only if another ctor site already provided type args via merging.
-            // We don't error here — finalize_insts will catch missing instantiations.
-            // But we DO add a merge-partial with empty args so finalize knows this
-            // enum was referenced.
-            .Ident(ename) -> {
-                if generic_enum_lookup(regs.enums, ename) != null {
-                    let empty_ta: List<TypeArg> = []
-                    st with { insts: merge_partial(ename, empty_ta, st.insts) }
-                } else {
-                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
-                }
-            }
-            // Module-qualified bare variant access (resolver
-            // rewrote `RgmList.End` → `mod::RgmList.End`).
-            .QualifiedIdent(ename) -> {
-                if generic_enum_lookup(regs.enums, ename) != null {
-                    let empty_ta: List<TypeArg> = []
-                    st with { insts: merge_partial(ename, empty_ta, st.insts) }
-                } else {
-                    collect_inst_expr(regs.store.exprs.get(obj), regs, st)
-                }
-            }
-            _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         }
         .Binary(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .Logical(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
@@ -1558,40 +1602,43 @@ fn add_resolved_inst(name: string, tp: List<TypeParamEntry>, ta: List<TypeArg>, 
     }
 }
 
-/// Add (or merge) a generic-fn instantiation inferred from
-/// the call args. Falls back to `merge_partial` so partial
-/// info from one call site can complete another's bindings.
-fn try_add_fn_inst(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, regs: GenRegs, st: CollectState) -> CollectState {
-    let empty_ta: List<TypeArg> = []
-    add_resolved_inst(name, tp, infer_from_params(regs, tp, params, args, empty_ta), regs.ambig, st)
-}
-
-/// Variant of `try_add_fn_inst` that takes the call site's
-/// expected return type. After arg-based inference,
-/// `unify_param` is run with the fn's declared `ret_vt` against
-/// `expected` to harvest extra bindings for type params that
-/// only appear in the return position. Mirror of the typeck-side
+/// Add (or merge) a generic-fn instantiation inferred from the
+/// call args plus the call site's expected return type. After
+/// arg-based inference, `unify_param` is run with the fn's
+/// declared `ret_vt` against `expected` to harvest extra bindings
+/// for type params that only appear in the return position (a no-op
+/// when `expected` is Unknown). Mirror of the typeck-side
 /// `tc_subst_generic_ret_with_expected` (so07.7.15).
 fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_vt: ValueType, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let empty_ta: List<TypeArg> = []
     add_resolved_inst(name, tp, infer_from_params_with_expected(regs, tp, params, args, ret_vt, expected, empty_ta), regs.ambig, st)
 }
 
-/// Add (or merge) a generic-enum instantiation inferred from
-/// a constructor call. Looks up the variant's fields in the
-/// generic enum registry and infers from there.
-fn try_add_enum_inst(tn: string, variant: string, args: List<ExprId>, regs: GenRegs, st: CollectState) -> CollectState {
+/// Add (or merge) a generic-enum instantiation, optionally constrained by the
+/// construction's expected type (a `let`/return annotation). The annotation
+/// supplies args for params absent from the constructed variant's payload —
+/// `B` in `Pair<int,string> = Pair.L(7)` — so a single-ctor-site program
+/// resolves instead of raising F1002. With `expected = Unknown` it reduces to
+/// pure payload inference. Enum mirror of `try_add_struct_inst_with_expected`
+/// (ps3t.3.8 / qcvb).
+fn try_add_enum_inst_with_expected(tn: string, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return st }
     let entry = e!
-    st with { insts: merge_partial(tn, resolve_enum_type_args(regs.store, entry.tp, entry.variants, variant, args), st.insts) }
+    st with { insts: merge_partial(tn, resolve_enum_type_args_with_expected(regs.store, entry.tp, entry.variants, tn, variant, args, expected), st.insts) }
 }
 
-/// Add (or merge) a generic-struct instantiation inferred
-/// from a struct literal's field initializers.
-fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: CollectState) -> CollectState {
-    // No expected type → infer from the field initializers alone.
-    try_add_struct_inst_with_expected(name, inits, ValueType.Unknown, regs, st)
+/// Collect a bare variant access (`Opt.None`) on `ename`, when it names a
+/// generic enum. With no payload to infer from, the site's expected type is
+/// the only local source of args; without one we still merge an EMPTY partial
+/// so finalize knows this enum was referenced (another ctor site may complete
+/// the bindings via merging — finalize_insts catches the truly unresolvable).
+/// When `ename` isn't a generic enum this is an ordinary field access — recurse
+/// into the object.
+fn collect_bare_variant(obj: ExprId, ename: string, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    let e = generic_enum_lookup(regs.enums, ename)
+    if e == null { return collect_inst_expr(regs.store.exprs.get(obj), regs, st) }
+    st with { insts: merge_partial(ename, bare_variant_type_args_from_expected(e!.tp, ename, expected), st.insts) }
 }
 
 /// Add (or merge) a generic-struct instantiation, optionally constrained by the
@@ -1600,7 +1647,7 @@ fn try_add_struct_inst(name: string, inits: List<FieldInit>, regs: GenRegs, st: 
 /// param, or one behind an empty-collection field — so `Arena<int,int> =
 /// Arena { nodes: [], … }` resolves instead of raising F1002. With
 /// `expected = Unknown` it reduces to pure field inference. Mirror of
-/// `try_add_fn_inst` / `_with_expected` (qcvb).
+/// `try_add_fn_inst_with_expected` (qcvb).
 fn try_add_struct_inst_with_expected(name: string, inits: List<FieldInit>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_struct_lookup(regs.structs, name)
     if e == null { return st }
@@ -2417,6 +2464,10 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
         .Grouping(e) -> Expr.Grouping(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
         .Try(e) -> Expr.Try(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), expected, regs, insts), e))
         .StructLit(name, inits) -> rewrite_struct_lit_with_expected(name, inits, expected, regs, insts)
+        .EnumCtor(tn, variant, args) -> rewrite_enum_ctor_with_expected(tn, variant, args, expected, regs, insts)
+        // A bare generic-enum variant: pick the specialisation the annotation
+        // names (multi-inst enums would otherwise get first-inst-wins).
+        .FieldAccess(obj, f) -> rewrite_field_access(obj, f, expected, regs, insts)
         _ -> rewrite_expr(expr, regs, insts)
     }
 }
@@ -2490,6 +2541,11 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         // field types (`val: Box<int>`) that still need their monomorphized
         // names; mangle them so codegen resolves a concrete struct.
         .TypeDecl(name, tp, fields) -> .TypeDecl(name, tp, rewrite_field_types(fields, regs, insts))
+        // Same for a specialised enum's variant payloads (`Just(v: Maybe<int>)`)
+        // — the struct arm above had this from the start; the enum arm was
+        // missing, so a structurally-substituted payload type kept its bare
+        // generic name and codegen failed with "unknown enum".
+        .EnumDecl(name, tp, variants) -> .EnumDecl(name, tp, rewrite_variant_field_types(variants, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt_id(inner, regs, insts))
         .Impl(name, methods) -> .Impl(name, rewrite_stmt_ids(methods, regs, insts))
         .Defer(body) -> .Defer(rewrite_expr_id(body, regs, insts))
@@ -2499,7 +2555,12 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr_id(cond, regs, insts))
         .Parallel(body) -> .Parallel(rewrite_stmt_ids(body, regs, insts))
         .Select(arms) -> .Select(rewrite_select_arms_mono(arms, regs, insts))
-        .Const(n, vt, init) -> .Const(n, vt, regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init))
+        // Const mirrors rewrite_let_binding: mangle the declared type through
+        // the structural rewriter AND thread the ORIGINAL vt as the init's
+        // expected type. Latent today — typeck's const-evaluable gate rejects
+        // generic constructions before mono — but the symmetry means consts
+        // can't silently diverge from let/mut if that gate ever widens.
+        .Const(n, vt, init) -> .Const(n, rewrite_instance_vtype(vt, regs, insts), regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(init), vt, regs, insts), init))
         _ -> stmt
     }
 }
@@ -2581,25 +2642,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
         }
         .EnumCtor(tn, variant, args) -> rewrite_enum_ctor(tn, variant, args, regs, insts)
         .StructLit(name, inits) -> rewrite_struct_lit(name, inits, regs, insts)
-        .FieldAccess(obj, f) -> match regs.store.exprs.get(obj) {
-            .Ident(ename) -> {
-                if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(regs.store.reexpr(Expr.Ident(inst_mangled(insts, ename)), obj), f)
-                } else {
-                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
-                }
-            }
-            // Module-qualified enum reference (resolver rewrote
-            // `RgmList` → `mod::RgmList`). Same mangling logic.
-            .QualifiedIdent(ename) -> {
-                if generic_enum_lookup(regs.enums, ename) != null {
-                    Expr.FieldAccess(regs.store.reexpr(Expr.QualifiedIdent(inst_mangled(insts, ename)), obj), f)
-                } else {
-                    Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
-                }
-            }
-            _ -> Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
-        }
+        .FieldAccess(obj, f) -> rewrite_field_access(obj, f, ValueType.Unknown, regs, insts)
         .Binary(l, op, r) -> .Binary(rewrite_expr_id(l, regs, insts), op, rewrite_expr_id(r, regs, insts))
         .Logical(l, op, r) -> .Logical(rewrite_expr_id(l, regs, insts), op, rewrite_expr_id(r, regs, insts))
         .Unary(op, e) -> .Unary(op, rewrite_expr_id(e, regs, insts))
@@ -2701,11 +2744,12 @@ fn rewrite_field_inits(inits: List<FieldInit>, regs: GenRegs, insts: List<Inst>)
     out
 }
 
-/// Compute the mangled enum name for a constructor call site
-/// from its arg-inferred `List<TypeArg>`. Falls back to existing
-/// inst entries when site-local inference can't fully resolve.
-fn mangle_enum_at_site(store: NodeStore, tn: string, variant: string, tp: List<TypeParamEntry>, variants: List<Variant>, args: List<ExprId>, insts: List<Inst>) -> string {
-    let partial = resolve_enum_type_args(store, tp, variants, variant, args)
+/// Compute the mangled enum name for a constructor call site from its
+/// payload-inferred `List<TypeArg>`, optionally constrained by the site's
+/// expected type. Falls back to existing inst entries when site-local
+/// inference can't fully resolve.
+fn mangle_enum_at_site(store: NodeStore, tn: string, variant: string, tp: List<TypeParamEntry>, variants: List<Variant>, args: List<ExprId>, expected: ValueType, insts: List<Inst>) -> string {
+    let partial = resolve_enum_type_args_with_expected(store, tp, variants, tn, variant, args, expected)
     let result = inst_mangled_compatible(insts, tn, partial)
     // If compatible match failed (returned raw name), fall back to any entry
     // for this generic. Better to use a potentially wrong instantiation than
@@ -2717,11 +2761,63 @@ fn mangle_enum_at_site(store: NodeStore, tn: string, variant: string, tp: List<T
 /// the type name with the mangled specialisation that matches
 /// the inferred type-args.
 fn rewrite_enum_ctor(tn: string, variant: string, args: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> Expr {
+    // No expected type → mangle from the ctor payload alone.
+    rewrite_enum_ctor_with_expected(tn, variant, args, ValueType.Unknown, regs, insts)
+}
+
+/// Rewrite a generic enum ctor to its mangled specialisation, optionally
+/// constrained by the construction's expected type. Must compute the SAME type
+/// args as the collect-side `try_add_enum_inst_with_expected` so the mangled
+/// name matches the registered instantiation (else codegen references an
+/// unspecialised name). With `expected = Unknown` it mangles from the payload
+/// alone.
+fn rewrite_enum_ctor_with_expected(tn: string, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
     let new_args = rewrite_expr_list_ids(args, regs, insts)
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return Expr.EnumCtor(tn, variant, new_args) }
     let entry = e!
-    Expr.EnumCtor(mangle_enum_at_site(regs.store, tn, variant, entry.tp, entry.variants, args, insts), variant, new_args)
+    Expr.EnumCtor(mangle_enum_at_site(regs.store, tn, variant, entry.tp, entry.variants, args, expected, insts), variant, new_args)
+}
+
+/// Mangled name for a bare generic-enum variant site (`Opt.None`). Prefers the
+/// inst compatible with the expected-derived args — so a multi-instantiation
+/// enum picks the annotated specialisation — falling back to any entry when
+/// the site has no expectation (the pre-existing single-inst behavior). Must
+/// compute the SAME args as the collect-side `collect_bare_variant` so the
+/// mangled name matches the registered instantiation.
+fn mangle_bare_variant(ename: string, tp: List<TypeParamEntry>, expected: ValueType, insts: List<Inst>) -> string {
+    let partial = bare_variant_type_args_from_expected(tp, ename, expected)
+    if partial.length == 0 { return inst_mangled(insts, ename) }
+    let result = inst_mangled_compatible(insts, ename, partial)
+    if result == ename { inst_mangled(insts, ename) } else { result }
+}
+
+/// Rewrite a `FieldAccess(obj, f)` site. When `obj` names a generic enum this
+/// is a bare variant access — replace the name with its mangled specialisation
+/// (the one compatible with `expected`, when present). Otherwise it's an
+/// ordinary field read — recurse into the object.
+fn rewrite_field_access(obj: ExprId, f: string, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
+    match regs.store.exprs.get(obj) {
+        .Ident(ename) -> {
+            let e = generic_enum_lookup(regs.enums, ename)
+            if e != null {
+                Expr.FieldAccess(regs.store.reexpr(Expr.Ident(mangle_bare_variant(ename, e!.tp, expected, insts)), obj), f)
+            } else {
+                Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
+            }
+        }
+        // Module-qualified enum reference (resolver rewrote
+        // `RgmList` → `mod::RgmList`). Same mangling logic.
+        .QualifiedIdent(ename) -> {
+            let e = generic_enum_lookup(regs.enums, ename)
+            if e != null {
+                Expr.FieldAccess(regs.store.reexpr(Expr.QualifiedIdent(mangle_bare_variant(ename, e!.tp, expected, insts)), obj), f)
+            } else {
+                Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
+            }
+        }
+        _ -> Expr.FieldAccess(rewrite_expr_id(obj, regs, insts), f)
+    }
 }
 
 /// Variant of `inst_mangled` that prefers the inst whose
