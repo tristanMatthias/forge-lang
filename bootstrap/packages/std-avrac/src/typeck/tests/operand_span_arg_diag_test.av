@@ -142,11 +142,12 @@ spec "the remaining argument gates caret their operands too" {
         out.contains("F1000") && out.contains(":7:9")
     }
     then "a wrong-typed closure-call argument on its own line carets the argument" {
-        // The binding must be FnTyped for the closure gate to see declared
-        // params — a nested fn guarantees that (its desugar annotates the
-        // let). An UN-annotated `let f = (s: string) -> s` binding does not
-        // yet infer FnTyped, so its calls are ungated entirely — a separate
-        // inference gap, tracked independently of caret placement.
+        // The closure gate keys on the binding's FnTyped type. A nested fn
+        // is one source of that (its desugar annotates the let); a plain
+        // annotated-param lambda binding is another (see the specs below).
+        // This case uses the nested fn; the plain-lambda binding is covered
+        // by "annotated plain-lambda bindings carry FnTyped to the closure
+        // gate".
         let out = opspan_check_out("closure_arg",
             "fn main() {\n" +
             "    fn f(s: string) -> string { s }\n" +
