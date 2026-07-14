@@ -10,7 +10,8 @@
 use core.{Stmt, Expr, CompConfig, CompConfigPair, ChildrenSlot, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, StmtId, ExprId, SrcPos, byte_span_none}
 use parse.{Parser, StmtListIds}
 use core.{Tk}
-use core.{register_component_name}
+use core.{register_component_name, register_raw_body_component, component_is_raw_body}
+use core.{vtype_struct, body_declares_token_stream}
 
 impl Parser {
     // Keyword-free instantiation: `comp_name inst_name { ... }`
@@ -31,6 +32,65 @@ impl Parser {
         let body = self.parse_comp_block_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
         .Ok(self.alloc_stmt_leaf(Stmt.ComponentBlock(name, instance, config, body.ids)))
+    }
+
+    // Raw-body instantiation for `body: TokenStream` components
+    // (vez6.9): `sql q { SELECT * FROM t }`. The body is NOT
+    // structured Avra — it is captured as the verbatim source
+    // substring between BALANCED braces and stored as a single
+    // Stmt.TokenBody row for the @expand macro to parse as it sees
+    // fit. Registered per name by register_component_def, replacing
+    // parse_component_block_bare in the stmt_parsers dispatch.
+    fn parse_component_block_raw(self) -> Result<StmtId, string> {
+        let name = self.consume_identifier("expected component name")?
+        if !self.check(Tk.Identifier) {
+            // Not a component block (same fallback as the structured
+            // form) — treat the consumed name as an expression start.
+            return self.parse_statement()
+        }
+        let instance = self.consume_identifier("expected instance name")?
+        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
+        self.parse_raw_block_after_brace(name, instance)
+    }
+
+    /// Shared raw-capture tail — the caller consumed `comp inst {`.
+    /// Captures the verbatim body text, consumes the closing `}`, and
+    /// builds the ComponentBlock whose body is the single TokenBody row.
+    fn parse_raw_block_after_brace(self, name: string, instance: string) -> Result<StmtId, string> {
+        let text = self.capture_raw_body_text(name)?
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
+        let body_row = self.alloc_stmt_leaf(Stmt.TokenBody(text))
+        let empty_cfg: List<CompConfigPair> = []
+        let body_ids: List<StmtId> = [body_row]
+        .Ok(self.alloc_stmt_leaf(Stmt.ComponentBlock(name, instance, empty_cfg, body_ids)))
+    }
+
+    /// Scan tokens to the `}` balancing the already-consumed `{`,
+    /// WITHOUT consuming it, and return the verbatim source substring
+    /// in between (outer whitespace trimmed). Brace TOKENS drive the
+    /// depth count, so a `{` inside a string literal or comment never
+    /// miscounts — the documented limitation is only an UNBALANCED
+    /// bare brace token in the raw text.
+    fn capture_raw_body_text(self, comp: string) -> Result<string, string> {
+        let start = self.current_start
+        mut end = self.current_start
+        mut depth = 1
+        while depth > 0 {
+            if self.check(Tk.Eof) {
+                self.set_error("unterminated `body: TokenStream` block for `${comp}` — no balancing `}` before end of file")
+                return .Err("parse error")
+            }
+            if self.check(Tk.LeftBrace) { depth = depth + 1 }
+            if self.check(Tk.RightBrace) {
+                depth = depth - 1
+                if depth == 0 {
+                    end = self.current_start
+                    break
+                }
+            }
+            self.advance()
+        }
+        .Ok(self.source.substring(start, end).trim())
     }
 
     // `component name { ... }` — always a definition (no parens)
@@ -68,7 +128,7 @@ impl Parser {
             } else { [] }
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return .Err("parse error") }
-            register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+            self.register_component_def(name, body.ids)
             return .Ok(self.alloc_stmt_leaf(Stmt.ComponentDef(name, params, config, [], implements, body.ids)))
         }
 
@@ -90,6 +150,9 @@ impl Parser {
             let instance = self.current_lexeme
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return .Err("parse error") }
+            if component_is_raw_body(self.features, name) {
+                return self.parse_raw_block_after_brace(name, instance)
+            }
             let config = self.parse_comp_config_pairs()?
             let body = self.parse_comp_block_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return .Err("parse error") }
@@ -162,14 +225,53 @@ impl Parser {
         } else {
             []
         }
+        // Optional `body: TokenStream` (vez6.9) — declares that this
+        // component's instance blocks are RAW token bodies, captured
+        // verbatim for an @expand macro to parse. Sits after config /
+        // children. Stored in the def body as its natural field-decl
+        // shape (`let body: TokenStream` produces the same row via the
+        // `let` production, so both spellings register identically).
+        mut def_ids: List<StmtId> = []
+        if self.check(Tk.Identifier) && self.current_lexeme == "body" && self.peek_after_ident_is_colon() {
+            let bline = self.current_line
+            let bcol = self.current_column
+            self.advance()
+            if !self.consume(Tk.Colon, "expected `:` after `body`") { return .Err("parse error") }
+            let marker = self.consume_identifier("expected `TokenStream` after `body:`")?
+            if marker != "TokenStream" {
+                self.set_error("`body:` in a component declares a raw token body — the only valid type is `TokenStream`, got `${marker}`")
+                return .Err("parse error")
+            }
+            let vt = vtype_struct("TokenStream", 0)
+            self.push_body_elem(def_ids, self.alloc_binding_stmt(Stmt.Let("body", vt, self.alloc_leaf(Expr.None)), vt), bline, bcol)
+        }
         let body = self.parse_comp_def_body()?
         if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
             return .Err("parse error")
         }
+        mut all_ids = def_ids
+        for id in body.ids { all_ids.push(id) }
+        if children.length > 0 && body_declares_token_stream(self.store, all_ids) {
+            self.set_error("component `${name}` declares both `children { … }` and `body: TokenStream` — a raw token body has no structured children; pick one")
+            return .Err("parse error")
+        }
         // Register this component name for keyword-free instantiation
-        register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+        self.register_component_def(name, all_ids)
         let empty_p: List<ParamEntry> = []
-        .Ok(self.alloc_stmt_leaf(Stmt.ComponentDef(name, empty_p, config, children, implements, body.ids)))
+        .Ok(self.alloc_stmt_leaf(Stmt.ComponentDef(name, empty_p, config, children, implements, all_ids)))
+    }
+
+    /// Register a parsed component definition for keyword-free
+    /// instantiation. A def declaring `body: TokenStream` routes its
+    /// instances to the RAW token capture; everything else parses
+    /// structured component-block bodies.
+    fn register_component_def(self, name: string, body_ids: List<StmtId>) {
+        if body_declares_token_stream(self.store, body_ids) {
+            register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_raw())
+            register_raw_body_component(self.features, name)
+        } else {
+            register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+        }
     }
 
     // ── Children Schema (definition) — vez6.7 ──
@@ -474,6 +576,11 @@ impl Parser {
                 self.advance()
                 let inst_name = self.consume_identifier("expected instance name")?
                 if !self.consume(Tk.LeftBrace, "expected `{` after nested block name") { return .Err("parse error") }
+                if component_is_raw_body(self.features, comp_name) {
+                    let sid = self.parse_raw_block_after_brace(comp_name, inst_name)?
+                    self.push_body_elem(ids, sid, line, col)
+                    continue
+                }
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
                 if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }
@@ -486,6 +593,11 @@ impl Parser {
                 let comp_name = self.current_lexeme
                 self.advance()
                 self.advance()  // consume {
+                if component_is_raw_body(self.features, comp_name) {
+                    let sid = self.parse_raw_block_after_brace(comp_name, comp_name)?
+                    self.push_body_elem(ids, sid, line, col)
+                    continue
+                }
                 let nested_config = self.parse_comp_config_pairs()?
                 let nested_body = self.parse_comp_block_body()?
                 if !self.consume(Tk.RightBrace, "expected `}` at end of nested block") { return .Err("parse error") }

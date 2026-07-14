@@ -137,6 +137,11 @@ export type Registry = {
     stmt_evals: ptr,
     decl_parsers: ptr,
     stmt_parsers: ptr,
+    // Component names declared with `body: TokenStream` (vez6.9) —
+    // parse-time routing state alongside the name's stmt_parsers
+    // handler, so every instance-block production (keyword-free,
+    // keyword-prefixed, nested) agrees on raw-vs-structured capture.
+    raw_body_comps: ptr,
 }
 
 /// Empty registry — every map is freshly allocated. Use `register`
@@ -153,6 +158,7 @@ export fn registry_new() -> Registry {
         stmt_evals: avra_intmap_new(),
         decl_parsers: avra_map_new_cstr(),
         stmt_parsers: avra_map_new_cstr(),
+        raw_body_comps: avra_map_new_cstr(),
     }
 }
 
@@ -276,6 +282,17 @@ export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
 /// pseudo-keyword in the stmt parser.
 export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Result<StmtId, string>) {
     avra_map_set_cstr(reg.stmt_parsers, name, handler)
+}
+
+/// Mark `name` as a `body: TokenStream` component (vez6.9): its
+/// instance blocks capture raw tokens instead of structured Avra.
+export fn register_raw_body_component(reg: Registry, name: string) {
+    avra_map_set_cstr(reg.raw_body_comps, name, 1)
+}
+
+/// True when `name` was declared with `body: TokenStream`.
+export fn component_is_raw_body(reg: Registry, name: string) -> bool {
+    avra_map_get_cstr(reg.raw_body_comps, name) != 0
 }
 
 // ── Build the registry ──

@@ -1459,6 +1459,11 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
                       string_lit_expr(instance),
                       construct_comp_config_pair_list(store, config),
                       construct_stmt_ids(store, body)))
+        // The raw body of a `body: TokenStream` component instance —
+        // without this arm the passthrough would hand the macro a NoOp
+        // and silently lose the text. string_lit_expr embeds the raw
+        // text verbatim (no re-parse), so quotes/braces inside survive.
+        .TokenBody(text) -> stmt_ctor(store, "TokenBody", one_arg(string_lit_expr(text)))
         // Step 4 nested @expand: a macro returning code that itself
         // carries an @expand annotation needs the Annotated layer to
         // roundtrip through quote construction so the outer expand

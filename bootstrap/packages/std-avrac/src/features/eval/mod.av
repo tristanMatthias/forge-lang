@@ -3053,6 +3053,11 @@ fn enum_value_to_stmt(store: NodeStore, v: Value) -> Result<Stmt, string> {
             let body = list_value_to_stmt_id_list(store, p[3])?
             .Ok(Stmt.ComponentBlock(comp_v.text, inst_v.text, config, body))
         }
+        "TokenBody" -> {
+            if p.length != 1 { return .Err("decode: bad payload") }
+            let text_v: Value = p[0]
+            .Ok(Stmt.TokenBody(text_v.text))
+        }
         "Annotated" -> {
             if p.length != 2 { return .Err("decode: bad payload") }
             let annots = list_value_to_annotation_list(store, p[0])?

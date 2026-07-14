@@ -11,7 +11,7 @@
 // Phase 1 of Components V2 (vez6.1) — see
 // docs/2026_05_08_COMPONENTS_V2_DESIGN.md §3.2.
 
-use core.{Expr, CompConfigPair, StmtId, NodeStore}
+use core.{Expr, CompConfigPair, StmtId, NodeStore, vtype_struct_name}
 
 // ── Function lookup ──
 
@@ -70,3 +70,29 @@ export fn config_lookup(pairs: List<CompConfigPair>, key: string) -> Expr? {
 export fn config_has(pairs: List<CompConfigPair>, key: string) -> bool {
     config_lookup(pairs, key) != null
 }
+
+// ── TokenStream bodies (vez6.9) ──
+
+/// True when this def-body row is the `body: TokenStream` declaration
+/// (stored as its natural field-decl shape: a `body`-named binding of
+/// the marker type `TokenStream`). Shared by the parser (raw-capture
+/// registration + children-conflict check) and component expansion
+/// (the missing-@expand diagnostic) so the two can't disagree.
+export fn stmt_is_token_body_decl(store: NodeStore, id: StmtId) -> bool {
+    match store.stmts.get(id) {
+        .Let(name, vt, _) -> name == "body" && vtype_struct_name(vt) == "TokenStream"
+        _ -> false
+    }
+}
+
+/// True when any row of a component def body declares `body: TokenStream`.
+export fn body_declares_token_stream(store: NodeStore, body: List<StmtId>) -> bool {
+    for id in body {
+        if stmt_is_token_body_decl(store, id) { return true }
+    }
+    false
+}
+
+// The macro-side raw-text accessor lives in features/comptime/synth.av
+// (`token_body_text`) — macros have no store handle, so they read the
+// row through the synth_deref_stmt identity shim instead.

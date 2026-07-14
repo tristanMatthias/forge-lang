@@ -6,7 +6,7 @@
 component_decl   = "component" IDENT implements? "{" component_body "}"
 implements       = "implements" ident_list
 
-component_body   = config_block? children_block? method*
+component_body   = config_block? children_block? token_body_decl? method*
 
 config_block     = "config" "{" config_field ("," config_field)* "}"
 config_field     = IDENT ":" type_expr ("=" expression)?
@@ -14,8 +14,12 @@ config_field     = IDENT ":" type_expr ("=" expression)?
 children_block   = "children" "{" children_field ("," children_field)* "}"
 children_field   = IDENT ":" "List" "<" IDENT ">"
 
+token_body_decl  = "body" ":" "TokenStream"      # raw instance bodies (§3.6.4)
+
 component_block  = IDENT IDENT? "{" component_block_body "}"
                                        # `<comp_name> <instance>? { config, … }`
+                                       # (raw token text when the def declares
+                                       #  `body: TokenStream`)
 ```
 
 ## Semantics
@@ -77,6 +81,39 @@ untouched and are consumed by the comptime macro pipeline
 (`features/comptime/expand_macro.av`). The `cli`/`command`
 blocks in `packages/cli/src/main.av` (macros in
 `@std.cli.cmdgen`) are the canonical example.
+
+## `body: TokenStream` — free-form DSL bodies (§3.6.4)
+
+A component declaring `body: TokenStream` opts its instance blocks
+out of structured parsing entirely: the parser captures the
+VERBATIM source between balanced braces as a single
+`Stmt.TokenBody(text)` row, and the `@expand` macro reads it via
+`token_body_text(body)` (`@std.avrac.features.comptime`) and
+parses it however it wants — SQL, regex, HTML, anything.
+
+```avra
+@expand(parse_sql)
+component sql {
+    body: TokenStream
+}
+
+sql q { SELECT * FROM users WHERE age > 18 }
+```
+
+Rules and limits:
+
+- `body: TokenStream` is mutually exclusive with `children { … }`
+  (parse error), and REQUIRES `@expand` — a raw body with no macro
+  to parse it is F4101.
+- Brace counting is TOKEN-based: `{`/`}` inside string literals or
+  comments never miscount. The one limitation: the body cannot
+  contain an UNBALANCED bare brace token (and must lex as Avra
+  tokens — an unterminated string inside the body is a lex error).
+- Outer whitespace is trimmed; interior text (spacing, strings,
+  comments) is preserved verbatim. `fmt` re-emits the raw text
+  between the braces, so format → reparse is a fixed point.
+- The spelling `let body: TokenStream` parses to the same
+  declaration row and behaves identically.
 
 The former **template flavour** — `fn init()` bodies inlined at
 the instantiation site, `self.__parent`/`self.__parent_name`
