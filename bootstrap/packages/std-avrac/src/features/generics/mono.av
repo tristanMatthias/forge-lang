@@ -1170,14 +1170,27 @@ fn rewrite_param_types(params: List<ParamEntry>, regs: GenRegs, insts: List<Inst
 /// untouched, so the string round-trip never corrupts a non-generic type.
 fn rewrite_instance_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
     if vtype_is_unknown(vt) { return vt }
-    // A wrapper type (`T?`) names no generic instance itself, so the string-
-    // render path below would leave it untouched — but its INNER type may be a
-    // generic instance that must be mangled (`Box<int>?` -> `Box__int?`).
-    // Recurse structurally so the inner gets the same treatment a bare param
-    // would; otherwise a method/field on the unwrapped value dispatches to the
-    // un-monomorphized name (`undefined method Box.count`).
+    // A built-in CONTAINER type (`T?`, `List<T>`, `Map<K,V>`, `(A, B)`,
+    // `Channel<T>`, `Task<T>`, `A | B`, `fn(A) -> B`) names no user generic
+    // itself — its base isn't in the generic registries, so the string-render
+    // path below leaves the WHOLE type (wrapper AND contents) untouched. But its
+    // INNER type may be a generic instance that must be mangled: `Box<int>?` ->
+    // `Box__int?`, `List<DenseTable<Id,V>>` -> `List<DenseTable__Id__V>`. Recurse
+    // structurally so each inner gets the same treatment a bare field/param
+    // would; otherwise a method on the unwrapped/indexed value dispatches to the
+    // un-monomorphized name (`undefined method DenseTable.get` on `store.list[i].get()`).
+    // Mirror of the collector's `collect_inst_from_vtype` wrapper recursion —
+    // a user-generic nominal (`.Struct`/`.Enum`/`.Newtype`) is intentionally NOT
+    // intercepted here: the string path mangles it (and its nested args) whole.
     match vt {
         .Optional(inner) -> return ValueType.Optional(rewrite_instance_vtype(inner, regs, insts))
+        .List(elem) -> return ValueType.List(rewrite_instance_vtype(elem, regs, insts))
+        .Map(k, v) -> return ValueType.Map(rewrite_instance_vtype(k, regs, insts), rewrite_instance_vtype(v, regs, insts))
+        .Tuple(elems) -> return ValueType.Tuple(rewrite_instance_vtypes(elems, regs, insts))
+        .Channel(elem) -> return ValueType.Channel(rewrite_instance_vtype(elem, regs, insts))
+        .Task(r) -> return ValueType.Task(rewrite_instance_vtype(r, regs, insts))
+        .Union(types) -> return ValueType.Union(rewrite_instance_vtypes(types, regs, insts))
+        .FnTyped(params, r) -> return ValueType.FnTyped(rewrite_instance_vtypes(params, regs, insts), rewrite_instance_vtype(r, regs, insts))
         _ -> {}
     }
     let full = vtype_render_full(vt)
@@ -1196,6 +1209,18 @@ fn rewrite_instance_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> Va
     let disp = vtype_display(vt)
     let disp_mangled = rewrite_type_name(disp, regs, insts)
     if disp_mangled != disp { vtype_from_type_string(disp_mangled) } else { vt }
+}
+
+/// Map `rewrite_instance_vtype` over a list of types (Tuple / Union elements,
+/// FnTyped params). Mirror of `collect_inst_from_vtypes` on the rewrite side.
+fn rewrite_instance_vtypes(vts: List<ValueType>, regs: GenRegs, insts: List<Inst>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < vts.length {
+        out.push(rewrite_instance_vtype(vts[i], regs, insts))
+        i = i + 1
+    }
+    out
 }
 
 /// Rewrite generic-instance references in a specialised struct's field types
