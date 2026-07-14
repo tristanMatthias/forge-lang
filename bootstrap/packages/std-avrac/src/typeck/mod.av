@@ -2210,19 +2210,17 @@ export fn int_into_pointer_slot(tc: TC, arg_ty: ValueType, declared: ValueType) 
     if !(arg_ty is .Int) { return false }
     let inner = vtype_strip_optional(declared)
     if vtype_mentions_unresolved(tc, inner) { return false }
-    // Str/Bytes are the original slots; `.Channel` extends the set to the
-    // structural runtime-handle kind (`let ch: Channel<int> = 42` reads int 42
-    // as a channel handle — a wild store). Kept OUT of the broad heap-pointer
-    // set (Struct/List/Map/Enum) on purpose: those are where the ~140 `.Int`
-    // inference-artifact fallbacks land in the compiler's own source, so gating
-    // them here would mass-false-positive (the an9 Int-vs-Unknown limitation);
-    // `.Channel`-typed slots are rare (~16 sites, all genuine) and never an
-    // artifact target (ps3t.4.7). NB: `Task<T>` is NOT here — a `Task<int>`
-    // ANNOTATION parses to the nominal `Enum("Task", …)` (no `"Task"` arm in
-    // type_expr_to_vtype, unlike Channel), so `int → Task-slot` is the general
-    // int→Enum case that rides an9. A Task VALUE → int-slot is caught in the
-    // other direction, by enum_into_value_scalar_slot (Task values are Enum).
-    inner is .Str || inner is .Bytes || inner is .Channel
+    // Str/Bytes are the original slots; `.Channel`/`.Task` extend the set to the
+    // structural runtime-handle kinds (`let ch: Channel<int> = 42` / `let t:
+    // Task<int> = 42` read int 42 as a handle pointer — a wild store). Both now
+    // parse structurally (ps3t.4.8 gave Task<T> a type_expr_to_vtype arm, so it
+    // is `.Task`, not the nominal `Enum("Task")` it used to be). Kept OUT of the
+    // broad heap-pointer set (Struct/List/Map/Enum) on purpose: those are where
+    // the ~140 `.Int` inference-artifact fallbacks land in the compiler's own
+    // source, so gating them here would mass-false-positive (the an9 Int-vs-
+    // Unknown limitation); Channel/Task slots are rare and never an artifact
+    // target.
+    inner is .Str || inner is .Bytes || inner is .Channel || inner is .Task
 }
 
 /// True iff `declared`, with its `Optional` stripped, is a CONCRETE value-scalar
@@ -2261,41 +2259,40 @@ export fn enum_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: Value
     slot_is_concrete_value_scalar(tc, declared)
 }
 
-/// Sibling of `enum_into_value_scalar_slot` for the structural `Channel` kind: a
-/// `Channel` value — a pointer-passed runtime handle — flowing into a value-scalar
-/// slot (int/bool/float/…) is a wild store, the handle pointer read as an integer
-/// (`fn want(x: int); want(ch)` where `ch: Channel<int>`). Scoped to `.Channel`
-/// on purpose: like `.Enum`, it is a distinct ValueType kind — never an inference
-/// artifact and never a bare type-param (those surface as `.Struct`-form), so the
-/// check is false-positive-free, unlike a broad heap-pointer check that would
-/// flag a `.Struct("T")` type-param which may instantiate to a scalar (ps3t.4.7).
-/// NB: `Task` values are NOT here — a `Task<T>` is the nominal `Enum("Task", …)`
-/// (no structural `"Task"` arm in type_expr_to_vtype, unlike Channel), so a Task
-/// value into a scalar slot is already caught by `enum_into_value_scalar_slot`.
-/// When ps3t.4.8 makes Task structural, add `.Task` here (and this doc note goes).
-export fn channel_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
-    if !(arg_ty is .Channel) { return false }
+/// Sibling of `enum_into_value_scalar_slot` for the structural runtime-handle
+/// kinds: a `Channel` or `Task` value — a pointer-passed runtime handle —
+/// flowing into a value-scalar slot (int/bool/float/…) is a wild store, the
+/// handle pointer read as an integer (`fn want(x: int); want(ch)` where
+/// `ch: Channel<int>`). Scoped to `.Channel`/`.Task` on purpose: like `.Enum`,
+/// each is a distinct ValueType kind — never an inference artifact and never a
+/// bare type-param (those surface as `.Struct`-form), so the check is
+/// false-positive-free, unlike a broad heap-pointer check that would flag a
+/// `.Struct("T")` type-param which may instantiate to a scalar. (`.Task` joined
+/// here in ps3t.4.8, once Task<T> annotations/values became structural `.Task`
+/// rather than the nominal `Enum("Task")` the enum check used to cover.)
+export fn runtime_handle_into_value_scalar_slot(tc: TC, arg_ty: ValueType, declared: ValueType) -> bool {
+    if !((arg_ty is .Channel) || (arg_ty is .Task)) { return false }
     slot_is_concrete_value_scalar(tc, declared)
 }
 
 /// THE narrow wild-store layout-conflict predicate (nlzq). True iff storing a
 /// value of type `actual` into a slot of declared type `expected` is a layout
 /// lie: a generic-arg conflict (`Box<int>` vs `Box<string>`), an int into a
-/// pointer slot (`incl_int`), or a `List`/`Map`/enum/Channel value into a
+/// pointer slot (`incl_int`), or a `List`/`Map`/enum/Channel/Task value into a
 /// value-scalar slot (`incl_collection` — these pointer-into-scalar checks ride
 /// the same toggle). Unions the wild-store checks that were hand-rolled, and
 /// individually forgotten, across the binding / reassign / call / arg positions
 /// (the dominant root cause behind the 63wu arc).
 ///
-/// This is the NARROW family: the int / collection / enum / channel checks are
-/// deliberately scoped subsets (int→Str/Bytes/Channel only; List/Map/Enum/Channel
-/// arg only) because these positions hold INFERENCE-ARTIFACT-prone values —
-/// typeck hands back `.Int` as a fallback for ~140 unresolved exprs on the
-/// compiler's own source, so the full scalar↔ptr divide (`layout_conflict`)
+/// This is the NARROW family: the int / collection / enum / handle checks are
+/// deliberately scoped subsets (int→Str/Bytes/Channel/Task only; List/Map/Enum/
+/// Channel/Task arg only) because these positions hold INFERENCE-ARTIFACT-prone
+/// values — typeck hands back `.Int` as a fallback for ~140 unresolved exprs on
+/// the compiler's own source, so the full scalar↔ptr divide (`layout_conflict`)
 /// would mass-false-positive here. Each arg-side check is scoped to a distinct
 /// ValueType kind (never a bare type-param, which surfaces as `.Struct`-form),
-/// keeping it false-positive-free. (`Task` needs no arm of its own: a `Task<T>`
-/// is the nominal `Enum("Task", …)`, so the `enum` checks already cover it.)
+/// keeping it false-positive-free. (`Channel` and `Task` are both structural
+/// runtime-handle kinds since ps3t.4.8.)
 /// Reliable element / value / payload positions use the broad
 /// `nested_layout_conflict` instead. The two toggles tune which subset a
 /// position needs (both default on; see the three wrappers below).
@@ -2311,7 +2308,7 @@ export fn assign_layout_conflict(tc: TC, actual: ValueType, expected: ValueType,
         || (incl_int && int_into_pointer_slot(tc, actual, expected))
         || (incl_collection && collection_into_value_scalar_slot(tc, actual, expected))
         || (incl_collection && enum_into_value_scalar_slot(tc, actual, expected))
-        || (incl_collection && channel_into_value_scalar_slot(tc, actual, expected))
+        || (incl_collection && runtime_handle_into_value_scalar_slot(tc, actual, expected))
 }
 
 /// THE assignability gate (nlzq): the SINGLE place a "value meets an expected
