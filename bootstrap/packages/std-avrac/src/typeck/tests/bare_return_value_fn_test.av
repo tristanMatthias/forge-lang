@@ -1,0 +1,77 @@
+// WHY: t-4qzd — a bare `return` (Stmt.ReturnEmpty, void) inside a function
+// whose declared return type is a value type (`-> int`, `-> string`, `-> T?`,
+// …) was NOT rejected by the type checker. Codegen then emitted a void return
+// where a value is required, and the caller read uninitialised memory as the
+// result — a garbage-value read that SIGSEGVs for a pointer-repr type. The gate
+// lives in tc_check_stmt_returns' `.ReturnEmpty` arm, which runs ONLY for
+// value-returning fns (void fns skip the whole return-check pass in
+// tc_check_fn_body), so any bare `return` reaching it is unambiguously a
+// missing value. Discovered while writing t-uv1n's newline specs, where a
+// bare `return` in a `-> int` helper returned garbage that happened to be 0.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Sentinel on a clean compile, so positive controls assert real success rather
+// than the mere absence of an F-code.
+fn br_out(source: string) -> string {
+    let path = "/tmp/avra_4qzd.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "bare return in a value-returning fn is F1000 (t-4qzd)" {
+    then "a bare return in a `-> int` fn is rejected" {
+        let out = br_out("fn g() -> int { return }")
+        out.contains("F1000") && !out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare return in a `-> string` fn is rejected (the SIGSEGV shape)" {
+        let out = br_out("fn g() -> string { return }")
+        out.contains("F1000")
+    }
+    then "a bare return nested in an `if` of a value fn is rejected" {
+        let out = br_out("fn g(n: int) -> int {
+    if n > 0 { return }
+    n
+}")
+        out.contains("F1000")
+    }
+    then "a bare return in a nullable `-> int?` fn is rejected (write `return null`)" {
+        let out = br_out("fn g(n: int) -> int? {
+    if n > 0 { return }
+    5
+}")
+        out.contains("F1000")
+    }
+    then "the diagnostic names the fn and its return type" {
+        let out = br_out("fn make_label() -> string { return }")
+        out.contains("make_label") && out.contains("string")
+    }
+}
+
+spec "bare return stays legal where no value is required (t-4qzd — no over-fire)" {
+    then "a bare return in a void fn compiles" {
+        let out = br_out("fn v(n: int) {
+    if n > 0 { return }
+    println(\"ok\")
+}
+fn main() { v(1) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an explicit `return null` in a nullable fn compiles" {
+        let out = br_out("fn h(n: int) -> int? {
+    if n > 0 { return null }
+    5
+}
+fn main() { println(\"x\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an explicit `return <value>` in a value fn compiles" {
+        let out = br_out("fn g(n: int) -> int {
+    if n > 0 { return 99 }
+    n
+}
+fn main() { println(string(g(1))) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

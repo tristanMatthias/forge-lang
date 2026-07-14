@@ -2707,6 +2707,19 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             }
             r.tc
         }
+        .ReturnEmpty -> {
+            // t-4qzd: this walker runs ONLY for value-returning fns (void
+            // fns skip the whole return-check pass in tc_check_fn_body), so a
+            // bare `return` here yields no value where one is required. Codegen
+            // would emit a void return and the caller reads uninitialised
+            // memory (a garbage-value SIGSEGV for a ptr-repr type). Reject it,
+            // requiring an explicit `return <value>` (or `return null` for a
+            // nullable). Unknown declared types stay unchecked (fallback path).
+            if vtype_is_unknown(declared) { return tc }
+            let msg = "function `${fn_name}` returns `${vtype_render_full(declared)}`, but this bare `return` produces no value — write `return <value>`"
+            let cause = "declared return type is `${vtype_render_full(declared)}`"
+            tc_report_with_cause(tc, DiagCode.TypeMismatch, msg, cause)
+        }
         .Block(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
         .If(_, then_branch, else_branch) -> {
             let after_then = tc_check_stmt_returns(tc, fn_name, declared, tc.nodes.stmts.get(then_branch))
