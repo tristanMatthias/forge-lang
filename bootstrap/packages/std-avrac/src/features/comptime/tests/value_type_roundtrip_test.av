@@ -86,6 +86,34 @@ spec "ValueType.Map(.Str, .Int) survives quote roundtrip" {
     }
 }
 
+spec "ValueType.Optional(.Int) survives quote roundtrip (vez6.3.14 decoder fix)" {
+    then "fn -> int? renders with the nullable return type, not Unknown" {
+        // enum_value_to_value_type was missing the Optional (and Channel)
+        // arm — a nullable return type decoded back as Unknown (the
+        // Let/Function-vtype fallback swallowed the decode error). This
+        // pins the added arm; also the layout-correctness fix that gives
+        // nullable AST fields their `ptr` (Optional) type instead of i64.
+        let out = run_expand_e2e("opt",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build_opt() -> Stmt {\n" +
+            "    return quote stmt {\n" +
+            "        fn _gen_opt() -> int? { return none }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build_opt)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            MAIN_HEADER + " {\n" +
+            "}\n")
+        out.contains("fn _gen_opt")
+            && out.contains("-> int?")
+            && !out.contains("_gen_opt() -> <unknown>")
+    }
+}
+
 spec "gap 1.B: typed bool return roundtrips" {
     then "fn -> bool renders with explicit `bool` return type" {
         let out = run_expand_e2e("bool",
