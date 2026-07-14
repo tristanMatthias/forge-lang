@@ -1,0 +1,80 @@
+// A match EXPRESSION whose FIRST arm diverges (`return`/`break`) must be typed
+// by its PRODUCING arms, never `.Unknown` (spec §6: no layout from an
+// under-determined type). Codegen used to adopt the first arm's body type
+// unconditionally; a diverging first arm has an `.Unknown` body value, so the
+// whole `let x = match … { .Err -> return, .Ok(v) -> v }` was typed `.Unknown`
+// and laid out as i64 — even though `x` holds the producing arm's value. Any
+// downstream use that needs the real type (a following `match`, a field access)
+// then mishandled it. Fixed by skipping non-producing (diverging/Void) arms in
+// codegen's result-type tracking, matching typeck's `arm_type_skip`.
+
+enum Shade { Dim, Bright }
+type Box = { n: int, label: string }
+
+// The result-binding `s` must be typed `Shade` (from the `.Ok` arm), NOT
+// `.Unknown` from the diverging `.Err -> return` arm — otherwise the following
+// `match s` sees an under-determined subject and can't dispatch the variants.
+fn classify(r: Result<Shade, string>) -> string {
+    let s = match r {
+        .Err(e) -> return "error:" + e
+        .Ok(shade) -> shade
+    }
+    match s {
+        .Dim -> "dim"
+        .Bright -> "bright"
+    }
+}
+
+// The result-binding `b` must be typed `Box` (from `.Ok`), so the field access
+// `b.n` / `b.label` reads the struct layout — an `.Unknown`/i64 binding would
+// GEP through the wrong type.
+fn box_sum(r: Result<Box, string>, extra: int) -> int {
+    let b = match r {
+        .Err(e) -> return -1
+        .Ok(box) -> box
+    }
+    b.n + extra
+}
+
+fn box_label(r: Result<Box, string>) -> string {
+    let b = match r {
+        .Err(e) -> return "none"
+        .Ok(box) -> box
+    }
+    b.label
+}
+
+// Optional-subject match with a diverging FIRST arm (`none -> return`). The
+// optional path uses a different result-type tracking pattern; this confirms
+// it too binds `s` to the producing arm's `Shade`, not `.Unknown`.
+fn opt_classify(o: Shade?) -> string {
+    let s = match o {
+        none -> return "empty"
+        let shade -> shade
+    }
+    match s {
+        .Dim -> "dim"
+        .Bright -> "bright"
+    }
+}
+
+spec "a diverging-first-arm match expression is typed by its producing arm" {
+    then "enum producing arm: the binding is a Shade the next match can dispatch" {
+        classify(Result.Ok(Shade.Bright)) == "bright" && classify(Result.Ok(Shade.Dim)) == "dim"
+    }
+    then "the diverging first arm still diverges (returns) correctly" {
+        classify(Result.Err("boom")) == "error:boom"
+    }
+    then "struct producing arm: the binding is a Box whose int field reads back" {
+        box_sum(Result.Ok(Box { n: 40, label: "x" }), 2) == 42
+    }
+    then "struct producing arm: the binding's string field reads back" {
+        box_label(Result.Ok(Box { n: 1, label: "hello" })) == "hello"
+    }
+    then "struct case still diverges on Err" {
+        box_sum(Result.Err("no"), 5) == -1 && box_label(Result.Err("no")) == "none"
+    }
+    then "optional subject with a diverging first arm binds the producing Shade" {
+        opt_classify(Shade.Bright) == "bright" && opt_classify(Shade.Dim) == "dim" && opt_classify(null) == "empty"
+    }
+}
