@@ -246,9 +246,12 @@ export fn sym_id_for(qualified_name: string) -> int {
 export const METADATA_MAGIC: int = 0x444D5641
 export const METADATA_VERSION_MAJOR: int = 1
 // Minor 3: VT_MAP now carries key + value ValueType payloads (was a payloadless
-// tag). The compiler-binary fingerprint already invalidates stale caches, but
-// the bump records the wire-format evolution.
-export const METADATA_VERSION_MINOR: int = 3
+// tag). Minor 4 (nsvk): VT_STRUCT now carries its generic type_args (a trailing
+// vtype_list), mirroring VT_ENUM — so a generic struct's args survive a module
+// boundary and cross-module field substitution fires. The compiler-binary
+// fingerprint already invalidates stale caches, but the bump records the
+// wire-format evolution.
+export const METADATA_VERSION_MINOR: int = 4
 
 /// Stable section IDs. Kept in this enum so the byte values are
 /// pinned — adding a new section appends; never reorder or reuse a
@@ -401,10 +404,17 @@ impl BytesWriter {
             // already have the local TypeRegistry can rebuild id from
             // the name; cross-unit decoders use sym_id to follow the
             // cross-reference.
-            .Struct(name, _, _) -> {
+            .Struct(name, args, _) -> {
                 self.u8(VT_STRUCT)
                 self.string(name)
                 self.u64_le(sym_id_for(name))
+                // Carry the generic type_args (nsvk), mirroring the `.Enum` arm
+                // below. Without this a `Box<int>` decodes cross-module as `Box`
+                // with empty args, so field-access substitution
+                // (tc_specialize_field_ty) no-ops and `b.val` stays the
+                // unsubstituted `T`. Empty args round-trip equal, so the
+                // non-generic case is unchanged.
+                self.vtype_list(args)
             }
             .Enum(name, args, _) -> {
                 self.u8(VT_ENUM)
@@ -613,7 +623,8 @@ impl BytesReader {
         if tag == VT_STRUCT {
             let name = self.string()
             let _id = self.u64_le()
-            return vtype_struct(name, 0)
+            let args = self.vtype_list()
+            return ValueType.Struct(name, args, 0)
         }
         if tag == VT_ENUM {
             let name = self.string()
