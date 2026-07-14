@@ -1,9 +1,9 @@
 // WHY: codegen for map literals {"key": value, ...} and map operations.
 // Maps are backed by the C-runtime avra_map_*_cstr functions.
 
-use core.{Expr, ExprId, VarBinding, ValueType}
+use core.{Expr, ExprId, VarBinding, ValueType, vtype_map_value, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
-use codegen.{emit_single_arg}
+use codegen.{emit_single_arg, optional_repr_tagged, emit_optional_some, emit_optional_none}
 
 /// Codegen for `{k: v, k: v, ...}`. Allocates a fresh
 /// `avra_map_new_cstr` and inserts every entry via
@@ -37,12 +37,18 @@ fn insert_map_entries(ctx: Ctx, env: List<VarBinding>, entries: List<ExprId>, ma
 /// Dispatch a method call on a Map value. Maps method names to
 /// the corresponding `avra_map_*_cstr` runtime call. Unknown
 /// methods produce a "not implemented" error.
-export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
+///
+/// `map_ty` is the receiver's `Map<K, V>` type. The value column is an i64 in
+/// the runtime, so `.get` / `.values` used to stamp their result `.Unknown` —
+/// an under-determined type that hit the `.Unknown -> i64t` layout guess (a
+/// representation decided from a type that doesn't determine one). We now thread
+/// `V` through (`vtype_map_value`): `.get` yields `V?` (`emit_map_get`),
+/// `.values` yields `List<V>`, so the boundary consumes a fully-resolved type
+/// instead of guessing.
+export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, map_ty: ValueType, method: string, args: List<ExprId>) -> Result<EmitValue, string> {
+    let val_ty = vtype_map_value(map_ty)
     match method {
-        "get" -> {
-            let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("avra_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Unknown)
-        }
+        "get" -> return emit_map_get(ctx, env, map_ptr, val_ty, args)
         "has" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             return ok_emit(ctx.call("avra_map_has_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Bool)
@@ -50,13 +56,50 @@ export fn emit_map_method_call(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, me
         "set" -> return emit_map_set(ctx, env, map_ptr, args)
         "len" or "length" -> return ok_emit(ctx.call("avra_map_len_cstr", [map_ptr]), .Int)
         "keys" -> return ok_emit(ctx.call("avra_map_keys_cstr", [map_ptr]), .List(.Str))
-        "values" -> return ok_emit(ctx.call("avra_map_values_cstr", [map_ptr]), .List(.Unknown))
+        "values" -> return ok_emit(ctx.call("avra_map_values_cstr", [map_ptr]), .List(val_ty))
         "remove" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             return ok_emit(ctx.call("avra_map_remove_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]), .Void)
         }
         _ -> err_emit("map method `${method}` not implemented")
     }
+}
+
+/// Codegen for `map.get(key)` → `V?`. The runtime value column is an i64
+/// (0 = absent), so the optional is built per the `V` repr (spec Axis 10 §3):
+///   - pointer-backed V (Str/Struct/List/…): the null-pointer NICHE — the raw
+///     i64 IS the optional (0 = none), so `cast_to` (inttoptr) is the whole job.
+///   - value-scalar V (int/bool/float): BOXED. A raw 0 is ambiguous (a stored 0
+///     vs absent), so presence is decided by `has`; a present value is boxed via
+///     `emit_optional_some` (so `Some(0)` ≠ none), absent stays the null pointer.
+///   - unresolved V (Unknown): the map's value type wasn't resolved upstream — a
+///     SEPARATE under-determination, out of scope here. Preserve the legacy
+///     raw-i64 / `.Unknown` result exactly (keeps the compiler's own untyped-map
+///     gets byte-identical); it flows to the optional path once V is resolved.
+fn emit_map_get(ctx: Ctx, env: List<VarBinding>, map_ptr: ptr, val_ty: ValueType, args: List<ExprId>) -> Result<EmitValue, string> {
+    let arg_r = emit_single_arg(ctx, env, args)?
+    let key_ptr = ctx.to_ptr(arg_r.value, "map_key")
+    if vtype_is_unknown(val_ty) {
+        return ok_emit(ctx.call("avra_map_get_cstr", [map_ptr, key_ptr]), .Unknown)
+    }
+    let opt_ty = ValueType.Optional(val_ty)
+    if !optional_repr_tagged(val_ty) {
+        // pointer-backed V: the null-pointer niche — inttoptr the raw column.
+        let raw = ctx.call("avra_map_get_cstr", [map_ptr, key_ptr])
+        return ok_emit(ctx.cast_to(raw, opt_ty), opt_ty)
+    }
+    // value-scalar V: box present (Some(0) ≠ none), null for absent, presence
+    // decided by `has` since the raw column can't distinguish a stored 0.
+    let present = ctx.call("avra_map_has_cstr", [map_ptr, key_ptr])
+    let raw = ctx.call("avra_map_get_cstr", [map_ptr, key_ptr])
+    let slot = ctx.alloca_i64("mapget_optslot")
+    let merge_bb = ctx.bb("mapget_optend")
+    let else_bb = ctx.if_true(ctx.truthy(present, "mapget_has"), "mapget")
+    ctx.store_br_if_open(ctx.to_i64(emit_optional_some(ctx, val_ty, raw), "mapget_some"), slot, merge_bb)
+    ctx.position(else_bb)
+    ctx.store_br_if_open(emit_optional_none(ctx), slot, merge_bb)
+    ctx.position(merge_bb)
+    ok_emit(ctx.load_i64(slot, "mapget_val"), opt_ty)
 }
 
 /// Codegen for `map.set(key, val)`. Two-arg variant — emits

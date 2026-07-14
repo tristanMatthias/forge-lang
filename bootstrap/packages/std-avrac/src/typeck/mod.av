@@ -4239,7 +4239,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
     // Map methods — dispatched to features/map_lit/typeck.av
     if o.ty is .Map {
         // ibjo: guard set's value arg against the map's value type.
-        return check_map_method(check_collection_value_arg(checked_args, ca.types, method, vtype_map_value(o.ty)), method)
+        return check_map_method(check_collection_value_arg(checked_args, ca.types, method, vtype_map_value(o.ty)), vtype_map_value(o.ty), method)
     }
 
     // Channel methods — dispatched to features/channels/typeck.av

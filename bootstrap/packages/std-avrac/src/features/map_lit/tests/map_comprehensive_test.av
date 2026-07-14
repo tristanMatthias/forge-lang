@@ -26,8 +26,10 @@ spec "map comprehensive" {
         k.length == 3
     }
     then "numeric values sum" {
+        // `.get` returns `int?` (a key may be absent); these keys are all
+        // present, so `!` unwraps and also asserts presence.
         let nums = {"a": 1, "b": 2, "c": 3}
-        let sum = nums.get("a") + nums.get("b") + nums.get("c")
+        let sum = nums.get("a")! + nums.get("b")! + nums.get("c")!
         sum == 6
     }
 }
