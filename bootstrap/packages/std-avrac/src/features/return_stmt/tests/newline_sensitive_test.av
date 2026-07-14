@@ -23,12 +23,22 @@ fn rns_capture() -> string {
     avra_test_capture_stop()
 }
 
-// ── Bare early return controls flow; the trailing block value is separate ──
-fn rns_early(n: int) -> int {
+// ── Bare early return controls flow; the trailing statement is separate ──
+// Void fn: a bare `return` is only legal where no value is required (t-4qzd
+// gates a bare `return` in a value-returning fn). We observe the early exit
+// via captured output — "tail" prints only when the early return was NOT
+// taken.
+fn rns_early_void(n: int) {
     if n > 0 {
         return
     }
-    n - 1
+    println("tail")
+}
+
+fn rns_early(n: int) -> string {
+    avra_test_capture_start()
+    rns_early_void(n)
+    avra_test_capture_stop()
 }
 
 // ── Same-line value stays the operand ──
@@ -80,8 +90,8 @@ spec "bare return is newline-sensitive (t-uv1n)" {
         then "the trailing statement is dead code and does not execute" {
             rns_capture() == "live"
         }
-        then "the bare return still controls flow (fall-through value is separate)" {
-            rns_early(0) == 0 - 1 && rns_early(5) == 0
+        then "the bare return still controls flow (fall-through statement is separate)" {
+            rns_early(5) == "" && rns_early(0) == "tail"
         }
     }
     given "a return whose value begins on the same line" {
