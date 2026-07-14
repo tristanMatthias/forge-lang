@@ -238,6 +238,45 @@ fn extract_inherent_methods(store: NodeStore, methods: List<StmtId>) -> List<Met
     out
 }
 
+/// True when `name` names an already-extracted GENERIC type (one with
+/// >=1 type param). Used to decide whether an inherent impl's methods
+/// need their bodies shipped for consumer-side monomorphization
+/// (ps3t.3.11). Types are extracted before their impls in every module
+/// (decl-order), so the entry is present by the time we reach the impl.
+fn type_is_generic(types: List<TypeDeclEntry>, name: string) -> bool {
+    mut i = 0
+    while i < types.length {
+        if types[i].name == name { return types[i].type_params.length > 0 }
+        i = i + 1
+    }
+    false
+}
+
+/// Ship each inherent-impl method's BODY as a GenericBodyEntry keyed by
+/// the `Type__method` mangle, so a consumer that instantiates the
+/// generic struct can monomorphize the method with a REAL body (mirror
+/// of the generic-fn path in the `.Function` arm). Non-generic structs
+/// skip this (their bodies live in the producer's .o).
+fn push_impl_method_bodies(acc: ExtractAcc, methods: List<StmtId>, type_qn: string) -> ExtractAcc {
+    mut cur = acc
+    for id in methods {
+        match stmt_unwrap(cur.nodes, cur.nodes.stmts.get(id)) {
+            .Function(mangled, _, _, _, body) -> {
+                let m_name = strip_mangle(mangled)
+                let entry = GenericBodyEntry {
+                    qualified_name: "${type_qn}__${m_name}",
+                    source: fmt_stmt_ids(cur.nodes, body, 0),
+                    file: "",
+                    byte_offset: 0,
+                }
+                cur = push_generic_body(cur, entry)
+            }
+            _ -> {}
+        }
+    }
+    cur
+}
+
 fn walk_stmts(acc: ExtractAcc, stmts: List<StmtId>, current_module: string, exported: bool, is_comptime: bool) -> ExtractAcc {
     mut cur = acc
     mut i = 0
@@ -478,7 +517,22 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                     type_name: type_qn,
                     methods: extract_inherent_methods(acc.nodes, methods),
                 }
-                push_inherent_impl(acc, entry)
+                let with_impl = push_inherent_impl(acc, entry)
+                // ps3t.3.11: a GENERIC struct's inherent-impl methods must
+                // ALSO ship their BODIES (as GenericBodyEntry, keyed by the
+                // `Type__method` mangle), because the CONSUMER monomorphizes
+                // them per instantiation — exactly like a generic free fn.
+                // A signature-only synth (the else branch) leaves the method
+                // body empty, so specialize_impl_methods produces an empty
+                // `ret 0` stub that shadows the producer's real body via
+                // linkonce_odr → every read of the instantiated struct
+                // returns 0/null. Non-generic struct methods stay sig-only
+                // (the producer's .o supplies the body at link time).
+                if type_is_generic(with_impl.types, type_qn) {
+                    push_impl_method_bodies(with_impl, methods, type_qn)
+                } else {
+                    with_impl
+                }
             }
         }
         _ -> acc

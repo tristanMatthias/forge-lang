@@ -1,0 +1,46 @@
+// ps3t.3.11 regression: a GENERIC struct's inherent-impl methods must
+// ship their BODIES through metadata (as GenericBodyEntry, keyed by the
+// `Type__method` mangle), so a CONSUMER that instantiates the struct
+// can monomorphize the method with a REAL body.
+//
+// Before the fix, metadata shipped only method SIGNATURES for inherent
+// impls; the consumer synthesized signature-only @external_unit stubs,
+// and specialize_impl_methods turned each into an empty `ret 0` body
+// that shadowed the producer's real body via linkonce_odr — so every
+// read through a consumer-monomorphized generic-struct method returned
+// 0/null. This test compiles through the library/metadata path (as all
+// package tests do), where the bug manifested; the identical code
+// compiled whole-program never hit it.
+//
+// The probe wraps @std's real DenseTable (a generic struct) both
+// directly and as a field of a locally-declared generic struct, and
+// reads the fill (an unset slot → returns self.fill) — the exact path
+// that regressed to 0.
+
+use @std.avrac.core.{ExprId, StmtId, DenseTable, new_dense_table}
+
+type Holder<Id> = { a: int, spans: DenseTable<Id, int>, mk: fn(int) -> Id }
+impl Holder<Id> {
+    fn span_of(self, id: Id) -> int { self.spans.get(id) }
+}
+
+spec "generic-struct method bodies survive the metadata boundary" {
+    then "direct DenseTable fill read (ExprId,int) returns the fill, not 0" {
+        let d: DenseTable<ExprId, int> = new_dense_table(-9)
+        d.get(ExprId(5)) == 0 - 9
+    }
+    then "direct DenseTable fill read (StmtId,int) returns the fill, not 0" {
+        let d: DenseTable<StmtId, int> = new_dense_table(-7)
+        d.get(StmtId(5)) == 0 - 7
+    }
+    then "DenseTable set/get through a consumer-monomorphized method round-trips" {
+        mut d: DenseTable<ExprId, int> = new_dense_table(-1)
+        d.set(ExprId(2), 55)
+        d.get(ExprId(2)) == 55
+    }
+    then "generic-struct field's method read returns the fill through span_of" {
+        let s: DenseTable<ExprId, int> = new_dense_table(-9)
+        let h: Holder<ExprId> = Holder { a: 1, spans: s, mk: (k: int) -> ExprId(k) }
+        h.span_of(ExprId(9)) == 0 - 9
+    }
+}
