@@ -1,0 +1,75 @@
+// j568: the compile-cache preserves a compile's DIAGNOSTICS, not just
+// its .ll. /tmp ad-hoc fixtures used to be excluded from caching
+// because compile_capture-style tests assert diagnostic text in bs2
+// stderr, and a silent cache HIT dropped it. The cache now captures a
+// compile's stderr (the runtime stderr tee) into a `unit.diag` artifact
+// staged inside cache_publish's atomic rename, and replays it on a hit
+// — so `bs2 compile … 2>&1` is byte-identical whether the pipeline ran
+// or the slot was served. These specs pin that: a warning-emitting
+// compile, run twice against a FRESH slot (pid-salted source so run #1
+// is always a miss), must show the identical diagnostic both times, and
+// run #2 must be a genuine cache hit.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+extern fn avra_uptime_ms() -> int
+
+/// A source that COMPILES SUCCESSFULLY (so it reaches the cache publish
+/// — failed compiles never cache) yet emits a diagnostic: the fn name
+/// is PascalCase, tripping the F9003 snake_case warning. Salted with a
+/// per-invocation token so each run keys a fresh cache slot.
+fn warning_source(salt: string) -> string {
+    "// j568-salt:" + salt + "\n" +
+    "fn BadlyNamedFn() -> int { 42 }\n" +
+    "fn main() { println(string(BadlyNamedFn())) }\n"
+}
+
+/// Compile `path` and capture combined stdout+stderr, exactly like the
+/// compile_capture fixtures. `|| true` so a non-zero exit still yields
+/// output to inspect. The `env -u …` clears the cache-disabling env
+/// vars the test-runner shard sets (AVRA_USE_METADATA in particular) so
+/// the nested compile is cache-eligible — reproducing a plain developer
+/// `bs2 compile /tmp/x.av`, which is exactly the flow j568 speeds up.
+fn compile_capture(path: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    avra_shell_exec("cd '${root}' && env -u AVRA_USE_METADATA -u AVRA_DIR_MODULE "
+        + "-u AVRA_TIMINGS -u AVRA_TIMINGS_JSON -u AVRA_DEPS_OUT "
+        + "./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "j568: compile-cache replays diagnostics on a hit" {
+    then "a warning survives a cache hit byte-for-byte, and the hit is real" {
+        let salt = "${string(avra_getpid())}.${string(avra_uptime_ms())}"
+        let path = "/tmp/avra_j568_replay_${salt}.av"
+        let _ = avra_selfhost_write_file(path, warning_source(salt))
+
+        // Miss: fresh slot (salted), compiles OK, warns live, publishes.
+        let first = compile_capture(path)
+        // Hit: same path + content → same slot → .ll served + diag replayed.
+        let second = compile_capture(path)
+
+        let warned_first = first.contains("F9003") && first.contains("BadlyNamedFn")
+        let warned_second = second.contains("F9003") && second.contains("BadlyNamedFn")
+        let was_hit = second.contains("[compile-cache] hit")
+        let was_published = first.contains("[compile-cache] published")
+
+        warned_first && warned_second && was_hit && was_published
+    }
+    then "a clean compile caches with an empty diag — a hit replays no phantom text" {
+        let salt = "${string(avra_getpid())}.${string(avra_uptime_ms())}.clean"
+        let path = "/tmp/avra_j568_clean_${salt}.av"
+        // No PascalCase fn, no unused anything → no diagnostics.
+        let _ = avra_selfhost_write_file(path,
+            "// j568-salt:" + salt + "\n" +
+            "fn add(a: int, b: int) -> int { a + b }\n" +
+            "fn main() { println(string(add(1, 2))) }\n")
+
+        let first = compile_capture(path)
+        let second = compile_capture(path)
+        // The hit must NOT invent an F9003/F-code the clean compile never
+        // emitted; only the cache-machinery line is present on the hit.
+        second.contains("[compile-cache] hit")
+            && !second.contains("warning[F")
+            && first.contains("[compile-cache] published")
+    }
+}

@@ -40,7 +40,7 @@ fn main() -> int {
 
     // Probe 3: publish writes the entry atomically.
     avra_shell_exec("printf 'pretend object bytes' > /tmp/avra_cache_test_obj.o")
-    let pr = cache_publish(c, fp, "; pretend IR\n", "/tmp/avra_cache_test_obj.o", "metadata-blob", "1")
+    let pr = cache_publish(c, fp, "; pretend IR\n", "/tmp/avra_cache_test_obj.o", "metadata-blob", "", "1")
     avra_shell_exec("rm -f /tmp/avra_cache_test_obj.o")
     if pr.success {
         println("PROBE publish: ok")
@@ -81,7 +81,7 @@ fn main() -> int {
 
     // Probe 8: re-publish after evict succeeds (no leftover state).
     avra_shell_exec("printf 'pretend object bytes 2' > /tmp/avra_cache_test_obj.o")
-    let pr2 = cache_publish(c, fp, "; pretend IR 2\n", "/tmp/avra_cache_test_obj.o", "meta2", "2")
+    let pr2 = cache_publish(c, fp, "; pretend IR 2\n", "/tmp/avra_cache_test_obj.o", "meta2", "", "2")
     avra_shell_exec("rm -f /tmp/avra_cache_test_obj.o")
     if pr2.success && cache_read_ll(c, fp) == "; pretend IR 2\n" {
         println("PROBE republish: ok")

@@ -40,11 +40,11 @@ spec "pdme.9: publish repairs half-slot wreckage instead of dying" {
     then "BUILD slot: delete metadata.bin, republish → success and complete" {
         let c = mk_cache("build")
         let fp = mk_fp(FP_A)
-        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s1")
+        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "", "s1")
         // Wreck the slot the way the fuzz's damage kind does.
         let _ = avra_remove_file(entry_metadata_path(c, fp))
         let wrecked = !cache_has(c, fp)
-        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s2")
+        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "", "s2")
         p1.success && wrecked && p2.success && cache_has(c, fp)
             && avra_file_size(entry_ll_path(c, fp)) > 0
     }
@@ -64,10 +64,10 @@ spec "pdme.9: publish repairs half-slot wreckage instead of dying" {
     then "a COMPLETE existing slot keeps concurrent-winner semantics" {
         let c = mk_cache("winner")
         let fp = mk_fp(FP_C)
-        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s1")
+        let p1 = cache_publish(c, fp, "; ir v1\n", "", "meta", "", "s1")
         // Same fp, same (content-addressed) inputs — the loser of a
         // publish race must report success without disturbing the slot.
-        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "s2")
+        let p2 = cache_publish(c, fp, "; ir v1\n", "", "meta", "", "s2")
         p1.success && p2.success && cache_has(c, fp)
     }
 }

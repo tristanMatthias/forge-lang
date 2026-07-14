@@ -95,13 +95,19 @@ use @std.avrac.build.{
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
-    cache_for, entry_source_meta_path, ensure_source_meta_dir,
+    cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
     package_full_fingerprint, source_slot_fp,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
+// j568: stderr tee — capture a compile's diagnostics so the cache can
+// replay them on a hit. begin/end bracket the pipeline; write_raw
+// replays captured text verbatim (it already carries newlines).
+extern fn avra_stderr_tee_begin()
+extern fn avra_stderr_tee_end() -> string
+extern fn avra_stderr_write_raw(s: string)
 use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
@@ -1962,7 +1968,7 @@ fn run_build_command(args: BuildArgs) {
             let ll_content = read_file(ll_path)
             let metadata = ""
             let staging_id = "${unit_name}.${fp_short(fp)}"
-            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, "", staging_id)
+            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, "", "", staging_id)
             // 0qmm: after publish, mirror the source-keyed cache slot
             // (just emitted by the inner `bs2 compile --emit_metadata`)
             // into the path-keyed cache so future Hits can restore it.
@@ -2688,7 +2694,7 @@ fn run_test_shard_command(paths: List<string>, args: TestArgs) {
                 .Err(e) -> { fail("shard compile failed: ${e}") }
             }
             let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
-            let _ = record_build_result(inputs, fp, "", "", "", built, staging_id)
+            let _ = record_build_result(inputs, fp, "", "", "", built, "", staging_id)
             // Publish copies the staging bin into the cache slot, so
             // the local `_test_<shard>.{bin,o}` aren't load-bearing
             // anymore. Drop them — 317 shards × ~5MB each = ~1.5GB
@@ -3374,7 +3380,7 @@ fn check_test_cache_or_miss(inputs: BuildInputs) -> Fingerprint? {
 /// binary is still on disk and the user can re-run.
 fn publish_test_binary(inputs: BuildInputs, fp: Fingerprint, bin_path: string) {
     let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
-    let pr = record_build_result(inputs, fp, "", "", "", bin_path, staging_id)
+    let pr = record_build_result(inputs, fp, "", "", "", bin_path, "", staging_id)
     if !pr.success {
         eprintln("[test-cache] publish failed: ${pr.error}")
     } else {
@@ -3793,15 +3799,15 @@ fn cmd_compile(args: CliResult) -> int {
             && avra_process_env_get("AVRA_DIR_MODULE") == ""
             && !csource.contains("\nmod ")
             && !csource.starts_with("mod ")
-            // /tmp/ ad-hoc fixtures: cache-eligibility blocked because
-            // compile_capture-style tests assert specific diagnostic text
-            // in bs2 stderr on each invocation. A cache hit returns the
-            // .ll without re-printing diagnostics → assertion fails. The
-            // grgg cache only stores .ll, not diagnostics — proper fix
-            // (j568) is to capture+replay diagnostics on hit, or to skip
-            // caching for sources that produce diagnostics. Until then,
-            // /tmp stays excluded.
-            && !cpath.starts_with("/tmp/")
+            // j568: /tmp/ ad-hoc fixtures are now cacheable. They used to
+            // be excluded because compile_capture-style tests assert
+            // diagnostic text in bs2 stderr on each invocation, and a
+            // silent cache hit dropped it. The cache now captures a
+            // compile's diagnostics (unit.diag, via the stderr tee) and
+            // replays them on hit, so the observable output is identical
+            // whether the compile ran or was served — the exclusion is
+            // gone. (The fp keys on the path via unit_name AND the source
+            // content, so a replayed diag's locators always match.)
         // pdme.7: --output participates in the cache — the output path is
         // not a compilation input (the fp keys sources + deps + compiler
         // content, never the destination), so a hit just materialises the
@@ -3863,6 +3869,15 @@ fn cmd_compile(args: CliResult) -> int {
                     // otherwise recompile and let the fresh emit render
                     // the honest verdict on the destination.
                     if cached_ll != "" && avra_selfhost_write_file(dest_ll, cached_ll) == 1 {
+                        // j568: replay the compile's diagnostics BEFORE the
+                        // cache-machinery line, so `bs2 compile … 2>&1`
+                        // sees byte-identical output to a fresh compile
+                        // (fixture tests assert on this text). A slot
+                        // predating j568 has no unit.diag → "" → nothing
+                        // replayed, matching the pre-j568 silent hit.
+                        let cache = cache_for(compile_project_root)
+                        let diag = cache_read_diag(cache, fp)
+                        if diag != "" { avra_stderr_write_raw(diag) }
                         eprintln("[compile-cache] hit ${fp_short(fp)} → ${dest_ll}")
                         return 0
                     }
@@ -3874,6 +3889,16 @@ fn cmd_compile(args: CliResult) -> int {
                 }
             }
         }
+
+        // j568: when this compile will publish to the cache (a
+        // cache-eligible miss), tee its diagnostics so we can store
+        // them alongside the .ll and replay on a later hit. The tee
+        // brackets ONLY the compile pipeline below — the cache-machinery
+        // eprintlns (`[compile-cache] …`, `[timings] …`) sit outside it
+        // and are never captured. The tee does not divert: diagnostics
+        // still print live on this (miss) run.
+        let capture_diag = compile_publish_fp != null
+        if capture_diag { avra_stderr_tee_begin() }
 
         // Per-stage wall-clock timings — emitted to stderr at the
         // end when AVRA_TIMINGS=1 is set in the environment. Cheap
@@ -4070,6 +4095,14 @@ fn cmd_compile(args: CliResult) -> int {
             .Err(e) -> { fail_with_codegen_ice(e, ctx) }
         }
         let t_codegen = avra_uptime_ms()
+        // j568: close the diagnostics capture the moment codegen
+        // succeeds — everything the pipeline emitted to stderr is now in
+        // `compile_diag`. Ending it HERE (before the cache-machinery
+        // eprintlns below) keeps those lines out of the stored artifact.
+        // A failed compile exits via `fail`/`fail_with_codegen_ice`
+        // above without ever publishing, so a dangling open tee on that
+        // path is harmless (the process ends).
+        let compile_diag = if capture_diag { avra_stderr_tee_end() } else { "" }
         // grgg: publish the freshly-compiled .ll into the per-project
         // cache so the next invocation with byte-identical inputs can
         // skip the entire pipeline. Best-effort — a publish failure
@@ -4078,7 +4111,7 @@ fn cmd_compile(args: CliResult) -> int {
             let fp = compile_publish_fp!
             let ll_content = read_file(output)
             let staging_id = "compile.${fp_short(fp)}"
-            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", staging_id)
+            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", compile_diag, staging_id)
             if pr.success {
                 eprintln("[compile-cache] published ${fp_short(fp)}")
             } else {
