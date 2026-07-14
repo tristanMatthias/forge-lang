@@ -1356,40 +1356,163 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         // rewriter then can't find.
         .Const(_, vt, init) -> collect_inst_expr_with_expected(regs.store.exprs.get(init), vt, regs, st)
         .Errdefer(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
-        // ps3t.3.11: a SPECIALISED struct/enum (empty tp) whose FIELD type names
-        // a generic instance — `Arena__Expr__ExprId { edges: DenseTable<ExprId,
-        // NodeEdges> }` — must seed that instance so it gets specialised and
-        // `rewrite_field_types` can mangle the field. Without this, a generic
-        // instance reachable ONLY through a struct field (never via a direct
-        // `let`/construction in this unit — the consumer-side arena case) is
-        // never collected, so the field stays `DenseTable<…>` and codegen fails
-        // "undefined method DenseTable.set". A generic decl (tp>0) is skipped —
-        // its field types still carry type params, not concrete args.
-        .TypeDecl(_, tp, fields) -> {
-            if tp.length > 0 { return st }
-            CollectState { insts: collect_field_type_insts(fields, regs, st.insts), bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
-        }
-        .EnumDecl(_, tp, variants) -> {
-            if tp.length > 0 { return st }
-            mut cur = st.insts
-            for v in variants { cur = collect_field_type_insts(v.fields, regs, cur) }
-            CollectState { insts: cur, bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
-        }
+        // A CONCRETE struct/enum decl's FIELD types can name a generic instance
+        // reachable ONLY through that field — `Arena__Expr__ExprId { edges:
+        // DenseTable<ExprId, NodeEdges> }`, or a WRAPPED form like
+        // `List<DenseTable<Id, V>>` / `DenseTable<Id, V>?` — with no local
+        // StructLit / generic-fn call site to request it (the consumer-side arena
+        // case, where the struct arrives from a concrete @std constructor across
+        // the module boundary). Those are collected SEPARATELY by the
+        // end-of-pipeline `mono_decl_mopup` (a STRUCTURAL walker over the declared
+        // field types, `collect_inst_from_vtype`), NOT here: running it as a
+        // post-fixpoint mop-up that adds only what the call/ctor fixpoint missed
+        // keeps this collector's ordering — and thus the whole-program IR —
+        // untouched, while a structural walk (vs the old first-`<` string split)
+        // reaches instances nested inside wrappers too (ps3t.3.11 / ps3t.3.12).
         _ -> st
     }
 }
 
-/// Seed an instantiation for each field whose type names a generic instance
-/// (`DenseTable<ExprId, NodeEdges>` → the `DenseTable__ExprId__NodeEdges` inst),
-/// via the same vtype-string collector return types use. Non-generic field
-/// types are no-ops. Transitivity (a collected inst's OWN generic fields) is
-/// handled by the `mono_converge` fixed point re-walking the emitted spec.
-fn collect_field_type_insts(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst>) -> List<Inst> {
-    mut cur = insts
-    for f in fields {
-        cur = scope_insts_for_ret(vtype_render_full(f.resolved), regs, cur)
+/// Zip a generic decl's type params with the concrete type-args carried
+/// by a `.Struct`/`.Enum` ValueType into a `List<TypeArg>`. Shortest-zip,
+/// like `explicit_to_type_args`.
+fn type_args_from_vtypes(tp: List<TypeParamEntry>, args: List<ValueType>) -> List<TypeArg> {
+    mut out: List<TypeArg> = []
+    let limit = if tp.length < args.length { tp.length } else { args.length }
+    mut i = 0
+    while i < limit {
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: args[i] })
+        i = i + 1
+    }
+    out
+}
+
+/// Collect every generic-struct / generic-enum instantiation NAMED by a
+/// declared ValueType — recursing through wrappers (List / Optional / Map /
+/// Tuple / Channel / Task / Newtype / Union / fn types) so a nested instance
+/// (`List<DenseTable<Id, V>>`, `DenseTable<Id, V>?`) is reached too.
+///
+/// This is the DECLARED-TYPE channel of instantiation collection (ps3t.3.11
+/// Part 2 + ps3t.3.12): a consumer that only ever CALLS methods on an imported
+/// generic struct — never constructing it (the struct arrives from a concrete
+/// @std constructor like `new_node_store`) — has no StructLit/generic-fn call
+/// site for the collector to see, so the instantiation was never requested, its
+/// methods never specialised, and its type never mangled (codegen then failed
+/// with `undefined method Type.method`). Collecting the instances a CONCRETE
+/// struct's field types name (`NodeStore.stmts : Arena<Stmt, StmtId>`) — and,
+/// transitively via the specialised struct decls the converge pass walks, the
+/// instances THOSE fields name (`Arena__Stmt__StmtId.edges : DenseTable<StmtId,
+/// NodeEdges>`) — closes the gap. STRUCTURAL (not the old first-`<` string
+/// split): a generic instance nested inside a wrapper field type is reached
+/// too, which the string path missed (its base was the wrapper). Only
+/// fully-resolved instances are added (a bare type-param arg is skipped), so a
+/// still-generic decl contributes nothing and no spurious F1002 is raised. In
+/// whole-program mode every one of these is already collected via the
+/// constructor's StructLit, so this only ever DEDUPS there — the
+/// library/metadata path is where it adds the missing requests.
+fn collect_inst_from_vtype(vt: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    match vt {
+        // A nominal-with-args type. The Struct/Enum TAG is UNRELIABLE here: the
+        // parser lowers every generic annotation (`Arena<Stmt, StmtId>`,
+        // `DenseTable<Id, V>`) to `.Enum` because it can't tell a struct from an
+        // enum, and typeck's `resolve_vtype` reclassifies TRANSIENTLY without
+        // persisting the fix into the struct decl's stored FieldEntry — so a
+        // field type read raw (as here) is often an `.Enum`-tagged generic
+        // STRUCT. Resolve against BOTH registries, exactly as `resolve_vtype`
+        // does, so the kind tag never matters.
+        .Struct(name, args, _) -> collect_nominal_inst(name, args, regs, collect_inst_from_vtypes(args, regs, st))
+        .Enum(name, args, _) -> collect_nominal_inst(name, args, regs, collect_inst_from_vtypes(args, regs, st))
+        .List(elem) -> collect_inst_from_vtype(elem, regs, st)
+        .Optional(inner) -> collect_inst_from_vtype(inner, regs, st)
+        .Map(k, v) -> collect_inst_from_vtype(v, regs, collect_inst_from_vtype(k, regs, st))
+        .Tuple(elems) -> collect_inst_from_vtypes(elems, regs, st)
+        .Channel(elem) -> collect_inst_from_vtype(elem, regs, st)
+        .Task(r) -> collect_inst_from_vtype(r, regs, st)
+        .Newtype(_, inner, _) -> collect_inst_from_vtype(inner, regs, st)
+        .Union(types) -> collect_inst_from_vtypes(types, regs, st)
+        .FnTyped(params, r) -> collect_inst_from_vtype(r, regs, collect_inst_from_vtypes(params, regs, st))
+        _ -> st
+    }
+}
+
+/// Register the instantiation `name<args>` names, resolving `name` against the
+/// generic-struct THEN generic-enum registry (the kind tag is unreliable — see
+/// `collect_inst_from_vtype`). Only a fully-resolved instance is added; a bare
+/// type-param arg makes `all_resolved` false and the inst is skipped, so a
+/// still-generic decl contributes nothing (and no spurious F1002).
+fn collect_nominal_inst(name: string, args: List<ValueType>, regs: GenRegs, st: CollectState) -> CollectState {
+    let se = generic_struct_lookup(regs.structs, name)
+    if se != null {
+        let ta = type_args_from_vtypes(se!.tp, args)
+        return if all_resolved(se!.tp, ta) { add_resolved_inst(name, se!.tp, ta, regs.ambig, st) } else { st }
+    }
+    let ee = generic_enum_lookup(regs.enums, name)
+    if ee != null {
+        let ta = type_args_from_vtypes(ee!.tp, args)
+        return if all_resolved(ee!.tp, ta) { add_resolved_inst(name, ee!.tp, ta, regs.ambig, st) } else { st }
+    }
+    st
+}
+
+/// Fold `collect_inst_from_vtype` over a list of declared types.
+fn collect_inst_from_vtypes(vts: List<ValueType>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < vts.length {
+        cur = collect_inst_from_vtype(vts[i], regs, cur)
+        i = i + 1
     }
     cur
+}
+
+/// Collect the generic instantiations a CONCRETE (already-specialised or
+/// never-generic) struct's field types name. Skipped for a still-generic decl
+/// (its field types reference unbound type params — nothing resolves). See
+/// `collect_inst_from_vtype`.
+fn collect_inst_from_field_decls(fields: List<FieldEntry>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < fields.length {
+        cur = collect_inst_from_vtype(fields[i].resolved, regs, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// Enum mirror of `collect_inst_from_field_decls`: collect the generic
+/// instantiations a CONCRETE enum's variant payload types name.
+fn collect_inst_from_variant_decls(variants: List<Variant>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < variants.length {
+        cur = collect_inst_from_field_decls(variants[i].fields, regs, cur)
+        i = i + 1
+    }
+    cur
+}
+
+/// The DECLARED-TYPE instantiation channel (ps3t.3.11 Part 2), run as a
+/// SEPARATE pass from `collect_inst_stmt` by the end-of-pipeline
+/// `mono_decl_mopup` (so it never perturbs the call/ctor fixpoint's ordering).
+/// Walks the decl structure (Module / Annotated / Block) collecting the generic
+/// instances that CONCRETE struct/enum decls' field types name. A generic decl
+/// (tp>0) is skipped; its field types are reached once it is specialised (the
+/// mop-up re-runs this walker over every emitted spec).
+fn collect_decl_type_insts_ids(ids: List<StmtId>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    for id in ids { cur = collect_decl_type_inst_stmt(regs.store.stmts.get(id), regs, cur) }
+    cur
+}
+
+fn collect_decl_type_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectState {
+    match stmt {
+        .TypeDecl(_, tp, fields) -> if tp.length > 0 { st } else { collect_inst_from_field_decls(fields, regs, st) }
+        .EnumDecl(_, tp, variants) -> if tp.length > 0 { st } else { collect_inst_from_variant_decls(variants, regs, st) }
+        .Module(_, body) -> collect_decl_type_insts_ids(body, regs, st)
+        .Annotated(_, inner) -> collect_decl_type_inst_stmt(regs.store.stmts.get(inner), regs, st)
+        .Block(body) -> collect_decl_type_insts_ids(body, regs, st)
+        _ -> st
+    }
 }
 
 /// Walk every arm of a `select { ... }` collecting
@@ -2967,9 +3090,53 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     let initial_specs = generate_specializations(finalized.insts, regs)
     let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0, trait_impls)
 
-    let rewritten = rewrite_stmt_ids(ids, regs, converged.all_insts)
-    let rewritten_specs = rewrite_stmt_ids(converged.all_specs, regs, converged.all_insts)
-    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
+    // ps3t.3.11 Part 2 / ps3t.3.12 — DECLARED-TYPE mop-up, run AFTER the
+    // call/ctor-driven fixpoint has fully converged. A consumer that only CALLS
+    // methods on an imported generic struct (the struct arrives from a concrete
+    // @std constructor across the module boundary, so no local StructLit /
+    // generic-fn call requests it — the library/metadata path) leaves that
+    // instantiation uncollected: its methods never specialise and its type never
+    // mangles, so codegen fails with `undefined method Type.method`. This pass
+    // requests the instances a CONCRETE struct/enum's field types NAME — walked
+    // STRUCTURALLY, so a wrapped nested instance (`List<DenseTable<Id, V>>`) is
+    // reached too. Running it LAST — and adding only instances the fixpoint
+    // didn't already reach — keeps a whole-program compile byte-identical to the
+    // pre-fix base (there every instance is reached via its constructor, so the
+    // mop-up adds nothing); only the library path gains the missing instances.
+    let mopped = mono_decl_mopup(ids, regs, converged.all_insts, converged.all_specs, converged.bag, 0, trait_impls)
+
+    let rewritten = rewrite_stmt_ids(ids, regs, mopped.all_insts)
+    let rewritten_specs = rewrite_stmt_ids(mopped.all_specs, regs, mopped.all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: mopped.bag }
+}
+
+/// Declared-type instantiation mop-up (ps3t.3.11 Part 2 / ps3t.3.12). Iterates a
+/// fixed point: collect the generic instances that CONCRETE struct/enum decls —
+/// in the program AND every specialisation generated so far — name in their
+/// field types (walked structurally by `collect_inst_from_vtype`); keep only
+/// those the call/ctor fixpoint hasn't already produced; generate them and let
+/// `mono_converge` chase THEIR ordinary (generic-call) deps; repeat until a
+/// round adds nothing. Order-neutral for whole-program (the first round's
+/// `drop_already_known` empties immediately, so `all_specs` is returned
+/// untouched). Bounded like `mono_converge`.
+fn mono_decl_mopup(prog_ids: List<StmtId>, regs: GenRegs, all_insts: List<Inst>, all_specs: List<StmtId>, b: DiagnosticBag, depth: int, ti: List<TraitImplEntry>) -> ConvergeResult {
+    if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
+    // Scan the program's concrete decls plus every spec emitted so far — the
+    // latter surfaces nested instances (`Arena__Stmt__StmtId.edges :
+    // DenseTable<StmtId, NodeEdges>`) a specialised struct introduces.
+    let from_prog = collect_decl_type_insts_ids(prog_ids, regs, CollectState { insts: [], bag: b, line: 0, col: 0, trait_impls: ti })
+    let from_specs = collect_decl_type_insts_ids(all_specs, regs, from_prog)
+    let decl_final = finalize_insts(from_specs.insts, regs, from_specs.bag, ti)
+    let fresh = drop_already_known(decl_final.insts, all_insts)
+    if inst_list_len(fresh) == 0 {
+        ConvergeResult { all_insts, all_specs, bag: decl_final.bag }
+    } else {
+        let new_specs = generate_specializations(fresh, regs)
+        // Let the ordinary transitive fixpoint chase the generic-CALL deps of
+        // the freshly-generated declared-type specs.
+        let conv = mono_converge(new_specs, regs, append_insts(fresh, all_insts), prepend_stmts(new_specs, all_specs), decl_final.bag, 0, ti)
+        mono_decl_mopup(prog_ids, regs, conv.all_insts, conv.all_specs, conv.bag, depth + 1, ti)
+    }
 }
 
 /// Per-iteration output of `mono_converge`. Carries the
