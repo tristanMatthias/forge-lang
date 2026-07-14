@@ -27,10 +27,18 @@ use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, diag_error, span_
 ///
 /// Fast-path: most files contain zero `quote { ... }` expressions, so
 /// a non-allocating presence scan up-front lets the rewrite walker
-/// skip. The scan does the same recursion shape but without building
-/// a new tree, so the worst case (file *with* quotes) is one extra
-/// O(N) traversal — accepted in exchange for the common-case win
-/// where we never allocate a single new Stmt/Expr node.
+/// skip entirely — the whole program's rows pass through untouched.
+///
+/// Fine-grained reuse: even a file that DOES contain a quote keeps every
+/// quote-free subtree in place. `lower_stmt_id`/`lower_expr_id` re-run the
+/// same presence predicate per node and return the original id when nothing
+/// beneath it is a quote, so only the spine of nodes above each quote is
+/// reallocated — most of a macro file (the non-quote fns) is reused, not
+/// copied. Cost: the presence scan is repeated down each quote spine (bounded
+/// by depth-to-quote), traded for eliminating the reallocation of every
+/// quote-free container. The single-pass {node, changed} form that would drop
+/// the repeated scan belongs to a future generic-AST-visitor consolidation
+/// that would unify this walker with rewrite.av / desugar.av.
 ///
 /// This RECURSIVE-scan entry walks the actual statement tree, so it stays
 /// correct for trees merged from more than one parse (sibling-file loading),
@@ -402,13 +410,24 @@ fn lower_stmt_ids(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
     out
 }
 
-/// Lower one statement row, allocating against the original.
+/// Lower one statement row. A statement with NO `Quote` anywhere beneath it
+/// is UNCHANGED by lowering — this pass rewrites only `Quote` nodes — so its
+/// id is returned IN PLACE: no `restmt`, no descent. Reallocation is confined
+/// to the spine of statements above each quote. `any_quote_in_stmt` is the very
+/// predicate the whole-program fast-path already trusts (`lower_quotes`),
+/// applied per-subtree, so this adds no new correctness assumption — only
+/// finer-grained reuse.
 fn lower_stmt_id(store: NodeStore, id: StmtId) -> StmtId {
+    if !any_quote_in_stmt(store, store.stmts.get(id)) { return id }
     store.restmt(lower_stmt(store, store.stmts.get(id)), id)
 }
 
-/// Lower one expression row, allocating against the original.
+/// Lower one expression row. Like `lower_stmt_id`: a quote-free expression
+/// subtree is returned in place (no `reexpr`, no descent), since only `Quote`
+/// nodes are rewritten — so a `Binary`/`Call`/… whose operands hold no quote
+/// keeps its original row.
 fn lower_expr_id(store: NodeStore, id: ExprId) -> ExprId {
+    if !any_quote_in_expr(store, store.exprs.get(id)) { return id }
     store.reexpr(lower_expr(store, store.exprs.get(id)), id)
 }
 
