@@ -1164,6 +1164,29 @@ const char* avra_selfhost_read_file(const char* path) {
     return buf;
 }
 
+// Tail read: return only the bytes at or after `offset`, so a poller can
+// read the new suffix of a growing file instead of re-reading from byte 0
+// every tick (the O(N^2)-over-a-build re-read the spinner's progress
+// drain hit). Returns "" for a missing/unreadable file, or when `offset`
+// is at/past EOF (nothing new yet) — same empty-string contract as
+// avra_selfhost_read_file's failure case, so callers branch on length.
+// A negative offset is clamped to 0 (read the whole file).
+const char* avra_selfhost_read_file_from(const char* path, int64_t offset) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return "";
+    if (offset < 0) offset = 0;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    if (offset >= size) { fclose(f); return ""; }
+    long tail = size - (long)offset;
+    if (fseek(f, (long)offset, SEEK_SET) != 0) { fclose(f); return ""; }
+    char* buf = (char*)malloc(tail + 1);
+    size_t got = fread(buf, 1, tail, f);
+    buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
 // Whole-file writes land via a same-directory temp file + rename(2),
 // so concurrent readers see the complete old content or the complete
 // new content — never a truncated/interleaved hybrid. The test

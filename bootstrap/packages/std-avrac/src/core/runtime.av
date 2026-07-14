@@ -7,6 +7,10 @@ extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_selfhost_read_file(path: string) -> string
+// Tail read: only the bytes at/after `offset` (a growing-file poller reads
+// the new suffix instead of re-reading from byte 0). "" for missing file
+// or offset at/past EOF — same empty-string contract as read_file's miss.
+extern fn avra_selfhost_read_file_from(path: string, offset: int) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
 extern fn avra_selfhost_append_file(path: string, content: string) -> int
 // Binary-safe variants — read/write `bytes` so embedded 0x00 octets
