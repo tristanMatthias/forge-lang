@@ -1356,8 +1356,40 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         // rewriter then can't find.
         .Const(_, vt, init) -> collect_inst_expr_with_expected(regs.store.exprs.get(init), vt, regs, st)
         .Errdefer(body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
+        // ps3t.3.11: a SPECIALISED struct/enum (empty tp) whose FIELD type names
+        // a generic instance — `Arena__Expr__ExprId { edges: DenseTable<ExprId,
+        // NodeEdges> }` — must seed that instance so it gets specialised and
+        // `rewrite_field_types` can mangle the field. Without this, a generic
+        // instance reachable ONLY through a struct field (never via a direct
+        // `let`/construction in this unit — the consumer-side arena case) is
+        // never collected, so the field stays `DenseTable<…>` and codegen fails
+        // "undefined method DenseTable.set". A generic decl (tp>0) is skipped —
+        // its field types still carry type params, not concrete args.
+        .TypeDecl(_, tp, fields) -> {
+            if tp.length > 0 { return st }
+            CollectState { insts: collect_field_type_insts(fields, regs, st.insts), bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
+        }
+        .EnumDecl(_, tp, variants) -> {
+            if tp.length > 0 { return st }
+            mut cur = st.insts
+            for v in variants { cur = collect_field_type_insts(v.fields, regs, cur) }
+            CollectState { insts: cur, bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
+        }
         _ -> st
     }
+}
+
+/// Seed an instantiation for each field whose type names a generic instance
+/// (`DenseTable<ExprId, NodeEdges>` → the `DenseTable__ExprId__NodeEdges` inst),
+/// via the same vtype-string collector return types use. Non-generic field
+/// types are no-ops. Transitivity (a collected inst's OWN generic fields) is
+/// handled by the `mono_converge` fixed point re-walking the emitted spec.
+fn collect_field_type_insts(fields: List<FieldEntry>, regs: GenRegs, insts: List<Inst>) -> List<Inst> {
+    mut cur = insts
+    for f in fields {
+        cur = scope_insts_for_ret(vtype_render_full(f.resolved), regs, cur)
+    }
+    cur
 }
 
 /// Walk every arm of a `select { ... }` collecting
