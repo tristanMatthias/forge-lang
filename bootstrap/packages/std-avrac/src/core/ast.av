@@ -1612,7 +1612,18 @@ export fn vtype_render_full(t: ValueType) -> string {
         .Fn(_) or .Closure(_, _) -> "fn"
         .Void -> "void"
         .Float -> "float"
-        .FnTyped(params, ret) -> "fn(${render_type_list_full(params)}) -> ${vtype_render_full(ret)}"
+        // t-meba: render an UNKNOWN return visibly. The top-level
+        // `.Unknown -> ""` (below) must stay empty — it's the mangling
+        // form and keeps `List<Unknown>` as `List<>` — but a fn type
+        // with an unspecified return rendered `fn() -> ` (trailing
+        // space), which reads as a truncated compiler bug in the F1000
+        // "returns `fn() -> `" diagnostic. Show `<unknown>` for that
+        // ret only (the same token vtype_display/vtype_render_decl
+        // already use), scoped to the FnTyped arm so nothing else moves.
+        .FnTyped(params, ret) -> {
+            let ret_str = if ret is .Unknown { "<unknown>" } else { vtype_render_full(ret) }
+            "fn(${render_type_list_full(params)}) -> ${ret_str}"
+        }
         .Trait(n, _) -> "dyn ${n}"
         .Union(types) -> render_union_full(types)
         .Newtype(name, _, _) -> name
