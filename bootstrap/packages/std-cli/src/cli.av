@@ -11,6 +11,10 @@
 extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
 extern fn avra_process_exit(code: int)
+// Codepoint-aware width/slice (t-clnd), backed by runtime.c — so help
+// columns measure and truncate names in codepoints, not bytes.
+extern fn avra_str_codepoint_count(s: string) -> int
+extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
 
 // ── Types ──
 
@@ -349,26 +353,34 @@ fn arg_display(a: ArgDef) -> string {
 /// Widest left-column across a command's flags, options, and args, so every
 /// section's descriptions align to a single column.
 fn cmd_help_col_width(meta: CommandSpec) -> int {
+    // Codepoint counts, not byte lengths, so a non-ASCII name doesn't
+    // over-claim the column (a 2-byte codepoint is one cell here).
     mut w = 0
     for f in meta.flags {
-        let d = flag_display(f)
-        if d.length > w { w = d.length }
+        let d = avra_str_codepoint_count(flag_display(f))
+        if d > w { w = d }
     }
     for o in meta.options {
-        let d = option_display(o)
-        if d.length > w { w = d.length }
+        let d = avra_str_codepoint_count(option_display(o))
+        if d > w { w = d }
     }
     for a in meta.args {
-        let d = arg_display(a)
-        if d.length > w { w = d.length }
+        let d = avra_str_codepoint_count(arg_display(a))
+        if d > w { w = d }
     }
     w
 }
 
-/// Pad `s` with trailing spaces to at least `width` columns.
+/// Pad `s` with trailing spaces to at least `width` codepoints, so columns
+/// align even when a name contains multibyte UTF-8 (byte length would
+/// over-count and under-pad).
 fn pad_to(s: string, width: int) -> string {
     mut out = s
-    while out.length < width { out = "${out} " }
+    mut n = avra_str_codepoint_count(s)
+    while n < width {
+        out = "${out} "
+        n = n + 1
+    }
     out
 }
 

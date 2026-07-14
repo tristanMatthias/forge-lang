@@ -1,0 +1,59 @@
+// Codepoint-aware string ops (t-clnd): avra_str_codepoint_count counts
+// Unicode codepoints (not bytes); avra_str_substring_codepoints slices by
+// codepoint index so a multibyte UTF-8 sequence is never torn. Backs the
+// CLI's codepoint-safe help padding/truncation. `cps_`-prefixed.
+//
+// UTF-8 refresher for the fixtures: "é" (U+00E9) is 2 bytes, "€" (U+20AC)
+// is 3 bytes, "🚀" (U+1F680) is 4 bytes. Byte-indexed ops would split them.
+
+extern fn avra_str_codepoint_count(s: string) -> int
+extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
+
+spec "avra_str_codepoint_count counts codepoints, not bytes" {
+    then "ASCII: count == byte length" {
+        avra_str_codepoint_count("hello") == 5
+    }
+    then "the empty string is 0" {
+        avra_str_codepoint_count("") == 0
+    }
+    then "a 2-byte codepoint counts as one" {
+        // "café" = c a f é = 4 codepoints, 5 bytes.
+        avra_str_codepoint_count("café") == 4
+    }
+    then "3- and 4-byte codepoints each count as one" {
+        // "a€🚀" = a + € (3 bytes) + 🚀 (4 bytes) = 3 codepoints, 8 bytes.
+        avra_str_codepoint_count("a€🚀") == 3
+    }
+}
+
+spec "avra_str_substring_codepoints slices on codepoint boundaries" {
+    then "ASCII slice matches a byte substring" {
+        avra_str_substring_codepoints("0123456789", 7, 10) == "789"
+    }
+    then "a slice ending before a multibyte codepoint keeps whole prior codepoints" {
+        // "café": codepoints [0,3) = "caf" (é excluded, not split).
+        avra_str_substring_codepoints("café", 0, 3) == "caf"
+    }
+    then "a slice INCLUDING a multibyte codepoint returns it whole" {
+        // "café": codepoints [3,4) = "é" (both its bytes), not a torn half.
+        avra_str_substring_codepoints("café", 3, 4) == "é"
+    }
+    then "a slice spanning multibyte codepoints is intact" {
+        // "a€🚀": codepoints [1,3) = "€🚀".
+        avra_str_substring_codepoints("a€🚀", 1, 3) == "€🚀"
+    }
+    then "end past the codepoint count clamps to the string end" {
+        avra_str_substring_codepoints("café", 0, 99) == "café"
+    }
+    then "start past the end returns empty" {
+        avra_str_substring_codepoints("café", 10, 12) == ""
+    }
+    then "a negative start clamps to 0" {
+        avra_str_substring_codepoints("café", -3, 3) == "caf"
+    }
+    then "the classic truncation shape keeps the first N codepoints whole" {
+        // pad_right's `first width-1 codepoints + …` on a multibyte name:
+        // width 4 → first 3 codepoints of "café…input" = "caf" + "…".
+        avra_str_substring_codepoints("caféabc", 0, 3) + "…" == "caf…"
+    }
+}

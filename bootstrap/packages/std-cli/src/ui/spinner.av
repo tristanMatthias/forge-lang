@@ -47,6 +47,11 @@ extern fn avra_parse_int(s: string) -> int
 use @std.json.{json_str, json_extract_string}
 use @std.avrac.build.{pool_extract_rc}
 
+// Codepoint-aware string ops (t-clnd) — declared inline like this
+// package's other runtime externs (see cli.av). Backed by runtime.c.
+extern fn avra_str_codepoint_count(s: string) -> int
+extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
+
 /// Silent (non-TTY / spawn-failure) execution shared by
 /// run_with_spinner and run_with_progress: run `cmd` captured and
 /// return the child's REAL exit status. Stream replay policy lives
@@ -364,12 +369,20 @@ fn trim_trailing_av(s: string) -> string {
     s
 }
 
+// Pad/truncate `s` to `width` display cells, measured in CODEPOINTS so a
+// multibyte UTF-8 name (module paths are ASCII today, but a package or
+// flag could be non-ASCII) is never truncated mid-codepoint and the
+// padding count is right. Width here is codepoint count, not terminal
+// column width — a wcwidth surface for wide CJK/emoji glyphs is a further
+// step (t-clnd notes it as out of scope).
 fn pad_right(s: string, width: int) -> string {
-    if s.length > width {
-        return s.substring(0, width - 1) + "…"
+    let cps = avra_str_codepoint_count(s)
+    if cps > width {
+        // Keep the first width-1 codepoints, then the ellipsis (1 cell).
+        return avra_str_substring_codepoints(s, 0, width - 1) + "…"
     }
     mut out = s
-    mut pad = width - s.length
+    mut pad = width - cps
     while pad > 0 {
         out = out + " "
         pad = pad - 1

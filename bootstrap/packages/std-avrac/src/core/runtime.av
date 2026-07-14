@@ -137,6 +137,13 @@ extern fn avra_str_char_at_len(s: string, idx: int, len: int) -> string
 /// `strlen`. Lets the lexer slice every token out of a fixed, once-measured
 /// source without re-measuring it per token.
 extern fn avra_str_substring_len(s: string, start: int, end: int, len: int) -> string
+/// Number of Unicode CODEPOINTS in `s` (not bytes). For width/column math
+/// over text that may contain multibyte UTF-8, so a truncation width isn't
+/// mismeasured in bytes.
+extern fn avra_str_codepoint_count(s: string) -> int
+/// Substring by CODEPOINT index (codepoints [start, end)), so truncation
+/// never tears a multibyte sequence. Clamps like the byte substring.
+extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
 
 // ── Intmap extensions ──
 extern fn avra_intmap_inc(map: ptr, key: int) -> int
