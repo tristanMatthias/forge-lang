@@ -51,7 +51,13 @@ Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 
 The canonical type mapping function is `llvm_type_for_full` in `codegen/types.av`.
 Struct fields use proper LLVM named struct types via `avra_llvm_struct_create_named` + GEP.
-A legacy `llvm_type_for` still exists (maps Bool/Float to i64) for callers not yet updated.
+The `Ctx.llvm_type_for` method is NOT a legacy i64 mapper — it resolves narrow
+sized-int widths (U8→i8 … U32→i32) itself and delegates everything else
+(Bool→i1, Float→double, …) to `llvm_type_for_full`. No code path maps Bool or
+Float to i64 (verified: ps3t.4.5(b)). The residual k5al Phase-B migration is
+purely about sized-int WIDTH — callers of `llvm_type_for_full` directly get the
+wide (i64) sized-int layout, and move to the `llvm_type_for` method as their
+arithmetic/cast logic is proven for narrow widths.
 
 `EmitValue` carries both `value: ptr` and `ty: ValueType` — every emitted value is type-aware.
 

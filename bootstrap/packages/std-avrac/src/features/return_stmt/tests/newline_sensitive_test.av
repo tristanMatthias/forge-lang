@@ -1,0 +1,106 @@
+// WHY: t-uv1n — a bare `return` used to GREEDILY consume the next line's
+// expression as its value, because parse_return_statement only treated
+// `return` as empty when the next token was `}` / Eof. Avra is
+// newline-sensitive (spec Axis 28): a value on a LATER line is a separate
+// statement, not the return's operand. Without the fix,
+// `return \n println("dead")` folded the print into the return value and
+// EXECUTED it. The fix: a bare `return` with nothing on the SAME line is
+// Stmt.ReturnEmpty (both the statement path and the match-arm `-> return`
+// path). Same-line values, binary-operator continuations, and
+// parenthesised continuations — all of which begin on the return's line —
+// keep parsing as the return's operand.
+
+// ── Statement-level bare return: the dead trailing statement must NOT run ──
+fn rns_dead_after_return() {
+    println("live")
+    return
+    println("dead")
+}
+
+fn rns_capture() -> string {
+    avra_test_capture_start()
+    rns_dead_after_return()
+    avra_test_capture_stop()
+}
+
+// ── Bare early return controls flow; the trailing block value is separate ──
+fn rns_early(n: int) -> int {
+    if n > 0 {
+        return
+    }
+    n - 1
+}
+
+// ── Same-line value stays the operand ──
+fn rns_same_line(n: int) -> int {
+    return n + 1
+}
+
+// ── Binary-operator continuation begins on the return's line → one operand ──
+fn rns_binary_cont() -> int {
+    return 10 +
+        20 +
+        5
+}
+
+// ── Parenthesised continuation begins on the return's line → one operand ──
+fn rns_paren_cont() -> int {
+    return (
+        100
+    )
+}
+
+// ── Match-arm bare `-> return` (was a parse error: folded the next arm) ──
+// The bare `-> return` exits the ENCLOSING (void) function, so "end" prints
+// only when the non-return arm was taken.
+fn rns_match_void(n: int) {
+    match n {
+        0 -> return
+        _ -> println("other")
+    }
+    println("end")
+}
+
+fn rns_match_capture(n: int) -> string {
+    avra_test_capture_start()
+    rns_match_void(n)
+    avra_test_capture_stop()
+}
+
+// ── Match-arm same-line `-> return expr` still returns the operand ──
+fn rns_match_expr(n: int) -> int {
+    match n {
+        0 -> return 100
+        _ -> return 5
+    }
+}
+
+spec "bare return is newline-sensitive (t-uv1n)" {
+    given "a bare return followed by a statement on the next line" {
+        then "the trailing statement is dead code and does not execute" {
+            rns_capture() == "live"
+        }
+        then "the bare return still controls flow (fall-through value is separate)" {
+            rns_early(0) == 0 - 1 && rns_early(5) == 0
+        }
+    }
+    given "a return whose value begins on the same line" {
+        then "a same-line value is the operand" {
+            rns_same_line(41) == 42
+        }
+        then "a binary-operator continuation is one operand" {
+            rns_binary_cont() == 35
+        }
+        then "a parenthesised continuation is one operand" {
+            rns_paren_cont() == 100
+        }
+    }
+    given "a bare `-> return` in a match arm" {
+        then "it parses (no fold of the next arm) and returns early" {
+            rns_match_capture(0) == "" && rns_match_capture(9) == "other\nend"
+        }
+        then "a same-line `-> return expr` still returns its operand" {
+            rns_match_expr(0) == 100 && rns_match_expr(7) == 5
+        }
+    }
+}

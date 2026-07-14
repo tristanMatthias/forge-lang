@@ -83,7 +83,7 @@ fn main() -> int {
 
     // Probe 2: record_build_result publishes the artifact.
     avra_shell_exec("printf 'pretend obj' > /tmp/avra_driver_obj.o")
-    let pr = record_build_result(inputs, fp_of(out1), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "1")
+    let pr = record_build_result(inputs, fp_of(out1), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "", "1")
     avra_shell_exec("rm -f /tmp/avra_driver_obj.o")
     if pr.success {
         println("PROBE publish: ok")
@@ -121,7 +121,7 @@ fn main() -> int {
     // test profile/unit perturbations independently.
     let _w3 = write_fixture(entry, "fn main() -> int { 0 }")
     avra_shell_exec("printf 'pretend obj' > /tmp/avra_driver_obj.o")
-    let _pr2 = record_build_result(inputs, fp_of(decide_build(inputs)), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "2")
+    let _pr2 = record_build_result(inputs, fp_of(decide_build(inputs)), "; pretend IR\n", "/tmp/avra_driver_obj.o", "meta", "", "", "2")
     avra_shell_exec("rm -f /tmp/avra_driver_obj.o")
 
     // Probe 6: changing profile flags → different fp → Miss.

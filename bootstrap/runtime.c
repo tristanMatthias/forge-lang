@@ -2864,10 +2864,93 @@ void avra_dump_stmt_list(const char* label, int64_t list_ptr) {
 }
 
 
+// ── stderr tee (j568) ─────────────────────────────────────────────
+// The compile-cache must preserve a compile's DIAGNOSTICS, not just its
+// .ll: fixture tests shell out to `bs2 compile` and assert specific
+// diagnostic text (`no @comptime fn named …`, `is not a valid child of
+// …`). A cache HIT that returned the .ll silently dropped those, so
+// /tmp fixtures were excluded from caching entirely. The tee captures a
+// compile's stderr into a buffer the cache stores, then replays it on a
+// hit — diagnostics are observable output, so the cache preserves them.
+//
+// Distinct from the sink (avra_sink_*) BY DESIGN: the sink DIVERTS
+// stdout and deliberately never touches stderr ("diagnostics stay
+// live"). The tee does NOT divert — every teed line still prints live
+// to stderr exactly as before; the tee only ADDITIONALLY accumulates a
+// copy. So a first (miss) compile shows its diagnostics live AND stores
+// them; a later (hit) compile replays the stored copy. Every Avra
+// `eprintln` lowers to avra_eprintln (the sole stderr chokepoint), so
+// teeing here captures DiagnosticBag renders and raw eprintlns alike.
+typedef struct AvraStderrTee {
+    char* buf;
+    size_t len;
+    size_t cap;
+} AvraStderrTee;
+
+static _Thread_local AvraStderrTee* t_etee = NULL;
+
+// Begin capturing stderr on the current thread. A compile is single-
+// shot and non-nested, so a stray begin without a matching end just
+// replaces the frame rather than stacking (no leak, no orphan).
+void avra_stderr_tee_begin(void) {
+    if (t_etee) { free(t_etee->buf); free(t_etee); }
+    AvraStderrTee* t = (AvraStderrTee*)malloc(sizeof(AvraStderrTee));
+    t->cap = 4096;
+    t->len = 0;
+    t->buf = (char*)malloc(t->cap);
+    t->buf[0] = '\0';
+    t_etee = t;
+}
+
+static void etee_append(const char* s, size_t n) {
+    AvraStderrTee* t = t_etee;
+    if (!t || n == 0) return;
+    if (t->len + n + 1 > t->cap) {
+        size_t want = t->cap * 2;
+        while (want < t->len + n + 1) want *= 2;
+        t->buf = (char*)realloc(t->buf, want);
+        t->cap = want;
+    }
+    memcpy(t->buf + t->len, s, n);
+    t->len += n;
+    t->buf[t->len] = '\0';
+}
+
+// Stop capturing; return everything teed while it was active (rc
+// string, same allocation discipline as avra_sink_pop). "" when no
+// tee was active or nothing was written.
+const char* avra_stderr_tee_end(void) {
+    AvraStderrTee* t = t_etee;
+    if (!t) return "";
+    t_etee = NULL;
+    char* out = (char*)avra_rc_alloc((int64_t)t->len + 1);
+    memcpy(out, t->buf, t->len + 1);
+    free(t->buf);
+    free(t);
+    return out;
+}
+
+// Write a string to stderr VERBATIM — no trailing newline, no tee.
+// j568 uses this to replay a cached compile's captured diagnostics on
+// a cache hit: the captured text already carries each line's newline,
+// so replaying it raw reproduces the original stderr byte-for-byte.
+// Deliberately does NOT tee — a replay is not a fresh diagnostic.
+void avra_stderr_write_raw(const char* s) {
+    if (!s) return;
+    fputs(s, stderr);
+    fflush(stderr);
+}
+
 // ── eprintln: write string + newline to stderr ──
 void avra_eprintln(const char* s) {
     fputs(s, stderr);
     fputc('\n', stderr);
+    // Tee a copy (with the same trailing newline) when a capture window
+    // is open. Live output above is untouched — the tee never diverts.
+    if (t_etee) {
+        etee_append(s, strlen(s));
+        etee_append("\n", 1);
+    }
 }
 
 // ── Float support ──

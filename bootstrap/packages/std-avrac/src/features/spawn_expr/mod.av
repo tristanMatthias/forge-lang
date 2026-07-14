@@ -7,9 +7,9 @@ use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
 
-/// Register the `spawn { body }` expression feature. Returns an
-/// integer task handle that callers can pass to `await`.
-/// Spec Axis 18 (concurrency).
+/// Register the `spawn { body }` expression feature. Yields a typed
+/// `Task<T>` handle (T = the body's result type; ps3t.4.8) that is
+/// auto-awaited at scope exit. Spec Axis 18 (concurrency).
 export fn spawn_expr_feature() -> Feature {
     feature_new("spawn") with {
         expr_tag: Expr.Spawn(ExprId(0)),
@@ -29,13 +29,19 @@ fn spawn_resolve(r: Resolver, expr: Expr) -> Resolver {
 }
 
 /// Type-check hook for `Spawn`. Walks the body for its errors
-/// then declares the result Int — the task handle.
+/// then declares the result as a `.Task` handle carrying the body's type.
 fn spawn_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Spawn(body) -> {
             let b = check_expr(tc, tc.nodes.exprs.get(body))
-            // spawn returns an int handle (task handle)
-            tc_er(b.tc, .Int)
+            // spawn yields a `Task<T>` handle, where T is the body's result
+            // type — matching what codegen emits (`ok_emit(handle, .Task(...))`)
+            // and the `Task<T>` surface type (ps3t.4.8). Previously this returned
+            // a bare `.Int` handle, disagreeing with codegen; harmless while
+            // `Task<T>` annotations were the nominal `Enum("Task")` (int→Enum was
+            // ungated), but a structural `Task<T>` annotation needs the value to
+            // actually type as `.Task` to unify.
+            tc_er(b.tc, ValueType.Task(b.ty))
         }
         _ -> tc_er(tc, .Unknown)
     }

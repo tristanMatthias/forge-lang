@@ -706,6 +706,16 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     ValueType.Channel(elem)
                 }
+                // `Task<T>` parses STRUCTURALLY, mirroring Channel (ps3t.4.8).
+                // mono's vtype_from_type_string already round-trips Task<T> to
+                // ValueType.Task (see its "Task" arm) — this closes the latent
+                // gap where the AST-parse path alone left `Task<T>` as the
+                // nominal Enum("Task"), splitting Task's representation between
+                // annotation position (Enum) and value position (structural).
+                "Task" -> {
+                    let inner = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
+                    ValueType.Task(inner)
+                }
                 "Map" -> {
                     let k = if args.length == 0 { ValueType.Unknown } else { type_expr_to_vtype(args[0]) }
                     let v = if args.length < 2 { ValueType.Unknown } else { type_expr_to_vtype(args[1]) }

@@ -91,6 +91,22 @@ export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
 export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/metadata.bin"
 }
+/// j568: the captured-diagnostics artifact. A compile's stderr
+/// diagnostics are observable output; the compile-cache stores them
+/// here (staged inside cache_publish's atomic rename, so a slot is
+/// never seen with unit.ll present but unit.diag missing) and replays
+/// them on a hit. Absent on slots published before j568 — a hit reads
+/// "" and replays nothing, which is the honest pre-j568 behaviour.
+export fn entry_diag_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.diag"
+}
+
+/// Read a cached compile's diagnostics (j568). "" when the slot
+/// predates j568 (no unit.diag) or the compile emitted none — both
+/// mean "replay nothing".
+export fn cache_read_diag(c: Cache, fp: Fingerprint) -> string {
+    avra_selfhost_read_file(entry_diag_path(c, fp))
+}
 
 /// 0qmm: source-keyed metadata slot. The consolidated home for what
 /// used to live at the fixed path `<file>.meta.bin`. Both producer
@@ -219,6 +235,7 @@ export fn cache_publish(
     ll_content: string,
     o_path_src: string,         // path to the .o file produced by llc
     metadata_content: string,
+    diag_content: string,       // j568: captured compile diagnostics ("" = none)
     staging_id: string,
 ) -> PublishResult {
     // jg3p: reject empty ll_content up-front. Observed bug: a killed
@@ -266,6 +283,16 @@ export fn cache_publish(
     let _ = o_path_src
     if avra_selfhost_write_file(staged_meta, metadata_content) == 0 {
         return PublishResult { success: false, error: "write failed: " + staged_meta }
+    }
+    // j568: stage the diagnostics artifact INSIDE the same staging dir,
+    // so it lands in the single atomic rename below. This is what keeps
+    // a slot from ever being observed with unit.ll present but unit.diag
+    // missing (the check-then-use gap that a post-publish write would
+    // reopen). Always written — even "" (no diagnostics) — so every
+    // j568-era slot is unambiguously diag-complete.
+    let staged_diag = staging + "/unit.diag"
+    if avra_selfhost_write_file(staged_diag, diag_content) == 0 {
+        return PublishResult { success: false, error: "write failed: " + staged_diag }
     }
 
     let final_dir = entry_dir_for(c, fp)
