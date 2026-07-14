@@ -31,4 +31,25 @@ spec "typeck diagnostics use vtype_render_full for type-mismatch messages" {
         out.contains("(int, string)") && out.contains("(string, int)")
             && !out.contains("returns `(tuple)`, but return produces `(tuple)`")
     }
+    // t-meba: a fn type with an UNSPECIFIED return (explicit `fn()`,
+    // no `-> R`) is FnTyped([], Unknown). vtype_render_full rendered
+    // its Unknown ret as EMPTY, so the F1000 message read
+    // "returns `fn() -> `" — a trailing space that looks like a
+    // truncated compiler bug. The FnTyped arm now renders an unknown
+    // ret as `<unknown>` (matching vtype_display/vtype_render_decl),
+    // while the top-level `.Unknown -> ""` (the mangling form) is
+    // untouched — diff-test stays byte-identical.
+    then "an unspecified fn return renders `<unknown>`, not a truncated `fn() -> `" {
+        let fixture = "/tmp/avra_render_full_fnret_test.av"
+        write_fixture(fixture,
+            "fn make(p: string) -> fn() {\n" +
+            "    (name: string) -> { p + name }\n" +
+            "}\n" +
+            "fn main() { let _ = make(\"x\") }\n")
+        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        // Post-fix: the declared side is visible. Pre-fix it was the
+        // trailing-space `fn() -> ` immediately before the comma.
+        out.contains("fn() -> <unknown>")
+            && !out.contains("returns `fn() -> `,")
+    }
 }

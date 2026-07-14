@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Code_Remote__*",
+      "mcp__github__*",
+      "mcp__Agent_Tasks__*"
+    ]
+  },
   "hooks": {
     "PostToolUseFailure": [
       {
