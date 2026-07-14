@@ -618,8 +618,14 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     }
 
     if !ctx.has_terminator() {
-        let lambda_ret = body_ctx.current_fn_ret()
-        ctx.ret(result.value, lambda_ret)
+        // The lambda's LLVM fn is ALWAYS built with an i64 return (the closure
+        // calling convention — see `ctx.fn_type(ctx.i64_type, …)` above). Cast
+        // the body value to i64 EXPLICITLY via `.Int` rather than through
+        // `current_fn_ret()`, which is `Unknown` for a lambda and would reach
+        // the layout mapper's `.Unknown -> i64` fallback — a guess forbidden by
+        // §6 (ps3t.4.5). `.Int` maps to the same i64, so this is byte-identical
+        // IR while removing the under-determined type at this rep boundary.
+        ctx.ret(result.value, .Int)
     }
     body_ctx.cov_finalize_fn()
 
