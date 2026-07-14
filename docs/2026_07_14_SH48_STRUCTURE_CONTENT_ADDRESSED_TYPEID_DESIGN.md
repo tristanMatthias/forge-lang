@@ -90,12 +90,20 @@ fingerprint is a separate value used only where finer invalidation is wanted.
 A pure, separate primitive in `core/type_registry.av`, computed from the
 `TypeRegistry` contents. Nominal identity (`content_id_for`) is unchanged.
 
-```
+```text
 // id -> stable 64-bit hash of the type's STRUCTURE (fields/variants/inner),
 // with the FQN mixed in as the nominal discriminator. Changes iff the type's
-// structure (or name) changes. Merkle fixed-point over the type graph.
+// structure (or name) changes. Cycle-safe canonical graph hash (§4.2).
 export fn type_structure_fingerprint(reg: TypeRegistry, id: int) -> int
 ```
+
+**Value semantics.** Like `content_id_for`, the result is a *signed* i64
+(FNV-1a-64 truncated — frequently NEGATIVE; never test it with `> 0`). `0` is a
+LEGAL fingerprint value, so consumers MUST NOT overload it as an "uninitialised"
+sentinel or use positivity as a "computed" check — track computed-vs-absent
+separately (the map's has-key probe, a presence bit), exactly as the registry
+already tests "stamped" as `id != 0` only because it reserves 0, which this
+primitive does NOT.
 
 ### 4.1 Canonical serialization of one type (one Merkle step)
 
@@ -121,50 +129,87 @@ export fn type_structure_fingerprint(reg: TypeRegistry, id: int) -> int
 
 Note: `ValueType.Struct/Enum` reference nested types **by name+id**, not by
 inlined structure (`ast.av:502`). So the *naive* serialization is already
-cycle-free (a `Stmt` field of type `Expr` renders as "Expr"). The Merkle step
-(substituting `child_hash(id)` for the name) is what introduces the recursion —
-and hence the need for a fixed point (§4.2) over mutually-recursive graphs like
-`Stmt ↔ Expr`.
+cycle-free (a `Stmt` field of type `Expr` renders as "Expr"). Substituting a
+child's *hash* for its name is what makes it a true structure hash — and what
+introduces the recursion over mutually-recursive graphs like `Stmt ↔ Expr`.
+§4.2 makes that substitution cycle-safe.
 
-### 4.2 Merkle fixed-point over recursive type graphs
+### 4.2 Cycle-safe canonical graph hashing (NOT fixed-point iteration)
 
-`Stmt` contains `Expr` contains `Stmt` — a cycle. A single pass can't hash a
-type whose children aren't hashed yet. Use the standard iterate-to-fixed-point
-scheme (git's tree hashing handles DAGs; type graphs have cycles, so iterate):
+`Stmt` contains `Expr` contains `Stmt` — a cycle. The tempting "iterate
+`hash'[id] = F(hash)` until `hash' == hash`" scheme is **wrong**: a hash
+recurrence has no fixed-point guarantee — even a one-node self-reference
+`h' = fnv(F(h))` need never satisfy `h' == h`, and a cap of *N* rounds does not
+bound convergence (it can enter a non-fixed cycle, or leave a valid recursive
+type with an arbitrary capped value). Do NOT iterate to a fixed point.
 
-1. **Init**: `hash[id] = content_id_for(FQN)` for every registered type (the
-   name hash as the seed — guarantees a deterministic starting point and nominal
-   distinctness even before structure converges).
-2. **Iterate**: recompute `hash'[id] = fnv(canonical_serialization(reg, info,
-   λ cid → hash[cid]))` for all ids, reading children from the PREVIOUS round's
-   `hash`.
-3. **Converge**: repeat until `hash' == hash` for all ids (a round with no
-   change), or a fixed iteration cap `= number of types` (a Merkle fixed point
-   over N nodes stabilises in ≤ N rounds; the cap is a determinism backstop, not
-   an approximation — if it's ever hit, that's a bug to assert on, not silently
-   accept).
-4. Result: `type_structure_fingerprint(reg, id) = hash[id]` at convergence.
+Instead, hash the **type-reference graph canonically**, the way recursive
+structures are content-addressed in practice (Tarjan SCC + canonical
+within-cycle ordering — a total function of the graph, no iteration):
 
-Determinism holds because: registration set is deterministic; field/variant
-order is normalised (sorted by name); iteration reads the whole prior map (no
-visitation-order dependence); FNV is pure. Two `make clean && make build` cycles
-produce identical fingerprints (acceptance #1) by construction.
+1. **Build the reference graph**: node = registered type; edge `A → B` when a
+   field/variant/inner `ValueType` of `A` references type `B` (by id). This is
+   the graph whose cycles §4.1's child-hash substitution must survive.
+2. **Condense to SCCs** (Tarjan): each strongly-connected component is either a
+   single acyclic type or a maximal cycle (e.g. `{Stmt, Expr}`). The condensation
+   is a DAG.
+3. **Hash the SCC-DAG bottom-up** in reverse-topological order. For an edge that
+   leaves the current SCC (a reference to an *already-hashed* SCC), substitute
+   the **referenced SCC's digest** for the type name (the real Merkle step —
+   acyclic, so the child digest is available).
+4. **Within an SCC, break the cycle by canonical position, not by hash.** Order
+   the SCC's members deterministically (sort by FQN). A reference to a *fellow
+   SCC member* serialises as its **SCC-local index** (`#0`, `#1`, …) — a value
+   that exists without hashing the not-yet-hashed member. Concatenate every
+   member's §4.1 serialization (in FQN order, intra-SCC refs encoded as local
+   indices, cross-SCC refs as child SCC digests) into ONE canonical byte string;
+   `scc_digest = fnv(that string)`.
+5. **Distribute** each member's fingerprint from the whole-SCC hash + its local
+   index: `fingerprint[member] = fnv(scc_digest ++ local_index ++ FQN)`. The FQN
+   suffix keeps the nominal distinctness of §2 even for two members of the same
+   cycle; the `scc_digest` makes the fingerprint depend on the *entire* cyclic
+   structure (so a field change anywhere in the cycle moves every member — the
+   acceptance "changing fields changes the id" holds, conservatively, across a
+   whole SCC).
 
-### 4.3 Complexity / when to compute
+This is a **total function of the registry** — no iteration, no convergence
+question, guaranteed to terminate (SCC condensation + one bottom-up pass).
+Determinism: the registration set is deterministic; SCC membership is a graph
+invariant; field/variant order and SCC-member order are normalised (sorted by
+name/FQN); FNV is pure. Two `make clean && make build` cycles therefore produce
+identical fingerprints (acceptance #1) by construction.
 
-O(N²) worst case (N rounds × N types), N ≈ low hundreds for `@std::avrac::core`
-— trivial, and computed ONCE per registry after all types are registered (a
-`finalize` pass), not per-lookup. Cache the converged map on the registry.
+### 4.3 Complexity, lifecycle, and the mutation contract
+
+O(V + E) for Tarjan + one bottom-up hashing pass — trivial (V ≈ low hundreds for
+`@std::avrac::core`). Computed ONCE, by a `type_registry_finalize(reg)` pass that
+runs **after all types are registered**, and cached on the registry.
+
+**The cache is only valid on a frozen registry.** `TypeRegistry` is mutable —
+`type_registry_register` appends entries — so a fingerprint computed before a
+later registration would be stale (a new type can add an edge into an existing
+SCC and change its digest). The contract, therefore:
+
+- `type_structure_fingerprint` is defined ONLY after `finalize`. `finalize` sets
+  a `frozen` flag; a `type_registry_register` on a frozen registry is an ICE
+  (F9999), not a silent re-open — registration and fingerprint-consumption are
+  distinct phases (resolve populates; later passes read), matching how the
+  compiler already sequences the registry.
+- If a future caller genuinely needs post-finalize registration, the fallback is
+  cache **versioning** (a monotonic registry epoch stamped into each cached
+  fingerprint; a mutation bumps the epoch and invalidates), NOT in-place mutation
+  of a live cache. Freeze-at-finalize is the recommended default; versioning is
+  the escape hatch, spelled out so the implementer doesn't invent a third thing.
 
 ## 5. Acceptance-criteria mapping
 
 | sh48 acceptance | This design |
 |---|---|
-| Two `make clean && make build` → identical structure ids for Stmt/Expr/ValueType | §4.2 determinism (sorted fields, whole-map iteration, pure FNV) |
-| Mutually-recursive types hash via Merkle fixed-point (no infinite loop) | §4.2 iterate-to-fixed-point with N-round cap + convergence assert |
-| Nominal distinctions preserved (UserId ≠ ProductId) | §2/§4.1 FQN mixed in as primary discriminator |
+| Two `make clean && make build` → identical structure ids for Stmt/Expr/ValueType | §4.2 determinism (deterministic registration set + SCC invariance + normalised order + pure FNV) |
+| Mutually-recursive types hash via Merkle fixed-point (no infinite loop) | §4.2 cycle-safe canonical graph hash (Tarjan SCC + local-index cycle break) — a total function, terminates by construction, no iteration |
+| Nominal distinctions preserved (UserId ≠ ProductId) | §2/§4.1 FQN mixed in as primary discriminator (and re-mixed per-member in §4.2 step 5) |
 | Selfhost + diff-test byte-identical | additive fingerprint never reaches IR; identity path untouched → byte-identical by construction |
-| Changing a type's fields changes its id; unrelated type unchanged | §4.1 field rendering + §4.2 transitive propagation (a change flows only to dependents) |
+| Changing a type's fields changes its id; unrelated type unchanged | §4.1 field rendering + §4.2 cross-SCC digest propagation (a change flows to the type and its dependent SCCs only) — modulo the collision caveat in §7 |
 
 The one criterion sh48's *sketch* stated — "id = hash(structure) **instead of**
 hash(FQN)" — is deliberately NOT met: §2/§3 show replacing the nominal id is both
@@ -208,5 +253,25 @@ dependents). Not before.
   structs keyed by field name (not source order), so sorting fields for the hash
   is safe; double-check no pass depends on declaration order surviving into a
   layout the fingerprint claims is unchanged.
-- **Collision bound**: i64-truncated FNV, same bound `content_id_for` already
-  carries and metadata already trusts. Acceptable; document it, don't re-litigate.
+- **Collision handling is NOT the same as nominal identity's, and this matters.**
+  `content_id_for`'s i64 collision is caught and `panic`ed at registration
+  (`type_registry_register`) because BOTH conflicting FQNs are present there to
+  compare. A fingerprint used as a **cache key** has no such moment: two distinct
+  structures colliding to the same i64 would produce a **false cache HIT** —
+  serving one type's stale cached output for another — which silently violates the
+  "changing fields changes the id" acceptance. So the consuming cache (ps3t.8)
+  MUST NOT trust the 64-bit fingerprint alone as a hit. Required discipline (pick
+  per the consumer, spelled out so the implementer doesn't skip it):
+  - **Verify on hit** — store the canonical serialization (or a second,
+    independent digest) alongside the cached entry; a fingerprint match is only a
+    *candidate*, confirmed by structural/second-digest comparison before reuse.
+    This is the same two-tier "fast bucket key + content-compare on collision"
+    discipline the content-hash interning already uses (`content_hash.av`), and it
+    turns a collision into a benign cache MISS, never a wrong hit.
+  - **Or widen the digest** — a 128-bit digest drives collision probability below
+    any realistic build's type count; combine with verify-on-hit for cache
+    entries whose staleness would be a correctness bug (not just a perf loss).
+  The nominal path keeps its cheap i64 + panic (a collision there is a build-time
+  rename, not a silent corruption). Do not paper over this asymmetry by citing
+  "metadata already trusts i64" — metadata trusts it for *identity* (panic-guarded),
+  not for a *silent cache hit*.
