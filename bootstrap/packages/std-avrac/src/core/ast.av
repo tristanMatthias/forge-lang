@@ -2000,6 +2000,13 @@ export enum Expr {
     /// instead, so the same `~` token is overloaded by context.
     /// Phase 4 (vez6.4) of Components V2.
     Splice(target: ExprId)
+    /// A parsed type expression carried as a value (vez6.3.14) — the body
+    /// of `quote type { <compound> }`. The parser converts the type to a
+    /// ValueType via type_expr_to_vtype and wraps it here; lower_quotes
+    /// (dispatch_quote_kind) consumes it into a ValueType-construction
+    /// tree via construct_value_type. A compile-time-only carrier: it is
+    /// lowered away before resolve/typeck, so it never reaches codegen.
+    TypeLit(vt: ValueType)
     /// Error placeholder — the parser emits this on a syntax error and
     /// resyncs (spine §14.5) so a broken source still yields a partial
     /// tree. The diagnostic + bad span live in the arena's error
@@ -2587,6 +2594,7 @@ export fn render_expr(store: NodeStore, expr: Expr) -> string {
         }
         .Isolated(body) -> "(isolated ${render_expr(store, store.exprs.get(body))})"
         .Quote(kind, body) -> "(quote ${kind} ${render_expr_id(store, body)})"
+        .TypeLit(vt) -> "(type-lit ${vtype_render_full(vt)})"
         .Splice(target) -> "(splice ${render_expr(store, store.exprs.get(target))})"
         .Error -> "(error)"
         .Missing -> "(missing)"

@@ -244,6 +244,8 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Bool(_) -> set
         .None -> set
         .QualifiedIdent(_) -> set
+        // A type carrier holds no idents (lowered away before codegen).
+        .TypeLit(_) -> set
         .Error -> set
         .Missing -> set
     }

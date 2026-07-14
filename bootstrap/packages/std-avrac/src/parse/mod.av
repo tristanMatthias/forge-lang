@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit}
+use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
@@ -2527,9 +2527,30 @@ impl Parser {
             // Flipped Quote.body is an ExprId scalar (walker-opaque) — leaf row.
             return .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
         }
+        if kind == "type" {
+            // `quote type { <type_expr> }` — parse the body as a TYPE
+            // (not a block expression), so compound types (List<T>,
+            // fn(int) -> int, Result<T,E>, T?, A | B, tuples, …) are
+            // captured structurally instead of collapsing to Unknown.
+            // The parsed type rides as an Expr.TypeLit carrier that
+            // lower_quotes turns into the ValueType construction.
+            let body_id = self.parse_quote_type_body()?
+            self.quote_depth = self.quote_depth - 1
+            return .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
+        }
         let body_id = self.parse_block_expression()?
         self.quote_depth = self.quote_depth - 1
         .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
+    }
+
+    /// Parse `{ <type_expr> }` for `quote type { ... }`, converting the
+    /// type to a ValueType and wrapping it in an Expr.TypeLit carrier.
+    fn parse_quote_type_body(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        if !self.consume(Tk.LeftBrace, "expected `{` after `quote type`") { return .Err("parse error") }
+        let te = self.parse_type_expr("expected a type inside `quote type { ... }`")?
+        if !self.consume(Tk.RightBrace, "expected `}` after the type in `quote type`") { return .Err("parse error") }
+        .Ok(self.alloc_at(Expr.TypeLit(type_expr_to_vtype(te)), sp_start))
     }
 
     fn parse_quote_kind(self) -> string {

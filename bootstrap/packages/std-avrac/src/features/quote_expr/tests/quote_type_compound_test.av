@@ -1,0 +1,71 @@
+// `quote type { <T> }` (vez6.3.14): the parser captures the body as a
+// TYPE (parse_type_expr → ValueType), carried through an Expr.TypeLit
+// and lowered by construct_value_type — so compound types (List<T>,
+// generics, fn types, optionals, unions, tuples, maps) survive instead
+// of collapsing to ValueType.Unknown (the old Ident-primitive-only path).
+//
+// Probe: a @comptime macro embeds the quoted type as the annotation of a
+// `let xs: <T> = 5` and we read the EXPANDED source — the rendered
+// annotation is exactly the type when construction is correct, and
+// absent (`let xs = 5`) when it falls to Unknown. `qtc_`-prefixed.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Build a fixture whose @expand macro annotates `let xs` with
+// `quote type { <ty> }`, then return the expanded source.
+fn qtc_expand(tag: string, ty: string) -> string {
+    let path = "/tmp/avra_qtc_${tag}.av"
+    write_fixture(path,
+        "use @std.avrac.core.{Stmt, Expr, ValueType}\n" +
+        "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+        "\n" +
+        "@comptime\n" +
+        "fn build() -> Stmt {\n" +
+        "    let t = quote type { " + ty + " }\n" +
+        "    Stmt.Let(\"xs\", t, synth_expr_id(Expr.Number(\"5\")))\n" +
+        "}\n" +
+        "\n" +
+        "@expand(build)\n" +
+        "fn placeholder() {}\n" +
+        "\n" +
+        "fn main() {}\n")
+    avra_shell_exec("env -u AVRA_TEST_RESULTS_BIN_PATH -u AVRA_LIB_PKG_ROOT ./build/bs2 expand '${path}' 2>/dev/null || true")
+}
+
+spec "quote type captures compound type expressions" {
+    then "List<int> is a List, not Unknown" {
+        qtc_expand("list", "List<int>").contains("let xs: List<int> = 5")
+    }
+    then "a nullable T? is an Optional" {
+        qtc_expand("opt", "int?").contains("let xs: int? = 5")
+    }
+    then "a generic Result<int, string> keeps both type args" {
+        // Result resolves to its fully-qualified name; the type args are
+        // what this pins (the old Unknown path dropped them entirely).
+        qtc_expand("generic", "Result<int, string>").contains("Result<int, string> = 5")
+    }
+    then "a function type fn(int) -> int round-trips" {
+        qtc_expand("fnty", "fn(int) -> int").contains("let xs: fn(int) -> int = 5")
+    }
+    then "an ad-hoc union int | string round-trips" {
+        qtc_expand("union", "int | string").contains("let xs: int|string = 5")
+    }
+    then "a tuple (int, string) round-trips" {
+        qtc_expand("tuple", "(int, string)").contains("let xs: (int, string) = 5")
+    }
+    then "a Map<string, int> round-trips" {
+        qtc_expand("map", "Map<string, int>").contains("let xs: Map<string, int> = 5")
+    }
+}
+
+spec "quote type still handles primitives (regression)" {
+    then "a bare int is still ValueType.Int" {
+        qtc_expand("prim", "int").contains("let xs: int = 5")
+    }
+    then "string, bool, float primitives round-trip" {
+        qtc_expand("str", "string").contains("let xs: string = 5")
+            && qtc_expand("bool", "bool").contains("let xs: bool = 5")
+            && qtc_expand("float", "float").contains("let xs: float = 5")
+    }
+}

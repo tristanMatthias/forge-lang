@@ -119,6 +119,10 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Isolated(body) -> "isolated ${fmt_expr(store, store.exprs.get(body))}"
         .Quote(kind, body) -> if kind == "expr" { "quote ${fmt_expr(store, store.exprs.get(body))}" } else { "quote ${kind} ${fmt_expr(store, store.exprs.get(body))}" }
         .Splice(target) -> "~${fmt_expr(store, store.exprs.get(target))}"
+        // The body of `quote type { T }` — render the type back inside
+        // the braces so `quote type ${body}` reproduces parseable source
+        // (metadata re-parses @comptime bodies from fmt output).
+        .TypeLit(vt) -> "{ ${vtype_render_full(vt)} }"
         .Error -> "(error)"
         .Missing -> "(missing)"
     }

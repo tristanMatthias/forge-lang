@@ -3378,6 +3378,16 @@ fn enum_value_to_value_type(v: Value) -> Result<ValueType, string> {
             let rt = value_to_value_type_node(p[0])?
             .Ok(ValueType.Task(rt))
         }
+        "Channel" -> {
+            if p.length != 1 { return .Err("decode: Channel arity") }
+            let elem = value_to_value_type_node(p[0])?
+            .Ok(ValueType.Channel(elem))
+        }
+        "Optional" -> {
+            if p.length != 1 { return .Err("decode: Optional arity") }
+            let inner = value_to_value_type_node(p[0])?
+            .Ok(ValueType.Optional(inner))
+        }
         _ -> .Err("decode: unknown ValueType variant `${v.enum_variant}`")
     }
 }
