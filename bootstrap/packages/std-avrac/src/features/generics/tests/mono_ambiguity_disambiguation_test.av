@@ -1,0 +1,61 @@
+// Monomorphizer disambiguation regression guard (ps3t.4.5(c)).
+//
+// CLAUDE.md "Silent Failure Modes" flags a monomorphizer ambiguity — when
+// multiple instantiations of the same generic base coexist, a naive pass would
+// take the FIRST match and stamp a wrong layout (the classic "mis-resolves a
+// `Box<Box<int>>`" case noted next to `scope_insts_for_ret`). That is handled
+// today by return-type pinning (`scope_insts_for_ret`) + superseded-inst
+// removal (`remove_superseded_insts_for`), which keep every genuinely-distinct
+// fully-concrete instantiation and drop only the under-resolved partials.
+//
+// This guard freezes that correctness: each `then` reads a value back through a
+// shape where a wrong first-match pick would corrupt the layout (returning a
+// null/garbage field or the wrong variant). If the disambiguation ever
+// regresses to first-match-wins, these fail. No production code changed for
+// this ticket — the machinery already resolves these; the guard prevents a
+// silent regression.
+
+type MadBox<T> = { val: T }
+type MadPair<A, B> = { fst: A, snd: B }
+
+fn mad_mk_i() -> MadBox<int> { MadBox { val: 7 } }
+fn mad_mk_s() -> MadBox<string> { MadBox { val: "hi" } }
+fn mad_id<T>(x: T) -> T { x }
+fn mad_first<A, B>(p: MadPair<A, B>) -> A { p.fst }
+
+spec "monomorphizer keeps distinct instantiations of the same base apart" {
+    then "a plain MadBox<int> field reads back (baseline)" {
+        let b: MadBox<int> = MadBox { val: 5 }
+        b.val == 5
+    }
+    then "nested MadBox<MadBox<int>> reads through BOTH levels (the flagged case)" {
+        // A first-match pick of the bare `MadBox` for the inner field would
+        // give the outer's `val` a wrong layout — the inner read would be
+        // garbage. Must be 42.
+        let outer: MadBox<MadBox<int>> = MadBox { val: MadBox { val: 42 } }
+        outer.val.val == 42
+    }
+    then "two return-type instantiations coexist (int vs string payload)" {
+        mad_mk_i().val == 7 && mad_mk_s().val == "hi"
+    }
+    then "a generic fn instantiated at two coexisting types" {
+        mad_id(9) == 9 && mad_id("q") == "q"
+    }
+    then "type-arg ORDER distinguishes MadPair<int,string> from MadPair<string,int>" {
+        // Swapped type-arg order is a distinct layout; a name-only (base) match
+        // would conflate them and mis-place the fields.
+        let p1: MadPair<int, string> = MadPair { fst: 3, snd: "a" }
+        let p2: MadPair<string, int> = MadPair { fst: "b", snd: 4 }
+        p1.fst == 3 && p1.snd == "a" && p2.fst == "b" && p2.snd == 4
+    }
+    then "a generic fn returning the bare first type-param, two instantiations" {
+        let p1: MadPair<int, string> = MadPair { fst: 3, snd: "a" }
+        let p2: MadPair<string, int> = MadPair { fst: "b", snd: 4 }
+        mad_first(p1) == 3 && mad_first(p2) == "b"
+    }
+    then "same base, differing second arg: MadPair<int,int> vs MadPair<int,string>" {
+        let a: MadPair<int, int> = MadPair { fst: 1, snd: 2 }
+        let b: MadPair<int, string> = MadPair { fst: 1, snd: "x" }
+        a.snd == 2 && b.snd == "x"
+    }
+}
