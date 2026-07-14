@@ -40,14 +40,16 @@ extern fn avra_stdout_write(s: string)
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_getpid() -> int
-extern fn avra_selfhost_read_file(path: string) -> string
-extern fn avra_selfhost_file_exists(path: string) -> int
+// Tail-read the progress file from a byte offset — the whole-file
+// read + file_exists probe are gone: "" covers both missing-file and
+// nothing-new-since-last-poll.
+extern fn avra_selfhost_read_file_from(path: string, offset: int) -> string
 extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_str, json_extract_string}
 use @std.avrac.build.{pool_extract_rc}
 
-// Codepoint-aware string ops (t-clnd) — declared inline like this
+// Codepoint-aware string ops — declared inline like this
 // package's other runtime externs (see cli.av). Backed by runtime.c.
 extern fn avra_str_codepoint_count(s: string) -> int
 extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
@@ -198,7 +200,7 @@ export fn run_with_progress(cmd: string, label: string, total: int) -> int {
     rc
 }
 
-type DrainResult = {
+export type DrainResult = {
     bytes_seen: int,
     active: string,
     active_t_start: int,
@@ -209,15 +211,18 @@ type DrainResult = {
 /// Read the progress file from `bytes_seen` to EOF, parse new
 /// `start`/`done` events, print scrollback for each `done`, and
 /// return updated state. Idempotent on the file (caller tracks
-/// bytes_seen).
-fn drain_progress_file(path: string, bytes_seen: int, active_in: string, active_t_in: int,
+/// bytes_seen). Exported so the tail-read + offset arithmetic is
+/// unit-testable across successive polls of a growing file.
+export fn drain_progress_file(path: string, bytes_seen: int, active_in: string, active_t_in: int,
                         last_pkg_in: string, count_in: int) -> DrainResult {
-    if avra_selfhost_file_exists(path) == 0 {
-        return DrainResult { bytes_seen: bytes_seen, active: active_in, active_t_start: active_t_in,
-                             last_pkg: last_pkg_in, count: count_in }
-    }
-    let buf = avra_selfhost_read_file(path)
-    if buf.length <= bytes_seen {
+    // Tail-read only the bytes written since the last poll, instead of
+    // re-reading the whole file from byte 0 each 100ms tick.
+    // `buf` is the suffix at/after `bytes_seen`, so its indices are
+    // tail-relative; a missing file OR no new bytes both yield "" →
+    // return unchanged. `start`/`i` now walk the tail from 0, and the
+    // new absolute offset is `bytes_seen + start`.
+    let buf = avra_selfhost_read_file_from(path, bytes_seen)
+    if buf.length == 0 {
         return DrainResult { bytes_seen: bytes_seen, active: active_in, active_t_start: active_t_in,
                              last_pkg: last_pkg_in, count: count_in }
     }
@@ -225,8 +230,8 @@ fn drain_progress_file(path: string, bytes_seen: int, active_in: string, active_
     mut active_t = active_t_in
     mut last_pkg = last_pkg_in
     mut count = count_in
-    mut start = bytes_seen
-    mut i = bytes_seen
+    mut start = 0
+    mut i = 0
     while i < buf.length {
         if buf.byte(i) == 0x0A {
             // Process this line
@@ -262,7 +267,7 @@ fn drain_progress_file(path: string, bytes_seen: int, active_in: string, active_
         }
         i = i + 1
     }
-    DrainResult { bytes_seen: start, active: active, active_t_start: active_t, last_pkg: last_pkg, count: count }
+    DrainResult { bytes_seen: bytes_seen + start, active: active, active_t_start: active_t, last_pkg: last_pkg, count: count }
 }
 
 /// Render the sticky bottom region: spinner + progress bar.
@@ -374,7 +379,7 @@ fn trim_trailing_av(s: string) -> string {
 // flag could be non-ASCII) is never truncated mid-codepoint and the
 // padding count is right. Width here is codepoint count, not terminal
 // column width — a wcwidth surface for wide CJK/emoji glyphs is a further
-// step (t-clnd notes it as out of scope).
+// step, out of scope here.
 fn pad_right(s: string, width: int) -> string {
     let cps = avra_str_codepoint_count(s)
     if cps > width {

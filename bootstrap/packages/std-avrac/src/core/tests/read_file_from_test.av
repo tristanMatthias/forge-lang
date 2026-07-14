@@ -1,7 +1,7 @@
 // avra_selfhost_read_file_from(path, offset): tail read — return only the
 // bytes at/after `offset`, so a poller reads the new suffix of a growing
-// file instead of re-reading from byte 0 (t-yhpb; unblocks the spinner's
-// progress drain). Empty-string contract on miss / at-or-past-EOF, same as
+// file instead of re-reading from byte 0 (backs the spinner's progress
+// drain). Empty-string contract on miss / at-or-past-EOF, same as
 // avra_selfhost_read_file's failure case. `rff_`-prefixed fixtures.
 
 extern fn avra_selfhost_write_file(path: string, content: string) -> int

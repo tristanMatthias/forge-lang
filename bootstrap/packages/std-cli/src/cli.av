@@ -11,7 +11,7 @@
 extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
 extern fn avra_process_exit(code: int)
-// Codepoint-aware width/slice (t-clnd), backed by runtime.c — so help
+// Codepoint-aware width/slice, backed by runtime.c — so help
 // columns measure and truncate names in codepoints, not bytes.
 extern fn avra_str_codepoint_count(s: string) -> int
 extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string

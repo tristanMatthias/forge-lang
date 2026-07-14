@@ -1,4 +1,4 @@
-// Codepoint-aware string ops (t-clnd): avra_str_codepoint_count counts
+// Codepoint-aware string ops: avra_str_codepoint_count counts
 // Unicode codepoints (not bytes); avra_str_substring_codepoints slices by
 // codepoint index so a multibyte UTF-8 sequence is never torn. Backs the
 // CLI's codepoint-safe help padding/truncation. `cps_`-prefixed.

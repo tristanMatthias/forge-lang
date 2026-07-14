@@ -2393,7 +2393,7 @@ const char* avra_str_substring_len(const char* s, int64_t start, int64_t end,
     return r;
 }
 
-// ── Codepoint-aware string ops (t-clnd) ──
+// ── Codepoint-aware string ops ──
 // The byte-indexed substring/length ops above split multibyte UTF-8
 // sequences and miscount width for non-ASCII text. These two count and
 // slice by Unicode CODEPOINT instead, so CLI truncation/padding never
