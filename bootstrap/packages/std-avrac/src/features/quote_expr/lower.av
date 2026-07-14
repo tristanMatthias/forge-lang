@@ -1602,6 +1602,10 @@ fn construct_logicop(store: NodeStore, op: LogicOp) -> Expr {
 /// returns the source-text form ("+", "==", etc.); we need the
 /// enum-variant name ("Add", "Eq", etc.) for the AST construction.
 fn op_variant_name_bin(op: BinOp) -> string {
+    // Exhaustive — no wildcard: a missing arm here silently mis-encodes the
+    // operator (a `_ -> "Add"` fallthrough used to map every bitwise/shift op
+    // to Add, so `quote { a << b }` reconstructed as `a + b`). Naming every
+    // variant makes a future BinOp a compile error instead.
     match op {
         .Add -> "Add"
         .Sub -> "Sub"
@@ -1614,21 +1618,24 @@ fn op_variant_name_bin(op: BinOp) -> string {
         .Le -> "Le"
         .Gt -> "Gt"
         .Ge -> "Ge"
-        _ -> "Add"
+        .BitAnd -> "BitAnd"
+        .BitOr -> "BitOr"
+        .BitXor -> "BitXor"
+        .Shl -> "Shl"
+        .Shr -> "Shr"
     }
 }
 fn op_variant_name_un(op: UnOp) -> string {
     match op {
         .Neg -> "Neg"
         .Not -> "Not"
-        _ -> "Neg"
+        .BitNot -> "BitNot"
     }
 }
 fn op_variant_name_logic(op: LogicOp) -> string {
     match op {
         .And -> "And"
         .Or -> "Or"
-        _ -> "And"
     }
 }
 

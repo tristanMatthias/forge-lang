@@ -2966,6 +2966,11 @@ fn enum_value_to_binop(v: Value) -> Result<BinOp, string> {
         "Le"  -> .Ok(BinOp.Le)
         "Gt"  -> .Ok(BinOp.Gt)
         "Ge"  -> .Ok(BinOp.Ge)
+        "BitAnd" -> .Ok(BinOp.BitAnd)
+        "BitOr"  -> .Ok(BinOp.BitOr)
+        "BitXor" -> .Ok(BinOp.BitXor)
+        "Shl"    -> .Ok(BinOp.Shl)
+        "Shr"    -> .Ok(BinOp.Shr)
         _     -> .Err("decode: unknown BinOp `${v.enum_variant}`")
     }
 }
@@ -2975,6 +2980,7 @@ fn enum_value_to_unop(v: Value) -> Result<UnOp, string> {
     match v.enum_variant {
         "Neg" -> .Ok(UnOp.Neg)
         "Not" -> .Ok(UnOp.Not)
+        "BitNot" -> .Ok(UnOp.BitNot)
         _     -> .Err("decode: unknown UnOp `${v.enum_variant}`")
     }
 }

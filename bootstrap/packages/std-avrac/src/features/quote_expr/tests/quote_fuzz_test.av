@@ -1,0 +1,225 @@
+// WHY: quote fuzzing harness. Generates random, deeply-nested Expr trees and
+// checks the quote round-trip invariant: encoding an Expr the way quote
+// lowering does — construct_stmt(Stmt.Return(e)) — then evaluating it and
+// decoding the result (value_to_stmt) yields a Return whose expression renders
+// IDENTICALLY to the original. This exercises construct_expr/construct_stmt +
+// the eval encoder/decoder over randomly-combined variants and nesting depths
+// the hand-picked spec suites never reach. Property-driven via the seeded,
+// shrinking @std.avrac.testing framework, so a failure reports a MINIMAL
+// counterexample (rendered) at a replayable seed.
+
+use @std.avrac.core.{NodeStore, ExprId, Expr, Stmt, BinOp, UnOp, new_node_store, build_line_index, render_expr_id}
+use @std.avrac.features.quote_expr.{construct_stmt}
+use @std.avrac.features.eval.{runtime_new, eval_expr, step_had_error, value_to_stmt}
+use @std.avrac.testing.{Rng, gen_choice, check_property_shrink}
+
+// ── Round-trip predicate ──
+
+/// Encode `eid` as quote lowering would (wrapped in a Return so we can decode
+/// via the exported value_to_stmt), evaluate the construction, and render the
+/// decoded expression. Returns a distinctive sentinel string on any failure
+/// so a mismatch is visible in the counterexample.
+fn roundtrip_render(store: NodeStore, eid: ExprId) -> string {
+    let c = construct_stmt(store, Stmt.Return(eid))
+    let r = eval_expr(runtime_new(store), c)
+    if step_had_error(r) { return "<eval-error>" }
+    match value_to_stmt(store, r.value) {
+        .Ok(s) -> match s {
+            .Return(eid2) -> render_expr_id(store, eid2)
+            _ -> "<not-return>"
+        }
+        .Err(_) -> "<decode-error>"
+    }
+}
+
+/// The round-trip invariant: the decoded expression renders identically to the
+/// original.
+fn roundtrips(store: NodeStore, eid: ExprId) -> bool {
+    roundtrip_render(store, eid) == render_expr_id(store, eid)
+}
+
+// ── Generators ──
+
+fn all_binops() -> List<BinOp> {
+    let ops: List<BinOp> = [BinOp.Add, BinOp.Sub, BinOp.Mul, BinOp.Div, BinOp.Mod,
+     BinOp.Eq, BinOp.Ne, BinOp.Lt, BinOp.Le, BinOp.Gt, BinOp.Ge,
+     BinOp.BitAnd, BinOp.BitOr, BinOp.BitXor, BinOp.Shl, BinOp.Shr]
+    ops
+}
+
+fn all_unops() -> List<UnOp> {
+    let ops: List<UnOp> = [UnOp.Neg, UnOp.Not, UnOp.BitNot]
+    ops
+}
+
+/// A random LEAF expression (no children). Content is kept simple/ASCII so a
+/// mismatch means a real encode/decode bug, not a rendering quirk.
+fn gen_leaf(rng: Rng, store: NodeStore) -> ExprId {
+    match rng.int_below(5) {
+        0 -> store.exprs.add_leaf(Expr.Number(string(rng.int_below(1000))))
+        1 -> store.exprs.add_leaf(Expr.String("\"s" + string(rng.int_below(100)) + "\""))
+        2 -> store.exprs.add_leaf(Expr.Bool(if rng.boolean() { "true" } else { "false" }))
+        3 -> store.exprs.add_leaf(Expr.Ident("v" + string(rng.int_below(100))))
+        _ -> store.exprs.add_leaf(Expr.None)
+    }
+}
+
+/// `n` in `[min_len, min_len+2]` children, each generated at `depth`.
+fn gen_kids(rng: Rng, store: NodeStore, depth: int, min_len: int) -> List<ExprId> {
+    let n = min_len + rng.int_below(3)
+    mut out: List<ExprId> = []
+    mut i = 0
+    while i < n {
+        out.push(gen_expr_id(rng, store, depth))
+        i = i + 1
+    }
+    out
+}
+
+/// A random Expr tree of depth up to `depth`, built into `store`; returns its
+/// root id. At depth 0 only leaves are produced, so recursion always terminates.
+fn gen_expr_id(rng: Rng, store: NodeStore, depth: int) -> ExprId {
+    if depth <= 0 { return gen_leaf(rng, store) }
+    match rng.int_below(9) {
+        2 -> {
+            let l = gen_expr_id(rng, store, depth - 1)
+            let r = gen_expr_id(rng, store, depth - 1)
+            store.exprs.add_leaf(Expr.Binary(l, gen_choice(rng, all_binops()), r))
+        }
+        3 -> store.exprs.add_leaf(Expr.Unary(gen_choice(rng, all_unops()), gen_expr_id(rng, store, depth - 1)))
+        4 -> store.exprs.add_leaf(Expr.Grouping(gen_expr_id(rng, store, depth - 1)))
+        5 -> store.exprs.add_leaf(Expr.ListLit(gen_kids(rng, store, depth - 1, 0)))
+        6 -> store.exprs.add_leaf(Expr.Tuple(gen_kids(rng, store, depth - 1, 2)))
+        // The remaining draws (0, 1, 7, 8) terminate this branch at a leaf,
+        // biasing toward shallow-ish trees while still nesting to `depth`.
+        _ -> gen_leaf(rng, store)
+    }
+}
+
+// ── Shrinker ──
+
+/// Smaller candidates for a failing tree: replace a compound node with one of
+/// its (already smaller) child subtrees. Leaves are already minimal. Ordered
+/// smaller-first, as check_property_shrink expects.
+fn shrink_expr_id(store: NodeStore, eid: ExprId) -> List<ExprId> {
+    match store.exprs.get(eid) {
+        .Binary(l, _, r) -> [l, r]
+        .Unary(_, r) -> [r]
+        .Grouping(inner) -> [inner]
+        .ListLit(elems) -> elems
+        .Tuple(elems) -> elems
+        _ -> {
+            let empty: List<ExprId> = []
+            empty
+        }
+    }
+}
+
+// ── Explicit per-variant regression checks ──
+//
+// A deterministic round-trip for each generated variant in isolation, so a
+// regression names the exact variant rather than surfacing only through the
+// fuzzer's random draws.
+
+fn leaf(store: NodeStore, e: Expr) -> ExprId { store.exprs.add_leaf(e) }
+
+spec "each generated Expr variant round-trips through quote construction" {
+    then "Number" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Number("42")))
+    }
+    then "String" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.String("\"hello\"")))
+    }
+    then "Bool" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Bool("true")))
+    }
+    then "None" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.None))
+    }
+    then "Ident" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Ident("x")))
+    }
+    then "Binary" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Binary(leaf(s, Expr.Number("2")), BinOp.Mul, leaf(s, Expr.Number("3")))))
+    }
+    then "Unary" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Unary(UnOp.Neg, leaf(s, Expr.Number("7")))))
+    }
+    then "Grouping" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Grouping(leaf(s, Expr.Ident("y")))))
+    }
+    then "ListLit" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.ListLit([leaf(s, Expr.Number("1")), leaf(s, Expr.Number("2"))])))
+    }
+    then "Tuple" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Tuple([leaf(s, Expr.Number("1")), leaf(s, Expr.Ident("z"))])))
+    }
+    then "Binary with a shift op (regression: `<<` was mis-encoded as `+`)" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Binary(leaf(s, Expr.Number("1")), BinOp.Shl, leaf(s, Expr.Number("2")))))
+    }
+    then "Binary with a bitwise op (regression: `&`/`|`/`^` were mis-encoded as `+`)" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Binary(leaf(s, Expr.Ident("a")), BinOp.BitXor, leaf(s, Expr.Ident("b")))))
+    }
+    then "Unary BitNot (regression: `~` was mis-encoded as `-`)" {
+        let s = new_node_store(build_line_index(""))
+        roundtrips(s, leaf(s, Expr.Unary(UnOp.BitNot, leaf(s, Expr.Number("5")))))
+    }
+}
+
+// ── The fuzzer ──
+//
+// Each generated case carries its OWN store, so one iteration's construction /
+// eval / decode allocations can't perturb another's — the property is over an
+// isolated (store, root) pair, not a store shared across the whole batch.
+
+type FuzzCase = { store: NodeStore, root: ExprId }
+
+/// A fresh store with one random depth-`d` tree; `root` is its id in that store.
+fn gen_case(rng: Rng, d: int) -> FuzzCase {
+    let s = new_node_store(build_line_index(""))
+    FuzzCase { store: s, root: gen_expr_id(rng, s, d) }
+}
+
+/// Smaller cases: each child subtree of `root`, in the same (per-case) store.
+fn shrink_case(fc: FuzzCase) -> List<FuzzCase> {
+    mut out: List<FuzzCase> = []
+    for child in shrink_expr_id(fc.store, fc.root) {
+        out.push(FuzzCase { store: fc.store, root: child })
+    }
+    out
+}
+
+fn fuzz_batch(seed: int) -> bool {
+    let rep = check_property_shrink(
+        (r: Rng) -> gen_case(r, 4),
+        (fc: FuzzCase) -> shrink_case(fc),
+        (fc: FuzzCase) -> roundtrips(fc.store, fc.root),
+        (fc: FuzzCase) -> render_expr_id(fc.store, fc.root),
+        seed, 100)
+    if !rep.ok {
+        println("COUNTEREXAMPLE seed=" + string(rep.seed) + " iter=" + string(rep.iterations)
+            + " shrinks=" + string(rep.shrinks) + " failing=" + rep.failing)
+    }
+    rep.ok
+}
+
+spec "quote construction round-trips random Expr trees" {
+    then "100 random depth-4 trees all round-trip (construct_stmt → eval → decode)" {
+        fuzz_batch(1)
+    }
+    then "a different seed also round-trips (independent batch)" {
+        fuzz_batch(424242)
+    }
+}
