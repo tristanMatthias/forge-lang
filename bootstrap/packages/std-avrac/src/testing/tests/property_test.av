@@ -1,0 +1,139 @@
+// WHY: pins the property-testing framework's own contract — the PRNG is
+// deterministic + bounded, the generator combinators stay within their inputs,
+// check_property captures a counterexample on failure, and shrinking drives
+// that counterexample to its minimal reproducer. These are the guarantees
+// downstream property tests (e.g. the quote fuzzer) rely on, so they are
+// mutation-checked: a broken PRNG/shrinker fails specific specs here.
+
+use @std.avrac.testing.{Rng, rng_new, gen_choice, gen_one_of, gen_list, check_property, check_property_shrink, property_holds}
+
+spec "seeded PRNG is deterministic and bounded" {
+    then "same seed yields the same sequence" {
+        let a = rng_new(42)
+        let b = rng_new(42)
+        a.next_raw() == b.next_raw() && a.next_raw() == b.next_raw()
+    }
+    then "different seeds diverge" {
+        let a = rng_new(1)
+        let b = rng_new(2)
+        a.next_raw() != b.next_raw()
+    }
+    then "int_below stays in [0, n)" {
+        let r = rng_new(7)
+        mut ok = true
+        mut i = 0
+        while i < 300 {
+            let v = r.int_below(10)
+            if v < 0 || v >= 10 { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "int_in stays in the inclusive range" {
+        let r = rng_new(99)
+        mut ok = true
+        mut i = 0
+        while i < 300 {
+            let v = r.int_in(-3, 5)
+            if v < -3 || v > 5 { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "int_below spans its range rather than returning a constant" {
+        let r = rng_new(123)
+        let first = r.int_below(1000000)
+        mut saw_different = false
+        mut i = 0
+        while i < 50 {
+            if r.int_below(1000000) != first { saw_different = true }
+            i = i + 1
+        }
+        saw_different
+    }
+}
+
+spec "generator combinators stay within their inputs" {
+    then "gen_choice returns an element of the list" {
+        let r = rng_new(5)
+        let choices: List<int> = [10, 20, 30]
+        mut ok = true
+        mut i = 0
+        while i < 100 {
+            let v = gen_choice(r, choices)
+            if v != 10 && v != 20 && v != 30 { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "gen_list length is within [0, max_len]" {
+        let r = rng_new(8)
+        mut ok = true
+        mut i = 0
+        while i < 100 {
+            let xs = gen_list(r, (rr: Rng) -> rr.int_below(100), 6)
+            if xs.length < 0 || xs.length > 6 { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "gen_one_of runs one of the provided generators" {
+        let r = rng_new(11)
+        // Two generators: one always yields 1, the other always 2.
+        let gens: List<fn(Rng) -> int> = [(rr: Rng) -> rr.int_below(1) + 1, (rr: Rng) -> rr.int_below(1) + 2]
+        mut ok = true
+        mut i = 0
+        while i < 100 {
+            let v = gen_one_of(r, gens)
+            if v != 1 && v != 2 { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+}
+
+spec "check_property runs a predicate over generated inputs" {
+    then "an always-true property passes every iteration" {
+        let rep = check_property((r: Rng) -> r.int_below(100), (x: int) -> x >= 0, (x: int) -> string(x), 1, 200)
+        rep.ok && rep.iterations == 200 && rep.failing == ""
+    }
+    then "a false property fails and renders its counterexample" {
+        // "every draw is < 5" is false over int_below(100); describe tags
+        // whether the captured value really violates the predicate (x >= 5).
+        let rep = check_property((r: Rng) -> r.int_below(100), (x: int) -> x < 5,
+                                 (x: int) -> if x >= 5 { "violates" } else { "spurious" }, 1, 500)
+        !rep.ok && rep.failing == "violates"
+    }
+    then "check_property is deterministic in its seed" {
+        let a = check_property((r: Rng) -> r.int_below(100), (x: int) -> x < 5, (x: int) -> string(x), 7, 500)
+        let b = check_property((r: Rng) -> r.int_below(100), (x: int) -> x < 5, (x: int) -> string(x), 7, 500)
+        a.ok == b.ok && a.iterations == b.iterations && a.failing == b.failing
+    }
+    then "property_holds is the boolean shorthand" {
+        property_holds((r: Rng) -> r.int_below(100), (x: int) -> x >= 0, 3, 100)
+    }
+}
+
+spec "shrinking minimizes a counterexample" {
+    then "an int property shrinks down to the boundary value" {
+        // gen yields [4, 50] — every value fails `x <= 3`; the minimal
+        // failing value is 4. shrink steps x down by one toward 0.
+        let gen = (r: Rng) -> r.int_in(4, 50)
+        let shrink = (x: int) -> {
+            mut cands: List<int> = []
+            if x > 0 { cands.push(x - 1) }
+            cands
+        }
+        let rep = check_property_shrink(gen, shrink, (x: int) -> x <= 3, (x: int) -> string(x), 1, 50)
+        !rep.ok && rep.failing == "4" && rep.shrinks > 0
+    }
+    then "shrinking a passing property is a no-op success" {
+        let gen = (r: Rng) -> r.int_below(100)
+        let shrink = (x: int) -> {
+            let empty: List<int> = []
+            empty
+        }
+        let rep = check_property_shrink(gen, shrink, (x: int) -> x >= 0, (x: int) -> string(x), 1, 100)
+        rep.ok && rep.shrinks == 0 && rep.failing == ""
+    }
+}

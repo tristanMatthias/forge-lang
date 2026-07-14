@@ -1,0 +1,194 @@
+// WHY: property-based / generative testing for the spec/given/then suite.
+// Instead of hand-picking cases, a PROPERTY states an invariant that must
+// hold for EVERY input a generator can produce; the runner checks it over a
+// bounded, deterministic batch of random inputs and, on failure, SHRINKS the
+// counterexample toward a minimal reproducer.
+//
+// Determinism is a hard requirement here: `Math.random` is unavailable in this
+// runtime AND `bs2 test` must be reproducible, so all randomness comes from an
+// explicitly-threaded seeded PRNG. Same seed → same sequence → a failing
+// property replays exactly. This is a plain-fn API (`check_property(...)`), not
+// new `property { forall }` surface syntax — new syntax would need a seed
+// cycle, which feature branches must never do; a fn API drops straight into a
+// `then` block as the asserted boolean.
+
+// ── Seeded PRNG: SplitMix64 ──
+//
+// State advances by a fixed odd Weyl increment (GOLDEN), so it steps through
+// all 2^64 values and can never get stuck at a fixed point — unlike xorshift,
+// whose period and non-degeneracy depend on the shift being logical. The
+// output is a multiply-based avalanche mix of the state; even where `>>` is
+// arithmetic here, the multiplies dominate the spread, and the sequence stays
+// fully deterministic. Not cryptographic — reproducible variety is all a
+// fuzzer needs.
+
+const GOLDEN: int = 0x9E3779B97F4A7C15   // odd 64-bit Weyl increment (golden ratio)
+const MIX1: int   = 0xBF58476D1CE4E5B9
+const MIX2: int   = 0x94D049BB133111EB
+const MASK63: int = 0x7FFFFFFFFFFFFFFF   // clears the sign bit → non-negative
+
+/// A seeded pseudo-random source. Threaded explicitly (there is no global
+/// entropy); `next_raw` mutates it in place so successive draws walk the
+/// sequence.
+export type Rng = { state: int }
+
+/// A fresh PRNG for `seed`. Every seed — including 0 — yields a usable,
+/// non-degenerate sequence (the Weyl step advances from any start).
+export fn rng_new(seed: int) -> Rng {
+    Rng { state: seed }
+}
+
+impl Rng {
+    /// Advance the state one Weyl step and return the mixed 64-bit output.
+    /// The raw result spans the full signed i64 range (may be negative);
+    /// callers that want a bounded non-negative value use `int_below`/`int_in`.
+    fn next_raw(self) -> int {
+        self.state = self.state + GOLDEN
+        mut z = self.state
+        z = (z ^ (z >> 30)) * MIX1
+        z = (z ^ (z >> 27)) * MIX2
+        z = z ^ (z >> 31)
+        z
+    }
+
+    /// A non-negative int in `[0, n)`. `n <= 0` yields 0 (empty range).
+    fn int_below(self, n: int) -> int {
+        if n <= 0 { return 0 }
+        (self.next_raw() & MASK63) % n
+    }
+
+    /// An int in the INCLUSIVE range `[lo, hi]`. `hi < lo` yields `lo`.
+    fn int_in(self, lo: int, hi: int) -> int {
+        if hi <= lo { return lo }
+        lo + self.int_below(hi - lo + 1)
+    }
+
+    /// A coin flip.
+    fn boolean(self) -> bool {
+        self.int_below(2) == 1
+    }
+}
+
+// ── Generator combinators ──
+//
+// A generator is a closure `fn(Rng) -> T`. It draws from the threaded `rng`
+// (mutating it) and builds a value of the target type. Compose them to
+// describe arbitrarily-shaped inputs; recursion is bounded by a depth budget
+// the caller threads through its own generators.
+
+/// Pick one element of `choices` uniformly. `choices` must be non-empty
+/// (an empty list has nothing to return — the caller guarantees it).
+export fn gen_choice<T>(rng: Rng, choices: List<T>) -> T {
+    choices[rng.int_below(choices.length)]
+}
+
+/// Run one of `gens`, chosen uniformly — the sum/alternation combinator
+/// (e.g. "a literal OR a binary OR a call"). `gens` must be non-empty.
+export fn gen_one_of<T>(rng: Rng, gens: List<fn(Rng) -> T>) -> T {
+    let pick = gens[rng.int_below(gens.length)]
+    pick(rng)
+}
+
+/// A list of 0..=`max_len` elements, each drawn from `elem`.
+export fn gen_list<T>(rng: Rng, elem: fn(Rng) -> T, max_len: int) -> List<T> {
+    let len = rng.int_below(max_len + 1)
+    mut out: List<T> = []
+    mut i = 0
+    while i < len {
+        out.push(elem(rng))
+        i = i + 1
+    }
+    out
+}
+
+// ── Property runner ──
+
+/// The outcome of a property check. `ok` is the assertion a `then` block reads.
+/// On failure the remaining fields replay + explain the counterexample: `seed`
+/// reruns the whole batch, `iterations` is how many inputs were tried before
+/// the failure, `shrinks` is how many minimization steps were applied, and
+/// `failing` is the caller's `describe` of the (minimized) counterexample
+/// (`""` on success). The report is deliberately NON-generic: the input type
+/// `T` lives only in the generator/predicate closures, and rendering the
+/// counterexample to a string here keeps the report free of `T` — a generic
+/// struct returned from a generic fn currently can't be monomorphized when its
+/// type parameter is reachable only through closure arguments.
+export type PropReport = {
+    ok: bool,
+    iterations: int,
+    seed: int,
+    shrinks: int,
+    failing: string,
+}
+
+/// Hard cap on shrink steps, so a misbehaving `shrink` (one that returns an
+/// endlessly-failing-but-never-smaller candidate) can't loop forever.
+const MAX_SHRINK_STEPS: int = 1000
+
+/// Check that `pred` holds for every one of `iters` inputs drawn from a PRNG
+/// seeded with `seed`. Stops at the first counterexample and renders it via
+/// `describe` into the report's `failing`. No shrinking — use
+/// `check_property_shrink` to minimize the counterexample first.
+export fn check_property<T>(gen: fn(Rng) -> T, pred: fn(T) -> bool, describe: fn(T) -> string, seed: int, iters: int) -> PropReport {
+    let rng = rng_new(seed)
+    mut i = 0
+    while i < iters {
+        let input = gen(rng)
+        if !pred(input) {
+            return PropReport { ok: false, iterations: i + 1, seed: seed, shrinks: 0, failing: describe(input) }
+        }
+        i = i + 1
+    }
+    PropReport { ok: true, iterations: iters, seed: seed, shrinks: 0, failing: "" }
+}
+
+/// Like `check_property`, but on the first counterexample it MINIMIZES: it asks
+/// `shrink` for smaller candidates and greedily adopts the first that still
+/// fails `pred`, repeating until no smaller failing candidate exists (or the
+/// step cap is hit). `shrink` returns candidates ordered smaller-first; an
+/// empty list means "already minimal". The reported `failing` is `describe` of
+/// the minimal reproducer, which is what a developer actually debugs.
+export fn check_property_shrink<T>(gen: fn(Rng) -> T, shrink: fn(T) -> List<T>, pred: fn(T) -> bool, describe: fn(T) -> string, seed: int, iters: int) -> PropReport {
+    let rng = rng_new(seed)
+    mut i = 0
+    while i < iters {
+        let input = gen(rng)
+        if !pred(input) {
+            mut cur = input
+            mut steps = 0
+            mut shrinking = true
+            while shrinking && steps < MAX_SHRINK_STEPS {
+                shrinking = false
+                let cands = shrink(cur)
+                mut j = 0
+                while j < cands.length {
+                    if !pred(cands[j]) {
+                        cur = cands[j]
+                        steps = steps + 1
+                        shrinking = true
+                        j = cands.length          // restart the search from the smaller `cur`
+                    } else {
+                        j = j + 1
+                    }
+                }
+            }
+            return PropReport { ok: false, iterations: i + 1, seed: seed, shrinks: steps, failing: describe(cur) }
+        }
+        i = i + 1
+    }
+    PropReport { ok: true, iterations: iters, seed: seed, shrinks: 0, failing: "" }
+}
+
+/// Convenience for the common "just assert the invariant holds" case: returns
+/// the bare boolean a `then` block wants (no counterexample rendering, so no
+/// `describe`). Reach for `check_property*` when the counterexample / seed /
+/// shrink detail matters for the failure message.
+export fn property_holds<T>(gen: fn(Rng) -> T, pred: fn(T) -> bool, seed: int, iters: int) -> bool {
+    let rng = rng_new(seed)
+    mut i = 0
+    while i < iters {
+        if !pred(gen(rng)) { return false }
+        i = i + 1
+    }
+    true
+}
