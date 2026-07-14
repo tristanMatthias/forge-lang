@@ -1,0 +1,68 @@
+// avra_selfhost_read_file_from(path, offset): tail read — return only the
+// bytes at/after `offset`, so a poller reads the new suffix of a growing
+// file instead of re-reading from byte 0 (backs the spinner's progress
+// drain). Empty-string contract on miss / at-or-past-EOF, same as
+// avra_selfhost_read_file's failure case. `rff_`-prefixed fixtures.
+
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_read_file_from(path: string, offset: int) -> string
+extern fn avra_selfhost_append_file(path: string, content: string) -> int
+extern fn avra_remove_file(path: string) -> int
+
+fn rff_write(p: string, s: string) {
+    let _ = avra_selfhost_write_file(p, s)
+}
+
+spec "avra_selfhost_read_file_from tail-reads from an offset" {
+    then "offset 0 returns the whole file (== read_file)" {
+        let p = "build/cache/_rff_whole.txt"
+        rff_write(p, "SELECT * FROM users")
+        let got = avra_selfhost_read_file_from(p, 0)
+        let _ = avra_remove_file(p)
+        got == "SELECT * FROM users"
+    }
+    then "a mid-file offset returns only the suffix" {
+        let p = "build/cache/_rff_mid.txt"
+        rff_write(p, "0123456789")
+        // 10 bytes; offset 7 -> the last 3 bytes "789".
+        let got = avra_selfhost_read_file_from(p, 7)
+        let _ = avra_remove_file(p)
+        got == "789"
+    }
+    then "offset exactly at EOF returns the empty string" {
+        let p = "build/cache/_rff_eof.txt"
+        rff_write(p, "abc")
+        let got = avra_selfhost_read_file_from(p, 3)
+        let _ = avra_remove_file(p)
+        got == ""
+    }
+    then "offset past EOF returns the empty string (no over-read)" {
+        let p = "build/cache/_rff_past.txt"
+        rff_write(p, "abc")
+        let got = avra_selfhost_read_file_from(p, 99)
+        let _ = avra_remove_file(p)
+        got == ""
+    }
+    then "a negative offset is clamped to 0 (whole file)" {
+        let p = "build/cache/_rff_neg.txt"
+        rff_write(p, "xyz")
+        let got = avra_selfhost_read_file_from(p, -5)
+        let _ = avra_remove_file(p)
+        got == "xyz"
+    }
+    then "a missing file returns the empty string" {
+        avra_selfhost_read_file_from("build/cache/_rff_absent_nope.txt", 0) == ""
+    }
+    then "the tail-read tracks a growing file across appends" {
+        // Simulate the poller: read the tail written since the last offset.
+        let p = "build/cache/_rff_grow.txt"
+        rff_write(p, "aaa")
+        let first = avra_selfhost_read_file_from(p, 0)
+        let _ = avra_selfhost_append_file(p, "bbbb")
+        // After the append, tail-read from the old length (3) -> just "bbbb".
+        let tail = avra_selfhost_read_file_from(p, 3)
+        let _ = avra_remove_file(p)
+        first == "aaa" && tail == "bbbb"
+    }
+}

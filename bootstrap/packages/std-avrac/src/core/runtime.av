@@ -7,6 +7,10 @@ extern fn avra_selfhost_argc() -> int
 extern fn avra_selfhost_get_arg_cstr(idx: int) -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
 extern fn avra_selfhost_read_file(path: string) -> string
+// Tail read: only the bytes at/after `offset` (a growing-file poller reads
+// the new suffix instead of re-reading from byte 0). "" for missing file
+// or offset at/past EOF — same empty-string contract as read_file's miss.
+extern fn avra_selfhost_read_file_from(path: string, offset: int) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
 extern fn avra_selfhost_append_file(path: string, content: string) -> int
 // Binary-safe variants — read/write `bytes` so embedded 0x00 octets
@@ -133,6 +137,13 @@ extern fn avra_str_char_at_len(s: string, idx: int, len: int) -> string
 /// `strlen`. Lets the lexer slice every token out of a fixed, once-measured
 /// source without re-measuring it per token.
 extern fn avra_str_substring_len(s: string, start: int, end: int, len: int) -> string
+/// Number of Unicode CODEPOINTS in `s` (not bytes). For width/column math
+/// over text that may contain multibyte UTF-8, so a truncation width isn't
+/// mismeasured in bytes.
+extern fn avra_str_codepoint_count(s: string) -> int
+/// Substring by CODEPOINT index (codepoints [start, end)), so truncation
+/// never tears a multibyte sequence. Clamps like the byte substring.
+extern fn avra_str_substring_codepoints(s: string, start: int, end: int) -> string
 
 // ── Intmap extensions ──
 extern fn avra_intmap_inc(map: ptr, key: int) -> int

@@ -1,0 +1,84 @@
+// drain_progress_file tail-reads the progress file from `bytes_seen`
+// (via an offset read) instead of re-reading the whole file each poll.
+// This pins the CONSEQUENCE that matters: across successive
+// polls of a GROWING file, each `done` line is counted exactly once and
+// bytes_seen advances only past COMPLETE lines — so a partial trailing line
+// written between polls is re-read (not dropped, not double-counted).
+//
+// The progress format (producer side): `start <path>` / `done <path> <ms>`,
+// one event per line. drain prints scrollback per `done`, so the fixtures
+// capture stdout to keep the suite quiet. `dpg_`-prefixed.
+
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_append_file(path: string, content: string) -> int
+extern fn avra_remove_file(path: string) -> int
+extern fn avra_test_capture_start()
+extern fn avra_test_capture_stop() -> string
+
+use @std.cli.ui.{drain_progress_file, DrainResult}
+
+const DPG_PATH: string = "build/cache/_dpg_progress.txt"
+
+fn dpg_drain(seen: int) -> DrainResult {
+    avra_test_capture_start()
+    let r = drain_progress_file(DPG_PATH, seen, "", 0, "", 0)
+    let _ = avra_test_capture_stop()
+    r
+}
+
+spec "drain_progress_file tail-reads a growing file without double-counting" {
+    then "a single poll counts every complete done line once" {
+        let _ = avra_selfhost_write_file(DPG_PATH,
+            "start a/x.av\ndone a/x.av 100\ndone a/y.av 200\n")
+        let r = dpg_drain(0)
+        let _ = avra_remove_file(DPG_PATH)
+        r.count == 2
+    }
+    then "a second poll processes ONLY the newly-appended lines" {
+        let _ = avra_selfhost_write_file(DPG_PATH, "done a/x.av 100\n")
+        let first = dpg_drain(0)
+        // Append two more complete lines, then poll again from where we left.
+        let _ = avra_selfhost_append_file(DPG_PATH, "done a/y.av 200\ndone a/z.av 300\n")
+        let second = dpg_drain(first.bytes_seen)
+        let _ = avra_remove_file(DPG_PATH)
+        // First poll saw 1; second poll saw exactly the 2 new ones (no
+        // re-count of x). count resets per call (the caller accumulates),
+        // so `second.count == 2` proves only the appended lines were read.
+        first.count == 1 && second.count == 2
+    }
+    then "bytes_seen advances only past the last COMPLETE line; a partial tail is re-read" {
+        // Write one complete line + a partial (no trailing newline).
+        let _ = avra_selfhost_write_file(DPG_PATH, "done a/x.av 100\ndone a/partial.av")
+        let first = dpg_drain(0)
+        // Complete the partial line by appending its remainder + newline.
+        let _ = avra_selfhost_append_file(DPG_PATH, " 400\n")
+        let second = dpg_drain(first.bytes_seen)
+        let _ = avra_remove_file(DPG_PATH)
+        // First: only the complete x line (partial not yet counted).
+        // Second: the now-complete partial line, counted once.
+        first.count == 1 && second.count == 1
+    }
+    then "no new bytes since the last poll is a no-op" {
+        let _ = avra_selfhost_write_file(DPG_PATH, "done a/x.av 100\n")
+        let first = dpg_drain(0)
+        let second = dpg_drain(first.bytes_seen)
+        let _ = avra_remove_file(DPG_PATH)
+        first.count == 1 && second.count == 0 && second.bytes_seen == first.bytes_seen
+    }
+    then "a missing progress file is a no-op (empty-string contract)" {
+        let r = dpg_drain(0)
+        r.count == 0 && r.bytes_seen == 0
+    }
+    then "bytes_seen returned from a non-zero-offset poll is FILE-absolute" {
+        // Two 16-byte lines. Poll #1 from 0 → bytes_seen 16. Append a
+        // third; poll #2 from 16 must return 32 (16 + the 16 tail bytes),
+        // NOT the tail-relative 16 — the offset arithmetic is
+        // `bytes_seen + start`, so a later poll reads from the right place.
+        let _ = avra_selfhost_write_file(DPG_PATH, "done a/x.av 100\n")
+        let first = dpg_drain(0)
+        let _ = avra_selfhost_append_file(DPG_PATH, "done a/y.av 200\n")
+        let second = dpg_drain(first.bytes_seen)
+        let _ = avra_remove_file(DPG_PATH)
+        first.bytes_seen == 16 && second.bytes_seen == 32
+    }
+}

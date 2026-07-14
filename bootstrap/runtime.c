@@ -1164,6 +1164,29 @@ const char* avra_selfhost_read_file(const char* path) {
     return buf;
 }
 
+// Tail read: return only the bytes at or after `offset`, so a poller can
+// read the new suffix of a growing file instead of re-reading from byte 0
+// every tick (the O(N^2)-over-a-build re-read the spinner's progress
+// drain hit). Returns "" for a missing/unreadable file, or when `offset`
+// is at/past EOF (nothing new yet) — same empty-string contract as
+// avra_selfhost_read_file's failure case, so callers branch on length.
+// A negative offset is clamped to 0 (read the whole file).
+const char* avra_selfhost_read_file_from(const char* path, int64_t offset) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return "";
+    if (offset < 0) offset = 0;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    if (offset >= size) { fclose(f); return ""; }
+    long tail = size - (long)offset;
+    if (fseek(f, (long)offset, SEEK_SET) != 0) { fclose(f); return ""; }
+    char* buf = (char*)malloc(tail + 1);
+    size_t got = fread(buf, 1, tail, f);
+    buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
 // Whole-file writes land via a same-directory temp file + rename(2),
 // so concurrent readers see the complete old content or the complete
 // new content — never a truncated/interleaved hybrid. The test
@@ -2366,6 +2389,62 @@ const char* avra_str_substring_len(const char* s, int64_t start, int64_t end,
     int64_t sub_len = end - start;
     char* r = (char*)avra_rc_alloc(sub_len + 1);
     memcpy(r, s + start, sub_len);
+    r[sub_len] = '\0';
+    return r;
+}
+
+// ── Codepoint-aware string ops ──
+// The byte-indexed substring/length ops above split multibyte UTF-8
+// sequences and miscount width for non-ASCII text. These two count and
+// slice by Unicode CODEPOINT instead, so CLI truncation/padding never
+// emits a torn codepoint and column math is right for narrow non-ASCII.
+// (Display WIDTH — CJK/emoji occupying two columns — is a further step
+// left to a wcwidth surface; codepoint count is the documented minimum.)
+// A continuation byte is 10xxxxxx (0x80..0xBF); every other byte starts
+// a codepoint. Malformed UTF-8 degrades gracefully — stray continuation
+// bytes just aren't counted as starts, so the result never exceeds the
+// byte length.
+
+// Number of UTF-8 codepoints in `s` (not bytes).
+int64_t avra_str_codepoint_count(const char* s) {
+    int64_t n = 0;
+    for (const unsigned char* p = (const unsigned char*)s; *p; p++) {
+        if ((*p & 0xC0) != 0x80) n++;
+    }
+    return n;
+}
+
+// Substring by CODEPOINT index: codepoints [start, end). Clamps like the
+// byte substring (start>=0, end>=start, indices past the end clamp to the
+// string end). Returns a fresh null-terminated copy of the byte span those
+// codepoints occupy. A codepoint's byte offset is recorded only at a
+// BOUNDARY (a start byte or the terminator), so a multibyte sequence is
+// never sliced through the middle.
+const char* avra_str_substring_codepoints(const char* s, int64_t start, int64_t end) {
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    int64_t cp = 0;
+    size_t byte_start = SIZE_MAX, byte_end = SIZE_MAX;
+    const unsigned char* base = (const unsigned char*)s;
+    const unsigned char* p = base;
+    for (;;) {
+        int at_boundary = (*p == '\0') || ((*p & 0xC0) != 0x80);
+        if (at_boundary) {
+            // cp is the index of the codepoint that begins here.
+            if (byte_start == SIZE_MAX && cp == start) byte_start = (size_t)(p - base);
+            if (byte_end == SIZE_MAX && cp == end) byte_end = (size_t)(p - base);
+            if (*p == '\0') break;
+            cp++;
+        }
+        p++;
+    }
+    size_t str_end = (size_t)(p - base);  // byte length (p sits on the NUL)
+    if (byte_start == SIZE_MAX) byte_start = str_end;   // start past the end
+    if (byte_end == SIZE_MAX) byte_end = str_end;       // end past the end
+    if (byte_end < byte_start) byte_end = byte_start;
+    size_t sub_len = byte_end - byte_start;
+    char* r = (char*)avra_rc_alloc(sub_len + 1);
+    memcpy(r, s + byte_start, sub_len);
     r[sub_len] = '\0';
     return r;
 }
