@@ -604,13 +604,16 @@ fn construct_match_arm_null(store: NodeStore) -> Expr {
     })
 }
 
-/// Recognize the body of `quote type { ... }` as a ValueType by
-/// matching the body's Ident text against the primitive names.
-/// Anything else falls through to ValueType.Unknown — generic +
-/// structural type expressions are tracked under vez6.3.13.
+/// Lower the body of `quote type { ... }` to a ValueType-construction
+/// Expr. The parser captures the type structurally as an Expr.TypeLit
+/// carrier (vez6.3.14), so every compound form — List<T>, fn(A) -> B,
+/// Result<T,E>, T?, A | B, tuples, maps — flows through the complete
+/// construct_value_type. A bare-Ident body (a pre-carrier fallback, or
+/// a splice-produced shape) still resolves its primitive name.
 fn construct_value_type_from_body(store: NodeStore, body: Expr) -> Expr {
     let inner = unwrap_quote_body(store, body)
     match inner {
+        .TypeLit(vt) -> construct_value_type(store, vt)
         .Ident(name) -> primitive_value_type(name)
         _ -> construct_value_type_unknown()
     }
