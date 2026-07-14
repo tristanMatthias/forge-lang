@@ -8,7 +8,18 @@ impl Parser {
     fn parse_return_statement(self) -> Result<StmtId, string> {
         self.advance()
 
-        if self.current_kind in [Tk.RightBrace, Tk.Eof] {
+        // A bare `return` ends the statement (Stmt.ReturnEmpty) when nothing
+        // follows on the SAME line. Avra is newline-sensitive (spec Axis 28):
+        // a value on a later line is a separate statement, not the return's
+        // operand. Without the line check, `return\n  println("x")` folds the
+        // next statement into the return value and executes it (t-uv1n). The
+        // `}` / Eof guard is subsumed by the line check for the common
+        // trailing-`return` case, but stays for a same-line `return }`.
+        // `self.current_line != self.prev_line` is the parser's standard
+        // newline-boundary test (cf. postfix-chain gating in parse/mod.av):
+        // after advancing past `return`, prev_line is the keyword's line and
+        // current_line is the next token's line.
+        if self.current_kind in [Tk.RightBrace, Tk.Eof] || self.current_line != self.prev_line {
             return .Ok(self.alloc_stmt_leaf(Stmt.ReturnEmpty))
         }
 
