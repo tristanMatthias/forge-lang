@@ -13,6 +13,20 @@ fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> { Result.Ok(ty) }
 /// Companion failure helper for arm type unification.
 fn err_match_ty(message: string) -> Result<ValueType, string> { Result.Err(message) }
 
+/// True when a match arm body PRODUCES a usable value type — i.e. it is not
+/// a diverging (`return`/`break`/`continue`) arm and not a side-effecting
+/// `Void` body. The codegen mirror of typeck's `arm_type_skip`
+/// (features/match_expr/typeck.av): the reported match-expression type must
+/// come from the *producing* arms. A diverging arm emits an `Unknown`/`Void`
+/// body value; if the FIRST arm diverges (`match e { .Err(m) -> return …,
+/// .Ok(r) -> … }`) and its `Unknown` were adopted as the match type, the
+/// whole expression would be laid out as i64 even though it holds the
+/// producing arm's value — the §6 "no layout from an under-determined type"
+/// violation. Skipping non-producing arms keeps `first_ty` concrete.
+fn arm_produces_value(ty: ValueType) -> bool {
+    !vtype_is_unknown(ty) && !vtype_eq(ty, .Void)
+}
+
 /// Emit a codegen-time F1000 when arm bodies disagree on type.
 /// Surfaced as a warning rather than an error so generic / Void
 /// arms keep compiling.
@@ -353,7 +367,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
             }
             _ -> return err_match_ty("union match requires type patterns like `int(n)` or `.Variant(binding)`, or `_` wildcard")
         }
-        if !first_ty_set {
+        if !first_ty_set && arm_produces_value(result_for_arm) {
             first_ty = result_for_arm
             first_ty_set = true
         }
@@ -459,7 +473,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
         }
         prev_ty = body_ty
         prev_ty_set = true
-        if !first_ty_set {
+        if !first_ty_set && arm_produces_value(body_ty) {
             first_ty = body_ty
             first_ty_set = true
         }
@@ -920,7 +934,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
         }
         prev_ty = body_ty
         prev_ty_set = true
-        if !first_ty_set {
+        if !first_ty_set && arm_produces_value(body_ty) {
             first_ty = body_ty
             first_ty_set = true
         }
