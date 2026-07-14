@@ -226,14 +226,23 @@ fn store_children_faithful(store: NodeStore, kids: List<SpannedChild>, refs: Lis
 /// because no pass can mutate a shared node. Do NOT add an in-place node setter —
 /// it would foreclose interning. Guarded by the append-only specs in
 /// core/tests/arena_test.av.
-export type ExprArena = { nodes: List<Expr>, edges: DenseTable<ExprId, NodeEdges>, spans: DenseTable<ExprId, ByteSpan> }
-impl ExprArena {
+/// Append-only arena of `N` nodes addressed by typed id `Id`, collapsing the
+/// four hand-duplicated concrete arenas (agcv). `edges`/`spans` are dense,
+/// id-keyed side-tables. `make_id: fn(int) -> Id` is how the generic body
+/// constructs the typed id — a type param isn't a constructor, so each concrete
+/// arena passes its own `(n) -> ExprId(n)` at construction; `id.raw()` (every id
+/// is an `@opaque int`) handles the reverse. Typed-id distinctness is preserved
+/// by the `Id` param: `Arena<Expr, ExprId>` and `Arena<Stmt, StmtId>` are
+/// distinct monomorphizations, so a cross-arena id mixup stays F1000.
+export type Arena<N, Id> = { nodes: List<N>, edges: DenseTable<Id, NodeEdges>, spans: DenseTable<Id, ByteSpan>, make_id: fn(int) -> Id }
+impl Arena<N, Id> {
     /// Append `node` with its (already-ingested) cross-type child `edges` and
     /// `sp` span, returning its id. The post-order recursion that produces
-    /// `edges` lives on `NodeStore.ingest_expr` — a lone arena can't place a
+    /// `edges` lives on `NodeStore.ingest_*` — a lone arena can't place a
     /// node's cross-type children.
-    fn add(self, node: Expr, edges: NodeEdges, sp: ByteSpan) -> ExprId {
-        let id = ExprId(self.nodes.length + 1)
+    fn add(self, node: N, edges: NodeEdges, sp: ByteSpan) -> Id {
+        let mk = self.make_id
+        let id = mk(self.nodes.length + 1)
         self.nodes.push(node)
         // Empty edges / the sentinel span ARE the DenseTable `fill`, so an
         // unwritten slot reads back identically — skip those writes and a
@@ -244,18 +253,19 @@ impl ExprArena {
     }
     /// Append a LEAF row (no children, no source span): one list push, none
     /// of the caller-side edge/span allocations `add` requires. The hot path
-    /// for literal/ident rows — the majority of expr nodes.
-    fn add_leaf(self, node: Expr) -> ExprId {
-        let id = ExprId(self.nodes.length + 1)
+    /// for literal/ident rows — the majority of nodes.
+    fn add_leaf(self, node: N) -> Id {
+        let mk = self.make_id
+        let id = mk(self.nodes.length + 1)
         self.nodes.push(node)
         id
     }
-    fn get(self, id: ExprId) -> Expr { self.nodes[id.raw() - 1] }
+    fn get(self, id: Id) -> N { self.nodes[id.raw() - 1] }
     /// Navigate by id, not by pointer — the L1 access discipline. Cross-type:
     /// a child `NodeRef` may point into any of the four arenas.
-    fn children_of(self, id: ExprId) -> List<NodeRef> { self.edges.get(id).refs }
+    fn children_of(self, id: Id) -> List<NodeRef> { self.edges.get(id).refs }
     /// The node's byte-offset span (§14.2) — a side-table lookup.
-    fn span_of(self, id: ExprId) -> ByteSpan { self.spans.get(id) }
+    fn span_of(self, id: Id) -> ByteSpan { self.spans.get(id) }
     /// Roll back to `n` rows — nodes and their parallel id-keyed columns
     /// (edges, spans) truncate together so the arena stays consistent. The
     /// speculative-parse rollback primitive (B1): O(rows dropped).
@@ -269,13 +279,14 @@ impl ExprArena {
     fn count(self) -> int { self.nodes.length }
 }
 
-/// Construct an empty `ExprArena`. The dense side-tables are built in typed
-/// `let`s so the annotation supplies their phantom key type (a struct-field
-/// initializer can't yet — bug pf15), then assembled into the arena.
-export fn new_expr_arena() -> ExprArena {
+/// Construct an empty Expr arena (`Arena<Expr, ExprId>`). The dense side-tables
+/// are built in typed `let`s so the annotation supplies their phantom key type
+/// (a struct-field initializer can't yet — bug pf15), then assembled into the
+/// arena with the ExprId constructor as `make_id`.
+export fn new_expr_arena() -> Arena<Expr, ExprId> {
     let edges: DenseTable<ExprId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
     let spans: DenseTable<ExprId, ByteSpan> = new_dense_table(byte_span_none())
-    ExprArena { nodes: [], edges: edges, spans: spans }
+    Arena { nodes: [], edges: edges, spans: spans, make_id: (n: int) -> ExprId(n) }
 }
 
 /// Append-only arena of `Stmt` nodes, addressed by `StmtId`. `edges`/`spans`
@@ -284,26 +295,30 @@ export fn new_expr_arena() -> ExprArena {
 /// carried for this row, needed because one store hosts sub-parses of
 /// SEVERAL files (F0) so a byte span alone can't attribute a row to its
 /// file. Dense so speculative-parse rollback truncates it with the rows.
-export type StmtArena = { nodes: List<Stmt>, edges: DenseTable<StmtId, NodeEdges>, spans: DenseTable<StmtId, ByteSpan>, pos: DenseTable<StmtId, SrcPos> }
+/// The `Stmt` arena. Shares the generic `Arena<Stmt, StmtId>` for the uniform
+/// node/edge/span machinery (agcv), and adds ONE stmt-specific column on top:
+/// `pos` is the F3a position column — the (line, col, file) the pre-flip
+/// `SStmt` wrapper carried for this row, needed because one store hosts
+/// sub-parses of SEVERAL files (F0) so a byte span alone can't attribute a
+/// row to its file. Dense so speculative-parse rollback truncates it with the
+/// rows. Every non-pos operation delegates to the embedded arena, so the
+/// add/get/children/span/truncate logic lives in exactly one place.
+export type StmtArena = { arena: Arena<Stmt, StmtId>, pos: DenseTable<StmtId, SrcPos> }
 impl StmtArena {
-    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
+    /// Append `node` with its cross-type child `edges` + `sp` (see Arena.add).
     fn add(self, node: Stmt, edges: NodeEdges, sp: ByteSpan) -> StmtId {
-        let id = StmtId(self.nodes.length + 1)
-        self.nodes.push(node)
-        // Fill-valued edges/spans skip the write (see ExprArena.add).
-        if edges.refs.length > 0 { self.edges.set(id, edges) }
-        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
-        id
+        self.arena.add(node, edges, sp)
     }
-    /// Append a LEAF row (no children, no source span) — see ExprArena.add_leaf.
-    fn add_leaf(self, node: Stmt) -> StmtId {
-        let id = StmtId(self.nodes.length + 1)
-        self.nodes.push(node)
-        id
+    /// Append a LEAF row (no children, no source span) — see Arena.add_leaf.
+    fn add_leaf(self, node: Stmt) -> StmtId { self.arena.add_leaf(node) }
+    fn get(self, id: StmtId) -> Stmt { self.arena.get(id) }
+    fn children_of(self, id: StmtId) -> List<NodeRef> { self.arena.children_of(id) }
+    fn span_of(self, id: StmtId) -> ByteSpan { self.arena.span_of(id) }
+    /// Late span write for a row whose extent is computed after ingest
+    /// (record_roots) — reaches through to the shared span column.
+    fn set_span(self, id: StmtId, sp: ByteSpan) {
+        if !byte_span_is_none(sp) { self.arena.spans.set(id, sp) }
     }
-    fn get(self, id: StmtId) -> Stmt { self.nodes[id.raw() - 1] }
-    fn children_of(self, id: StmtId) -> List<NodeRef> { self.edges.get(id).refs }
-    fn span_of(self, id: StmtId) -> ByteSpan { self.spans.get(id) }
     /// Stamp the row's (line, col, file) — the producer-side write the
     /// parser makes at every point it used to build a positioned wrapper.
     fn record_pos(self, id: StmtId, p: SrcPos) {
@@ -311,100 +326,44 @@ impl StmtArena {
     }
     /// The row's stamped position, or the synthesised sentinel.
     fn pos_of(self, id: StmtId) -> SrcPos { self.pos.get(id) }
-    fn count(self) -> int { self.nodes.length }
-    /// Roll back to `n` rows (see ExprArena.truncate_to).
+    fn count(self) -> int { self.arena.count() }
+    /// Roll back to `n` rows (see Arena.truncate_to) — the shared columns
+    /// truncate inside the arena; the stmt-only `pos` column truncates here.
     fn truncate_to(self, n: int) {
-        while self.nodes.length > n { self.nodes.pop() }
+        self.arena.truncate_to(n)
         // Ids are 1-based (0 = the null niche), so a table's highest live
         // slot for n rows is raw index n — keep n + 1 slots.
-        self.edges.truncate_to(n + 1)
-        self.spans.truncate_to(n + 1)
         self.pos.truncate_to(n + 1)
     }
 }
 
-/// Construct an empty `StmtArena` (see `new_expr_arena`).
+/// Construct an empty `StmtArena` (see `new_expr_arena`). The embedded
+/// `Arena<Stmt, StmtId>` holds the shared node/edge/span columns; the `pos`
+/// column is the stmt-specific F3a addition.
 export fn new_stmt_arena() -> StmtArena {
     let edges: DenseTable<StmtId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
     let spans: DenseTable<StmtId, ByteSpan> = new_dense_table(byte_span_none())
     let pos: DenseTable<StmtId, SrcPos> = new_dense_table(src_pos_none())
-    StmtArena { nodes: [], edges: edges, spans: spans, pos: pos }
+    let arena: Arena<Stmt, StmtId> = Arena { nodes: [], edges: edges, spans: spans, make_id: (n: int) -> StmtId(n) }
+    StmtArena { arena: arena, pos: pos }
 }
 
-/// Append-only arena of `Pattern` nodes, addressed by `PatId`. `edges`/`spans`
-/// are dense, id-keyed side-tables (see ExprArena).
-export type PatArena = { nodes: List<Pattern>, edges: DenseTable<PatId, NodeEdges>, spans: DenseTable<PatId, ByteSpan> }
-impl PatArena {
-    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
-    fn add(self, node: Pattern, edges: NodeEdges, sp: ByteSpan) -> PatId {
-        let id = PatId(self.nodes.length + 1)
-        self.nodes.push(node)
-        // Fill-valued edges/spans skip the write (see ExprArena.add).
-        if edges.refs.length > 0 { self.edges.set(id, edges) }
-        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
-        id
-    }
-    /// Append a LEAF row (no children, no source span) — see ExprArena.add_leaf.
-    fn add_leaf(self, node: Pattern) -> PatId {
-        let id = PatId(self.nodes.length + 1)
-        self.nodes.push(node)
-        id
-    }
-    fn get(self, id: PatId) -> Pattern { self.nodes[id.raw() - 1] }
-    fn children_of(self, id: PatId) -> List<NodeRef> { self.edges.get(id).refs }
-    fn span_of(self, id: PatId) -> ByteSpan { self.spans.get(id) }
-    fn count(self) -> int { self.nodes.length }
-    /// Roll back to `n` rows (see ExprArena.truncate_to).
-    fn truncate_to(self, n: int) {
-        while self.nodes.length > n { self.nodes.pop() }
-        // Ids are 1-based (0 = the null niche), so a table's highest live
-        // slot for n rows is raw index n — keep n + 1 slots.
-        self.edges.truncate_to(n + 1)
-        self.spans.truncate_to(n + 1)
-    }
-}
-
-/// Construct an empty `PatArena` (see `new_expr_arena`).
-export fn new_pat_arena() -> PatArena {
+/// Construct an empty Pattern arena (`Arena<Pattern, PatId>`; see
+/// `new_expr_arena` — same generic `Arena`, `PatId` as `make_id`).
+export fn new_pat_arena() -> Arena<Pattern, PatId> {
     let edges: DenseTable<PatId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
     let spans: DenseTable<PatId, ByteSpan> = new_dense_table(byte_span_none())
-    PatArena { nodes: [], edges: edges, spans: spans }
+    Arena { nodes: [], edges: edges, spans: spans, make_id: (n: int) -> PatId(n) }
 }
 
-/// Append-only arena of `ValueType` nodes, addressed by `TypeId` — the
-/// fourth node kind (§14.1: "Expr/Stmt/Pattern/ValueType, each in its own
-/// dense arena"). Type trees flatten the same way (e.g. `List<T>`'s element
-/// type becomes a child `TypeId`). `edges`/`spans` are dense side-tables.
-export type TypeArena = { nodes: List<ValueType>, edges: DenseTable<TypeId, NodeEdges>, spans: DenseTable<TypeId, ByteSpan> }
-impl TypeArena {
-    /// Append `node` with its cross-type child `edges` + `sp` (see ExprArena.add).
-    fn add(self, node: ValueType, edges: NodeEdges, sp: ByteSpan) -> TypeId {
-        let id = TypeId(self.nodes.length + 1)
-        self.nodes.push(node)
-        // Fill-valued edges/spans skip the write (see ExprArena.add).
-        if edges.refs.length > 0 { self.edges.set(id, edges) }
-        if !byte_span_is_none(sp) { self.spans.set(id, sp) }
-        id
-    }
-    fn get(self, id: TypeId) -> ValueType { self.nodes[id.raw() - 1] }
-    fn children_of(self, id: TypeId) -> List<NodeRef> { self.edges.get(id).refs }
-    fn span_of(self, id: TypeId) -> ByteSpan { self.spans.get(id) }
-    fn count(self) -> int { self.nodes.length }
-    /// Roll back to `n` rows (see ExprArena.truncate_to).
-    fn truncate_to(self, n: int) {
-        while self.nodes.length > n { self.nodes.pop() }
-        // Ids are 1-based (0 = the null niche), so a table's highest live
-        // slot for n rows is raw index n — keep n + 1 slots.
-        self.edges.truncate_to(n + 1)
-        self.spans.truncate_to(n + 1)
-    }
-}
-
-/// Construct an empty `TypeArena` (see `new_expr_arena`).
-export fn new_type_arena() -> TypeArena {
+/// Construct an empty ValueType arena (`Arena<ValueType, TypeId>`) — the fourth
+/// node kind (§14.1: "Expr/Stmt/Pattern/ValueType, each in its own dense
+/// arena"). Type trees flatten the same way (e.g. `List<T>`'s element type
+/// becomes a child `TypeId`). Same generic `Arena`, `TypeId` as `make_id`.
+export fn new_type_arena() -> Arena<ValueType, TypeId> {
     let edges: DenseTable<TypeId, NodeEdges> = new_dense_table(NodeEdges { refs: [] })
     let spans: DenseTable<TypeId, ByteSpan> = new_dense_table(byte_span_none())
-    TypeArena { nodes: [], edges: edges, spans: spans }
+    Arena { nodes: [], edges: edges, spans: spans, make_id: (n: int) -> TypeId(n) }
 }
 
 /// The L1 store: one dense arena per node kind, the data-oriented
@@ -419,10 +378,10 @@ export fn new_type_arena() -> TypeArena {
 export type StoreMark = { exprs: int, stmts: int, pats: int, types: int }
 
 export type NodeStore = {
-    exprs: ExprArena,
+    exprs: Arena<Expr, ExprId>,
     stmts: StmtArena,
-    pats: PatArena,
-    types: TypeArena,
+    pats: Arena<Pattern, PatId>,
+    types: Arena<ValueType, TypeId>,
     lines: LineIndex,
     // The top-level statement ids, in source order — the program's entry
     // points into the StmtArena. The parser records them as it finishes each
@@ -611,7 +570,7 @@ impl NodeStore {
                 }
                 byte_span(lo, hi)
             }
-            if !byte_span_is_none(sp) { self.stmts.spans.set(id, sp) }
+            self.stmts.set_span(id, sp)
             self.roots.push(id)
         }
     }
