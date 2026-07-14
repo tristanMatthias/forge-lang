@@ -1,6 +1,6 @@
 // WHY: type checking for map method calls + map-literal value-type checking.
 
-use core.{ExprId, ValueType, vtype_render_full}
+use core.{ExprId, ValueType, vtype_render_full, vtype_is_unknown}
 use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
@@ -21,15 +21,22 @@ export fn gate_map_value_lambdas(tc: TC, entries: List<ExprId>) -> TC {
 }
 
 /// Map a method name to its result ValueType for type-checking.
-/// Returns `.Unknown` for methods the typeck doesn't track yet —
-/// the codegen path will surface unknown methods as a runtime
-/// error there.
-export fn check_map_method(tc: TC, method: string) -> ExprResult {
+/// `map_value` is the receiver's `Map<K, V>` value type: `.get` yields `V?`
+/// (a key may be absent — spec Axis 10) and `.values`
+/// yields `List<V>` — threaded through so the checker agrees with codegen
+/// (which builds the `V?` optional / raw `List<V>`) instead of the old
+/// `.get -> .Str` hardcode (which only survived via scalar-assignability
+/// leniency) and the `.values` fallthrough to `.Unknown`. An unresolved `V`
+/// (`Unknown`) is a separate under-determination — kept `.Unknown` so an
+/// untyped map's `.get` stays byte-identical. Returns `.Unknown` for methods
+/// the typeck doesn't track yet — codegen surfaces unknown methods as an error.
+export fn check_map_method(tc: TC, map_value: ValueType, method: string) -> ExprResult {
     match method {
-        "get"              -> tc_er(tc, .Str)
+        "get"              -> tc_er(tc, if vtype_is_unknown(map_value) { .Unknown } else { ValueType.Optional(map_value) })
         "has"              -> tc_er(tc, .Bool)
         "set"              -> tc_er(tc, .Void)
         "keys"             -> tc_er(tc, .List(.Str))
+        "values"           -> tc_er(tc, .List(map_value))
         "length" or "len"  -> tc_er(tc, .Int)
         _                  -> tc_er(tc, .Unknown)
     }

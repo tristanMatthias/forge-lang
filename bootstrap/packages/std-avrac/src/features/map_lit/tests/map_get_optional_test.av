@@ -1,0 +1,65 @@
+// Map `.get(key)` returns `V?` (a key may be absent — spec Axis 10 §3).
+//
+// Before this fix `.get` was typed `.Str` (typeck) / `.Unknown` (codegen) —
+// an under-determined layout that only survived via scalar-assignability
+// leniency and could not model an absent key. Now `.get` threads the map's
+// value type `V` and yields `V?`:
+//   - value-scalar V (int/bool/float) is BOXED so `Some(0)` is distinct from
+//     `none` (the raw i64 column can't tell a stored 0 from absent — presence
+//     is decided by `has`),
+//   - pointer-backed V (string/struct/…) uses the null-pointer niche.
+// `.values` yields `List<V>`.
+
+type Cfg = { port: int, host: string }
+
+spec "map .get returns V? with correct present/absent/zero semantics" {
+    then "int map: present key unwraps to its value" {
+        let m = {"a": 1, "b": 2}
+        let got = m.get("a")
+        got != null && got! == 1
+    }
+    then "int map: absent key is null" {
+        let m = {"a": 1, "b": 2}
+        m.get("zzz") == null
+    }
+    then "int map: a STORED zero is Some(0), not none (the disambiguation fix)" {
+        // The runtime value column returns 0 for BOTH a stored 0 and an absent
+        // key; `has` disambiguates, so a present 0 must read back as non-null.
+        let m = {"z": 0}
+        m.get("z") != null && m.get("z")! == 0
+    }
+    then "string map: present key unwraps (pointer niche)" {
+        let m = {"k": "hello"}
+        let got = m.get("k")
+        got != null && got! == "hello"
+    }
+    then "string map: absent key is null (null-pointer niche)" {
+        let m = {"k": "hello"}
+        m.get("missing") == null
+    }
+    then "?? coalesces an absent get to a default" {
+        let m = {"a": 10}
+        let v = m.get("nope") ?? 99
+        v == 99
+    }
+    then "?? passes through a present get" {
+        let m = {"a": 10}
+        let v = m.get("a") ?? 99
+        v == 10
+    }
+    then ".values yields the value type, summable as List<int>" {
+        let m = {"a": 3, "b": 4}
+        mut total = 0
+        for v in m.values() { total = total + v }
+        total == 7
+    }
+    then "struct-valued map: present unwrap reads a field through the niche" {
+        let m = {"web": Cfg { port: 8080, host: "localhost" }}
+        let got = m.get("web")
+        got != null && got!.port == 8080 && got!.host == "localhost"
+    }
+    then "struct-valued map: absent key is null" {
+        let m = {"web": Cfg { port: 8080, host: "localhost" }}
+        m.get("db") == null
+    }
+}

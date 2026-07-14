@@ -526,7 +526,7 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
     // Map methods — dispatched to features/map_lit/codegen.av
     if vtype_is_map(r.ty) {
         let map_ptr = ctx.to_ptr(r.value, "map_ptr")
-        return emit_map_method_call(ctx, env, map_ptr, method, args)
+        return emit_map_method_call(ctx, env, map_ptr, r.ty, method, args)
     }
     // Channel methods — dispatched to features/channels/codegen.av
     match r.ty {
