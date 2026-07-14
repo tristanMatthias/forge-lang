@@ -122,7 +122,7 @@ export fn synthesize_unit_body(m: UnitMetadata, store: NodeStore) -> List<StmtId
     // `impl Type { ... }` blocks so consumer call sites
     // (`bytes_writer.unit(meta)`) can resolve to the producer's
     // mangled extern (`@std::avrac::build::BytesWriter__unit`).
-    let after_inherent = insert_inherent_impls(store, after_impls, m.inherent_impls, m.unit_name)
+    let after_inherent = insert_inherent_impls(store, after_impls, m.inherent_impls, m.unit_name, m.generic_bodies)
     trie_to_stmtlist(store, after_inherent)
 }
 
@@ -571,14 +571,14 @@ fn int_to_text(n: int) -> string {
 /// build the impl block directly from `e.methods`. Path is the
 /// type's relative-to-unit segments (same as trait impls), so a
 /// `use @pkg.sub.Type` resolves through the right mod chain.
-fn insert_inherent_impls(store: NodeStore, trie: SubMod, xs: List<InherentImplEntry>, unit_name: string) -> SubMod {
+fn insert_inherent_impls(store: NodeStore, trie: SubMod, xs: List<InherentImplEntry>, unit_name: string, bodies: List<GenericBodyEntry>) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
         let e = xs[i]
         let rp = relative_path(e.type_name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_inherent_impl_decl(store, e)
+            let decl = synth_inherent_impl_decl(store, e, bodies)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -586,30 +586,44 @@ fn insert_inherent_impls(store: NodeStore, trie: SubMod, xs: List<InherentImplEn
     t
 }
 
-fn synth_inherent_impl_decl(store: NodeStore, e: InherentImplEntry) -> StmtId {
+fn synth_inherent_impl_decl(store: NodeStore, e: InherentImplEntry, bodies: List<GenericBodyEntry>) -> StmtId {
     let type_local = local_name(e.type_name)
     // synth_impl_method_stmts expects a `trait_methods` list for
     // sig lookup. For inherent impls we ARE the source of truth, so
     // pass `e.methods` directly as the lookup table.
-    let methods = synth_impl_method_stmts_from_sigs(store, e.methods, e.type_name)
+    let methods = synth_impl_method_stmts_from_sigs(store, e.methods, e.type_name, bodies)
     store.stmts.add_leaf(Stmt.Impl(type_local, methods))
 }
 
 /// Build the impl-body List<StmtId> from a fully-populated
-/// MetaTraitMethod list. Each method's sig is already known, so we
-/// can emit the @external_unit Function stub directly without a
-/// trait lookup. Mirrors synth_impl_method_stmts's mangling +
-/// wrapping rules.
-fn synth_impl_method_stmts_from_sigs(store: NodeStore, ms: List<MetaTraitMethod>, qualified_type: string) -> List<StmtId> {
+/// MetaTraitMethod list. Each method's sig is already known.
+///
+/// ps3t.3.11: a GENERIC struct's method carries a shipped BODY in
+/// `bodies` (keyed by the `Type__method` mangle). Re-parse it and emit
+/// a REAL-bodied Function (NOT @external_unit) so the consumer's
+/// monomorphizer can specialize it per instantiation with content —
+/// mirror of synth_fn_decl's generic path. Without the body,
+/// specialize_impl_methods produces an empty `ret 0` stub that shadows
+/// the producer's real body via linkonce_odr → reads return 0/null.
+/// Non-generic struct methods have no shipped body and take the
+/// signature-only @external_unit stub path (producer's .o links it).
+fn synth_impl_method_stmts_from_sigs(store: NodeStore, ms: List<MetaTraitMethod>, qualified_type: string, bodies: List<GenericBodyEntry>) -> List<StmtId> {
     mut acc: List<StmtId> = []
     mut i = 0
     while i < ms.length {
         let m = ms[i]
         let mangled = "${qualified_type}__${m.name}"
         let empty_tp: List<TypeParamEntry> = []
-        let empty_body: List<StmtId> = []
-        let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, empty_body)
-        acc.push(store.stmts.add_leaf(wrap_external_unit(store, fn_decl)))
+        let body_source = lookup_generic_body(bodies, mangled)
+        if body_source != "" {
+            let parsed_body = parse_body_source(body_source, store)
+            let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, parsed_body)
+            acc.push(store.stmts.add_leaf(fn_decl))
+        } else {
+            let empty_body: List<StmtId> = []
+            let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, empty_body)
+            acc.push(store.stmts.add_leaf(wrap_external_unit(store, fn_decl)))
+        }
         i = i + 1
     }
     acc
