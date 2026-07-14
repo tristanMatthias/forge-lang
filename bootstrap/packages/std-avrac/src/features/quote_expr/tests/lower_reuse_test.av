@@ -1,0 +1,75 @@
+// WHY: lower_quotes reuses quote-free subtrees IN PLACE. This
+// pass rewrites only `Quote` nodes, so a subtree containing no quote is
+// unchanged by lowering — `lower_stmt_id`/`lower_expr_id` return its original
+// arena id instead of reallocating a fresh row. These specs pin that
+// observable: after lowering a program that DOES contain a quote, a quote-free
+// sibling/operand keeps its exact id, while the quote and the spine of nodes
+// above it get fresh ids. Mutation guard: dropping the reuse guard (always
+// re-alloc) reallocates the quote-free nodes too, so their id changes and
+// every "id preserved" assertion fails.
+
+use @std.avrac.core.{Expr, Stmt, StmtId, ExprId, NodeStore, ValueType, new_node_store, build_line_index}
+use @std.avrac.features.quote_expr.{lower_quotes}
+
+/// `quote { 5 }` with its body ingested into `store`.
+fn quote_five(store: NodeStore) -> ExprId {
+    store.exprs.add_leaf(Expr.Quote("expr", store.exprs.add_leaf(Expr.Number("5"))))
+}
+
+/// `let <name> = <init>` as a top-level leaf statement.
+fn let_stmt(store: NodeStore, name: string, init: ExprId) -> StmtId {
+    let sid = store.stmts.add_leaf(Stmt.Let(name, ValueType.Unknown, init))
+    store.set_stmt_pos(sid, 1, 1, "")
+    sid
+}
+
+spec "lower_quotes reuses quote-free statements in place" {
+    then "a quote-free sibling statement keeps its id; the quote statement gets a new one" {
+        let store = new_node_store(build_line_index(""))
+        // `let a = 42` (quote-free) beside `let b = quote { 5 }`.
+        let a_sid = let_stmt(store, "a", store.exprs.add_leaf(Expr.Number("42")))
+        let b_sid = let_stmt(store, "b", quote_five(store))
+        let ids: List<StmtId> = [a_sid, b_sid]
+        let out = lower_quotes(ids, store)
+        // A carries no quote → returned in place. B carries a quote → rewritten.
+        out[0] == a_sid && out[1] != b_sid
+    }
+    then "a quote-free operand subtree survives inside a rewritten container" {
+        let store = new_node_store(build_line_index(""))
+        // `let x = (grp, quote { 5 })` — grp = `(a)`, a quote-free CONTAINER.
+        let grp = store.exprs.add_leaf(Expr.Grouping(store.exprs.add_leaf(Expr.Ident("a"))))
+        let q = quote_five(store)
+        let tup = store.exprs.add_leaf(Expr.Tuple([grp, q]))
+        let sid = let_stmt(store, "x", tup)
+        let out = lower_quotes([sid], store)
+        // The statement + tuple contain a quote → both reallocated.
+        out[0] != sid
+            && match store.stmts.get(out[0]) {
+                .Let(_, _, new_init) -> {
+                    new_init != tup
+                        && match store.exprs.get(new_init) {
+                            // grp (quote-free) reused by id; the quote element rewritten.
+                            .Tuple(elems) -> elems[0] == grp && elems[1] != q
+                            _ -> false
+                        }
+                }
+                _ -> false
+            }
+    }
+    then "the lowered program still differs from the input (the quote was rewritten)" {
+        let store = new_node_store(build_line_index(""))
+        let sid = let_stmt(store, "b", quote_five(store))
+        let out = lower_quotes([sid], store)
+        // Sanity: reuse didn't accidentally short-circuit the actual lowering.
+        out[0] != sid
+    }
+    then "a wholly quote-free program is returned untouched (whole-program fast path)" {
+        let store = new_node_store(build_line_index(""))
+        let a_sid = let_stmt(store, "a", store.exprs.add_leaf(Expr.Number("1")))
+        let b_sid = let_stmt(store, "b", store.exprs.add_leaf(Expr.Number("2")))
+        let ids: List<StmtId> = [a_sid, b_sid]
+        let out = lower_quotes(ids, store)
+        // No quote anywhere → the exact same list of ids comes back.
+        out.length == 2 && out[0] == a_sid && out[1] == b_sid
+    }
+}
