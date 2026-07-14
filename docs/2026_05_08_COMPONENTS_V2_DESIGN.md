@@ -48,7 +48,7 @@ Feature status against §3:
 | 3.6.2 `children { }` schema + validation ("not a valid child" errors) | ✅ shipped |
 | 3.6.3 `implements Trait` | ✅ shipped (1-method, see above) |
 | 3.3 / 3.4 quote / splice | ✅ shipped — repeating `~list` (#722), computed `~(expr)` (#723); evaluator `{}` map-lit gap fixed (rmzs) |
-| 3.2 rich inspection (`children_of_type` / `method_body` / `parent_chain_flags`) | ❌ macros walk manually via `comp_children` / `match` |
+| 3.2 macro-facing inspection | ✅ shipped as free `comp_*` helpers (`comp_instance_name` / `comp_children` in `std-cli/introspect`, on the `synth_deref_*` shims), NOT node methods; `run()` body + config read inline by cmdgen; `parent_chain_flags` dropped in favour of the top-down `expand_cli` ownership model |
 | 3.7 hygiene / `@unhygienic` | ❌ not implemented |
 | 3.6.4 `body: TokenStream` | ✅ shipped (vez6.9) — token-balanced raw capture to `Stmt.TokenBody`, macro reads via `token_body_text`; children-conflict + missing-@expand (F4101) diagnostics |
 
@@ -64,7 +64,7 @@ A `@comptime` annotation marks a function as callable at compile time. The compi
 
 ```avra
 @comptime
-fn expand_command(decl: ComponentDecl) -> List<Decl> { … }
+fn expand_command(s: Stmt) -> List<Stmt> { … }
 ```
 
 Rules:
@@ -74,15 +74,21 @@ Rules:
 
 ### 3.2 AST values
 
-AST node types from `core/ast.av` become a stable public surface accessible to `@comptime` functions:
+AST node types from `core/ast.av` become a public surface accessible to `@comptime` functions:
 
 ```avra
-use @std.avra.ast.{Stmt, Expr, ValueType, Decl, ComponentDecl, …}
+use @std.avrac.core.{Stmt, Expr, ValueType, …}
 ```
 
-Every node type provides:
-- Constructor calls (already supported as enum variants).
-- Inspection methods (`block.children_of_type<T>()`, `decl.method_body("run")`, `decl.instance_name`, etc.).
+There is no separate `Decl` / `ComponentDecl` type — a declaration IS a `Stmt`
+(a component instance is a `Stmt.ComponentBlock`), and a macro both receives and
+returns `Stmt` / `List<Stmt>`. Every node type provides:
+- Constructor calls (enum variants) — and `quote { … }` as the ergonomic builder.
+- Inspection via macro-facing helpers rather than node methods: a macro
+  destructures the top node (`match s { .ComponentBlock(comp_name, instance,
+  config, body) -> … }`) and reads children with the `comp_*` helpers std-cli
+  ships (`comp_instance_name(s)`, `comp_children(s, "flag")`), which walk `body`
+  through the `synth_deref_*` id→node read shims (`features/comptime/synth.av`).
 - Identity (each AST value carries a stable id for hygiene).
 
 A stability contract over these types (`@stable` or similar) is deferred — added once macro authors start shipping libraries that depend on the AST shape. Until then, AST refactors are fair game.
@@ -96,7 +102,7 @@ quote { x + y }                     // → Expr (default)
 quote stmt { let x = 5 }            // → Stmt
 quote stmts { let a = 1; let b = 2 } // → StmtList
 quote type { (int, int) -> int }     // → ValueType
-quote decl { fn foo() { … } }       // → Decl
+quote decl { fn foo() { … } }       // → Stmt (`decl` is an alias for `stmt`)
 ```
 
 The kind keyword sits in keyword position right after `quote`, parses by reusing the existing grammar for that production.
@@ -133,7 +139,7 @@ The compiler's expand pass:
 1. Sees `@expand(f)` on a declaration.
 2. Parses the declaration into its AST node.
 3. Calls `f(decl_ast)` at compile time.
-4. Replaces the original declaration with `f`'s return value (a `List<Decl>` or single `Decl`).
+4. Replaces the original declaration with `f`'s return value (a `List<Stmt>` or single `Stmt`).
 
 `@expand` is **the** generic mechanism. `@derive(Trait)` is sugar over `@expand` (registers a `derive_<trait>` function). Future macros for caching, retry, etc. all flow through `@expand`.
 
@@ -280,6 +286,14 @@ avra.run()
 
 ### 4.2 What std-cli ships
 
+> **Illustrative.** This section shows the *design* shape. The shipped
+> `std-cli` diverges as documented in the reality-check above: a one-method
+> `trait Runnable`, an `App` holding `List<Subcommand>` (schema-as-data +
+> `dyn` behaviour) rather than `Cli` holding `List<dyn Runnable>`, and
+> `cmdgen`'s macros build output by direct AST construction rather than the
+> `quote`/`~splice` below. The macro API shape (a `Stmt` in, `List<Stmt>` out,
+> `comp_*` inspection helpers) is accurate.
+
 ```avra
 type Flag = { name: string, short: string, description: string }
 type Arg = { name: string, description: string, required: bool }
@@ -309,26 +323,36 @@ impl Cli {
                 return cmd.run(parsed)
             }
         }
-        print_help(self); 1
+        print_help(self)
+        1
     }
 }
 
+// A macro receives the RAW component block as a `Stmt` (a `ComponentBlock`),
+// not a `ComponentDecl` wrapper, and returns `List<Stmt>`. Inspection is via
+// the macro-facing `comp_*` helpers std-cli ships (`packages/std-cli/src/
+// introspect/`), built on the `synth_deref_*` read shims — a `@comptime`
+// helper is callable from a `@comptime` macro, so the walkers stay separate
+// functions rather than being inlined.
 @comptime
-fn expand_command(decl: ComponentDecl) -> List<Decl> {
-    let cmd_name = decl.instance_name
-    let flags = decl.children_of_type(Flag)
-    let args = decl.children_of_type(Arg)
-    let user_run = decl.method_body("run")
-    let inherited_flags = decl.parent_chain_flags()  // walks up to cli for global flags
+fn expand_command(s: Stmt) -> List<Stmt> {
+    let cmd_name = comp_instance_name(s)     // the `ComponentBlock.instance` field
+    let flags = comp_children(s, "flag")     // child `flag { … }` blocks
+    let args  = comp_children(s, "arg")      // child `arg { … }` blocks
+    // The `run()` body and each config pair are read out of `s`'s body the
+    // same way (cmdgen walks them inline). Global flags are NOT discovered by a
+    // bottom-up parent walk — a macro's received node has no parent pointer.
+    // Instead `expand_cli` owns the whole DSL top-down and threads the inherited
+    // global flags DOWN into each command's expansion (see §4.2 architecture note).
 
-    let bindings = (flags + inherited_flags).map(f -> quote stmt {
+    let bindings = flags.map(f -> quote stmt {
         let ~(f.name) = result_has_flag(args, ~(f.name))
     }) + args.map(a -> quote stmt {
         let ~(a.name) = result_get_arg(args, ~(a.name))
     })
 
     let type_name = "Command_" + cmd_name
-    quote decl {
+    quote decl {                             // `quote decl` builds Stmt(s)
         type ~type_name = {
             name: string,
             description: string,
@@ -345,6 +369,13 @@ fn expand_command(decl: ComponentDecl) -> List<Decl> {
     }
 }
 ```
+
+**Architecture (top-down, not bottom-up).** A single `@expand(expand_cli)`
+macro owns the DSL. It reads the `command` children off the `cli` block and
+calls `expand_command` as a plain `@comptime` helper per command, threading the
+`cli`'s global flags DOWN as an argument. There is no `parent_chain_flags()` /
+bottom-up walk — a macro's received `Stmt` carries no parent pointer, so
+inheritance flows from the owner outward.
 
 ### 4.3 What the compiler produces
 
@@ -405,7 +436,10 @@ Phased so each phase ships independently and the bootstrap stays green throughou
 
 ### Phase 1 — AST as public surface
 - Audit `core/ast.av` types and expose them via a curated public path.
-- Add inspection helpers (`children_of_type`, `method_body`, `parent_chain`) to `ComponentDecl`-shaped types.
+- Inspection is macro-facing free helpers, not node methods: the `synth_deref_*`
+  id→node read shims (`features/comptime/synth.av`) plus the `comp_*` walkers
+  std-cli builds on them (`comp_instance_name`, `comp_children`). A macro
+  destructures the received `Stmt.ComponentBlock` and reads its `body`.
 - Document invariants per node type.
 - No language changes; pure library work.
 - **Deferred:** stability contract / `@stable` annotation. Revisit when macro authors start depending on these types in published libraries.
