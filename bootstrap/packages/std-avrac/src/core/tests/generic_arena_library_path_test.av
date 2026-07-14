@@ -1,0 +1,68 @@
+// ps3t.3.11 Part 2 regression — consumer-side instantiation of an imported
+// generic struct through the LIBRARY/METADATA compile path.
+//
+// The generic `Arena<N, Id>` (core/arena.av) holds two generic-struct fields:
+// `edges: DenseTable<Id, NodeEdges>` and `spans: DenseTable<Id, ByteSpan>`.
+// A test shard compiles as a CONSUMER of @std: it obtains the arena from the
+// concrete `new_node_store` constructor (never constructing the arena or its
+// DenseTables itself) and only ever CALLS methods on it. Before the fix, those
+// field-only-reachable `DenseTable<Id, …>` instantiations were never collected
+// on this path — their methods weren't specialised and their types weren't
+// mangled — so `children_of`/`span_of` (which read through `self.edges.get` /
+// `self.spans.get`) resolved to `undefined method DenseTable.get` at shard
+// compile, or (Part 1's earlier half) returned 0/null from empty `ret 0` stubs.
+// The IDENTICAL code compiled whole-program inlines @std and dodged it, which
+// is why every automated gate stayed green while the reads were broken — only a
+// spec that exercises the reads directly (this one, and arena_test) catches it.
+//
+// This is the minimal, explicitly-labelled guard for that path; arena_test
+// covers it end-to-end too (26/26 on the generic Arena).
+
+use @std.avrac.core.{new_node_store, build_line_index, NodeStore}
+use @std.avrac.core.{Expr, Stmt, ExprId, StmtId, NodeRef, expr_ref_id}
+use @std.avrac.core.{byte_span, byte_span_none, byte_span_is_none, SrcPos}
+
+fn store() -> NodeStore { new_node_store(build_line_index("")) }
+
+spec "ps3t.3.11: library-path generic-arena field reads round-trip" {
+    then "children_of returns the real edge written through the generic Arena's DenseTable field" {
+        let s = store()
+        let child = s.exprs.add_leaf(Expr.Number("5"))
+        // add() writes the edge into `self.edges` (DenseTable<ExprId, NodeEdges>)
+        let parent = s.add_expr(Expr.Number("7"), byte_span_none(), [NodeRef.ExprRef(child)])
+        let kids = s.exprs.children_of(parent)
+        kids.length == 1 && expr_ref_id(kids[0]) == child
+    }
+    then "span_of returns the real span written through the generic Arena's DenseTable field" {
+        let s = store()
+        let id = s.add_expr(Expr.Number("9"), byte_span(3, 8), [])
+        let sp = s.exprs.span_of(id)
+        !byte_span_is_none(sp)
+    }
+    then "get returns the stored node (nodes column) through the generic Arena" {
+        let s = store()
+        let id = s.exprs.add_leaf(Expr.Number("42"))
+        match s.exprs.get(id) {
+            .Number(v) -> v == "42"
+            _ -> false
+        }
+    }
+    then "the Stmt arena wrapper reads its DenseTable edge + pos columns too" {
+        let s = store()
+        let child = s.stmts.add_leaf(Stmt.Break)
+        let parent = s.add_stmt(Stmt.Continue, byte_span_none(), [NodeRef.StmtRef(child)])
+        s.stmts.record_pos(parent, SrcPos { line: 4, col: 2, file: "x.av" })
+        s.stmts.children_of(parent).length == 1 && s.stmts.pos_of(parent).line == 4
+    }
+    then "typed-id distinctness survives the generic collapse (edge kind is preserved)" {
+        let s = store()
+        let e = s.exprs.add_leaf(Expr.Number("1"))
+        let parent = s.add_stmt(Stmt.Break, byte_span_none(), [NodeRef.ExprRef(e)])
+        // A Stmt row can carry a cross-type Expr child edge — the NodeRef kind
+        // rides through the generic Arena<Stmt,StmtId>'s DenseTable intact.
+        match s.stmts.children_of(parent)[0] {
+            .ExprRef(_) -> true
+            _ -> false
+        }
+    }
+}
