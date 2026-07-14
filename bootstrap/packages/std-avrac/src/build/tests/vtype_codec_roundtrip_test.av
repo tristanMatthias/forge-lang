@@ -32,3 +32,25 @@ spec "metadata codec round-trips Map(key, value)" {
         rt(ValueType.List(ValueType.Int)) == "List<int>"
     }
 }
+
+// nsvk: VT_STRUCT must carry its generic type_args across the codec, mirroring
+// VT_ENUM. Before the fix the encoder dropped args (name+sym_id only), so a
+// generic struct decoded cross-module as the bare name with empty args and
+// field-access substitution (tc_specialize_field_ty) no-op'd — `b.val` for a
+// `Box<int>` imported via metadata stayed the unsubstituted `T`. These assert
+// the args survive; the empty-args control proves the non-generic case is
+// unchanged (byte-identical round-trip).
+spec "metadata codec round-trips a generic Struct's type_args (nsvk)" {
+    then "Box<int> keeps its arg through the round-trip" {
+        rt(ValueType.Struct("Box", [ValueType.Int], 0)) == "Box<int>"
+    }
+    then "a two-arg generic struct round-trips (Pair<int, string>)" {
+        rt(ValueType.Struct("Pair", [ValueType.Int, ValueType.Str], 0)) == "Pair<int, string>"
+    }
+    then "a nested generic arg round-trips (Box<List<int>>)" {
+        rt(ValueType.Struct("Box", [ValueType.List(ValueType.Int)], 0)) == "Box<List<int>>"
+    }
+    then "a non-generic struct still round-trips as the bare name (control)" {
+        rt(ValueType.Struct("Plain", [], 0)) == "Plain"
+    }
+}
