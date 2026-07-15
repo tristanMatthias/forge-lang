@@ -38,6 +38,25 @@ type GenRegs = {
     // leaving every collision-free program (and the compiler itself)
     // byte-identical.
     ambig: List<string>,
+    // EVERY function's (name → params) — generic AND non-generic — so a
+    // call site can thread each argument's declared param type as the
+    // `expected` for that arg's instantiation. Without it a generic
+    // constructor argument to a NON-generic callee (`classify(Result.Ok(x))`
+    // where `classify(r: Result<Shade,string>)`) can't infer the ctor's
+    // type-args from the param context — E stays unbound, the instance is
+    // erased, and its payload field type reaches codegen `.Unknown`
+    // (ps3t.4.5(d).6). Only consulted for args that CONSUME an expected type
+    // (enum ctors / struct lits / bare variants), so the lookup is rare.
+    fn_sigs: List<FnSig>,
+}
+
+/// One function's signature for arg-position expected-type threading:
+/// name → declared params. Populated for every top-level `fn` (generic +
+/// non-generic) in `collect_generic_stmt`. Impl-method calls (`obj.m(ctor)`)
+/// aren't covered yet — a follow-up if a method-arg ctor ever needs it.
+type FnSig = {
+    name: string,
+    params: List<ParamEntry>,
 }
 
 /// One entry in the generic-fn registry. Pairs the name with the
@@ -82,6 +101,60 @@ fn generic_fn_lookup(reg: List<GenericFnEntry>, name: string) -> GenericFnEntry?
         i = i - 1
     }
     null
+}
+/// Look up a function's declared params by name across ALL fns (the
+/// arg-position expected-type source, ps3t.4.5(d).6). Empty list when the
+/// name isn't a known fn (a closure value, a builtin, an unresolved call)
+/// — callers then thread `Unknown`, i.e. the pre-change behaviour. Tail-first
+/// like `generic_fn_lookup` so the newest registration wins on a name clash.
+fn fn_sig_lookup(reg: List<FnSig>, name: string) -> List<ParamEntry> {
+    mut i = reg.length - 1
+    while i >= 0 {
+        let e = reg[i]
+        if e.name == name { return e.params }
+        i = i - 1
+    }
+    let empty: List<ParamEntry> = []
+    empty
+}
+/// The declared param type at `idx`, or `.Unknown` when the call has more
+/// args than the signature lists it (variadic / builtin / arity mismatch —
+/// threading `.Unknown` is the safe pre-change behaviour).
+fn param_ty_at(params: List<ParamEntry>, idx: int) -> ValueType {
+    if idx < params.length { params[idx].vtype } else { ValueType.Unknown }
+}
+/// The bare name of a call head (`Ident`/`QualifiedIdent`), or "" otherwise.
+fn expr_callee_name(e: Expr) -> string {
+    match e {
+        .Ident(name) -> name
+        .QualifiedIdent(name) -> name
+        _ -> ""
+    }
+}
+/// The callee's declared params for a `.Call` head, or empty when the callee
+/// isn't a resolvable named fn (a closure value, a builtin) — `fn_sig_lookup`
+/// returns empty for the "" name, so this needs no special-casing.
+fn callee_param_sig(callee: ExprId, regs: GenRegs) -> List<ParamEntry> {
+    fn_sig_lookup(regs.fn_sigs, expr_callee_name(regs.store.exprs.get(callee)))
+}
+
+/// True when any arg is an expected-consuming shape (enum ctor / struct lit /
+/// bare variant) — the ONLY args whose instantiation a param type can
+/// constrain. Every other arg threads identically with or without a param
+/// type, so a call made entirely of them skips the per-call fn-sig lookup and
+/// takes the plain (pre-change, byte-identical) arg path.
+fn args_consume_expected(ids: List<ExprId>, regs: GenRegs) -> bool {
+    mut i = 0
+    while i < ids.length {
+        match regs.store.exprs.get(ids[i]) {
+            .EnumCtor(_, _, _) -> return true
+            .StructLit(_, _) -> return true
+            .FieldAccess(_, _) -> return true
+            _ -> {}
+        }
+        i = i + 1
+    }
+    false
 }
 /// Find a generic enum by name. Mirror of `generic_fn_lookup`.
 fn generic_enum_lookup(reg: List<GenericEnumEntry>, name: string) -> GenericEnumEntry? {
@@ -1251,10 +1324,21 @@ fn collect_generics_ids(ids: List<StmtId>, regs: GenRegs) -> GenRegs {
 /// other stmts pass through.
 fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
     match stmt {
-        .Function(name, tp, params, ret_vt, body) if tp.length > 0 -> {
-            mut fns = regs.fns
-            fns.push(GenericFnEntry { name, tp, params, ret_vt, body })
-            regs with { fns }
+        .Function(name, tp, params, ret_vt, body) -> {
+            // Record EVERY fn's signature (generic + non-generic) so call
+            // sites can thread each arg's param type as its `expected`
+            // (ps3t.4.5(d).6). Then, if generic, also register it for
+            // specialisation.
+            mut fn_sigs = regs.fn_sigs
+            fn_sigs.push(FnSig { name, params })
+            let with_sig = regs with { fn_sigs }
+            if tp.length > 0 {
+                mut fns = with_sig.fns
+                fns.push(GenericFnEntry { name, tp, params, ret_vt, body })
+                with_sig with { fns }
+            } else {
+                with_sig
+            }
         }
         .EnumDecl(name, tp, variants) if tp.length > 0 -> {
             mut enums = regs.enums
@@ -1570,7 +1654,15 @@ fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st
 fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .Call(callee, args) -> {
-            let s = collect_inst_exprs(args, regs, st)
+            // Thread each arg's declared param type as its `expected`, so a
+            // generic ctor/struct-lit arg binds its type-args from the param
+            // context even when the callee is NON-generic (ps3t.4.5(d).6). Only
+            // pay the fn-sig lookup when an arg can actually consume it.
+            let s = if args_consume_expected(args, regs) {
+                collect_inst_args_with_params(args, callee_param_sig(callee, regs), regs, st)
+            } else {
+                collect_inst_exprs(args, regs, st)
+            }
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
                     let fn_e = generic_fn_lookup(regs.fns, name)
@@ -1695,6 +1787,23 @@ fn collect_inst_exprs(ids: List<ExprId>, regs: GenRegs, st: CollectState) -> Col
         let id = ids[i]
         let lc = regs.store.expr_linecol(id)
         acc = collect_inst_expr(regs.store.exprs.get(id), regs, acc with { line: lc.line, col: lc.col })
+        i = i + 1
+    }
+    acc
+}
+
+/// Like `collect_inst_exprs`, but threads each arg's declared param type
+/// (`params[i]`) as its `expected` so a generic ctor/struct-lit arg binds its
+/// type-args from the param context (ps3t.4.5(d).6). Args past the signature —
+/// or with no known sig — thread `.Unknown`, which is exactly what
+/// `collect_inst_exprs` does, so those args stay byte-identical.
+fn collect_inst_args_with_params(ids: List<ExprId>, params: List<ParamEntry>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut acc = st
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        let lc = regs.store.expr_linecol(id)
+        acc = collect_inst_expr_with_expected(regs.store.exprs.get(id), param_ty_at(params, i), regs, acc with { line: lc.line, col: lc.col })
         i = i + 1
     }
     acc
@@ -2592,7 +2701,15 @@ fn rewrite_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, insts: 
 fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rewrite_expr_list_ids(args, regs, insts)
+            // Thread each arg's param type so a generic ctor/struct-lit arg
+            // mangles to the same specialisation the collect pass registered
+            // from the param context (ps3t.4.5(d).6), not the erased base. Only
+            // pay the fn-sig lookup when an arg can actually consume it.
+            let new_args = if args_consume_expected(args, regs) {
+                rewrite_args_with_params(args, callee_param_sig(callee, regs), regs, insts)
+            } else {
+                rewrite_expr_list_ids(args, regs, insts)
+            }
             let empty_ta: List<TypeArg> = []
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
@@ -2743,7 +2860,15 @@ fn rewrite_select_arms_mono(arms: List<SelectArm>, regs: GenRegs, insts: List<In
 fn rewrite_expr(expr: Expr, regs: GenRegs, insts: List<Inst>) -> Expr {
     match expr {
         .Call(callee, args) -> {
-            let new_args = rewrite_expr_list_ids(args, regs, insts)
+            // Thread each arg's param type so a generic ctor/struct-lit arg
+            // mangles to the same specialisation the collect pass registered
+            // from the param context (ps3t.4.5(d).6), not the erased base. Only
+            // pay the fn-sig lookup when an arg can actually consume it.
+            let new_args = if args_consume_expected(args, regs) {
+                rewrite_args_with_params(args, callee_param_sig(callee, regs), regs, insts)
+            } else {
+                rewrite_expr_list_ids(args, regs, insts)
+            }
             let empty_ta: List<TypeArg> = []
             match regs.store.exprs.get(callee) {
                 .Ident(name) -> {
@@ -2867,6 +2992,24 @@ fn rewrite_when_arms(arms: List<WhenArm>, regs: GenRegs, insts: List<Inst>) -> L
 fn rewrite_expr_list_ids(ids: List<ExprId>, regs: GenRegs, insts: List<Inst>) -> List<ExprId> {
     mut out: List<ExprId> = []
     for id in ids { out.push(rewrite_expr_id(id, regs, insts)) }
+    out
+}
+
+/// Like `rewrite_expr_list_ids`, but rewrites each call arg under its declared
+/// param type (`params[i]`) so a generic ctor/struct-lit arg mangles to the
+/// SAME specialisation the (param-threaded) collect pass registered — instead
+/// of the erased base (ps3t.4.5(d).6). Args past the signature (or a call with
+/// no known sig) thread `.Unknown`, and `rewrite_expr_with_expected` with an
+/// `.Unknown` expected falls straight through to `rewrite_expr`, so those args
+/// stay byte-identical.
+fn rewrite_args_with_params(ids: List<ExprId>, params: List<ParamEntry>, regs: GenRegs, insts: List<Inst>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    mut i = 0
+    while i < ids.length {
+        let id = ids[i]
+        out.push(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(id), param_ty_at(params, i), regs, insts), id))
+        i = i + 1
+    }
     out
 }
 
@@ -3064,7 +3207,7 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
     // hands ids in, collect/infer/generate/rewrite all thread ids (the type-arg
     // inference reads each arg's typeck-inferred type from the `arg_tys`
     // side-table via `store.arg_ty_of(id)`), and codegen takes the rows out.
-    let regs0 = collect_generics_ids(ids, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [] })
+    let regs0 = collect_generics_ids(ids, GenRegs { store, fns: [], enums: [], structs: [], impls: [], ambig: [], fn_sigs: [] })
     if !has_generics(regs0) { return MonoResult { stmts: ids, bag: bag_new() } }
     // Resolve the short-name collisions ONCE up front so every pass mangles
     // colliding instances module-qualified and the rest by short name (see
