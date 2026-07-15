@@ -262,7 +262,12 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: 
 /// `current_fn_ret()` is `Unknown`. Returning through `Unknown` would
 /// reach the layout mapper's under-determined boundary (§6 hard-error,
 /// ps3t.4.5(d)); map it to `.Int` (the same i64) so the cast is explicit.
-/// A no-op for every real function (whose ret is Void/concrete).
+/// A no-op for every real function: `resolve_fn_ret` (codegen/setup.av)
+/// maps an unresolved declared return to `.Void`, so a non-lambda fn's
+/// `current_fn_ret()` is always Void/concrete and only a lambda body reaches
+/// this with `.Unknown`. The CALLER's use of the value is layout-checked
+/// separately (an Unknown-typed result destructured by a caller still ICEs at
+/// the caller), so this never masks a real under-determined-type error.
 fn normalize_lambda_ret(ret: ValueType) -> ValueType {
     if vtype_is_unknown(ret) { ValueType.Int } else { ret }
 }

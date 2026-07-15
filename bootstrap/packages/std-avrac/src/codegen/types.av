@@ -970,6 +970,14 @@ impl Ctx {
             .I32 -> self.i32_type
             .U64 -> self.i64_type
             _ -> {
+                // `in_erased_body` widens the `.Unknown` layout to i64 for the
+                // WHOLE body of a `@mono_erased` base, not only the specific
+                // unbound type param — deliberately coarse: an erased template
+                // body has no bound layout to distinguish against, and the
+                // instantiated (non-erased) specializations carry the real
+                // types. A stray `.Unknown` from an unrelated codegen bug inside
+                // an erased body is thus tolerated rather than ICE'd (narrow,
+                // erased-body-only trade-off).
                 llvm_type_for_full_g(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt, self.in_erased_body)
             }
         }

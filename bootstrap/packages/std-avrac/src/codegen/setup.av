@@ -1540,7 +1540,12 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let param_arr = avra_llvm_type_array_new(arity)
                 fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0, is_erased)
                 let ret_vt = resolve_fn_ret(store, regs, traits, rvt, body, type_reg)
-                let ret_llvm = llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt)
+                // Erasure-aware, symmetric with the param path above: an erased
+                // base returning a bare `T` lays out as the wide repr, not a
+                // hard ICE. (resolve_fn_ret already maps an unresolved return to
+                // `.Void`, so this is a belt-and-suspenders guard for a future
+                // erased return that reaches here still `.Unknown`.)
+                let ret_llvm = llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt, is_erased)
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
