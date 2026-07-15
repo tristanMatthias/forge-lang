@@ -132,6 +132,20 @@ export fn new_wrapped_tables() -> WrappedTables {
     WrappedTables { direct: d, layers: [l0, l1], opt: o }
 }
 
+/// ps3t.3.13 regression fixtures — CONCRETE fns whose RETURN type wraps a generic
+/// instance (`List<DenseTable<StmtId, int>>` / `DenseTable<StmtId, int>?`). A
+/// consumer that calls one and reads the result (`wrapped_layers()[0].get(id)` /
+/// `wrapped_opt_table()!.get(id)`) reaches `DenseTable<StmtId, int>` ONLY via the
+/// return-type channel — no struct field, no local construction. See
+/// core/tests/generic_wrapped_return_library_path_test.av.
+export fn wrapped_layers() -> List<DenseTable<StmtId, int>> {
+    new_wrapped_tables().layers
+}
+
+export fn wrapped_opt_table() -> DenseTable<StmtId, int>? {
+    new_wrapped_tables().opt
+}
+
 /// A sparse, node-id-keyed side-table: `idx` maps `id.raw() -> slot` and
 /// `vals[slot]` holds the fact. Absent ids cost nothing (no array slot). For
 /// facts few nodes carry — provenance, name-resolution overrides (§14.3).

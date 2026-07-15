@@ -1,0 +1,42 @@
+// ps3t.3.13 regression — a consumer reads a generic instance reached ONLY through
+// a CONCRETE @std fn's WRAPPED RETURN type, via the library/metadata path.
+//
+// `wrapped_layers() -> List<DenseTable<StmtId, int>>` and
+// `wrapped_opt_table() -> DenseTable<StmtId, int>?` (core/side_table.av) return a
+// generic `DenseTable<StmtId, int>` inside a container. The @std fn bodies (the
+// only construction) stay in the producer, so a CONSUMER that calls one and reads
+// the result — `wrapped_layers()[0].get(id)`, `wrapped_opt_table()!.get(id)` —
+// must monomorphize `DenseTable<StmtId, int>` with the instance reachable ONLY via
+// the fn's return-type signature (no struct field, no local `new_dense_table`).
+//
+// This is the return-type sibling of ps3t.3.12 (which covered struct FIELDS). Two
+// mono passes must handle a wrapped return: COLLECTION (mono_decl_mopup now walks
+// a concrete fn's RETURN type, collecting the generic instance WRAPPED inside it —
+// collect_inst_from_ret_vtype) AND REWRITING (rewrite_fn_ret now mangles
+// wrapper-nested instances like rewrite_param_types / rewrite_field_types, instead
+// of the old wrapper-blind string split). Before the fix, `wrapped_layers()[i]`
+// kept the un-mangled element type and `.get` on it failed `undefined method
+// DenseTable.get`.
+//
+// PARAM types need no separate collection: a param value is always either
+// constructed by the caller (collecting the inst) or sourced from a return/field
+// (already collected), and the param type itself is mangled by rewrite_param_types
+// (ps3t.3.12) — so `helper(wrapped_layers())[i].get(id)` resolves via the arg's
+// provenance. (A structural param COLLECTION would also re-collect nominal params
+// under a different type-arg representation than the call/ctor path and diverge.)
+
+use @std.avrac.core.{wrapped_layers, wrapped_opt_table, StmtId}
+
+spec "ps3t.3.13: consumer reads a generic instance through a fn's WRAPPED return type" {
+    then "List<DenseTable<…>> return: each layer's written slot round-trips through .get" {
+        let ls = wrapped_layers()
+        ls[0].get(StmtId(2)) == 20 && ls[1].get(StmtId(3)) == 30
+    }
+    then "List<DenseTable<…>> return: unwritten slot reads the fill" {
+        wrapped_layers()[0].get(StmtId(7)) == 0 - 5
+    }
+    then "DenseTable<…>? return: written slot + fill round-trip through .get" {
+        let o = wrapped_opt_table()!
+        o.get(StmtId(4)) == 40 && o.get(StmtId(1)) == 0 - 9
+    }
+}
