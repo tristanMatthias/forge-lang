@@ -41,10 +41,21 @@ impl Parser {
     }
 
     // `let v = x else { ELSE }` desugars to a block-expression initializer:
-    //   let v = { let __t = x;  if __t == none { ELSE } else { __t! } }
+    //   let v = { let __t = x;  if __t != none { __t! } else { ELSE } }
     // `v` stays at the outer scope (visible in the continuation); the
-    // subject is evaluated once via `__t`; `ELSE` must diverge (so the
-    // if-expr's then-branch is valueless and its type is the unwrapped T).
+    // subject is evaluated once via `__t`; `ELSE` must diverge.
+    //
+    // The PRESENT value `__t!` is the THEN arm (not the else): the if-expr's
+    // type is its then-branch's type (both codegen `emit_if_expr` and typeck
+    // `if_expr_result_type` fall back to the then-type when the other arm is
+    // the `.Void`/`.Unknown` of a diverging block), so `v` is typed the
+    // unwrapped `T` — not `.Unknown`. Were `__t!` the ELSE arm instead, `v`
+    // would inherit the diverging then-block's `.Unknown`: for a scalar `T`
+    // that lowered to i64 and happened to work, but a `string?`/`struct?`
+    // then ICE'd at the first field/method access on the empty layout type
+    // (F9999 "field access on non-struct value, ty="). Keeping the real
+    // value in the THEN arm makes the binding's type total (§6 layout).
+    //
     // `is_mut` selects the outer binding (`let mut v = x else` / `mut v = x
     // else` bind a reassignable `v`) — the fresh binding stays sound either
     // way, since nothing can invalidate the already-unwrapped value.
@@ -66,12 +77,13 @@ impl Parser {
         }
         let tmp = self.fresh("letelse")
         let unwrap_id = self.alloc_force_unwrap_row(tmp)
-        let cond_id = self.alloc_none_check_row(tmp, BinOp.Eq)
+        // `__t != none` (present) — the THEN arm unwraps, the ELSE arm diverges.
+        let cond_id = self.alloc_none_check_row(tmp, BinOp.Ne)
         // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf) — the
         // reused else-body rows ARE the structure, so the block-expr is a leaf.
         let else_block = Expr.Block(else_ids)
         let else_block_id = self.alloc_leaf(else_block)
-        let guard = Expr.IfExpr(cond_id, else_block_id, unwrap_id)
+        let guard = Expr.IfExpr(cond_id, unwrap_id, else_block_id)
         let guard_id = self.alloc_leaf(guard)
         let tmp_let_id = self.alloc_binding_stmt(Stmt.Let(tmp, ValueType.Unknown, subject_id), ValueType.Unknown)
         let guard_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(guard_id))
