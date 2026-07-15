@@ -44,13 +44,19 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<StmtId>) -> Result<List<Var
         // a copy, and only `linkonce_odr` lets the linker dedup them
         // instead of erroring on duplicate symbols.
         let is_mono_spec = find_annotation(ctx.nodes, node, "mono_spec") != null
+        // Erased generic base (ps3t.4.5(d)): a `@mono_erased` specialization
+        // whose type-arg stayed `.Unknown`. Its body legitimately lays out
+        // unbound-`T` values as the erased wide repr, so we set the
+        // layout-boundary gate for the duration of its body emission.
+        let is_mono_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
         let inner = match stmt_unwrap(ctx.nodes, node) {
             .Function(name, _, params, _, body) -> {
                 avra_ice_push_fn(name)
                 let r = if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
                     ok_stmt(empty_e)
                 } else {
-                    let res = emit_function_body(ctx, name, params, body)
+                    let fctx = ctx with { in_erased_body: is_mono_erased }
+                    let res = emit_function_body(fctx, name, params, body)
                     if is_mono_spec {
                         let fn_val = ctx.get_fn(name)
                         if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }

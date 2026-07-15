@@ -832,6 +832,31 @@ void avra_ice_pop_fn(void) {
     if (g_ice_fn_depth > 0) g_ice_fn_depth--;
 }
 
+// Deliberate F9999 ICE (ps3t.4.5(d), spec §6): an under-determined type
+// (`ValueType.Unknown`) reached the LLVM layout boundary OUTSIDE an erased
+// generic template. The compiler must resolve or hard-error — never guess a
+// layout. Historically this silently returned i64, so a ptr-carrying value
+// laid out as an int and corrupted memory at runtime. Now it is a first-class
+// internal-compiler-error naming the offending function (from the ICE
+// fn-stack) so the real bug surfaces at compile time instead of at runtime.
+// Never returns (exits 99); typed `void*` only to satisfy the Avra call site.
+void *avra_layout_unknown_ice(void) {
+    const char *fn = "?";
+    if (g_ice_fn_depth > 0) {
+        int top = g_ice_fn_depth - 1;
+        if (top >= ICE_FN_STACK_MAX) top = ICE_FN_STACK_MAX - 1;
+        if (g_ice_fn_stack[top][0]) fn = g_ice_fn_stack[top];
+    }
+    safe_write("\n  error[F9999]: internal compiler error — under-determined type at the layout boundary\n");
+    safe_write("    the compiler tried to choose an LLVM representation for an unresolved (`Unknown`) type,\n");
+    safe_write("    but nothing bound it. Per spec §6 a layout is never guessed from an under-determined type.\n");
+    if (g_ice_phase[0]) { safe_write("    phase: "); safe_write(g_ice_phase); safe_write("\n"); }
+    safe_write("    in:    "); safe_write(fn); safe_write("\n");
+    safe_write("    please report (include these lines): https://github.com/tristanMatthias/forge-lang/issues\n");
+    exit(99);
+    return NULL;  // unreachable
+}
+
 // Mark the statement currently being processed (file:line:col).
 void avra_ice_at(const char *file, int64_t line, int64_t col) {
     ice_copy(g_ice_at_file, sizeof g_ice_at_file, file);

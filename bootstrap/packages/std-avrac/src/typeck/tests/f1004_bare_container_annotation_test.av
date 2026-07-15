@@ -1,0 +1,78 @@
+// WHY: negative-path spec for the F1004 totality gate on a bare generic
+// CONTAINER written in an ANNOTATION position (param, field, let/mut binding,
+// return type). A bare `List` / `Map` / `Channel` / `Task` (no `<…>`) resolves
+// to `List(Unknown)` etc. — an element the layout boundary cannot represent.
+// Per spec Axis 20 (the totality rule) and the FULL_SPEC "error AT THE
+// DECLARATION SITE, never default to a type" decision (Sub-decision on empty
+// list literals), the gate `tc_gate_container_elem` reports F1004 with a clear
+// fix at the annotation, rather than deferring to codegen's `.Unknown` layout
+// ICE. This is the sibling of `f1004_channel_elem_totality_test` (which gates
+// the EXPRESSION type-arg on `channel<T>(cap)`); here we gate the annotation.
+//
+// Each error case is paired with a fully-applied positive control so the gate
+// is proven to fire on the under-application specifically — not on collections
+// generally. `List<T>` inside a generic fn stays exempt (the element carries
+// the in-scope type param, not Unknown).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn bare_annot_out(source: string) -> string {
+    let path = "/tmp/avra_bare_container_annot.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a bare generic container in an annotation is rejected (F1004)" {
+    then "a bare `List` PARAMETER is F1004" {
+        let out = bare_annot_out("fn f(items: List) -> int { 0 }
+fn main() { let n = f([1, 2]) }")
+        out.contains("F1004")
+    }
+    then "the fully-applied `List<int>` parameter compiles (positive control)" {
+        let out = bare_annot_out("fn f(items: List<int>) -> int { 0 }
+fn main() { let n = f([1, 2]) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a bare `List` STRUCT FIELD is F1004" {
+        let out = bare_annot_out("type Bag = { data: List }
+fn main() { let b = Bag { data: [1] } }")
+        out.contains("F1004")
+    }
+    then "a bare `List` LET annotation is F1004" {
+        let out = bare_annot_out("fn main() { let xs: List = [] }")
+        out.contains("F1004")
+    }
+    then "a bare `List` RETURN type is F1004" {
+        let out = bare_annot_out("fn f() -> List { [] }
+fn main() { let xs = f() }")
+        out.contains("F1004")
+    }
+    then "a bare `Map` annotation is F1004" {
+        let out = bare_annot_out("fn f(m: Map) -> int { 0 }
+fn main() { let n = f({}) }")
+        out.contains("F1004")
+    }
+    then "a bare `List` NESTED in a container is F1004" {
+        let out = bare_annot_out("fn f(xs: List<List>) -> int { 0 }
+fn main() { }")
+        out.contains("F1004")
+    }
+}
+
+spec "the bare-container annotation gate does not over-fire" {
+    then "a concrete `List<int>` field compiles" {
+        let out = bare_annot_out("type Bag = { data: List<int> }
+fn main() { let b = Bag { data: [1, 2] } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an in-scope type param element compiles — `List<T>` inside `fn f<T>()`" {
+        let out = bare_annot_out("fn f<T>(xs: List<T>) -> int { xs.length }
+fn main() { let n = f([1, 2]) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an empty list with a typed annotation compiles (bidirectional)" {
+        let out = bare_annot_out("fn main() { let xs: List<int> = [] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

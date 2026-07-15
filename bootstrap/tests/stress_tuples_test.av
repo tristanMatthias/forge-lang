@@ -1,6 +1,6 @@
 type StuPoint = { x: int, y: int }
 
-fn stu_divmod(a: int, b: int) {
+fn stu_divmod(a: int, b: int) -> (int, int) {
     (a / b, a % b)
 }
 

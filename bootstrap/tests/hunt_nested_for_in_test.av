@@ -1,4 +1,4 @@
-type HnfiStudent = { name: string, scores: List }
+type HnfiStudent = { name: string, scores: List<int> }
 
 fn hnfi_run() -> string {
     avra_test_capture_start()
