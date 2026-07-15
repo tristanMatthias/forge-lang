@@ -1,0 +1,33 @@
+// WHY: shared byte-level (ASCII) character classification for the
+// grammar module's two scanners — the DSL scanner (seed_parser.av,
+// over grammar text) and the target-language tokeniser (lex.av, over
+// expression source). Kept in one file so the helpers exist once
+// (files in a feature directory merge into one module namespace, so a
+// duplicate top-level name across files would collide).
+
+/// Codepoint value at byte index `i`. Uses the proven lexer idiom
+/// (slice one char, take its zero-arg `char_code`); the one-arg
+/// `char_code(i)` form does NOT index by position.
+export fn code_at(s: string, i: int) -> int {
+    s.substring(i, i + 1).char_code()
+}
+
+/// space / tab / newline / carriage-return.
+export fn is_space_code(c: int) -> bool {
+    c == 32 || c == 9 || c == 10 || c == 13
+}
+
+/// ASCII digit `0`–`9`.
+export fn is_digit_code(c: int) -> bool {
+    c >= 48 && c <= 57
+}
+
+/// Identifier start: a letter or `_`.
+export fn is_ident_start_code(c: int) -> bool {
+    (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95
+}
+
+/// Identifier continuation: a letter, digit, or `_`.
+export fn is_ident_cont_code(c: int) -> bool {
+    is_ident_start_code(c) || is_digit_code(c)
+}

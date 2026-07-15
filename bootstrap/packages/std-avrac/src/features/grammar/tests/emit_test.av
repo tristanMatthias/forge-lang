@@ -1,0 +1,73 @@
+// ps3t.6.4 — the generator's code-emission face: emit.av renders the
+// grammar as RD parser-fn source (Nystrom's correspondence, §4). These
+// specs assert the emitted source has the right RD skeleton — one fn
+// per rule, `while p.match(...)` for a starred group, `parse_<ref>(p)`
+// for nonterminals, the build calls, and the alt if/else chain.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_parser_source, emit_rule_fn}
+use @std.avrac.features.grammar.{Grammar, Rule}
+
+fn expr_grammar_src() -> string {
+    "grammar Expr {\n" +
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\"\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
+    "}"
+}
+
+fn emit_all() -> string {
+    let gp = parse_grammar(expr_grammar_src())
+    emit_parser_source(gp.grammar)
+}
+
+spec "grammar emitter: renders RD parser fns per Nystrom's correspondence" {
+    then "one function per rule (rule -> a function)" {
+        let src = emit_all()
+        src.contains("fn parse_expression(p: Parser) -> ExprId") &&
+        src.contains("fn parse_equality(p: Parser) -> ExprId") &&
+        src.contains("fn parse_factor(p: Parser) -> ExprId") &&
+        src.contains("fn parse_primary(p: Parser) -> ExprId")
+    }
+
+    then "a starred group lowers to `while p.match(...)` (repetition -> loop)" {
+        let gp = parse_grammar(expr_grammar_src())
+        let factor = emit_rule_fn(gp_factor(gp.grammar))
+        // factor = l:unary ( op:("*"|"/") r:unary )* -> fold_binary(l, op, r)
+        factor.contains("while p.match(\"*\", \"/\")") &&
+        factor.contains("parse_unary(p)") &&
+        factor.contains("return fold_binary(l, op, r)")
+    }
+
+    then "an alternation lowers to an if/else-if chain (| -> if)" {
+        let src = emit_all()
+        // unary has two alternatives → an if … else if … chain.
+        src.contains("if p.check(") &&
+        src.contains("} else if ") &&
+        src.contains("return Unary(op, operand)")
+    }
+
+    then "terminals lower to p.match; named terminals unquoted; refs to parse_x" {
+        let src = emit_all()
+        src.contains("p.match(NUMBER)") &&
+        src.contains("p.match(\"true\")") &&
+        src.contains("parse_comparison(p)")
+    }
+
+    then "the pass-through build returns its capture (-> e)" {
+        let src = emit_all()
+        src.contains("return e")
+    }
+}
+
+// Helper: pull the `factor` rule out (kept simple — the grammar always
+// has it in this test).
+fn gp_factor(g: Grammar) -> Rule {
+    for r in g.rules {
+        if r.name == "factor" { return r }
+    }
+    g.rules[0]
+}

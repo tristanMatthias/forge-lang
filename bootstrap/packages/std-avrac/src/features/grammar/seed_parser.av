@@ -24,6 +24,7 @@
 //            | "@recover" "(" "sync_to" ":" STRING ")"
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 
 // ── The DSL token stream ──
 
@@ -37,24 +38,8 @@ export type GTok = { kind: string, text: string }
 export type GrammarParse = { grammar: Grammar, error: string }
 
 // ── Character classification (byte-level, ASCII) ──
-
-// Byte/codepoint value at index `i`. Uses the proven lexer idiom
-// (slice one char, take its zero-arg char_code) — the one-arg
-// `char_code(i)` form does not index by position.
-fn code_at(s: string, i: int) -> int { s.substring(i, i + 1).char_code() }
-
-fn is_space_code(c: int) -> bool {
-    // space, tab, newline, carriage-return
-    c == 32 || c == 9 || c == 10 || c == 13
-}
-
-fn is_ident_start_code(c: int) -> bool {
-    (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95
-}
-
-fn is_ident_cont_code(c: int) -> bool {
-    is_ident_start_code(c) || (c >= 48 && c <= 57)
-}
+// The generic char helpers (code_at / is_space_code / is_ident_*) live
+// in chars.av and are imported above (shared with lex.av).
 
 /// True when every char of `s` is an uppercase letter, digit, or `_`
 /// (and it starts with a letter) — the EBNF convention marking a
