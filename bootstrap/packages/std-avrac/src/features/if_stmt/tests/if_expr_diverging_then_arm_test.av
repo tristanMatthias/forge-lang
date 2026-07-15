@@ -53,6 +53,20 @@ fn div_then_block_tail(c: bool) -> int {
     v.length
 }
 
+// COMPOSITE divergence: the then arm is a nested `if` whose BOTH arms diverge.
+// Its emission leaves the insert point at a dead, unterminated merge block, so a
+// local `has_terminator()` check would miss the divergence (reporting the arm as
+// non-diverging) while typeck's AST analysis types the outer `if` from the else
+// — a codegen/typeck mismatch that ICE'd. Both sides now use the AST check.
+fn div_then_composite(c: bool, d: bool) -> int {
+    let v = if c {
+        if d { return 1 } else { return 2 }
+    } else {
+        "surface"
+    }
+    v.length
+}
+
 spec "if-expr with a diverging then arm types from the surviving else" {
     then "then `return`, else `string` — v is `string`, `.length` reads (was F9999)" {
         div_then_str(false) == 5
@@ -81,6 +95,15 @@ spec "if-expr with a diverging then arm types from the surviving else" {
     }
     then "twin path: the diverging then is taken on the true branch" {
         div_then_block_tail(true) == -1
+    }
+    then "composite: a nested all-returning then arm still types from the else (was F9999)" {
+        div_then_composite(false, false) == 7
+    }
+    then "composite: the nested then's first arm returns" {
+        div_then_composite(true, true) == 1
+    }
+    then "composite: the nested then's second arm returns" {
+        div_then_composite(true, false) == 2
     }
 }
 

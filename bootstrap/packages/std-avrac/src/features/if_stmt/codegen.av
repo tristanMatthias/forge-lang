@@ -2,7 +2,7 @@
 // Also handles flow-sensitive type narrowing: when condition is
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for, NodeStore}
+use core.{Expr, Stmt, ValueType, VarBinding, vtype_eq, env_lookup, env_extend, vtype_enum_name, vtype_nominal_name, type_registry_id_for, NodeStore, expr_diverges}
 use codegen.{Ctx, EmitValue, StmtResult, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
 use codegen.{emit_if_optional_canon, cond_if_true, emit_cond_truthy}
@@ -124,10 +124,15 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = ctx.emit(then_env, then_branch)?
     let t_ty = emit_value_ty(t)
-    // Did the then-branch diverge (return/break/continue/panic)? Its block is
-    // then already terminated and never reaches the merge — so its type must
-    // NOT drive the if-expr's result type (see the merge below).
-    let then_diverged = ctx.has_terminator()
+    // Did the then-branch diverge (return/break/continue/panic)? Use the SAME
+    // AST-based analysis typeck uses (expr_diverges) — NOT `ctx.has_terminator()`,
+    // which only inspects the current LLVM block and so misses a COMPOSITE
+    // divergence: a nested `if d { return } else { return }` leaves the insert
+    // point at its own (dead, unterminated) merge block, so has_terminator would
+    // report `false` while typeck typed the outer `if` from the surviving arm.
+    // That codegen/typeck disagreement is itself an ICE downstream. A diverging
+    // branch never reaches the merge, so its type must not drive the result.
+    let then_diverged = expr_diverges(ctx.nodes, then_branch)
     // store_br_if_open: skip the store + br when the branch's emit
     // already terminated the block (e.g. body was `return X`). Without
     // this guard the codegen produces invalid LLVM IR — two terminators
@@ -140,7 +145,7 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     ctx.cov_branch_else(branch_id)
     let e = ctx.emit(env, else_branch)?
     let e_ty = emit_value_ty(e)
-    let else_diverged = ctx.has_terminator()
+    let else_diverged = expr_diverges(ctx.nodes, else_branch)
     ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
 
     // ── Merge ──
