@@ -134,27 +134,54 @@ fn expr_callee_name(e: Expr) -> string {
 /// The callee's declared params for a `.Call` head, or empty when the callee
 /// isn't a resolvable named fn (a closure value, a builtin) — `fn_sig_lookup`
 /// returns empty for the "" name, so this needs no special-casing.
+///
+/// ONLY non-generic callees are threaded. A GENERIC callee's declared params
+/// still carry its own unbound type variables (`fn wrap<E>(r: Result<Shade, E>,
+/// …)` → the param is `Result<Shade, E>`), and mono infers those bottom-up FROM
+/// the call's args — so passing them top-down as an arg's `expected` would
+/// register a corrupt instance (`Result__Shade__E`, E unbound) and fail
+/// monomorphization. This fix targets non-generic callees anyway (the
+/// `classify(Result.Ok(x))` case), so restricting here is exact, not a
+/// concession.
 fn callee_param_sig(callee: ExprId, regs: GenRegs) -> List<ParamEntry> {
-    fn_sig_lookup(regs.fn_sigs, expr_callee_name(regs.store.exprs.get(callee)))
+    let name = expr_callee_name(regs.store.exprs.get(callee))
+    if generic_fn_lookup(regs.fns, name) != null {
+        let empty: List<ParamEntry> = []
+        return empty
+    }
+    fn_sig_lookup(regs.fn_sigs, name)
 }
 
-/// True when any arg is an expected-consuming shape (enum ctor / struct lit /
-/// bare variant) — the ONLY args whose instantiation a param type can
-/// constrain. Every other arg threads identically with or without a param
-/// type, so a call made entirely of them skips the per-call fn-sig lookup and
-/// takes the plain (pre-change, byte-identical) arg path.
+/// True when any arg is an expected-consuming shape — the ONLY args whose
+/// instantiation a param type can constrain. Every other arg threads
+/// identically with or without a param type, so a call made entirely of them
+/// skips the per-call fn-sig lookup and takes the plain (pre-change,
+/// byte-identical) arg path.
 fn args_consume_expected(ids: List<ExprId>, regs: GenRegs) -> bool {
     mut i = 0
     while i < ids.length {
-        match regs.store.exprs.get(ids[i]) {
-            .EnumCtor(_, _, _) -> return true
-            .StructLit(_, _) -> return true
-            .FieldAccess(_, _) -> return true
-            _ -> {}
-        }
+        if expr_consumes_expected(regs.store.exprs.get(ids[i]), regs) { return true }
         i = i + 1
     }
     false
+}
+
+/// An enum ctor / struct lit / bare variant consumes an expected type; the
+/// value-position wrappers `.Grouping` (`(Result.Ok(x))`) and `.Try`
+/// (`Result.Ok(x)?`) preserve it, so recurse through them — matching the same
+/// wrappers `collect_inst_expr_with_expected` / `rewrite_expr_with_expected`
+/// look through. `.Call` is intentionally NOT included: threading a param type
+/// into a nested generic call is return-position inference (a separate concern
+/// the pre-change path also skipped), and would re-broaden the fn-sig lookup.
+fn expr_consumes_expected(expr: Expr, regs: GenRegs) -> bool {
+    match expr {
+        .EnumCtor(_, _, _) -> true
+        .StructLit(_, _) -> true
+        .FieldAccess(_, _) -> true
+        .Grouping(inner) -> expr_consumes_expected(regs.store.exprs.get(inner), regs)
+        .Try(inner) -> expr_consumes_expected(regs.store.exprs.get(inner), regs)
+        _ -> false
+    }
 }
 /// Find a generic enum by name. Mirror of `generic_fn_lookup`.
 fn generic_enum_lookup(reg: List<GenericEnumEntry>, name: string) -> GenericEnumEntry? {

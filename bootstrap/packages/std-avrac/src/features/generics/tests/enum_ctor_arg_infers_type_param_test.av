@@ -32,13 +32,15 @@ fn take_info_result(r: Result<int, Info>) -> string {
     }
 }
 
-/// Compile a probe source with the REAL bs2 and return the captured
-/// diagnostics — the established shell-probe pattern (see typeck tests).
+/// Compile a probe source with the REAL bs2 (full pipeline, so monomorphization
+/// runs) and return the captured diagnostics — the established shell-probe
+/// pattern. `check` only typechecks; F1002 is a MONO diagnostic, so this must
+/// use `compile`.
 fn compile_probe(slug: string, src: string) -> string {
     let root = avra_shell_exec("pwd").trim()
     let path = "/tmp/avra_enumarg_${slug}_${string(avra_getpid())}.av"
     let _ = avra_selfhost_write_file(path, src)
-    avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+    avra_shell_exec("cd '${root}' && ./build/bs2 compile '${path}' --output '${path}.ll' 2>&1")
 }
 
 spec "an enum ctor arg infers its unbound type-param from the callee param type" {
@@ -48,6 +50,24 @@ spec "an enum ctor arg infers its unbound type-param from the callee param type"
             "fn classify(r: Result<Shade, string>) -> string { match r { .Err(e) -> \"e\", .Ok(s) -> \"ok\" } }\n" +
             "fn main() { let _ = classify(Result.Ok(Shade.Bright)) }\n")
         !out.contains("F1002") && !out.contains("cannot infer")
+    }
+    then "wrapped: `classify((Result.Ok(x)))` threads through the Grouping too — no F1002" {
+        let out = compile_probe("parenarg",
+            "enum Shade { Dim, Bright }\n" +
+            "fn classify(r: Result<Shade, string>) -> string { match r { .Err(e) -> \"e\", .Ok(s) -> \"ok\" } }\n" +
+            "fn main() { let _ = classify((Result.Ok(Shade.Bright))) }\n")
+        !out.contains("F1002")
+    }
+    then "a GENERIC callee's Result-param arg is NOT threaded — a clean F1002, never a corrupt instance / ICE" {
+        // Threading a generic callee's un-substituted `Result<Shade, E>` (E its
+        // own unbound var) would register `Result__Shade__E` and crash mono. We
+        // restrict threading to non-generic callees, so this stays the graceful
+        // pre-existing F1002 — and crucially not an F9999 ICE.
+        let out = compile_probe("gencallee",
+            "enum Shade { Dim, Bright }\n" +
+            "fn wrap<E>(r: Result<Shade, E>, e: E) -> E { e }\n" +
+            "fn main() { let _ = wrap(Result.Ok(Shade.Bright), \"hi\") }\n")
+        out.contains("F1002") && !out.contains("F9999")
     }
     then "Ok arg: E=string infers from the param; the Ok(Color) payload reads back" {
         take_result(Result.Ok(Color.Green)) == "green" && take_result(Result.Ok(Color.Red)) == "red"
