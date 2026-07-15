@@ -1,0 +1,84 @@
+// An enum constructor passed as a CALL ARGUMENT infers its unbound type-args
+// from the callee's declared parameter type (ps3t.4.5(d).6). `Result.Ok(x)`
+// binds only T; its E is determinable ONLY from the param `Result<_, E>`.
+// Before this fix mono collected/rewrote the arg with expected=Unknown, so the
+// instantiation stayed erased: standalone it was a FALSE F1002 ("cannot infer
+// type parameter E"), and inside a then-block thunk it slipped to codegen with
+// the payload field type `.Unknown` (a §6 layout-lie — the batched-shard
+// Unknown-at-layout that blocked the layout-totality flip). Now the callee's
+// param type threads through both mono passes, so the instance is concrete.
+//
+// The compile-probe spec is the mutation guard: `classify(Result.Ok(x))`
+// standalone was F1002 before the fix, and compiles cleanly after. The
+// behavioural specs confirm payloads round-trip through the resolved instance.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+enum Color { Red, Green }
+
+fn take_result(r: Result<Color, string>) -> string {
+    match r {
+        .Err(e) -> "err:" + e
+        .Ok(c) -> match c { .Red -> "red", .Green -> "green" }
+    }
+}
+
+type Info = { code: int, label: string }
+
+fn take_info_result(r: Result<int, Info>) -> string {
+    match r {
+        .Err(i) -> "${i.label}=${string(i.code)}"
+        .Ok(n) -> "ok:${string(n)}"
+    }
+}
+
+/// Compile a probe source with the REAL bs2 (full pipeline, so monomorphization
+/// runs) and return the captured diagnostics — the established shell-probe
+/// pattern. `check` only typechecks; F1002 is a MONO diagnostic, so this must
+/// use `compile`.
+fn compile_probe(slug: string, src: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let path = "/tmp/avra_enumarg_${slug}_${string(avra_getpid())}.av"
+    let _ = avra_selfhost_write_file(path, src)
+    avra_shell_exec("cd '${root}' && ./build/bs2 compile '${path}' --output '${path}.ll' 2>&1")
+}
+
+spec "an enum ctor arg infers its unbound type-param from the callee param type" {
+    then "the call-arg form `classify(Result.Ok(x))` compiles — E infers from the param, no F1002" {
+        let out = compile_probe("okarg",
+            "enum Shade { Dim, Bright }\n" +
+            "fn classify(r: Result<Shade, string>) -> string { match r { .Err(e) -> \"e\", .Ok(s) -> \"ok\" } }\n" +
+            "fn main() { let _ = classify(Result.Ok(Shade.Bright)) }\n")
+        !out.contains("F1002") && !out.contains("cannot infer")
+    }
+    then "wrapped: `classify((Result.Ok(x)))` threads through the Grouping too — no F1002" {
+        let out = compile_probe("parenarg",
+            "enum Shade { Dim, Bright }\n" +
+            "fn classify(r: Result<Shade, string>) -> string { match r { .Err(e) -> \"e\", .Ok(s) -> \"ok\" } }\n" +
+            "fn main() { let _ = classify((Result.Ok(Shade.Bright))) }\n")
+        !out.contains("F1002")
+    }
+    then "a GENERIC callee's Result-param arg is NOT threaded — a clean F1002, never a corrupt instance / ICE" {
+        // Threading a generic callee's un-substituted `Result<Shade, E>` (E its
+        // own unbound var) would register `Result__Shade__E` and crash mono. We
+        // restrict threading to non-generic callees, so this stays the graceful
+        // pre-existing F1002 — and crucially not an F9999 ICE.
+        let out = compile_probe("gencallee",
+            "enum Shade { Dim, Bright }\n" +
+            "fn wrap<E>(r: Result<Shade, E>, e: E) -> E { e }\n" +
+            "fn main() { let _ = wrap(Result.Ok(Shade.Bright), \"hi\") }\n")
+        out.contains("F1002") && !out.contains("F9999")
+    }
+    then "Ok arg: E=string infers from the param; the Ok(Color) payload reads back" {
+        take_result(Result.Ok(Color.Green)) == "green" && take_result(Result.Ok(Color.Red)) == "red"
+    }
+    then "Err arg: the string error value threads through the same param context" {
+        take_result(Result.Err("boom")) == "err:boom"
+    }
+    then "struct-typed E: Ok(int) with E=Info still infers; the int payload reads back" {
+        take_info_result(Result.Ok(42)) == "ok:42"
+    }
+    then "struct-typed E: Err(Info) lays out E as the real struct (not an erased i64) so its fields read" {
+        take_info_result(Result.Err(Info { code: 7, label: "e" })) == "e=7"
+    }
+}
