@@ -1,0 +1,130 @@
+// ps3t.6.3 — the grammar-DSL seed parser reads the grammar notation
+// (rules / seq / alt / group / *+? / captures / build / @expect /
+// @recover) into a grammar-AST. Proven on the Avra expression grammar
+// (GRAMMAR_DSL.md §2).
+
+use @std.avrac.features.grammar.{parse_grammar, render_grammar, is_terminal_name}
+use @std.avrac.features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+
+// The §2 expression grammar, verbatim in the DSL.
+fn expr_grammar_src() -> string {
+    "grammar Expr {\n" +
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\"\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
+    "}"
+}
+
+fn rule_named(g: Grammar, name: string) -> Rule {
+    for r in g.rules {
+        if r.name == name { return r }
+    }
+    Rule { name: "", body: GNode.Alt([]) }
+}
+
+fn branch_count(r: Rule) -> int {
+    match r.body {
+        .Alt(branches) -> branches.length
+    }
+}
+
+fn nth_branch(r: Rule, i: int) -> GSeq {
+    match r.body {
+        .Alt(branches) -> branches[i]
+    }
+}
+
+spec "grammar seed parser: reads the expression grammar into a grammar-AST" {
+    given "the §2 expression grammar text" {
+        then "parses with no error and yields the 7 rules in order" {
+            let p = parse_grammar(expr_grammar_src())
+            p.error == "" &&
+            p.grammar.name == "Expr" &&
+            p.grammar.rules.length == 7 &&
+            p.grammar.rules[0].name == "expression" &&
+            p.grammar.rules[6].name == "primary"
+        }
+
+        then "expression is a pass-through of a single nonterminal ref" {
+            let p = parse_grammar(expr_grammar_src())
+            let r = rule_named(p.grammar, "expression")
+            let seq = nth_branch(r, 0)
+            branch_count(r) == 1 &&
+            seq.items.length == 1 &&
+            (match seq.items[0].prim { .Ref(n) -> n == "equality", _ -> false }) &&
+            (match seq.build { .None -> true, _ -> false })
+        }
+
+        then "equality captures l, a starred group, and folds via fold_binary(l, op, r)" {
+            let p = parse_grammar(expr_grammar_src())
+            let r = rule_named(p.grammar, "equality")
+            let seq = nth_branch(r, 0)
+            // items: l:comparison , ( op:(…) r:comparison )*
+            seq.items.length == 2 &&
+            seq.items[0].label == "l" &&
+            (match seq.items[1].rep { .Star -> true, _ -> false }) &&
+            (match seq.items[1].prim { .Group(_) -> true, _ -> false }) &&
+            (match seq.build {
+                .Call(name, args) -> name == "fold_binary" && args.length == 3 && args[0] == "l" && args[2] == "r"
+                _ -> false
+            })
+        }
+
+        then "unary has two alternatives; the first builds Unary(op, operand)" {
+            let p = parse_grammar(expr_grammar_src())
+            let r = rule_named(p.grammar, "unary")
+            let a0 = nth_branch(r, 0)
+            branch_count(r) == 2 &&
+            (match a0.build {
+                .Call(name, args) -> name == "Unary" && args.length == 2 && args[0] == "op" && args[1] == "operand"
+                _ -> false
+            }) &&
+            (match nth_branch(r, 1).items[0].prim { .Ref(n) -> n == "primary", _ -> false })
+        }
+
+        then "primary's group alternative carries @expect and @recover annotations" {
+            let p = parse_grammar(expr_grammar_src())
+            let r = rule_named(p.grammar, "primary")
+            // 5 alternatives: NUMBER, STRING, "true", "false", ( … )
+            branch_count(r) == 5
+        }
+
+        then "primary's paren alternative recovers to ')' and passes through e" {
+            let p = parse_grammar(expr_grammar_src())
+            let r = rule_named(p.grammar, "primary")
+            let paren = nth_branch(r, 4)
+            paren.annots.length == 2 &&
+            (match paren.annots[0] { .Expect(tok, _) -> tok == ")", _ -> false }) &&
+            (match paren.annots[1] { .Recover(sync_to) -> sync_to == ")", _ -> false }) &&
+            (match paren.build { .Var(n) -> n == "e", _ -> false })
+        }
+
+        then "NUMBER/STRING classify as named terminals; lowercase as refs" {
+            is_terminal_name("NUMBER") &&
+            is_terminal_name("STRING") &&
+            !is_terminal_name("expression") &&
+            !is_terminal_name("equality")
+        }
+
+        then "render round-trips the key structure" {
+            let p = parse_grammar(expr_grammar_src())
+            let txt = render_grammar(p.grammar)
+            txt.contains("expression = equality") &&
+            txt.contains("fold_binary(l, op, r)") &&
+            txt.contains("Unary(op, operand)") &&
+            txt.contains("@recover(sync_to: \")\")")
+        }
+    }
+
+    given "malformed grammar input" {
+        then "a missing `=` is reported, not spun on (bounded)" {
+            let p = parse_grammar("grammar Bad {\n  foo bar\n}")
+            p.error != ""
+        }
+    }
+}

@@ -1,0 +1,99 @@
+// WHY: render a `Grammar` back to canonical DSL text. Used by tests to
+// assert a parse structurally (a compact, greppable form) and for
+// debugging. The renderer is the inverse of seed_parser.av's read — a
+// near round-trip (whitespace/comments are not preserved, per the
+// structure-only contract).
+
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+
+/// Render a whole grammar: one `name = body` line per rule.
+export fn render_grammar(g: Grammar) -> string {
+    mut out = "grammar ${g.name} {\n"
+    for r in g.rules {
+        out = out + "  ${r.name} = ${render_node(r.body)}\n"
+    }
+    out + "}"
+}
+
+fn render_node(n: GNode) -> string {
+    match n {
+        .Alt(branches) -> render_branches(branches)
+    }
+}
+
+fn render_branches(branches: List<GSeq>) -> string {
+    mut out = ""
+    mut i = 0
+    for b in branches {
+        if i > 0 { out = out + " | " }
+        out = out + render_seq(b)
+        i = i + 1
+    }
+    out
+}
+
+fn render_seq(s: GSeq) -> string {
+    mut out = ""
+    mut i = 0
+    for it in s.items {
+        if i > 0 { out = out + " " }
+        out = out + render_item(it)
+        i = i + 1
+    }
+    out = out + render_build(s.build)
+    for a in s.annots {
+        out = out + " " + render_annot(a)
+    }
+    out
+}
+
+fn render_item(it: GItem) -> string {
+    mut out = ""
+    if it.label != "" { out = it.label + ":" }
+    out = out + render_prim(it.prim) + render_rep(it.rep)
+    out
+}
+
+fn render_rep(r: GRep) -> string {
+    match r {
+        .One -> ""
+        .Star -> "*"
+        .Plus -> "+"
+        .Opt -> "?"
+    }
+}
+
+fn render_prim(p: GPrim) -> string {
+    match p {
+        .Ref(name) -> name
+        .Lit(text) -> "\"${text}\""
+        .Named(tok) -> tok
+        .Group(inner) -> "( ${render_node(inner)} )"
+    }
+}
+
+fn render_build(b: GBuild) -> string {
+    match b {
+        .None -> ""
+        .Var(name) -> " -> ${name}"
+        .Call(name, args) -> " -> ${name}(${render_args(args)})"
+    }
+}
+
+fn render_args(args: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    for a in args {
+        if i > 0 { out = out + ", " }
+        out = out + a
+        i = i + 1
+    }
+    out
+}
+
+fn render_annot(a: GAnnot) -> string {
+    match a {
+        .Expect(tok, msg) -> "@expect(\"${tok}\", \"${msg}\")"
+        .Recover(sync_to) -> "@recover(sync_to: \"${sync_to}\")"
+    }
+}

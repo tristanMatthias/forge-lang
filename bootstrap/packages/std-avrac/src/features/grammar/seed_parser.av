@@ -1,0 +1,372 @@
+// WHY: ps3t.6.3 — the grammar-DSL *seed* parser. A small, stable,
+// hand-written recursive-descent parser for the grammar-of-grammars
+// (GRAMMAR_DSL.md §6), written ONCE (EBNF is stable, so it never
+// churns — exactly as yacc has a hand-written parser for yacc input,
+// tree-sitter for its grammar DSL). It reads grammar *text* into a
+// `Grammar` value (ast.av); the generator (executor.av / emit.av,
+// ps3t.6.4) turns that into a parser.
+//
+// Reading grammar text as a *string* (not new Avra surface syntax)
+// keeps this bootstrap-window-clean: no seed cycle is needed to build
+// and test it. The `grammar Foo { … }` *block* as Avra surface syntax
+// is folded into the parser-migration step (ps3t.6.5).
+//
+// The grammar-of-grammars it implements (self-describing):
+//   grammar  = "grammar" NAME "{" rule+ "}"
+//   rule     = NAME "=" alt
+//   alt      = seq ( "|" seq )*
+//   seq      = labeled+ ( "->" build )? annot*
+//   labeled  = ( NAME ":" )? postfix
+//   postfix  = primary ( "*" | "+" | "?" )?
+//   primary  = NAME | STRING | "(" alt ")"
+//   build    = NAME ( "(" ( NAME ( "," NAME )* )? ")" )?
+//   annot    = "@expect" "(" STRING "," STRING ")"
+//            | "@recover" "(" "sync_to" ":" STRING ")"
+
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+
+// ── The DSL token stream ──
+
+/// One token of the grammar-of-grammars. `kind` ∈ {NAME, STRING,
+/// PUNCT, ARROW, EOF}; for PUNCT `text` is the single char; for STRING
+/// `text` is the unquoted contents.
+export type GTok = { kind: string, text: string }
+
+/// The parse outcome: the grammar plus an error string ("" == ok). A
+/// nonempty `error` means `grammar` is a best-effort partial.
+export type GrammarParse = { grammar: Grammar, error: string }
+
+// ── Character classification (byte-level, ASCII) ──
+
+// Byte/codepoint value at index `i`. Uses the proven lexer idiom
+// (slice one char, take its zero-arg char_code) — the one-arg
+// `char_code(i)` form does not index by position.
+fn code_at(s: string, i: int) -> int { s.substring(i, i + 1).char_code() }
+
+fn is_space_code(c: int) -> bool {
+    // space, tab, newline, carriage-return
+    c == 32 || c == 9 || c == 10 || c == 13
+}
+
+fn is_ident_start_code(c: int) -> bool {
+    (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95
+}
+
+fn is_ident_cont_code(c: int) -> bool {
+    is_ident_start_code(c) || (c >= 48 && c <= 57)
+}
+
+/// True when every char of `s` is an uppercase letter, digit, or `_`
+/// (and it starts with a letter) — the EBNF convention marking a
+/// *named terminal* (NUMBER, STRING) apart from a lowercase rule ref.
+export fn is_terminal_name(s: string) -> bool {
+    if s.length == 0 { return false }
+    let first = code_at(s, 0)
+    if !((first >= 65 && first <= 90) || first == 95) { return false }
+    mut i = 0
+    while i < s.length {
+        let c = code_at(s, i)
+        let ok = (c >= 65 && c <= 90) || c == 95 || (c >= 48 && c <= 57)
+        if !ok { return false }
+        i = i + 1
+    }
+    true
+}
+
+// ── Scanner: grammar text → List<GTok> ──
+
+/// Tokenise the whole grammar source up front. Skips whitespace and
+/// `// line comments`. Recognises identifiers, `"strings"`, the `->`
+/// arrow, and single-char punctuation (`= | ( ) { } * + ? : , @`).
+export fn scan_grammar(src: string) -> List<GTok> {
+    mut toks: List<GTok> = []
+    let n = src.length
+    mut i = 0
+    while i < n {
+        let c = code_at(src, i)
+        if is_space_code(c) {
+            i = i + 1
+            continue
+        }
+        // line comment
+        if c == 47 && i + 1 < n && code_at(src, i + 1) == 47 {
+            while i < n && code_at(src, i) != 10 { i = i + 1 }
+            continue
+        }
+        // arrow `->`
+        if c == 45 && i + 1 < n && code_at(src, i + 1) == 62 {
+            toks.push(GTok { kind: "ARROW", text: "->" })
+            i = i + 2
+            continue
+        }
+        // identifier
+        if is_ident_start_code(c) {
+            let start = i
+            i = i + 1
+            while i < n && is_ident_cont_code(code_at(src, i)) { i = i + 1 }
+            toks.push(GTok { kind: "NAME", text: src.substring(start, i) })
+            continue
+        }
+        // string literal — contents without the surrounding quotes
+        if c == 34 {
+            i = i + 1
+            let start = i
+            while i < n && code_at(src, i) != 34 { i = i + 1 }
+            let text = src.substring(start, i)
+            if i < n { i = i + 1 }  // consume closing quote
+            toks.push(GTok { kind: "STRING", text })
+            continue
+        }
+        // single-char punctuation
+        toks.push(GTok { kind: "PUNCT", text: src.substring(i, i + 1) })
+        i = i + 1
+    }
+    toks.push(GTok { kind: "EOF", text: "" })
+    toks
+}
+
+// ── The recursive-descent seed parser ──
+
+/// Parser state over the pre-scanned token list. `pos` is the cursor;
+/// `error` accumulates the first diagnostic (best-effort partial after
+/// that).
+type GP = { toks: List<GTok>, pos: int, error: string }
+
+impl GP {
+    fn peek(self) -> GTok { self.toks[self.pos] }
+
+    fn at_end(self) -> bool { self.peek().kind == "EOF" }
+
+    fn advance(self) -> GTok {
+        let t = self.toks[self.pos]
+        if self.pos + 1 < self.toks.length { self.pos = self.pos + 1 }
+        t
+    }
+
+    /// True when the cursor is a PUNCT with this exact text.
+    fn is_punct(self, ch: string) -> bool {
+        let t = self.peek()
+        t.kind == "PUNCT" && t.text == ch
+    }
+
+    /// Consume a PUNCT `ch` if present; report `msg` otherwise.
+    fn expect_punct(self, ch: string, msg: string) {
+        if self.is_punct(ch) { let _ = self.advance() } else { self.fail(msg) }
+    }
+
+    fn fail(self, msg: string) {
+        if self.error == "" {
+            self.error = "${msg} (at `${self.peek().text}`)"
+        }
+    }
+}
+
+/// Parse a whole grammar string into a `Grammar`. Returns a
+/// `GrammarParse` carrying the (possibly partial) grammar + an error
+/// string ("" on success).
+export fn parse_grammar(src: string) -> GrammarParse {
+    let toks = scan_grammar(src)
+    mut p = GP { toks, pos: 0, error: "" }
+    let g = parse_grammar_body(p)
+    GrammarParse { grammar: g, error: p.error }
+}
+
+fn parse_grammar_body(p: GP) -> Grammar {
+    // Optional `grammar NAME {` wrapper.
+    mut name = "grammar"
+    if p.peek().kind == "NAME" && p.peek().text == "grammar" {
+        let _ = p.advance()
+        if p.peek().kind == "NAME" {
+            name = p.advance().text
+        } else {
+            p.fail("expected grammar name after `grammar`")
+        }
+        p.expect_punct("{", "expected `{` to open grammar body")
+    }
+    mut rules: List<Rule> = []
+    while !p.at_end() && !p.is_punct("}") {
+        let before = p.pos
+        rules.push(parse_rule(p))
+        // Guard against a stuck cursor on malformed input — always
+        // make progress so a bad rule can't spin forever (bounded).
+        if p.pos == before { let _ = p.advance() }
+    }
+    if p.is_punct("}") { let _ = p.advance() }
+    Grammar { name, rules }
+}
+
+// rule = NAME "=" alt
+fn parse_rule(p: GP) -> Rule {
+    mut rname = ""
+    if p.peek().kind == "NAME" {
+        rname = p.advance().text
+    } else {
+        p.fail("expected a rule name")
+        let _ = p.advance()
+    }
+    p.expect_punct("=", "expected `=` after rule name `${rname}`")
+    let body = parse_alt(p)
+    Rule { name: rname, body }
+}
+
+// alt = seq ( "|" seq )*
+fn parse_alt(p: GP) -> GNode {
+    mut branches: List<GSeq> = []
+    branches.push(parse_seq(p))
+    while p.is_punct("|") {
+        let _ = p.advance()
+        branches.push(parse_seq(p))
+    }
+    GNode.Alt(branches)
+}
+
+// seq = labeled+ ( "->" build | annot )*
+//
+// The build and the error annotations may appear in either order after
+// the items — GRAMMAR_DSL.md §2 writes `@expect … @recover … -> e`
+// (annots before build), so parse them interleaved rather than fixing
+// a rigid build-then-annots order.
+fn parse_seq(p: GP) -> GSeq {
+    mut items: List<GItem> = []
+    while seq_can_continue(p) {
+        let before = p.pos
+        items.push(parse_labeled(p))
+        if p.pos == before { let _ = p.advance() }  // bounded progress
+    }
+    mut build = GBuild.None
+    mut annots: List<GAnnot> = []
+    while true {
+        if p.peek().kind == "ARROW" {
+            let _ = p.advance()
+            build = parse_build(p)
+        } else if p.is_punct("@") {
+            annots.push(parse_annot(p))
+        } else {
+            break
+        }
+    }
+    GSeq { items, build, annots }
+}
+
+/// A sequence keeps taking items until a FOLLOW token: `|`, `)`, `}`,
+/// `->`, `@`, or EOF — or the start of the NEXT rule. Because the
+/// scanner strips newlines, a rule boundary is detected by lookahead:
+/// a `NAME "="` ahead begins the next production, not another item.
+fn seq_can_continue(p: GP) -> bool {
+    if p.at_end() { return false }
+    if p.peek().kind == "ARROW" { return false }
+    if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") || p.is_punct("@") { return false }
+    if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
+        let nxt = p.toks[p.pos + 1]
+        if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
+    }
+    true
+}
+
+// labeled = ( NAME ":" )? postfix
+fn parse_labeled(p: GP) -> GItem {
+    mut label = ""
+    // A capture label is `NAME ":"` — needs one-token lookahead so a
+    // bare NAME primary isn't mistaken for a label.
+    if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
+        let nxt = p.toks[p.pos + 1]
+        if nxt.kind == "PUNCT" && nxt.text == ":" {
+            label = p.advance().text   // NAME
+            let _ = p.advance()        // ":"
+        }
+    }
+    let base = parse_postfix(p)
+    GItem { label, rep: base.rep, prim: base.prim }
+}
+
+// postfix = primary ( "*" | "+" | "?" )?
+type Postfix = { rep: GRep, prim: GPrim }
+
+fn parse_postfix(p: GP) -> Postfix {
+    let prim = parse_primary(p)
+    mut rep = GRep.One
+    if p.is_punct("*") {
+        let _ = p.advance()
+        rep = GRep.Star
+    } else if p.is_punct("+") {
+        let _ = p.advance()
+        rep = GRep.Plus
+    } else if p.is_punct("?") {
+        let _ = p.advance()
+        rep = GRep.Opt
+    }
+    Postfix { rep, prim }
+}
+
+// primary = NAME | STRING | "(" alt ")"
+fn parse_primary(p: GP) -> GPrim {
+    let t = p.peek()
+    if t.kind == "STRING" {
+        let _ = p.advance()
+        return GPrim.Lit(t.text)
+    }
+    if t.kind == "NAME" {
+        let _ = p.advance()
+        if is_terminal_name(t.text) { return GPrim.Named(t.text) }
+        return GPrim.Ref(t.text)
+    }
+    if p.is_punct("(") {
+        let _ = p.advance()
+        let inner = parse_alt(p)
+        p.expect_punct(")", "expected `)` to close a group")
+        return GPrim.Group(inner)
+    }
+    p.fail("expected a rule reference, terminal, or `(`")
+    let _ = p.advance()
+    GPrim.Lit("")
+}
+
+// build = NAME ( "(" ( NAME ( "," NAME )* )? ")" )?
+fn parse_build(p: GP) -> GBuild {
+    if p.peek().kind != "NAME" {
+        p.fail("expected a build (constructor or helper name) after `->`")
+        return GBuild.None
+    }
+    let name = p.advance().text
+    if !p.is_punct("(") {
+        return GBuild.Var(name)   // `-> e` : return the named capture
+    }
+    let _ = p.advance()  // "("
+    mut args: List<string> = []
+    while !p.is_punct(")") && !p.at_end() {
+        if p.peek().kind == "NAME" {
+            args.push(p.advance().text)
+        } else {
+            let _ = p.advance()   // tolerate stray token
+        }
+        if p.is_punct(",") { let _ = p.advance() }
+    }
+    p.expect_punct(")", "expected `)` to close a build's argument list")
+    GBuild.Call(name, args)
+}
+
+// annot = "@expect" "(" STRING "," STRING ")"
+//       | "@recover" "(" "sync_to" ":" STRING ")"
+fn parse_annot(p: GP) -> GAnnot {
+    let _ = p.advance()   // "@"
+    mut kind = ""
+    if p.peek().kind == "NAME" { kind = p.advance().text }
+    p.expect_punct("(", "expected `(` after `@${kind}`")
+    if kind == "recover" {
+        // `sync_to` ":" STRING
+        if p.peek().kind == "NAME" { let _ = p.advance() }   // sync_to
+        p.expect_punct(":", "expected `:` in @recover(sync_to: …)")
+        mut tok = ""
+        if p.peek().kind == "STRING" { tok = p.advance().text }
+        p.expect_punct(")", "expected `)` to close @recover")
+        return GAnnot.Recover(tok)
+    }
+    // @expect(tok, msg)
+    mut tok = ""
+    if p.peek().kind == "STRING" { tok = p.advance().text }
+    if p.is_punct(",") { let _ = p.advance() }
+    mut msg = ""
+    if p.peek().kind == "STRING" { msg = p.advance().text }
+    p.expect_punct(")", "expected `)` to close @expect")
+    GAnnot.Expect(tok, msg)
+}
