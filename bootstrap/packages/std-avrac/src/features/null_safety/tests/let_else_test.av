@@ -14,6 +14,39 @@ fn le_pick(x: int?) -> int {
     v + 100
 }
 
+type LePoint = { x: int, y: int }
+
+// PTR-typed optionals were the broken case: the desugared if-expr's THEN arm
+// is the diverging else-block (type `.Unknown`), and emit_if_expr returned
+// that arm's type — so `v` was typed `.Unknown`. For `int?` the empty layout
+// coincidentally lowered to i64 and worked; for a `string?`/`struct?` the
+// later field/method access ICE'd (F9999 "field access on non-struct value,
+// ty=" — empty). These exercise the surviving-branch type now flowing to `v`.
+fn le_pick_str(x: string?) -> int {
+    let v = x else { return -1 }
+    v.length
+}
+
+fn le_pick_struct(p: LePoint?) -> int {
+    let v = p else { return -99 }
+    v.x + v.y
+}
+
+// A `List<T>?` is another ptr-typed optional shape: `.length` must dispatch on
+// the resolved `List` type, not the empty layout of an `.Unknown` binding.
+fn le_pick_list(xs: List<int>?) -> int {
+    let v = xs else { return -1 }
+    v.length
+}
+
+// `mut v = x else` on a ptr-typed optional then reassigning — the reassign
+// must see `v`'s real `string` type, not `.Unknown`.
+fn le_mut_str(x: string?) -> string {
+    mut v = x else { return "absent" }
+    v = v + "!"
+    v
+}
+
 fn le_break(xs: List<int?>) -> int {
     mut total = 0
     for x in xs {
@@ -59,6 +92,34 @@ spec "let-else — bind-fresh guard" {
     then "`mut v = x else` takes the diverging else on none" {
         le_mut(none) == -1
     }
+    then "a `string?` binds with its real type — `.length` reads (was an F9999 ICE)" {
+        // Pre-fix: `v` typed `.Unknown` (the diverging then-arm's type), so
+        // `v.length` ICE'd on an empty layout. The functions compiling into
+        // this shard AND the round-trip together guard the fix.
+        le_pick_str("hello") == 5
+    }
+    then "a `string?` else on none diverges" {
+        le_pick_str(none) == -1
+    }
+    then "a `struct?` binds with its real type — fields read back" {
+        let p: LePoint? = LePoint { x: 3, y: 4 }
+        le_pick_struct(p) == 7
+    }
+    then "a `struct?` else on none diverges" {
+        le_pick_struct(none) == -99
+    }
+    then "a `List<int>?` binds with its real type — `.length` reads" {
+        le_pick_list([10, 20, 30]) == 3
+    }
+    then "a `List<int>?` else on none diverges" {
+        le_pick_list(none) == -1
+    }
+    then "`mut v = string? else` binds a reassignable present string" {
+        le_mut_str("hi") == "hi!"
+    }
+    then "`mut v = string? else` takes the diverging else on none" {
+        le_mut_str(none) == "absent"
+    }
 }
 
 spec "let-else — a non-diverging else is rejected (F1203)" {
@@ -77,6 +138,22 @@ spec "let-else — a non-diverging else is rejected (F1203)" {
             "fn main() -> int { 0 }\n")
         let out = cached_fixture_check_no_metadata(f)
         !out.contains("F1203")
+    }
+}
+
+spec "let-else — the binding carries the unwrapped type into typeck" {
+    then "`v` from `string? else` is typed `string`, so `let n: int = v` is F1000" {
+        // Typeck-side guard: pre-fix the diverging THEN arm's `.Unknown` type
+        // flowed to `v`, so typeck was permissive and this mismatch slipped
+        // through (only to miscompile in codegen). Now typeck sees `v: string`
+        // and rejects the `int` annotation — matching codegen's type.
+        let f = "/tmp/avra_letelse_typed.av"
+        write_fixture(f,
+            "fn u(x: string?) -> int { let v = x else { return -1 }\n" +
+            " let n: int = v\n n }\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        out.contains("F1000")
     }
 }
 
