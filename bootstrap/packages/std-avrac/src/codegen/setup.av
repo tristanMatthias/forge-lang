@@ -414,6 +414,7 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
         nodes: store,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
         lib_pkg_roots: parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT")),
+        in_erased_body: false,
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -1458,9 +1459,9 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
 /// alloca-side type produced by ctx.type_for. Used by
 /// declare_functions; legacy fill_typed_param_array stays for
 /// callers without narrow type pointers.
-fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, params: List<ParamEntry>, idx: int) {
+fn fill_typed_param_array_sized(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, params: List<ParamEntry>, idx: int, allow_unknown: bool) {
     for (i, p) in params.enumerate() {
-        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, p.vtype))
+        avra_llvm_type_array_set(arr, idx + i, llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, p.vtype, allow_unknown))
     }
 }
 
@@ -1531,10 +1532,20 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                     eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
                     exit(1)
                 }
+                // Erased generic base (ps3t.4.5(d)): a `@mono_erased`
+                // specialization whose unbound-`T` params are `.Unknown`.
+                // Permit the erased wide repr when declaring its param
+                // widths; a non-erased fn with `.Unknown` params ICEs.
+                let is_erased = find_annotation(store, store.stmts.get(ss), "mono_erased") != null
                 let param_arr = avra_llvm_type_array_new(arity)
-                fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0)
+                fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0, is_erased)
                 let ret_vt = resolve_fn_ret(store, regs, traits, rvt, body, type_reg)
-                let ret_llvm = llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt)
+                // Erasure-aware, symmetric with the param path above: an erased
+                // base returning a bare `T` lays out as the wide repr, not a
+                // hard ICE. (resolve_fn_ret already maps an unresolved return to
+                // `.Void`, so this is a belt-and-suspenders guard for a future
+                // erased return that reaches here still `.Unknown`.)
+                let ret_llvm = llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt, is_erased)
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
@@ -1544,7 +1555,7 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let resolved_params = resolve_param_list(params, regs)
                 let arity = resolved_params.length
                 let param_arr = avra_llvm_type_array_new(arity)
-                fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0)
+                fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0, false)
                 let empty_body: List<StmtId> = []
                 let ret_vt = resolve_fn_ret(store, regs, traits, ext_rvt, empty_body, type_reg)
                 let ret_llvm = llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, ret_vt)

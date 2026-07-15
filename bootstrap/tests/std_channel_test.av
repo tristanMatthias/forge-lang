@@ -29,9 +29,12 @@ spec "std channel" {
         true
     }
     then "select picks the ready channel" {
-        let ch1 = avra_channel_new()
-        let ch2 = avra_channel_new()
-        avra_channel_send(ch1, 100)
+        // typed channels: `select`'s receive binding `v` is typed by the
+        // channel element type (int) — a raw-`ptr` channel would leave `v`
+        // under-determined at the layout boundary (ps3t.4.5).
+        let ch1 = channel<int>(1)
+        let ch2 = channel<int>(1)
+        ch1.send(100)
         mut got = 0
         select {
             v <- ch1 -> { got = v }

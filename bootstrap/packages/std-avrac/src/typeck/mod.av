@@ -1143,6 +1143,20 @@ fn resolve_vtype_list(tc: TC, types: List<ValueType>) -> List<ValueType> {
 // the silent wrong-layout / segfault class. Reject it here, before codegen,
 // with a clear diagnostic instead of a guess.
 
+/// Gate one container element/param at the F1004 layer. An `Unknown` here is a
+/// bare generic container (`List` / `Map` / `Channel` / `Task` with no `<…>`)
+/// in a RESOLVED annotation position — under-determined, no layout. Report
+/// F1004 with a clear fix rather than deferring to the codegen layout ICE;
+/// otherwise recurse so a nested bare generic (`List<List>`) is still caught.
+fn tc_gate_container_elem(tc: TC, elem: ValueType, container: string, scope_tp: List<TypeParamEntry>) -> TC {
+    if vtype_is_unknown(elem) {
+        tc_report(tc, DiagCode.UnderAppliedGeneric,
+            "generic type `${container}` needs a type argument — write `${container}<…>`, or make the function generic over the element type")
+    } else {
+        tc_check_type_applied(tc, elem, scope_tp)
+    }
+}
+
 /// Recursively verify every declared-generic reference inside a RESOLVED
 /// ValueType is fully applied. Recurses through container / wrapper types so a
 /// bare generic nested in `List<…>`, `T?`, a tuple, a union, or a fn type is
@@ -1155,8 +1169,17 @@ fn tc_check_type_applied(tc: TC, vt: ValueType, scope_tp: List<TypeParamEntry>) 
     match vt {
         .Enum(name, args, _) -> tc_check_generic_arity(tc, name, args, enum_type_params(tc.enums, name), scope_tp)
         .Struct(name, args, _) -> tc_check_generic_arity(tc, name, args, struct_type_params(tc.structs, name), scope_tp)
-        .List(elem) -> tc_check_type_applied(tc, elem, scope_tp)
-        .Map(key, value) -> tc_check_type_applied(tc_check_type_applied(tc, key, scope_tp), value, scope_tp)
+        // A bare collection/carrier (`List` / `Map` / `Channel` / `Task` with
+        // no `<…>`) resolves to `List(Unknown)` etc. — an under-determined
+        // element the layout boundary cannot represent. Per spec Axis 20 (the
+        // totality rule) + the FULL_SPEC "error AT THE DECLARATION SITE, never
+        // default to a type" decision, report F1004 HERE with a clear fix
+        // instead of deferring to the codegen `.Unknown` layout ICE (the flip).
+        // `List<T>` in generic scope carries the resolved param, not Unknown,
+        // so it is unaffected; empty literals `[]` are expressions, not
+        // annotations, so they never reach this annotation gate.
+        .List(elem) -> tc_gate_container_elem(tc, elem, "List", scope_tp)
+        .Map(key, value) -> tc_gate_container_elem(tc_gate_container_elem(tc, key, "Map", scope_tp), value, "Map", scope_tp)
         .Optional(inner) -> tc_check_type_applied(tc, inner, scope_tp)
         .Newtype(_, inner, _) -> tc_check_type_applied(tc, inner, scope_tp)
         .Union(types) -> tc_check_type_applied_list(tc, types, scope_tp)
@@ -1164,9 +1187,10 @@ fn tc_check_type_applied(tc: TC, vt: ValueType, scope_tp: List<TypeParamEntry>) 
         .FnTyped(params, ret) -> tc_check_type_applied(tc_check_type_applied_list(tc, params, scope_tp), ret, scope_tp)
         // Nested-type carriers the old wildcard silently swallowed: a bare
         // generic behind `Task<…>` / `channel<…>` / a fn or closure return is
-        // the same under-determined layout as one behind `List<…>` — recurse.
-        .Task(result_ty) -> tc_check_type_applied(tc, result_ty, scope_tp)
-        .Channel(elem) -> tc_check_type_applied(tc, elem, scope_tp)
+        // the same under-determined layout as one behind `List<…>` — recurse
+        // (and gate a bare `Task` / `Channel` element too).
+        .Task(result_ty) -> tc_gate_container_elem(tc, result_ty, "Task", scope_tp)
+        .Channel(elem) -> tc_gate_container_elem(tc, elem, "Channel", scope_tp)
         .Fn(ret) -> tc_check_type_applied(tc, ret, scope_tp)
         .Closure(_, ret) -> tc_check_type_applied(tc, ret, scope_tp)
         // ── Explicit no-ops: every leaf is named so adding a ValueType

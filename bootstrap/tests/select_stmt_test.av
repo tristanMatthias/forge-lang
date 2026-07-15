@@ -1,21 +1,18 @@
-extern fn avra_spawn(f: int) -> int
-extern fn avra_thread_join(h: int)
-extern fn avra_channel_new() -> ptr
-extern fn avra_channel_send(ch: ptr, v: int)
+// `select` over typed channels: two `Channel<int>` producers, each select
+// consumes one ready channel; the receive binding `v` is typed by the
+// channel's element type (int), never under-determined (ps3t.4.5 layout
+// totality — a raw-`ptr` channel left `v` Unknown at the layout boundary).
 
-mut sel_ch1: ptr = null
-mut sel_ch2: ptr = null
-
-fn sel_send1() { avra_channel_send(sel_ch1, 10) }
-fn sel_send2() { avra_channel_send(sel_ch2, 20) }
+mut sel_ch1: Channel<int> = channel<int>(1)
+mut sel_ch2: Channel<int> = channel<int>(1)
 
 fn sel_run() -> int {
-    sel_ch1 = avra_channel_new()
-    sel_ch2 = avra_channel_new()
-    let h1 = avra_spawn(sel_send1)
-    let h2 = avra_spawn(sel_send2)
-    avra_thread_join(h1)
-    avra_thread_join(h2)
+    sel_ch1 = channel<int>(1)
+    sel_ch2 = channel<int>(1)
+    let h1 = spawn { sel_ch1.send(10)  0 }
+    let h2 = spawn { sel_ch2.send(20)  0 }
+    h1.await
+    h2.await
     mut total = 0
     select {
         v <- sel_ch1 -> { total = total + v }

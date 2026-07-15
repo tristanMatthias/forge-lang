@@ -108,11 +108,15 @@ spec "un-annotated lambdas in unthreaded positions are rejected (F1006)" {
     }
 }
 
-spec "the F1007 layout backstop refuses what typeck cannot see" {
-    then "an `it` projection over an element-untyped List is refused at codegen, not guessed as i64" {
+spec "an element-untyped collection is refused at the declaration site" {
+    then "a bare `List` parameter is rejected by the F1004 totality gate, not guessed as i64" {
+        // ps3t.4.5: the under-determined-type rule errors AT THE DECLARATION
+        // SITE (`items: List`) — the clear root-cause fix — rather than
+        // deferring to a downstream consequence (the `it` projection's F1007
+        // lambda-param backstop) or the codegen layout ICE.
         let out = ulr_compile_out("fn f(items: List) -> int { let r = items.map(it * 2)  r.length }
 fn main() { let n = f([1, 2])  0 }")
-        out.contains("F1007")
+        out.contains("F1004")
     }
     then "typing the collection's element resolves the same shape (positive control)" {
         let out = ulr_compile_out("fn f(items: List<int>) -> int { let r = items.map(it * 2)  r.length }

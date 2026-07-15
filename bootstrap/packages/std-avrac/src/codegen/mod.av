@@ -6,7 +6,7 @@
 // indexing/helpers/escape/cycles auto-load as siblings, surface flat at
 // `codegen.{...}`.
 
-use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
+use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, field_index_of, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_trait_name, vtype_strip_optional}
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed, emit_expected}
@@ -255,6 +255,23 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: List<ValueType>, idx: 
     }
 }
 
+/// Normalize a function's registered return type at a `return` site.
+/// A lambda body's lifted LLVM fn is always built with an i64 return
+/// (the closure ABI — `ctx.fn_type(ctx.i64_type, …)` in
+/// emit_lambda_typed), but a lambda has no `fn_rets` entry so
+/// `current_fn_ret()` is `Unknown`. Returning through `Unknown` would
+/// reach the layout mapper's under-determined boundary (§6 hard-error,
+/// ps3t.4.5(d)); map it to `.Int` (the same i64) so the cast is explicit.
+/// A no-op for every real function: `resolve_fn_ret` (codegen/setup.av)
+/// maps an unresolved declared return to `.Void`, so a non-lambda fn's
+/// `current_fn_ret()` is always Void/concrete and only a lambda body reaches
+/// this with `.Unknown`. The CALLER's use of the value is layout-checked
+/// separately (an Unknown-typed result destructured by a caller still ICEs at
+/// the caller), so this never masks a real under-determined-type error.
+fn normalize_lambda_ret(ret: ValueType) -> ValueType {
+    if vtype_is_unknown(ret) { ValueType.Int } else { ret }
+}
+
 /// The statement-emit dispatcher. Handles every built-in `Stmt`
 /// directly; unknown variants fall through to the feature registry
 /// so feature codegen modules can plug in new statement kinds via
@@ -311,7 +328,14 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             } else {
                 emit_defers(ctx, env)
             }
-            let fn_ret = ctx.current_fn_ret()
+            // A lambda body's LLVM fn always returns i64 (the closure ABI —
+            // `ctx.fn_type(ctx.i64_type, …)` in emit_lambda_typed); its
+            // registered ret is `Unknown`. An EARLY `return` inside a lambda
+            // must cast to `.Int` (the same i64) rather than reach the layout
+            // mapper's `.Unknown` — a guess forbidden by §6 (ps3t.4.5(d)).
+            // Mirrors emit_lambda_typed's tail path (`ctx.ret(v, .Int)`);
+            // byte-identical IR since `.Unknown` and `.Int` both map to i64.
+            let fn_ret = normalize_lambda_ret(ctx.current_fn_ret())
             // Optional box/unbox: box a present value-inner `T` returned as
             // `T?`, unbox a `T?` returned into a non-optional slot.
             // `emit_optional_coerce` is a no-op when neither applies.
@@ -331,7 +355,10 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
                 ctx.call("avra_task_group_await_all", [ctx.task_group])
             }
             emit_defers(ctx, env)
-            let fn_ret = ctx.current_fn_ret()
+            // See the `.Return` arm: a bare `return` inside a lambda body
+            // normalizes the `Unknown` closure-ABI ret to `.Int` (i64) so
+            // ret_void never reaches the layout mapper's `.Unknown` (§6).
+            let fn_ret = normalize_lambda_ret(ctx.current_fn_ret())
             ctx.ret_void(fn_ret)
             ok_sr(ctx, env)
         }

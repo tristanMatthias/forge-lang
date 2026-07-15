@@ -6,7 +6,7 @@ fn htic_safe_parse(s: string) -> int? {
     int(s)
 }
 
-fn htic_process_all(items: List) -> int? {
+fn htic_process_all(items: List<string>) -> int? {
     mut total = 0
     for item in items {
         let val = htic_safe_parse(item)

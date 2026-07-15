@@ -2029,6 +2029,16 @@ fn specialize_fn(store: NodeStore, mangled: string, params: List<ParamEntry>, re
     // final link in library-mode (multiple packages share specs).
     mut annots: List<Annotation> = []
     annots.push(Annotation { name: "mono_spec", arg_ids: [] })
+    // An ERASED base — a specialization where some type-arg is still UNRESOLVED
+    // (`concrete_vt` is `.Unknown`; these mangle to the empty slug, e.g.
+    // `list_push_copy__`, and arise from generic-context calls mono can't fully
+    // specialize). Its params/locals typed by that unbound param legitimately
+    // lay out as the erased wide repr. Tag it so codegen exempts its body from
+    // the layout-boundary hard-error (ps3t.4.5(d): the one legitimate `.Unknown`
+    // at layout). A fully-concrete instantiation is NOT tagged.
+    mut ta_erased = false
+    for a in ta { if vtype_is_unknown(a.concrete_vt) { ta_erased = true } }
+    if ta_erased { annots.push(Annotation { name: "mono_erased", arg_ids: [] }) }
     Stmt.Annotated(annots, store.stmts.add_leaf(fn_stmt))
 }
 

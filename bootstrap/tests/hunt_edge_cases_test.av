@@ -9,7 +9,7 @@ fn hec_abs(n: int) -> int {
 
 spec "hunt edge cases" {
     then "empty list" {
-        let empty: List = []
+        let empty: List<int> = []
         empty.length == 0
     }
     then "single element list" {
