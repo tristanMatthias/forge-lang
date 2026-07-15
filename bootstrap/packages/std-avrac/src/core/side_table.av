@@ -112,6 +112,26 @@ export fn new_dense_table<Id, V>(fill: V) -> DenseTable<Id, V> {
     DenseTable { vals: [], fill }
 }
 
+/// ps3t.3.12 regression fixture — a CONCRETE struct whose fields hold a generic
+/// `DenseTable<StmtId, int>` (directly and container-wrapped). A CONSUMER obtains
+/// it from `new_wrapped_tables` (whose body — the only construction — stays in
+/// the producer) and reads the tables directly, so it must monomorphize
+/// `DenseTable<StmtId, int>` with the instance reachable ONLY via these field
+/// types. See core/tests/generic_wrapped_field_library_path_test.av.
+export type WrappedTables = { direct: DenseTable<StmtId, int>, layers: List<DenseTable<StmtId, int>>, opt: DenseTable<StmtId, int>? }
+
+export fn new_wrapped_tables() -> WrappedTables {
+    let mut d: DenseTable<StmtId, int> = new_dense_table(0 - 1)
+    d.set(StmtId(5), 50)
+    let mut l0: DenseTable<StmtId, int> = new_dense_table(0 - 5)
+    l0.set(StmtId(2), 20)
+    let mut l1: DenseTable<StmtId, int> = new_dense_table(0 - 5)
+    l1.set(StmtId(3), 30)
+    let mut o: DenseTable<StmtId, int> = new_dense_table(0 - 9)
+    o.set(StmtId(4), 40)
+    WrappedTables { direct: d, layers: [l0, l1], opt: o }
+}
+
 /// A sparse, node-id-keyed side-table: `idx` maps `id.raw() -> slot` and
 /// `vals[slot]` holds the fact. Absent ids cost nothing (no array slot). For
 /// facts few nodes carry — provenance, name-resolution overrides (§14.3).

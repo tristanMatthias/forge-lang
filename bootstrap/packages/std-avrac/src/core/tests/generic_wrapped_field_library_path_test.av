@@ -1,0 +1,61 @@
+// ps3t.3.12 regression — consumer-side instantiation of an imported generic
+// struct reached through a struct field (direct AND container-WRAPPED), via the
+// LIBRARY/METADATA compile path, with the generic instance's method called
+// DIRECTLY by the consumer.
+//
+// The concrete @std `WrappedTables` (core/side_table.av) holds `DenseTable<StmtId,
+// int>` three ways:
+//   direct : DenseTable<StmtId, int>            (direct field)
+//   layers : List<DenseTable<StmtId, int>>      (List-wrapped)
+//   opt    : DenseTable<StmtId, int>?            (Optional-wrapped)
+// A test shard compiles as a CONSUMER of @std. It obtains the struct from the
+// concrete `new_wrapped_tables` constructor (whose body — the only place a
+// `DenseTable` is built — stays in the producer, unshipped) and reads the tables
+// DIRECTLY: `w.direct.get(id)`, `w.layers[0].get(id)`, `w.opt!.get(id)`. So the
+// consumer must monomorphize `DenseTable<StmtId, int>` — collect the inst,
+// specialise its struct AND its `.get` method, AND rewrite each field-reached
+// reference to the mangled name — with the instance reachable ONLY via
+// `WrappedTables`' field types and NO local StructLit / `new_dense_table` call.
+//
+// This is the first test where a consumer calls a method directly on a generic
+// instance reached purely through an imported concrete struct's field (the arena
+// tests all go through Arena's own methods, so DenseTable is specialised
+// transitively inside Arena's spec, never called directly). Two mono passes must
+// both walk field types structurally through wrappers: `collect_inst_from_vtype`
+// (collection, ps3t.3.11/#792) AND `rewrite_instance_vtype` (mangling — the
+// LIST-wrapped case regressed here: the rewriter recursed into `Optional` but not
+// `List`/`Map`/`Tuple`/…, so `store.layers[i]` kept the un-mangled element type
+// and `.get` on it failed `undefined method DenseTable.get`; ps3t.3.12).
+//
+// generic_arena_library_path_test.av covers the field-through-generic-wrapper
+// (Arena) path; this covers a consumer calling a field-reached generic
+// instance's method directly, direct + through List / Optional wrappers.
+
+use @std.avrac.core.{WrappedTables, new_wrapped_tables, StmtId}
+
+spec "ps3t.3.12: consumer reads a field-reached imported DenseTable directly (direct + wrapped)" {
+    then "DIRECT field: written slot + fill round-trip" {
+        let w = new_wrapped_tables()
+        let d = w.direct
+        d.get(StmtId(5)) == 50 && d.get(StmtId(9)) == 0 - 1
+    }
+    then "LIST-wrapped field: each layer's written slot round-trips through .get" {
+        let w = new_wrapped_tables()
+        let t0 = w.layers[0]
+        let t1 = w.layers[1]
+        t0.get(StmtId(2)) == 20 && t1.get(StmtId(3)) == 30
+    }
+    then "LIST-wrapped field: unwritten slot reads the fill" {
+        let w = new_wrapped_tables()
+        w.layers[0].get(StmtId(7)) == 0 - 5
+    }
+    then "OPTIONAL-wrapped field: written slot + fill round-trip through .get" {
+        let w = new_wrapped_tables()
+        let o = w.opt!
+        o.get(StmtId(4)) == 40 && o.get(StmtId(1)) == 0 - 9
+    }
+    then "the List-wrapped field's own length reads back" {
+        let w = new_wrapped_tables()
+        w.layers.length == 2
+    }
+}
