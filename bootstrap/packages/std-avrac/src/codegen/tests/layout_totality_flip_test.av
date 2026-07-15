@@ -1,0 +1,81 @@
+// WHY: guards the §6 layout-totality flip (ps3t.4.5(d).4). The type→layout
+// boundary (`llvm_type_for_full`) no longer guesses i64 for an under-determined
+// `.Unknown` — it is a hard F9999 ICE (avra_layout_unknown_ice) EXCEPT inside an
+// erased generic base body (a `@mono_erased` specialization, gated by
+// `Ctx.in_erased_body`), where an unbound `T` legitimately lays out as the
+// erased wide repr.
+//
+// This test's job is to prove the flip does NOT false-ICE valid programs — the
+// hazard when a total boundary is introduced is that a legitimately-resolvable
+// type is mis-seen as under-determined. Two shapes that route ptr/struct values
+// through paths the flip touches must still compile + run:
+//
+//  1. Lambda EARLY returns of ptr/struct/int values. A lambda's lifted fn has an
+//     i64 closure-ABI return; `normalize_lambda_ret` pins that to `.Int` at a
+//     lambda `return` so the flip can never see the closure-ABI ret as
+//     `.Unknown`. (On the current tree the ret already resolves before the
+//     boundary, so these compile with or without that helper — they are a
+//     forward guard that the flip stays total over lambda returns, NOT a
+//     mutation test of the helper itself.)
+//  2. A generic function instantiated at a ptr type exercises the mono
+//     machinery whose erased bases (`@mono_erased`) are the ONE legitimate
+//     `.Unknown`-at-layout; the exemption must keep them compiling.
+
+// ── 1. Lambda early-return of a ptr/struct value ──
+
+type FPoint = { x: int, y: int }
+
+fn call_i(g: fn(int) -> int, n: int) -> int { g(n) }
+fn call_s(g: fn(int) -> string, n: int) -> string { g(n) }
+fn call_p(g: fn(int) -> FPoint, n: int) -> FPoint { g(n) }
+
+fn lam_ret_str(n: int) -> int {
+    let v = call_s((k) -> {
+        if k > 0 { return "positive" }
+        "nonpositive"
+    }, n)
+    v.length
+}
+
+fn lam_ret_struct(n: int) -> int {
+    let v = call_p((k) -> {
+        if k > 0 { return FPoint { x: k, y: k * 2 } }
+        FPoint { x: 0, y: 0 }
+    }, n)
+    v.x + v.y
+}
+
+fn lam_ret_int(n: int) -> int {
+    let v = call_i((k) -> {
+        if k > 0 { return k + 100 }
+        -1
+    }, n)
+    v
+}
+
+// ── 2. Generic function over a ptr type (erased-base exemption stays live) ──
+
+fn first_or<T>(xs: List<T>, dflt: T) -> T {
+    if xs.length > 0 { xs[0] } else { dflt }
+}
+
+fn gen_over_str() -> int {
+    let xs = ["a", "bb", "ccc"]
+    let v = first_or(xs, "z")
+    v.length
+}
+
+spec "layout-totality flip — resolved shapes compile + run under the hard boundary" {
+    then "lambda early-return of a `string` (normalize_lambda_ret → Int, not Unknown)" {
+        lam_ret_str(5) == 8 && lam_ret_str(-1) == 11
+    }
+    then "lambda early-return of a `struct`" {
+        lam_ret_struct(3) == 9 && lam_ret_struct(-1) == 0
+    }
+    then "lambda early-return of an `int` (baseline)" {
+        lam_ret_int(5) == 105 && lam_ret_int(-1) == -1
+    }
+    then "generic fn over a ptr type still monomorphizes (erased-base exemption live)" {
+        gen_over_str() == 1
+    }
+}

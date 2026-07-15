@@ -148,6 +148,15 @@ export type Ctx = {
     // shard owns several test modules at once — a fn belongs to the
     // unit when ANY root prefixes it. Empty list = whole-program.
     lib_pkg_roots: List<string>,
+    // Layout-boundary erasure gate (ps3t.4.5(d), spec §6). True only
+    // while emitting the body of an ERASED generic base (a `@mono_erased`
+    // specialization whose type-arg stayed `.Unknown` — mangled to the
+    // empty `__` slug). Such a body legitimately lays out its
+    // unbound-`T` values as the erased wide repr, so `Ctx.llvm_type_for`
+    // permits `.Unknown` at the layout boundary. Everywhere else the flag
+    // is false and an under-determined type at layout is a hard F9999 ICE
+    // — the compiler must resolve or hard-error, never guess a layout.
+    in_erased_body: bool,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
@@ -404,6 +413,12 @@ extern fn avra_map_new_cstr() -> ptr
 extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
 extern fn avra_map_get_cstr(map: ptr, key: string) -> int
 extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+// Deliberate F9999 ICE: an under-determined type (`.Unknown`) reached the
+// LLVM layout boundary outside an erased generic template. Per spec §6 the
+// compiler must resolve or hard-error — never guess a layout. Never returns
+// (prints an F9999 diagnostic naming the offending fn, then exits). Typed
+// `-> ptr` so it can stand in the `.Unknown` match arm; the value is unused.
+extern fn avra_layout_unknown_ice() -> ptr
 
 export fn fn_ret_types_new() -> FnRetTypes {
     FnRetTypes { ord: [], idx: avra_map_new_cstr() }
@@ -731,6 +746,21 @@ export fn loops_top(stack: List<LoopStackFrame>) -> LoopFrame {
 /// codegen/setup.av MUST use the narrow path so fn declarations
 /// match the alloca-side widths produced by ctx.type_for.
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
+    // Strict entry: `.Unknown` at layout is a hard ICE (spec §6). Every
+    // caller with a fully-resolved type uses this. Erased generic
+    // templates (the ONE legitimate `.Unknown` source) route through
+    // `llvm_type_for_full_g(..., true)` instead.
+    llvm_type_for_full_g(i64t, i1t, dt, pt, vt, false)
+}
+
+/// Erasure-aware core of `llvm_type_for_full`. `allow_unknown` is true
+/// ONLY when laying out the body/signature of an erased generic base
+/// (a `@mono_erased` specialization whose type-arg stayed `.Unknown`);
+/// there `.Unknown` maps to the erased wide repr (i64). Everywhere else
+/// `allow_unknown` is false and `.Unknown` at the layout boundary is a
+/// first-class F9999 ICE — the compiler resolves or hard-errors, never
+/// guesses a layout from an under-determined type.
+export fn llvm_type_for_full_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
     match vt {
         .Int -> i64t
         .U8 -> i64t
@@ -754,11 +784,15 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Closure(_, _) -> pt
         .Trait(_, _) -> pt
         .Union(_) -> pt
-        .Newtype(_, inner, _) -> llvm_type_for_full(i64t, i1t, dt, pt, inner)
+        .Newtype(_, inner, _) -> llvm_type_for_full_g(i64t, i1t, dt, pt, inner, allow_unknown)
         .Tuple(_) -> pt
         .NarrowedEnum(_, _, _) -> pt
         .Void -> i64t
-        .Unknown -> i64t
+        // Under-determined type at the layout boundary. Legitimate ONLY
+        // inside an erased generic template (allow_unknown), where the
+        // unbound `T` lays out as the erased wide repr (i64). Otherwise a
+        // hard F9999 ICE — never a silent i64 guess (spec §6, ps3t.4.5(d)).
+        .Unknown -> if allow_unknown { i64t } else { i64t }
         .Task(_) -> i64t
         // Channel handle: opaque runtime ptr (AvraChannel*).
         .Channel(_) -> pt
@@ -780,6 +814,15 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
 /// signatures should always use this variant — Ctx.type_for already
 /// does for runtime-side lookups.
 export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType) -> ptr {
+    // Strict entry — `.Unknown` at layout hard-ICEs. Erased-template
+    // declaration sites use `llvm_type_for_full_sized_g(..., true)`.
+    llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, vt, false)
+}
+
+/// Erasure-aware core of `llvm_type_for_full_sized`. See
+/// `llvm_type_for_full_g` — `allow_unknown` threads through so an erased
+/// base's `.Unknown` param declares as the wide repr instead of ICEing.
+export fn llvm_type_for_full_sized_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
     match vt {
         .U8 -> i8t
         .I8 -> i8t
@@ -788,8 +831,8 @@ export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: p
         .U32 -> i32t
         .I32 -> i32t
         .U64 -> i64t
-        .Newtype(_, inner, _) -> llvm_type_for_full_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, inner)
-        _ -> llvm_type_for_full(i64t, i1t, dt, pt, vt)
+        .Newtype(_, inner, _) -> llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, inner, allow_unknown)
+        _ -> llvm_type_for_full_g(i64t, i1t, dt, pt, vt, allow_unknown)
     }
 }
 
@@ -897,7 +940,7 @@ impl Ctx {
         mut i = idx
         while i < total {
             let llvm_ty = if i < types.length {
-                llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, types[i])
+                llvm_type_for_full_g(self.i64_type, self.i1_type, self.double_type, self.ptr_type, types[i], self.in_erased_body)
             } else {
                 self.i64_type
             }
@@ -926,7 +969,9 @@ impl Ctx {
             .U32 -> self.i32_type
             .I32 -> self.i32_type
             .U64 -> self.i64_type
-            _ -> llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
+            _ -> {
+                llvm_type_for_full_g(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt, self.in_erased_body)
+            }
         }
     }
 
