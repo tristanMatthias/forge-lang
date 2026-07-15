@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
-use core.{Stmt, ValueType, vtype_display, vtype_eq, vtype_is_unknown}
+use core.{Stmt, Expr, ValueType, vtype_display, vtype_eq, vtype_is_unknown, expr_diverges}
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
@@ -174,6 +174,26 @@ fn unify_if_expr_branches(tc: TC, then_ty: ValueType, else_ty: ValueType) -> Exp
     tc_er(tc, if_expr_result_type(then_ty, else_ty))
 }
 
+/// Unify two if-expr arm types, honoring divergence: when exactly one arm
+/// diverges (`return` / `break` / `continue` / `panic`) only the OTHER arm
+/// reaches the merge, so the if-expr's type is that surviving arm's — never
+/// the diverging arm's `.Void`/`.Unknown`. Mirrors `emit_if_expr`'s codegen
+/// divergence handling so typeck and codegen agree on the type of a binding
+/// like `let v = if c { return } else { real }` (else the binding would type
+/// `.Unknown` and its later uses would go unchecked; §6 layout totality). An
+/// else-less `if c { return X }` in value position keeps its effect-only
+/// `.Void`: its synthesized empty-block else diverges=false and types `.Void`,
+/// so `then diverges, else survives .Void` returns `.Void` — exactly today's
+/// behavior. Both-diverge and neither-diverge fall through to the ordinary
+/// (union-forming) unification.
+fn unify_if_branches_diverge_aware(tc: TC, then_e: Expr, else_e: Expr, then_ty: ValueType, else_ty: ValueType) -> ExprResult {
+    let then_div = expr_diverges(tc.nodes, then_e)
+    let else_div = expr_diverges(tc.nodes, else_e)
+    if then_div && !else_div { return tc_er(tc, else_ty) }
+    if else_div && !then_div { return tc_er(tc, then_ty) }
+    unify_if_expr_branches(tc, then_ty, else_ty)
+}
+
 fn if_expr_result_type(then_ty: ValueType, else_ty: ValueType) -> ValueType {
     if !vtype_eq(then_ty, else_ty) && !vtype_is_unknown(then_ty) && !vtype_is_unknown(else_ty) && !vtype_eq(then_ty, .Void) && !vtype_eq(else_ty, .Void) {
         mut members: List<ValueType> = []
@@ -209,14 +229,14 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             if guard.var == "" {
                 let t = check_expr(branch_gated, then_e)
                 let e = check_expr(t.tc, else_e)
-                return unify_if_expr_branches(e.tc, t.ty, e.ty)
+                return unify_if_branches_diverge_aware(e.tc, then_e, else_e, t.ty, e.ty)
             }
             // Narrowing path: narrow the present arm, resetting the env
             // to `baseline` after each so narrowing stays branch-local.
             let baseline = branch_gated.types
             let t = check_expr(tc_narrow_true_branch(branch_gated, guard), then_e)
             let e = check_expr(tc_narrow_false_branch(t.tc with { types: baseline }, guard), else_e)
-            unify_if_expr_branches(e.tc with { types: baseline }, t.ty, e.ty)
+            unify_if_branches_diverge_aware(e.tc with { types: baseline }, then_e, else_e, t.ty, e.ty)
         }
         _ -> tc_er(tc, .Unknown)
     }

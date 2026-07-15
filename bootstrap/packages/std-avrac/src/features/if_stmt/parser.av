@@ -122,7 +122,13 @@ impl Parser {
             }
             has_else = true
         }
-        if !has_else { else_id = self.alloc_leaf(Expr.Number("0")) }
+        if !has_else {
+            // No else: a Void empty-block else (see parse_if_expression) — not
+            // a `0` literal — so an `if let` whose then-branch diverges stays
+            // effect-only rather than being typed by a synthesized int.
+            let void_else_rows: List<StmtId> = []
+            else_id = self.alloc_leaf(Expr.Block(void_else_rows))
+        }
         let bind_id = self.iflet_bind_row(h.tmp, h.binding)
         // Prepend the unwrap-bind to the then-block. Flipped Expr.Block holds
         // List<StmtId> (walker-opaque leaf) — the rows ARE the structure, so
@@ -182,10 +188,18 @@ impl Parser {
         }
         let then_id = self.parse_block_expression()?
         if !self.check(Tk.KwElse) {
-            // The synthesized `0` else-arm is a real child row, exactly as
-            // the canonical ingest would record it.
-            let zero_id = self.alloc_leaf(Expr.Number("0"))
-            return .Ok(self.alloc_at(Expr.IfExpr(condition, then_id, zero_id), sp_start))
+            // An else-less `if` in expression position has no value on the
+            // fall-through path: synthesize an EMPTY-BLOCK else, which types
+            // `.Void` (an empty block has no tail value), NOT a `0` literal.
+            // The Void else keeps the if-expr effect-only when its then-branch
+            // diverges (so `if c { return X }` in value position stays valid —
+            // its type is still the then-block's `.Void`), and it lets the
+            // divergence-aware result typing hand back the real ELSE type for
+            // `if c { <diverge> } else { v }` instead of a synthesized `int`
+            // hijacking it (§6: no layout decision from an under-determined type).
+            let void_else_rows: List<StmtId> = []
+            let void_else_id = self.alloc_leaf(Expr.Block(void_else_rows))
+            return .Ok(self.alloc_at(Expr.IfExpr(condition, then_id, void_else_id), sp_start))
         }
         self.advance()
         // Else can be either a block, another if-expression

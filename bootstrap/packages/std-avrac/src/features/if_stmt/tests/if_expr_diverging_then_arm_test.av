@@ -1,0 +1,131 @@
+// WHY: an if-EXPRESSION whose THEN arm diverges (return/break/continue/panic)
+// must take its type from the surviving ELSE arm — only the else reaches the
+// merge. Before the divergence-aware result typing, both codegen (emit_if_expr)
+// and typeck (if_expr_result_type) returned the THEN-arm type unconditionally,
+// so `let v = if c { return … } else { <value> }` typed `v` as the diverging
+// then-block's `.Unknown`. A scalar `v` coincidentally lowered to i64; a
+// `string?`/`struct?` ICE'd at the first field/method access on the empty
+// layout type (F9999 "field access on non-struct value, ty="). §6 forbids a
+// layout decision from an under-determined type; a diverging arm is Void/Unknown.
+//
+// The mirror shape (else diverges, then survives) already worked — its type is
+// the THEN arm, which is the surviving one there. And an else-LESS
+// `if c { return X }` in value position must STAY effect-only (its synthesized
+// empty-block else types `.Void`), never regress to an `int` from a synthesized
+// `0` (guarded by if_expr_with_return_test.av + the effect-only spec below).
+
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+
+type DPoint = { x: int, y: int }
+
+// THEN diverges, ELSE is the real value — the case that used to ICE.
+fn div_then_str(c: bool) -> int {
+    let v = if c { return -1 } else { "hello" }
+    v.length
+}
+
+fn div_then_struct(c: bool) -> int {
+    let v = if c { return -99 } else { DPoint { x: 3, y: 4 } }
+    v.x + v.y
+}
+
+// The mirror: ELSE diverges, THEN survives (already correct — regression guard).
+fn div_else_str(c: bool) -> int {
+    let v = if c { "world!" } else { return -1 }
+    v.length
+}
+
+// break as the divergence form, inside a loop.
+fn div_then_break(xs: List<string>) -> int {
+    mut total = 0
+    for x in xs {
+        let v = if x == "" { break } else { x }
+        total = total + v.length
+    }
+    total
+}
+
+// The TWIN codegen path: a statement-`if` in value position (a block-expr
+// whose tail is an `if` STATEMENT), routed through emit_stmt_if_as_value rather
+// than emit_if_expr. It had the identical diverging-then bug.
+fn div_then_block_tail(c: bool) -> int {
+    let v = { if c { return -1 } else { "hidden" } }
+    v.length
+}
+
+// COMPOSITE divergence: the then arm is a nested `if` whose BOTH arms diverge.
+// Its emission leaves the insert point at a dead, unterminated merge block, so a
+// local `has_terminator()` check would miss the divergence (reporting the arm as
+// non-diverging) while typeck's AST analysis types the outer `if` from the else
+// — a codegen/typeck mismatch that ICE'd. Both sides now use the AST check.
+fn div_then_composite(c: bool, d: bool) -> int {
+    let v = if c {
+        if d { return 1 } else { return 2 }
+    } else {
+        "surface"
+    }
+    v.length
+}
+
+spec "if-expr with a diverging then arm types from the surviving else" {
+    then "then `return`, else `string` — v is `string`, `.length` reads (was F9999)" {
+        div_then_str(false) == 5
+    }
+    then "then `return` taken on the true branch" {
+        div_then_str(true) == -1
+    }
+    then "then `return`, else `struct` — fields read back (was F9999)" {
+        div_then_struct(false) == 7
+    }
+    then "then `return` taken for the struct case" {
+        div_then_struct(true) == -99
+    }
+    then "mirror: else `return`, then `string` still binds the then value" {
+        div_else_str(true) == 6
+    }
+    then "mirror: else `return` taken on the false branch" {
+        div_else_str(false) == -1
+    }
+    then "`break` divergence in the then arm binds the else value per iteration" {
+        // "a"(1) + "bb"(2), then "" breaks
+        div_then_break(["a", "bb", "", "ccc"]) == 3
+    }
+    then "twin path: a block-tail statement-`if` with diverging then binds the else value (was F9999)" {
+        div_then_block_tail(false) == 6
+    }
+    then "twin path: the diverging then is taken on the true branch" {
+        div_then_block_tail(true) == -1
+    }
+    then "composite: a nested all-returning then arm still types from the else (was F9999)" {
+        div_then_composite(false, false) == 7
+    }
+    then "composite: the nested then's first arm returns" {
+        div_then_composite(true, true) == 1
+    }
+    then "composite: the nested then's second arm returns" {
+        div_then_composite(true, false) == 2
+    }
+}
+
+spec "an else-less `if c { return X }` in EXPRESSION position stays effect-only (no synthesized-int regression)" {
+    then "an else-less diverging-then if as a match-arm value type-checks in a `string` fn" {
+        // The if here is in EXPRESSION (match-arm-value) position, so it goes
+        // through parse_if_expression and gets a SYNTHESIZED else. Pre-fix the
+        // synthesized else was `0` (int); with the divergence rule that `int`
+        // became the arm type and F1000'd (int not assignable to string). The
+        // synthesized else is now a Void empty block, so the diverging arm stays
+        // Void — exactly the pre-divergence-rule behavior. (Mirrors the standing
+        // if_expr_with_return_test.av guard; kept self-contained here too.)
+        let f = "/tmp/avra_elseless_effectonly.av"
+        write_fixture(f,
+            "fn label(c: bool) -> string {\n" +
+            "    match c {\n" +
+            "        true  -> if c { return \"early\" }\n" +
+            "        false -> \"late\"\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        let out = cached_fixture_check_no_metadata(f)
+        !out.contains("F1000") && !out.contains("F9999")
+    }
+}
