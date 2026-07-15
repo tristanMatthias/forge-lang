@@ -1627,6 +1627,30 @@ fn collect_inst_from_variant_decls(variants: List<Variant>, regs: GenRegs, st: C
     cur
 }
 
+/// Collect the generic instantiations WRAPPED inside a concrete fn's RETURN type
+/// (ps3t.3.13) — and ONLY those. A TOP-LEVEL nominal return (`Result<…>`,
+/// `DenseTable<…>`) is already collected by the main pass's `scope_insts_for_ret`
+/// (collect_inst_stmt `.Function` arm); re-collecting it here would register the
+/// same instance under a DIFFERENT type-arg representation (the structural raw
+/// nominal vs the string path's pre-mangled args — mono.av ~347) and diverge the
+/// whole-program IR. What `scope_insts_for_ret` MISSES is the inner of a WRAPPER
+/// return (`List<DenseTable<Id,V>>` → base `List` names no user generic → nothing
+/// collected), so this walks ONLY the wrapper arms and defers to
+/// `collect_inst_from_vtype` for their contents.
+fn collect_inst_from_ret_vtype(vt: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    match vt {
+        .List(elem) -> collect_inst_from_vtype(elem, regs, st)
+        .Map(k, v) -> collect_inst_from_vtype(v, regs, collect_inst_from_vtype(k, regs, st))
+        .Optional(inner) -> collect_inst_from_vtype(inner, regs, st)
+        .Tuple(elems) -> collect_inst_from_vtypes(elems, regs, st)
+        .Channel(elem) -> collect_inst_from_vtype(elem, regs, st)
+        .Task(r) -> collect_inst_from_vtype(r, regs, st)
+        .Union(types) -> collect_inst_from_vtypes(types, regs, st)
+        .FnTyped(params, r) -> collect_inst_from_vtype(r, regs, collect_inst_from_vtypes(params, regs, st))
+        _ -> st
+    }
+}
+
 /// The DECLARED-TYPE instantiation channel (ps3t.3.11 Part 2), run as a
 /// SEPARATE pass from `collect_inst_stmt` by the end-of-pipeline
 /// `mono_decl_mopup` (so it never perturbs the call/ctor fixpoint's ordering).
@@ -1644,6 +1668,17 @@ fn collect_decl_type_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> C
     match stmt {
         .TypeDecl(_, tp, fields) -> if tp.length > 0 { st } else { collect_inst_from_field_decls(fields, regs, st) }
         .EnumDecl(_, tp, variants) -> if tp.length > 0 { st } else { collect_inst_from_variant_decls(variants, regs, st) }
+        // A CONCRETE fn whose RETURN type WRAPS a generic instance —
+        // `wrapped_layers() -> List<DenseTable<StmtId, int>>` — reaches that
+        // instance only through the signature (no field, no local construction;
+        // ps3t.3.13). A consumer that calls it and reads the result
+        // (`wrapped_layers()[i].get(id)`) needs the inner instance collected +
+        // specialised, and `scope_insts_for_ret` (the main pass) misses it because
+        // the wrapper base names no user generic. Only the WRAPPED inner is
+        // collected here (see `collect_inst_from_ret_vtype`) — a top-level nominal
+        // return is left to the main pass to avoid a representation-mismatch
+        // divergence. Generic fns (tp>0) are skipped.
+        .Function(_, tp, _, ret_vt, _) -> if tp.length > 0 { st } else { collect_inst_from_ret_vtype(ret_vt, regs, st) }
         .Module(_, body) -> collect_decl_type_insts_ids(body, regs, st)
         .Annotated(_, inner) -> collect_decl_type_inst_stmt(regs.store.stmts.get(inner), regs, st)
         .Block(body) -> collect_decl_type_insts_ids(body, regs, st)
@@ -2689,22 +2724,57 @@ fn vt_is_tagged_optional_inner(vt: ValueType) -> bool {
     }
 }
 
-fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType {
-    let rewritten = rewrite_type_name(ret_ty, regs, insts)
-    // Preserve a nullable return type `T?` as `Optional(T)` ONLY for value-inner
-    // (tagged/boxed) T — that is the case the boxed repr depends on (without it
-    // `-> int?` registered as `int` and the box was unboxed at the return, none-
-    // deref). Pointer-inner `T?` (Stmt?/Expr?/string? …) is a null-pointer niche:
-    // its value is identical whether typed `T` or `T?`, so it stays ERASED here,
-    // matching the long-standing behaviour the rest of the compiler relies on
-    // (preserving it broadly corrupted impl-name reconstruction → spurious
-    // F3104). vtype_from_type_string still strips `?` everywhere else.
-    if rewritten.ends_with("?") && rewritten.length > 1 {
-        let inner = vtype_from_type_string(rewritten.substring(0, rewritten.length - 1))
-        if vt_is_tagged_optional_inner(inner) { return ValueType.Optional(inner) }
-        return inner
+/// Mangle generic-instance references in a return type, recursing structurally
+/// through built-in container wrappers (List / Map / Tuple / Channel / Task /
+/// Union / FnTyped / Optional) — which the string mangler leaves untouched
+/// because their base names no user generic, so a `List<DenseTable<Id,V>>` return
+/// kept its inner instance un-mangled and a consumer method-call on `f()[i]`
+/// dispatched to the raw FQN (`undefined method`; ps3t.3.13). A NOMINAL
+/// (Struct / Enum / scalar) is mangled via the HISTORIC string path
+/// (`rewrite_type_name`, no `rewrite_instance_vtype` disp-fallback) so a nominal
+/// return stays byte-identical — the disp fallback mis-mangles a phantom render
+/// (e.g. `decode_or`'s `Result<List<Sym>, IoError>` → `Result__string`).
+fn mangle_ret_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
+    match vt {
+        .List(elem) -> ValueType.List(mangle_ret_vtype(elem, regs, insts))
+        .Map(k, v) -> ValueType.Map(mangle_ret_vtype(k, regs, insts), mangle_ret_vtype(v, regs, insts))
+        .Tuple(elems) -> ValueType.Tuple(mangle_ret_vtypes(elems, regs, insts))
+        .Channel(elem) -> ValueType.Channel(mangle_ret_vtype(elem, regs, insts))
+        .Task(r) -> ValueType.Task(mangle_ret_vtype(r, regs, insts))
+        .Union(types) -> ValueType.Union(mangle_ret_vtypes(types, regs, insts))
+        .FnTyped(params, r) -> ValueType.FnTyped(mangle_ret_vtypes(params, regs, insts), mangle_ret_vtype(r, regs, insts))
+        .Optional(inner) -> ValueType.Optional(mangle_ret_vtype(inner, regs, insts))
+        _ -> vtype_from_type_string(rewrite_type_name(vtype_render_full(vt), regs, insts))
     }
-    vtype_from_type_string(rewritten)
+}
+
+fn mangle_ret_vtypes(vts: List<ValueType>, regs: GenRegs, insts: List<Inst>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < vts.length {
+        out.push(mangle_ret_vtype(vts[i], regs, insts))
+        i = i + 1
+    }
+    out
+}
+
+fn rewrite_fn_ret(ret_vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
+    // Nullable-return REPR nuance applies at the TOP level only: a nullable return
+    // `T?` stays `Optional(T)` ONLY for value-inner (tagged/boxed) T — the case
+    // the boxed repr depends on (without it `-> int?` unboxes at the return →
+    // none-deref). Pointer-inner `T?` (Stmt?/Expr?/string? / a List / …) is a
+    // null-pointer niche: its value is identical whether typed `T` or `T?`, so it
+    // stays ERASED, matching the long-standing behaviour the rest of the compiler
+    // relies on (preserving it broadly corrupted impl-name reconstruction →
+    // spurious F3104). The inner is mangled structurally so a wrapped generic in a
+    // nullable return (`DenseTable<Id,V>?`) mangles too.
+    match ret_vt {
+        .Optional(inner) -> {
+            let ri = mangle_ret_vtype(inner, regs, insts)
+            if vt_is_tagged_optional_inner(ri) { ValueType.Optional(ri) } else { ri }
+        }
+        _ -> mangle_ret_vtype(ret_vt, regs, insts)
+    }
 }
 
 /// Rewrite an entire fn declaration: param types, return
@@ -2714,7 +2784,7 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: List<Inst>) -> ValueType
 fn rewrite_function(name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, ret_vt: ValueType, body: List<StmtId>, regs: GenRegs, insts: List<Inst>) -> Stmt {
     let ret_ty = vtype_render_full(ret_vt)
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
-    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_fn_body(body, ret_vt, regs, scoped))
+    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_vt, regs, insts), rewrite_fn_body(body, ret_vt, regs, scoped))
 }
 
 /// Walk a fn body; tail-position `.Expr` / `.Return` statements
@@ -2858,7 +2928,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr_id(coll, regs, insts), rewrite_stmt_id(body, regs, insts))
         .Function(name, tp, params, ret_vt, body) -> rewrite_function(name, tp, params, ret_vt, body, regs, insts)
         .ExternFn(name, params, ret_vt) ->
-            .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
+            .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(ret_vt, regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr_id(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmt_ids(body, regs, insts))
         // A specialised struct (tp already emptied) may carry generic-instance
