@@ -124,6 +124,10 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = ctx.emit(then_env, then_branch)?
     let t_ty = emit_value_ty(t)
+    // Did the then-branch diverge (return/break/continue/panic)? Its block is
+    // then already terminated and never reaches the merge — so its type must
+    // NOT drive the if-expr's result type (see the merge below).
+    let then_diverged = ctx.has_terminator()
     // store_br_if_open: skip the store + br when the branch's emit
     // already terminated the block (e.g. body was `return X`). Without
     // this guard the codegen produces invalid LLVM IR — two terminators
@@ -136,10 +140,27 @@ export fn emit_if_expr(ctx: Ctx, env: List<VarBinding>, condition: Expr, then_br
     ctx.cov_branch_else(branch_id)
     let e = ctx.emit(env, else_branch)?
     let e_ty = emit_value_ty(e)
+    let else_diverged = ctx.has_terminator()
     ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
 
     // ── Merge ──
     ctx.position(merge_bb)
+
+    // One branch diverges → only the OTHER branch flows to the merge, so the
+    // if-expr's value AND type are that surviving branch's. Returning the
+    // diverging arm's type instead would hand a `.Void`/`.Unknown` layout
+    // downstream — e.g. `let v = if c { return } else { <ptr value> }` would
+    // type `v` as the diverging then-arm's `.Unknown` and ICE at the first
+    // `v.field`/`v.method()` on an empty layout type (§6 layout totality). The
+    // value load is unchanged — only the open branch stored into the slot.
+    if then_diverged && !else_diverged {
+        let sv = ctx.load_i64(result_slot, "ife_val")
+        return ok_emit(sv, e_ty)
+    }
+    if else_diverged && !then_diverged {
+        let sv = ctx.load_i64(result_slot, "ife_val")
+        return ok_emit(sv, t_ty)
+    }
 
     // Optional mix: one branch a value-inner (tagged) optional or its inner,
     // the other `null` (none) → canonicalise the whole if-expr to `T?` so a

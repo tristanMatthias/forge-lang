@@ -112,20 +112,39 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
     let t_ty = emit_value_ty(t)
+    // Did the then-branch diverge? If so it never reaches the merge and its
+    // type must not drive the result type (twin of emit_if_expr; see below).
+    let then_diverged = ctx.has_terminator()
     ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)
     ctx.cov_branch_else(branch_id)
     mut e_ty = ValueType.Void
+    mut else_diverged = false
     if else_branch != null {
         let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
         e_ty = emit_value_ty(e)
+        else_diverged = ctx.has_terminator()
         ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
     } else {
         ctx.br(merge_bb)
     }
 
     ctx.position(merge_bb)
+    // One branch diverges → only the OTHER flows to the merge, so the result
+    // value AND type are that surviving branch's — never the diverging arm's
+    // `.Void`/`.Unknown`. Twin of emit_if_expr: without this a `let v = { if c
+    // { return } else { <ptr value> } }` (a statement-`if` in value position,
+    // e.g. a block-expr tail) types `v` as the diverging then-arm's `.Unknown`
+    // and ICEs at the first `v.field`/`v.method()` (§6 layout totality).
+    if then_diverged && !else_diverged {
+        let sv = ctx.load_i64(result_slot, "sif_val")
+        return ok_emit(sv, e_ty)
+    }
+    if else_diverged && !then_diverged {
+        let sv = ctx.load_i64(result_slot, "sif_val")
+        return ok_emit(sv, t_ty)
+    }
     // Canonicalise a value-inner optional mix ({T, null} etc.) to `T?` so a
     // present value is boxed and `none` stays the null pointer (e.g. an
     // `if x > 0 { x } else { none }` function body returning `int?`).
