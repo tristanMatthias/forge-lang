@@ -1,0 +1,137 @@
+// ps3t.6.5.6 — the grammar-DSL TYPE family. Extends the executor's
+// semantic-action seam to also produce type expressions: CapVal.TExpr +
+// run_grammar_type + capval_to_texpr + the type build vocabulary
+// (named/generic/optional/union/list/tuple/fn/dyn). The hand parser builds
+// a surface `TypeExpr` then lowers it to a `ValueType` via
+// `type_expr_to_vtype`; the DSL mirrors that — builds the SAME `TypeExpr`,
+// and run_grammar_type shares the exact same lowering + the store's type
+// arena — so equivalence reduces to constructing the same `TypeExpr`,
+// checked via render_type_id (the ValueType renderer).
+//
+// Scope = parse_type_expr's surface: named/primitive types, single-level
+// generics `Foo<A, B>`, nullable `T?`, ad-hoc union `A | B`, list `[T]`,
+// tuple `(T, U)`, fn types `fn(A) -> R` (+ bare `fn`), and `dyn Trait`.
+//
+// DSL-lexer note (deferred to the real-lexer wiring, ps3t.6.5.8): lex_expr
+// tokenizes `>>` as ONE shift token, so NESTED generics that close with `>>`
+// (`List<List<T>>`) can't parse here — the real parser splits them via
+// maybe_split_shr. Qualified `@pkg::T` and `~splice` type atoms are likewise
+// out of scope. Single-level generics fully exercise the generic mechanism.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+
+// A type-expression grammar mirroring parse_type_expr / parse_type_atom.
+fn type_grammar_src() -> string {
+    "grammar Type {\n" +
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" r:type_expr )? -> MkFn(lp, p, r)\n" +
+    "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
+    "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
+    "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
+    "  named_type = name:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
+    "}"
+}
+
+// The DSL-generated type parser's ValueType for `src`, rendered canonically.
+fn dsl_type(src: string) -> string {
+    let gp = parse_grammar(type_grammar_src())
+    let r = run_grammar_type(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_type_id(r.store, r.root)
+}
+
+// The hand-written parser's ValueType for `src`, rendered the SAME way — it
+// builds a TypeExpr, lowers it via the shared type_expr_to_vtype, and renders
+// the arena'd ValueType.
+fn hand_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<parse error>"
+    }
+}
+
+// True when both parsers agree on the type tree for `src`.
+fn agree(src: string) -> bool {
+    dsl_type(src) == hand_type(src)
+}
+
+spec "grammar-DSL type family: generated parser == hand-written parser (ps3t.6.5.6)" {
+    given "named + primitive types" {
+        then "primitives and user names agree" {
+            agree("int") &&
+            agree("string") &&
+            agree("bool") &&
+            agree("float") &&
+            agree("Foo") &&
+            agree("MyType")
+        }
+    }
+    given "nullable `T?`" {
+        then "primitive, user, and generic nullables agree" {
+            agree("int?") &&
+            agree("Foo?") &&
+            agree("string?") &&
+            agree("Result<int, string>?")
+        }
+    }
+    given "single-level generic application" {
+        then "builtin containers and user generics agree" {
+            agree("List<int>") &&
+            agree("Map<string, int>") &&
+            agree("Result<int, string>") &&
+            agree("Channel<bool>") &&
+            agree("Task<int>") &&
+            agree("Foo<A>") &&
+            agree("Pair<A, B>")
+        }
+    }
+    given "list + tuple types" {
+        then "list, multi-element tuple, and single-paren grouping agree" {
+            agree("[int]") &&
+            agree("[Foo]") &&
+            agree("(int, string)") &&
+            agree("(int, bool, Foo)") &&
+            agree("(int)")
+        }
+    }
+    given "ad-hoc unions" {
+        then "two- and three-way unions, incl. a generic member, agree" {
+            agree("int | string") &&
+            agree("int | string | bool") &&
+            agree("Foo | Bar") &&
+            agree("List<int> | string")
+        }
+    }
+    given "fn types" {
+        then "arity, arrow, bare, and union-return forms agree" {
+            agree("fn(int) -> bool") &&
+            agree("fn(int, string) -> Foo") &&
+            agree("fn() -> int") &&
+            agree("fn -> int") &&
+            agree("fn") &&
+            agree("fn(int) -> bool | string")
+        }
+    }
+    given "dyn trait objects" {
+        then "dyn Trait lowers to the bare trait name" {
+            agree("dyn Display") &&
+            agree("dyn Iterator")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built a ValueType)" {
+        then "canonical renders of representative forms" {
+            dsl_type("int?") == "int?" &&
+            dsl_type("[int]") == "List<int>" &&
+            dsl_type("Map<string, int>") == "Map<string, int>" &&
+            dsl_type("Result<int, string>") == "Result<int, string>" &&
+            dsl_type("fn(int) -> bool") == "fn(int) -> bool" &&
+            dsl_type("int | string") == "int|string"
+        }
+    }
+}
