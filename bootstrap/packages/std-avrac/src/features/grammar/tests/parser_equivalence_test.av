@@ -177,5 +177,14 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("f(1) + g(2)") &&
             agree("f(a) * 2 + b[0]")
         }
+        then "method calls fall out of field+call (no special node needed)" {
+            // a.b(c) is Call(FieldAccess(a, b), [c]) — the rebind fold
+            // composes field + call with no method-specific machinery,
+            // and it matches the hand-written parser.
+            agree("a.b(c)") &&
+            agree("a.b(c).d(e)") &&
+            agree("f(x).y") &&
+            agree("obj.method(1, 2)")
+        }
     }
 }
