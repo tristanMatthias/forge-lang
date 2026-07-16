@@ -67,10 +67,14 @@ impl CapEnv {
     fn append_tok(self, name: string, t: Token) {
         let existing = self.get(name)
         mut ts: List<Token> = []
+        // Promote a prior scalar into the list — the `first ( "," rest )*`
+        // comma-list shape reuses one label (first bound scalar, then
+        // list-appended); seed the list with the scalar so it isn't lost.
         match existing {
             .Toks(prev) -> {
                 for x in prev { ts.push(x) }
             }
+            .Tok(prev) -> ts.push(prev)
             _ -> {}
         }
         ts.push(t)
@@ -84,6 +88,7 @@ impl CapEnv {
             .Nodes(prev) -> {
                 for x in prev { ns.push(x) }
             }
+            .Node(prev) -> ns.push(prev)
             _ -> {}
         }
         ns.push(id)
@@ -433,6 +438,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "index_suffix" && args.length == 1 {
         return st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0]))))
     }
+    if name == "call_suffix" && args.length == 1 {
+        // A partial Call with a sentinel callee + the captured arg list
+        // (a single arg arrives as a scalar Node, many as Nodes, none as
+        // Nil — normalise to a list). fold_postfix rebinds the callee.
+        return st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0]))))
+    }
     if name == "fold_postfix" && args.length == 2 {
         return fold_postfix_expr(st, env.get(args[0]), env.get(args[1]))
     }
@@ -459,7 +470,20 @@ fn rebind_receiver(st: PState, recv: ExprId, suffix: ExprId) -> ExprId {
     match st.store.exprs.get(suffix) {
         .FieldAccess(_, field) -> st.store.exprs.add_leaf(Expr.FieldAccess(recv, field))
         .Index(_, idx) -> st.store.exprs.add_leaf(Expr.Index(recv, idx))
+        .Call(_, cargs) -> st.store.exprs.add_leaf(Expr.Call(recv, cargs))
         _ -> recv
+    }
+}
+
+/// A capture as a node list: many args are Nodes, a single arg a scalar
+/// Node, no args Nil. (The `first ( "," rest )*` comma-list, with
+/// scalar→list promotion in append_node, produces Nodes for ≥2 and a
+/// scalar Node for exactly 1.)
+fn capval_to_node_list(v: CapVal) -> List<ExprId> {
+    match v {
+        .Nodes(ns) -> ns
+        .Node(id) -> [id]
+        _ -> []
     }
 }
 
@@ -567,11 +591,20 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         .Logical(l, op, r) -> "(${logicop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
         .FieldAccess(obj, field) -> "(. ${dump_expr(store, obj)} ${field})"
         .Index(obj, idx) -> "([] ${dump_expr(store, obj)} ${dump_expr(store, idx)})"
+        .Call(callee, cargs) -> "(call ${dump_expr(store, callee)}${dump_args(store, cargs)})"
         .Grouping(e) -> dump_expr(store, e)
         .Error -> "<error>"
         .Missing -> "<missing>"
         _ -> "<?>"
     }
+}
+
+fn dump_args(store: NodeStore, cargs: List<ExprId>) -> string {
+    mut out = ""
+    for a in cargs {
+        out = out + " " + dump_expr(store, a)
+    }
+    out
 }
 
 fn binop_sym(op: BinOp) -> string {

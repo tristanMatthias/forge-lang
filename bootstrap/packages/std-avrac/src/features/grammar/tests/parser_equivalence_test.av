@@ -31,6 +31,7 @@ fn expr_grammar_src() -> string {
     "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
     "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
     "             | \"[\" idx:expression \"]\" -> index_suffix(idx)\n" +
+    "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
     "  primary    = NUMBER | \"true\" | \"false\" | @hand(ident)\n" +
     "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
     "}"
@@ -158,6 +159,23 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("a[0] * b.c") &&
             agree("-a.b") &&
             agree("a.b < c.d && e[0] == f")
+        }
+    }
+    given "function calls (list-valued args via scalar→list promotion)" {
+        then "zero / one / many args agree" {
+            agree("f()") &&
+            agree("f(1)") &&
+            agree("f(1, 2, 3)") &&
+            agree("g(a + b, c * d)")
+        }
+        then "call chains and calls mixed with field/index agree" {
+            agree("f(1)(2)") &&
+            agree("f(a)[0]") &&
+            agree("f(g(x), h(y, z))")
+        }
+        then "calls compose with the binary operators" {
+            agree("f(1) + g(2)") &&
+            agree("f(a) * 2 + b[0]")
         }
     }
 }
