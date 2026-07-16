@@ -1,0 +1,50 @@
+// WHY: guards the ps3t.4.5(d) rep-boundary invariant. After d-4 + the total
+// `resolve_layout`, the ONLY sanctioned place an under-determined `.Unknown` type
+// maps to an LLVM layout is `resolve_layout` — guarded by `allow_unknown`, else
+// `err_layout()`/ICE. A direct `.Unknown -> <LLVM type ptr>` anywhere in codegen
+// is the historical silent-i64-guess bug (spec §6). Crucially it BYPASSES the
+// runtime ICE (which only fires *through* `resolve_layout`), so this SOURCE lint
+// (`diagnose.sh --check-layout-boundary`) is the only thing that catches a
+// reintroduction. This test pins the lint green on the real tree and
+// mutation-verifies it against planted violations (the negative arms ARE the
+// mutation check — they fail if the lint stops catching the anti-pattern).
+//
+// @@fixture-stateful@@ — shells out to the SHARED scripts/diagnose.sh (external
+// state not in the fixture-cache key); opt out of failure caching so a repaired
+// lint re-probes instead of replaying a stale `: FAIL`.
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file}
+
+fn tmpdir(slug: string) -> string {
+    let d = "/tmp/avra_layout_lint_${slug}"
+    let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
+    d
+}
+
+fn lint(dir: string) -> int {
+    avra_shell_exec_status("bash scripts/diagnose.sh --check-layout-boundary '${dir}' >/dev/null 2>&1")
+}
+
+spec "ps3t.4.5(d) layout-boundary lint" {
+    then "passes on the real codegen tree — no silent .Unknown→layout fallback" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-layout-boundary >/dev/null 2>&1") == 0
+    }
+    then "catches a reintroduced `.Unknown -> i64t` silent fallback (wide)" {
+        let d = tmpdir("bad_wide")
+        let _ = avra_selfhost_write_file("${d}/bad.av",
+            "fn f(vt: ValueType) -> ptr {\n    match vt {\n        .Unknown -> i64t\n        _ -> pt\n    }\n}\n")
+        lint(d) != 0
+    }
+    then "catches the narrow-width variant `.Unknown -> self.i64_type`" {
+        let d = tmpdir("bad_narrow")
+        let _ = avra_selfhost_write_file("${d}/bad.av",
+            "fn f(self, vt: ValueType) -> ptr {\n    match vt {\n        .Unknown -> self.i64_type\n        _ -> self.ptr_type\n    }\n}\n")
+        lint(d) != 0
+    }
+    then "does NOT flag the sanctioned guarded arm or non-layout .Unknown arms" {
+        let d = tmpdir("ok")
+        let _ = avra_selfhost_write_file("${d}/ok.av",
+            "fn g(vt: ValueType) -> X {\n    match vt {\n        .Unknown -> if allow_unknown { ok_layout(i64t) } else { err_layout() }\n        _ -> ok_layout(pt)\n    }\n}\nfn h(vt: ValueType) -> bool {\n    match vt {\n        .Unknown -> false\n        _ -> true\n    }\n}\n")
+        lint(d) == 0
+    }
+}
