@@ -787,7 +787,42 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         let ret = if has_ret { capval_to_texpr(st, env.get(args[2])) } else { TypeExpr.Infer }
         return CapVal.TExpr(TypeExpr.FnType(capval_to_texpr_list(env.get(args[1])), ret))
     }
+    // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
+    // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
+    // lowers through the SHARED type family (a captured TExpr → ValueType via
+    // type_expr_to_vtype); absent ⇒ Unknown — exactly the hand parser's
+    // `ty_vt = Unknown` default. `let mut` and a bare `mut` both build Mut.
+    if name == "MkLet" && args.length == 3 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Let(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+    }
+    if name == "MkMut" && args.length == 3 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Mut(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+    }
+    if name == "MkConst" && args.length == 3 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Const(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+    }
+    if name == "MkDestructure" && args.length == 2 {
+        // `let (a, b, …) = init` — the ident list becomes ParamEntry bindings
+        // (names only, per parse_destructure_names' Unknown-vtype rows).
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(param_entries_from_toks(env.get(args[0])), capval_to_expr(st, env.get(args[1])))))
+    }
+    if name == "MkDefer" && args.length == 1 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
+    }
+    if name == "MkErrdefer" && args.length == 1 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
+}
+
+/// An optional `: type` annotation capture → the declared `ValueType`, via
+/// the SHARED `type_expr_to_vtype` (ps3t.6.5.4). Absent (or non-type) ⇒
+/// `Unknown`, exactly the hand parser's un-annotated binding default.
+fn ann_to_vtype(v: CapVal) -> ValueType {
+    match v {
+        .TExpr(te) -> type_expr_to_vtype(te)
+        _ -> ValueType.Unknown
+    }
 }
 
 /// True when a capture is present (bound to anything but `Nil`) — the

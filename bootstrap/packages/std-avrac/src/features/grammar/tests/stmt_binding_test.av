@@ -1,0 +1,135 @@
+// ps3t.6.5.4 — the grammar-DSL STATEMENT family, bindings slice: `let` /
+// `mut` / `const` (with optional `: type` annotations and pattern
+// destructure) plus `defer` / `errdefer`. This is where the statement,
+// type, and expression families COMPOSE: a binding's annotation lowers
+// through the SHARED type family (a captured TExpr → ValueType via
+// type_expr_to_vtype), and its initializer through the expression family —
+// exactly as the hand parser threads parse_type_expr + parse_expression.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// over a binding corpus and assert identical ASTs via render_stmt_id. The
+// hand probe is parse_declaration() — `let`/`mut`/`const` are decl_keyword
+// parsers (dispatched there, not in parse_statement), and parse_declaration
+// falls through to parse_statement for `defer`/`errdefer`, so it reaches
+// every form uniformly.
+//
+// Deferred (per the ticket): bare `return` (ReturnEmpty) is newline-sensitive
+// and the DSL demo lexer strips newlines, so it belongs to the lexer-mode /
+// real-lexer work (ps3t.6.5.10 / 6.5.8); the `let … else` guard desugar and
+// statement-position `match` (which needs the match-arm machinery) are their
+// own follow-ups. Initializers stay within the proven precedence-only
+// expression grammar (literals / arithmetic / comparison / idents / grouping).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+// A binding-statement grammar composing the statement, type, and expression
+// families. `let` dispatches via a `let_body` sub-rule (build-bearing
+// alternatives, the proven suffix-style shape) on the token after `let`:
+// `mut` → Mut, `(` → destructure, an identifier → Let.
+fn binding_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  statement   = let_stmt | mut_stmt | const_stmt | defer_stmt | errdefer_stmt | expr_stmt\n" +
+    "  let_stmt    = \"let\" let_body\n" +
+    "  let_body    = \"mut\" mn:IDENT ( \":\" mt:type_expr )? \"=\" me:expression -> MkMut(mn, mt, me)\n" +
+    "              | \"(\" dn:IDENT ( \",\" dn:IDENT )* \")\" \"=\" de:expression -> MkDestructure(dn, de)\n" +
+    "              | ln:IDENT ( \":\" lt:type_expr )? \"=\" le:expression -> MkLet(ln, lt, le)\n" +
+    "  mut_stmt    = \"mut\" n:IDENT ( \":\" t:type_expr )? \"=\" e:expression -> MkMut(n, t, e)\n" +
+    "  const_stmt  = \"const\" n:IDENT ( \":\" t:type_expr )? \"=\" e:expression -> MkConst(n, t, e)\n" +
+    "  defer_stmt  = \"defer\" e:expression -> MkDefer(e)\n" +
+    "  errdefer_stmt = \"errdefer\" e:expression -> MkErrdefer(e)\n" +
+    "  expr_stmt   = e:expression -> ExprStmt(e)\n" +
+    // ── type family (binding annotations) ──
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type   = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type  = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type = \"(\" ( pt:type_expr ( \",\" pt:type_expr )* )? \")\" -> TyParen(pt)\n" +
+    "  named_type = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression family (initializers) ──
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+// The DSL-generated parser's tree for `src`, rendered canonically.
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(binding_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+// The hand-written parser's tree for `src`, rendered the SAME way — via
+// parse_declaration (the layer where let/mut/const dispatch).
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL statement family: bindings == hand-written parser (ps3t.6.5.4)" {
+    given "let bindings — with and without type annotations" {
+        then "unannotated, primitive, generic, nullable, and expression inits" {
+            agree("let x = 5") &&
+            agree("let x: int = 5") &&
+            agree("let y: string = \"hi\"") &&
+            agree("let flag: bool = true") &&
+            agree("let z = 1 + 2") &&
+            agree("let w: List<int> = a") &&
+            agree("let n: int? = a") &&
+            agree("let m: Map<string, int> = a")
+        }
+    }
+    given "mut bindings — both `let mut` and bare `mut`" {
+        then "annotated and unannotated agree" {
+            agree("let mut x = 0") &&
+            agree("let mut c: int = a") &&
+            agree("mut x = 0") &&
+            agree("mut y: int = a")
+        }
+    }
+    given "const bindings" {
+        then "annotated and unannotated agree" {
+            agree("const X = 5") &&
+            agree("const MAX: int = a") &&
+            agree("const K: bool = true")
+        }
+    }
+    given "tuple destructure `let (a, b) = …`" {
+        then "two- and three-name destructures agree" {
+            agree("let (a, b) = p") &&
+            agree("let (x, y, z) = t")
+        }
+    }
+    given "defer / errdefer" {
+        then "expression-bodied defers agree" {
+            agree("defer a") &&
+            agree("defer 1 + 2") &&
+            agree("errdefer b")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built the Stmt)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("let x: int = 5") == "(let x:int 5)" &&
+            dsl_stmt("let x = 5") == "(let x:<unknown> 5)" &&
+            dsl_stmt("mut y = a") == "(mut y:<unknown> a)" &&
+            dsl_stmt("const N: int = a") == "(const N:int a)" &&
+            dsl_stmt("let (a, b) = p") == "(let-destruct (a, b) p)" &&
+            dsl_stmt("defer a") == "(defer a)"
+        }
+    }
+}
