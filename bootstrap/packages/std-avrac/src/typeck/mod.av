@@ -4408,6 +4408,36 @@ fn check_block(tc: TC, stmts: List<StmtId>) -> ExprResult {
     tc_er(after, pair.ty)
 }
 
+/// The value type of a single branch statement of a statement-`if` used in value
+/// position — its block's tail value, or a bare expression's type.
+fn tc_branch_value(tc: TC, s: Stmt) -> ValueType {
+    match s {
+        .Block(body) -> check_block(tc, body).ty
+        .Expr(e) -> check_expr(tc, tc.nodes.exprs.get(e)).ty
+        _ -> .Void
+    }
+}
+
+/// §799 typeck completion: the value type of a statement-`if` in value position
+/// (the tail of a block-expression), mirroring `emit_stmt_if_as_value`. Types
+/// from the branch that does NOT diverge (return / break / continue / panic), so
+/// `let v = { if c { return } else { "x" } }` types `v` as the else arm's type
+/// rather than `.Void`. Called with a throwaway bag — the real diagnostics come
+/// from the normal `check_stmt` pass; this only computes the type.
+fn tc_stmt_if_value_type(tc: TC, then_branch: StmtId, else_branch: StmtId?) -> ValueType {
+    let then_s = tc.nodes.stmts.get(then_branch)
+    let then_ty = tc_branch_value(tc, then_s)
+    let then_div = stmt_diverges(tc.nodes, then_s)
+    if else_branch == null { return .Void }
+    let else_s = tc.nodes.stmts.get(else_branch!)
+    let else_ty = tc_branch_value(tc, else_s)
+    let else_div = stmt_diverges(tc.nodes, else_s)
+    if then_div && !else_div { return else_ty }
+    if else_div && !then_div { return then_ty }
+    if vtype_eq(then_ty, .Void) { return else_ty }
+    then_ty
+}
+
 /// Implementation of `check_block` — walks every stmt, returning
 /// the last one's value type as the block's type.
 fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
@@ -4427,6 +4457,16 @@ fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
     avra_ice_at(lpos.file, lpos.line, lpos.col)
     match tc.nodes.stmts.get(id) {
         .Expr(e) -> check_expr(cur, tc.nodes.exprs.get(e))
+        // A tail statement-`if` in value position produces the surviving arm's
+        // value (§799 codegen already lowers it that way). Run the normal
+        // check_stmt for real checking/narrowing/diagnostics, then compute the
+        // value type separately from the branches so the block's type is the
+        // surviving arm, not `.Void`.
+        .If(_, then_branch, else_branch) -> {
+            let checked = check_stmt(cur, tc.nodes.stmts.get(id))
+            let vty = tc_stmt_if_value_type(checked with { bag: bag_new() }, then_branch, else_branch)
+            tc_er(checked, vty)
+        }
         _ -> {
             let checked = check_stmt(cur, tc.nodes.stmts.get(id))
             tc_er(checked, .Void)

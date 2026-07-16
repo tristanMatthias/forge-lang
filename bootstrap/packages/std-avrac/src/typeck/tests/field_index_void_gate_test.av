@@ -58,4 +58,16 @@ fn g() -> P { P { x: 1 } }
 fn main() { let v = g()  let z = v.x }")
         out.contains("__AVRA_COMPILE_OK__")
     }
+    then "field access on a diverging-branch block value compiles (§799 typeck: v is the surviving arm, not Void)" {
+        // `let v = { if c { return } else { \"x\" } }` — the then arm diverges, so
+        // `v` is the else arm's String, not `.Void`. Without the check_block_stmts
+        // tail-`if` typing, typeck typed `v` as Void and this `.length` false-fired
+        // the field gate. Guards the typeck/codegen consistency.
+        let out = fivg_out("fn f(c: bool) -> int {
+  let v = { if c { return -1 } else { \"hidden\" } }
+  v.length
+}
+fn main() { }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
 }
