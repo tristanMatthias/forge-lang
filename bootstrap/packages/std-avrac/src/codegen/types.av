@@ -847,6 +847,27 @@ export fn llvm_type_for_full_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueT
     }
 }
 
+/// Narrow-aware total layout resolution — the sized sibling of `resolve_layout`
+/// (ps3t.4.5(d)-5). Sized-int variants resolve to their native LLVM widths
+/// (U8/I8 → i8 … U32/I32 → i32, U64 → i64); everything else defers to the wide
+/// `resolve_layout` (Bool → i1, Float → double, ptr-backed → ptr, and the
+/// `.Unknown` failure contract). `.Newtype` recurses NARROW so a newtype over a
+/// sized int keeps its native width. This brings the narrow (k5al) layout arms
+/// under the same total constructor as the wide path.
+export fn resolve_layout_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType, allow_unknown: bool) -> Result<Layout, LayoutError> {
+    match vt {
+        .U8 -> ok_layout(i8t)
+        .I8 -> ok_layout(i8t)
+        .U16 -> ok_layout(i16t)
+        .I16 -> ok_layout(i16t)
+        .U32 -> ok_layout(i32t)
+        .I32 -> ok_layout(i32t)
+        .U64 -> ok_layout(i64t)
+        .Newtype(_, inner, _) -> resolve_layout_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, inner, allow_unknown)
+        _ -> resolve_layout(i64t, i1t, dt, pt, vt, allow_unknown)
+    }
+}
+
 /// Narrow-aware variant: takes i8/i16/i32 type pointers in addition
 /// to the four base widths. Sized integer ValueTypes resolve to
 /// their native LLVM widths (e.g. u32 → i32) so fn declarations and
@@ -861,20 +882,15 @@ export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: p
     llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, vt, false)
 }
 
-/// Erasure-aware core of `llvm_type_for_full_sized`. See
-/// `llvm_type_for_full_g` — `allow_unknown` threads through so an erased
-/// base's `.Unknown` param declares as the wide repr instead of ICEing.
+/// Erasure-aware narrow entry — a thin unwrap of the total `resolve_layout_sized`
+/// (ps3t.4.5(d)-5), which owns the sized mapping. `allow_unknown` threads through
+/// so an erased base's `.Unknown` param declares as the wide repr instead of
+/// ICEing; everywhere else a non-template `.Unknown` is `.Err` there → the F9999
+/// layout ICE here.
 export fn llvm_type_for_full_sized_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
-    match vt {
-        .U8 -> i8t
-        .I8 -> i8t
-        .U16 -> i16t
-        .I16 -> i16t
-        .U32 -> i32t
-        .I32 -> i32t
-        .U64 -> i64t
-        .Newtype(_, inner, _) -> llvm_type_for_full_sized_g(i64t, i1t, dt, pt, i8t, i16t, i32t, inner, allow_unknown)
-        _ -> llvm_type_for_full_g(i64t, i1t, dt, pt, vt, allow_unknown)
+    match resolve_layout_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, vt, allow_unknown) {
+        .Ok(l) -> l.ty
+        .Err(_) -> avra_layout_unknown_ice()
     }
 }
 
