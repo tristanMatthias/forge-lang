@@ -1,0 +1,61 @@
+// WHY: §6 layout-totality caller-side gates (ps3t.4.9). Reading a value from a
+// function that omits `-> Type` yields a `.Void`, and using that value in a
+// layout-demanding position used to reach the codegen boundary as an F9999
+// "internal compiler error" ICE. Two consumers are gated here (the destructure
+// consumer, `let (…) = init`, landed separately in #802):
+//   * field access `v.x` on a `.Void` receiver → clean F1000 at the access
+//     (was codegen "field access on non-struct value").
+//   * index `v[i]` on a `.Void` receiver → clean F1206 at the index
+//     (was codegen "indexing on non-string/list value").
+// `.Unknown` receivers are deliberately NOT gated (an Unknown signals an
+// upstream under-determination — an undefined callee / failed mono — whose own
+// diagnostic must not be masked).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn fivg_out(source: string) -> string {
+    let path = "/tmp/avra_fivg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "field access / index on a Void value is a clean error, not an F9999 ICE (ps3t.4.9)" {
+    then "field access on a void-fn result is F1000 (not F9999)" {
+        let out = fivg_out("type P = { x: int }
+fn g() { P { x: 1 } }
+fn main() { let v = g()  let z = v.x }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "indexing a void-fn result is F1206 (not F9999)" {
+        let out = fivg_out("fn g() { [1, 2, 3] }
+fn main() { let v = g()  let z = v[0] }")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+}
+
+spec "the field / index void gates do not over-fire" {
+    then "a struct field access compiles" {
+        let out = fivg_out("type P = { x: int }
+fn main() { let p = P { x: 5 }  let z = p.x }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a `.length` field on a list compiles" {
+        let out = fivg_out("fn main() { let xs = [1, 2, 3]  let n = xs.length }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "indexing a real list compiles" {
+        let out = fivg_out("fn main() { let xs = [1, 2, 3]  let z = xs[0] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "indexing a string compiles" {
+        let out = fivg_out("fn main() { let s = \"hi\"  let z = s[0] }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "field access on an annotated struct-returning fn compiles" {
+        let out = fivg_out("type P = { x: int }
+fn g() -> P { P { x: 1 } }
+fn main() { let v = g()  let z = v.x }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}

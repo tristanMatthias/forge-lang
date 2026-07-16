@@ -13,6 +13,16 @@ use diagnostics.{DiagCode}
 /// re-checks per instantiation).
 export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
+    // §6 layout totality (ps3t.4.9): field access on a `.Void` receiver — the
+    // common case being a value read from a function that omits `-> Type` and so
+    // returns void — has no fields. Report a clean F1000 here instead of falling
+    // through to the codegen "field access on non-struct value" F9999 ICE.
+    // `.Unknown` is left alone (upstream under-determination — an undefined
+    // callee / failed mono — whose own diagnostic must not be masked).
+    if vtype_eq(o.ty, .Void) {
+        return tc_er(tc_report(o.tc, DiagCode.TypeMismatch,
+            "cannot access field `${field}` on a value of type `Void` — the receiver produces no value (a function used here may omit its `-> Type` and return void)"), .Unknown)
+    }
     // String .length
     if vtype_eq(o.ty, .Str) && field == "length" {
         return tc_er(o.tc, .Int)

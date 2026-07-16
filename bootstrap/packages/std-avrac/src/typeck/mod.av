@@ -3013,6 +3013,14 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             // handled).
             match o.ty {
                 .Map(_, _) -> return tc_reject_index(i.tc, o.ty, "use `.get(key)`", vtype_map_value(o.ty))
+                // §6 layout totality (ps3t.4.9): indexing a `.Void` receiver — the
+                // common case being a value read from a fn that omits `-> Type`
+                // and returns void — has no elements; reject it cleanly here
+                // instead of falling through to the codegen "indexing on
+                // non-string/list value" F9999 ICE. `.Unknown` is left to fall
+                // through (upstream under-determination — its own diagnostic must
+                // not be masked).
+                .Void -> return tc_reject_index(i.tc, o.ty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", o.ty)
                 _ if vtype_is_value_scalar(o.ty) ->
                     return tc_reject_index(i.tc, o.ty, "only strings, lists, and pointers are indexable", o.ty)
                 _ -> {}
