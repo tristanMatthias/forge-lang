@@ -1,0 +1,100 @@
+// WHY: ps3t.6.5.1 — the `grammar { … }` surface syntax. An unquoted
+// grammar block is sugar for the string-based `parse_grammar("…")` API:
+// the rule text between the braces is captured verbatim and desugared to
+// a runtime `parse_grammar(<body>)` call. These specs prove the sugar is
+// equivalent to the string form (render oracle), runs end-to-end over
+// input, preserves interior quotes / newlines in the captured body, and
+// surfaces malformed-grammar errors.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, dump_expr, render_grammar}
+
+// The same grammar authored as an unquoted `grammar { … }` block.
+fn sugar_rendered() -> string {
+    let gp = grammar {
+        expression = l:term ( op:("+" | "-") r:term )* -> fold_binary(l, op, r)
+        term       = NUMBER
+    }
+    render_grammar(gp.grammar)
+}
+
+// The identical grammar authored as a quoted string (bare rules, no
+// `grammar Name { }` wrapper — the anonymous form the sugar captures).
+fn string_rendered() -> string {
+    let gp = parse_grammar("expression = l:term ( op:(\"+\" | \"-\") r:term )* -> fold_binary(l, op, r)\nterm = NUMBER")
+    render_grammar(gp.grammar)
+}
+
+// Run a `grammar { … }`-defined parser over `src` and dump the AST.
+fn sugar_run(src: string) -> string {
+    let gp = grammar {
+        expression = l:term ( op:("+" | "-") r:term )* -> fold_binary(l, op, r)
+        term       = NUMBER
+    }
+    let r = run_grammar_expr(gp.grammar, src)
+    dump_expr(r.store, r.root)
+}
+
+fn empty_error() -> string {
+    let gp = grammar { }
+    gp.error
+}
+
+// The FULL grammar-of-grammars notation authored through the sugar:
+// alternation, grouping, captures, repetition, `@hand`, `@expect`,
+// `@recover`, and a `-> build`. If the verbatim raw capture dropped or
+// mangled any of it, the render would diverge from the string form.
+fn rich_sugar() -> string {
+    let gp = grammar {
+        expression = logic_or
+        logic_or   = l:term ( op:("||") r:term )* -> fold_logical(l, op, r)
+        term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
+        factor     = NUMBER | @hand(ident)
+                   | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
+    }
+    render_grammar(gp.grammar)
+}
+
+fn rich_string() -> string {
+    let gp = parse_grammar("expression = logic_or\nlogic_or = l:term ( op:(\"||\") r:term )* -> fold_logical(l, op, r)\nterm = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\nfactor = NUMBER | @hand(ident)\n  | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)")
+    render_grammar(gp.grammar)
+}
+
+spec "grammar { } surface syntax (ps3t.6.5.1)" {
+    given "the sugar is equivalent to the string-based parse_grammar API" {
+        then "an unquoted block renders identically to the quoted form" {
+            sugar_rendered() == string_rendered()
+        }
+        then "the rendered grammar is non-empty (both parsed real rules)" {
+            sugar_rendered().length > 0
+        }
+    }
+    given "a grammar { } parser runs over input" {
+        then "left-associative fold over + and -" {
+            sugar_run("1 + 2 - 3") == "(- (+ 1 2) 3)"
+        }
+        then "a single term passes through" {
+            sugar_run("42") == "42"
+        }
+        then "operator precedence is left-to-right for same-level ops" {
+            sugar_run("1 - 2 + 3") == "(+ (- 1 2) 3)"
+        }
+    }
+    given "interior quotes and newlines survive the raw capture" {
+        then "the captured body's \"+\"/\"-\" string literals parse as operators" {
+            // If the bookend-quote String synthesis mishandled the
+            // interior `"` in `"+"`/`"-"`, the operators would be lost
+            // and this run would not fold — equivalence above + this
+            // run together pin the escaping.
+            sugar_run("7 + 8") == "(+ 7 8)"
+        }
+    }
+    given "the full grammar notation survives the verbatim raw capture" {
+        then "alternation / grouping / @hand / @expect / @recover / build render identically to the string form" {
+            rich_sugar() == rich_string()
+        }
+    }
+    given "malformed grammar blocks surface an error" {
+        then "an empty grammar block reports the no-rules error" {
+            empty_error() != ""
+        }
+    }
+}

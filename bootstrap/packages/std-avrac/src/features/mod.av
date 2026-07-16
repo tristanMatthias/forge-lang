@@ -11,6 +11,7 @@ use features.enum_decl.{enum_decl_feature}
 use features.extern_decl.{extern_decl_feature}
 use features.fn_decl.{fn_decl_feature}
 use features.for_stmt.{for_feature, for_in_feature}
+use features.grammar.{grammar_feature}
 use features.if_stmt.{if_stmt_feature}
 use features.impl_decl.{impl_decl_feature}
 use features.is_keyword.{is_keyword_feature}
@@ -101,4 +102,5 @@ export fn init_features(reg: Registry) {
     register(reg, mod_feature())
     register(reg, use_feature())
     register(reg, component_decl_feature())
+    register(reg, grammar_feature())
 }
