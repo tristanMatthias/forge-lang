@@ -96,16 +96,23 @@ fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
             // upstream under-determination (an undefined callee, a failed
             // monomorphization) whose own diagnostic must not be masked by a
             // "not a tuple" message.
-            match r.ty {
-                .Tuple(elems) if elems.length == n -> bind_destructure(r.tc, names, r.ty)
+            //
+            // Every branch then falls through to a single `bind_destructure`, so
+            // the names are ALWAYS bound (to their positional element types, or
+            // `.Unknown` for an ill-shaped / out-of-range slot) — the error paths
+            // never leave a name type-less, which keeps downstream references to
+            // them from firing spurious cascade diagnostics on top of the F1000.
+            let reported = match r.ty {
+                .Tuple(elems) if elems.length == n -> r.tc
                 .Tuple(elems) -> tc_report(r.tc, DiagCode.TypeMismatch,
                     "destructuring pattern binds ${n} name(s) but the initializer is a ${elems.length}-tuple — the arities must match")
-                .Unknown -> bind_destructure(r.tc, names, r.ty)
+                .Unknown -> r.tc
                 .Void -> tc_report(r.tc, DiagCode.TypeMismatch,
                     "cannot destructure a value of type `Void` — `let (…) = …` needs a ${n}-tuple; the initializer produces no value (a function used here may omit its `-> Type` and return void)")
                 _ -> tc_report(r.tc, DiagCode.TypeMismatch,
                     "cannot destructure a value of type `${vtype_display(r.ty)}` — `let (…) = …` needs a ${n}-tuple, not a scalar/collection value")
             }
+            bind_destructure(reported, names, r.ty)
         }
         _ -> tc
     }
