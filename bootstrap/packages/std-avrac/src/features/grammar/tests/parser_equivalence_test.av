@@ -9,15 +9,24 @@
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, dump_expr}
 use @std.avrac.parse.{parse_expression_native_probe}
 
+// Avra's full binary-operator precedence, mirrored from the hand-written
+// parser (parse_or → and → equality → bitor → bitxor → bitand →
+// comparison → shift → term → factor → unary). The differential test
+// below is what proves this stratification matches, operator for
+// operator, level for level.
 fn expr_grammar_src() -> string {
     "grammar Expr {\n" +
     "  expression = logic_or\n" +
     "  logic_or   = l:logic_and ( op:(\"||\") r:logic_and )* -> fold_logical(l, op, r)\n" +
     "  logic_and  = l:equality ( op:(\"&&\") r:equality )* -> fold_logical(l, op, r)\n" +
-    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
-    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  equality   = l:bitor ( op:(\"!=\" | \"==\") r:bitor )* -> fold_binary(l, op, r)\n" +
+    "  bitor      = l:bitxor ( op:(\"|\") r:bitxor )* -> fold_binary(l, op, r)\n" +
+    "  bitxor     = l:bitand ( op:(\"^\") r:bitand )* -> fold_binary(l, op, r)\n" +
+    "  bitand     = l:comparison ( op:(\"&\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:shift ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:shift )* -> fold_binary(l, op, r)\n" +
+    "  shift      = l:term ( op:(\"<<\" | \">>\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
-    "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
     "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
     "  primary    = NUMBER | \"true\" | \"false\"\n" +
     "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
@@ -93,6 +102,31 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
         then "logical-and binds tighter than logical-or" {
             agree("1 || 2 && 3") &&
             agree("0 && 1 || 2 && 3")
+        }
+    }
+    given "bitwise, shift, and modulo (the full binary chain)" {
+        then "modulo sits with * /" {
+            agree("7 % 3") &&
+            agree("10 % 3 + 1") &&
+            agree("2 * 3 % 4")
+        }
+        then "bitwise or/xor/and stratify (| looser than ^ looser than &)" {
+            agree("5 | 2") &&
+            agree("5 ^ 1") &&
+            agree("6 & 3") &&
+            agree("1 | 2 & 3") &&
+            agree("1 ^ 2 | 3 & 4")
+        }
+        then "shift sits between comparison and term" {
+            agree("1 << 4") &&
+            agree("256 >> 2") &&
+            agree("1 + 2 << 3") &&
+            agree("1 << 2 + 3") &&
+            agree("1 < 2 << 3")
+        }
+        then "a deep mixed expression across every level agrees" {
+            agree("1 | 2 ^ 3 & 4 == 5 < 6 << 7 + 8 * 9 % 2") &&
+            agree("(1 + 2) * 3 & 4 | 5 && 6 == 7")
         }
     }
 }

@@ -501,6 +501,11 @@ fn binop_of(sym: string) -> BinOp {
     if sym == "<=" { return BinOp.Le }
     if sym == ">" { return BinOp.Gt }
     if sym == ">=" { return BinOp.Ge }
+    if sym == "&" { return BinOp.BitAnd }
+    if sym == "|" { return BinOp.BitOr }
+    if sym == "^" { return BinOp.BitXor }
+    if sym == "<<" { return BinOp.Shl }
+    if sym == ">>" { return BinOp.Shr }
     BinOp.Add
 }
 
