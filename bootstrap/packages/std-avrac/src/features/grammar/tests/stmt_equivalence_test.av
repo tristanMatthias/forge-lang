@@ -1,0 +1,95 @@
+// ps3t.6.5.2 — the grammar-DSL STATEMENT family, first slice. The executor's
+// semantic-action seam now targets `Stmt` as well as `Expr` (run_grammar_stmt +
+// CapVal.SNode + the Break/Continue/Return/ExprStmt build vocabulary). This is
+// the differential-test ORACLE for statements, mirroring parser_equivalence_test
+// for expressions: run the DSL-generated statement parser AND the shipping
+// hand-written parser (parser_new(src).parse_statement()) over a statement
+// corpus and assert identical ASTs — compared via render_stmt_id, which is TOTAL
+// over the Stmt enum (the statement twin of dump_expr). Since both sides render
+// through the same total renderer, equal trees ⇒ equal strings regardless of the
+// renderer's exact format, so this needs no golden strings.
+//
+// Scope (simplest-first): break, continue, `return <expr>`, and bare
+// expression-statements. Bare `return` (ReturnEmpty, newline-sensitive), block,
+// let/mut/const, if, for follow in later slices.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+// A statement grammar: the simplest statement forms layered on the proven
+// expression grammar (the embedded expressions the statements reference).
+fn stmt_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  continue_stmt = \"continue\" -> Continue()\n" +
+    "  return_stmt   = \"return\" e:expression -> Return(e)\n" +
+    "  expr_stmt     = e:expression -> ExprStmt(e)\n" +
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary         = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\"\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+// The DSL-generated statement parser's tree for `src`, rendered canonically.
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(stmt_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    // A diagnostic-bearing (error-tolerant partial) parse is a distinct
+    // outcome — surface it so a recovered tree can't spuriously match the
+    // hand-written parser's clean tree in the differential comparison.
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+// The hand-written parser's tree for `src`, rendered the SAME way.
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+// True when both parsers agree on the statement tree for `src`.
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL statement family: generated parser == hand-written parser (ps3t.6.5.2)" {
+    given "keyword statements with no operand" {
+        then "break and continue" {
+            agree("break") &&
+            agree("continue")
+        }
+    }
+    given "return with a same-line expression operand" {
+        then "return of a literal / arithmetic / grouped expression" {
+            agree("return 42") &&
+            agree("return 1 + 2") &&
+            agree("return 1 + 2 * 3") &&
+            agree("return (1 + 2) * 3")
+        }
+    }
+    given "bare expression-statements (ride on the proven expression family)" {
+        then "arithmetic, precedence, unary, comparison, grouping as statements" {
+            agree("1 + 2 * 3") &&
+            agree("8 / 4 / 2") &&
+            agree("-2 + 3") &&
+            agree("1 < 2 == 3") &&
+            agree("(1 + 2) * 3")
+        }
+    }
+    given "the DSL statement tree is non-trivial (sanity: it really built a Stmt)" {
+        then "return renders as a return node, break as a break node" {
+            dsl_stmt("return 42") == "(return 42)" &&
+            dsl_stmt("break") == "(break)" &&
+            dsl_stmt("continue") == "(continue)"
+        }
+    }
+}

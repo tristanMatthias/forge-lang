@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -28,6 +28,10 @@ enum CapVal {
     Nil
     Tok(t: Token)
     Node(id: ExprId)
+    // A built STATEMENT node (the statement-family target seam, ps3t.6.5.2).
+    // A rule whose build constructs a Stmt yields this; capval_to_stmt
+    // coerces it at the use-site, mirroring capval_to_expr for Node.
+    SNode(id: StmtId)
     Toks(ts: List<Token>)
     Nodes(ns: List<ExprId>)
 }
@@ -212,18 +216,55 @@ export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
     }
-    let root = exec_rule(grammar, grammar.rules[0].name, st)
+    let root = capval_to_expr(st, exec_rule(grammar, grammar.rules[0].name, st))
     RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
-/// Execute a rule with a FRESH capture environment (rule scope), coerce
-/// its value to an Expr node.
-fn exec_rule(g: Grammar, name: string, st: PState) -> ExprId {
+/// The statement-family analogue of `RunResult` — a `StmtId` root instead
+/// of `ExprId` (ps3t.6.5.2).
+export type StmtRunResult = { store: NodeStore, root: StmtId, had_error: bool, diags: List<string> }
+
+/// Run `grammar` over `src` starting at the first rule and coerce the
+/// root to a STATEMENT node — the statement-family entry, mirroring
+/// `run_grammar_expr`. The grammar's start rule must build a Stmt; its
+/// sub-rules may build Exprs (embedded expressions) or Stmts.
+export fn run_grammar_stmt(grammar: Grammar, src: string) -> StmtRunResult {
+    let toks = lex_expr(src)
+    let store = new_node_store(build_line_index(src))
+    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    if grammar.rules.length == 0 {
+        st.report("empty grammar")
+        let root = st.store.stmts.add_leaf(Stmt.Error)
+        return StmtRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+    }
+    let root = capval_to_stmt(st, exec_rule(grammar, grammar.rules[0].name, st))
+    StmtRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+}
+
+/// Execute a rule with a FRESH capture environment (rule scope) and
+/// return its RAW capture value — an Expr node, a Stmt node, or a bare
+/// token. Coercion is deferred to the use-site (`capval_to_expr` /
+/// `capval_to_stmt`), so a rule can target either node kind; the
+/// expression family already relied on use-site coercion (operator
+/// captures stay `Tok`, folds/ctors coerce their node args, and the
+/// run entry coerces the root), so this is behaviour-preserving for it.
+fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let r = lookup_rule(g, name)
-    if r.name == "" { return st.error_node("unknown rule `${name}`") }
+    if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
     mut env = CapEnv { caps: [] }
     let v = exec_node(g, r.body, st, env, false)
-    capval_to_expr(st, v)
+    // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
+    // bare terminal yields a `Tok`, so coerce that to a literal Expr node
+    // HERE, at the rule boundary — otherwise a rule reference captured in a
+    // repetition (`r:unary`) routes to the `Toks` list instead of `Nodes`
+    // (bind) and the fold loses its operands. Node and SNode (statement)
+    // results already carry a node id and pass through unchanged. This is
+    // exactly the old boundary coercion, minus the Tok→literal step being
+    // the ONLY coercion (so SNode survives for the statement family).
+    match v {
+        .Tok(t) -> CapVal.Node(literal_node(st, t))
+        _ -> v
+    }
 }
 
 /// Execute an alternation: pick the first branch whose FIRST matches the
@@ -258,7 +299,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
         // yields it (capval_to_expr), so operator captures stay tokens.
         .None -> last
         .Var(name) -> env.get(name)
-        .Call(name, args) -> CapVal.Node(apply_build(g, name, args, env, st))
+        .Call(name, args) -> apply_build(g, name, args, env, st)
     }
 }
 
@@ -322,7 +363,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             handle_missing(st, name, annots)
             CapVal.Node(st.missing_node())
         }
-        .Ref(name) -> CapVal.Node(exec_rule(g, name, st))
+        .Ref(name) -> exec_rule(g, name, st)
         .Group(inner) -> exec_node(g, inner, st, env, multi)
         .Hand(hf) -> CapVal.Node(run_hand(hf, st))
     }
@@ -398,7 +439,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
     }
 }
 
-// ── Semantic actions (target: Expr) ──
+// ── Semantic actions (targets: Expr + Stmt) ──
 
 /// Coerce a capture value to an Expr node: a node passes through; a bare
 /// token becomes a literal; anything else is an error node.
@@ -417,43 +458,79 @@ fn literal_node(st: PState, t: Token) -> ExprId {
     st.store.exprs.add_leaf(Expr.Ident(t.text))
 }
 
-/// Apply a build helper / node constructor. The fixed vocabulary
-/// (GRAMMAR_DSL.md §1): `fold_binary` (left-assoc chain) + node ctors
-/// (`Unary`). Unknown names are a reported error, not a silent miss.
-fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> ExprId {
+/// Apply a build helper / node constructor, returning a `CapVal` so the
+/// vocabulary spans BOTH target families: expression builds wrap their
+/// `ExprId` in `CapVal.Node`, statement builds their `StmtId` in
+/// `CapVal.SNode`. The fixed expression vocabulary (GRAMMAR_DSL.md §1):
+/// `fold_binary`/`fold_logical`/`fold_postfix` (left-assoc chains) + node
+/// ctors (`Unary`, `Grouping`, `*_suffix`). The statement vocabulary
+/// (ps3t.6.5.2): the simplest Stmt ctors — `Break`, `Continue`,
+/// `ReturnEmpty`, `Return(e)`, `ExprStmt(e)`. Unknown names are a reported
+/// error, not a silent miss.
+fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
+    // ── Expression builds (target: Expr) ──
     if name == "fold_binary" && args.length == 3 {
-        return fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        return CapVal.Node(fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
     }
     if name == "Unary" && args.length == 2 {
-        return unary_expr(st, env.get(args[0]), env.get(args[1]))
+        return CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
     }
     if name == "fold_logical" && args.length == 3 {
-        return fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        return CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
     }
     if name == "Grouping" && args.length == 1 {
         // Preserve the parenthesisation node so the produced AST matches
         // the hand-written parser (which wraps `(e)` in Expr.Grouping),
         // not merely a grouping-normalised form.
-        return st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0]))))
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0])))))
     }
     if name == "field_suffix" && args.length == 1 {
         // A partial FieldAccess with a sentinel receiver; fold_postfix
         // rebinds the receiver to the accumulated base.
-        return st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0]))))
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0])))))
     }
     if name == "index_suffix" && args.length == 1 {
-        return st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0]))))
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0])))))
     }
     if name == "call_suffix" && args.length == 1 {
         // A partial Call with a sentinel callee + the captured arg list
         // (a single arg arrives as a scalar Node, many as Nodes, none as
         // Nil — normalise to a list). fold_postfix rebinds the callee.
-        return st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0]))))
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0])))))
     }
     if name == "fold_postfix" && args.length == 2 {
-        return fold_postfix_expr(st, env.get(args[0]), env.get(args[1]))
+        return CapVal.Node(fold_postfix_expr(st, env.get(args[0]), env.get(args[1])))
     }
-    st.error_node("unknown build `${name}`")
+    // ── Statement builds (target: Stmt, ps3t.6.5.2) ──
+    if name == "Break" && args.length == 0 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))
+    }
+    if name == "Continue" && args.length == 0 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
+    }
+    if name == "ReturnEmpty" && args.length == 0 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
+    }
+    if name == "Return" && args.length == 1 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
+    }
+    if name == "ExprStmt" && args.length == 1 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
+    }
+    CapVal.Node(st.error_node("unknown build `${name}`"))
+}
+
+/// Coerce a capture value to a Stmt node — the statement twin of
+/// `capval_to_expr`. Only a built statement node (`SNode`) is a valid
+/// statement; anything else is a reported error yielding `Stmt.Error`.
+fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
+    match v {
+        .SNode(id) -> id
+        _ -> {
+            st.report("expected a statement")
+            st.store.stmts.add_leaf(Stmt.Error)
+        }
+    }
 }
 
 /// Left-fold a `base ( suffix )*` postfix chain. Each suffix was built as
