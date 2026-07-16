@@ -126,5 +126,25 @@ spec "grammar seed parser: reads the expression grammar into a grammar-AST" {
             let p = parse_grammar("grammar Bad {\n  foo bar\n}")
             p.error != ""
         }
+
+        then "an unclosed grammar envelope is rejected" {
+            parse_grammar("grammar G {\n  x = \"a\"").error != ""
+        }
+
+        then "trailing tokens after the closing `}` are rejected" {
+            parse_grammar("grammar G {\n  x = \"a\"\n} junk").error != ""
+        }
+
+        then "a zero-rule grammar is rejected" {
+            parse_grammar("grammar G {\n}").error != ""
+        }
+
+        then "an empty alternative (`x = | \"a\"`) is rejected" {
+            parse_grammar("grammar G {\n  x = | \"a\"\n}").error != ""
+        }
+
+        then "an unterminated string literal is rejected" {
+            parse_grammar("grammar G {\n  x = \"oops\n}").error != ""
+        }
     }
 }

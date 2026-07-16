@@ -65,7 +65,7 @@ duplicated generator logic."
 
 ### 1.2 Module layout
 
-```
+```text
 features/derive/
   mod.av          — public entry: derive_engine(decl, plan) -> ResolvedDecls
   classify.av     — the field classifier (generalized FieldKind + FieldShape)
@@ -191,20 +191,30 @@ enum Annot { Expect(tok: string, msg: string), Recover(sync_to: string) }
 This lives in `features/grammar/ast.av` — the contract between `.3` (parser
 produces it) and `.4` (generator consumes it).
 
+**As-built (this PR):** the landed types use the `G`-prefixed names
+(`GNode`/`GSeq`/`GItem`/`GPrim`/`GRep`/`GBuild`/`GAnnot`), repetition is a
+separate `GRep` field on `GItem` (not `Postfix` variants), `GBuild` is
+`None | Var(name) | Call(name, args)` (the `Call` covers both ctors and helpers;
+pass-through is `None`/`Var`), and — beyond this sketch — `GPrim` carries a
+**`Hand(fn_name)`** variant for the `@hand(fn)` escape-hatch (`ps3t.6.7`). See
+`features/grammar/ast.av` for the authoritative definitions.
+
 ### 2.2 `ps3t.6.3` — the seed parser (~200-line hand-written RD)
 
 A small, stable, hand-written recursive-descent parser for the **grammar-of-
-grammars** (`GRAMMAR_DSL.md §6`):
+grammars** (`GRAMMAR_DSL.md §6`). The landed parser also accepts the
+`grammar Name { … }` **wrapper** around the rules (required-to-close, rejects
+empty/trailing) and a `@hand(fn)` primary:
 
-```
-grammar  = rule+
+```text
+grammar  = "grammar" NAME "{" rule+ "}"
 rule     = NAME "=" alt
 alt      = seq ( "|" seq )*
-seq      = labeled+ ( "->" build )? annot*
+seq      = labeled+ ( "->" build | annot )*
 labeled  = ( NAME ":" )? postfix
 postfix  = primary ( "*" | "+" | "?" )?
-primary  = NAME | STRING | "(" alt ")"
-annot    = "@expect" "(" … ")" | "@recover" "(" … ")"
+primary  = NAME | STRING | "(" alt ")" | "@hand" "(" NAME ")"
+annot    = "@expect" "(" STRING "," STRING ")" | "@recover" "(" "sync_to" ":" STRING ")"
 ```
 
 - **Input:** grammar text as a `string` (read from a `quote`/string literal in
@@ -341,7 +351,7 @@ the per-macro `@expand(derive_walker)` / `@marshal` annotations, which become
 
 ## 4. Sequencing + bootstrap-window discipline
 
-```
+```text
 6.1 design (this doc) ─┬─▶ 6.2 derive engine ──────────────▶ 6.6 @derive surface + pipeline
                        ├─▶ 6.3 seed parser ─▶ 6.4 generator ─┬─▶ 6.7 lexer modes/escape-hatch
                        │                                     └─▶ 6.5 migrate parser

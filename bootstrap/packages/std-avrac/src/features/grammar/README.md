@@ -12,7 +12,7 @@ worked proof slice: `docs/2026_06_14_GRAMMAR_DSL.md` · spine Layer 4:
 
 ## The notation (~9 constructs)
 
-```
+```text
 grammar Name {
     rule     = alternation
     alt      = seq ( "|" seq )*
@@ -69,13 +69,21 @@ r.had_error                  // false; diagnostics in r.diags on malformed input
 
 ## Status
 
-Complete + tested on the **§2 Avra expression grammar** (the GRAMMAR_DSL.md §8
-proof slice) — precedence, associativity, prefix-unary, comparison/equality
-stratification, and partial-tree recovery (`(1 + 2`, `)`, `(1 + 2 * 3`). 25 specs
-green across `tests/`.
+**Landed** (this PR): the seed parser, the executable generator + error-tolerant
+recovery, the source-form emitter, and the `@hand` escape-hatch. The whole
+**expression family** is differential-tested byte-equivalent to the shipping
+hand-written parser (`parse_expression_native_probe` as oracle): literals,
+identifiers, strings, the full binary-operator precedence chain, prefix unary
+(incl. `~`), grouping (`Grouping` preserved losslessly), and postfix
+(field / index / call / method). ~54 specs green across `tests/`.
 
-**Next** (`ps3t.6.5`): scale the notation to Avra's full grammar rule-family by
-rule-family behind the HRN differential test, and add the `grammar { … }` block
-as Avra surface syntax (seed-gated) so the generated parser can splice
-`Stmt.Function` AST into a real compile and replace the hand-written parser.
-The gnarly-5% lexer modes + `@hand` escape-hatch are `ps3t.6.7`.
+**Not yet** (future work, tracked on `ps3t.6.5` / `.6.7`):
+
+- **Lexer-stream integration** — the executor uses its own `lex.av` + a fresh
+  `NodeStore`; wiring it to the real lexer token stream + build store is `.6.5`.
+- **`grammar { … }` surface syntax** — grammars are read from *strings* today;
+  the Avra `grammar { }` block is **seed-gated** and lands in `.6.5`.
+- **Lexer modes** (`.6.7`) — string interpolation + newline-sensitivity as
+  formal lexer modes. Only the `@hand` escape-hatch half of `.6.7` has landed.
+- Other rule families (statements / patterns / types / declarations), and
+  method-dispatch as a distinct node where the hand parser uses one.

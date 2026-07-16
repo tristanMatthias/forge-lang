@@ -430,6 +430,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "fold_logical" && args.length == 3 {
         return fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
     }
+    if name == "Grouping" && args.length == 1 {
+        // Preserve the parenthesisation node so the produced AST matches
+        // the hand-written parser (which wraps `(e)` in Expr.Grouping),
+        // not merely a grouping-normalised form.
+        return st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0]))))
+    }
     if name == "field_suffix" && args.length == 1 {
         // A partial FieldAccess with a sentinel receiver; fold_postfix
         // rebinds the receiver to the accumulated base.
@@ -592,10 +598,15 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         .FieldAccess(obj, field) -> "(. ${dump_expr(store, obj)} ${field})"
         .Index(obj, idx) -> "([] ${dump_expr(store, obj)} ${dump_expr(store, idx)})"
         .Call(callee, cargs) -> "(call ${dump_expr(store, callee)}${dump_args(store, cargs)})"
-        .Grouping(e) -> dump_expr(store, e)
+        // Render Grouping EXPLICITLY (never unwrap) so the dump is a
+        // lossless view of the tree — `((1))` must not collapse to `1`.
+        .Grouping(e) -> "(group ${dump_expr(store, e)})"
         .Error -> "<error>"
         .Missing -> "<missing>"
-        _ -> "<?>"
+        // A variant the dump doesn't model explicitly. Kept as a loud,
+        // greppable marker; the equivalence test asserts it never appears
+        // so an unmodelled variant can't silently "agree".
+        _ -> "<unmodelled-variant>"
     }
 }
 

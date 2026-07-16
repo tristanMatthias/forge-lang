@@ -92,13 +92,26 @@ export fn scan_grammar(src: string) -> List<GTok> {
             toks.push(GTok { kind: "NAME", text: src.substring(start, i) })
             continue
         }
-        // string literal — contents without the surrounding quotes
+        // string literal — contents without the surrounding quotes. A
+        // backslash escapes the next char (so `\"` is not a terminator).
+        // An unterminated literal (EOF before the closing quote) becomes
+        // an ERROR token the parser rejects, rather than a silent STRING.
         if c == 34 {
             i = i + 1
             let start = i
-            while i < n && code_at(src, i) != 34 { i = i + 1 }
+            while i < n && code_at(src, i) != 34 {
+                if code_at(src, i) == 92 && i + 1 < n {
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+            }
+            if i >= n {
+                toks.push(GTok { kind: "ERROR", text: src.substring(start, i) })
+                continue
+            }
             let text = src.substring(start, i)
-            if i < n { i = i + 1 }  // consume closing quote
+            i = i + 1  // consume closing quote
             toks.push(GTok { kind: "STRING", text })
             continue
         }
@@ -157,9 +170,11 @@ export fn parse_grammar(src: string) -> GrammarParse {
 }
 
 fn parse_grammar_body(p: GP) -> Grammar {
-    // Optional `grammar NAME {` wrapper.
+    // Optional `grammar NAME { … }` wrapper.
     mut name = "grammar"
+    mut wrapped = false
     if p.peek().kind == "NAME" && p.peek().text == "grammar" {
+        wrapped = true
         let _ = p.advance()
         if p.peek().kind == "NAME" {
             name = p.advance().text
@@ -176,7 +191,19 @@ fn parse_grammar_body(p: GP) -> Grammar {
         // make progress so a bad rule can't spin forever (bounded).
         if p.pos == before { let _ = p.advance() }
     }
-    if p.is_punct("}") { let _ = p.advance() }
+    // Envelope validation: a wrapped grammar MUST close its `}` and
+    // declare at least one rule; nothing may trail the close.
+    if wrapped {
+        p.expect_punct("}", "expected `}` to close the grammar body")
+        if !p.at_end() {
+            p.fail("unexpected trailing tokens after `}`")
+        }
+    } else if p.is_punct("}") {
+        let _ = p.advance()
+    }
+    if rules.length == 0 {
+        p.fail("a grammar must declare at least one rule")
+    }
     Grammar { name, rules }
 }
 
@@ -217,6 +244,12 @@ fn parse_seq(p: GP) -> GSeq {
         let before = p.pos
         items.push(parse_labeled(p))
         if p.pos == before { let _ = p.advance() }  // bounded progress
+    }
+    // A sequence must have at least one item — an empty alternative
+    // (`x = | "a"`) would otherwise lower to a `true` guard that shadows
+    // every following alternative. Reject it here.
+    if items.length == 0 {
+        p.fail("expected at least one item in a sequence (empty alternative)")
     }
     mut build = GBuild.None
     mut annots: List<GAnnot> = []
@@ -299,6 +332,11 @@ fn parse_postfix(p: GP) -> Postfix {
 // primary = NAME | STRING | "(" alt ")"
 fn parse_primary(p: GP) -> GPrim {
     let t = p.peek()
+    if t.kind == "ERROR" {
+        p.fail("unterminated string literal")
+        let _ = p.advance()
+        return GPrim.Lit("")
+    }
     if t.kind == "STRING" {
         let _ = p.advance()
         return GPrim.Lit(t.text)
@@ -340,17 +378,25 @@ fn parse_build(p: GP) -> GBuild {
         return GBuild.Var(name)   // `-> e` : return the named capture
     }
     let _ = p.advance()  // "("
+    // Args are comma-separated NAMEs. Commas are REQUIRED between args —
+    // `Node(a b)` (missing comma) is rejected: after `a` with no comma
+    // the loop stops and expect_punct fails on `b`.
     mut args: List<string> = []
-    while !p.is_punct(")") && !p.at_end() {
-        if p.peek().kind == "NAME" {
-            args.push(p.advance().text)
-        } else {
-            let _ = p.advance()   // tolerate stray token
+    if !p.is_punct(")") {
+        args.push(parse_build_arg(p))
+        while p.is_punct(",") {
+            let _ = p.advance()
+            args.push(parse_build_arg(p))
         }
-        if p.is_punct(",") { let _ = p.advance() }
     }
-    p.expect_punct(")", "expected `)` to close a build's argument list")
+    p.expect_punct(")", "expected `,` or `)` in a build's argument list")
     GBuild.Call(name, args)
+}
+
+fn parse_build_arg(p: GP) -> string {
+    if p.peek().kind == "NAME" { return p.advance().text }
+    p.fail("expected a capture name in a build's argument list")
+    ""
 }
 
 // annot = "@expect" "(" STRING "," STRING ")"
@@ -359,22 +405,34 @@ fn parse_annot(p: GP) -> GAnnot {
     let _ = p.advance()   // "@"
     mut kind = ""
     if p.peek().kind == "NAME" { kind = p.advance().text }
+    // Only `@expect` / `@recover` are known — reject anything else
+    // (e.g. `@foo(...)`) rather than silently treating it as @expect.
+    if kind != "expect" && kind != "recover" {
+        p.fail("unknown annotation `@${kind}` (expected `@expect` or `@recover`)")
+    }
     p.expect_punct("(", "expected `(` after `@${kind}`")
     if kind == "recover" {
-        // `sync_to` ":" STRING
-        if p.peek().kind == "NAME" { let _ = p.advance() }   // sync_to
+        // `sync_to` ":" STRING — the key MUST be `sync_to`.
+        if p.peek().kind == "NAME" {
+            let key = p.advance().text
+            if key != "sync_to" {
+                p.fail("expected `sync_to` in @recover(sync_to: …), got `${key}`")
+            }
+        } else {
+            p.fail("expected `sync_to` in @recover(sync_to: …)")
+        }
         p.expect_punct(":", "expected `:` in @recover(sync_to: …)")
         mut tok = ""
-        if p.peek().kind == "STRING" { tok = p.advance().text }
+        if p.peek().kind == "STRING" { tok = p.advance().text } else { p.fail("expected a string token in @recover") }
         p.expect_punct(")", "expected `)` to close @recover")
         return GAnnot.Recover(tok)
     }
-    // @expect(tok, msg)
+    // @expect(tok, msg) — both string operands required, comma between.
     mut tok = ""
-    if p.peek().kind == "STRING" { tok = p.advance().text }
-    if p.is_punct(",") { let _ = p.advance() }
+    if p.peek().kind == "STRING" { tok = p.advance().text } else { p.fail("expected a token string in @expect") }
+    p.expect_punct(",", "expected `,` between @expect's token and message")
     mut msg = ""
-    if p.peek().kind == "STRING" { msg = p.advance().text }
+    if p.peek().kind == "STRING" { msg = p.advance().text } else { p.fail("expected a message string in @expect") }
     p.expect_punct(")", "expected `)` to close @expect")
     GAnnot.Expect(tok, msg)
 }

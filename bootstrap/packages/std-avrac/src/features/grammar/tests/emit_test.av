@@ -7,10 +7,13 @@
 use @std.avrac.features.grammar.{parse_grammar, emit_parser_source, emit_rule_fn}
 use @std.avrac.features.grammar.{Grammar, Rule}
 
+// Every rule the fixture references is declared, so the emitted source is
+// internally complete (no dangling parse_<rule> call).
 fn expr_grammar_src() -> string {
     "grammar Expr {\n" +
     "  expression = equality\n" +
     "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
     "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
@@ -29,15 +32,19 @@ spec "grammar emitter: renders RD parser fns per Nystrom's correspondence" {
         let src = emit_all()
         src.contains("fn parse_expression(p: Parser) -> ExprId") &&
         src.contains("fn parse_equality(p: Parser) -> ExprId") &&
+        src.contains("fn parse_comparison(p: Parser) -> ExprId") &&
+        src.contains("fn parse_term(p: Parser) -> ExprId") &&
         src.contains("fn parse_factor(p: Parser) -> ExprId") &&
+        src.contains("fn parse_unary(p: Parser) -> ExprId") &&
         src.contains("fn parse_primary(p: Parser) -> ExprId")
     }
 
-    then "a starred group lowers to `while p.match(...)` (repetition -> loop)" {
+    then "a starred group lowers to `while p.check(...)` (repetition -> loop)" {
         let gp = parse_grammar(expr_grammar_src())
         let factor = emit_rule_fn(gp_factor(gp.grammar))
         // factor = l:unary ( op:("*"|"/") r:unary )* -> fold_binary(l, op, r)
-        factor.contains("while p.match(\"*\", \"/\")") &&
+        // The loop GUARD is non-consuming (p.check); the body consumes.
+        factor.contains("while p.check(\"*\", \"/\")") &&
         factor.contains("parse_unary(p)") &&
         factor.contains("return fold_binary(l, op, r)")
     }
@@ -50,11 +57,25 @@ spec "grammar emitter: renders RD parser fns per Nystrom's correspondence" {
         src.contains("return Unary(op, operand)")
     }
 
-    then "terminals lower to p.match; named terminals unquoted; refs to parse_x" {
+    then "terminals CONSUME via p.match; named terminals unquoted; refs to parse_x" {
         let src = emit_all()
         src.contains("p.match(NUMBER)") &&
         src.contains("p.match(\"true\")") &&
         src.contains("parse_comparison(p)")
+    }
+
+    then "named-terminal FIRST guards render unquoted (p.check(NUMBER))" {
+        // primary's alternation guards on NUMBER — a named terminal, so
+        // the guard is p.check(NUMBER), not p.check("NUMBER").
+        let src = emit_all()
+        src.contains("p.check(NUMBER)") &&
+        !src.contains("p.check(\"NUMBER\")")
+    }
+
+    then "error annotations are emitted (@expect / @recover)" {
+        let src = emit_all()
+        src.contains("p.expect(\")\"") &&
+        src.contains("p.recover_to(\")\")")
     }
 
     then "the pass-through build returns its capture (-> e)" {

@@ -18,15 +18,18 @@ sit on. Building it for the compiler's own parser yields their foundation for fr
   ("add SQL-as-syntax as a typed package"). The `grammar { }` here IS the
   `ps3t.6.5` construct.
 
-## What ps3t.6 already provides them
+## What ps3t.6 provides them (landed vs planned)
 
-| Embedded-DSL need | ps3t.6 piece |
-|---|---|
-| "the package's parser" (§12.4 step 3–4) | the generator/executor — a grammar → an error-tolerant RD parser producing typed AST |
-| good errors + a usable tree on a half-typed block (LSP/compile-validate) | `@expect`/`@recover` → partial-tree recovery (`Expr.Error`/`Missing`) |
-| switching how you lex on entering `sql { … }` / `html"…{x}…"` | lexer modes (`ps3t.6.7`) — the SAME machinery as string interpolation |
-| a sublanguage's gnarly corners without bloating its grammar | the `@hand(fn)` escape-hatch |
-| authoring a sublanguage as data, not hand-rolled code | the seed parser + `grammar { }` surface (`ps3t.6.5`) |
+The **Status** column distinguishes what has landed from what is still ahead —
+this doc describes the ps3t.6 *program*, not a single PR.
+
+| Embedded-DSL need | ps3t.6 piece | Status |
+|---|---|---|
+| "the package's parser" (§12.4 step 3–4) | the generator/executor — a grammar → an error-tolerant RD parser producing typed AST | **landed** (expression family) |
+| good errors + a usable tree on a half-typed block (LSP/compile-validate) | `@expect`/`@recover` → partial-tree recovery (`Expr.Error`/`Missing`) | **landed** |
+| a sublanguage's gnarly corners without bloating its grammar | the `@hand(fn)` escape-hatch | **landed** |
+| switching how you lex on entering `sql { … }` / `html"…{x}…"` | lexer modes (`ps3t.6.7`) — the SAME machinery as string interpolation | **planned** (`.6.7`) |
+| authoring a sublanguage as *Avra source* (unquoted `grammar { }` block) | the `grammar { }` surface syntax (`ps3t.6.5`, seed-gated) | **planned** (`.6.5`) — grammars are read from strings today |
 
 ## What is NOT covered by the grammar-DSL (separate stories)
 

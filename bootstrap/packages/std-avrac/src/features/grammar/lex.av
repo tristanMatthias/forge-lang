@@ -43,13 +43,23 @@ export fn lex_expr(src: string) -> List<Token> {
             continue
         }
         // string: keep the surrounding quotes in `text` (Expr.String's
-        // contract — the renderer round-trips without re-quoting).
+        // contract — the renderer round-trips without re-quoting). A
+        // backslash escapes the next char; an unterminated literal (EOF
+        // before the closing quote) is an ERROR token, not a valid STRING.
         if c == 34 {
             let start = i
             i = i + 1
-            while i < n && code_at(src, i) != 34 { i = i + 1 }
-            if i < n { i = i + 1 }  // closing quote
-            toks.push(Token { kind: "STRING", text: src.substring(start, i), pos: start })
+            while i < n && code_at(src, i) != 34 {
+                if code_at(src, i) == 92 && i + 1 < n {
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+            }
+            let closed = i < n
+            if closed { i = i + 1 }  // closing quote
+            let kind = if closed { "STRING" } else { "ERROR" }
+            toks.push(Token { kind, text: src.substring(start, i), pos: start })
             continue
         }
         // identifier / boolean keyword

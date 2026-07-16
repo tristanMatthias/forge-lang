@@ -27,13 +27,13 @@ fn expr_grammar_src() -> string {
     "  shift      = l:term ( op:(\"<<\" | \">>\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
-    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | postfix\n" +
+    "  unary      = op:(\"!\" | \"-\" | \"~\") operand:unary -> Unary(op, operand) | postfix\n" +
     "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
     "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
     "             | \"[\" idx:expression \"]\" -> index_suffix(idx)\n" +
     "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
-    "  primary    = NUMBER | \"true\" | \"false\" | @hand(ident)\n" +
-    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
     "}"
 }
 
@@ -52,9 +52,14 @@ fn handwritten_tree(src: string) -> string {
     dump_expr(probe.store, probe.root)
 }
 
-// True when both parsers agree on the tree for `src`.
+// True when both parsers agree on the tree for `src`. The dump is a
+// LOSSLESS view (Grouping is rendered explicitly, never unwrapped), and
+// we additionally reject the "<unmodelled-variant>" marker on either
+// side so an unhandled Expr variant can't silently compare equal.
 fn agree(src: string) -> bool {
-    grammar_tree(src) == handwritten_tree(src)
+    let g = grammar_tree(src)
+    let h = handwritten_tree(src)
+    g == h && !g.contains("<unmodelled-variant>") && !h.contains("<unmodelled-variant>")
 }
 
 spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
@@ -78,16 +83,23 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
         }
     }
     given "grouping + unary + comparison" {
-        then "parentheses agree (Grouping normalises away in both)" {
+        then "parentheses produce matching Grouping nodes (losslessly)" {
+            // Grouping is preserved on BOTH sides now, so `((1))` keeps
+            // its two Grouping nodes rather than collapsing to `1`.
             agree("(1 + 2) * 3") &&
             agree("2 * (3 + 4)") &&
-            agree("((1))")
+            agree("((1))") &&
+            agree("(1)")
         }
-        then "prefix unary agrees" {
+        then "prefix unary agrees (incl. bitwise-not ~)" {
             agree("-5") &&
             agree("-2 + 3") &&
             agree("!0") &&
-            agree("- -5")
+            agree("- -5") &&
+            agree("~5") &&
+            agree("~a + 2") &&
+            agree("~~3") &&
+            agree("!~-1")
         }
         then "comparison + equality stratification agrees" {
             agree("1 < 2") &&
@@ -140,6 +152,13 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("a * b + c") &&
             agree("(x + y) * z") &&
             agree("a < b && c == d")
+        }
+    }
+    given "string literals" {
+        then "string literals parse equivalently (quotes retained)" {
+            agree("\"hello\"") &&
+            agree("\"a\" == \"b\"") &&
+            agree("x + \"lit\"")
         }
     }
     given "postfix field-access + index (partial-node rebind fold)" {
