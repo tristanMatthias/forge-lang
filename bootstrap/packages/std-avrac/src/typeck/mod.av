@@ -4237,6 +4237,19 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
     let ca = check_expr_list_types(o.tc, args)
     let checked_args = ca.tc
 
+    // §6 layout totality (ps3t.4.9): a method call `v.foo(...)` on a `.Void`
+    // receiver — the common case being a value read from a function that omits
+    // `-> Type` and so returns void — has no methods. Report a clean F1000 here
+    // instead of falling through to codegen's "method call on non-struct/enum
+    // value (ty=void)" F9999 ICE. The args are checked above so their own errors
+    // still surface. `.Unknown` is left alone (upstream under-determination — an
+    // undefined callee / failed mono — whose own diagnostic must not be masked).
+    // Mirror of the `check_field_access` / `.Index` Void gates.
+    if vtype_eq(o.ty, .Void) {
+        return tc_er(tc_report(checked_args, DiagCode.TypeMismatch,
+            "cannot call method `${method}` on a value of type `Void` — the receiver produces no value (a function used here may omit its `-> Type` and return void)"), .Unknown)
+    }
+
     // String methods
     if vtype_eq(o.ty, .Str) {
         match method {
@@ -4409,29 +4422,49 @@ fn check_block(tc: TC, stmts: List<StmtId>) -> ExprResult {
 }
 
 /// The value type of a single branch statement of a statement-`if` used in value
-/// position — its block's tail value, or a bare expression's type.
+/// position — its block's tail value, a bare expression's type, or (for a bare
+/// `else if` chain) the recursive value of the nested statement-`if`. The `.If`
+/// recursion mirrors codegen's `emit_stmt_as_value` → `emit_stmt_if_as_value`
+/// dispatch, so an `else if` survivor is typed by its own surviving arm (with
+/// narrowing) instead of collapsing to `.Void` — otherwise
+/// `{ if a { return } else if b { "x" } else { "y" } }` would type `.Void` and a
+/// downstream `.length` would false-fire the field/index/method Void gate, while
+/// the block-wrapped `else { if b … }` form typed correctly.
 fn tc_branch_value(tc: TC, s: Stmt) -> ValueType {
-    match s {
+    match stmt_unwrap(tc.nodes, s) {
         .Block(body) -> check_block(tc, body).ty
         .Expr(e) -> check_expr(tc, tc.nodes.exprs.get(e)).ty
+        .If(cond_id, then_branch, else_branch) -> tc_stmt_if_value_type(tc, cond_id, then_branch, else_branch)
         _ -> .Void
     }
 }
 
 /// §799 typeck completion: the value type of a statement-`if` in value position
-/// (the tail of a block-expression), mirroring `emit_stmt_if_as_value`. Types
-/// from the branch that does NOT diverge (return / break / continue / panic), so
-/// `let v = { if c { return } else { "x" } }` types `v` as the else arm's type
-/// rather than `.Void`. Called with a throwaway bag — the real diagnostics come
-/// from the normal `check_stmt` pass; this only computes the type.
-fn tc_stmt_if_value_type(tc: TC, then_branch: StmtId, else_branch: StmtId?) -> ValueType {
+/// (the tail of a block-expression), mirroring `emit_stmt_if_as_value` AND the
+/// if-EXPR checker's flow-narrowing. Types from the branch that does NOT diverge
+/// (return / break / continue / panic), so `let v = { if c { return } else { "x" } }`
+/// types `v` as the else arm's type rather than `.Void`. Each branch is checked
+/// under the condition's flow-narrowing (`tc.types` is the pre-`if` baseline, so
+/// the then-branch sees `x != null`'s presence and the else-branch sees
+/// `x == null`'s, independently) — WITHOUT this, `let v = { if x != null { x }
+/// else { 0 } }` would re-type `v` as `int?` and spuriously reject a downstream
+/// `v + 1`, diverging from the byte-identical if-EXPR form. Called with a
+/// throwaway bag — the real diagnostics come from the normal `check_stmt` pass;
+/// this only computes the type.
+fn tc_stmt_if_value_type(tc: TC, cond_id: ExprId, then_branch: StmtId, else_branch: StmtId?) -> ValueType {
     let then_s = tc.nodes.stmts.get(then_branch)
-    let then_ty = tc_branch_value(tc, then_s)
     let then_div = stmt_diverges(tc.nodes, then_s)
+    // An else-less statement-`if` in value position is effect-only `.Void`
+    // (matches emit + the if-EXPR checker's else-less handling).
     if else_branch == null { return .Void }
     let else_s = tc.nodes.stmts.get(else_branch!)
-    let else_ty = tc_branch_value(tc, else_s)
     let else_div = stmt_diverges(tc.nodes, else_s)
+    // Narrow the guard variable per branch (mirrors `if_check_expr`). Both
+    // helpers are no-ops when the condition isn't an `x == none` / `x != none`
+    // guard, so the un-narrowed path is unchanged.
+    let guard = narrow_guard_of(tc.nodes, tc.nodes.exprs.get(cond_id))
+    let then_ty = tc_branch_value(tc_narrow_true_branch(tc, guard), then_s)
+    let else_ty = tc_branch_value(tc_narrow_false_branch(tc, guard), else_s)
     if then_div && !else_div { return else_ty }
     if else_div && !then_div { return then_ty }
     if vtype_eq(then_ty, .Void) { return else_ty }
@@ -4451,20 +4484,24 @@ fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
         cur = check_stmt(cur, tc.nodes.stmts.get(stmts[i]))
         i = i + 1
     }
-    // Last statement — its type is the block's type
+    // Last statement — its type is the block's type. Unwrap `Annotated` so a
+    // tail `@…`-wrapped expression / statement-`if` still routes to its value
+    // arm instead of falling through to `.Void`.
     let id = stmts[last]
     let lpos = tc.nodes.stmt_pos(id)
     avra_ice_at(lpos.file, lpos.line, lpos.col)
-    match tc.nodes.stmts.get(id) {
+    match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
         .Expr(e) -> check_expr(cur, tc.nodes.exprs.get(e))
         // A tail statement-`if` in value position produces the surviving arm's
         // value (§799 codegen already lowers it that way). Run the normal
-        // check_stmt for real checking/narrowing/diagnostics, then compute the
-        // value type separately from the branches so the block's type is the
-        // surviving arm, not `.Void`.
-        .If(_, then_branch, else_branch) -> {
+        // check_stmt (on the ORIGINAL, possibly-annotated stmt) for real
+        // checking/narrowing/diagnostics, then compute the value type from the
+        // branches — starting from the pre-`if` `cur` (not the post-`if` result)
+        // on a throwaway bag, so the condition's flow-narrowing applies and no
+        // diagnostics are double-reported.
+        .If(cond_id, then_branch, else_branch) -> {
             let checked = check_stmt(cur, tc.nodes.stmts.get(id))
-            let vty = tc_stmt_if_value_type(checked with { bag: bag_new() }, then_branch, else_branch)
+            let vty = tc_stmt_if_value_type(cur with { bag: bag_new() }, cond_id, then_branch, else_branch)
             tc_er(checked, vty)
         }
         _ -> {

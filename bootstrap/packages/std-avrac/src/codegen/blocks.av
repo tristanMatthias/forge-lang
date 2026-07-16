@@ -45,7 +45,12 @@ export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) 
 /// Anything else falls back to plain `emit_stmt` and inherits the
 /// caller's `last_val` / `last_ty`.
 export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
-    match stmt {
+    // Unwrap `Annotated` for dispatch so a documented (`///`) / `@…`-annotated
+    // tail expression/if still yields its VALUE — a raw match would fall through
+    // to `_` and lose it (returning the block's default `i64 0`/`.Unknown`, which
+    // then ICEs at the layout boundary). Twin of `check_block_stmts`' tail unwrap;
+    // a no-op for the common unannotated tail, so IR stays byte-identical there.
+    match stmt_unwrap(ctx.nodes, stmt) {
         .Expr(e) -> ctx.emit(env, ctx.nodes.exprs.get(e))
         .Block(body) -> emit_block_expr(ctx, env, body)
         .Match(subject, arms) -> emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)
@@ -65,7 +70,9 @@ export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_v
 /// can recover defer state after evaluating a block.
 fn emit_stmt_as_value_ctx(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     ctx.cov_line()
-    match stmt {
+    // Unwrap `Annotated` for dispatch (see `emit_stmt_as_value`): a documented /
+    // annotated tail must still yield its value, not fall through to `_`.
+    match stmt_unwrap(ctx.nodes, stmt) {
         .Expr(e) -> {
             let r = ctx.emit(env, ctx.nodes.exprs.get(e))?
             ok_br(r.value, r.ty, ctx, env)

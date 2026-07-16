@@ -1,9 +1,10 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.tuples.{...}`.
-use core.{vtype_tuple_at}
+use core.{vtype_tuple_at, vtype_eq}
 use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr, resolve_expr_list_ids}
-use typeck.{check_expr, check_expr_list_types, tc_er, tc_gate_unthreaded_lambda}
+use typeck.{check_expr, check_expr_list_types, tc_er, tc_report, tc_gate_unthreaded_lambda}
+use diagnostics.{DiagCode}
 use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
 
 /// Register the `(a, b, c)` tuple literal feature. Wires up
@@ -93,6 +94,17 @@ fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .TupleIndex(obj, idx) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
+            // §6 layout totality (ps3t.4.9): a tuple-index `.N` on a `.Void`
+            // receiver — the common case being a value read from a function that
+            // omits `-> Type` and so returns void (the ticket's `let t = g()  t.0`
+            // repro) — has no tuple elements. Report a clean F1000 here instead of
+            // the codegen "tuple index on non-tuple value" F9999 ICE. `.Unknown`
+            // is left alone (upstream under-determination whose own diagnostic must
+            // not be masked). Mirror of the field-access / index / method Void gates.
+            if vtype_eq(o.ty, .Void) {
+                return tc_er(tc_report(o.tc, DiagCode.TypeMismatch,
+                    "cannot access tuple element `.${string(idx)}` on a value of type `Void` — the receiver produces no value (a function used here may omit its `-> Type` and return void)"), .Unknown)
+            }
             tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
         _ -> tc_er(tc, .Unknown)
