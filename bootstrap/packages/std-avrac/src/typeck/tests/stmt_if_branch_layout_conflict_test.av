@@ -1,0 +1,104 @@
+// WHY: statement-`if` parity with the if-EXPR layout-conflict guard (ps3t.4.9
+// adversarial round 2). A block-tail statement-`if` in value position
+// (`let x = { if c { … } else { … } }`) is typed by `tc_stmt_if_value_type` from
+// the surviving arm — but `check_stmt`/`if_check_stmt` never UNIFY the arm types,
+// so unlike the if-EXPR path (`unify_if_expr_branches`) it did NOT run
+// `generic_args_layout_conflict`. That let a block-tail-`if` whose two live arms
+// have memory-incompatible CONTAINER layouts (`List<int>` scalar-elem vs
+// `List<Node>` ptr-elem) type-check clean and wild-deref at runtime (the F4d.8
+// class), while the identical if-EXPR form was correctly F1000. The additive
+// `tc_if_tail_layout_ok` walk closes the gap and mirrors the if-EXPR oracle:
+// direct arms, bare `else if` chains, and value-position arm blocks are all
+// walked, so a conflict at any level is caught.
+//
+// Deliberately NOT gated (parity with if-EXPR): a TOP-LEVEL scalar-vs-pointer
+// difference (`int` vs `string`) is a legitimate inferred ad-hoc union; the
+// hazard is a shared container shell whose element layouts disagree.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn sck(tag: string, source: string) -> string {
+    let path = "/tmp/avra_sif_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+spec "block-tail statement-if branches with conflicting container layouts are F1000 (parity with if-expr)" {
+    then "List<int> vs List<Node> (scalar vs pointer elements) is F1000" {
+        let out = sck("list", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let c = true  let x = { if c { ints() } else { nodes() } }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "the inverse (List<Node> then, List<int> else) is also F1000" {
+        let out = sck("list_inv", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let c = true  let x = { if c { nodes() } else { ints() } }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a conflict in a bare `else if` survivor arm is F1000 (walk recurses into the else-if)" {
+        let out = sck("elseif", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let a = false  let b = true  let x = { if a { ints() } else if b { ints() } else { nodes() } }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a conflict inside a value-position arm block is F1000 (walk recurses into the block tail)" {
+        let out = sck("nestblock", "type Node = { x: int }
+fn ints() -> List<int> { [1, 2] }
+fn nodes() -> List<Node> { [Node { x: 1 }] }
+fn main() { let a = false  let b = true  let x = { if a { ints() } else { if b { ints() } else { nodes() } } }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a Map-value layout conflict between arms is F1000" {
+        let out = sck("map", "type Node = { x: int }
+fn a() -> Map<string, int> { {\"k\": 1} }
+fn b() -> Map<string, Node> { {\"k\": Node { x: 1 }} }
+fn main() { let c = true  let x = { if c { a() } else { b() } }  let _ = x }")
+        out.contains("F1000")
+    }
+    then "a same-nominal generic-arg conflict (Box<int> vs Box<string>) is F1000 (no vtype_eq short-circuit)" {
+        // vtype_eq ignores generic args, so `Box<int>` == `Box<string>` — a
+        // `vtype_eq` short-circuit would skip the conflict check on this
+        // same-nominal argument-layout clash (int scalar slot vs string ptr slot,
+        // a wild store). generic_args_layout_conflict must catch it.
+        let out = sck("box", "type Box<T> = { val: T }
+fn bi() -> Box<int> { Box { val: 1 } }
+fn bs() -> Box<string> { Box { val: \"s\" } }
+fn main() { let c = true  let x = { if c { bi() } else { bs() } }  let _ = x }")
+        out.contains("F1000")
+    }
+}
+
+spec "legitimate block-tail statement-if differences are NOT over-gated (parity with if-expr)" {
+    then "a top-level int|string difference is not gated (valid inferred union)" {
+        let out = sck("union", "fn main() { let c = true  let x = { if c { 1 } else { \"hi\" } }  println(\"ok\") }")
+        !out.contains("F1000")
+    }
+    then "two pointer struct types (a Node|Other union) are not gated" {
+        let out = sck("structs", "type Node = { x: int }
+type Other = { y: int }
+fn n() -> Node { Node { x: 1 } }
+fn o() -> Other { Other { y: 2 } }
+fn main() { let c = true  let x = { if c { n() } else { o() } }  println(\"ok\") }")
+        !out.contains("F1000")
+    }
+    then "matching container element types compile" {
+        let out = sck("same", "fn a() -> List<int> { [1] }
+fn b() -> List<int> { [2] }
+fn main() { let c = true  let x = { if c { a() } else { b() } }  let _ = x }")
+        !out.contains("F1000")
+    }
+    then "a diverging arm does not participate (then returns, else is the value)" {
+        let out = sck("diverge", "fn nodes() -> List<int> { [1, 2] }
+fn f(c: bool) -> int {
+  let x = { if c { return -1 } else { nodes() } }
+  x.length
+}
+fn main() { let _ = f(false) }")
+        !out.contains("F1000")
+    }
+}

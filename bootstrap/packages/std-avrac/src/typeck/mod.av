@@ -3013,6 +3013,14 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             // handled).
             match o.ty {
                 .Map(_, _) -> return tc_reject_index(i.tc, o.ty, "use `.get(key)`", vtype_map_value(o.ty))
+                // §6 layout totality (ps3t.4.9): indexing a `.Void` receiver — the
+                // common case being a value read from a fn that omits `-> Type`
+                // and returns void — has no elements; reject it cleanly here
+                // instead of falling through to the codegen "indexing on
+                // non-string/list value" F9999 ICE. `.Unknown` is left to fall
+                // through (upstream under-determination — its own diagnostic must
+                // not be masked).
+                .Void -> return tc_reject_index(i.tc, o.ty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", .Unknown)
                 _ if vtype_is_value_scalar(o.ty) ->
                     return tc_reject_index(i.tc, o.ty, "only strings, lists, and pointers are indexable", o.ty)
                 _ -> {}
@@ -4229,6 +4237,19 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
     let ca = check_expr_list_types(o.tc, args)
     let checked_args = ca.tc
 
+    // §6 layout totality (ps3t.4.9): a method call `v.foo(...)` on a `.Void`
+    // receiver — the common case being a value read from a function that omits
+    // `-> Type` and so returns void — has no methods. Report a clean F1000 here
+    // instead of falling through to codegen's "method call on non-struct/enum
+    // value (ty=void)" F9999 ICE. The args are checked above so their own errors
+    // still surface. `.Unknown` is left alone (upstream under-determination — an
+    // undefined callee / failed mono — whose own diagnostic must not be masked).
+    // Mirror of the `check_field_access` / `.Index` Void gates.
+    if vtype_eq(o.ty, .Void) {
+        return tc_er(tc_report(checked_args, DiagCode.TypeMismatch,
+            "cannot call method `${method}` on a value of type `Void` — the receiver produces no value (a function used here may omit its `-> Type` and return void)"), .Unknown)
+    }
+
     // String methods
     if vtype_eq(o.ty, .Str) {
         match method {
@@ -4400,6 +4421,115 @@ fn check_block(tc: TC, stmts: List<StmtId>) -> ExprResult {
     tc_er(after, pair.ty)
 }
 
+/// The value type of a single branch statement of a statement-`if` used in value
+/// position — its block's tail value, a bare expression's type, or (for a bare
+/// `else if` chain) the recursive value of the nested statement-`if`. The `.If`
+/// recursion mirrors codegen's `emit_stmt_as_value` → `emit_stmt_if_as_value`
+/// dispatch, so an `else if` survivor is typed by its own surviving arm (with
+/// narrowing) instead of collapsing to `.Void` — otherwise
+/// `{ if a { return } else if b { "x" } else { "y" } }` would type `.Void` and a
+/// downstream `.length` would false-fire the field/index/method Void gate, while
+/// the block-wrapped `else { if b … }` form typed correctly.
+fn tc_branch_value(tc: TC, s: Stmt) -> ValueType {
+    match stmt_unwrap(tc.nodes, s) {
+        .Block(body) -> check_block(tc, body).ty
+        .Expr(e) -> check_expr(tc, tc.nodes.exprs.get(e)).ty
+        .If(cond_id, then_branch, else_branch) -> tc_stmt_if_value_type(tc, cond_id, then_branch, else_branch)
+        _ -> .Void
+    }
+}
+
+/// §799 typeck completion: the value type of a statement-`if` in value position
+/// (the tail of a block-expression), mirroring `emit_stmt_if_as_value` AND the
+/// if-EXPR checker's flow-narrowing. Types from the branch that does NOT diverge
+/// (return / break / continue / panic), so `let v = { if c { return } else { "x" } }`
+/// types `v` as the else arm's type rather than `.Void`. Each branch is checked
+/// under the condition's flow-narrowing (`tc.types` is the pre-`if` baseline, so
+/// the then-branch sees `x != null`'s presence and the else-branch sees
+/// `x == null`'s, independently) — WITHOUT this, `let v = { if x != null { x }
+/// else { 0 } }` would re-type `v` as `int?` and spuriously reject a downstream
+/// `v + 1`, diverging from the byte-identical if-EXPR form. Called with a
+/// throwaway bag — the real diagnostics come from the normal `check_stmt` pass;
+/// this only computes the type.
+fn tc_stmt_if_value_type(tc: TC, cond_id: ExprId, then_branch: StmtId, else_branch: StmtId?) -> ValueType {
+    let then_s = tc.nodes.stmts.get(then_branch)
+    let then_div = stmt_diverges(tc.nodes, then_s)
+    // An else-less statement-`if` in value position is effect-only `.Void`
+    // (matches emit + the if-EXPR checker's else-less handling).
+    if else_branch == null { return .Void }
+    let else_s = tc.nodes.stmts.get(else_branch!)
+    let else_div = stmt_diverges(tc.nodes, else_s)
+    // Narrow the guard variable per branch (mirrors `if_check_expr`). Both
+    // helpers are no-ops when the condition isn't an `x == none` / `x != none`
+    // guard, so the un-narrowed path is unchanged.
+    let guard = narrow_guard_of(tc.nodes, tc.nodes.exprs.get(cond_id))
+    let then_ty = tc_branch_value(tc_narrow_true_branch(tc, guard), then_s)
+    let else_ty = tc_branch_value(tc_narrow_false_branch(tc, guard), else_s)
+    if then_div && !else_div { return else_ty }
+    if else_div && !then_div { return then_ty }
+    if vtype_eq(then_ty, .Void) { return else_ty }
+    then_ty
+}
+
+/// Container-layout-conflict guard for a value-position statement-`if` (the
+/// tail of a block-expression). A statement-`if` never UNIFIES its arm types —
+/// `check_stmt`/`if_check_stmt` type each branch independently and discard the
+/// result — so without this guard a block-tail-`if` whose two live arms have
+/// memory-incompatible container element layouts (`List<int>` scalar-elem vs
+/// `List<Node>` ptr-elem) types as one arm yet holds the other at runtime: a
+/// wild store/deref (the F4d.8 metadata-SIGSEGV class). The sibling if-EXPR path
+/// guards this via `unify_if_expr_branches`; this brings the statement-`if` value
+/// form to parity. Purely ADDITIVE: it only reports `generic_args_layout_conflict`
+/// (F1000) into the REAL bag for INVALID programs — valid programs are unchanged
+/// (byte-identical). Walks the whole value-position if-tree (bare `else if`
+/// chains + value-position arm blocks) so a conflict at ANY level is caught. Arm
+/// TYPES are recomputed on a throwaway bag (the branches are already type-checked
+/// by the normal pass); only the conflict diagnostic is kept.
+fn tc_if_tail_layout_ok(tc: TC, cond_id: ExprId, then_branch: StmtId, else_branch: StmtId?) -> TC {
+    if else_branch == null { return tc }
+    let then_s = tc.nodes.stmts.get(then_branch)
+    let else_s = tc.nodes.stmts.get(else_branch!)
+    // Recurse into the arms first — a nested value-position `if`/block reports its
+    // own arm conflicts (e.g. `else if b { P } else { Q }` where P/Q conflict).
+    let after_then = tc_branch_layout_ok(tc, then_s)
+    let after_else = tc_branch_layout_ok(after_then, else_s)
+    // Only both-live arms are unified; a diverging arm contributes no value.
+    let then_div = stmt_diverges(tc.nodes, then_s)
+    let else_div = stmt_diverges(tc.nodes, else_s)
+    if then_div || else_div { return after_else }
+    let guard = narrow_guard_of(tc.nodes, tc.nodes.exprs.get(cond_id))
+    let then_ty = tc_branch_value(tc_narrow_true_branch(tc with { bag: bag_new() }, guard), then_s)
+    let else_ty = tc_branch_value(tc_narrow_false_branch(tc with { bag: bag_new() }, guard), else_s)
+    // NO `vtype_eq` short-circuit: `vtype_eq` ignores generic args, so it reports
+    // `Box<int>` == `Box<string>` and would skip the conflict check on a
+    // same-nominal argument-layout clash (int scalar slot vs string ptr slot — a
+    // wild store). `generic_args_layout_conflict` is the correct guard: it returns
+    // false for genuinely-identical types AND for a legitimate top-level scalar
+    // union (`int` vs `string` — an inferred ad-hoc union, deliberately allowed),
+    // and true only for a shared-nominal container/struct whose type args disagree
+    // in layout. Mirrors the if-EXPR path (`unify_if_expr_branches`, same fix).
+    if generic_args_layout_conflict(after_else, then_ty, else_ty) {
+        let msg = "`if` branches have incompatible layouts: `${vtype_display(then_ty)}` (then) vs `${vtype_display(else_ty)}` (else) — their element/argument types are memory-incompatible (pointer vs scalar), so the result can't be used as either"
+        return tc_report(after_else, DiagCode.TypeMismatch, msg)
+    }
+    after_else
+}
+
+/// Recurse the value-position layout guard into a branch: a bare `else if`
+/// (nested statement-`if`) or a value-position block whose own tail is an `if`.
+/// A tail EXPRESSION (incl. an if-EXPR) is already guarded by the normal
+/// check_expr pass (`unify_if_expr_branches`), so it needs no walk here.
+fn tc_branch_layout_ok(tc: TC, s: Stmt) -> TC {
+    match stmt_unwrap(tc.nodes, s) {
+        .If(cond_id, then_b, else_b) -> tc_if_tail_layout_ok(tc, cond_id, then_b, else_b)
+        .Block(body) -> {
+            if body.length == 0 { return tc }
+            tc_branch_layout_ok(tc, tc.nodes.stmts.get(body[body.length - 1]))
+        }
+        _ -> tc
+    }
+}
+
 /// Implementation of `check_block` — walks every stmt, returning
 /// the last one's value type as the block's type.
 fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
@@ -4413,12 +4543,29 @@ fn check_block_stmts(tc: TC, stmts: List<StmtId>) -> ExprResult {
         cur = check_stmt(cur, tc.nodes.stmts.get(stmts[i]))
         i = i + 1
     }
-    // Last statement — its type is the block's type
+    // Last statement — its type is the block's type. Unwrap `Annotated` so a
+    // tail `@…`-wrapped expression / statement-`if` still routes to its value
+    // arm instead of falling through to `.Void`.
     let id = stmts[last]
     let lpos = tc.nodes.stmt_pos(id)
     avra_ice_at(lpos.file, lpos.line, lpos.col)
-    match tc.nodes.stmts.get(id) {
+    match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
         .Expr(e) -> check_expr(cur, tc.nodes.exprs.get(e))
+        // A tail statement-`if` in value position produces the surviving arm's
+        // value (§799 codegen already lowers it that way). Run the normal
+        // check_stmt (on the ORIGINAL, possibly-annotated stmt) for real
+        // checking/narrowing/diagnostics, then compute the value type from the
+        // branches — starting from the pre-`if` `cur` (not the post-`if` result)
+        // on a throwaway bag, so the condition's flow-narrowing applies and no
+        // diagnostics are double-reported.
+        .If(cond_id, then_branch, else_branch) -> {
+            let checked = check_stmt(cur, tc.nodes.stmts.get(id))
+            // Additive layout-conflict guard on the value-position arms (parity
+            // with the if-EXPR path; `check_stmt` never unifies statement-if arms).
+            let guarded = tc_if_tail_layout_ok(checked, cond_id, then_branch, else_branch)
+            let vty = tc_stmt_if_value_type(cur with { bag: bag_new() }, cond_id, then_branch, else_branch)
+            tc_er(guarded, vty)
+        }
         _ -> {
             let checked = check_stmt(cur, tc.nodes.stmts.get(id))
             tc_er(checked, .Void)

@@ -164,9 +164,14 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
 /// CONTAINER shell whose element layouts disagree, which is almost never an
 /// intended union and is what the wild-store class actually corrupts.
 fn unify_if_expr_branches(tc: TC, then_ty: ValueType, else_ty: ValueType) -> ExprResult {
-    // Common case: identical branch types can't conflict and don't union — skip
-    // the layout walk (mirrors `if_expr_result_type`'s own equality short-circuit).
-    if vtype_eq(then_ty, else_ty) { return tc_er(tc, then_ty) }
+    // NO `vtype_eq` short-circuit: `vtype_eq` ignores generic args, so it reports
+    // `Box<int>` == `Box<string>` and would skip the conflict check on a
+    // same-nominal argument-layout clash (int scalar slot vs string ptr slot — a
+    // wild store; the F4d.8 class). `generic_args_layout_conflict` is the correct
+    // guard — it returns false for genuinely-identical types (so identical
+    // branches still don't error and `if_expr_result_type` collapses them) AND for
+    // a legitimate top-level scalar union (`int` vs `string`), and true only for a
+    // shared-nominal container/struct whose type args disagree in layout.
     if generic_args_layout_conflict(tc, then_ty, else_ty) {
         let msg = "`if` branches have incompatible layouts: `${vtype_display(then_ty)}` (then) vs `${vtype_display(else_ty)}` (else) — their element/argument types are memory-incompatible (pointer vs scalar), so the result can't be used as either"
         return tc_er(tc_report(tc, DiagCode.TypeMismatch, msg), if_expr_result_type(then_ty, else_ty))
