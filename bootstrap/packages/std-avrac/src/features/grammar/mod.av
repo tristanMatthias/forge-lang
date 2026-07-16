@@ -18,6 +18,6 @@ use core.{feature_new, Feature}
 export fn grammar_feature() -> Feature {
     feature_new("grammar") with {
         expr_keyword: "grammar",
-        parse_expr: (p: Parser) -> p.parse_grammar_block(),
+        parse_expr: (p: Parser, start: int) -> p.parse_grammar_block(start),
     }
 }

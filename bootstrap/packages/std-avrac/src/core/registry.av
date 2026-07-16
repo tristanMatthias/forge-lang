@@ -44,6 +44,11 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// @field parse_decl     — parser hook for top-level decls.
 /// @field parse_stmt     — parser hook for stmt-level constructs.
 /// @field parse_expr     — parser hook for `expr_keyword`-led expressions.
+///                          The `int` arg is the keyword's start offset
+///                          (parse_primary's `sp_start`) so the generated
+///                          node's byte span begins at the keyword, not
+///                          the `{` (the identifier is already consumed at
+///                          dispatch time).
 /// @field emit_expr/stmt — codegen hooks (untyped int slot — fn ptrs
 ///                          go through the Result<EmitValue, string>
 ///                          shape).
@@ -60,7 +65,7 @@ export type Feature = {
     expr_keyword: string,
     parse_decl: fn(Parser) -> Result<StmtId, string>,
     parse_stmt: fn(Parser) -> Result<StmtId, string>,
-    parse_expr: fn(Parser) -> Result<ExprId, string>,
+    parse_expr: fn(Parser, int) -> Result<ExprId, string>,
     emit_expr: int,
     emit_stmt: int,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
@@ -104,7 +109,7 @@ fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 /// in-tree dispatch when no feature claims this keyword.
 fn noop_parse(p: Parser) -> Result<StmtId, string> { .Err("no parser registered") }
 /// Expression-parser no-op — mirror of `noop_parse` for `parse_expr`.
-fn noop_parse_expr(p: Parser) -> Result<ExprId, string> { .Err("no expr parser registered") }
+fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module
 /// builds on this with `with`-updates to register its own callbacks.

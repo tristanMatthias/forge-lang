@@ -26,8 +26,10 @@ impl Parser {
     /// `strip_quotes` peels exactly one char each end, so interior `"`
     /// in grammar literals like `"+"` (and newlines in a multi-line
     /// block) survive verbatim into the runtime string.
-    fn parse_grammar_block(self) -> Result<ExprId, string> {
-        let sp = self.current_start
+    fn parse_grammar_block(self, sp: int) -> Result<ExprId, string> {
+        // `sp` is the `grammar` keyword's start offset (threaded from
+        // parse_primary), so the desugared Call node's span covers the
+        // whole `grammar { … }` construct, not just the block body.
         if !self.consume(Tk.LeftBrace, "expected `{` after `grammar`") {
             return .Err("parse error")
         }
