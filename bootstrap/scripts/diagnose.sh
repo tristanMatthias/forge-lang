@@ -393,6 +393,15 @@ SEED MANAGEMENT
                          integration seed + compiler sources; bypass with
                          AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
                          and the bootstrap-window CI workflow.
+  --check-layout-boundary [dir]
+                         ps3t.4.5(d) rep-boundary lint. Fail if codegen maps an
+                         under-determined `.Unknown` type straight to an LLVM
+                         layout (`.Unknown -> i64t` / `self.i64_type` / …) — the
+                         silent-i64-guess bug (spec §6). The total resolve_layout
+                         is the sole sanctioned `.Unknown` gate (it errors/ICEs),
+                         and it BYPASSES the runtime ICE, so only this source lint
+                         catches a reintroduction. [dir] defaults to the codegen
+                         tree; the guard test passes a temp dir.
   --seed-merge [--base ours|theirs|<ref>]
                          One-command seed-merge staging. For a merge where
                          the seed pin conflicted (seed.lock, or seed.ll on
@@ -2368,6 +2377,39 @@ mode_clean_cache() {
   ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
 }
 
+# ── ps3t.4.5(d) layout-boundary lint ──
+# The rep-boundary-fallback guard for the type→layout totality invariant. After
+# d-4 + the total resolve_layout / resolve_layout_sized, the SOLE place an
+# under-determined `.Unknown` type is mapped to an LLVM layout is `resolve_layout`,
+# and only under the erased-template guard
+# (`.Unknown -> if allow_unknown { ok_layout(i64t) } else { err_layout() }`).
+# A direct `.Unknown -> <bare LLVM base-type ptr>` anywhere in codegen is the
+# historical silent-i64-guess bug (spec §6: never guess a layout from an
+# under-determined type). Crucially it BYPASSES the runtime ICE — which only
+# fires *through* resolve_layout — so nothing else catches a reintroduction.
+# This source lint flags exactly that anti-pattern.
+#
+# $1 (optional) = codegen dir to scan (defaults to the real tree; the guard test
+# points it at a temp dir with a planted violation). The sanctioned guarded arm
+# maps via ok_layout/err_layout (`-> if …`, never `-> <ptr>`) and non-layout arms
+# map to `false`/`{}`/etc., so neither matches — zero false positives.
+mode_check_layout_boundary() {
+  local cg="${1:-$BOOTSTRAP_DIR/packages/std-avrac/src/codegen}"
+  [ -d "$cg" ] || die "check-layout-boundary: dir not found: $cg"
+  # `--exclude-dir=tests`: the invariant governs codegen SOURCE, not fixtures.
+  # Test files legitimately embed the anti-pattern as a string literal (e.g. this
+  # lint's own guard test plants `.Unknown -> i64t` to prove the check fires), so
+  # scanning them would flag the fixtures, not real regressions.
+  local hits
+  hits=$(grep -rnE --exclude-dir=tests '\.Unknown[[:space:]]*->[[:space:]]*(i64t|i1t|dt|pt|i8t|i16t|i32t|self\.(i64|i1|i8|i16|i32|double|ptr)_type)\b' "$cg" || true)
+  if [ -n "$hits" ]; then
+    err "check-layout-boundary: silent .Unknown→layout fallback reintroduced — route it through resolve_layout (which errors/ICEs on an under-determined type), never map .Unknown straight to an LLVM type (spec §6, ps3t.4.5(d)):"
+    printf '%s\n' "$hits" >&2
+    exit 1
+  fi
+  ok "check-layout-boundary: no silent .Unknown→layout fallback in $cg (resolve_layout is the sole under-determined-type gate)"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -2414,6 +2456,7 @@ main() {
     --seed-inputs-hash)   seed_inputs_hash "$@" ;;
     --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
+    --check-layout-boundary) mode_check_layout_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
     --slot-exec)          mode_slot_exec "$@" ;;
