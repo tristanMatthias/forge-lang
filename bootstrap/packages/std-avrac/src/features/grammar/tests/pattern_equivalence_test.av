@@ -33,7 +33,7 @@ fn pat_grammar_src() -> string {
     "grammar Pat {\n" +
     "  pattern_or  = l:pattern ( \"or\" r:pattern_or )? -> OrMaybe(l, r)\n" +
     "  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat\n" +
-    "  variant_pat = \".\" name:IDENT ( \"(\" ( binds:IDENT ( \",\" binds:IDENT )* | subs:pattern ( \",\" subs:pattern )* ) \")\" )? -> MkVariant(name, binds, subs)\n" +
+    "  variant_pat = \".\" name:IDENT ( \"(\" ( binds:IDENT ( \",\" binds:IDENT )* | subs:variant_pat ( \",\" subs:pattern )* ) \")\" )? -> MkVariant(name, binds, subs)\n" +
     "  ident_pat   = name:IDENT ( \"(\" b:IDENT \")\" )? -> IdentPat(name, b)\n" +
     "  bool_pat    = b:(\"true\" | \"false\") -> PatBool(b)\n" +
     "  str_pat     = s:STRING -> PatStr(s)\n" +
@@ -110,7 +110,11 @@ spec "grammar-DSL pattern family: generated parser == hand-written parser (ps3t.
             agree(".Some(.Ok(x))") &&
             agree(".Wrap(.Inner)") &&
             agree(".Two(.A, .B)") &&
-            agree(".Deep(.Mid(.Leaf(v)))")
+            agree(".Deep(.Mid(.Leaf(v)))") &&
+            // Nested mode is entered ONLY by a leading `.` (matching the hand
+            // parser's `.`-only is_pattern_start); once entered, later items are
+            // general patterns, so a literal after the leading variant is fine.
+            agree(".Foo(.A, 42)")
         }
     }
     given "or-patterns (right-associative, matching parse_pattern_or)" {
