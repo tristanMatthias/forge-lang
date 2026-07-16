@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, BinOp, UnOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -422,7 +422,30 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "Unary" && args.length == 2 {
         return unary_expr(st, env.get(args[0]), env.get(args[1]))
     }
+    if name == "fold_logical" && args.length == 3 {
+        return fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+    }
     st.error_node("unknown build `${name}`")
+}
+
+/// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
+/// (the `&&`/`||` short-circuit ops). Sibling of fold_binary.
+fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        acc = st.store.exprs.add_leaf(Expr.Logical(acc, logicop_of(ops[i].text), rs[i]))
+        i = i + 1
+    }
+    acc
+}
+
+fn logicop_of(sym: string) -> LogicOp {
+    if sym == "||" { return LogicOp.Or }
+    LogicOp.And
 }
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Binary` chain.
@@ -501,6 +524,7 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         .Ident(n) -> n
         .Unary(op, r) -> "(${unop_sym(op)} ${dump_expr(store, r)})"
         .Binary(l, op, r) -> "(${binop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
+        .Logical(l, op, r) -> "(${logicop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
         .Grouping(e) -> dump_expr(store, e)
         .Error -> "<error>"
         .Missing -> "<missing>"
@@ -534,5 +558,12 @@ fn unop_sym(op: UnOp) -> string {
         .Neg -> "neg"
         .Not -> "not"
         .BitNot -> "bitnot"
+    }
+}
+
+fn logicop_sym(op: LogicOp) -> string {
+    match op {
+        .And -> "&&"
+        .Or -> "||"
     }
 }

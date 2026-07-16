@@ -11,7 +11,9 @@ use @std.avrac.parse.{parse_expression_native_probe}
 
 fn expr_grammar_src() -> string {
     "grammar Expr {\n" +
-    "  expression = equality\n" +
+    "  expression = logic_or\n" +
+    "  logic_or   = l:logic_and ( op:(\"||\") r:logic_and )* -> fold_logical(l, op, r)\n" +
+    "  logic_and  = l:equality ( op:(\"&&\") r:equality )* -> fold_logical(l, op, r)\n" +
     "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
     "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
@@ -78,6 +80,19 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("1 < 2") &&
             agree("1 + 2 < 3 * 4") &&
             agree("1 < 2 == 3")
+        }
+    }
+    given "logical operators (&& / ||)" {
+        then "logical-and/or agree and stratify below equality" {
+            agree("1 && 2") &&
+            agree("1 || 2") &&
+            agree("1 == 2 && 3") &&
+            agree("1 && 2 || 3") &&
+            agree("1 < 2 && 3 + 4 == 7")
+        }
+        then "logical-and binds tighter than logical-or" {
+            agree("1 || 2 && 3") &&
+            agree("0 && 1 || 2 && 3")
         }
     }
 }

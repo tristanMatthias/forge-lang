@@ -62,10 +62,10 @@ export fn lex_expr(src: string) -> List<Token> {
             toks.push(Token { kind, text: word, pos: start })
             continue
         }
-        // two-char operators: != == <= >=
+        // two-char operators: != == <= >= && ||
         if i + 1 < n {
             let two = src.substring(i, i + 2)
-            if two == "!=" || two == "==" || two == "<=" || two == ">=" {
+            if two == "!=" || two == "==" || two == "<=" || two == ">=" || two == "&&" || two == "||" {
                 toks.push(Token { kind: "PUNCT", text: two, pos: i })
                 i = i + 2
                 continue
