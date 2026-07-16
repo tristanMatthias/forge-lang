@@ -49,15 +49,33 @@ Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 - `Float` → double
 - `Str`, `Ptr`, `Struct`, `Enum`, `List`, `Map`, `Fn`, `Closure`, `Trait` → ptr
 
-The canonical type mapping function is `llvm_type_for_full` in `codegen/types.av`.
-Struct fields use proper LLVM named struct types via `avra_llvm_struct_create_named` + GEP.
+The canonical `ValueType`→LLVM-type mapping lives in ONE place: the total
+`resolve_layout(...) -> Result<Layout, LayoutError>` (and its narrow/sized sibling
+`resolve_layout_sized`) in `codegen/types.av`. `llvm_type_for_full` /
+`llvm_type_for_full_sized` and the `Ctx.llvm_type_for` method are thin unwraps of
+it (`.Ok(l) -> l.ty`, `.Err(_) -> avra_layout_unknown_ice()`). Struct fields use
+proper LLVM named struct types via `avra_llvm_struct_create_named` + GEP.
+
+**Layout totality (spec §6, ps3t.4.5(d)) — a layout is NEVER guessed from an
+under-determined type.** `resolve_layout` returns `.Err(UnderDetermined)` for a
+non-template `.Unknown`; the unwrap turns that into a first-class F9999 ICE
+(`avra_layout_unknown_ice`), legitimate ONLY inside an erased generic-base body
+(`@mono_erased` → `Ctx.in_erased_body` → `allow_unknown`), where the unbound `T`
+lays out as the erased wide i64. The invariant is ENFORCED (the ICE), CENTRALIZED
+(the one total constructor), and GUARDED against regression by `diagnose.sh
+--check-layout-boundary` — a source lint that fails on any silent `.Unknown -> <LLVM
+type>` reintroduced outside `resolve_layout` (a bypass the runtime ICE can't catch,
+since it only fires *through* `resolve_layout`; wired into the suite via
+`codegen/tests/layout_boundary_lint_test.av`). NEVER add a raw `.Unknown -> i64t`
+mapping — route every layout through `resolve_layout`.
+
 The `Ctx.llvm_type_for` method is NOT a legacy i64 mapper — it resolves narrow
 sized-int widths (U8→i8 … U32→i32) itself and delegates everything else
-(Bool→i1, Float→double, …) to `llvm_type_for_full`. No code path maps Bool or
+(Bool→i1, Float→double, …) to `resolve_layout`. No code path maps Bool or
 Float to i64 (verified: ps3t.4.5(b)). The residual k5al Phase-B migration is
-purely about sized-int WIDTH — callers of `llvm_type_for_full` directly get the
-wide (i64) sized-int layout, and move to the `llvm_type_for` method as their
-arithmetic/cast logic is proven for narrow widths.
+purely about sized-int WIDTH — callers of the wide `resolve_layout` /
+`llvm_type_for_full` directly get the wide (i64) sized-int layout, and move to the
+`llvm_type_for` method (narrow) as their arithmetic/cast logic is proven for narrow widths.
 
 `EmitValue` carries both `value: ptr` and `ty: ValueType` — every emitted value is type-aware.
 
