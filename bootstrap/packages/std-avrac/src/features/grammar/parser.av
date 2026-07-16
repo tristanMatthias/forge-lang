@@ -1,0 +1,42 @@
+// WHY: parses the `grammar { … }` surface-syntax block (ps3t.6.5) and
+// desugars it to a runtime `parse_grammar(<body>)` call. The rule text
+// between the braces is captured verbatim (balanced-brace raw capture)
+// and handed to the string-based grammar engine at runtime — the surface
+// form simply drops the quotes from `parse_grammar("…")`.
+//
+// No new AST node: the emitted tree is byte-identical to the hand-written
+// call, so it resolves / typechecks / codegens through the existing paths
+// and needs no seed cycle. `parse_grammar` is resolved via the caller's
+// `use @std.avrac.features.grammar.{parse_grammar}` (same import the
+// string API already requires).
+use core.{Expr, ExprId}
+use parse.{Parser}
+use core.{Tk}
+
+impl Parser {
+    /// Called from `parse_primary` (via the registry's `expr_parsers`
+    /// dispatch) with the `grammar` keyword already consumed and the
+    /// cursor AT the opening `{`. Captures the raw rule text between
+    /// balanced braces and builds the desugared call:
+    ///
+    ///   grammar { expr = term ("+" term)* }
+    ///     ==>  parse_grammar("expr = term (\"+\" term)*")
+    ///
+    /// The String node is built with bookend quotes only — codegen's
+    /// `strip_quotes` peels exactly one char each end, so interior `"`
+    /// in grammar literals like `"+"` (and newlines in a multi-line
+    /// block) survive verbatim into the runtime string.
+    fn parse_grammar_block(self) -> Result<ExprId, string> {
+        let sp = self.current_start
+        if !self.consume(Tk.LeftBrace, "expected `{` after `grammar`") {
+            return .Err("parse error")
+        }
+        let body = self.capture_balanced_brace_body("unterminated `grammar { }` block — no balancing `}` before end of file")?
+        if !self.consume(Tk.RightBrace, "expected `}` to close `grammar { }` block") {
+            return .Err("parse error")
+        }
+        let str_node = self.alloc_leaf(Expr.String("\"" + body + "\""))
+        let callee = self.alloc_leaf(Expr.Ident("parse_grammar"))
+        .Ok(self.alloc_at(Expr.Call(callee, [str_node]), sp))
+    }
+}

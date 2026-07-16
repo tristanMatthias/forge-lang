@@ -65,32 +65,12 @@ impl Parser {
         .Ok(self.alloc_stmt_leaf(Stmt.ComponentBlock(name, instance, empty_cfg, body_ids)))
     }
 
-    /// Scan tokens to the `}` balancing the already-consumed `{`,
-    /// WITHOUT consuming it, and return the verbatim source substring
-    /// in between (outer whitespace trimmed). Brace TOKENS drive the
-    /// depth count, so a `{` inside a string literal or comment never
-    /// miscounts — the documented limitation is only an UNBALANCED
-    /// bare brace token in the raw text.
+    /// Capture the verbatim body of a `body: TokenStream` instance
+    /// block — delegates to the shared balanced-brace raw-capture
+    /// (`capture_balanced_brace_body`, parse/mod.av). The `{` is
+    /// already consumed; the closing `}` is left for the caller.
     fn capture_raw_body_text(self, comp: string) -> Result<string, string> {
-        let start = self.current_start
-        mut end = self.current_start
-        mut depth = 1
-        while depth > 0 {
-            if self.check(Tk.Eof) {
-                self.set_error("unterminated `body: TokenStream` block for `${comp}` — no balancing `}` before end of file")
-                return .Err("parse error")
-            }
-            if self.check(Tk.LeftBrace) { depth = depth + 1 }
-            if self.check(Tk.RightBrace) {
-                depth = depth - 1
-                if depth == 0 {
-                    end = self.current_start
-                    break
-                }
-            }
-            self.advance()
-        }
-        .Ok(self.source.substring(start, end).trim())
+        self.capture_balanced_brace_body("unterminated `body: TokenStream` block for `${comp}` — no balancing `}` before end of file")
     }
 
     // `component name { ... }` — always a definition (no parens)

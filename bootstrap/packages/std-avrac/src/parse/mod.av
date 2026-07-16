@@ -12,7 +12,7 @@
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
-use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
+use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser, lookup_expr_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
@@ -1665,6 +1665,36 @@ impl Parser {
         .Ok(name)
     }
 
+    /// Scan tokens to the `}` balancing the already-consumed `{`,
+    /// WITHOUT consuming it, and return the verbatim source substring
+    /// in between (outer whitespace trimmed). Brace TOKENS drive the
+    /// depth count, so a `{` inside a string literal or comment never
+    /// miscounts — the only limitation is an UNBALANCED bare brace
+    /// token in the raw text. `unterminated_msg` is reported on EOF
+    /// before a balancing `}`. Shared by every raw-capture construct
+    /// (`body: TokenStream` components, `grammar { … }`, …).
+    fn capture_balanced_brace_body(self, unterminated_msg: string) -> Result<string, string> {
+        let start = self.current_start
+        mut end = self.current_start
+        mut depth = 1
+        while depth > 0 {
+            if self.check(Tk.Eof) {
+                self.set_error(unterminated_msg)
+                return .Err("parse error")
+            }
+            if self.check(Tk.LeftBrace) { depth = depth + 1 }
+            if self.check(Tk.RightBrace) {
+                depth = depth - 1
+                if depth == 0 {
+                    end = self.current_start
+                    break
+                }
+            }
+            self.advance()
+        }
+        .Ok(self.source.substring(start, end).trim())
+    }
+
     fn parse_primary(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
         // Fully-qualified name `@pkg::mod::name` in expression position —
@@ -1755,6 +1785,20 @@ impl Parser {
             // comparison on a variable named `table` (e.g. `table < 10`).
             if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
                 return self.parse_table_literal()
+            }
+            // Registered `kw { … }` expression construct (grammar / future
+            // sql, regex, …): dispatch to the feature's `parse_expr`, which
+            // owns the block. Positioned at `{` (the keyword identifier is
+            // already consumed). Gated on allow_struct_lit like struct
+            // literals so a brace in a control-flow header (`if x {`) is
+            // never mis-read as a block, and placed BEFORE the struct-lit
+            // branch so `grammar {` never falls through to a StructLit.
+            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
+                let ekw_raw = lookup_expr_parser(self.features, name)
+                if ekw_raw != null {
+                    let handler: fn(Parser) -> Result<ExprId, string> = ekw_raw!
+                    return handler(self)
+                }
             }
             if self.allow_struct_lit && self.check(Tk.LeftBrace) {
                 self.advance()

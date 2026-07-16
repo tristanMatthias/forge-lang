@@ -37,8 +37,13 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
 /// @field decl_keyword   — first token of a top-level decl (e.g. "fn").
 /// @field stmt_keyword   — first token of a stmt-level construct.
+/// @field expr_keyword   — leading keyword of a `kw { … }` expression
+///                          construct (e.g. "grammar"); the generic
+///                          "registered `<keyword> { }` → package parser"
+///                          seam for embedded sublanguages.
 /// @field parse_decl     — parser hook for top-level decls.
 /// @field parse_stmt     — parser hook for stmt-level constructs.
+/// @field parse_expr     — parser hook for `expr_keyword`-led expressions.
 /// @field emit_expr/stmt — codegen hooks (untyped int slot — fn ptrs
 ///                          go through the Result<EmitValue, string>
 ///                          shape).
@@ -52,8 +57,10 @@ export type Feature = {
     stmt_tag: Stmt?,
     decl_keyword: string,
     stmt_keyword: string,
+    expr_keyword: string,
     parse_decl: fn(Parser) -> Result<StmtId, string>,
     parse_stmt: fn(Parser) -> Result<StmtId, string>,
+    parse_expr: fn(Parser) -> Result<ExprId, string>,
     emit_expr: int,
     emit_stmt: int,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
@@ -96,6 +103,8 @@ fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Parser no-op — returns null so the parser falls back to the
 /// in-tree dispatch when no feature claims this keyword.
 fn noop_parse(p: Parser) -> Result<StmtId, string> { .Err("no parser registered") }
+/// Expression-parser no-op — mirror of `noop_parse` for `parse_expr`.
+fn noop_parse_expr(p: Parser) -> Result<ExprId, string> { .Err("no expr parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module
 /// builds on this with `with`-updates to register its own callbacks.
@@ -106,8 +115,10 @@ export fn feature_new(name: string) -> Feature {
         stmt_tag: null,
         decl_keyword: "",
         stmt_keyword: "",
+        expr_keyword: "",
         parse_decl: noop_parse,
         parse_stmt: noop_parse,
+        parse_expr: noop_parse_expr,
         emit_expr: noop_emit_expr,
         emit_stmt: noop_emit_stmt,
         resolve_expr: noop_resolve_expr,
@@ -137,6 +148,9 @@ export type Registry = {
     stmt_evals: ptr,
     decl_parsers: ptr,
     stmt_parsers: ptr,
+    // Keyword → `parse_expr` handler for `kw { … }` expression
+    // constructs (grammar/sql/regex …). Consulted by parse_primary.
+    expr_parsers: ptr,
     // Component names declared with `body: TokenStream` (vez6.9) —
     // parse-time routing state alongside the name's stmt_parsers
     // handler, so every instance-block production (keyword-free,
@@ -158,6 +172,7 @@ export fn registry_new() -> Registry {
         stmt_evals: avra_intmap_new(),
         decl_parsers: avra_map_new_cstr(),
         stmt_parsers: avra_map_new_cstr(),
+        expr_parsers: avra_map_new_cstr(),
         raw_body_comps: avra_map_new_cstr(),
     }
 }
@@ -185,6 +200,9 @@ export fn register(reg: Registry, f: Feature) {
     }
     if f.stmt_keyword.length > 0 {
         avra_map_set_cstr(reg.stmt_parsers, f.stmt_keyword, f.parse_stmt)
+    }
+    if f.expr_keyword.length > 0 {
+        avra_map_set_cstr(reg.expr_parsers, f.expr_keyword, f.parse_expr)
     }
 }
 
@@ -274,6 +292,14 @@ export fn lookup_decl_parser(reg: Registry, keyword: string) -> int? {
 export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
     if avra_map_has_cstr(reg.stmt_parsers, keyword) == 0 { return null }
     avra_map_get_cstr(reg.stmt_parsers, keyword)
+}
+
+/// Look up an expression parser by leading keyword (e.g. `"grammar"`).
+/// Returns the `parse_expr` handler-fn-as-int, or null when no feature
+/// claims it. Consulted by `parse_primary` for `kw { … }` constructs.
+export fn lookup_expr_parser(reg: Registry, keyword: string) -> int? {
+    if avra_map_has_cstr(reg.expr_parsers, keyword) == 0 { return null }
+    avra_map_get_cstr(reg.expr_parsers, keyword)
 }
 
 /// Register a component name for keyword-free instantiation. After

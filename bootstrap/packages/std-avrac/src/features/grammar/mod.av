@@ -1,0 +1,23 @@
+// WHY: the `grammar { … }` surface-syntax feature (ps3t.6.5). Registers
+// `grammar` as an expression keyword so a grammar can be authored inline
+// (unquoted) instead of `parse_grammar("…")`. The block body is captured
+// verbatim and desugared to a runtime `parse_grammar(<body>)` call — the
+// surface form simply drops the quotes, reusing the landed string-based
+// engine (seed_parser.av / executor.av) unchanged. This is the generic
+// "registered `<keyword> { }` → package parser" seam the embedded-
+// sublanguage plan (docs/2026_07_16_GRAMMAR_DSL_AND_EMBEDDED_SUBLANGUAGES.md)
+// sits on; `parser.av` holds the parse+desugar.
+//
+// dir-as-module (g2eo.1): no `mod` decls — the sibling files surface flat.
+use core.{feature_new, Feature}
+
+/// Register the `grammar { … }` expression construct. Only the parser
+/// hook is populated: the desugared `Call(Ident("parse_grammar"), …)`
+/// flows through the existing resolve / typecheck / codegen / eval
+/// paths with no new AST node, so no per-pass handlers are needed.
+export fn grammar_feature() -> Feature {
+    feature_new("grammar") with {
+        expr_keyword: "grammar",
+        parse_expr: (p: Parser) -> p.parse_grammar_block(),
+    }
+}
