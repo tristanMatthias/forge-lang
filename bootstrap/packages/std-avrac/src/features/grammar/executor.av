@@ -34,6 +34,11 @@ enum CapVal {
     SNode(id: StmtId)
     Toks(ts: List<Token>)
     Nodes(ns: List<ExprId>)
+    // A parallel list of built STATEMENT nodes — the block/statement-list
+    // capture (ps3t.6.5.3). A `*`/`+` over a statement rule accumulates
+    // into this, mirroring `Nodes` for expressions; `capval_to_stmt_list`
+    // reads it at a `Block(stmts)` build.
+    SNodes(ns: List<StmtId>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -97,6 +102,24 @@ impl CapEnv {
         }
         ns.push(id)
         self.set_scalar(name, CapVal.Nodes(ns))
+    }
+
+    // Statement-list twin of append_node (ps3t.6.5.3): a `*`/`+` over a
+    // statement rule accumulates its built Stmt nodes here. Same
+    // scalar→list promotion as append_node, so a `first ( … rest )*`
+    // shape over statements reuses one label without losing the first.
+    fn append_snode(self, name: string, id: StmtId) {
+        let existing = self.get(name)
+        mut ns: List<StmtId> = []
+        match existing {
+            .SNodes(prev) -> {
+                for x in prev { ns.push(x) }
+            }
+            .SNode(prev) -> ns.push(prev)
+            _ -> {}
+        }
+        ns.push(id)
+        self.set_scalar(name, CapVal.SNodes(ns))
     }
 }
 
@@ -432,6 +455,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
         match v {
             .Tok(t) -> env.append_tok(label, t)
             .Node(id) -> env.append_node(label, id)
+            .SNode(id) -> env.append_snode(label, id)
             _ -> {}
         }
     } else {
@@ -517,6 +541,46 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "ExprStmt" && args.length == 1 {
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
     }
+    // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) ──
+    if name == "Block" && args.length == 1 {
+        // The statement-list capture → a brace block. An empty body (the
+        // `*` matched nothing) is a `Stmt.Block([])`, exactly the hand
+        // parser's `{ }`.
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(capval_to_stmt_list(env.get(args[0])))))
+    }
+    if name == "While" && args.length == 2 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
+    }
+    if name == "If" && args.length == 3 {
+        // else may be absent — the optional `( "else" e:… )?` leaves `e`
+        // as Nil, which becomes a null else_branch (the hand parser's
+        // else-less If); a present else (a block or a nested if_stmt for
+        // `else if` chains) is an SNode.
+        let cond = capval_to_expr(st, env.get(args[0]))
+        let then_s = capval_to_stmt(st, env.get(args[1]))
+        mut else_opt: StmtId? = none
+        match env.get(args[2]) {
+            .SNode(eid) -> else_opt = eid
+            _ -> {}
+        }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(cond, then_s, else_opt)))
+    }
+    if name == "ForLoop" && args.length == 4 {
+        // `for v in lo [.. hi] body`. The optional `.. hi` picks the AST:
+        // present ⇒ integer-range `Stmt.For(v, lo, hi, body)`, absent ⇒
+        // collection `Stmt.ForIn(v, lo, body)` — mirroring the hand
+        // parser's post-expression `..`-lookahead branch (for_stmt/parser.av).
+        let var = capval_tok_text(env.get(args[0]))
+        let lo = capval_to_expr(st, env.get(args[1]))
+        let body = capval_to_stmt(st, env.get(args[3]))
+        match env.get(args[2]) {
+            .Nil -> return CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
+            _ -> {
+                let hi = capval_to_expr(st, env.get(args[2]))
+                return CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
+            }
+        }
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
@@ -530,6 +594,17 @@ fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
             st.report("expected a statement")
             st.store.stmts.add_leaf(Stmt.Error)
         }
+    }
+}
+
+/// A capture as a statement list (ps3t.6.5.3): the block-body `*` yields
+/// `SNodes` for ≥2, a scalar `SNode` for exactly 1, `Nil` for none — the
+/// statement twin of `capval_to_node_list`.
+fn capval_to_stmt_list(v: CapVal) -> List<StmtId> {
+    match v {
+        .SNodes(ns) -> ns
+        .SNode(id) -> [id]
+        _ -> []
     }
 }
 

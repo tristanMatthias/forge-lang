@@ -1,0 +1,133 @@
+// ps3t.6.5.3 — the grammar-DSL STATEMENT family, control-flow slice:
+// blocks, `while`, `if`/`else` (incl. `else if` chains), and both `for`
+// forms (integer range + collection). Builds on the Stmt seam landed in
+// 6.5.2 (CapVal.SNode + run_grammar_stmt) and adds the enabling primitive
+// for compound statements — the STATEMENT-LIST capture (CapVal.SNodes),
+// which lets a `*` over a statement rule accumulate a `{ stmt* }` body.
+//
+// This is the differential-test ORACLE for control flow, mirroring
+// stmt_equivalence_test for the simplest statements: run the DSL-generated
+// statement parser AND the shipping hand-written parser
+// (parser_new(src).parse_statement()) over a control-flow corpus and
+// assert identical ASTs — compared via render_stmt_id (TOTAL over the Stmt
+// enum). Equal trees ⇒ equal strings through the same total renderer, so
+// this needs no golden strings.
+//
+// Note on the gnarly-5%: the hand parser disables struct literals in
+// if/while/for HEADER position (allow_struct_lit=false). This grammar's
+// expression family has no struct-literal form, so that disambiguation is
+// vacuous here — it belongs to ps3t.6.5.10 (the escape-hatch catalogue),
+// reached only once struct literals enter the DSL expression grammar.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+// A control-flow statement grammar: blocks + while/if/for layered on the
+// proven precedence-only expression grammar (plus @hand(ident) so a
+// collection `for x in coll { … }` and identifier operands parse). The
+// for rule's optional `.. hi` picks range vs collection post-expression,
+// exactly as the hand parser's `..`-lookahead does.
+fn cf_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  statement     = break_stmt | continue_stmt | return_stmt | while_stmt | if_stmt | for_stmt | block | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  continue_stmt = \"continue\" -> Continue()\n" +
+    "  return_stmt   = \"return\" e:expression -> Return(e)\n" +
+    "  while_stmt    = \"while\" c:expression body:block -> While(c, body)\n" +
+    "  if_stmt       = \"if\" c:expression t:block ( \"else\" e:else_target )? -> If(c, t, e)\n" +
+    "  else_target   = block | if_stmt\n" +
+    "  for_stmt      = \"for\" v:IDENT \"in\" lo:expression ( \"..\" hi:expression )? body:block -> ForLoop(v, lo, hi, body)\n" +
+    "  block         = \"{\" stmts:statement* \"}\" -> Block(stmts)\n" +
+    "  expr_stmt     = e:expression -> ExprStmt(e)\n" +
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary         = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+// The DSL-generated statement parser's tree for `src`, rendered canonically.
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(cf_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    // A diagnostic-bearing (error-tolerant partial) parse is a distinct
+    // outcome — surface it so a recovered tree can't spuriously match the
+    // hand-written parser's clean tree in the differential comparison.
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+// The hand-written parser's tree for `src`, rendered the SAME way.
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+// True when both parsers agree on the statement tree for `src`.
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL statement family: control flow == hand-written parser (ps3t.6.5.3)" {
+    given "brace blocks — the statement-list primitive" {
+        then "empty / single / multi-statement / nested blocks" {
+            agree("{ }") &&
+            agree("{ break }") &&
+            agree("{ break continue }") &&
+            agree("{ { break } }") &&
+            agree("{ 1 + 2 }") &&
+            agree("{ 1 + 2  3 * 4 }")
+        }
+    }
+    given "while loops" {
+        then "condition + block body, incl. multi-statement bodies" {
+            agree("while 1 { break }") &&
+            agree("while 1 < 2 { continue }") &&
+            agree("while 1 { break continue }") &&
+            agree("while 1 { }")
+        }
+    }
+    given "if / else (statement position)" {
+        then "if without else, with else, and else-if chains" {
+            agree("if 1 { break }") &&
+            agree("if 1 { break } else { continue }") &&
+            agree("if 1 { break } else if 2 { continue }") &&
+            agree("if 1 { break } else if 2 { continue } else { break }") &&
+            agree("if 1 < 2 { return 42 }")
+        }
+    }
+    given "for loops — both forms via the optional `.. hi`" {
+        then "integer range" {
+            agree("for i in 0..5 { break }") &&
+            agree("for i in 0..10 { break continue }") &&
+            agree("for i in 1..2 { }")
+        }
+        then "collection iteration (identifier operand)" {
+            agree("for x in coll { break }") &&
+            agree("for item in items { continue }")
+        }
+    }
+    given "nested control flow (blocks compose recursively)" {
+        then "if inside while, while inside for, block inside if" {
+            agree("while 1 { if 2 { break } else { continue } }") &&
+            agree("for i in 0..3 { while 1 { break } }") &&
+            agree("if 1 { { break } } else { continue }")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built the Stmt)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("while 1 { break }") == "(while 1 (block (break)))" &&
+            dsl_stmt("if 1 { break } else { continue }") == "(if 1 (block (break)) (block (continue)))" &&
+            dsl_stmt("for i in 0..5 { break }") == "(for i 0..5 (block (break)))" &&
+            dsl_stmt("for x in coll { break }") == "(for-in x coll (block (break)))" &&
+            dsl_stmt("{ }") == "(block )"
+        }
+    }
+}
