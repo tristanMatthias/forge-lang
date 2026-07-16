@@ -1,0 +1,134 @@
+// ps3t.6.5.5 — the grammar-DSL PATTERN family. Extends the executor's
+// semantic-action seam from Expr|Stmt (6.5.2/6.5.3) to also produce
+// `Pattern` nodes: CapVal.PNode + run_grammar_pat + capval_to_pat + the
+// pattern build vocabulary (Wildcard/Rest/literals/Variant/NestedVariant/
+// Or/TypePattern). This is the differential-test ORACLE for patterns,
+// mirroring stmt_equivalence for statements: run the DSL-generated pattern
+// parser AND the shipping hand-written pattern parser
+// (parser_new(src).parse_pattern_or()) over a pattern corpus and assert
+// identical ASTs — compared via render_pat_id, which is TOTAL over the
+// Pattern enum (the pattern twin of render_stmt_id). Equal trees ⇒ equal
+// strings through the same total renderer, so no golden strings are needed.
+//
+// Scope: wildcard `_`, the deliberate `rest` remainder, integer/float/
+// string/bool literals (+ negatives), type patterns `int(n)`, bare variants
+// `.None`, variant bindings `.Ok(x, y)`, nested variants `.Some(.Ok(x))`,
+// and right-associative or-patterns `a or b or c`. Guards (`pat if cond ->`)
+// live on the match ARM, not the pattern node, so they belong to the
+// match-arm/declaration slice, not here.
+//
+// DSL-lexer note: `lex_expr` lexes `42` and `3.14` both as NUMBER (no
+// separate Float token — that awaits the real-lexer wiring, ps3t.6.5.8), so
+// the num build selects LitInt vs LitFloat by a `.` in the token text,
+// reproducing the hand parser's Number/Float split.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_pat}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_pat_id}
+
+// A match-pattern grammar. The entry `pattern_or` is the right-recursive
+// or-pattern (matching parse_pattern_or); a variant's `(...)` payload
+// dispatches to a binding list (identifiers) or a sub-pattern list (first
+// token `.`) exactly as the hand parser's is_pattern_start.
+fn pat_grammar_src() -> string {
+    "grammar Pat {\n" +
+    "  pattern_or  = l:pattern ( \"or\" r:pattern_or )? -> OrMaybe(l, r)\n" +
+    "  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat\n" +
+    "  variant_pat = \".\" name:IDENT ( \"(\" ( binds:IDENT ( \",\" binds:IDENT )* | subs:pattern ( \",\" subs:pattern )* ) \")\" )? -> MkVariant(name, binds, subs)\n" +
+    "  ident_pat   = name:IDENT ( \"(\" b:IDENT \")\" )? -> IdentPat(name, b)\n" +
+    "  bool_pat    = b:(\"true\" | \"false\") -> PatBool(b)\n" +
+    "  str_pat     = s:STRING -> PatStr(s)\n" +
+    "  neg_pat     = \"-\" n:NUMBER -> PatNegNum(n)\n" +
+    "  num_pat     = n:NUMBER -> PatNum(n)\n" +
+    "}"
+}
+
+// The DSL-generated pattern parser's tree for `src`, rendered canonically.
+fn dsl_pat(src: string) -> string {
+    let gp = parse_grammar(pat_grammar_src())
+    let r = run_grammar_pat(gp.grammar, src)
+    // A diagnostic-bearing (error-tolerant partial) parse is a distinct
+    // outcome — surface it so a recovered tree can't spuriously match the
+    // hand-written parser's clean tree in the differential comparison.
+    if r.had_error { return "<dsl parse error>" }
+    render_pat_id(r.store, r.root)
+}
+
+// The hand-written parser's tree for `src`, rendered the SAME way.
+fn hand_pat(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_pattern_or() {
+        .Ok(id) -> render_pat_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+// True when both parsers agree on the pattern tree for `src`.
+fn agree(src: string) -> bool {
+    dsl_pat(src) == hand_pat(src)
+}
+
+spec "grammar-DSL pattern family: generated parser == hand-written parser (ps3t.6.5.5)" {
+    given "wildcard + the deliberate rest remainder" {
+        then "_ and rest" {
+            agree("_") &&
+            agree("rest")
+        }
+    }
+    given "literal patterns (int / float / string / bool, incl. negatives)" {
+        then "each literal shape agrees" {
+            agree("42") &&
+            agree("0") &&
+            agree("-42") &&
+            agree("3.14") &&
+            agree("-3.14") &&
+            agree("\"hello\"") &&
+            agree("true") &&
+            agree("false")
+        }
+    }
+    given "type patterns `Name(binding)`" {
+        then "builtin and user type names, incl. contextual rest(x)" {
+            agree("int(n)") &&
+            agree("string(s)") &&
+            agree("MyType(v)") &&
+            agree("rest(x)")
+        }
+    }
+    given "variant patterns" {
+        then "bare variants" {
+            agree(".None") &&
+            agree(".Red") &&
+            agree(".Ok")
+        }
+        then "variant bindings (single + multiple)" {
+            agree(".Ok(x)") &&
+            agree(".Some(value)") &&
+            agree(".Pair(a, b)") &&
+            agree(".Triple(a, b, c)")
+        }
+        then "nested variants (sub-pattern lists)" {
+            agree(".Some(.Ok(x))") &&
+            agree(".Wrap(.Inner)") &&
+            agree(".Two(.A, .B)") &&
+            agree(".Deep(.Mid(.Leaf(v)))")
+        }
+    }
+    given "or-patterns (right-associative, matching parse_pattern_or)" {
+        then "two- and three-way alternations of variants and literals" {
+            agree(".Red or .Green") &&
+            agree(".Red or .Green or .Blue") &&
+            agree("1 or 2 or 3") &&
+            agree(".Some(.Ok(x)) or .None")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built a Pattern)" {
+        then "canonical renders of representative forms" {
+            dsl_pat("_") == "_" &&
+            dsl_pat("rest") == "rest" &&
+            dsl_pat(".Ok(x)") == ".Ok(x)" &&
+            dsl_pat(".Some(.Ok(x))") == ".Some(.Ok(x))" &&
+            dsl_pat("int(n)") == "int(n)" &&
+            dsl_pat(".Red or .Green") == ".Red() or .Green()"
+        }
+    }
+}

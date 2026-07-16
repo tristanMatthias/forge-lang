@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, ValueType, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -39,6 +39,14 @@ enum CapVal {
     // into this, mirroring `Nodes` for expressions; `capval_to_stmt_list`
     // reads it at a `Block(stmts)` build.
     SNodes(ns: List<StmtId>)
+    // A built PATTERN node + a parallel list of them (the pattern-family
+    // target seam, ps3t.6.5.5). A rule whose build constructs a Pattern
+    // yields `PNode`; a `*`/`+` over a pattern rule (a nested-variant's
+    // sub-pattern list) accumulates into `PNodes`. capval_to_pat /
+    // capval_to_pat_list coerce at the use-site, mirroring the Expr + Stmt
+    // families.
+    PNode(id: PatId)
+    PNodes(ns: List<PatId>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -120,6 +128,23 @@ impl CapEnv {
         }
         ns.push(id)
         self.set_scalar(name, CapVal.SNodes(ns))
+    }
+
+    // Pattern-list twin of append_node/append_snode (ps3t.6.5.5): a `*`/`+`
+    // over a pattern rule (a nested variant's sub-pattern list) accumulates
+    // its built Pattern nodes here, with the same scalar→list promotion.
+    fn append_pnode(self, name: string, id: PatId) {
+        let existing = self.get(name)
+        mut ns: List<PatId> = []
+        match existing {
+            .PNodes(prev) -> {
+                for x in prev { ns.push(x) }
+            }
+            .PNode(prev) -> ns.push(prev)
+            _ -> {}
+        }
+        ns.push(id)
+        self.set_scalar(name, CapVal.PNodes(ns))
     }
 }
 
@@ -262,6 +287,26 @@ export fn run_grammar_stmt(grammar: Grammar, src: string) -> StmtRunResult {
     }
     let root = capval_to_stmt(st, exec_rule(grammar, grammar.rules[0].name, st))
     StmtRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+}
+
+/// The pattern-family analogue of `RunResult` — a `PatId` root (ps3t.6.5.5).
+export type PatRunResult = { store: NodeStore, root: PatId, had_error: bool, diags: List<string> }
+
+/// Run `grammar` over `src` starting at the first rule and coerce the root
+/// to a PATTERN node — the pattern-family entry, mirroring run_grammar_stmt.
+/// The start rule must build a Pattern; its sub-rules build Patterns (and
+/// may capture bare tokens for names/bindings).
+export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
+    let toks = lex_expr(src)
+    let store = new_node_store(build_line_index(src))
+    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    if grammar.rules.length == 0 {
+        st.report("empty grammar")
+        let root = st.store.pats.add_leaf(Pattern.Wildcard)
+        return PatRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+    }
+    let root = capval_to_pat(st, exec_rule(grammar, grammar.rules[0].name, st))
+    PatRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
 /// Execute a rule with a FRESH capture environment (rule scope) and
@@ -456,6 +501,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .Tok(t) -> env.append_tok(label, t)
             .Node(id) -> env.append_node(label, id)
             .SNode(id) -> env.append_snode(label, id)
+            .PNode(id) -> env.append_pnode(label, id)
             _ -> {}
         }
     } else {
@@ -581,7 +627,76 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             }
         }
     }
+    // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
+    if name == "OrMaybe" && args.length == 2 {
+        // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
+        // Absent `or` ⇒ just the left pattern; present ⇒ `Pattern.Or(l, r)`
+        // (right-associative, since `r` is itself a pattern_or).
+        match env.get(args[1]) {
+            .Nil -> return env.get(args[0])
+            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, env.get(args[0])), capval_to_pat(st, env.get(args[1])))))
+        }
+    }
+    if name == "IdentPat" && args.length == 2 {
+        // A bare identifier pattern: `_` ⇒ Wildcard, `rest` ⇒ Rest (both
+        // contextual — only when NOT followed by `(`), and `name(binding)`
+        // ⇒ TypePattern. Any other bare identifier is not a pattern (the
+        // hand parser errors); we report + fall back to Wildcard.
+        let nm = capval_tok_text(env.get(args[0]))
+        match env.get(args[1]) {
+            .Nil -> {
+                if nm == "_" { return CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard)) }
+                if nm == "rest" { return CapVal.PNode(st.store.pats.add_leaf(Pattern.Rest)) }
+                st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
+                return CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
+            }
+            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(nm, capval_tok_text(env.get(args[1])))))
+        }
+    }
+    if name == "MkVariant" && args.length == 3 {
+        // `.Name` / `.Name(bind, …)` / `.Name(.Sub, …)`. A sub-pattern
+        // payload (first token `.`) ⇒ NestedVariant; a binding payload
+        // (identifiers) or none ⇒ Variant — mirroring the hand parser's
+        // is_pattern_start (`.`-only) branch.
+        let nm = capval_tok_text(env.get(args[0]))
+        match env.get(args[2]) {
+            .Nil -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1])))))
+            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
+        }
+    }
+    if name == "PatStr" && args.length == 1 {
+        // The DSL lexer keeps the bookend quotes in a STRING token; the
+        // Pattern.LitString stores the unquoted content (render re-quotes).
+        let raw = capval_tok_text(env.get(args[0]))
+        let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
+        return CapVal.PNode(st.store.pats.add_leaf(Pattern.LitString(content)))
+    }
+    if name == "PatBool" && args.length == 1 {
+        let v = if capval_tok_text(env.get(args[0])) == "true" { 1 } else { 0 }
+        return CapVal.PNode(st.store.pats.add_leaf(Pattern.LitBool(v)))
+    }
+    if name == "PatNum" && args.length == 1 {
+        return CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
+    }
+    if name == "PatNegNum" && args.length == 1 {
+        return CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
+}
+
+/// Build an integer- or float-literal pattern from a NUMBER token's text.
+/// The DSL lexer lexes `42` and `3.14` both as NUMBER (no separate Float
+/// token — that awaits the real-lexer wiring, ps3t.6.5.8), so a `.` in the
+/// text selects `LitFloat` (stored as the string, sign included) vs
+/// `LitInt`, reproducing the hand parser's Number-vs-Float split exactly.
+fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
+    if text.contains(".") {
+        let v = if negative { "-" + text } else { text }
+        return st.store.pats.add_leaf(Pattern.LitFloat(v))
+    }
+    let n = int(text)
+    let iv = if negative { 0 - n } else { n }
+    st.store.pats.add_leaf(Pattern.LitInt(iv))
 }
 
 /// Coerce a capture value to a Stmt node — the statement twin of
@@ -606,6 +721,49 @@ fn capval_to_stmt_list(v: CapVal) -> List<StmtId> {
         .SNode(id) -> [id]
         _ -> []
     }
+}
+
+/// Coerce a capture value to a Pattern node — the pattern twin of
+/// `capval_to_stmt` (ps3t.6.5.5). Only a built pattern (`PNode`) is a
+/// valid pattern; anything else is a reported error yielding a neutral
+/// `Wildcard` (the Pattern enum has no Error variant, and Wildcard is the
+/// natural error-tolerant placeholder — it matches anything, binds nothing).
+fn capval_to_pat(st: PState, v: CapVal) -> PatId {
+    match v {
+        .PNode(id) -> id
+        _ -> {
+            st.report("expected a pattern")
+            st.store.pats.add_leaf(Pattern.Wildcard)
+        }
+    }
+}
+
+/// A capture as a pattern list (ps3t.6.5.5): a nested variant's sub-pattern
+/// `*` yields `PNodes` for ≥2, a scalar `PNode` for exactly 1, `Nil` for
+/// none — the pattern twin of capval_to_stmt_list.
+fn capval_to_pat_list(v: CapVal) -> List<PatId> {
+    match v {
+        .PNodes(ns) -> ns
+        .PNode(id) -> [id]
+        _ -> []
+    }
+}
+
+/// Convert captured identifier tokens to a `ParamEntry` binding list — the
+/// simple-binding variant payload `.Ok(x, y)` (ps3t.6.5.5). Only the name is
+/// load-bearing for render/equivalence (render_param_list renders names
+/// only), so the vtype is `Unknown`, exactly as the hand parser's
+/// unannotated binding.
+fn param_entries_from_toks(v: CapVal) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    match v {
+        .Toks(ts) -> {
+            for t in ts { out.push(ParamEntry { name: t.text, vtype: ValueType.Unknown }) }
+        }
+        .Tok(t) -> out.push(ParamEntry { name: t.text, vtype: ValueType.Unknown })
+        _ -> {}
+    }
+    out
 }
 
 /// Left-fold a `base ( suffix )*` postfix chain. Each suffix was built as
