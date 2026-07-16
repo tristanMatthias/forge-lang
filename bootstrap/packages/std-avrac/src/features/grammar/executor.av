@@ -425,7 +425,42 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "fold_logical" && args.length == 3 {
         return fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
     }
+    if name == "field_suffix" && args.length == 1 {
+        // A partial FieldAccess with a sentinel receiver; fold_postfix
+        // rebinds the receiver to the accumulated base.
+        return st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0]))))
+    }
+    if name == "index_suffix" && args.length == 1 {
+        return st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0]))))
+    }
+    if name == "fold_postfix" && args.length == 2 {
+        return fold_postfix_expr(st, env.get(args[0]), env.get(args[1]))
+    }
     st.error_node("unknown build `${name}`")
+}
+
+/// Left-fold a `base ( suffix )*` postfix chain. Each suffix was built as
+/// a partial node (FieldAccess/Index) with a sentinel receiver; here we
+/// rebind each one's receiver to the accumulated left node — a
+/// left-associative chain (`a.b[0].c` → `((a.b)[0]).c`). This is the
+/// "partial-node with a HOLE" technique that lets a heterogeneous
+/// postfix fold live in the grammar (docs/…L4_DERIVE_FRAMEWORK_DESIGN
+/// §2.5). Calls (arg lists) + method dispatch are the harder remaining
+/// case (list-valued builds).
+fn fold_postfix_expr(st: PState, basecap: CapVal, suffixescap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, basecap)
+    for s in capval_nodes(suffixescap) {
+        acc = rebind_receiver(st, acc, s)
+    }
+    acc
+}
+
+fn rebind_receiver(st: PState, recv: ExprId, suffix: ExprId) -> ExprId {
+    match st.store.exprs.get(suffix) {
+        .FieldAccess(_, field) -> st.store.exprs.add_leaf(Expr.FieldAccess(recv, field))
+        .Index(_, idx) -> st.store.exprs.add_leaf(Expr.Index(recv, idx))
+        _ -> recv
+    }
 }
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
@@ -530,6 +565,8 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         .Unary(op, r) -> "(${unop_sym(op)} ${dump_expr(store, r)})"
         .Binary(l, op, r) -> "(${binop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
         .Logical(l, op, r) -> "(${logicop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
+        .FieldAccess(obj, field) -> "(. ${dump_expr(store, obj)} ${field})"
+        .Index(obj, idx) -> "([] ${dump_expr(store, obj)} ${dump_expr(store, idx)})"
         .Grouping(e) -> dump_expr(store, e)
         .Error -> "<error>"
         .Missing -> "<missing>"

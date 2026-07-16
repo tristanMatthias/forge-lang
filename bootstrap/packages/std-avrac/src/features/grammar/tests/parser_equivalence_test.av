@@ -27,7 +27,10 @@ fn expr_grammar_src() -> string {
     "  shift      = l:term ( op:(\"<<\" | \">>\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
-    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | postfix\n" +
+    "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
+    "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
+    "             | \"[\" idx:expression \"]\" -> index_suffix(idx)\n" +
     "  primary    = NUMBER | \"true\" | \"false\" | @hand(ident)\n" +
     "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
     "}"
@@ -136,6 +139,25 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("a * b + c") &&
             agree("(x + y) * z") &&
             agree("a < b && c == d")
+        }
+    }
+    given "postfix field-access + index (partial-node rebind fold)" {
+        then "single field / index agree" {
+            agree("a.b") &&
+            agree("a[0]") &&
+            agree("x[i]")
+        }
+        then "left-associative chains agree" {
+            agree("a.b.c") &&
+            agree("a[0][1]") &&
+            agree("a.b[0]") &&
+            agree("a[0].b")
+        }
+        then "postfix binds tighter than the binary operators" {
+            agree("a.b + c[0]") &&
+            agree("a[0] * b.c") &&
+            agree("-a.b") &&
+            agree("a.b < c.d && e[0] == f")
         }
     }
 }
