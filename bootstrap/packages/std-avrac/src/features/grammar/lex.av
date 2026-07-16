@@ -72,14 +72,15 @@ export fn lex_expr(src: string) -> List<Token> {
             toks.push(Token { kind, text: word, pos: start })
             continue
         }
-        // two-char operators: != == <= >= && || << >> .. — `..` is the
-        // range delimiter (`for x in 0..5`); it only forms from two ADJACENT
-        // dots, so single-dot field access (`a.b`) is unaffected (its `.`
-        // has a non-dot follower). The statement family (ps3t.6.5.3) needs it
-        // for the for-range form.
+        // two-char operators: != == <= >= && || << >> .. -> — `..` is the
+        // range delimiter (`for x in 0..5`), needed by the statement family
+        // (ps3t.6.5.3); `->` is the fn-type arrow (`fn(int) -> bool`), needed
+        // by the type family (ps3t.6.5.6). Both form only from two ADJACENT
+        // chars, so single-dot field access (`a.b`) and negative literals
+        // (`-5`) are unaffected (their `.`/`-` has a non-dot/non-`>` follower).
         if i + 1 < n {
             let two = src.substring(i, i + 2)
-            if two == "!=" || two == "==" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "<<" || two == ">>" || two == ".." {
+            if two == "!=" || two == "==" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "<<" || two == ">>" || two == ".." || two == "->" {
                 toks.push(Token { kind: "PUNCT", text: two, pos: i })
                 i = i + 2
                 continue

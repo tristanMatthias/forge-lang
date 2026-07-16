@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, ValueType, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -47,6 +47,15 @@ enum CapVal {
     // families.
     PNode(id: PatId)
     PNodes(ns: List<PatId>)
+    // A built TYPE-EXPRESSION + a parallel list of them (the type-family
+    // target seam, ps3t.6.5.6). The hand parser builds a surface `TypeExpr`
+    // then lowers it to a `ValueType` via `type_expr_to_vtype`; the DSL
+    // mirrors that — builds the SAME `TypeExpr` (carried inline, not arena'd,
+    // since TypeExpr is a boxed recursive enum), and run_grammar_type shares
+    // the exact same lowering. `TExprs` collects a comma-list (generic args /
+    // fn params / tuple elements).
+    TExpr(te: TypeExpr)
+    TExprs(tes: List<TypeExpr>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -145,6 +154,23 @@ impl CapEnv {
         }
         ns.push(id)
         self.set_scalar(name, CapVal.PNodes(ns))
+    }
+
+    // Type-expression-list twin of append_node/append_snode/append_pnode
+    // (ps3t.6.5.6): a `*`/`+` over a type rule (generic args, fn params,
+    // tuple elements) accumulates its built TypeExprs here.
+    fn append_texpr(self, name: string, te: TypeExpr) {
+        let existing = self.get(name)
+        mut tes: List<TypeExpr> = []
+        match existing {
+            .TExprs(prev) -> {
+                for x in prev { tes.push(x) }
+            }
+            .TExpr(prev) -> tes.push(prev)
+            _ -> {}
+        }
+        tes.push(te)
+        self.set_scalar(name, CapVal.TExprs(tes))
     }
 }
 
@@ -307,6 +333,28 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
     }
     let root = capval_to_pat(st, exec_rule(grammar, grammar.rules[0].name, st))
     PatRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+}
+
+/// The type-family analogue of `RunResult` — a `TypeId` root (ps3t.6.5.6).
+/// The `TypeId` indexes the store's type arena; render via `render_type_id`.
+export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, diags: List<string> }
+
+/// Run `grammar` over `src` starting at the first rule, coerce the root to a
+/// surface `TypeExpr`, then lower it to a `ValueType` via the SHARED
+/// `type_expr_to_vtype` (exactly what the hand parser does) and ingest into
+/// the type arena — so equivalence reduces to building the same `TypeExpr`.
+export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
+    let toks = lex_expr(src)
+    let store = new_node_store(build_line_index(src))
+    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    if grammar.rules.length == 0 {
+        st.report("empty grammar")
+        let root = st.store.types.add_leaf(ValueType.Unknown)
+        return TypeRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+    }
+    let te = capval_to_texpr(st, exec_rule(grammar, grammar.rules[0].name, st))
+    let root = st.store.types.add_leaf(type_expr_to_vtype(te))
+    TypeRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
 /// Execute a rule with a FRESH capture environment (rule scope) and
@@ -502,6 +550,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .Node(id) -> env.append_node(label, id)
             .SNode(id) -> env.append_snode(label, id)
             .PNode(id) -> env.append_pnode(label, id)
+            .TExpr(te) -> env.append_texpr(label, te)
             _ -> {}
         }
     } else {
@@ -681,7 +730,74 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "PatNegNum" && args.length == 1 {
         return CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
     }
+    // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) ──
+    if name == "TyUnion" && args.length == 2 {
+        // `l ( "|" r )*` — left-associative union, mirroring parse_type_expr's
+        // while-loop. No `|` ⇒ just the left atom.
+        match env.get(args[1]) {
+            .Nil -> return env.get(args[0])
+            _ -> {
+                mut acc = capval_to_texpr(st, env.get(args[0]))
+                for rt in capval_to_texpr_list(env.get(args[1])) {
+                    acc = TypeExpr.Union(acc, rt)
+                }
+                return CapVal.TExpr(acc)
+            }
+        }
+    }
+    if name == "MkNamed" && args.length == 3 {
+        // `name ( "<" args ">" )? ( "?" )?` — a named type, optionally generic,
+        // optionally nullable, matching parse_type_atom's identifier branch.
+        let nm = capval_tok_text(env.get(args[0]))
+        mut base = if capval_present(env.get(args[1])) {
+            TypeExpr.Generic(nm, capval_to_texpr_list(env.get(args[1])))
+        } else {
+            TypeExpr.Named(nm)
+        }
+        if capval_present(env.get(args[2])) { base = TypeExpr.Optional(base) }
+        return CapVal.TExpr(base)
+    }
+    if name == "TyList" && args.length == 1 {
+        return CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
+    }
+    if name == "TyParen" && args.length == 1 {
+        // `( t ( "," t )* )` — a single element is grouping (the type itself);
+        // multiple are a tuple `Generic("__tuple", …)`, matching parse_type_atom.
+        match env.get(args[0]) {
+            .TExpr(te) -> return CapVal.TExpr(te)
+            .TExprs(tes) -> return CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
+            _ -> return CapVal.TExpr(TypeExpr.Generic("__tuple", []))
+        }
+    }
+    if name == "TyDyn" && args.length == 1 {
+        // `dyn Trait` lowers to a bare Named(trait) — dynamic dispatch is a
+        // resolve/codegen concern, not a distinct TypeExpr shape.
+        return CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
+    }
+    if name == "MkFn" && args.length == 3 {
+        // `fn ( "(" params? ")" )? ( "->" ret )?`. A bare `fn` (neither a
+        // param list nor an arrow) is the under-determined Named("fn"); any
+        // `(`/`->` makes it a FnType (params default [], ret defaults Infer) —
+        // mirroring parse_type_atom's `fn` branch.
+        let has_params = capval_present(env.get(args[0]))
+        let has_ret = capval_present(env.get(args[2]))
+        if !has_params && !has_ret {
+            return CapVal.TExpr(TypeExpr.Named("fn"))
+        }
+        let ret = if has_ret { capval_to_texpr(st, env.get(args[2])) } else { TypeExpr.Infer }
+        return CapVal.TExpr(TypeExpr.FnType(capval_to_texpr_list(env.get(args[1])), ret))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
+}
+
+/// True when a capture is present (bound to anything but `Nil`) — the
+/// optionality probe for `( … )?` groups whose marker/inner capture drives a
+/// build decision (ps3t.6.5.6: generic-args / `?` / fn param-list presence).
+fn capval_present(v: CapVal) -> bool {
+    match v {
+        .Nil -> false
+        _ -> true
+    }
 }
 
 /// Build an integer- or float-literal pattern from a NUMBER token's text.
@@ -745,6 +861,30 @@ fn capval_to_pat_list(v: CapVal) -> List<PatId> {
     match v {
         .PNodes(ns) -> ns
         .PNode(id) -> [id]
+        _ -> []
+    }
+}
+
+/// Coerce a capture value to a surface `TypeExpr` — the type twin of
+/// `capval_to_pat` (ps3t.6.5.6). Anything that isn't a built type expression
+/// is a reported error yielding `TypeExpr.Infer` (the neutral under-determined
+/// type, exactly what a missing annotation lowers to).
+fn capval_to_texpr(st: PState, v: CapVal) -> TypeExpr {
+    match v {
+        .TExpr(te) -> te
+        _ -> {
+            st.report("expected a type")
+            TypeExpr.Infer
+        }
+    }
+}
+
+/// A capture as a type-expression list (ps3t.6.5.6): a comma-list `*` yields
+/// `TExprs` for ≥2, a scalar `TExpr` for exactly 1, `Nil` for none.
+fn capval_to_texpr_list(v: CapVal) -> List<TypeExpr> {
+    match v {
+        .TExprs(tes) -> tes
+        .TExpr(te) -> [te]
         _ -> []
     }
 }
