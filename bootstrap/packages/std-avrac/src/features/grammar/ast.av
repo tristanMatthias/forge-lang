@@ -64,6 +64,14 @@ export enum GPrim {
     Named(tok: string)
     /// `( … )` — a parenthesised group, itself an alternation.
     Group(inner: GNode)
+    /// `@hand(fn)` — the ESCAPE HATCH. A rule position that delegates to
+    /// a hand-written parse function, for the gnarly 5% a small CFG
+    /// can't cleanly express (`<T>` generic-vs-less-than, the `~`
+    /// context-overload; GRAMMAR_DSL.md §5, ps3t.6.7). Keeps the DSL
+    /// minimal — the hard cases live in code the grammar merely *calls*,
+    /// not in new notation. Whole-rule granularity only (no inline
+    /// semantic actions — the §1 hard line holds).
+    Hand(fn_name: string)
 }
 
 /// The `-> …` build that constructs the result from captures.

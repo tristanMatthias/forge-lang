@@ -108,6 +108,7 @@ fn emit_primary(prim: GPrim) -> string {
         .Lit(text) -> "p.match(\"${text}\")"
         .Named(tok) -> "p.match(${tok})"
         .Group(inner) -> "( ${emit_group_inline(inner)} )"
+        .Hand(hf) -> "parse_${hf}(p)"
     }
 }
 
@@ -168,6 +169,7 @@ fn emit_first(prim: GPrim) -> string {
     if ts.length == 0 {
         match prim {
             .Ref(name) -> "starts(parse_${name})"
+            .Hand(hf) -> "starts(parse_${hf})"
             _ -> "…"
         }
     } else {
@@ -189,6 +191,7 @@ fn first_terminals(prim: GPrim) -> List<string> {
         .Named(tok) -> [tok]
         .Group(inner) -> group_first_terminals(inner)
         .Ref(_) -> []
+        .Hand(_) -> []
     }
 }
 

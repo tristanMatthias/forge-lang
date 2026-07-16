@@ -234,18 +234,31 @@ fn parse_seq(p: GP) -> GSeq {
 }
 
 /// A sequence keeps taking items until a FOLLOW token: `|`, `)`, `}`,
-/// `->`, `@`, or EOF — or the start of the NEXT rule. Because the
-/// scanner strips newlines, a rule boundary is detected by lookahead:
-/// a `NAME "="` ahead begins the next production, not another item.
+/// `->`, a trailing `@`-annotation, or EOF — or the start of the NEXT
+/// rule. Because the scanner strips newlines, a rule boundary is
+/// detected by lookahead: a `NAME "="` ahead begins the next
+/// production, not another item.
 fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
     if p.peek().kind == "ARROW" { return false }
-    if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") || p.is_punct("@") { return false }
+    if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
+    // `@hand(...)` is a PRIMARY (item) — keep going; `@expect`/`@recover`
+    // are trailing annotations — stop the item list.
+    if p.is_punct("@") { return at_hand_primary(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
     }
     true
+}
+
+/// True when the cursor is `@hand` — the escape-hatch primary, distinct
+/// from the `@expect`/`@recover` sequence annotations.
+fn at_hand_primary(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "hand"
 }
 
 // labeled = ( NAME ":" )? postfix
@@ -301,7 +314,17 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close a group")
         return GPrim.Group(inner)
     }
-    p.fail("expected a rule reference, terminal, or `(`")
+    // Escape-hatch primary: `@hand(fn)` delegates to a hand-written rule.
+    if at_hand_primary(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "hand"
+        p.expect_punct("(", "expected `(` after `@hand`")
+        mut hf = ""
+        if p.peek().kind == "NAME" { hf = p.advance().text }
+        p.expect_punct(")", "expected `)` to close `@hand`")
+        return GPrim.Hand(hf)
+    }
+    p.fail("expected a rule reference, terminal, `(`, or `@hand(fn)`")
     let _ = p.advance()
     GPrim.Lit("")
 }

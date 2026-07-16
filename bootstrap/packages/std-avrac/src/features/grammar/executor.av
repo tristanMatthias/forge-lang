@@ -148,6 +148,7 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, tok: Token, visited: List<string>) -
         .Named(name) -> tok.kind == name
         .Ref(name) -> tok_starts_rule(g, name, tok, visited)
         .Group(inner) -> tok_starts_node(g, inner, tok, visited)
+        .Hand(hf) -> hand_starts(hf, tok)
     }
 }
 
@@ -318,7 +319,42 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         }
         .Ref(name) -> CapVal.Node(exec_rule(g, name, st))
         .Group(inner) -> exec_node(g, inner, st, env, multi)
+        .Hand(hf) -> CapVal.Node(run_hand(hf, st))
     }
+}
+
+// ── The escape-hatch (@hand) — hand-written rules the grammar calls ──
+//
+// The gnarly 5% (GRAMMAR_DSL.md §5) lives in hand-written code the
+// grammar delegates to by name, not in the DSL notation. In the
+// executor these are a small built-in registry; in the spliced-parser
+// integration (ps3t.6.5) each `@hand(fn)` lowers to a call of a real
+// hand-written Avra parse function (emit.av already renders it that
+// way). Here `ident`/`number` demonstrate the mechanism — a primary the
+// pure expression grammar deliberately omits, added via the hatch.
+
+fn hand_starts(name: string, tok: Token) -> bool {
+    if name == "ident" { return tok.kind == "IDENT" }
+    if name == "number" { return tok.kind == "NUMBER" }
+    false
+}
+
+fn run_hand(name: string, st: PState) -> ExprId {
+    if name == "ident" {
+        if st.cur().kind == "IDENT" {
+            let t = st.advance()
+            return st.store.exprs.add_leaf(Expr.Ident(t.text))
+        }
+        return st.error_node("expected an identifier")
+    }
+    if name == "number" {
+        if st.cur().kind == "NUMBER" {
+            let t = st.advance()
+            return st.store.exprs.add_leaf(Expr.Number(t.text))
+        }
+        return st.error_node("expected a number")
+    }
+    st.error_node("no hand rule `${name}`")
 }
 
 /// A required terminal was absent: report the matching @expect message
