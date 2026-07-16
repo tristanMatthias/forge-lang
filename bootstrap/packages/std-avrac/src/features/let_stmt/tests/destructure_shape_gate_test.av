@@ -1,0 +1,79 @@
+// WHY: §6 layout-totality caller-side gate (ps3t.4.9). `let (…) = init` requires
+// a tuple with one element per name. `bind_destructure` → `vtype_tuple_at`
+// returns `.Unknown` for ANY non-tuple initializer (Void, Int, Str, Bool, Float,
+// List, Struct, …) OR any out-of-range index (arity mismatch); each `.Unknown`
+// element then hit the codegen layout boundary as an F9999 "internal compiler
+// error — please report" ICE (the ps3t.4.5 hard-error backstop). An ordinary
+// user typo was reported as a compiler bug. `let_destructure_check_stmt` now
+// reports a clean F1000 at the `let` for every ill-shaped CONCRETE initializer.
+//
+// `.Unknown` initializers are deliberately NOT gated: an Unknown signals an
+// upstream under-determination (an undefined callee, a failed monomorphization)
+// whose own diagnostic must not be masked by a "not a tuple" message.
+//
+// The gate is SAFE from over-fire: a real tuple of matching arity — including
+// enumerate()/zip() pairs (typed `List<(A,B)>`, so each pair is a `Tuple`),
+// nested destructuring, and annotated tuple-returning fns — all still compile.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn dsg_out(source: string) -> string {
+    let path = "/tmp/avra_dsg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "destructuring a non-tuple value is a clean F1000, never an F9999 ICE (ps3t.4.9)" {
+    then "a Void (void-fn result) initializer" {
+        let out = dsg_out("fn g() { (1, 2) }
+fn main() { let (a, b) = g()  let z = a + b }")
+        out.contains("F1000") && out.contains("Void") && !out.contains("F9999")
+    }
+    then "an Int scalar initializer" {
+        let out = dsg_out("fn main() { let (a, b) = 5 }")
+        out.contains("F1000") && out.contains("cannot destructure") && !out.contains("F9999")
+    }
+    then "a String scalar initializer" {
+        let out = dsg_out("fn main() { let (a, b) = \"hi\" }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a List initializer" {
+        let out = dsg_out("fn main() { let (a, b) = [1, 2, 3] }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a Struct initializer" {
+        let out = dsg_out("type Foo = { n: int }
+fn main() { let (a, b) = Foo { n: 1 } }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "an arity mismatch: 3 names for a 2-tuple" {
+        let out = dsg_out("fn main() { let (a, b, c) = (1, 2) }")
+        out.contains("F1000") && out.contains("arities") && !out.contains("F9999")
+    }
+}
+
+spec "the destructure-shape gate does not over-fire" {
+    then "a real tuple literal of matching arity compiles" {
+        let out = dsg_out("fn main() { let (a, b) = (1, 2)  let z = a + b }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an annotated tuple-returning fn compiles" {
+        let out = dsg_out("fn g() -> (int, int) { (1, 2) }
+fn main() { let (a, b) = g()  let z = a + b }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "nested destructuring compiles" {
+        let out = dsg_out("fn g() -> (int, (int, int)) { (1, (2, 3)) }
+fn main() { let (a, bc) = g()  let (b, c) = bc  let z = a + b + c }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "enumerate() for-destructure compiles (pair is a Tuple)" {
+        let out = dsg_out("fn main() { let xs = [10, 20]  for (i, x) in xs.enumerate() { let z = i + x } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "zip() for-destructure compiles" {
+        let out = dsg_out("fn main() { let a = [1, 2]  let b = [3, 4]  for (x, y) in a.zip(b) { let z = x + y } }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
