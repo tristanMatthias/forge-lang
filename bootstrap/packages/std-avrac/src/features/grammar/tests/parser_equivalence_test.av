@@ -1,0 +1,83 @@
+// ps3t.6.5 (validation slice) — the differential test that gates the
+// parser migration: the grammar-DSL-generated expression parser must
+// produce the SAME AST as the hand-written parser. Here we run both on a
+// corpus of expressions (the subset the §2 grammar covers) and compare
+// their trees via the canonical prefix dump. This is the acceptance
+// oracle for scaling the DSL to the full grammar rule-family by
+// rule-family — expressions are the first family, proven equivalent.
+
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, dump_expr}
+use @std.avrac.parse.{parse_expression_native_probe}
+
+fn expr_grammar_src() -> string {
+    "grammar Expr {\n" +
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | \"true\" | \"false\"\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
+    "}"
+}
+
+// The generated parser's tree for `src`, as a prefix dump.
+fn grammar_tree(src: string) -> string {
+    let gp = parse_grammar(expr_grammar_src())
+    let r = run_grammar_expr(gp.grammar, src)
+    dump_expr(r.store, r.root)
+}
+
+// The hand-written parser's tree for `src`, dumped the SAME way (dump_expr
+// walks any Expr, whichever parser built it).
+fn handwritten_tree(src: string) -> string {
+    let probe = parse_expression_native_probe(src)
+    if probe.had_error != 0 { return "<parse error>" }
+    dump_expr(probe.store, probe.root)
+}
+
+// True when both parsers agree on the tree for `src`.
+fn agree(src: string) -> bool {
+    grammar_tree(src) == handwritten_tree(src)
+}
+
+spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
+    given "arithmetic + precedence" {
+        then "literals and flat operators agree" {
+            agree("42") &&
+            agree("1 + 2") &&
+            agree("7 - 3") &&
+            agree("6 * 7") &&
+            agree("8 / 2")
+        }
+        then "mixed precedence agrees" {
+            agree("1 + 2 * 3") &&
+            agree("1 * 2 + 3 * 4") &&
+            agree("10 - 2 * 3 + 1")
+        }
+        then "left-associativity agrees" {
+            agree("1 - 2 - 3") &&
+            agree("1 + 2 + 3 + 4") &&
+            agree("8 / 4 / 2")
+        }
+    }
+    given "grouping + unary + comparison" {
+        then "parentheses agree (Grouping normalises away in both)" {
+            agree("(1 + 2) * 3") &&
+            agree("2 * (3 + 4)") &&
+            agree("((1))")
+        }
+        then "prefix unary agrees" {
+            agree("-5") &&
+            agree("-2 + 3") &&
+            agree("!0") &&
+            agree("- -5")
+        }
+        then "comparison + equality stratification agrees" {
+            agree("1 < 2") &&
+            agree("1 + 2 < 3 * 4") &&
+            agree("1 < 2 == 3")
+        }
+    }
+}
