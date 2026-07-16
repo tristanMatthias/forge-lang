@@ -60,6 +60,17 @@ fn b() -> Map<string, Node> { {\"k\": Node { x: 1 }} }
 fn main() { let c = true  let x = { if c { a() } else { b() } }  let _ = x }")
         out.contains("F1000")
     }
+    then "a same-nominal generic-arg conflict (Box<int> vs Box<string>) is F1000 (no vtype_eq short-circuit)" {
+        // vtype_eq ignores generic args, so `Box<int>` == `Box<string>` — a
+        // `vtype_eq` short-circuit would skip the conflict check on this
+        // same-nominal argument-layout clash (int scalar slot vs string ptr slot,
+        // a wild store). generic_args_layout_conflict must catch it.
+        let out = sck("box", "type Box<T> = { val: T }
+fn bi() -> Box<int> { Box { val: 1 } }
+fn bs() -> Box<string> { Box { val: \"s\" } }
+fn main() { let c = true  let x = { if c { bi() } else { bs() } }  let _ = x }")
+        out.contains("F1000")
+    }
 }
 
 spec "legitimate block-tail statement-if differences are NOT over-gated (parity with if-expr)" {

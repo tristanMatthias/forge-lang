@@ -3020,7 +3020,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
                 // non-string/list value" F9999 ICE. `.Unknown` is left to fall
                 // through (upstream under-determination — its own diagnostic must
                 // not be masked).
-                .Void -> return tc_reject_index(i.tc, o.ty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", o.ty)
+                .Void -> return tc_reject_index(i.tc, o.ty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", .Unknown)
                 _ if vtype_is_value_scalar(o.ty) ->
                     return tc_reject_index(i.tc, o.ty, "only strings, lists, and pointers are indexable", o.ty)
                 _ -> {}
@@ -4500,7 +4500,14 @@ fn tc_if_tail_layout_ok(tc: TC, cond_id: ExprId, then_branch: StmtId, else_branc
     let guard = narrow_guard_of(tc.nodes, tc.nodes.exprs.get(cond_id))
     let then_ty = tc_branch_value(tc_narrow_true_branch(tc with { bag: bag_new() }, guard), then_s)
     let else_ty = tc_branch_value(tc_narrow_false_branch(tc with { bag: bag_new() }, guard), else_s)
-    if vtype_eq(then_ty, else_ty) { return after_else }
+    // NO `vtype_eq` short-circuit: `vtype_eq` ignores generic args, so it reports
+    // `Box<int>` == `Box<string>` and would skip the conflict check on a
+    // same-nominal argument-layout clash (int scalar slot vs string ptr slot — a
+    // wild store). `generic_args_layout_conflict` is the correct guard: it returns
+    // false for genuinely-identical types AND for a legitimate top-level scalar
+    // union (`int` vs `string` — an inferred ad-hoc union, deliberately allowed),
+    // and true only for a shared-nominal container/struct whose type args disagree
+    // in layout. Mirrors the if-EXPR path (`unify_if_expr_branches`, same fix).
     if generic_args_layout_conflict(after_else, then_ty, else_ty) {
         let msg = "`if` branches have incompatible layouts: `${vtype_display(then_ty)}` (then) vs `${vtype_display(else_ty)}` (else) — their element/argument types are memory-incompatible (pointer vs scalar), so the result can't be used as either"
         return tc_report(after_else, DiagCode.TypeMismatch, msg)

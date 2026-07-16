@@ -52,6 +52,16 @@ fn b() -> Map<string, Node> { {\"k\": Node { x: 1 }} }
 fn main() { let c = true  let x = if c { a() } else { b() }  let _ = x }")
         out.contains("F1000")
     }
+    then "a same-nominal generic-arg conflict (Box<int> vs Box<string>) is F1000 (no vtype_eq short-circuit)" {
+        // vtype_eq ignores generic args (`Box<int>` == `Box<string>`), so the old
+        // vtype_eq short-circuit skipped the conflict check on this same-nominal
+        // argument-layout clash. generic_args_layout_conflict must catch it.
+        let out = ck("box", "type Box<T> = { val: T }
+fn bi() -> Box<int> { Box { val: 1 } }
+fn bs() -> Box<string> { Box { val: \"s\" } }
+fn main() { let c = true  let x = if c { bi() } else { bs() }  let _ = x }")
+        out.contains("F1000")
+    }
 }
 
 spec "legitimate if-expr branch differences are NOT over-gated (tpbn)" {
