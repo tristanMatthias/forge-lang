@@ -40,6 +40,10 @@ fn stmt_grammar_src() -> string {
 fn dsl_stmt(src: string) -> string {
     let gp = parse_grammar(stmt_grammar_src())
     let r = run_grammar_stmt(gp.grammar, src)
+    // A diagnostic-bearing (error-tolerant partial) parse is a distinct
+    // outcome — surface it so a recovered tree can't spuriously match the
+    // hand-written parser's clean tree in the differential comparison.
+    if r.had_error { return "<dsl parse error>" }
     render_stmt_id(r.store, r.root)
 }
 
