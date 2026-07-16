@@ -28,7 +28,7 @@ fn expr_grammar_src() -> string {
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
     "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
-    "  primary    = NUMBER | \"true\" | \"false\"\n" +
+    "  primary    = NUMBER | \"true\" | \"false\" | @hand(ident)\n" +
     "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
     "}"
 }
@@ -127,6 +127,15 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
         then "a deep mixed expression across every level agrees" {
             agree("1 | 2 ^ 3 & 4 == 5 < 6 << 7 + 8 * 9 % 2") &&
             agree("(1 + 2) * 3 & 4 | 5 && 6 == 7")
+        }
+    }
+    given "identifiers via the @hand(ident) escape-hatch" {
+        then "bare identifiers parse equivalently to the real parser" {
+            agree("x") &&
+            agree("foo + bar") &&
+            agree("a * b + c") &&
+            agree("(x + y) * z") &&
+            agree("a < b && c == d")
         }
     }
 }
