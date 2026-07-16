@@ -1,0 +1,94 @@
+// ps3t.6.4 — the grammar-DSL generator, in executable form: the §2
+// expression grammar is read by the seed parser, then RUN over
+// expression source, producing real Expr nodes with correct precedence
+// + associativity (GRAMMAR_DSL.md §4) and partial-tree recovery on
+// malformed input (@expect / @recover → panic-mode synchronize).
+
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, dump_expr}
+
+fn expr_grammar_src() -> string {
+    "grammar Expr {\n" +
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\"\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> e\n" +
+    "}"
+}
+
+// Parse the grammar once, run it over `src`, return the prefix dump.
+fn parse_expr(src: string) -> string {
+    let gp = parse_grammar(expr_grammar_src())
+    let r = run_grammar_expr(gp.grammar, src)
+    dump_expr(r.store, r.root)
+}
+
+fn had_error(src: string) -> bool {
+    let gp = parse_grammar(expr_grammar_src())
+    let r = run_grammar_expr(gp.grammar, src)
+    r.had_error
+}
+
+spec "grammar executor: the generated expression parser produces correct AST" {
+    given "a valid expression grammar and inputs" {
+        then "a bare literal is a leaf" {
+            parse_expr("42") == "42" &&
+            parse_expr("true") == "true"
+        }
+
+        then "precedence: * binds tighter than +" {
+            parse_expr("1 + 2 * 3") == "(+ 1 (* 2 3))"
+        }
+
+        then "precedence: parentheses override" {
+            parse_expr("(1 + 2) * 3") == "(* (+ 1 2) 3)"
+        }
+
+        then "left-associativity of +/-" {
+            parse_expr("1 - 2 - 3") == "(- (- 1 2) 3)" &&
+            parse_expr("1 + 2 + 3 + 4") == "(+ (+ (+ 1 2) 3) 4)"
+        }
+
+        then "left-associativity of * and mixed precedence" {
+            parse_expr("8 / 4 / 2") == "(/ (/ 8 4) 2)" &&
+            parse_expr("1 * 2 + 3 * 4") == "(+ (* 1 2) (* 3 4))"
+        }
+
+        then "prefix unary binds tighter, is distinct from binary minus" {
+            parse_expr("-2") == "(neg 2)" &&
+            parse_expr("!1") == "(not 1)" &&
+            parse_expr("-2 + 3") == "(+ (neg 2) 3)" &&
+            parse_expr("- -5") == "(neg (neg 5))"
+        }
+
+        then "comparison + equality precedence stratification" {
+            parse_expr("1 < 2 == 3") == "(== (< 1 2) 3)" &&
+            parse_expr("1 + 2 < 3 * 4") == "(< (+ 1 2) (* 3 4))"
+        }
+
+        then "a fully valid expression has no diagnostics" {
+            !had_error("(1 + 2) * 3 - 4 / 2")
+        }
+    }
+
+    given "malformed input" {
+        then "a missing close-paren recovers to a partial tree + diagnostic" {
+            // `(1 + 2` — @expect(')') fires, @recover synchronizes; the
+            // inner (+ 1 2) is still recovered (partial tree, not a bail).
+            had_error("(1 + 2") &&
+            parse_expr("(1 + 2") == "(+ 1 2)"
+        }
+
+        then "a leading garbage token yields an error node, not a crash" {
+            had_error(")")
+        }
+
+        then "recovery keeps the surrounding expression usable" {
+            // the group recovers, then the outer `* 3` still applies.
+            parse_expr("(1 + 2 * 3") == "(+ 1 (* 2 3))"
+        }
+    }
+}

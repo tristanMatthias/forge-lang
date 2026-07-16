@@ -1,0 +1,655 @@
+// WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
+// It lowers a `Grammar` (ast.av, produced by the seed parser) to an
+// error-tolerant recursive-descent parser and RUNS it over a token
+// stream, producing real `Expr` nodes — the GRAMMAR_DSL.md §8 proof
+// ("build the generator … run it, and show it producing real Expr
+// nodes"). Each rule executes exactly the RD algorithm its generated
+// function would (Nystrom's grammar→RD correspondence, GRAMMAR_DSL.md
+// §4): terminal → match/consume, nonterminal → call its rule, `|` →
+// first-match by FIRST-set, `*`/`+` → loop, `?` → optional, `->` →
+// build the node, `@recover` → panic-mode synchronize. emit.av renders
+// the same lowering as parser-fn source (the structural correspondence).
+//
+// The semantic actions (how a `build` constructs a target node) are the
+// one target-specific seam — mirroring the derive engine's pluggable
+// emitters. Here they build `Expr` for the expression slice: literals,
+// `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
+
+use core.{Expr, ExprId, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+use features.grammar.{Token, lex_expr}
+
+// ── Capture values + environment ──
+
+/// The value a grammar construct yields: a matched token, a built node,
+/// or (inside a `*`/`+`) a parallel list of either. `Nil` is the empty
+/// value of a repetition/optional that produced nothing.
+enum CapVal {
+    Nil
+    Tok(t: Token)
+    Node(id: ExprId)
+    Toks(ts: List<Token>)
+    Nodes(ns: List<ExprId>)
+}
+
+type Cap = { name: string, val: CapVal }
+
+/// The capture environment for ONE rule invocation. Scalar captures bind
+/// a single Tok/Node; captures made inside a repetition accumulate into
+/// parallel Toks/Nodes lists. Rebuilt on each mutation via `.push`
+/// (list index-assignment and payload mutation aren't available), which
+/// is cheap — a rule has a handful of captures.
+type CapEnv = { caps: List<Cap> }
+
+impl CapEnv {
+    fn get(self, name: string) -> CapVal {
+        for c in self.caps {
+            if c.name == name { return c.val }
+        }
+        CapVal.Nil
+    }
+
+    fn set_scalar(self, name: string, v: CapVal) {
+        mut out: List<Cap> = []
+        mut found = false
+        for c in self.caps {
+            if c.name == name {
+                out.push(Cap { name, val: v })
+                found = true
+            } else {
+                out.push(c)
+            }
+        }
+        if !found { out.push(Cap { name, val: v }) }
+        self.caps = out
+    }
+
+    fn append_tok(self, name: string, t: Token) {
+        let existing = self.get(name)
+        mut ts: List<Token> = []
+        // Promote a prior scalar into the list — the `first ( "," rest )*`
+        // comma-list shape reuses one label (first bound scalar, then
+        // list-appended); seed the list with the scalar so it isn't lost.
+        match existing {
+            .Toks(prev) -> {
+                for x in prev { ts.push(x) }
+            }
+            .Tok(prev) -> ts.push(prev)
+            _ -> {}
+        }
+        ts.push(t)
+        self.set_scalar(name, CapVal.Toks(ts))
+    }
+
+    fn append_node(self, name: string, id: ExprId) {
+        let existing = self.get(name)
+        mut ns: List<ExprId> = []
+        match existing {
+            .Nodes(prev) -> {
+                for x in prev { ns.push(x) }
+            }
+            .Node(prev) -> ns.push(prev)
+            _ -> {}
+        }
+        ns.push(id)
+        self.set_scalar(name, CapVal.Nodes(ns))
+    }
+}
+
+// ── Parser state ──
+
+/// The result of running a grammar over source: the store the nodes
+/// live in, the root node, and any diagnostics (error-tolerant — a
+/// malformed input yields a partial tree + diagnostics, never a bail).
+export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags: List<string> }
+
+type PState = { toks: List<Token>, pos: int, store: NodeStore, diags: List<string>, had_error: bool }
+
+impl PState {
+    fn cur(self) -> Token { self.toks[self.pos] }
+
+    fn at_end(self) -> bool { self.cur().kind == "EOF" }
+
+    fn advance(self) -> Token {
+        let t = self.toks[self.pos]
+        if self.pos + 1 < self.toks.length { self.pos = self.pos + 1 }
+        t
+    }
+
+    fn report(self, msg: string) {
+        self.diags.push(msg)
+        self.had_error = true
+    }
+
+    /// A whole-construct error placeholder (no matching alternative).
+    fn error_node(self, msg: string) -> ExprId {
+        self.report(msg)
+        self.store.exprs.add_leaf(Expr.Error)
+    }
+
+    /// An absent-but-required-position placeholder (a missing terminal).
+    fn missing_node(self) -> ExprId {
+        self.store.exprs.add_leaf(Expr.Missing)
+    }
+
+    /// Panic-mode synchronize: advance until `tok` (consumed) or EOF.
+    fn synchronize(self, tok: string) {
+        while !self.at_end() && self.cur().text != tok { let _ = self.advance() }
+        if self.cur().text == tok { let _ = self.advance() }
+    }
+}
+
+// ── FIRST-set membership (branch selection + repetition guards) ──
+
+fn list_has(xs: List<string>, s: string) -> bool {
+    for x in xs { if x == s { return true } }
+    false
+}
+
+/// Does `tok` start `prim`? Structural, cycle-guarded FIRST membership.
+fn tok_starts_prim(g: Grammar, prim: GPrim, tok: Token, visited: List<string>) -> bool {
+    match prim {
+        .Lit(t) -> tok.text == t
+        .Named(name) -> tok.kind == name
+        .Ref(name) -> tok_starts_rule(g, name, tok, visited)
+        .Group(inner) -> tok_starts_node(g, inner, tok, visited)
+        .Hand(hf) -> hand_starts(hf, tok)
+    }
+}
+
+fn tok_starts_rule(g: Grammar, name: string, tok: Token, visited: List<string>) -> bool {
+    if list_has(visited, name) { return false }   // cycle guard
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    let r = lookup_rule(g, name)
+    if r.name == "" { return false }
+    tok_starts_node(g, r.body, tok, v2)
+}
+
+fn tok_starts_node(g: Grammar, node: GNode, tok: Token, visited: List<string>) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                if tok_starts_seq(g, b, tok, visited) { return true }
+            }
+            false
+        }
+    }
+}
+
+/// FIRST of a sequence: the first item's FIRST, extended through any
+/// nullable (Opt/Star) leading items.
+fn tok_starts_seq(g: Grammar, seq: GSeq, tok: Token, visited: List<string>) -> bool {
+    for item in seq.items {
+        if tok_starts_prim(g, item.prim, tok, visited) { return true }
+        // A One/Plus item is non-nullable — FIRST stops here.
+        match item.rep {
+            .One -> return false
+            .Plus -> return false
+            _ -> {}   // Opt/Star are nullable — consider the next item too
+        }
+    }
+    false
+}
+
+fn lookup_rule(g: Grammar, name: string) -> Rule {
+    for r in g.rules {
+        if r.name == name { return r }
+    }
+    Rule { name: "", body: GNode.Alt([]) }
+}
+
+// ── The executor ──
+
+/// Run `grammar` over `src`, starting at the first rule (the start
+/// symbol). Returns the store + root + diagnostics.
+export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
+    let toks = lex_expr(src)
+    let store = new_node_store(build_line_index(src))
+    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    if grammar.rules.length == 0 {
+        let root = st.error_node("empty grammar")
+        return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+    }
+    let root = exec_rule(grammar, grammar.rules[0].name, st)
+    RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
+}
+
+/// Execute a rule with a FRESH capture environment (rule scope), coerce
+/// its value to an Expr node.
+fn exec_rule(g: Grammar, name: string, st: PState) -> ExprId {
+    let r = lookup_rule(g, name)
+    if r.name == "" { return st.error_node("unknown rule `${name}`") }
+    mut env = CapEnv { caps: [] }
+    let v = exec_node(g, r.body, st, env, false)
+    capval_to_expr(st, v)
+}
+
+/// Execute an alternation: pick the first branch whose FIRST matches the
+/// current token (recursive descent), execute it. No match → an Error
+/// node + diagnostic (error-tolerant).
+fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> CapVal {
+    match node {
+        .Alt(branches) -> {
+            let empty: List<string> = []
+            for b in branches {
+                if tok_starts_seq(g, b, st.cur(), empty) {
+                    return exec_seq(g, b, st, env, multi)
+                }
+            }
+            CapVal.Node(st.error_node("unexpected token `${st.cur().text}`"))
+        }
+    }
+}
+
+/// Execute one alternative: run each item (threading the shared env),
+/// then apply the build.
+fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapVal {
+    mut last = CapVal.Nil
+    mut count = 0
+    for item in seq.items {
+        last = exec_item(g, item, st, env, multi, seq.annots)
+        count = count + 1
+    }
+    match seq.build {
+        // Pass-through: the sole item's value. A bare terminal stays a
+        // Tok here; the Tok→literal conversion happens only when a RULE
+        // yields it (capval_to_expr), so operator captures stay tokens.
+        .None -> last
+        .Var(name) -> env.get(name)
+        .Call(name, args) -> CapVal.Node(apply_build(g, name, args, env, st))
+    }
+}
+
+/// Execute one postfix item, honouring its repetition, and bind its
+/// capture (scalar in a normal position, list-append inside `*`/`+`).
+fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
+    let empty: List<string> = []
+    match item.rep {
+        .One -> {
+            let v = exec_primary(g, item.prim, st, env, multi, annots)
+            bind(env, item.label, v, multi)
+            v
+        }
+        .Opt -> {
+            if tok_starts_prim(g, item.prim, st.cur(), empty) {
+                let v = exec_primary(g, item.prim, st, env, multi, annots)
+                bind(env, item.label, v, multi)
+                return v
+            }
+            CapVal.Nil
+        }
+        .Star -> {
+            exec_repeat(g, item, st, env, annots)
+            CapVal.Nil
+        }
+        .Plus -> {
+            // require ≥1: one forced iteration, then like Star.
+            let v0 = exec_primary(g, item.prim, st, env, true, annots)
+            bind(env, item.label, v0, true)
+            exec_repeat(g, item, st, env, annots)
+            CapVal.Nil
+        }
+    }
+}
+
+/// The `*` loop body shared by Star and Plus: keep taking the primary
+/// while the current token starts it, binding into list captures.
+/// Bounded — a non-consuming iteration breaks the loop.
+fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
+    let empty: List<string> = []
+    while tok_starts_prim(g, item.prim, st.cur(), empty) {
+        let before = st.pos
+        let v = exec_primary(g, item.prim, st, env, true, annots)
+        bind(env, item.label, v, true)
+        if st.pos == before { return }
+    }
+}
+
+/// Execute a primary. Terminals match+consume (or trigger @expect /
+/// @recover when a required terminal is missing); a ref calls its rule;
+/// a group recurses the enclosing env so its captures propagate out.
+fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
+    match prim {
+        .Lit(t) -> {
+            if st.cur().text == t { return CapVal.Tok(st.advance()) }
+            handle_missing(st, t, annots)
+            CapVal.Node(st.missing_node())
+        }
+        .Named(name) -> {
+            if st.cur().kind == name { return CapVal.Tok(st.advance()) }
+            handle_missing(st, name, annots)
+            CapVal.Node(st.missing_node())
+        }
+        .Ref(name) -> CapVal.Node(exec_rule(g, name, st))
+        .Group(inner) -> exec_node(g, inner, st, env, multi)
+        .Hand(hf) -> CapVal.Node(run_hand(hf, st))
+    }
+}
+
+// ── The escape-hatch (@hand) — hand-written rules the grammar calls ──
+//
+// The gnarly 5% (GRAMMAR_DSL.md §5) lives in hand-written code the
+// grammar delegates to by name, not in the DSL notation. In the
+// executor these are a small built-in registry; in the spliced-parser
+// integration (ps3t.6.5) each `@hand(fn)` lowers to a call of a real
+// hand-written Avra parse function (emit.av already renders it that
+// way). Here `ident`/`number` demonstrate the mechanism — a primary the
+// pure expression grammar deliberately omits, added via the hatch.
+
+fn hand_starts(name: string, tok: Token) -> bool {
+    if name == "ident" { return tok.kind == "IDENT" }
+    if name == "number" { return tok.kind == "NUMBER" }
+    false
+}
+
+fn run_hand(name: string, st: PState) -> ExprId {
+    if name == "ident" {
+        if st.cur().kind == "IDENT" {
+            let t = st.advance()
+            return st.store.exprs.add_leaf(Expr.Ident(t.text))
+        }
+        return st.error_node("expected an identifier")
+    }
+    if name == "number" {
+        if st.cur().kind == "NUMBER" {
+            let t = st.advance()
+            return st.store.exprs.add_leaf(Expr.Number(t.text))
+        }
+        return st.error_node("expected a number")
+    }
+    st.error_node("no hand rule `${name}`")
+}
+
+/// A required terminal was absent: report the matching @expect message
+/// (or a default), then panic-mode synchronize to the @recover target.
+fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
+    mut msg = "expected `${expected}`"
+    for a in annots {
+        match a {
+            .Expect(tok, m) -> {
+                if tok == expected { msg = m }
+            }
+            _ -> {}
+        }
+    }
+    st.report(msg)
+    for a in annots {
+        match a {
+            .Recover(sync_to) -> st.synchronize(sync_to)
+            _ -> {}
+        }
+    }
+}
+
+/// Bind a capture: no-op if unlabelled; list-append inside a repetition;
+/// scalar otherwise.
+fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
+    if label == "" { return }
+    if multi {
+        match v {
+            .Tok(t) -> env.append_tok(label, t)
+            .Node(id) -> env.append_node(label, id)
+            _ -> {}
+        }
+    } else {
+        env.set_scalar(label, v)
+    }
+}
+
+// ── Semantic actions (target: Expr) ──
+
+/// Coerce a capture value to an Expr node: a node passes through; a bare
+/// token becomes a literal; anything else is an error node.
+fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
+    match v {
+        .Node(id) -> id
+        .Tok(t) -> literal_node(st, t)
+        _ -> st.error_node("expected an expression")
+    }
+}
+
+fn literal_node(st: PState, t: Token) -> ExprId {
+    if t.kind == "NUMBER" { return st.store.exprs.add_leaf(Expr.Number(t.text)) }
+    if t.kind == "STRING" { return st.store.exprs.add_leaf(Expr.String(t.text)) }
+    if t.kind == "BOOL" { return st.store.exprs.add_leaf(Expr.Bool(t.text)) }
+    st.store.exprs.add_leaf(Expr.Ident(t.text))
+}
+
+/// Apply a build helper / node constructor. The fixed vocabulary
+/// (GRAMMAR_DSL.md §1): `fold_binary` (left-assoc chain) + node ctors
+/// (`Unary`). Unknown names are a reported error, not a silent miss.
+fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> ExprId {
+    if name == "fold_binary" && args.length == 3 {
+        return fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+    }
+    if name == "Unary" && args.length == 2 {
+        return unary_expr(st, env.get(args[0]), env.get(args[1]))
+    }
+    if name == "fold_logical" && args.length == 3 {
+        return fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+    }
+    if name == "Grouping" && args.length == 1 {
+        // Preserve the parenthesisation node so the produced AST matches
+        // the hand-written parser (which wraps `(e)` in Expr.Grouping),
+        // not merely a grouping-normalised form.
+        return st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0]))))
+    }
+    if name == "field_suffix" && args.length == 1 {
+        // A partial FieldAccess with a sentinel receiver; fold_postfix
+        // rebinds the receiver to the accumulated base.
+        return st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0]))))
+    }
+    if name == "index_suffix" && args.length == 1 {
+        return st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0]))))
+    }
+    if name == "call_suffix" && args.length == 1 {
+        // A partial Call with a sentinel callee + the captured arg list
+        // (a single arg arrives as a scalar Node, many as Nodes, none as
+        // Nil — normalise to a list). fold_postfix rebinds the callee.
+        return st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0]))))
+    }
+    if name == "fold_postfix" && args.length == 2 {
+        return fold_postfix_expr(st, env.get(args[0]), env.get(args[1]))
+    }
+    st.error_node("unknown build `${name}`")
+}
+
+/// Left-fold a `base ( suffix )*` postfix chain. Each suffix was built as
+/// a partial node (FieldAccess/Index) with a sentinel receiver; here we
+/// rebind each one's receiver to the accumulated left node — a
+/// left-associative chain (`a.b[0].c` → `((a.b)[0]).c`). This is the
+/// "partial-node with a HOLE" technique that lets a heterogeneous
+/// postfix fold live in the grammar (docs/…L4_DERIVE_FRAMEWORK_DESIGN
+/// §2.5). Calls (arg lists) + method dispatch are the harder remaining
+/// case (list-valued builds).
+fn fold_postfix_expr(st: PState, basecap: CapVal, suffixescap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, basecap)
+    for s in capval_nodes(suffixescap) {
+        acc = rebind_receiver(st, acc, s)
+    }
+    acc
+}
+
+fn rebind_receiver(st: PState, recv: ExprId, suffix: ExprId) -> ExprId {
+    match st.store.exprs.get(suffix) {
+        .FieldAccess(_, field) -> st.store.exprs.add_leaf(Expr.FieldAccess(recv, field))
+        .Index(_, idx) -> st.store.exprs.add_leaf(Expr.Index(recv, idx))
+        .Call(_, cargs) -> st.store.exprs.add_leaf(Expr.Call(recv, cargs))
+        _ -> recv
+    }
+}
+
+/// A capture as a node list: many args are Nodes, a single arg a scalar
+/// Node, no args Nil. (The `first ( "," rest )*` comma-list, with
+/// scalar→list promotion in append_node, produces Nodes for ≥2 and a
+/// scalar Node for exactly 1.)
+fn capval_to_node_list(v: CapVal) -> List<ExprId> {
+    match v {
+        .Nodes(ns) -> ns
+        .Node(id) -> [id]
+        _ -> []
+    }
+}
+
+/// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
+/// (the `&&`/`||` short-circuit ops). Sibling of fold_binary.
+fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        acc = st.store.exprs.add_leaf(Expr.Logical(acc, logicop_of(ops[i].text), rs[i]))
+        i = i + 1
+    }
+    acc
+}
+
+fn logicop_of(sym: string) -> LogicOp {
+    if sym == "||" { return LogicOp.Or }
+    LogicOp.And
+}
+
+/// Left-fold `l ( op r )*` into a left-associative `Expr.Binary` chain.
+/// With no operators, `l` passes through unchanged.
+fn fold_binary_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        acc = st.store.exprs.add_leaf(Expr.Binary(acc, binop_of(ops[i].text), rs[i]))
+        i = i + 1
+    }
+    acc
+}
+
+fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
+    let operand = capval_to_expr(st, opndcap)
+    let sym = capval_tok_text(opcap)
+    st.store.exprs.add_leaf(Expr.Unary(unop_of(sym), operand))
+}
+
+fn capval_toks(v: CapVal) -> List<Token> {
+    match v {
+        .Toks(ts) -> ts
+        _ -> []
+    }
+}
+
+fn capval_nodes(v: CapVal) -> List<ExprId> {
+    match v {
+        .Nodes(ns) -> ns
+        _ -> []
+    }
+}
+
+fn capval_tok_text(v: CapVal) -> string {
+    match v {
+        .Tok(t) -> t.text
+        _ -> ""
+    }
+}
+
+fn binop_of(sym: string) -> BinOp {
+    if sym == "-" { return BinOp.Sub }
+    if sym == "*" { return BinOp.Mul }
+    if sym == "/" { return BinOp.Div }
+    if sym == "%" { return BinOp.Mod }
+    if sym == "==" { return BinOp.Eq }
+    if sym == "!=" { return BinOp.Ne }
+    if sym == "<" { return BinOp.Lt }
+    if sym == "<=" { return BinOp.Le }
+    if sym == ">" { return BinOp.Gt }
+    if sym == ">=" { return BinOp.Ge }
+    if sym == "&" { return BinOp.BitAnd }
+    if sym == "|" { return BinOp.BitOr }
+    if sym == "^" { return BinOp.BitXor }
+    if sym == "<<" { return BinOp.Shl }
+    if sym == ">>" { return BinOp.Shr }
+    BinOp.Add
+}
+
+fn unop_of(sym: string) -> UnOp {
+    if sym == "!" { return UnOp.Not }
+    if sym == "~" { return UnOp.BitNot }
+    UnOp.Neg
+}
+
+// ── Debug rendering (canonical prefix form for assertions) ──
+
+/// Render an Expr subtree as an unambiguous prefix form, e.g.
+/// `1 + 2 * 3` → `(+ 1 (* 2 3))`, `!x` → `(not x)`. Used by tests to
+/// assert precedence + associativity crisply.
+export fn dump_expr(store: NodeStore, id: ExprId) -> string {
+    match store.exprs.get(id) {
+        .Number(v) -> v
+        .String(v) -> v
+        .Bool(v) -> v
+        .None -> "none"
+        .Ident(n) -> n
+        .Unary(op, r) -> "(${unop_sym(op)} ${dump_expr(store, r)})"
+        .Binary(l, op, r) -> "(${binop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
+        .Logical(l, op, r) -> "(${logicop_sym(op)} ${dump_expr(store, l)} ${dump_expr(store, r)})"
+        .FieldAccess(obj, field) -> "(. ${dump_expr(store, obj)} ${field})"
+        .Index(obj, idx) -> "([] ${dump_expr(store, obj)} ${dump_expr(store, idx)})"
+        .Call(callee, cargs) -> "(call ${dump_expr(store, callee)}${dump_args(store, cargs)})"
+        // Render Grouping EXPLICITLY (never unwrap) so the dump is a
+        // lossless view of the tree — `((1))` must not collapse to `1`.
+        .Grouping(e) -> "(group ${dump_expr(store, e)})"
+        .Error -> "<error>"
+        .Missing -> "<missing>"
+        // A variant the dump doesn't model explicitly. Kept as a loud,
+        // greppable marker; the equivalence test asserts it never appears
+        // so an unmodelled variant can't silently "agree".
+        _ -> "<unmodelled-variant>"
+    }
+}
+
+fn dump_args(store: NodeStore, cargs: List<ExprId>) -> string {
+    mut out = ""
+    for a in cargs {
+        out = out + " " + dump_expr(store, a)
+    }
+    out
+}
+
+fn binop_sym(op: BinOp) -> string {
+    match op {
+        .Add -> "+"
+        .Sub -> "-"
+        .Mul -> "*"
+        .Div -> "/"
+        .Mod -> "%"
+        .Eq -> "=="
+        .Ne -> "!="
+        .Lt -> "<"
+        .Le -> "<="
+        .Gt -> ">"
+        .Ge -> ">="
+        .BitAnd -> "&"
+        .BitOr -> "|"
+        .BitXor -> "^"
+        .Shl -> "<<"
+        .Shr -> ">>"
+    }
+}
+
+fn unop_sym(op: UnOp) -> string {
+    match op {
+        .Neg -> "neg"
+        .Not -> "not"
+        .BitNot -> "bitnot"
+    }
+}
+
+fn logicop_sym(op: LogicOp) -> string {
+    match op {
+        .And -> "&&"
+        .Or -> "||"
+    }
+}

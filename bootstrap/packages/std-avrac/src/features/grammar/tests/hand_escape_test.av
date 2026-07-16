@@ -1,0 +1,71 @@
+// ps3t.6.7 — the @hand escape-hatch: a grammar rule position that
+// delegates to a hand-written parse function, for the gnarly cases a
+// small CFG can't cleanly express (GRAMMAR_DSL.md §5). Here it adds an
+// IDENT primary — which the pure §2 expression grammar deliberately
+// omits — proving the grammar can call out to hand code by name while
+// the DSL notation stays minimal.
+
+use @std.avrac.features.grammar.{parse_grammar, render_grammar, run_grammar_expr, dump_expr, emit_parser_source}
+use @std.avrac.features.grammar.{Grammar, Rule, GNode, GSeq, GPrim}
+
+// A tiny grammar whose `primary` adds identifiers via `@hand(ident)`.
+fn grammar_with_hand() -> string {
+    "grammar E {\n" +
+    "  expression = term\n" +
+    "  term    = l:primary ( op:(\"+\" | \"-\") r:primary )* -> fold_binary(l, op, r)\n" +
+    "  primary = NUMBER | @hand(ident)\n" +
+    "}"
+}
+
+fn parse_expr(src: string) -> string {
+    let gp = parse_grammar(grammar_with_hand())
+    let r = run_grammar_expr(gp.grammar, src)
+    dump_expr(r.store, r.root)
+}
+
+fn primary_rule(g: Grammar) -> Rule {
+    for r in g.rules {
+        if r.name == "primary" { return r }
+    }
+    Rule { name: "", body: GNode.Alt([]) }
+}
+
+spec "grammar @hand escape-hatch: delegate a rule position to hand code" {
+    then "the seed parser reads @hand(ident) as a Hand primary" {
+        let gp = parse_grammar(grammar_with_hand())
+        gp.error == "" &&
+        (match primary_rule(gp.grammar).body {
+            .Alt(branches) -> branches.length == 2 && (match branches[1].items[0].prim {
+                .Hand(hf) -> hf == "ident"
+                _ -> false
+            })
+        })
+    }
+
+    then "render round-trips @hand(ident)" {
+        let gp = parse_grammar(grammar_with_hand())
+        render_grammar(gp.grammar).contains("@hand(ident)")
+    }
+
+    then "the executor runs the hand rule — an identifier primary parses" {
+        parse_expr("x") == "x"
+    }
+
+    then "hand-parsed identifiers compose with the pure grammar" {
+        parse_expr("a + 1") == "(+ a 1)" &&
+        parse_expr("1 + b - c") == "(- (+ 1 b) c)"
+    }
+
+    then "the emitter lowers @hand(ident) to a hand-fn call parse_ident(p)" {
+        let gp = parse_grammar(grammar_with_hand())
+        emit_parser_source(gp.grammar).contains("parse_ident(p)")
+    }
+
+    then "the pure §2 primary still rejects a bare identifier (hatch is opt-in)" {
+        // Without @hand, `x` has no matching primary alternative → error.
+        let pure = "grammar E {\n  expression = primary\n  primary = NUMBER\n}"
+        let gp = parse_grammar(pure)
+        let r = run_grammar_expr(gp.grammar, "x")
+        r.had_error
+    }
+}

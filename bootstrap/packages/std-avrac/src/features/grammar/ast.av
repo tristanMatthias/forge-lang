@@ -1,0 +1,122 @@
+// WHY: the grammar-AST — the shared contract between the grammar-DSL
+// seed parser (ps3t.6.3, seed_parser.av) and the generator/executor
+// (ps3t.6.4, executor.av + emit.av). One small EBNF notation
+// (Crafting Interpreters Ch5 metasyntax + captures + build +
+// @expect/@recover) is read into these types, then lowered to an
+// error-tolerant recursive-descent parser. See
+// docs/2026_06_14_GRAMMAR_DSL.md and
+// docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §2.
+//
+// The grammar body is a small mutually-recursive tree:
+//   Grammar -> Rule -> GNode(Alt) -> GSeq -> GItem -> GPrim -> GNode
+// mirroring the metasyntax: a grammar is rules; a rule is an
+// alternation; an alternation is sequences; a sequence is labelled
+// postfix items plus an optional build + error annotations; a postfix
+// item is a primary with a repetition; a primary is a nonterminal ref,
+// a terminal (literal text or a named token), or a parenthesised group
+// (another alternation).
+
+// ── The grammar tree ──
+
+/// A whole grammar: a name + its rules. The first rule is the start
+/// symbol (Nystrom's convention).
+export type Grammar = { name: string, rules: List<Rule> }
+
+/// One production `name = body`, where `body` is always an Alt.
+export type Rule = { name: string, body: GNode }
+
+/// The grammar body node. Kept as an enum (not a bare Alt) so the tree
+/// has an obvious recursion point and can grow node kinds later
+/// (e.g. a `@hand(fn)` escape-hatch primary is a GPrim, not a GNode).
+export enum GNode {
+    /// `a | b | c` — one-or-more sequence branches, tried in order
+    /// (first-match, per recursive descent).
+    Alt(branches: List<GSeq>)
+}
+
+/// A single alternative: an ordered list of labelled postfix items,
+/// an optional build directive, and any error annotations.
+export type GSeq = {
+    items: List<GItem>,
+    build: GBuild,
+    annots: List<GAnnot>,
+}
+
+/// A postfix item: an optional capture label + a repetition + a
+/// primary. `label == ""` means uncaptured. Repetition is one of
+/// GRep (One / Star / Plus / Opt).
+export type GItem = {
+    label: string,
+    rep: GRep,
+    prim: GPrim,
+}
+
+/// Repetition suffix on a primary: none / `*` / `+` / `?`.
+export enum GRep { One, Star, Plus, Opt }
+
+/// A primary — the atom a postfix wraps.
+export enum GPrim {
+    /// A nonterminal reference — recurse into that rule.
+    Ref(name: string)
+    /// A literal terminal — exact source text (`"+"`, `"true"`).
+    Lit(text: string)
+    /// A named terminal from the lexer (`NUMBER`, `STRING`, `IDENT`).
+    Named(tok: string)
+    /// `( … )` — a parenthesised group, itself an alternation.
+    Group(inner: GNode)
+    /// `@hand(fn)` — the ESCAPE HATCH. A rule position that delegates to
+    /// a hand-written parse function, for the gnarly 5% a small CFG
+    /// can't cleanly express (`<T>` generic-vs-less-than, the `~`
+    /// context-overload; GRAMMAR_DSL.md §5, ps3t.6.7). Keeps the DSL
+    /// minimal — the hard cases live in code the grammar merely *calls*,
+    /// not in new notation. Whole-rule granularity only (no inline
+    /// semantic actions — the §1 hard line holds).
+    Hand(fn_name: string)
+}
+
+/// The `-> …` build that constructs the result from captures.
+///   None       — pass-through of the single sub-result (`a = b`).
+///   Var(name)  — return a named capture (`-> e`).
+///   Call(n,as) — construct a node / call a fixed helper: `-> Unary(op,
+///                operand)`, `-> fold_binary(l, op, r)`. The executor
+///                dispatches on `name` (helper vocabulary vs node ctor).
+export enum GBuild {
+    None
+    Var(name: string)
+    Call(name: string, args: List<string>)
+}
+
+/// Error annotations lifted from Nystrom's by-hand `synchronize()` into
+/// the grammar (GRAMMAR_DSL.md §1). `@expect(tok, msg)` asserts the
+/// next token or reports `msg`; `@recover(sync_to: tok)` marks a
+/// panic-mode synchronize target.
+export enum GAnnot {
+    Expect(tok: string, msg: string)
+    Recover(sync_to: string)
+}
+
+// ── Small constructors / probes (keep call sites readable) ──
+
+/// A plain uncaptured One-item from a primary.
+export fn gitem(prim: GPrim) -> GItem {
+    GItem { label: "", rep: GRep.One, prim }
+}
+
+/// True when a sequence has no explicit build — the executor then
+/// applies the default build (pass-through of the single sub-result, or
+/// a literal from a lone terminal). See executor.av `default_build`.
+export fn gbuild_is_none(b: GBuild) -> bool {
+    match b {
+        .None -> true
+        _ -> false
+    }
+}
+
+/// True for the collecting repetitions (`*` / `+`) — captures inside
+/// them accumulate into parallel lists rather than binding a scalar.
+export fn grep_is_multi(r: GRep) -> bool {
+    match r {
+        .Star or .Plus -> true
+        _ -> false
+    }
+}

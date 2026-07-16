@@ -1,0 +1,276 @@
+// WHY: ps3t.6.4 — the code-generation face of the generator. Where
+// executor.av RUNS the grammar as recursive descent, emit.av RENDERS
+// the same lowering as parser-fn *source* — one `fn parse_<rule>` per
+// rule, by Nystrom's grammar→RD correspondence (GRAMMAR_DSL.md §4):
+//
+//   rule name = …      → fn parse_name(p: Parser) -> ExprId { … }
+//   nonterminal foo    → parse_foo(p)
+//   terminal "+" / NUM → p.match("+") / p.match(NUM)
+//   a b c   (seq)      → statements in order (captures → let bindings)
+//   a | b   (alt)      → if p.starts(FIRST(a)) { … } else if …
+//   ( … )*             → while p.match(FIRST) { … }
+//   ( … )?             → if p.match(FIRST) { … }
+//   -> Ctor(a, b)      → return p.node(Ctor(a, b))
+//   -> helper(l, op, r)→ return helper(l, op, r)
+//   @recover(sync_to)  → p.synchronize(sync_to) on a missing terminal
+//
+// The emitted text is the readable, general lowering (matches the
+// executor's semantics — a repetition accumulates captures then the
+// build folds them). §4 shows a *fused* hand-optimisation of the fold
+// loop; the unfused form here is equally faithful and shape-agnostic
+// (no pattern-matching special rule shapes — rule 16). The parser-fn
+// AST emission that splices into a real compile is ps3t.6.5's job;
+// this renders the correspondence so it can be inspected + tested.
+
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+
+/// Render the whole grammar as parser-fn source — one function per rule.
+export fn emit_parser_source(g: Grammar) -> string {
+    mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
+    for r in g.rules {
+        out = out + emit_rule_fn(r) + "\n"
+    }
+    out
+}
+
+/// Render one rule as its `parse_<name>` function.
+export fn emit_rule_fn(r: Rule) -> string {
+    let body = emit_node(r.body, "    ")
+    "fn parse_${r.name}(p: Parser) -> ExprId {\n${body}}\n"
+}
+
+// alt = seq ( "|" seq )*
+fn emit_node(node: GNode, ind: string) -> string {
+    match node {
+        .Alt(branches) -> {
+            if branches.length == 1 {
+                return emit_seq(branches[0], ind)
+            }
+            emit_alt_chain(branches, ind)
+        }
+    }
+}
+
+/// Multi-branch alternation → an if/else-if chain guarded by each
+/// branch's FIRST set, with a trailing error node (Nystrom's `|` → if).
+fn emit_alt_chain(branches: List<GSeq>, ind: string) -> string {
+    mut out = ""
+    mut i = 0
+    for b in branches {
+        let guard = seq_first_guard(b)
+        let kw = if i == 0 { "if" } else { "} else if" }
+        out = out + "${ind}${kw} ${guard} {\n"
+        out = out + emit_seq(b, ind + "    ")
+        i = i + 1
+    }
+    out = out + "${ind}} else {\n"
+    out = out + "${ind}    return p.error_node(\"expected an expression\")\n"
+    out = out + "${ind}}\n"
+    out
+}
+
+/// seq = labeled+ ( "->" build | annot )*
+fn emit_seq(seq: GSeq, ind: string) -> string {
+    // Pass-through: a lone `One` item with no build returns that item
+    // directly (`expression = equality` -> `return parse_equality(p)`),
+    // rather than emitting it as a statement then a placeholder return.
+    let one_item = seq.items.length == 1 && (match seq.items[0].rep {
+        .One -> true
+        _ -> false
+    })
+    if one_item && gbuild_is_none(seq.build) {
+        return emit_annots(seq.annots, ind) + "${ind}return ${emit_primary(seq.items[0].prim)}\n"
+    }
+    mut out = ""
+    for item in seq.items {
+        out = out + emit_item(item, ind)
+    }
+    // Error annotations (@expect / @recover) — the generated parser
+    // asserts the expected token and synchronises on a miss.
+    out = out + emit_annots(seq.annots, ind)
+    out = out + emit_build(seq.build, ind)
+    out
+}
+
+/// Render a sequence's error annotations as the parser's expect/recover
+/// calls (Nystrom's by-hand `synchronize()`, lifted into the grammar).
+fn emit_annots(annots: List<GAnnot>, ind: string) -> string {
+    mut out = ""
+    for a in annots {
+        match a {
+            .Expect(tok, msg) -> out = out + "${ind}p.expect(\"${tok}\", \"${msg}\")\n"
+            .Recover(sync_to) -> out = out + "${ind}p.recover_to(\"${sync_to}\")\n"
+        }
+    }
+    out
+}
+
+fn emit_item(item: GItem, ind: string) -> string {
+    let bind = if item.label == "" { "" } else { "let ${item.label} = " }
+    match item.rep {
+        // Guards use non-consuming p.check(...) — emit_primary performs
+        // the actual consumption, so the leading token isn't eaten twice.
+        .One -> "${ind}${bind}${emit_primary(item.prim)}\n"
+        .Opt -> "${ind}if p.check(${emit_first(item.prim)}) { ${bind}${emit_primary(item.prim)} }\n"
+        .Star -> emit_repeat(item, ind, "while")
+        .Plus -> emit_primary_once(item, ind) + emit_repeat(item, ind, "while")
+    }
+}
+
+fn emit_primary_once(item: GItem, ind: string) -> string {
+    let bind = if item.label == "" { "" } else { "collect ${item.label} += " }
+    "${ind}${bind}${emit_primary(item.prim)}\n"
+}
+
+fn emit_repeat(item: GItem, ind: string, kw: string) -> string {
+    let bind = if item.label == "" { "" } else { "collect ${item.label} += " }
+    mut out = "${ind}${kw} p.check(${emit_first(item.prim)}) {\n"
+    out = out + "${ind}    ${bind}${emit_primary(item.prim)}\n"
+    out = out + "${ind}}\n"
+    out
+}
+
+fn emit_primary(prim: GPrim) -> string {
+    match prim {
+        .Ref(name) -> "parse_${name}(p)"
+        .Lit(text) -> "p.match(\"${text}\")"
+        .Named(tok) -> "p.match(${tok})"
+        .Group(inner) -> "( ${emit_group_inline(inner)} )"
+        .Hand(hf) -> "parse_${hf}(p)"
+    }
+}
+
+/// A group inlines its captured sub-structure. For the common
+/// `( op:(…) r:X )` shape this reads as the loop body's captures.
+fn emit_group_inline(node: GNode) -> string {
+    match node {
+        .Alt(branches) -> {
+            mut out = ""
+            mut i = 0
+            for b in branches {
+                if i > 0 { out = out + " | " }
+                out = out + emit_seq_inline(b)
+                i = i + 1
+            }
+            out
+        }
+    }
+}
+
+fn emit_seq_inline(seq: GSeq) -> string {
+    mut out = ""
+    mut i = 0
+    for item in seq.items {
+        if i > 0 { out = out + ", " }
+        let bind = if item.label == "" { "" } else { "${item.label}=" }
+        out = out + bind + emit_primary(item.prim)
+        i = i + 1
+    }
+    out
+}
+
+fn emit_build(build: GBuild, ind: string) -> string {
+    match build {
+        // The single-item pass-through is handled in emit_seq; reaching
+        // here means a multi-item sequence with no build directive.
+        .None -> "${ind}return error_node(\"sequence has no build directive\")\n"
+        .Var(name) -> "${ind}return ${name}\n"
+        .Call(name, args) -> "${ind}return ${name}(${join_args(args)})\n"
+    }
+}
+
+fn join_args(args: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    for a in args {
+        if i > 0 { out = out + ", " }
+        out = out + a
+        i = i + 1
+    }
+    out
+}
+
+// ── FIRST-set rendering (the `p.check(...)` guard args) ──
+//
+// FIRST entries carry their terminal KIND so a named terminal renders
+// unquoted (`p.check(NUMBER)`, matching consumption's `p.match(NUMBER)`)
+// while a literal stays quoted (`p.check("+")`). Computation crosses
+// NULLABLE leading items (a `*`/`?` prefix) rather than stopping at the
+// first item.
+
+type FTerm = { by_kind: bool, val: string }
+
+/// The leading terminals of a primary, as guard args. A ref/hand renders
+/// as `starts(parse_<name>)` since its FIRST is computed at run time.
+fn emit_first(prim: GPrim) -> string {
+    let ts = first_terms(prim)
+    if ts.length == 0 {
+        match prim {
+            .Ref(name) -> "starts(parse_${name})"
+            .Hand(hf) -> "starts(parse_${hf})"
+            _ -> "…"
+        }
+    } else {
+        join_fterms(ts)
+    }
+}
+
+fn seq_first_guard(seq: GSeq) -> string {
+    if seq.items.length == 0 { return "true" }
+    let ts = seq_first_terms(seq)
+    if ts.length == 0 {
+        // Leading nonterminal / hand-rule — its FIRST is a runtime check.
+        return "p.check(${emit_first(seq.items[0].prim)})"
+    }
+    "p.check(${join_fterms(ts)})"
+}
+
+/// FIRST of a primary: Lit/Named directly (kind-tagged), Group unions
+/// its branches. Ref/Hand cross a rule boundary → empty (runtime check).
+fn first_terms(prim: GPrim) -> List<FTerm> {
+    match prim {
+        .Lit(text) -> [FTerm { by_kind: false, val: text }]
+        .Named(tok) -> [FTerm { by_kind: true, val: tok }]
+        .Group(inner) -> node_first_terms(inner)
+        .Ref(_) -> []
+        .Hand(_) -> []
+    }
+}
+
+fn node_first_terms(node: GNode) -> List<FTerm> {
+    match node {
+        .Alt(branches) -> {
+            mut out: List<FTerm> = []
+            for b in branches {
+                for t in seq_first_terms(b) { out.push(t) }
+            }
+            out
+        }
+    }
+}
+
+/// FIRST of a sequence — the first item's FIRST, extended through any
+/// nullable (Opt/Star) leading items, stopping at the first One/Plus.
+fn seq_first_terms(seq: GSeq) -> List<FTerm> {
+    mut out: List<FTerm> = []
+    for item in seq.items {
+        for t in first_terms(item.prim) { out.push(t) }
+        match item.rep {
+            .One -> return out
+            .Plus -> return out
+            _ -> {}
+        }
+    }
+    out
+}
+
+fn join_fterms(xs: List<FTerm>) -> string {
+    mut out = ""
+    mut i = 0
+    for x in xs {
+        if i > 0 { out = out + ", " }
+        out = out + (if x.by_kind { x.val } else { "\"${x.val}\"" })
+        i = i + 1
+    }
+    out
+}

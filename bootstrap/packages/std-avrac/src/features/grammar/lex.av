@@ -1,0 +1,90 @@
+// WHY: the target-language tokeniser for the grammar-DSL proof slice
+// (ps3t.6.4) — the "lexer" that GRAMMAR_DSL.md §3 says feeds the
+// generated parser. It turns EXPRESSION SOURCE into a token stream the
+// executor (executor.av) matches the grammar's terminals against. This
+// is deliberately small (the expression slice): numbers, strings,
+// booleans, identifiers, and the operator/paren punctuation. The gnarly
+// lexical concerns (interpolation, newline-sensitivity) are ps3t.6.7's
+// lexer modes — out of the grammar notation by design.
+//
+// Token kinds: NUMBER STRING BOOL IDENT PUNCT EOF. A named terminal in
+// the grammar (`NUMBER`) matches by `kind`; a literal terminal (`"+"`,
+// `"true"`) matches by `text`.
+
+use features.grammar.{code_at, is_space_code, is_digit_code, is_ident_start_code, is_ident_cont_code}
+
+/// One target token. `pos` is the byte offset of the token start (used
+/// for span-ish diagnostics).
+export type Token = { kind: string, text: string, pos: int }
+
+/// Tokenise expression source into `Token`s, terminated by an EOF
+/// token. Unknown characters become single-char PUNCT tokens so a
+/// grammar terminal simply fails to match them (error-tolerant).
+export fn lex_expr(src: string) -> List<Token> {
+    mut toks: List<Token> = []
+    let n = src.length
+    mut i = 0
+    while i < n {
+        let c = code_at(src, i)
+        if is_space_code(c) {
+            i = i + 1
+            continue
+        }
+        // number: digits with an optional single fractional part
+        if is_digit_code(c) {
+            let start = i
+            i = i + 1
+            while i < n && is_digit_code(code_at(src, i)) { i = i + 1 }
+            if i < n && code_at(src, i) == 46 && i + 1 < n && is_digit_code(code_at(src, i + 1)) {
+                i = i + 1
+                while i < n && is_digit_code(code_at(src, i)) { i = i + 1 }
+            }
+            toks.push(Token { kind: "NUMBER", text: src.substring(start, i), pos: start })
+            continue
+        }
+        // string: keep the surrounding quotes in `text` (Expr.String's
+        // contract — the renderer round-trips without re-quoting). A
+        // backslash escapes the next char; an unterminated literal (EOF
+        // before the closing quote) is an ERROR token, not a valid STRING.
+        if c == 34 {
+            let start = i
+            i = i + 1
+            while i < n && code_at(src, i) != 34 {
+                if code_at(src, i) == 92 && i + 1 < n {
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+            }
+            let closed = i < n
+            if closed { i = i + 1 }  // closing quote
+            let kind = if closed { "STRING" } else { "ERROR" }
+            toks.push(Token { kind, text: src.substring(start, i), pos: start })
+            continue
+        }
+        // identifier / boolean keyword
+        if is_ident_start_code(c) {
+            let start = i
+            i = i + 1
+            while i < n && is_ident_cont_code(code_at(src, i)) { i = i + 1 }
+            let word = src.substring(start, i)
+            let kind = if word == "true" || word == "false" { "BOOL" } else { "IDENT" }
+            toks.push(Token { kind, text: word, pos: start })
+            continue
+        }
+        // two-char operators: != == <= >= && || << >>
+        if i + 1 < n {
+            let two = src.substring(i, i + 2)
+            if two == "!=" || two == "==" || two == "<=" || two == ">=" || two == "&&" || two == "||" || two == "<<" || two == ">>" {
+                toks.push(Token { kind: "PUNCT", text: two, pos: i })
+                i = i + 2
+                continue
+            }
+        }
+        // single-char punctuation
+        toks.push(Token { kind: "PUNCT", text: src.substring(i, i + 1), pos: i })
+        i = i + 1
+    }
+    toks.push(Token { kind: "EOF", text: "", pos: n })
+    toks
+}
