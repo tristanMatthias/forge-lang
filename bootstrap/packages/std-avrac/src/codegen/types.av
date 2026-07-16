@@ -729,14 +729,93 @@ export fn loops_top(stack: List<LoopStackFrame>) -> LoopFrame {
 // Str, Ptr, Struct, Enum, List, Map, Fn, Closure, Trait, Union, Tuple → ptr
 // Newtype → recurse on inner type
 
-/// Canonical Avra ValueType → LLVM type mapping. The single source
-/// of truth used everywhere a value is allocated, loaded, stored or
-/// cast. Keeping this as a free function (not a method) lets pure
-/// helpers reach it without a Ctx.
+// ── Structural layout resolution (ps3t.4.5(d)-5) ──
+//
+// `Layout` is codegen's representation of a type's LLVM layout, constructible
+// ONLY through the total `resolve_layout` below. Making codegen consume
+// `Layout` (rather than passing a raw `ValueType` to a layout function that
+// can hit `.Unknown`) makes an under-determined type unrepresentable at the
+// boundary BY CONSTRUCTION — the structural version of the d-4 runtime ICE
+// gate (parse-don't-validate, spec §6). INCREMENT 1 lands the type + total
+// constructor and routes the existing chokepoint (`llvm_type_for_full_g`)
+// through it, byte-identical; later increments push `Layout` outward to the
+// layout-consuming sites so the raw `ValueType` never reaches them.
+export type Layout = { ty: ptr }
+
+// The one failure `resolve_layout` can produce: a non-template `.Unknown`
+// reached the layout boundary. The erased-template exemption (allow_unknown)
+// never yields it — an unbound `T` in an erased base lays out as wide i64.
+export enum LayoutError { UnderDetermined }
+
+fn ok_layout(ty: ptr) -> Result<Layout, LayoutError> {
+    let r = Result.Ok(Layout { ty: ty })
+    avra_tag_as_result(r)
+    r
+}
+
+fn err_layout() -> Result<Layout, LayoutError> {
+    let r = Result.Err(LayoutError.UnderDetermined)
+    avra_tag_as_result(r)
+    r
+}
+
+/// Total `ValueType` → `Layout` resolution — the SOLE constructor of `Layout`
+/// (ps3t.4.5(d)-5). `.Ok` for every type with a determined representation;
+/// `.Err(UnderDetermined)` for a non-template `.Unknown`. `allow_unknown` (set
+/// only inside an erased generic-base body) makes `.Unknown` a legitimate wide
+/// i64 instead. This is the structural home of the "never guess a layout from
+/// an under-determined type" rule (spec §6): the mapping lives here once, and
+/// `.Unknown` is the only arm that can fail.
+export fn resolve_layout(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType, allow_unknown: bool) -> Result<Layout, LayoutError> {
+    match vt {
+        .Int -> ok_layout(i64t)
+        .U8 -> ok_layout(i64t)
+        .U16 -> ok_layout(i64t)
+        .U32 -> ok_layout(i64t)
+        .U64 -> ok_layout(i64t)
+        .I8 -> ok_layout(i64t)
+        .I16 -> ok_layout(i64t)
+        .I32 -> ok_layout(i64t)
+        .Bool -> ok_layout(i1t)
+        .Float -> ok_layout(dt)
+        .Str -> ok_layout(pt)
+        .Bytes -> ok_layout(pt)
+        .Ptr -> ok_layout(pt)
+        .Struct(_, _, _) -> ok_layout(pt)
+        .Enum(_, _, _) -> ok_layout(pt)
+        .List(_) -> ok_layout(pt)
+        .Map(_, _) -> ok_layout(pt)
+        .Fn(_) -> ok_layout(pt)
+        .FnTyped(_, _) -> ok_layout(pt)
+        .Closure(_, _) -> ok_layout(pt)
+        .Trait(_, _) -> ok_layout(pt)
+        .Union(_) -> ok_layout(pt)
+        .Newtype(_, inner, _) -> resolve_layout(i64t, i1t, dt, pt, inner, allow_unknown)
+        .Tuple(_) -> ok_layout(pt)
+        .NarrowedEnum(_, _, _) -> ok_layout(pt)
+        .Void -> ok_layout(i64t)
+        // Under-determined type at the layout boundary. Legitimate ONLY inside
+        // an erased generic template (allow_unknown), where the unbound `T`
+        // lays out as the erased wide repr (i64). Otherwise `.Err` — the caller
+        // turns it into the F9999 ICE (spec §6, ps3t.4.5(d)).
+        .Unknown -> if allow_unknown { ok_layout(i64t) } else { err_layout() }
+        .Task(_) -> ok_layout(i64t)
+        // Channel handle: opaque runtime ptr (AvraChannel*).
+        .Channel(_) -> ok_layout(pt)
+        // Optional (T?): always a pointer (null-pointer niche / boxed inner).
+        .Optional(_) -> ok_layout(pt)
+    }
+}
+
+/// Canonical `ValueType` → LLVM type entry — a strict thin wrapper over the
+/// total `resolve_layout` (ps3t.4.5(d)-5), which owns the mapping. Used
+/// everywhere a value is allocated, loaded, stored or cast. Kept a free
+/// function (not a method) so pure helpers reach it without a `Ctx`.
 ///
-/// Mapping: `Int → i64`, `Bool → i1`, `Float → double`,
-/// `Void / Unknown / Task → i64`, all other reference types → `ptr`,
-/// `Newtype` recurses into its inner type.
+/// Mapping (owned by `resolve_layout`): `Int → i64`, `Bool → i1`,
+/// `Float → double`, `Void → i64`, all other reference types → `ptr`,
+/// `Newtype` recurses into its inner type. A non-template `.Unknown` is a hard
+/// F9999 ICE (never a guessed layout, spec §6).
 ///
 /// Sized integer variants (U8/U16/U32/U64/I8/I16/I32) map to i64
 /// here when the caller only has the four base type pointers
@@ -753,55 +832,18 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
     llvm_type_for_full_g(i64t, i1t, dt, pt, vt, false)
 }
 
-/// Erasure-aware core of `llvm_type_for_full`. `allow_unknown` is true
-/// ONLY when laying out the body/signature of an erased generic base
-/// (a `@mono_erased` specialization whose type-arg stayed `.Unknown`);
-/// there `.Unknown` maps to the erased wide repr (i64). Everywhere else
-/// `allow_unknown` is false and `.Unknown` at the layout boundary is a
-/// first-class F9999 ICE — the compiler resolves or hard-errors, never
-/// guesses a layout from an under-determined type.
+/// Erasure-aware core of `llvm_type_for_full` — a thin unwrap of the total
+/// `resolve_layout` (ps3t.4.5(d)-5), which owns the `ValueType`→LLVM-type
+/// mapping. `allow_unknown` is true ONLY when laying out the body/signature of
+/// an erased generic base (a `@mono_erased` specialization whose type-arg
+/// stayed `.Unknown`); there `.Unknown` maps to the erased wide repr (i64).
+/// Everywhere else a non-template `.Unknown` is `.Err` here → a first-class
+/// F9999 ICE (spec §6) — the compiler resolves or hard-errors, never guesses a
+/// layout from an under-determined type.
 export fn llvm_type_for_full_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
-    match vt {
-        .Int -> i64t
-        .U8 -> i64t
-        .U16 -> i64t
-        .U32 -> i64t
-        .U64 -> i64t
-        .I8 -> i64t
-        .I16 -> i64t
-        .I32 -> i64t
-        .Bool -> i1t
-        .Float -> dt
-        .Str -> pt
-        .Bytes -> pt
-        .Ptr -> pt
-        .Struct(_, _, _) -> pt
-        .Enum(_, _, _) -> pt
-        .List(_) -> pt
-        .Map(_, _) -> pt
-        .Fn(_) -> pt
-        .FnTyped(_, _) -> pt
-        .Closure(_, _) -> pt
-        .Trait(_, _) -> pt
-        .Union(_) -> pt
-        .Newtype(_, inner, _) -> llvm_type_for_full_g(i64t, i1t, dt, pt, inner, allow_unknown)
-        .Tuple(_) -> pt
-        .NarrowedEnum(_, _, _) -> pt
-        .Void -> i64t
-        // Under-determined type at the layout boundary. Legitimate ONLY
-        // inside an erased generic template (allow_unknown), where the
-        // unbound `T` lays out as the erased wide repr (i64). Otherwise a
-        // hard F9999 ICE — never a silent i64 guess (spec §6, ps3t.4.5(d)).
-        .Unknown -> if allow_unknown { i64t } else { avra_layout_unknown_ice() }
-        .Task(_) -> i64t
-        // Channel handle: opaque runtime ptr (AvraChannel*).
-        .Channel(_) -> pt
-        // Optional (T?): always a pointer. Pointer-backed inner is the
-        // null-pointer niche (the inner pointer IS the optional, none = null);
-        // value-backed inner (int?/bool?/float?) is boxed (Some = heap box,
-        // none = null). Both lower to `ptr`. See features/null_safety/
-        // optional_repr.av for the build/read primitives.
-        .Optional(_) -> pt
+    match resolve_layout(i64t, i1t, dt, pt, vt, allow_unknown) {
+        .Ok(l) -> l.ty
+        .Err(_) -> avra_layout_unknown_ice()
     }
 }
 
