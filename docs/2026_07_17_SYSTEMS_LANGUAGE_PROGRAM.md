@@ -640,11 +640,46 @@ Sharpened from the levels doc's list, with this program's receipts:
 
 ## 13. Immediate next steps
 
-1. File the program epic + S0 tickets (bare-gating of pointer ops, `ptr[i]`
-   null guard, `level` reservation, fingerprint/MIR notes into ps3t.8.1/1n1v).
+1. ~~File the program epic + S0 tickets~~ **Done — see §14.**
 2. Socialize §5.3 (second-class borrows) — it's the one *decision* this doc
-   adds over the spec; it deserves a red-team session like Axis 9 got.
+   adds over the spec; it deserves a red-team session like Axis 9 got
+   (`t-bw95.3`).
 3. Schedule the Axis 23 UI design session independently; only the S3
    `--lib c` dependency is shared.
 4. Baseline the boundary-cost benchmark harness alongside S1 so the perf
-   envelope is measured from the first commit, not retrofitted.
+   envelope is measured from the first commit, not retrofitted (`t-bw95.20`).
+
+## 14. Ticket map (Agent Tasks, epic `t-bw95`)
+
+Filed 2026-07-17; the DAG below drives ready-work. Deps are the real
+`blocks` edges in the tracker.
+
+| Ticket | Phase | Title (short) | Blocked by |
+|---|---|---|---|
+| `t-bw95.1` | S0 | Gate raw pointer ops behind `bare {}` + `ptr[i]` null guard + reserve `level` | — |
+| `t-bw95.2` | S0 | ps3t hooks: L6 fingerprint level slot + 1n1v MIR boundary instructions + Commitment-5 chokepoint lint | — |
+| `t-bw95.3` | S1-design | Red-team the second-class borrow model (corpus + checker rules) | — |
+| `t-bw95.4` | S1 | `systems` blocks/fns + level as inferred item effect (à la `@pure`) | .1 |
+| `t-bw95.5` | S1 | Drop trait completion + LIFO interleave (TRD P3-6) | — |
+| `t-bw95.6` | S1 | Layout control: `@repr(c)`/`@packed`/`@align`/enum discriminants | — |
+| `t-bw95.7` | S1 | const generics (integers only, spec 5.5) | — |
+| `t-bw95.8` | S1 | Sized-int literal suffixes + overflow semantics (Axis 31.4/31.5) | — |
+| `t-bw95.12` | S1 | Immutable second-class borrow checker | .3, .4 |
+| `t-bw95.13` | S1 | `@alloc` owned types + boundary machinery + `--explain-boundaries` | .4, .5 |
+| `t-bw95.20` | S1-exit | Boundary-cost benchmark harness + Sobel ≤1.1× C | .13 |
+| `t-bw95.16` | S2 | `&mut` with scope-local aliasing-XOR-mutation | .12 |
+| `t-bw95.17` | S2 | Borrow-informed RC elision (Perceus direction) | .12 |
+| `t-bw95.18` | S2-exit | `Arena<T>`/`Id<T>` idiom + arena allocator written in Avra | .16, .7 |
+| `t-bw95.9` | S3 | `bare` content: `@transmute`, ptr lvalue writes, typed read/write | .1 |
+| `t-bw95.19` | S3 | Portable SIMD vector types | .9 |
+| `t-bw95.14` | S3 | FFI tier 1: ownership annotations, opaque types, trampolines; SQLite wrap | .5, .6, .9 |
+| `t-bw95.21` | S3-exit | `avra build --lib c` + header emission (be a C library) | .14 |
+| `t-bw95.10` | S3 | Toolchain honesty: `avra size`/`avra asm`/sanitizers | — |
+| `t-bw95.11` | S4 | `--target` cross-compilation + target definitions | — |
+| `t-bw95.15` | S4 | `@core`/`@alloc`/`@std` tier split via level-effect propagation | .4, .11 |
+| `t-bw95.22` | S4 | Freestanding entry: linker scripts, `@interrupt`, `@panic_handler` | .11, .15 |
+| `t-bw95.23` | S4 | `Volatile<T>` + `register_map` component + SVD import | .9, .7, .15 |
+| `t-bw95.24` | S4 | Bare-metal atomics (@core, no scheduler) | .15 |
+| `t-bw95.25` | S4-exit | **THE HN ARTIFACT** — RP2040 blinky+UART, <16KB, zero runtime symbols | .11, .15, .22, .23, .24 |
+| `t-bw95.26` | S5 | Rewrite runtime.c in Avra; delete the C runtime | .15, .18, .9 |
+| `t-bw95.27` | S5 | `rt_loop` verified real-time scopes | .4, .15 |
