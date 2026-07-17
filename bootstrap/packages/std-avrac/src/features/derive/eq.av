@@ -1,0 +1,201 @@
+// WHY: the eq emitter — structural equality, the proof that the derive
+// engine's emitter interface carries a DISTINCT generator with zero new
+// traversal code (design doc §1.5). One per-variant method, both decl forms:
+//
+//   enum:    fn T__eq(self: T, other: T) -> bool {
+//                match self {
+//                    .V(__eq_a0, __eq_a1) -> match other {
+//                        .V(__eq_b0, __eq_b1) -> __eq_a0 == __eq_b0 && __eq_a1.eq(__eq_b1)
+//                        _ -> false
+//                    }
+//                    …
+//                }
+//            }
+//   struct:  fn P__eq(self: P, other: P) -> bool {
+//                let __eq_a0 = self.x
+//                __eq_a0 == other.x && …
+//            }
+//
+// Per-shape comparisons: a Leaf compares with `==`, a Node recurses via
+// the derived `.eq`, a NodeList pairs up through @std's `list_eq_by`, an
+// OptionalNode none-guards through `opt_eq_by` (both with a generated
+// `(x, y) -> x.eq(y)` lambda), a Wrapper hops `.node` then recurses.
+// Consumers of a list-/optional-carrying derive must have the combinator
+// in scope (`use @std.avrac.list_ops.{list_eq_by, opt_eq_by}`) — the same
+// contract as the walk emitter's unwrap_node_list family.
+//
+// The wrapper-list, optional-wrapper, and struct-list shapes have no
+// recipe yet (they only arise on the core AST's own decls): they emit a
+// LOUD undefined helper name so a derive over such a field fails its
+// generated code's compile with a named error (the `anynode_ctor`
+// precedent) instead of producing wrong equality. Extend here when a
+// consumer needs them.
+
+use core.{Stmt, Expr, ExprId, ParamEntry, Pattern, MatchArm, ValueType, BinOp, LogicOp}
+use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, synth_expr_id}
+use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, self_vtype, emit_call, ident_field_access, name_vtype, pattern_from_names}
+
+// ── Public entry ──
+
+/// 2-arg @comptime macro: `@expand(derive_eq)` on an enum or struct emits
+/// `Type__eq`, callable as `a.eq(b) -> bool`.
+@comptime
+export fn derive_eq(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
+    derive_engine(target, ctx, eq_plan())
+}
+
+/// The eq emitter: one per-variant method, enums AND structs.
+@comptime
+export fn eq_plan() -> EmitPlan {
+    let methods: List<EmitMethod> = [
+        EmitMethod.PerVariant(PerVariantMethod {
+            method_name: "eq",
+            cross_type: false,
+            signature: eq_sig,
+            bind: eq_bind,
+            arm_body: eq_arm,
+        }),
+    ]
+    EmitPlan { macro_name: "derive_eq", enum_only: false, methods }
+}
+
+// ── Hooks ──
+
+/// `fn Parent__eq(self: Parent, other: Parent) -> bool`.
+@comptime
+fn eq_sig(dc: DeclCtx) -> MethodSig {
+    let other_param = ParamEntry { name: "other", vtype: self_vtype(dc) }
+    let extras: List<ParamEntry> = [other_param]
+    let no_prologue: List<Stmt> = []
+    MethodSig { extra_params: extras, ret: ValueType.Bool, prologue: no_prologue }
+}
+
+/// Every field is compared, so every field binds — to a deterministic
+/// `__eq_a<i>` synthetic (position-indexed like map's), keeping the
+/// self-side bindings distinct from the inner match's `__eq_b<i>` names.
+@comptime
+fn eq_bind(field_name: string, kind: FieldShape, i: int) -> string {
+    "__eq_a${string(i)}"
+}
+
+/// One arm body. Enum: an inner `match other` whose same-variant arm is
+/// the pairwise conjunction and whose wildcard arm is `false` (different
+/// variants are never equal). Struct: the conjunction directly, comparing
+/// the driver-bound `__eq_a<i>` lets against `other.<field>` projections
+/// (a struct has no variants to mismatch).
+@comptime
+fn eq_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
+    if dc.is_struct {
+        mut struct_pairs: List<Expr> = []
+        for c in fields {
+            struct_pairs.push(pair_eq(Expr.Ident(c.binding), ident_field_access("other", c.name), c.kind, dc.parent))
+        }
+        return conjunction(struct_pairs)
+    }
+    mut pairs: List<Expr> = []
+    mut names: List<string> = []
+    mut i = 0
+    for c in fields {
+        let b_name = "__eq_b${string(i)}"
+        names.push(b_name)
+        pairs.push(pair_eq(Expr.Ident(c.binding), Expr.Ident(b_name), c.kind, dc.parent))
+        i = i + 1
+    }
+    let same_arm = MatchArm {
+        pattern: pattern_from_names(variant, names),
+        guard_id: null,
+        body_id: synth_expr_id(conjunction(pairs)),
+    }
+    let diff_arm = MatchArm {
+        pattern: Pattern.Wildcard,
+        guard_id: null,
+        body_id: synth_expr_id(Expr.Bool("false")),
+    }
+    let arms: List<MatchArm> = [same_arm, diff_arm]
+    Expr.MatchExpr(synth_expr_id(Expr.Ident("other")), arms)
+}
+
+// ── Comparison builders ──
+
+/// The Expr comparing one aligned field pair, dispatched on its shape.
+/// This match is eq's FieldShape exhaustiveness guard — a new shape
+/// forces a compile error here.
+@comptime
+fn pair_eq(a: Expr, b: Expr, kind: FieldShape, parent: string) -> Expr {
+    match kind {
+        .Leaf -> Expr.Binary(synth_expr_id(a), BinOp.Eq, synth_expr_id(b))
+        .Node(_) -> eq_method_call(a, b)
+        .NodeList(t) -> list_eq_by_call(a, b, t)
+        .OptionalNode(t) -> opt_eq_by_call(a, b, t)
+        .Wrapper(_, _) -> eq_method_call(node_hop(a), node_hop(b))
+        // No recipe yet — loud, named compile failure over silent wrong
+        // equality (see the file WHY).
+        .OptionalWrapper(_, _) -> unsupported_eq_call("optional_wrapper", a, b)
+        .WrapperList(_, _) -> unsupported_eq_call("wrapper_list", a, b)
+        .StructList(_) -> unsupported_eq_call("struct_list", a, b)
+    }
+}
+
+/// `a.eq(b)` — recurse into the derived eq via standard method dispatch.
+@comptime
+fn eq_method_call(a: Expr, b: Expr) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(b)]
+    emit_call(Expr.FieldAccess(synth_expr_id(a), "eq"), args)
+}
+
+/// `x.node` — the 1-hop wrapper projection.
+@comptime
+fn node_hop(x: Expr) -> Expr {
+    Expr.FieldAccess(synth_expr_id(x), "node")
+}
+
+/// `<helper>(a, b, (x: T, y: T) -> x.eq(y))` — pairwise/none-guarded
+/// equality via an @std combinator, recursing through a generated lambda.
+/// The lambda's params are ANNOTATED with the node type: a lambda bound to
+/// a generic fn param (`eq: fn(T, T) -> bool`) is never threaded a type at
+/// codegen, so un-annotated params trip the F1006 gate — and the emitter
+/// knows the element type exactly (the shape's target).
+@comptime
+fn eq_by_helper_call(helper: string, a: Expr, b: Expr, target: string) -> Expr {
+    let x = ParamEntry { name: "x", vtype: name_vtype(target) }
+    let y = ParamEntry { name: "y", vtype: name_vtype(target) }
+    let lambda_params: List<ParamEntry> = [x, y]
+    let lambda = Expr.Lambda(lambda_params, synth_expr_id(eq_method_call(Expr.Ident("x"), Expr.Ident("y"))))
+    let args: List<ExprId> = [synth_expr_id(a), synth_expr_id(b), synth_expr_id(lambda)]
+    emit_call(Expr.Ident(helper), args)
+}
+
+/// `list_eq_by(a, b, …)` — aligned-pair list equality.
+@comptime
+fn list_eq_by_call(a: Expr, b: Expr, target: string) -> Expr {
+    eq_by_helper_call("list_eq_by", a, b, target)
+}
+
+/// `opt_eq_by(a, b, …)` — none-guarded equality over a nullable node field.
+@comptime
+fn opt_eq_by_call(a: Expr, b: Expr, target: string) -> Expr {
+    eq_by_helper_call("opt_eq_by", a, b, target)
+}
+
+/// An undefined-fn call naming the unsupported shape — fails the generated
+/// code's compile loudly at the exact field.
+@comptime
+fn unsupported_eq_call(which: string, a: Expr, b: Expr) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(a), synth_expr_id(b)]
+    emit_call(Expr.Ident("derive_eq_has_no_${which}_recipe"), args)
+}
+
+/// Fold the pairwise comparisons into one `&&` chain; an empty variant
+/// compares equal (`true`).
+@comptime
+fn conjunction(pairs: List<Expr>) -> Expr {
+    if pairs.length == 0 { return Expr.Bool("true") }
+    mut acc = pairs[0]
+    mut i = 1
+    while i < pairs.length {
+        acc = Expr.Logical(synth_expr_id(acc), LogicOp.And, synth_expr_id(pairs[i]))
+        i = i + 1
+    }
+    acc
+}
+

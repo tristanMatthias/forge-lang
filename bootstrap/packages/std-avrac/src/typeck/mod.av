@@ -3135,11 +3135,43 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> 
     cur with { current_line: fb_line, current_col: fb_col }
 }
 
+/// Erase every nominal node naming one of the callee's declared type params
+/// to `Unknown` — the layout gate's "no settled layout" sentinel. The gate's
+/// unresolved-param detection (`vtype_node_unresolved`) is registry-membership
+/// by NAME, which a user type sharing a param's name defeats: a top-level
+/// `enum T` registers canonical "T", so every callee signature mentioning a
+/// bare `T` suddenly looks CONCRETE and the whole unit drowns in F1000
+/// layout conflicts. Erasing by the callee's own declared param list is
+/// exact — no name heuristics — and per-node, so `Pair<T, int>` still flags
+/// a concrete `int`↔`string` conflict while leaving the `T` pair alone.
+/// The nominal name a shadowed type param could have been upgraded to by
+/// resolve_vtype: Struct is the parser default; Enum / NarrowedEnum /
+/// Newtype / Trait are the registry-kind upgrades when a user type shares
+/// the param's name. "" for structural/primitive nodes (never a param
+/// name, so type_param_has skips them). Allocation-free — the erase walk
+/// previously round-tripped every node through vtype_display.
+fn tc_param_shaped_name(t: ValueType) -> string {
+    match t {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        .NarrowedEnum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        .Trait(n, _) -> n
+        _ -> ""
+    }
+}
+
+fn vtype_erase_type_params(ty: ValueType, tp: List<TypeParamEntry>) -> ValueType {
+    if type_param_has(tp, tc_param_shaped_name(ty)) { return ValueType.Unknown }
+    ty.map((c: ValueType) -> vtype_erase_type_params(c, tp))
+}
+
 // Check that newtype arguments match — UserId != OrderId even if both wrap string
 /// Verify newtype-wrapped arguments: a `UserId` param doesn't
 /// accept a bare `UUID` — the wrapper has to be explicit at the
-/// call site.
-fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args: List<ExprId>, is_extern: bool) -> TC {
+/// call site. `tp` is the callee's declared type-param list, threaded so
+/// the layout gate can erase param-named nodes (see vtype_erase_type_params).
+fn tc_check_newtype_args(tc: TC, fn_name: string, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, is_extern: bool) -> TC {
     // Per-arg caret: the mismatch/layout reports below then point at the
     // offending argument (fb = the call head's stamp, restored after) —
     // not the call statement's head.
@@ -3167,10 +3199,13 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: List<ParamEntry>, args
         // gate. An EXTERN C binding uses `int` as an i64-legacy value slot that
         // legitimately receives a List/Map (`avra_map_set_cstr(map, key, value: int)`),
         // so the collection→scalar check is omitted ONLY there (the param gate).
+        // Erase the callee's own type params for the layout gate only — the
+        // newtype check above compares the declared type as written.
+        let gate_ty = if tp.length == 0 { param_ty } else { vtype_erase_type_params(param_ty, tp) }
         cur = if is_extern {
-            check_assign_layout_param(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
+            check_assign_layout_param(cur, arg_ty, gate_ty, "`${fn_name}` parameter `${p.name}`")
         } else {
-            check_assign_layout(cur, arg_ty, param_ty, "`${fn_name}` parameter `${p.name}`")
+            check_assign_layout(cur, arg_ty, gate_ty, "`${fn_name}` parameter `${p.name}`")
         }
         i = i + 1
     }
@@ -3536,7 +3571,7 @@ fn tc_check_fn_call_with_expected(checked: TC, name: string, args: List<ExprId>,
     // pins T, so an un-annotated param would reach the layout boundary
     // Unknown (the F1007 backstop). Require the annotation here.
     let lambda_gated = tc_gate_generic_lambda_args(shape_checked, rec.tp, rec.params, args)
-    let newtype_checked = tc_check_newtype_args(lambda_gated, name, rec.params, args, rec.is_extern)
+    let newtype_checked = tc_check_newtype_args(lambda_gated, name, rec.tp, rec.params, args, rec.is_extern)
     // Optional strict arg-type warnings: AVRA_STRICT_ARGS=1 surfaces
     // F9004 when a concrete arg type isn't assignable to its concrete
     // param type. Off by default — the existing typeck has gaps in
@@ -3618,15 +3653,20 @@ fn tc_gate_generic_lambda_args(tc: TC, tp: List<TypeParamEntry>, params: List<Pa
 /// to whatever the arg's type is via tc_subst_generic_ret.
 fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     if tp.length == 0 { return false }
-    // A type "mentions" a param iff any node in its tree is a bare
-    // Struct naming one. derive_walker's ValueType.any tests that
-    // predicate on every node (self + all children), so it subsumes the
-    // hand-rolled List/Task/FnTyped/Enum recursion — and additionally
-    // reaches Union / Tuple / Newtype members the old walker skipped.
-    ty.any((t: ValueType) -> match t {
-        .Struct(n, _, _) -> type_param_has(tp, n)
-        _ -> false
-    })
+    // A type "mentions" a param iff any node in its tree is a nominal
+    // naming one. derive_walker's ValueType.any tests that predicate on
+    // every node (self + all children), so it subsumes the hand-rolled
+    // List/Task/FnTyped/Enum recursion — and additionally reaches
+    // Union / Tuple / Newtype members the old walker skipped.
+    //
+    // The non-Struct kinds matter when a USER type shares a param's name:
+    // a top-level `enum T` (or `type T = UUID`, `trait T`) registers
+    // canonical "T", so resolve_vtype upgrades a declared param slot `T`
+    // to that registry kind — the name is still lexically this decl's
+    // param, and missing the upgraded kind here turns the skip into a
+    // bogus F1000 against every `Result.Ok(x)`-style ctor.
+    // tc_param_shaped_name covers all five nominal kinds.
+    ty.any((t: ValueType) -> type_param_has(tp, tc_param_shaped_name(t)))
 }
 
 /// Resolve a generic-fn call's return type. Walks params/args
@@ -3751,6 +3791,23 @@ fn tc_fill_unresolved_typeargs(tp: List<TypeParamEntry>, base: List<TypeArg>, fi
     out
 }
 
+/// The tp list a POST-SUBSTITUTION erasure may act on: only params the
+/// bindings left unbound. A bound param's occurrences were replaced by
+/// tc_subst_vtype, so any node still displaying its name is the substituted
+/// CONCRETE type coinciding with the param's name (the `enum T` collision) —
+/// erasing it would silently revert a known type to Unknown and un-gate the
+/// call. Erasure over UNSUBSTITUTED types (the bare declared-tp gates) keeps
+/// the full list.
+fn unbound_type_params(tp: List<TypeParamEntry>, bindings: List<TypeArg>) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    for p in tp {
+        if vtype_is_unknown(tc_type_arg_lookup(bindings, p.name)) {
+            out.push(p)
+        }
+    }
+    out
+}
+
 fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: List<ParamEntry>, args: List<ExprId>, ret_ty: ValueType, expected: ValueType) -> ValueType {
     if tp.length == 0 { return ret_ty }
     let empty: List<TypeArg> = []
@@ -3766,7 +3823,16 @@ fn tc_subst_generic_ret_with_expected(tc: TC, tp: List<TypeParamEntry>, params: 
         let exp_only = tc_unify(tp, ret_ty, expected, empty)
         tc_fill_unresolved_typeargs(tp, arg_bindings, exp_only)
     }
-    tc_subst_vtype(ret_ty, ret_bindings)
+    // Erase any tp-named node the bindings left unsubstituted (a param that
+    // bound to Unknown, or never bound): the call's result type is genuinely
+    // unknown there, and leaking the literal `Struct("T")` fabricates a
+    // nominal that downstream gates then compare — harmless while "T" is
+    // unregistered (id 0 skips), a bogus F1000 the moment a user type shares
+    // the name. `.Unknown` is the honest sentinel every gate already skips.
+    // Unbound-only: a BOUND param's post-subst occurrences ARE its concrete
+    // binding — erasing a binding that coincides with the param's name
+    // (`enum T` + `wrap<T>`) would degrade a known result type to Unknown.
+    vtype_erase_type_params(tc_subst_vtype(ret_ty, ret_bindings), unbound_type_params(tp, ret_bindings))
 }
 
 /// Walk params/args pairwise, recursing into List/Task/FnTyped
@@ -4124,7 +4190,7 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<ValueType>, args: Li
     // (mirrors the regular call path) so `g<string>([1])` into an int param —
     // and `id<string>(9)` into a `T`-typed param now bound to string — are both
     // caught. Passing raw `r.params` would leave `T` unresolved and slip past.
-    let arg_checked = tc_check_newtype_args(lambda_gated, name, subst_param_types(r.params, bindings), args, r.is_extern)
+    let arg_checked = tc_check_newtype_args(lambda_gated, name, unbound_type_params(r.tp, bindings), subst_param_types(r.params, bindings), args, r.is_extern)
     tc_er(arg_checked, tc_subst_vtype(r.ret_ty, bindings))
 }
 
@@ -4385,7 +4451,7 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
             // (#539, also subst_param_types).
             let recv_bindings = tc_recv_type_bindings(checked_args, o.ty)
             let gated_params = subst_param_types(method_params_without_self(r.params), recv_bindings)
-            let arg_checked = tc_check_newtype_args(checked_args, qualified, gated_params, args, r.is_extern)
+            let arg_checked = tc_check_newtype_args(checked_args, qualified, unbound_type_params(r.tp, recv_bindings), gated_params, args, r.is_extern)
             // Substitute the return type from the ARGS first (method-level type
             // params, y9y4.16), then FILL any receiver-bound type param the args
             // left unresolved from the receiver's concrete type_args. A method

@@ -1,0 +1,23 @@
+// The engine failsafe: an enum-only plan (derive_walker) applied to a
+// struct decl must leave the decl untouched and emit NO methods — the
+// program still compiles and the struct works normally. Locks the
+// EmitPlan.enum_only gate so a plan/decl-kind mismatch degrades exactly
+// like the pre-engine walker did (failsafe, not a crash or half-derive).
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive engine: enum-only plan on a struct falls back untouched" {
+    then "the struct compiles and behaves normally, with no derived methods" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_enum_only_failsafe_test.av",
+            "use @std.avrac.features.walker.{derive_walker}\n" +
+            "\n" +
+            "@expand(derive_walker)\n" +
+            "type NotAnEnum = { a: int, b: string }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let v = NotAnEnum { a: 7, b: \"ok\" }\n" +
+            "    println(\"a=\" + string(v.a) + \" b=\" + v.b)\n" +
+            "}\n")
+        out.contains("a=7 b=ok")
+    }
+}

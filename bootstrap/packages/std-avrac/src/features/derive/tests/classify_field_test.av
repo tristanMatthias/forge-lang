@@ -1,0 +1,76 @@
+// Classifier unit tests — one assertion per FieldShape the
+// target-relative classifier can produce from a fixture (StructList is
+// cross-type-only and registry-gated to core's module; it is exercised by
+// the real Stmt/Expr derives in every selfhost compile). A probe macro
+// classifies hand-built ValueTypes against a target and prints the shapes,
+// so the assertions read the classifier's raw answers rather than
+// inferring them from generated code.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "classify_field: one shape per field form" {
+    then "leaf, node, list, optional, wrapper, wrapper-list, optional-wrapper" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_classify_field_test.av",
+            "use @std.avrac.core.{Stmt, Expr, ExprId, ValueType}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "use @std.avrac.features.derive.{FieldShape, classify_field, shape_target, shape_wrapper}\n" +
+            "\n" +
+            "// The 1-hop wrapper the structural discovery must find via\n" +
+            "// ctx_unwrap_path_to — a struct whose single `.node` hop lands on Tree.\n" +
+            "type STree = { node: Tree, line: int }\n" +
+            "\n" +
+            "enum Tree {\n" +
+            "    Leaf(v: int)\n" +
+            "    Node(l: Tree, r: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn shape_name(s: FieldShape) -> string {\n" +
+            "    match s {\n" +
+            "        .Leaf -> \"Leaf\"\n" +
+            "        .Node(t) -> \"Node(\" + t + \")\"\n" +
+            "        .NodeList(t) -> \"NodeList(\" + t + \")\"\n" +
+            "        .OptionalNode(t) -> \"OptionalNode(\" + t + \")\"\n" +
+            "        .Wrapper(t, w) -> \"Wrapper(\" + t + \",\" + w + \")\"\n" +
+            "        .WrapperList(t, w) -> \"WrapperList(\" + t + \",\" + w + \")\"\n" +
+            "        .OptionalWrapper(t, w) -> \"OptionalWrapper(\" + t + \",\" + w + \")\"\n" +
+            "        .StructList(c) -> \"StructList(\" + c + \")\"\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn probe(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let no_args: List<ValueType> = []\n" +
+            "    let tree = ValueType.Enum(\"Tree\", no_args, 0)\n" +
+            "    let stree = ValueType.Struct(\"STree\", no_args, 0)\n" +
+            "    let other = ValueType.Enum(\"Other\", no_args, 0)\n" +
+            "    mut out = \"int=\" + shape_name(classify_field(ValueType.Int, \"Tree\", ctx))\n" +
+            "    out = out + \";str=\" + shape_name(classify_field(ValueType.Str, \"Tree\", ctx))\n" +
+            "    out = out + \";other=\" + shape_name(classify_field(other, \"Tree\", ctx))\n" +
+            "    out = out + \";self=\" + shape_name(classify_field(tree, \"Tree\", ctx))\n" +
+            "    out = out + \";list=\" + shape_name(classify_field(ValueType.List(tree), \"Tree\", ctx))\n" +
+            "    out = out + \";opt=\" + shape_name(classify_field(ValueType.Optional(tree), \"Tree\", ctx))\n" +
+            "    out = out + \";optint=\" + shape_name(classify_field(ValueType.Optional(ValueType.Int), \"Tree\", ctx))\n" +
+            "    out = out + \";wrap=\" + shape_name(classify_field(stree, \"Tree\", ctx))\n" +
+            "    out = out + \";wraplist=\" + shape_name(classify_field(ValueType.List(stree), \"Tree\", ctx))\n" +
+            "    out = out + \";optwrap=\" + shape_name(classify_field(ValueType.Optional(stree), \"Tree\", ctx))\n" +
+            "    let args: List<ExprId> = [synth_expr_id(Expr.String(\"\\\"\" + out + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(probe)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("int=Leaf") &&
+            out.contains(";str=Leaf") &&
+            out.contains(";other=Leaf") &&
+            out.contains(";self=Node(Tree)") &&
+            out.contains(";list=NodeList(Tree)") &&
+            out.contains(";opt=OptionalNode(Tree)") &&
+            out.contains(";optint=Leaf") &&
+            out.contains(";wrap=Wrapper(Tree,STree)") &&
+            out.contains(";wraplist=WrapperList(Tree,STree)") &&
+            out.contains(";optwrap=OptionalWrapper(Tree,STree)")
+    }
+}

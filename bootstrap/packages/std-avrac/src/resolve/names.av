@@ -1448,6 +1448,17 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
             let builtin = vtype_from_name(name)
             match builtin {
                 .Struct(_, _, _) -> {
+                    // A type-param in scope stays bare AND unstamped (id 0).
+                    // resolve_type_in_ctx already keeps the NAME bare (cpvo),
+                    // but the id stamp below consults the registry by that
+                    // bare name — and a top-level user type sharing the
+                    // param's name (`enum T` registers canonical "T") would
+                    // stamp the param slot with the CONCRETE type's id,
+                    // turning every generic signature mentioning `T` in the
+                    // whole unit concrete (mass F1000 layout conflicts).
+                    if type_param_has(ctx.type_params, name) {
+                        return ValueType.Struct(name, rewrite_vtype_list(ctx, args), 0)
+                    }
                     // Genuinely a struct name; resolve through aliases.
                     let qn = resolve_type_in_ctx(ctx, name)
                     ValueType.Struct(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
@@ -1456,6 +1467,11 @@ fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
             }
         }
         .Enum(name, args, _) if name != "" -> {
+            // Same type-param guard as the Struct arm — an inferred/narrowed
+            // slot can carry a param under the Enum kind.
+            if type_param_has(ctx.type_params, name) {
+                return ValueType.Enum(name, rewrite_vtype_list(ctx, args), 0)
+            }
             let qn = resolve_type_in_ctx(ctx, name)
             ValueType.Enum(qn, rewrite_vtype_list(ctx, args), type_registry_id_for(ctx.type_reg, qn))
         }

@@ -81,3 +81,42 @@ spec "UAP: same-name impl method + fn-typed field disambiguate by position" {
         (c.tick)() == 99
     }
 }
+
+// Regression: a method-position fn-field call must carry the
+// field's DECLARED return type, not `.Int`. The old fallback emitted the
+// result via the untyped indirect-call helper, so a struct-returning
+// field-fn came back int-typed and any downstream field access on the
+// result failed codegen ("field access on non-struct value"). Discovered
+// by the derive engine's hook dispatch (`m.signature(dc).prologue`).
+
+type Point = { x: int, y: int }
+type PointFactory = { make: fn(int, int) -> Point }
+
+fn make_point(x: int, y: int) -> Point {
+    Point { x, y }
+}
+
+spec "UAP: struct-returning fn field types the call result" {
+    then "field access on the returned struct works" {
+        let f = PointFactory { make: make_point }
+        let p = f.make(3, 4)
+        p.x + p.y == 7
+    }
+    then "chained field access without a binding works" {
+        let f = PointFactory { make: make_point }
+        f.make(10, 20).y == 20
+    }
+}
+
+type Wordy = { greet: fn(string) -> string }
+
+fn greet_loudly(name: string) -> string {
+    "HI " + name
+}
+
+spec "UAP: string-returning fn field types the call result" {
+    then "string methods dispatch on the result" {
+        let w = Wordy { greet: greet_loudly }
+        w.greet("ada").length == 6
+    }
+}

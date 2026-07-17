@@ -1,0 +1,43 @@
+// WHY: the decl reader of the unified derive engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1) — normalizes
+// an enum decl's variants AND a struct decl's fields to ONE shape so the
+// engine's traversal (emit.av) and every emitter are written once against
+// `DeclView` instead of special-casing EnumDecl vs TypeDecl.
+//
+// A struct is a single-variant view: `type P = { x, y }` reads as one
+// variant named after the decl carrying the struct's fields. Core's own
+// `Variant` / `FieldEntry` are reused as the view rows — they already carry
+// exactly (name, fields) / (name, resolved) and inventing parallel view
+// types would just duplicate them.
+
+use core.{Stmt, Variant}
+
+/// Which declaration form a `DeclView` was read from. Emitters that only
+/// make sense per-variant-match (walk) gate on this via `EmitPlan.enum_only`;
+/// shape-agnostic emitters (eq) serve both.
+export enum DeclShapeKind {
+    EnumShape,
+    StructShape,
+}
+
+/// One derivable declaration, normalized: an enum's variants, or a struct
+/// as a single synthetic variant named after the decl. `name == ""` marks
+/// a non-derivable stmt (the engine failsafes, leaving the decl untouched).
+/// `generic` marks a decl with type params — derives don't parameterize
+/// their emitted methods yet, so the engine failsafes those too rather
+/// than emitting methods whose `self` type silently drops the params.
+export type DeclView = { name: string, kind: DeclShapeKind, generic: bool, variants: List<Variant> }
+
+/// Read a decl into a `DeclView`. invoke_macro already strips the
+/// Annotated wrapper, so only the bare decl forms need matching.
+@comptime
+export fn decl_view(s: Stmt) -> DeclView {
+    let empty: List<Variant> = []
+    match s {
+        .EnumDecl(name, tp, variants) -> DeclView { name, kind: DeclShapeKind.EnumShape, generic: tp.length > 0, variants }
+        .TypeDecl(name, tp, fields) -> {
+            let single: List<Variant> = [Variant { name, fields }]
+            DeclView { name, kind: DeclShapeKind.StructShape, generic: tp.length > 0, variants: single }
+        }
+        _ -> DeclView { name: "", kind: DeclShapeKind.EnumShape, generic: false, variants: empty }
+    }
+}

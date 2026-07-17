@@ -49,6 +49,28 @@ export fn list_all<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
     true
 }
 
+/// True when `xs` and `ys` have the same length and every aligned pair
+/// satisfies `eq`. Short-circuits on the first mismatch. The pairwise
+/// backbone of derived structural equality (features/derive eq emitter).
+export fn list_eq_by<T>(xs: List<T>, ys: List<T>, eq: fn(T, T) -> bool) -> bool {
+    if xs.length != ys.length { return false }
+    mut i = 0
+    while i < xs.length {
+        if !eq(xs[i], ys[i]) { return false }
+        i = i + 1
+    }
+    true
+}
+
+/// True when both optionals are absent, or both present with `eq`-equal
+/// values. The none-guarded sibling of `list_eq_by` — derived structural
+/// equality routes nullable node fields (`next: Tree?`) through here.
+export fn opt_eq_by<T>(a: T?, b: T?, eq: fn(T, T) -> bool) -> bool {
+    if a == null { return b == null }
+    if b == null { return false }
+    eq(a!, b!)
+}
+
 /// Linear membership check on a `List<string>`. Common enough that
 /// every caller writing `list_any(xs, (s: string) -> s == target)`
 /// (or the equivalent for-loop) is more noise than signal — name

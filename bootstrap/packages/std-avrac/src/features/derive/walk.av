@@ -1,0 +1,676 @@
+// WHY: the walk emitter — derive_walker's six methods (children /
+// all_children_spanned / visit / any / find / map) re-homed onto the
+// unified derive engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1). The arm-builder bodies are the mature
+// generators from walker/derive.av, verbatim; what moved OUT of them is
+// everything the engine now owns (decl reading, classification, binding,
+// match/fn assembly). Emitted AST is byte-identical to the pre-engine
+// walker — the HRN diff-test is the gate.
+//
+// Self-ness is a POLICY here, not a shape: children()/map() classify
+// against the parent only (`cross_type: false` — a field is a child iff
+// its target IS the derived enum), while all_children_spanned classifies
+// against every AST node kind (`cross_type: true`). Same classifier,
+// two probes — the old classify_field_kind / classify_field_crosstype
+// split, expressed as plan data.
+
+use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, ValueType, BinOp, type_short_name}
+use features.derive.{FieldShape, shape_is_child, shape_is_single, shape_is_listish, shape_target, shape_wrapper, shape_container, struct_list_helpers}
+use features.derive.{EmitPlan, EmitMethod, PerVariantMethod, WholeFnMethod, MethodSig, DeclCtx, Classified, self_vtype, emit_call, ident_field_access, name_vtype}
+use features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}
+
+// ── The plan ──
+
+/// The walk emitter: six methods in the exact order derive_walker has
+/// always emitted them. `enum_only` — map() reconstructs via EnumCtor and
+/// children() means nothing on a bare struct; a struct target falls back
+/// to the engine failsafe exactly as the pre-engine walker did.
+@comptime
+export fn walk_plan() -> EmitPlan {
+    let methods: List<EmitMethod> = [
+        EmitMethod.PerVariant(PerVariantMethod {
+            method_name: "children",
+            cross_type: false,
+            signature: children_sig,
+            bind: walk_bind,
+            arm_body: children_arm,
+        }),
+        // A2: `all_children_spanned()` is the SINGLE cross-type traversal — each
+        // child paired with its wrapper-derived (line, col). There is no separate
+        // position-free `all_children()`: a node's @std consumers (the arena probes,
+        // the ingest) strip the spans in @std via `strip_spans`, where that helper
+        // resolves. A generated `all_children` wrapper would emit a `strip_spans`
+        // call into EVERY derived enum — including user enums in packages that don't
+        // import it (F3000) — and a second per-variant fold would re-open the A1
+        // FnTyped ordering-drift. One generator avoids both.
+        EmitMethod.PerVariant(PerVariantMethod {
+            method_name: "all_children_spanned",
+            cross_type: true,
+            signature: spanned_sig,
+            bind: walk_bind,
+            arm_body: spanned_arm,
+        }),
+        EmitMethod.WholeFn(WholeFnMethod { method_name: "visit", build: build_visit_fn }),
+        EmitMethod.WholeFn(WholeFnMethod { method_name: "any", build: build_any_fn }),
+        EmitMethod.WholeFn(WholeFnMethod { method_name: "find", build: build_find_fn }),
+        EmitMethod.PerVariant(PerVariantMethod {
+            method_name: "map",
+            cross_type: false,
+            signature: map_sig,
+            bind: map_bind,
+            arm_body: map_arm,
+        }),
+    ]
+    EmitPlan { macro_name: "derive_walker", enum_only: true, methods }
+}
+
+// ── Bind hooks ──
+
+/// children/all_children_spanned bind children by name, leaves to `_`.
+@comptime
+fn walk_bind(field_name: string, kind: FieldShape, i: int) -> string {
+    if shape_is_child(kind) { return field_name }
+    "_"
+}
+
+/// map binds EVERY field readable — its body reconstructs the variant with
+/// each leaf in its original slot, so leaves get a deterministic
+/// `__avra_map_s<i>` synthetic name (`_` is unreadable). The leading `__`
+/// keeps synthetics distinct from any user identifier (spec Axis 28
+/// forbids `__`); `i` is the field position, matching the pre-engine
+/// walker's position-indexed synthetics.
+@comptime
+fn map_bind(field_name: string, kind: FieldShape, i: int) -> string {
+    if shape_is_child(kind) { return field_name }
+    "__avra_map_s${string(i)}"
+}
+
+// ── children() ──
+
+@comptime
+fn empty_binding_name() -> string {
+    "__derive_walker_empty"
+}
+
+/// `fn Parent__children(self) -> List<Self>`. The typed-empty prologue
+/// binding pins scalar arms to `List<Self>` — bare `[]` would be
+/// `List<Unknown>` and fail to unify with list-typed sibling arms (F1000).
+/// The Let decoder preserves the resolved-vtype slot, so the annotation
+/// survives the synth roundtrip.
+@comptime
+fn children_sig(dc: DeclCtx) -> MethodSig {
+    let no_extras: List<ParamEntry> = []
+    let ret = ValueType.List(self_vtype(dc))
+    let empty_elems: List<ExprId> = []
+    let prologue: List<Stmt> = [Stmt.Let(empty_binding_name(), ret, synth_expr_id(Expr.ListLit(empty_elems)))]
+    MethodSig { extra_params: no_extras, ret, prologue }
+}
+
+/// Build the arm body — the Expr producing the children list for this
+/// variant. Shapes (in match order):
+///
+///   - All leaves → `__derive_walker_empty` (the typed-empty binding).
+///   - Only single children → `[c1, c2, ...]`.
+///   - Single node-list child, no singles → `field_ident`.
+///   - Single wrapper-list child, no singles → `unwrap_fn(field_ident)`.
+///   - Anything mixed → fold via `list_concat([singles], list1, list2, ...)`,
+///     unwrapping wrapper-list bindings on the way in.
+@comptime
+fn children_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
+    let single_count = count_matching(fields, shape_is_single)
+    // Optional children contribute a conditional (0-or-1) list, so they
+    // count toward the list total — forcing the concat-fold path.
+    let total_list = count_matching(fields, shape_is_listish)
+
+    if single_count == 0 && total_list == 0 {
+        return Expr.Ident(empty_binding_name())
+    }
+
+    if total_list == 0 {
+        mut elems: List<ExprId> = []
+        for c in fields {
+            if shape_is_single(c.kind) {
+                elems.push(synth_expr_id(single_child_expr(c)))
+            }
+        }
+        return Expr.ListLit(elems)
+    }
+
+    if single_count == 0 && total_list == 1 {
+        for c in fields {
+            if c.kind is .NodeList { return Expr.Ident(c.binding) }
+            if c.kind is .WrapperList { return unwrap_call(c.binding, shape_wrapper(c.kind), dc.parent) }
+        }
+    }
+
+    fold_children(fields, dc.parent)
+}
+
+/// Count the fields whose shape satisfies `pred` — the one counting loop
+/// behind the old count_direct/count_list/count_wrap/count_opt quartet.
+@comptime
+fn count_matching(fields: List<Classified>, pred: fn(FieldShape) -> bool) -> int {
+    mut n = 0
+    for c in fields {
+        if pred(c.kind) { n = n + 1 }
+    }
+    n
+}
+
+/// The Expr that yields a single-child binding's node. A direct node is
+/// the binding itself; a wrapper projects one `.node` hop. Single source
+/// of truth for the children() sites that emit single children (the
+/// all-single list literal and the mixed concat fold).
+@comptime
+fn single_child_expr(c: Classified) -> Expr {
+    if c.kind is .Wrapper {
+        return ident_field_access(c.binding, "node")
+    }
+    Expr.Ident(c.binding)
+}
+
+/// Build an Expr that concatenates the single + list children into one
+/// `List<Self>` via repeated `list_concat`. Avoids generating
+/// `Expr.Assign` / `Expr.Block` / `mut` constructs — the macro return must
+/// roundtrip through the eval boundary, which only handles a subset of Expr.
+///
+/// Fold children in FIELD ORDER from the typed-empty list (which pins the
+/// element type to List<Self>), one binding at a time. A single contributes
+/// a one-element list; a list its elements; a nullable single a 0-or-1
+/// element list via the none-guarded *_opt helpers. Folding in binding order
+/// — rather than all singles first, then lists — keeps a list field that
+/// PRECEDES a single field in order (ValueType.FnTyped: params before ret).
+///
+/// The list-contributing shapes are dispatched with an `is`-chain rather
+/// than a `match`: this runs under `@comptime`, and the comptime
+/// interpreter can't evaluate a match whose non-contributing arms would
+/// be empty blocks (`-> {}`). The chain is therefore deliberate — when a
+/// new list-contributing FieldShape is added, add its branch here too (the
+/// expression-valued `map_arm` match stays the exhaustiveness guard).
+@comptime
+fn fold_children(fields: List<Classified>, parent: string) -> Expr {
+    mut acc: Expr = Expr.Ident(empty_binding_name())
+    for c in fields {
+        if shape_is_single(c.kind) {
+            let one: List<ExprId> = [synth_expr_id(single_child_expr(c))]
+            acc = concat_call(acc, Expr.ListLit(one))
+        }
+        if c.kind is .NodeList {
+            acc = concat_call(acc, Expr.Ident(c.binding))
+        }
+        if c.kind is .WrapperList {
+            acc = concat_call(acc, unwrap_call(c.binding, shape_wrapper(c.kind), parent))
+        }
+        if c.kind is .OptionalNode {
+            acc = concat_call(acc, self_opt_to_list_call(c.binding, parent))
+        }
+        if c.kind is .OptionalWrapper {
+            acc = concat_call(acc, unwrap_node_opt_call(c.binding, shape_wrapper(c.kind), parent))
+        }
+    }
+    acc
+}
+
+/// `list_concat(acc, item)`.
+@comptime
+fn concat_call(acc: Expr, item: Expr) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(acc), synth_expr_id(item)]
+    emit_call(Expr.Ident("list_concat"), args)
+}
+
+/// Build `unwrap_node_list::<Wrapper, Parent>(field_name)` for a
+/// wrapper-list binding. so07.7.1: explicit type-args make the typeck
+/// unambiguous via check_generic_call's substitution; mono then inherits
+/// the resolved types from the typeck pass.
+///
+/// `parent` is the FQN (e.g. "@std::avrac::core::Stmt") — pass it through
+/// unchanged so check_generic_call's resolve_vtype lookup hits the
+/// registered name as-is (the enum_type_has lookup is a strict string
+/// match; bare-vs-qualified tolerance only lives in vtype_eq, not in the
+/// registry probe).
+@comptime
+fn unwrap_call(field_name: string, wrapper: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_list")), type_args, args)
+}
+
+/// `self_opt_to_list::<Parent>(field)` — a `Self?` child as a 0-or-1
+/// element list. Explicit type-arg (like unwrap_call) so the call
+/// type-checks without relying on optional-aware inference.
+@comptime
+fn self_opt_to_list_call(field_name: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
+    let type_args: List<ValueType> = [name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("self_opt_to_list")), type_args, args)
+}
+
+/// `unwrap_node_opt::<W, Parent>(field)` — a `Wrapper<Self>?` child as a
+/// 0-or-1 element list of the unwrapped `.node`.
+@comptime
+fn unwrap_node_opt_call(field_name: string, wrapper: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_opt")), type_args, args)
+}
+
+// ── all_children_spanned() (A1 cross-type traversal + A2 spans) ──
+//
+// `children()` returns only SAME-type children (an `Expr`'s `Expr`
+// children). `all_children_spanned()` returns EVERY child across the four
+// node kinds, each boxed as `AnyNode` and PAIRED with its wrapper-derived
+// (line, col) — so one recursion can flatten a node's whole subtree into
+// the per-type arenas with a real span per wrapped child (A2).
+
+@comptime
+fn all_spanned_empty_binding_name() -> string {
+    "__derive_spanned_empty"
+}
+
+/// `fn Parent__all_children_spanned(self) -> List<SpannedChild>`.
+/// `SpannedChild` is concrete (a struct, not Self), so the list element
+/// type is fixed across all node kinds — the typed-empty prologue binding
+/// pins it for all-leaf arms. The element type rides `name_vtype` (a
+/// `.Struct` slot): the resolver's `rewrite_vtype` re-runs a `.Struct`
+/// name slot through `vtype_from_name` and qualifies it correctly,
+/// whereas a `.Enum` slot would stay (wrongly) tagged Enum.
+@comptime
+fn spanned_sig(dc: DeclCtx) -> MethodSig {
+    let no_extras: List<ParamEntry> = []
+    let ret = ValueType.List(name_vtype("SpannedChild"))
+    let empty_elems: List<ExprId> = []
+    let prologue: List<Stmt> = [Stmt.Let(all_spanned_empty_binding_name(), ret, synth_expr_id(Expr.ListLit(empty_elems)))]
+    MethodSig { extra_params: no_extras, ret, prologue }
+}
+
+/// Build one `all_children_spanned()` arm body: a `List<SpannedChild>` of
+/// every child, each paired with its wrapper-derived (line, col) (A2).
+/// Mirrors the fold of `fold_children` but each contribution is a spanned
+/// list: WRAPPER children carry their real position, bare children
+/// position-0. All-leaf → the typed-empty binding (so the arm types as
+/// `List<SpannedChild>`, not `List<Unknown>`).
+@comptime
+fn spanned_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
+    mut any_child = false
+    for c in fields {
+        if shape_is_child(c.kind) { any_child = true }
+    }
+    if !any_child {
+        return Expr.Ident(all_spanned_empty_binding_name())
+    }
+    // Fold in FIELD ORDER, one binding at a time, from the typed-empty list
+    // (which pins the element type to List<SpannedChild> before the first
+    // concat) — same ordering rationale as fold_children.
+    mut acc: Expr = Expr.Ident(all_spanned_empty_binding_name())
+    for c in fields {
+        if shape_is_single(c.kind) {
+            acc = concat_call(acc, spanned_single_list(c))
+        }
+        if shape_is_listish(c.kind) {
+            acc = concat_call(acc, spanned_list_child(c))
+        }
+    }
+    acc
+}
+
+/// The `List<SpannedChild>` expr for one single child (A2). Boxed and
+/// tagged position-0 via `spanned_bare_one` (spans are side-table-only).
+/// A single WRAPPER child has NO spanned recipe — same loud-failure
+/// convention as the wrapper list shapes below: silently projecting
+/// `.node` here would discard the wrapper's own span, so if a wrapper
+/// single ever reappears in an AST enum, the generated code fails its
+/// COMPILE on the undefined helper instead.
+@comptime
+fn spanned_single_list(c: Classified) -> Expr {
+    if c.kind is .Wrapper {
+        return helper_call("derive_spanned_has_no_cross_type_wrapper_recipe", Expr.Ident(c.binding))
+    }
+    helper_call("spanned_bare_one", box_single(c))
+}
+
+/// The `List<SpannedChild>` expr for one list/optional child (A2).
+/// Dispatched per shape — each listish shape names its boxing/flattening
+/// recipe explicitly. The two wrapper shapes have NO cross-type recipe:
+/// every wrapper field was retired from the AST enums in the B-final rep
+/// flip, so no input reaches them — and if one ever does, the emitted
+/// undefined helper name fails the generated code's COMPILE loudly (the
+/// `anynode_ctor` precedent) instead of mistyping the child.
+@comptime
+fn spanned_list_child(c: Classified) -> Expr {
+    if c.kind is .StructList {
+        // A registered struct-list: its hand-written extract helper flattens the
+        // element list into cross-type spanned children (field order per element).
+        return helper_call(struct_list_helpers(shape_container(c.kind)).spanned, Expr.Ident(c.binding))
+    }
+    if c.kind is .NodeList {
+        return helper_call("spanned_bare_list", box_list_call(shape_target(c.kind), Expr.Ident(c.binding)))
+    }
+    if c.kind is .OptionalNode {
+        return helper_call("spanned_bare_list", box_list_call(shape_target(c.kind), self_opt_to_list_call(c.binding, shape_target(c.kind))))
+    }
+    helper_call("derive_spanned_has_no_cross_type_wrapper_recipe", Expr.Ident(c.binding))
+}
+
+/// `AnyNode.AnyX(binding)` for a single DIRECT node child. Wrapper
+/// singles never reach here — spanned_single_list (the only caller)
+/// fails them loudly before boxing.
+@comptime
+fn box_single(c: Classified) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(c.binding))]
+    Expr.EnumCtor("AnyNode", anynode_ctor(shape_target(c.kind)), args)
+}
+
+/// `box_<target>_list(arg)` — box a `List<Node>` as `List<AnyNode>`.
+@comptime
+fn box_list_call(target: string, arg: Expr) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(arg)]
+    emit_call(Expr.Ident(box_list_fn(target)), args)
+}
+
+/// `fn(arg)` — call a named @std helper with one argument.
+@comptime
+fn helper_call(fn_name: string, arg: Expr) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(arg)]
+    emit_call(Expr.Ident(fn_name), args)
+}
+
+/// The `AnyNode` constructor name for a target node kind. `target` is the
+/// (possibly qualified) type name, so match on its short form.
+@comptime
+fn anynode_ctor(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "AnyExpr" }
+    if s == "Stmt" { return "AnyStmt" }
+    if s == "Pattern" { return "AnyPat" }
+    if s == "ValueType" { return "AnyType" }
+    // A new node kind reached the cross-type generator without an AnyNode arm.
+    // Emit an undefined ctor name so the generated all_children_spanned fails to
+    // COMPILE here (loud, named) rather than silently boxing the new kind as a
+    // ValueType — a wrong-arena store that would corrupt at runtime.
+    "AnyNode__add_a_NodeRef_AnyNode_arm_for_${s}"
+}
+
+/// The `box_*_list` helper name for a target node kind (matched on short name).
+@comptime
+fn box_list_fn(target: string) -> string {
+    let s = type_short_name(target)
+    if s == "Expr" { return "box_expr_list" }
+    if s == "Stmt" { return "box_stmt_list" }
+    if s == "Pattern" { return "box_pat_list" }
+    if s == "ValueType" { return "box_type_list" }
+    // See anynode_ctor: undefined helper name -> loud build failure on a new
+    // node kind, not a silent box_type_list miscategorization.
+    "box_list_add_helper_for_${s}"
+}
+
+
+// ── map() ──
+//
+// Per-variant constructor reconstruction with f applied to direct node
+// fields, list_map over `List<Self>` fields, the span-preserving
+// map_node* helpers over wrapper fields, and the none-guarded *_opt
+// helpers over nullable children. Leaves pass through untouched.
+//
+//   fn Type__map(self: Type, f: fn(Type) -> Type) -> Type {
+//       match self {
+//           .V1(s) -> .V1(s)                                 // leaves only
+//           .V2(x) -> .V2(f(x))                              // one direct node
+//           .V3(xs) -> .V3(list_map(xs, f))                  // one List<Self>
+//           .V4(s, x, xs, w) -> .V4(s, f(x), list_map(xs, f), w)
+//       }
+//   }
+
+/// `fn Parent__map(self: Parent, f: fn(Parent) -> Parent) -> Parent`.
+@comptime
+fn map_sig(dc: DeclCtx) -> MethodSig {
+    let self_ty = self_vtype(dc)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_param = ParamEntry { name: "f", vtype: ValueType.FnTyped(f_param_types, self_ty) }
+    let extras: List<ParamEntry> = [f_param]
+    let no_prologue: List<Stmt> = []
+    MethodSig { extra_params: extras, ret: self_ty, prologue: no_prologue }
+}
+
+/// One map arm body: `.Variant(t1, t2, ...)` where ti is the shape's
+/// transform of binding bi. This match is the exhaustiveness guard for
+/// FieldShape — a new shape forces a compile error here rather than
+/// silently leaving its child unwalked.
+@comptime
+fn map_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
+    mut args: List<ExprId> = []
+    for c in fields {
+        let arg_expr = match c.kind {
+            .Node(_) -> map_call_on_field(c.binding)
+            .NodeList(_) -> list_map_call(c.binding)
+            .Wrapper(_, w) -> map_node_call(c.binding, w, dc.parent)
+            .WrapperList(_, w) -> map_node_list_call(c.binding, w, dc.parent)
+            // None-guarded map of nullable children.
+            .OptionalNode(_) -> map_self_opt_call(c.binding, dc.parent)
+            .OptionalWrapper(_, w) -> map_node_opt_call(c.binding, w, dc.parent)
+            // A leaf (non-node) field is carried through unchanged. Named
+            // explicitly (not `_`) so a new FieldShape forces a compile error
+            // here rather than silently leaving its child unwalked.
+            .Leaf -> Expr.Ident(c.binding)
+            // StructList is cross-type only (classify_field never yields it),
+            // so this arm is unreachable in the same-type map(); it exists to
+            // keep this exhaustiveness guard wildcard-free. A struct-list is
+            // left unmapped here (same as its Leaf status in children()).
+            .StructList(_) -> Expr.Ident(c.binding)
+        }
+        args.push(synth_expr_id(arg_expr))
+    }
+    Expr.EnumCtor(dc.parent, variant, args)
+}
+
+/// `f(bind_name)` — the per-field transform applied to a direct node.
+@comptime
+fn map_call_on_field(bind_name: string) -> Expr {
+    let call_args: List<ExprId> = [synth_expr_id(Expr.Ident(bind_name))]
+    emit_call(Expr.Ident("f"), call_args)
+}
+
+/// `list_map(bind_name, f)` — map f over a List<Self>. The generic
+/// list_map helper's inference pins T,U from xs's element type and f's
+/// signature, so no explicit type-args needed here.
+@comptime
+fn list_map_call(bind_name: string) -> Expr {
+    let lm_args: List<ExprId> = [synth_expr_id(Expr.Ident(bind_name)), synth_expr_id(Expr.Ident("f"))]
+    emit_call(Expr.Ident("list_map"), lm_args)
+}
+
+/// `map_node::<Wrapper, Parent>(field_name, f)` — span-preserving map of
+/// f over a single wrapper field (one `SExpr` / `SStmt`). Explicit
+/// type-args so check_generic_call pins W + T unambiguously and mono
+/// inherits them — same rationale as unwrap_call.
+@comptime
+fn map_node_call(field_name: string, wrapper: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node")), type_args, args)
+}
+
+/// `map_node_list::<Wrapper, Parent>(field_name, f)` — span-preserving
+/// map of f over a wrapper-list (List<SExpr> / List<SStmt>): applies f to
+/// each entry's `.node` and rewraps with the original span via `with`, so
+/// a one-level map descends into wrapper-list children without the parent
+/// losing line/col info.
+@comptime
+fn map_node_list_call(field_name: string, wrapper: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_list")), type_args, args)
+}
+
+/// `map_self_opt::<Parent>(field, f)` — none-guarded map over a `Self?`
+/// child. Explicit type-arg so the call type-checks without inference.
+@comptime
+fn map_self_opt_call(field_name: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
+    let type_args: List<ValueType> = [name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_self_opt")), type_args, args)
+}
+
+/// `map_node_opt::<W, Parent>(field, f)` — span-preserving none-guarded
+/// map over a `Wrapper<Self>?` child.
+@comptime
+fn map_node_opt_call(field_name: string, wrapper: string, parent: string) -> Expr {
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
+    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_opt")), type_args, args)
+}
+
+// ── visit() — depth-first traversal callback ──
+
+/// Build `fn Type__visit(self: Type, f: fn(Type) -> void) { f(self);
+/// for c in self.children() { c.visit(f) } }`.
+///
+/// `f`'s vtype is FnTyped([Self], Void) — concrete signature, not a
+/// generic, so codegen knows the lambda's calling convention up front.
+/// Callers that want polymorphic accumulators (fold) get a separate
+/// generic builder when y9y4.3's fold slice lands.
+///
+/// The recursive `c.visit(f)` resolves through codegen's dot-dispatch
+/// lookup against the same `Type__visit` mangled name the plan emits —
+/// no special handling needed.
+@comptime
+fn build_visit_fn(dc: DeclCtx) -> Stmt {
+    let self_ty = self_vtype(dc)
+    let f_param_types: List<ValueType> = [self_ty]
+    let f_ty = ValueType.FnTyped(f_param_types, ValueType.Void)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let f_param = ParamEntry { name: "f", vtype: f_ty }
+    let params: List<ParamEntry> = [self_param, f_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // f(self)
+    let f_args: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let f_call = Stmt.Expr(synth_expr_id(emit_call(Expr.Ident("f"), f_args)))
+
+    // for c in self.children() { c.visit(f) }
+    let no_call_args: List<ExprId> = []
+    let children_call = emit_call(ident_field_access("self", "children"), no_call_args)
+    let visit_args: List<ExprId> = [synth_expr_id(Expr.Ident("f"))]
+    let visit_call = Stmt.Expr(synth_expr_id(emit_call(ident_field_access("c", "visit"), visit_args)))
+    let for_body_stmts: List<Stmt> = [visit_call]
+    let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
+    let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
+
+    let body: List<Stmt> = [f_call, for_loop]
+    Stmt.Function("${dc.parent}__visit", empty_tp, params, ValueType.Void, synth_stmt_ids(body))
+}
+
+// ── any() — short-circuiting existence check ──
+
+/// Build `fn Type__any(self: Type, pred: fn(Type) -> bool) -> bool {
+///     if pred(self) { return true }
+///     for c in self.children() { if c.any(pred) { return true } }
+///     false
+/// }`.
+///
+/// Short-circuit: `c.any(pred)` returning true exits the loop via an
+/// early `return true`. The trailing `false` falls through when nothing
+/// matched. Same shape as visit() but returns bool and guards with
+/// if-stmts.
+@comptime
+fn build_any_fn(dc: DeclCtx) -> Stmt {
+    let self_ty = self_vtype(dc)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return true }
+    let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let pred_call_self = emit_call(Expr.Ident("pred"), pred_args_self)
+    let return_true_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Bool("true")))]
+    let return_true_block = Stmt.Block(synth_stmt_ids(return_true_stmts))
+    let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_true_block), null)
+
+    // for c in self.children() { if c.any(pred) { return true } }
+    let no_call_args: List<ExprId> = []
+    let children_call = emit_call(ident_field_access("self", "children"), no_call_args)
+    let any_args: List<ExprId> = [synth_expr_id(Expr.Ident("pred"))]
+    let c_any_call = emit_call(ident_field_access("c", "any"), any_args)
+    let inner_return_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Bool("true")))]
+    let inner_return_block = Stmt.Block(synth_stmt_ids(inner_return_stmts))
+    let if_c_any = Stmt.If(synth_expr_id(c_any_call), synth_stmt_id(inner_return_block), null)
+    let for_body_stmts: List<Stmt> = [if_c_any]
+    let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
+    let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
+
+    // trailing `false` so the fn returns it when nothing matched
+    let false_return = Stmt.Return(synth_expr_id(Expr.Bool("false")))
+
+    let body: List<Stmt> = [
+        if_pred_self,
+        for_loop,
+        false_return,
+    ]
+    Stmt.Function("${dc.parent}__any", empty_tp, params, ValueType.Bool, synth_stmt_ids(body))
+}
+
+// ── find() — short-circuiting search returning first match ──
+
+/// Build `fn Type__find(self: Type, pred: fn(Type) -> bool) -> Type {
+///     if pred(self) { return self }
+///     for c in self.children() {
+///         let r = c.find(pred)
+///         if r != null { return r }
+///     }
+///     null
+/// }`.
+///
+/// Returns the matching node or null. Type? at source level lowers to the
+/// same ValueType.Enum (T's nullability lives in TypeExpr, not ValueType
+/// per the parser), so emitting ret_vtype = Self is the correct shape;
+/// `return null` and `r != null` are accepted by typeck against that
+/// return type. Mirror of any() but propagates the matching value instead
+/// of just acknowledging it.
+@comptime
+fn build_find_fn(dc: DeclCtx) -> Stmt {
+    let self_ty = self_vtype(dc)
+    let pred_param_types: List<ValueType> = [self_ty]
+    let pred_ty = ValueType.FnTyped(pred_param_types, ValueType.Bool)
+    let self_param = ParamEntry { name: "self", vtype: self_ty }
+    let pred_param = ParamEntry { name: "pred", vtype: pred_ty }
+    let params: List<ParamEntry> = [self_param, pred_param]
+    let empty_tp: List<TypeParamEntry> = []
+
+    // if pred(self) { return self }
+    let pred_args_self: List<ExprId> = [synth_expr_id(Expr.Ident("self"))]
+    let pred_call_self = emit_call(Expr.Ident("pred"), pred_args_self)
+    let return_self_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Ident("self")))]
+    let return_self_block = Stmt.Block(synth_stmt_ids(return_self_stmts))
+    let if_pred_self = Stmt.If(synth_expr_id(pred_call_self), synth_stmt_id(return_self_block), null)
+
+    // for c in self.children() {
+    //     let r = c.find(pred)
+    //     if r != null { return r }
+    // }
+    let no_call_args: List<ExprId> = []
+    let children_call = emit_call(ident_field_access("self", "children"), no_call_args)
+    let find_args: List<ExprId> = [synth_expr_id(Expr.Ident("pred"))]
+    let c_find_call = emit_call(ident_field_access("c", "find"), find_args)
+    let let_r = Stmt.Let("r", self_ty, synth_expr_id(c_find_call))
+    let r_not_null = Expr.Binary(synth_expr_id(Expr.Ident("r")), BinOp.Ne, synth_expr_id(Expr.None))
+    let return_r_stmts: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Ident("r")))]
+    let return_r_block = Stmt.Block(synth_stmt_ids(return_r_stmts))
+    let if_r_not_null = Stmt.If(synth_expr_id(r_not_null), synth_stmt_id(return_r_block), null)
+    let for_body_stmts: List<Stmt> = [
+        let_r,
+        if_r_not_null,
+    ]
+    let for_body = Stmt.Block(synth_stmt_ids(for_body_stmts))
+    let for_loop = Stmt.ForIn("c", synth_expr_id(children_call), synth_stmt_id(for_body))
+
+    // trailing `null` — no descendant matched
+    let null_return = Stmt.Return(synth_expr_id(Expr.None))
+
+    let body: List<Stmt> = [
+        if_pred_self,
+        for_loop,
+        null_return,
+    ]
+    Stmt.Function("${dc.parent}__find", empty_tp, params, self_ty, synth_stmt_ids(body))
+}

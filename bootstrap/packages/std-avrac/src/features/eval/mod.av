@@ -2805,6 +2805,16 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
             let value = value_to_expr_id(store, p[1])?
             .Ok(Expr.Assign(name_v.text, value))
         }
+        "Lambda" -> {
+            // Mirror of construct_expr's Lambda encode (quote_expr/lower.av):
+            // a params list + the body Expr node (→ arena id). Macro-emitted
+            // closures — e.g. the derive eq emitter's `(x, y) -> x.eq(y)` —
+            // decode through here.
+            if p.length != 2 { return .Err("decode: bad payload") }
+            let params = list_value_to_param_list(head)?
+            let body = value_to_expr_id(store, p[1])?
+            .Ok(Expr.Lambda(params, body))
+        }
         _                 -> .Err("decode: unknown Expr variant `${v.enum_variant}`")
     }
 }
