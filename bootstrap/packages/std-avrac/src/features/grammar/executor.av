@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -56,6 +56,12 @@ enum CapVal {
     // fn params / tuple elements).
     TExpr(te: TypeExpr)
     TExprs(tes: List<TypeExpr>)
+    // A built MATCH ARM + a parallel list of them (statement-`match`,
+    // ps3t.6.5.4). An arm composes a pattern (from the pattern family), an
+    // optional guard expression, and a body expression; a `*` over the arm
+    // rule accumulates `Arms`, which a `Match` build folds into Stmt.Match.
+    Arm(a: MatchArm)
+    Arms(xs: List<MatchArm>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -171,6 +177,22 @@ impl CapEnv {
         }
         tes.push(te)
         self.set_scalar(name, CapVal.TExprs(tes))
+    }
+
+    // Match-arm-list accumulator (statement-`match`, ps3t.6.5.4): a `*` over
+    // the arm rule collects each built MatchArm here.
+    fn append_arm(self, name: string, a: MatchArm) {
+        let existing = self.get(name)
+        mut xs: List<MatchArm> = []
+        match existing {
+            .Arms(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .Arm(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(a)
+        self.set_scalar(name, CapVal.Arms(xs))
     }
 }
 
@@ -551,6 +573,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .SNode(id) -> env.append_snode(label, id)
             .PNode(id) -> env.append_pnode(label, id)
             .TExpr(te) -> env.append_texpr(label, te)
+            .Arm(a) -> env.append_arm(label, a)
             _ -> {}
         }
     } else {
@@ -812,6 +835,20 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     if name == "MkErrdefer" && args.length == 1 {
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
     }
+    // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
+    if name == "MkArm" && args.length == 3 {
+        // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
+        // the boxed Pattern (read back from the arena — render_match_arm renders
+        // it) AND its PatId; the guard is nullable (absent ⇒ none).
+        let pat_id = capval_to_pat(st, env.get(args[0]))
+        mut guard: ExprId? = none
+        if capval_present(env.get(args[1])) { guard = capval_to_expr(st, env.get(args[1])) }
+        return CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
+    }
+    if name == "MkMatch" && args.length == 2 {
+        // `match subject { arm* }` — statement-position match.
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
@@ -920,6 +957,16 @@ fn capval_to_texpr_list(v: CapVal) -> List<TypeExpr> {
     match v {
         .TExprs(tes) -> tes
         .TExpr(te) -> [te]
+        _ -> []
+    }
+}
+
+/// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`
+/// yields `Arms` for ≥2, a scalar `Arm` for exactly 1, `Nil` for none.
+fn capval_to_arm_list(v: CapVal) -> List<MatchArm> {
+    match v {
+        .Arms(xs) -> xs
+        .Arm(a) -> [a]
         _ -> []
     }
 }
