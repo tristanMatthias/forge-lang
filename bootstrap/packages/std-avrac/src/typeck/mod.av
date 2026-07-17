@@ -4076,7 +4076,19 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<ValueType>, args: Li
         _ -> ""
     }
     if name == "" { return check_call(tc, callee, args) }
-    let checked = check_expr_list(tc, args)
+    mut checked = check_expr_list(tc, args)
+    // ps3t.4.6: apply the F1004 totality gate to every explicit turbofish
+    // type-arg. A bare generic written as `wrap<GenOpt>(x)` (GenOpt itself
+    // generic) reaches mono with no layout — the SAME under-determined hazard
+    // as a bare generic in a signature annotation, reached through the
+    // explicit-expression-type-arg surface (the sibling of channel<T>'s elem,
+    // gated the same way). 5idg flipped type_args to structural List<ValueType>,
+    // so each arg gates directly through the shared helper — no string re-parse.
+    // An in-scope type param (`wrap<T>(x)` inside `fn f<T>()`) rides
+    // current_scope_tp and stays exempt.
+    for ta in type_args {
+        checked = tc_gate_expr_type_arg(checked, ta)
+    }
     let r = fn_type_get(checked.fns, name)
     if !r.found { return tc_er(checked, .Unknown) }
     if r.tp.length == 0 || type_args.length == 0 {

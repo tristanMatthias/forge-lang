@@ -1,0 +1,96 @@
+// WHY: negative-path spec for the F1004 totality gate on a generic-call
+// TURBOFISH type argument — an explicit type argument written in EXPRESSION
+// position, the sibling of channel<T>'s element type (ps3t.4.6).
+//
+// `wrap<GenOpt>(x)` (where `enum GenOpt<T>`) supplies a bare generic as the
+// turbofish type-arg. It reaches monomorphization with no unique layout — the
+// same under-determined-type hazard as a bare generic in a signature annotation
+// (the silent first-match wrong-layout / segfault class for struct type-args).
+// Since 5idg flipped `Expr.GenericCall.type_args` to a structural
+// `List<ValueType>`, `check_generic_call` gates every type-arg through the same
+// `tc_gate_expr_type_arg` helper the channel-elem half uses — resolve + apply
+// F1004 against the enclosing scope's type params, so an in-scope param
+// (`wrap<T>(x)` inside `fn f<T>()`) stays exempt.
+//
+// NOTE on scope: turbofish syntax only accepts BARE type names (the parser's
+// parse_type_name_list captures a lexeme, not a nested `Foo<int>`), so a generic
+// type in turbofish position is ALWAYS bare — hence F1004 is the correct verdict
+// for any generic there, and the positive controls are concrete scalars,
+// non-generic named types, and in-scope params rather than a fully-applied
+// `Foo<int>` (which turbofish cannot express).
+//
+// Fixtures compile real programs through `bs2 compile` and assert the F-code in
+// captured output (or `__AVRA_COMPILE_OK__` for the positive controls). Each
+// error case is paired with a control so the gate is proven to fire on the
+// under-applied generic specifically — not on turbofish generally.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn tf_compile_out(source: string) -> string {
+    let path = "/tmp/avra_turbofish_totality.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "a bare generic turbofish type-arg is rejected (F1004)" {
+    then "a bare generic-enum turbofish arg is F1004" {
+        let out = tf_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn wrap<U>(x: U) -> U { x }
+fn main() { let r = wrap<GenOpt>(5) }")
+        out.contains("F1004")
+    }
+    then "a bare generic-struct turbofish arg is F1004" {
+        let out = tf_compile_out("type Box<T> = { val: T }
+fn wrap<U>(x: U) -> U { x }
+fn main() { let b: Box<int> = Box { val: 1 }  let r = wrap<Box>(b) }")
+        out.contains("F1004")
+    }
+    then "a two-param generic given as a bare turbofish arg is F1004" {
+        let out = tf_compile_out("type Pair<A, B> = { a: A, b: B }
+fn wrap<U>(x: U) -> U { x }
+fn main() { let r = wrap<Pair>(5) }")
+        out.contains("F1004")
+    }
+}
+
+spec "the turbofish type-arg gate does not over-fire" {
+    then "a concrete int turbofish arg compiles" {
+        let out = tf_compile_out("fn id<U>(x: U) -> U { x }
+fn main() { let r = id<int>(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a concrete string turbofish arg compiles" {
+        let out = tf_compile_out("fn id<U>(x: U) -> U { x }
+fn main() { let r = id<string>(\"hi\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a non-generic named type turbofish arg compiles (only generics are gated)" {
+        let out = tf_compile_out("type Msg = { id: int }
+fn id<U>(x: U) -> U { x }
+fn main() { let m: Msg = Msg { id: 1 }  let r = id<Msg>(m) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an in-scope type param turbofish arg compiles — `wrap<T>()` inside `fn outer<T>()`" {
+        // `T` is `outer`'s type parameter, concrete at each instantiation, so the
+        // gate must treat it as in-scope and NOT flag it — the regression guard
+        // for threading the enclosing scope's type params into the check.
+        let out = tf_compile_out("fn wrap<U>(x: U) -> U { x }
+fn outer<T>(seed: T) -> T { wrap<T>(seed) }
+fn main() { let r = outer(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "an in-scope param that SHADOWS a declared generic type is not flagged" {
+        // `wrap<T>()` inside `fn outer<T>()` — `T` is the fn's type param, even
+        // though a generic `type T<U>` is declared at top level. The gate must
+        // treat the turbofish `T` as the in-scope param, not the shadowed nominal
+        // (it would otherwise false-positive F1004 on valid code). An empty scope
+        // would wrongly flag this — the guard proving the enclosing scope's type
+        // params reach the type-arg check.
+        let out = tf_compile_out("type T<U> = { value: U }
+fn wrap<X>(x: X) -> X { x }
+fn outer<T>(seed: T) -> T { wrap<T>(seed) }
+fn main() { let r = outer(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
