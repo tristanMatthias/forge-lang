@@ -1,0 +1,90 @@
+// ps3t.6.5.10 — the gnarly-5% catalogue, entry 1: NEWLINE-SENSITIVITY (bare
+// `return`). Avra is newline-sensitive (spec Axis 28): a `return` with its
+// value on the SAME line is `Return(expr)`, but `return\n<expr>` is
+// `ReturnEmpty` followed by a SEPARATE statement — the hand parser decides via
+// `current_line != prev_line` (parse_return_statement). A stateless
+// token-grammar can't see that boundary (the grammar `?`-optional is greedy on
+// FIRST-set alone), so `return` routes through the @hand(return_stmt) escape
+// hatch — exactly what 6.5.10 prescribes for the gnarly-5% (route each
+// hand-written disambiguation via @hand / a lexer mode).
+//
+// This is the newline case ps3t.6.5.4 deferred: the pure-DSL MkReturn build
+// there handles `return` / `return expr` (the `}`/EOF boundary works via
+// FIRST-set), but NOT the `return\n<expr>` split — which needs the line info
+// the hand parser carries. @hand(return_stmt) delegates to parse_return_statement
+// over the shared store (run_hand_stmt), whose bridging parser tracks
+// line/column accurately (it advances token-by-token to the return keyword), so
+// the newline guard fires identically.
+//
+// Oracle: run the DSL parser AND the hand parser
+// (parser_new(src).parse_declaration() → falls through to parse_statement →
+// parse_return_statement) over a corpus INCLUDING newline-split inputs; assert
+// identical ASTs via render_stmt_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn ret_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  statement   = @hand(return_stmt) | expr_stmt\n" +
+    "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
+    "  expression  = equality\n" +
+    "  equality    = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison  = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(ret_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool { dsl_stmt(src) == hand_stmt(src) }
+
+spec "grammar-DSL gnarly-5%: return newline-sensitivity via @hand == hand parser (ps3t.6.5.10)" {
+    given "same-line return (value is the operand)" {
+        then "`return` / `return expr` agree" {
+            agree("return") &&
+            agree("return 42") &&
+            agree("return 1 + 2 * 3") &&
+            agree("return (x)")
+        }
+    }
+    given "NEWLINE-SPLIT return (the value on the next line is a SEPARATE statement)" {
+        then "`return\\n<expr>` folds to ReturnEmpty on both — the newline guard fires" {
+            // A greedy token-grammar would fold `42` into the return value here;
+            // @hand(return_stmt) delegates to the newline-aware hand parser, so
+            // both stop the return at the line boundary → ReturnEmpty.
+            agree("return\n42") &&
+            agree("return\nfoo") &&
+            agree("return\n1 + 2") &&
+            // canonical: the split return is bodyless on both.
+            dsl_stmt("return\n42") == "(return)" &&
+            hand_stmt("return\n42") == "(return)" &&
+            // sanity vs the same-line form: same tokens, no newline → Return(42).
+            dsl_stmt("return 42") == "(return 42)"
+        }
+    }
+    given "@hand(return_stmt) composes with the pure expr-statement alternative" {
+        then "return → @hand, a bare expression → ExprStmt, both agree" {
+            agree("return") &&
+            agree("x + 1") &&
+            agree("42")
+        }
+    }
+}
