@@ -1,0 +1,81 @@
+// ps3t.6.5.7 — the DECLARATION family, type-operator slice: the `without` /
+// `only` type operators on a non-brace `type` RHS. `type X = Base without
+// { a, b }` / `type X = Base only { x }` build the synthetic-marker TypeDecl
+// parse_type_declaration emits: a `__base` field carrying the underlying type,
+// a `__without` / `__only` marker (Str), then the user-listed field names
+// (Unknown) — the exact shape codegen's resolve_type_operator walks.
+//
+// MkTypeRHS is the COMPLETE non-brace RHS handler: with an operator it builds
+// the marker TypeDecl; with none it degrades to the union/newtype split (so it
+// also re-covers the newtype/union-alias forms from the prior slice).
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn typeop_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  type_decl  = \"type\" tname:IDENT \"=\" base:type_expr ( wop:( \"without\" | \"only\" ) \"{\" ( ofields:IDENT \",\"? )* \"}\" )? -> MkTypeRHS(tname, base, wop, ofields)\n" +
+    // ── type family ──
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type   = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type  = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(typeop_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: without/only type operators == hand-written parser (ps3t.6.5.7)" {
+    given "the `without` operator (drop fields → synthetic-marker TypeDecl)" {
+        then "single and multi dropped-field lists agree" {
+            agree("type Slim = Base without { a }") &&
+            agree("type Trimmed = Widget without { x, y }") &&
+            agree("type Bare = Config without { secret, token, key }")
+        }
+    }
+    given "the `only` operator (keep fields → synthetic-marker TypeDecl)" {
+        then "single and multi kept-field lists agree" {
+            agree("type Pick = Base only { x }") &&
+            agree("type View = Record only { id, name }")
+        }
+    }
+    given "the non-operator RHS still degrades to newtype / union-alias" {
+        then "MkTypeRHS handles the no-operator cases too" {
+            agree("type UserId = string") &&
+            agree("type Num = int | float")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: synthetic __base/__op markers)" {
+        then "canonical renders of representative forms" {
+            // render_field_list emits `name:vtype_display(resolved)`; the user
+            // field names carry Unknown → `<unknown>`, __base the concrete type,
+            // __without/__only the Str marker.
+            dsl_stmt("type Slim = Base without { a }") == "(type Slim (__base:Base, __without:string, a:<unknown>))" &&
+            dsl_stmt("type View = Record only { id, name }") == "(type View (__base:Record, __only:string, id:<unknown>, name:<unknown>))"
+        }
+    }
+}

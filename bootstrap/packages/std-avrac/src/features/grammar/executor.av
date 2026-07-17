@@ -1053,6 +1053,34 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, env.get(args[0])))))
         }
+        "MkTypeRHS" if args.length == 4 -> {
+            // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the
+            // full non-brace RHS. A present operator builds the synthetic-marker
+            // TypeDecl parse_type_declaration emits: a `__base` field carrying
+            // the underlying type, a `__without`/`__only` marker (Str), then the
+            // user-listed field names (Unknown) — the exact shape
+            // resolve_type_operator walks. With NO operator it degrades to the
+            // union/newtype split (same as MkTypeAlias).
+            let name = capval_tok_text(env.get(args[0]))
+            let base_te = capval_to_texpr(st, env.get(args[1]))
+            let base_vt = type_expr_to_vtype(base_te)
+            if capval_present(env.get(args[2])) {
+                let op = capval_tok_text(env.get(args[2]))
+                mut derived: List<FieldEntry> = [FieldEntry { name: "__base", resolved: base_vt }, FieldEntry { name: "__" + op, resolved: ValueType.Str }]
+                match env.get(args[3]) {
+                    .Toks(ts) -> { for t in ts { derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown }) } }
+                    .Tok(t) -> derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown })
+                    _ -> {}
+                }
+                let no_tp: List<TypeParamEntry> = []
+                CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, no_tp, derived)))
+            } else {
+                match base_te {
+                    .Union(_, _) -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.UnionAliasDecl(name, base_vt)))
+                    _ -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.NewtypeDecl(name, base_vt)))
+                }
+            }
+        }
         "MkTypeAlias" if args.length == 2 -> {
             // `type Name = <type_expr>` (NON-brace RHS). A Union RHS
             // (`type X = A | B`) → Stmt.UnionAliasDecl; anything else
