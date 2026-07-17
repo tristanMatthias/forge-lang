@@ -1,0 +1,143 @@
+// ps3t.6.5.8 — the REAL-LEXER wiring. The DSL-generated parser now consumes
+// the shipping streaming lexer's token stream (via `lex_real`) and builds into
+// a CALLER-PROVIDED `NodeStore` (via `run_grammar_stmt_toks`), instead of the
+// proof-slice demo tokeniser + a self-allocated store. This test drives that
+// exact path — `lex_real(src)` + a store the TEST constructs — and asserts:
+//
+//   1. Equivalence still holds over the real tokens: the DSL tree renders
+//      identically to the hand parser (`parser_new(src).parse_declaration()`),
+//      now that both sides see the SAME tokens.
+//   2. Token positions are the real byte offsets (the "matching positions"
+//      acceptance) — `lex_real` carries each token's source start.
+//   3. The reserved-word divergence is CLOSED. The demo lexer classified every
+//      word as IDENT, so a bare `IDENT` terminal silently accepted reserved
+//      words (`bare`, `async`) the hand lexer rejects — the DSL SUCCEEDED where
+//      the hand parser ERRORED. With the real lexer, keywords/reserved words
+//      are non-IDENT, so the DSL now rejects them too: both error, in lockstep.
+//   4. String escapes agree. The real lexer resolves `\n` into the lexeme (the
+//      hand parser stores that); the demo lexer kept the raw backslash. Same
+//      tokens ⇒ same `Expr.String`, so the escaped-string corpus now agrees.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt_toks, lex_real, Token}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id, new_node_store, build_line_index, NodeStore}
+
+fn decl_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  decl          = fn_decl | type_decl | enum_decl\n" +
+    "  fn_decl       = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
+    "  type_decl     = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
+    "  enum_decl     = \"enum\" edname:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, vars)\n" +
+    "  field         = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
+    "  variant       = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
+    "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    "  statement     = break_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
+    "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type       = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type      = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type     = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type    = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type    = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un            = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+// The DSL parse, driven through the ps3t.6.5.8 path: real-lexer tokens +
+// a store the CALLER (this fn) constructs and hands in.
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(decl_grammar_src())
+    let toks = lex_real(src)
+    let store = new_node_store(build_line_index(src))
+    let r = run_grammar_stmt_toks(gp.grammar, toks, store)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn dsl_had_error(src: string) -> bool {
+    let gp = parse_grammar(decl_grammar_src())
+    let store = new_node_store(build_line_index(src))
+    run_grammar_stmt_toks(gp.grammar, lex_real(src), store).had_error
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn hand_had_error(src: string) -> bool {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(_) -> false
+        .Err(_) -> true
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL real-lexer wiring: run_grammar_*_toks over real tokens == hand parser (ps3t.6.5.8)" {
+    given "declarations parsed from REAL-lexer tokens into a caller-provided store" {
+        then "fn / type / enum forms render identically to the hand parser" {
+            agree("fn add(a: int, b: int) -> int { return a + b }") &&
+            agree("type Point = { x: int, y: int }") &&
+            agree("enum Color { Red, Green, Blue }") &&
+            agree("fn use_dyn(d: dyn Show) { }") &&
+            agree("fn pipeline(xs: [int]) -> [int] { }")
+        }
+    }
+    given "the real lexer carries true source byte offsets (matching positions)" {
+        then "token starts land on the source substrings" {
+            let toks = lex_real("fn foo(x: int)")
+            // "fn"@0  "foo"@3  "("@6  "x"@7  ":"@8  "int"@10 ...
+            toks[0].text == "fn"  && toks[0].pos == 0 &&
+            toks[1].text == "foo" && toks[1].pos == 3 &&
+            toks[2].text == "("   && toks[2].pos == 6 &&
+            toks[3].text == "x"   && toks[3].pos == 7 &&
+            toks[5].text == "int" && toks[5].pos == 10 &&
+            // last token is always EOF at the source length.
+            toks[toks.length - 1].kind == "EOF" &&
+            toks[toks.length - 1].pos == 14
+        }
+    }
+    given "reserved words are non-IDENT now (the demo-lexer divergence, CLOSED)" {
+        then "a reserved word in name position makes BOTH parsers error in lockstep" {
+            // `bare` / `async` are Tk.KwReserved — the hand parser rejects them
+            // as a fn name; with the demo lexer the DSL wrongly SUCCEEDED (IDENT).
+            dsl_had_error("fn bare() { }")  == true &&
+            hand_had_error("fn bare() { }") == true &&
+            dsl_had_error("fn async() { }")  == true &&
+            hand_had_error("fn async() { }") == true &&
+            // and a genuine identifier still parses cleanly on BOTH sides.
+            dsl_had_error("fn myfunc() { }")  == false &&
+            hand_had_error("fn myfunc() { }") == false
+        }
+    }
+    given "the real lexer resolves string escapes (another demo-lexer divergence)" {
+        then "an escaped-string body agrees (same resolved Expr.String)" {
+            // The demo lexer kept the raw backslash; the real lexer resolves it,
+            // matching what the hand parser stores — so these now agree.
+            agree("fn f() { return \"a\\nb\" }") &&
+            agree("fn g() { return \"tab\\there\" }")
+        }
+    }
+    given "IDENT terminals still bind real identifiers unchanged" {
+        then "field / param / variant names round-trip" {
+            dsl_stmt("type Rec = { name: string, age: int }") == hand_stmt("type Rec = { name: string, age: int }") &&
+            dsl_stmt("enum Shape { Circle(r: int), Rect(w: int, h: int) }") == hand_stmt("enum Shape { Circle(r: int), Rect(w: int, h: int) }")
+        }
+    }
+}

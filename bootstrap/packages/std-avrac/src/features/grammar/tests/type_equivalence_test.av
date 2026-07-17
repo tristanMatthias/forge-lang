@@ -12,11 +12,13 @@
 // generics `Foo<A, B>`, nullable `T?`, ad-hoc union `A | B`, list `[T]`,
 // tuple `(T, U)`, fn types `fn(A) -> R` (+ bare `fn`), and `dyn Trait`.
 //
-// DSL-lexer note (deferred to the real-lexer wiring, ps3t.6.5.8): lex_expr
-// tokenizes `>>` as ONE shift token, so NESTED generics that close with `>>`
-// (`List<List<T>>`) can't parse here — the real parser splits them via
-// maybe_split_shr. Qualified `@pkg::T` and `~splice` type atoms are likewise
-// out of scope. Single-level generics fully exercise the generic mechanism.
+// DSL-lexer note (ps3t.6.5.8 wired the REAL lexer): the shipping lexer ALSO
+// merges `>>` into ONE shift token (`Tk.Shr`), so NESTED generics that close
+// with `>>` (`List<List<T>>`) still can't parse here — splitting `>>` in
+// generic position is context-sensitive PARSER logic (`maybe_split_shr`), not
+// a lexer concern, and stays with the gnarly-5% catalogue (ps3t.6.5.10).
+// Qualified `@pkg::T` and `~splice` type atoms are likewise out of scope.
+// Single-level generics fully exercise the generic mechanism.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_type_id, type_expr_to_vtype}

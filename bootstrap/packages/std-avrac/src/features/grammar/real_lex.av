@@ -1,0 +1,102 @@
+// WHY: the REAL-lexer bridge for the grammar-DSL executor (ps3t.6.5.8).
+// Retires the proof-slice demo tokeniser (`lex_expr`, lex.av) from the
+// execution path: the DSL-generated parser now consumes EXACTLY the token
+// stream the hand-written parser sees, produced by the shipping streaming
+// lexer (parse/lexer.av, driven through `parser_new`).
+//
+// The streaming lexer is pull-based — a `Parser` holds `current_kind` /
+// `current_lexeme` / `current_start` and advances in place via
+// `advance_token()`. This bridge drives it to completion and materialises
+// the whole stream as executor `Token`s (kind / text / byte-offset), the
+// vocabulary `executor.av` matches grammar terminals against.
+//
+// Why this closes real divergences (not just plumbing):
+//   * Reserved words. The demo lexer classified EVERY word as `IDENT`, so a
+//     bare `IDENT` terminal matched reserved words like `bare` / `async` that
+//     the hand lexer rejects (`Tk.KwReserved`). Here keywords map to a
+//     non-`IDENT` kind, so the DSL and hand parsers now AGREE (both reject).
+//   * String escapes. The real lexer resolves `\n` etc. into the lexeme; the
+//     hand parser stores that resolved text, so the DSL (same tokens) matches
+//     it exactly instead of carrying the demo lexer's raw backslashes.
+//   * Multi-char operators, comments, numeric bases / durations — all handled
+//     once, by the real lexer, identically for both parsers.
+//
+// Kind vocabulary the executor cares about is the set of NAMED terminals
+// (`IDENT NUMBER STRING BOOL EOF`); every other token (keywords, operators,
+// punctuation) is matched by TEXT, so its kind only has to avoid colliding
+// with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
+use core.{Tk, tk_keyword_str}
+use parse.{Parser, parser_new}
+use features.grammar.{Token}
+
+impl Parser {
+    /// Drive this parser's streaming lexer from its current position to EOF,
+    /// returning the whole stream bridged to executor `Token`s. Lives as a
+    /// `Parser` method (like `parse_grammar_block`) so it can call the
+    /// lexer's own `advance_token` / read `current_*` without exporting them.
+    fn lex_all_grammar_tokens(self) -> List<Token> {
+        mut toks: List<Token> = []
+        // `parser_new` already primed the first token, so `current_*` is valid
+        // before the first advance. Push-then-advance; stop AFTER pushing EOF.
+        while true {
+            let k = self.current_kind
+            toks.push(Token {
+                kind: tk_to_grammar_kind(k),
+                text: self.current_lexeme,
+                pos: self.current_start,
+            })
+            if k == Tk.Eof { break }
+            self.advance_token()
+        }
+        toks
+    }
+}
+
+/// Tokenise `src` through the shipping streaming lexer and hand back the
+/// executor token stream — the drop-in replacement for `lex_expr`.
+export fn lex_real(src: string) -> List<Token> {
+    mut p = parser_new(src)
+    p.lex_all_grammar_tokens()
+}
+
+/// True for the keyword family (all `Kw*` variants), including the reserved
+/// future keywords `tk_keyword_str` folds into its `""` tail (`bare`, `async`,
+/// …). Reuses the existing keyword table so there's ONE source of truth for
+/// keyword-ness — this only patches the one variant that table omits.
+fn tk_is_keyword(tk: Tk) -> bool {
+    match tk {
+        .KwReserved -> true
+        _ -> tk_keyword_str(tk) != ""
+    }
+}
+
+/// Map a lexer `Tk` to the executor's terminal-matching kind string. Only the
+/// NAMED-terminal kinds (`IDENT NUMBER STRING BOOL EOF`) are semantically
+/// load-bearing; keyword/operator tokens are matched by their `text`, so their
+/// kind just has to be non-`IDENT` (keywords) or otherwise distinct.
+fn tk_to_grammar_kind(tk: Tk) -> string {
+    match tk {
+        .Identifier -> "IDENT"
+        .Number     -> "NUMBER"
+        // `3.14` is `Tk.Float`; the demo lexer had no Float token, so the
+        // pattern/expr `num` builds split Int/Float on a `.` in the text — a
+        // convention preserved by keeping Float in the NUMBER kind (the lexeme
+        // still carries the dot).
+        .Float      -> "NUMBER"
+        .String     -> "STRING"
+        // `true` / `false` are keywords in the real lexer but literal terminals
+        // in the grammars (`"true"`), matched by text; the BOOL kind is what
+        // `literal_node` reads to build `Expr.Bool`.
+        .KwTrue     -> "BOOL"
+        .KwFalse    -> "BOOL"
+        .Eof        -> "EOF"
+        .Error      -> "ERROR"
+        // Interpolated / doc-comment tokens have no grammar terminal in the
+        // DSL surface (ps3t.6.7 lexer-mode territory); give them distinct
+        // non-matching kinds so they fail terminal matching, error-tolerant.
+        .Template       -> "TEMPLATE"
+        .DocComment     -> "DOC"
+        .ModDocComment  -> "MODDOC"
+        _ -> if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
+    }
+}
