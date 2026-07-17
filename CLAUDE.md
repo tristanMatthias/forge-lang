@@ -167,6 +167,30 @@ Concretely:
   + compiler sources), so a clean push is seconds. Escape hatch for genuine
   emergencies only: `AVRA_SKIP_WINDOW_CHECK=1 git push`.
 
+**Landing a change the current pin CANNOT build (field-type flips / comptime-decoder
+schema changes) — the tolerant-decode BRIDGE.** A seed cycle is NORMAL, not forbidden:
+the train advances the pin on every integration merge whose output diverged. What needs
+care is a change the pinned seed's *baked* comptime runtime can't process — e.g. flipping
+an AST field's type (`Expr.GenericCall.type_args: List<string>→List<ValueType>`, 5idg).
+A single PR F4006s: the pin's hand-written decoder (`value_to_expr_node`) runs during the
+compiler's OWN `@derive(walker)` expansion and rejects the new-shaped data. This is NOT a
+dead end and needs NO hand-authored/IR-patched seed — split it **widen-then-migrate across
+two train cycles**:
+- **PR #1 (bridge):** make the decoder accept BOTH the old and new encodings while KEEPING
+  the old field type (map the new form back to the old). The current pin builds this fine
+  (the field is unchanged, so the derive still emits the old shape and the new branch stays
+  dormant — byte-identical). Its merge cycles the seed to a pin whose baked decoder now
+  TOLERATES the new shape.
+- **PR #2 (flip):** rebased onto that `chore(seed): cycle` commit, do the actual field flip
+  + consumer updates. It builds because the tolerant pin accepts the derive's now-new-shaped
+  data. Merge → the train cycles again with the full flip.
+- **PR #3 (optional):** delete the now-dead old-encoding branch.
+Only a *structural* encoder (derive/walker-driven — follows the field automatically) needs
+no bridge; any *hand-written* encoder for the same field must be made tolerant in PR #1 too.
+The strict ordering (bridge → wait for the train's cycle commit → rebase the flip onto it)
+is the same "dogfood in `src/` only AFTER the train advances" discipline, applied to a
+decoder schema instead of a keyword.
+
 Any two branches that pass are compilable by the same seed BY CONSTRUCTION —
 the 2026-06-11 "neither seed can compile the union" merge state cannot
 happen. If `make build` auto-cycled your local seed (it does this when bs2

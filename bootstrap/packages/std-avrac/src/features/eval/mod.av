@@ -2697,7 +2697,7 @@ fn enum_value_to_expr(store: NodeStore, v: Value) -> Result<Expr, string> {
         "GenericCall" -> {
             if p.length != 3 { return .Err("decode: bad payload") }
             let callee = value_to_expr_id(store, head)?
-            let type_args = list_value_to_string_list(p[1])?
+            let type_args = list_value_to_type_name_list_tolerant(p[1])?
             let args = list_value_to_expr_id_list(store, p[2])?
             .Ok(Expr.GenericCall(callee, type_args, args))
         }
@@ -2948,6 +2948,31 @@ fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
     for entry in v.list_payload {
         if entry.kind != "string" { return .Err("decode: non-string in string list") }
         out.push(entry.text)
+    }
+    .Ok(out)
+}
+
+// 5idg step-1 (seed-transition bridge): decode a `GenericCall.type_args` list
+// that may be encoded as EITHER string Values (the current `List<string>` field
+// form) OR ValueType Values (the post-flip `List<ValueType>` form), producing the
+// still-`List<string>` field. Under the CURRENT pin this ValueType branch is
+// DORMANT — `ast.av`'s field is unchanged, so the walker emits string data and
+// only the string path runs (byte-identical to `list_value_to_string_list`). Its
+// job is to be BAKED INTO THE NEXT SEED so the flip PR (which changes the field to
+// `List<ValueType>`, making the walker emit ValueType data) builds against a seed
+// whose comptime decoder tolerates it instead of raising F4006. The ValueType is
+// rendered via `vtype_render_full` — the monomorphizer's own mangling key — so the
+// bridged string is exactly what the string-based path produced.
+fn list_value_to_type_name_list_tolerant(v: Value) -> Result<List<string>, string> {
+    if v.kind != "list" { return .Err("decode: type-name list not a list") }
+    mut out: List<string> = []
+    for entry in v.list_payload {
+        if entry.kind == "string" {
+            out.push(entry.text)
+        } else {
+            let vt = value_to_value_type_node(entry)?
+            out.push(vtype_render_full(vt))
+        }
     }
     .Ok(out)
 }
