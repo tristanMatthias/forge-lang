@@ -2820,15 +2820,26 @@ fn dunder_base_at(segs: List<string>, i: int, regs: GenRegs) -> DunderBase {
 /// (`qualified_mangle_base`: `a::Box` → `a__Box`) equals `mangled`, or 0.
 /// Injective by construction — user identifiers can't contain `__`, so two
 /// distinct qualified declarations never flatten to the same candidate.
+/// Only declarations whose SHORT name is in `regs.ambig` participate: the
+/// decoder must accept exactly what the encoder can emit, and `mangle_base`
+/// qualifies a base only on an ambiguity collision — a qualified match on a
+/// non-ambiguous declaration would consume segments the mangler flattened
+/// as ordinary args.
 fn qualified_generic_arity(regs: GenRegs, mangled: string) -> int {
     mut i = 0
     while i < regs.structs.length {
-        if qualified_mangle_base(regs.structs[i].name) == mangled { return regs.structs[i].tp.length }
+        let se = regs.structs[i]
+        if list_contains_str(regs.ambig, type_short_name(se.name)) && qualified_mangle_base(se.name) == mangled {
+            return se.tp.length
+        }
         i = i + 1
     }
     mut j = 0
     while j < regs.enums.length {
-        if qualified_mangle_base(regs.enums[j].name) == mangled { return regs.enums[j].tp.length }
+        let ee = regs.enums[j]
+        if list_contains_str(regs.ambig, type_short_name(ee.name)) && qualified_mangle_base(ee.name) == mangled {
+            return ee.tp.length
+        }
         j = j + 1
     }
     0

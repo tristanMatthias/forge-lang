@@ -14,9 +14,10 @@
 //                                       cycle must reproduce identically in
 //                                       both replays)
 //   step 7 — flip it back              (recovery after a cycle)
-// `oracle_clean` also demands the incremental replay did strictly LESS
-// compute work than the from-scratch replays — matching answers alone would
-// accept an engine that recomputes the world each step.
+// `oracle_saved_work` separately demands the incremental replay did strictly
+// LESS compute work than the from-scratch replays — matching answers alone
+// would accept an engine that recomputes the world each step; `oracle_clean`
+// reports answer equivalence only.
 //
 // A second spec drives the harness with a compute that commits the classic
 // engine-abuse the oracle exists to catch: reading a query WITHOUT recording
