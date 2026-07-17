@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -68,6 +68,16 @@ enum CapVal {
     // over the param rule accumulates `PEntries`, folded into Stmt.Function.
     PEntry(p: ParamEntry)
     PEntries(ps: List<ParamEntry>)
+    // A built STRUCT FIELD + a parallel list (type/enum declarations,
+    // ps3t.6.5.7). A field is `name : type`; a `*` accumulates `Fields`,
+    // folded into Stmt.TypeDecl (struct) or a Variant's field list.
+    Field(f: FieldEntry)
+    Fields(fs: List<FieldEntry>)
+    // A built ENUM VARIANT + a parallel list. A variant is a name + an
+    // optional `( field, … )` payload; a `*` accumulates `Vars`, folded
+    // into Stmt.EnumDecl.
+    Var(v: Variant)
+    Vars(vs: List<Variant>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -215,6 +225,38 @@ impl CapEnv {
         }
         ps.push(p)
         self.set_scalar(name, CapVal.PEntries(ps))
+    }
+
+    // Field-list accumulator (type/enum declarations, ps3t.6.5.7): a `*` over
+    // the field rule collects each built FieldEntry here.
+    fn append_field(self, name: string, f: FieldEntry) {
+        let existing = self.get(name)
+        mut fs: List<FieldEntry> = []
+        match existing {
+            .Fields(prev) -> {
+                for x in prev { fs.push(x) }
+            }
+            .Field(prev) -> fs.push(prev)
+            _ -> {}
+        }
+        fs.push(f)
+        self.set_scalar(name, CapVal.Fields(fs))
+    }
+
+    // Variant-list accumulator (enum declarations, ps3t.6.5.7): a `*` over the
+    // variant rule collects each built Variant here.
+    fn append_var(self, name: string, v: Variant) {
+        let existing = self.get(name)
+        mut vs: List<Variant> = []
+        match existing {
+            .Vars(prev) -> {
+                for x in prev { vs.push(x) }
+            }
+            .Var(prev) -> vs.push(prev)
+            _ -> {}
+        }
+        vs.push(v)
+        self.set_scalar(name, CapVal.Vars(vs))
     }
 }
 
@@ -597,6 +639,8 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .TExpr(te) -> env.append_texpr(label, te)
             .Arm(a) -> env.append_arm(label, a)
             .PEntry(p) -> env.append_pentry(label, p)
+            .Field(f) -> env.append_field(label, f)
+            .Var(v) -> env.append_var(label, v)
             _ -> {}
         }
     } else {
@@ -888,6 +932,29 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         let no_tp: List<TypeParamEntry> = []
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
     }
+    // `name : type` — a struct/variant field. The type lowers through the
+    // shared type family; a field ALWAYS carries a type (parse_field_list
+    // requires the `:`), so no default is involved.
+    if name == "MkField" && args.length == 2 {
+        return CapVal.Field(FieldEntry { name: capval_tok_text(env.get(args[0])), resolved: type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) })
+    }
+    if name == "MkTypeDecl" && args.length == 2 {
+        // `type Name = { field* }` — struct declaration (no generics this
+        // slice; type_params = []). Union-alias / newtype / type-operator RHS
+        // forms are follow-ups.
+        let no_tp: List<TypeParamEntry> = []
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_field_list(env.get(args[1])))))
+    }
+    if name == "MkEVariant" && args.length == 2 {
+        // `Name` (no payload ⇒ empty fields) or `Name( field, … )` — an enum
+        // variant. Field payload reuses MkField (the same `name : type`).
+        return CapVal.Var(Variant { name: capval_tok_text(env.get(args[0])), fields: capval_to_field_list(env.get(args[1])) })
+    }
+    if name == "MkEnumDecl" && args.length == 2 {
+        // `enum Name { variant* }` (no generics this slice).
+        let no_tp: List<TypeParamEntry> = []
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
@@ -1016,6 +1083,24 @@ fn capval_to_pentry_list(v: CapVal) -> List<ParamEntry> {
     match v {
         .PEntries(ps) -> ps
         .PEntry(p) -> [p]
+        _ -> []
+    }
+}
+
+/// A capture as a struct/variant field list (ps3t.6.5.7).
+fn capval_to_field_list(v: CapVal) -> List<FieldEntry> {
+    match v {
+        .Fields(fs) -> fs
+        .Field(f) -> [f]
+        _ -> []
+    }
+}
+
+/// A capture as an enum-variant list (ps3t.6.5.7).
+fn capval_to_var_list(v: CapVal) -> List<Variant> {
+    match v {
+        .Vars(vs) -> vs
+        .Var(vv) -> [vv]
         _ -> []
     }
 }
