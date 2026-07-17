@@ -164,6 +164,15 @@ export fn db_new<V>(compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, Qu
 }
 
 impl FamilyMemo<V> {
+    /// The memo slot indexed under `arg`, or null when this family has no
+    /// cell for it yet — the one lookup every cell reader shares.
+    fn slot_of(self, arg: int) -> int? {
+        if avra_intmap_has(self.idx, arg) != 0 {
+            return avra_intmap_get(self.idx, arg)
+        }
+        null
+    }
+
     /// Append a fresh cell and index it under `arg` — the shared insert step
     /// of the two memo writers (input set + recompute). Returns the slot.
     fn insert(self, arg: int, cell: MemoEntry<V>) -> int {
@@ -182,8 +191,9 @@ impl Db<V> {
     /// current_rev` hot path stays hot.
     fn set_input(self, q: QueryKey, value: V, value_hash: int) {
         mut fam = self.family(q.family)
-        if avra_intmap_has(fam.idx, q.arg) != 0 {
-            mut e = fam.cells[avra_intmap_get(fam.idx, q.arg)]
+        let existing = fam.slot_of(q.arg)
+        if existing != null {
+            mut e = fam.cells[existing!]
             if e.answer_hash == value_hash {
                 return
             }
@@ -262,10 +272,10 @@ impl Db<V> {
     /// the database stays usable after a reported cycle.
     fn fetch_slot(self, q: QueryKey) -> Result<int, QueryCycle> {
         let fam = self.family(q.family)
-        if avra_intmap_has(fam.idx, q.arg) != 0 {
-            let slot = avra_intmap_get(fam.idx, q.arg)
-            if fam.cells[slot].verified_at == self.current_rev {
-                return Result.Ok(slot)
+        let hot = fam.slot_of(q.arg)
+        if hot != null {
+            if fam.cells[hot!].verified_at == self.current_rev {
+                return Result.Ok(hot!)
             }
         }
         let cyc = self.active_cycle(q)
@@ -285,8 +295,9 @@ impl Db<V> {
     /// stamp `verified_at` and return the cached slot untouched.
     fn fetch_unverified(self, q: QueryKey) -> Result<int, QueryCycle> {
         mut fam = self.family(q.family)
-        if avra_intmap_has(fam.idx, q.arg) != 0 {
-            let slot = avra_intmap_get(fam.idx, q.arg)
+        let cached = fam.slot_of(q.arg)
+        if cached != null {
+            let slot = cached!
             mut e = fam.cells[slot]
             mut dep_changed = false
             for d in e.deps {
@@ -320,8 +331,9 @@ impl Db<V> {
         fam.computes = fam.computes + 1
         let out = self.compute(ctx, q)?
         let h = answer_hash_of(out.value_hash, out.diags)
-        if avra_intmap_has(fam.idx, q.arg) != 0 {
-            let slot = avra_intmap_get(fam.idx, q.arg)
+        let existing = fam.slot_of(q.arg)
+        if existing != null {
+            let slot = existing!
             mut e = fam.cells[slot]
             if e.answer_hash != h {
                 e.changed_at = self.current_rev
