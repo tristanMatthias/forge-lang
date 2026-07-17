@@ -1,0 +1,77 @@
+// ps3t.6.5.7 — the DECLARATION family, import/namespace slice: `use` and
+// `mod` (both LEAF declarations, no nested body). `use path { a, b }` builds
+// Stmt.Use(path, names) — the path is the dot-joined segments (with a leading
+// `@` for a package-qualified path), the names a bare ParamEntry list. `mod
+// name` builds Stmt.Module(name, []) — a stub whose body the resolver fills
+// from the `.av` file later (parse_module_declaration takes no inline body).
+// The seam needs no new capture kind: the path/name segments are plain Toks,
+// and MkUse/MkModule assemble them.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id.
+//
+// Note on the `use path.{ … }` conventional spelling: the hand parser accepts
+// BOTH `use path.{ names }` and the brace-adjacent `use path { names }` (the
+// `.` before `{` is optional — parse_use_declaration breaks its dotted-path
+// loop on `{`). The `.{` form needs 2-token lookahead (`.`-then-`{` vs
+// `.`-then-segment) which the FIRST-set-based `*` can't express (a gnarly-5%
+// escape-hatch / real-lexer case, 6.5.8/6.5.10), so this corpus uses the
+// equivalent no-`.` form the hand parser parses to the identical Stmt.Use.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn use_mod_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  declaration = use_decl | mod_decl\n" +
+    "  use_decl    = \"use\" ( at:\"@\" )? seg:IDENT ( \".\" seg:IDENT )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUse(at, seg, unames)\n" +
+    "  mod_decl    = \"mod\" mname:IDENT -> MkModule(mname)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(use_mod_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: use + mod == hand-written parser (ps3t.6.5.7)" {
+    given "use declarations — bare and package-qualified paths" {
+        then "single/multi segment paths and single/multi import names agree" {
+            agree("use foo { a }") &&
+            agree("use foo.bar { a, b }") &&
+            agree("use a.b.c { x }") &&
+            agree("use @std.avrac { parser_new }") &&
+            agree("use @std.avrac.core { render_stmt_id, ExprId }") &&
+            agree("use @std.json { encode, decode, Value }")
+        }
+    }
+    given "mod declarations (leaf stubs)" {
+        then "bare module names agree" {
+            agree("mod foo") &&
+            agree("mod parser") &&
+            agree("mod codegen")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built the decl)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("use foo.bar { a, b }") == "(use foo.bar (a, b))" &&
+            dsl_stmt("use @std.avrac { parser_new }") == "(use @std.avrac (parser_new))" &&
+            dsl_stmt("mod foo") == "(module foo )"
+        }
+    }
+}

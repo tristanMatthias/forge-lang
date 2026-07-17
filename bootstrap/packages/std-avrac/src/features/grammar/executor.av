@@ -955,6 +955,28 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         let no_tp: List<TypeParamEntry> = []
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
     }
+    if name == "MkUse" && args.length == 3 {
+        // `use ( "@" )? seg ( "." seg )* { names }` — an import. The path is
+        // the dot-joined segments (leading "@" for a package-qualified path);
+        // the names reuse the bare-name ParamEntry list (parse_use_name_list).
+        mut path = ""
+        match env.get(args[1]) {
+            .Toks(ts) -> {
+                for t in ts { path = if path == "" { t.text } else { path + "." + t.text } }
+            }
+            .Tok(t) -> path = t.text
+            _ -> {}
+        }
+        if capval_present(env.get(args[0])) { path = "@" + path }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2])))))
+    }
+    if name == "MkModule" && args.length == 1 {
+        // `mod name` — a module STUB. The surface form carries no inline body
+        // (parse_module_declaration produces `Stmt.Module(name, [])`); the
+        // resolver fills the body from the corresponding `.av` file later.
+        let empty_body: List<StmtId> = []
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(env.get(args[0])), empty_body)))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
