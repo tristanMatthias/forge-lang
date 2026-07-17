@@ -1,0 +1,49 @@
+// ps3t.6.2: the eq emitter on a STRUCT — proves the engine's struct path
+// (single synthetic variant, `let __eq_a<i> = self.<field>` projections,
+// no match) drives the same arm hook that serves enums. Mixed leaf kinds
+// (int + string) exercise the `==` leaf comparison across reprs.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_eq: structural equality on a struct" {
+    then "field-wise comparison over int + string leaves" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_struct_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "type Pt = { x: int, y: int, tag: string }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Pt { x: 1, y: 2, tag: \"origin\" }\n" +
+            "    let b = Pt { x: 1, y: 2, tag: \"origin\" }\n" +
+            "    let c = Pt { x: 1, y: 2, tag: \"other\" }\n" +
+            "    let d = Pt { x: 9, y: 2, tag: \"origin\" }\n" +
+            "    println(\"same=\" + string(a.eq(b)))\n" +
+            "    println(\"tag_diff=\" + string(a.eq(c)))\n" +
+            "    println(\"num_diff=\" + string(a.eq(d)))\n" +
+            "}\n")
+        out.contains("same=true") && out.contains("tag_diff=false") && out.contains("num_diff=false")
+    }
+}
+
+spec "derive_eq: struct with a self-typed node field recurses" {
+    then "a linked pair compares by structure, not identity" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_struct_node_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "enum Chain {\n" +
+            "    End\n" +
+            "    Link(label: int, next: Chain)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
+            "    let b = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
+            "    let c = Chain.Link(1, Chain.Link(3, Chain.End))\n" +
+            "    println(\"chain_same=\" + string(a.eq(b)))\n" +
+            "    println(\"chain_diff=\" + string(a.eq(c)))\n" +
+            "}\n")
+        out.contains("chain_same=true") && out.contains("chain_diff=false")
+    }
+}

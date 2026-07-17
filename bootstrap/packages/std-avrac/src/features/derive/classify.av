@@ -1,0 +1,346 @@
+// WHY: the field classifier of the unified derive engine (ps3t.6.2) — the
+// single place a field's ValueType is read into a `FieldShape` every emitter
+// (walk / eq / codec / render) then interprets. Moved down from
+// walker/derive.av (where it was Self-relative `FieldKind`) and generalized:
+// a shape carries the TARGET type it references, so "is this field a child
+// of the derived enum?" becomes a per-emitter POLICY (`target == parent`)
+// instead of being baked into the classification itself. This is the
+// `classify_field_kind` vs `classify_field_crosstype` split, unified — one
+// classifier run against one target (`classify_field`) or against every AST
+// node kind (`classify_field_any`).
+//
+// Wrapper discovery is structural (ctx_unwrap_path_to — zero hardcoded
+// wrapper tables); the struct-list registry (`struct_list_helpers`) is the
+// one name-keyed dispatch table, mirroring the `anynode_ctor` style.
+
+use core.{ValueType, type_short_name}
+use features.comptime.{ResolverCtx, ctx_lookup_type, ctx_unwrap_path_to}
+
+// ── FieldShape ──
+
+/// One field's structural relationship to a target node type. Flat by
+/// design — the walker's proven classification set is exactly these eight
+/// shapes, and a nested `Optional(inner)` would admit combinations
+/// (`Optional(Leaf)`, `Optional(Optional(..))`) no emitter can produce
+/// code for. `target` is the referenced node type (qualified like the
+/// resolved field types); `wrapper` is the 1-hop `.node` wrapper's short
+/// name; `container` is a registered node-container struct's short name.
+export enum FieldShape {
+    /// Scalar / non-node — no recursion. The only shape with no target.
+    Leaf,
+    /// A direct node reference (`left: Tree`).
+    Node(target: string),
+    /// `List<Node>` (`elements: List<ValueType>`).
+    NodeList(target: string),
+    /// `Node?` — a nullable single child, walked none-guarded.
+    OptionalNode(target: string),
+    /// A single 1-hop wrapper projecting to the node via `.node` (`SExpr`).
+    Wrapper(target: string, wrapper: string),
+    /// `List<Wrapper>` (`body: List<SStmt>`).
+    WrapperList(target: string, wrapper: string),
+    /// `Wrapper?` — a nullable wrapped single child (`else_branch: SStmt?`).
+    OptionalWrapper(target: string, wrapper: string),
+    /// A `List<S>` where `S` is a REGISTERED struct embedding node children
+    /// the target classification can't reach (e.g. `List<MatchArm>`).
+    /// CROSS-TYPE ONLY (produced by classify_field_any, never
+    /// classify_field): such a struct spans multiple node kinds, so
+    /// same-type walks leave it Leaf and only the cross-type traversal
+    /// covers it, via a hand-written per-struct extract helper dispatched
+    /// by `struct_list_helpers`.
+    StructList(container: string),
+}
+
+// ── Shape predicates + accessors (the per-emitter policy vocabulary) ──
+
+/// True unless the field plays no child role.
+@comptime
+export fn shape_is_child(s: FieldShape) -> bool {
+    match s {
+        .Leaf -> false
+        _ -> true
+    }
+}
+
+/// True when the shape contributes exactly one node child — a bare node
+/// field or a single 1-hop wrapper around one. Both emit a single element
+/// into a children list and reconstruct in-place under map; the only
+/// difference is the `.node` projection / rewrap.
+@comptime
+export fn shape_is_single(s: FieldShape) -> bool {
+    (s is .Node) || (s is .Wrapper)
+}
+
+/// True for the nullable single-child shapes — a 0-or-1 element
+/// contribution, none-guarded by the *_opt runtime helpers.
+@comptime
+export fn shape_is_optional(s: FieldShape) -> bool {
+    (s is .OptionalNode) || (s is .OptionalWrapper)
+}
+
+/// True for the variable-arity shapes (folded via concat, vs singles) —
+/// including a registered struct-list, which is one variable-arity slot.
+@comptime
+export fn shape_is_listish(s: FieldShape) -> bool {
+    (s is .NodeList) || (s is .WrapperList) || shape_is_optional(s) || (s is .StructList)
+}
+
+/// The node type a shape references — the qualified target for the node
+/// shapes, the container short name for a struct-list, "" for a Leaf.
+@comptime
+export fn shape_target(s: FieldShape) -> string {
+    match s {
+        .Leaf -> ""
+        .Node(t) -> t
+        .NodeList(t) -> t
+        .OptionalNode(t) -> t
+        .Wrapper(t, _) -> t
+        .WrapperList(t, _) -> t
+        .OptionalWrapper(t, _) -> t
+        .StructList(c) -> c
+    }
+}
+
+/// The 1-hop wrapper short name carried by the wrapper shapes ("" otherwise).
+@comptime
+export fn shape_wrapper(s: FieldShape) -> string {
+    match s {
+        .Wrapper(_, w) -> w
+        .WrapperList(_, w) -> w
+        .OptionalWrapper(_, w) -> w
+        _ -> ""
+    }
+}
+
+/// The container short name carried by a `StructList` ("" otherwise).
+@comptime
+export fn shape_container(s: FieldShape) -> string {
+    match s {
+        .StructList(c) -> c
+        _ -> ""
+    }
+}
+
+// ── The classifier ──
+
+/// Classify one field's ValueType against ONE target node type. Returns
+/// `Leaf` when the field doesn't reference `target` in any walkable form.
+/// This is walker/derive.av's `classify_field_kind` with the parent enum
+/// generalized to an arbitrary target.
+@comptime
+export fn classify_field(vt: ValueType, target: string, ctx: ResolverCtx) -> FieldShape {
+    // A nullable single child (`T?` / `Wrapper<T>?`) is walked none-guarded.
+    // Optional of a non-target type stays a Leaf.
+    if vt_is_optional(vt) {
+        let inner = vt_optional_inner(vt)
+        if vt_names_target(inner, target) { return FieldShape.OptionalNode(target) }
+        let ow = single_wrapper_name(inner, target, ctx)
+        if ow != "" { return FieldShape.OptionalWrapper(target, ow) }
+        return FieldShape.Leaf
+    }
+    if vt_names_target(vt, target) { return FieldShape.Node(target) }
+    if is_list_of(vt, target) { return FieldShape.NodeList(target) }
+    let single = single_wrapper_name(vt, target, ctx)
+    if single != "" { return FieldShape.Wrapper(target, single) }
+    let wrapper = list_wrapper_name(vt, target, ctx)
+    if wrapper != "" { return FieldShape.WrapperList(target, wrapper) }
+    FieldShape.Leaf
+}
+
+/// Classify one field against ALL four node kinds (not just one target):
+/// try each through `classify_field`, take the first non-Leaf. The four
+/// kinds are mutually exclusive, so order is irrelevant. `parent_name` is
+/// the decl being derived (qualified like the resolved field types);
+/// targets are built in its module prefix so `vt_names_target`'s strict
+/// `==` matches — the four node kinds share the AST module.
+@comptime
+export fn classify_field_any(vt: ValueType, parent_name: string, ctx: ResolverCtx) -> FieldShape {
+    let pfx = module_prefix(parent_name)
+    let ke = classify_field(vt, "${pfx}Expr", ctx)
+    if shape_is_child(ke) { return ke }
+    let ks = classify_field(vt, "${pfx}Stmt", ctx)
+    if shape_is_child(ks) { return ks }
+    let kp = classify_field(vt, "${pfx}Pattern", ctx)
+    if shape_is_child(kp) { return kp }
+    let kt = classify_field(vt, "${pfx}ValueType", ctx)
+    // 5idg: a SINGLE cross-type ValueType child (e.g. ChannelNew.elem) is walkable —
+    // the standard parser ingests it as a TypeArena edge, so walker view and store
+    // edges agree. A `List<ValueType>` field, though, splits two ways and this gate
+    // must tell them apart, because `all_children_spanned()` is built SOLELY from
+    // this cross-type classifier — even a ValueType node's OWN self-recursive list
+    // flows through here, NOT the same-type `children()` path:
+    //   * On an AST *expression* node (GenericCall.type_args) it is a type-ANNOTATION
+    //     list the generics parser stores INLINE (alloc_leaf, no edge ingest), so it
+    //     is NOT a walkable sub-node — walking it would make `all_children_spanned()`
+    //     diverge from `children_of()` (the faithfulness oracle, arena.av). Keep it
+    //     Leaf. Here the list element (ValueType) is NOT the parent, so
+    //     `is_list_of` is false.
+    //   * On the ValueType enum ITSELF (FnTyped.params, Struct/Enum.type_args) it is
+    //     genuine recursive children that the arena DOES ingest as edges — dropping
+    //     it to Leaf made `all_children_spanned()` under-count and the arena's
+    //     FnTyped ingest read past the recorded edges (SIGABRT, arena_test.av:188).
+    //     Here the element IS the parent, so `is_list_of(vt, parent_name)` is
+    //     true and the list must be walked.
+    if shape_is_child(kt) && (!(kt is .NodeList) || is_list_of(vt, parent_name)) { return kt }
+    // A `List<Struct>` whose element is a REGISTERED walkable node-container
+    // (e.g. `List<MatchArm>`). Classified here rather than in classify_field
+    // because such a struct spans multiple node kinds, so the same-type
+    // children() leaves it Leaf and only the cross-type walk covers it.
+    //
+    // The registry keys on the short name, so gate on SAME MODULE as the parent
+    // decl: compare the full resolved element name to the parent-module-prefixed
+    // short name. The registered structs (MatchArm, …) live beside Expr/Stmt in
+    // this module, and a core AST enum's struct-list fields only reference core
+    // structs — so a foreign `otherpkg::MatchArm` sharing the short name (the 24yd
+    // short-name-collision class) is rejected here rather than misrouted to @std's
+    // `match_arm_children_spanned`.
+    let elem_name = vt_nominal_name(list_elem_or_unknown(vt))
+    let elem_struct = type_short_name(elem_name)
+    if struct_list_helpers(elem_struct).spanned != "" && elem_name == "${pfx}${elem_struct}" {
+        return FieldShape.StructList(elem_struct)
+    }
+    FieldShape.Leaf
+}
+
+// ── Struct-list registry ──
+
+/// The @std helper for one registered struct-list: `spanned` flattens
+/// `List<Struct>` into cross-type spanned children (used by
+/// all_children_spanned). `spanned == ""` ⇒ not registered (the field stays
+/// Leaf). One entry per struct type (+ its @std helper); mirrors the
+/// `anynode_ctor` name-dispatch style, not a content heuristic. Keying on
+/// the short name is safe because `classify_field_any` only reaches this
+/// table for an element in the SAME MODULE as the derived decl (its
+/// same-module gate) — a foreign type sharing the short name never routes
+/// here.
+export type StructListHelpers = { spanned: string }
+
+@comptime
+export fn struct_list_helpers(container: string) -> StructListHelpers {
+    if container == "MatchArm" {
+        return StructListHelpers { spanned: "match_arm_children_spanned" }
+    }
+    if container == "FieldInit" {
+        return StructListHelpers { spanned: "field_init_children_spanned" }
+    }
+    StructListHelpers { spanned: "" }
+}
+
+// ── ValueType probes ──
+
+/// True when `vt` refers to the target type. Post-resolve, an
+/// `enum Tree { Node(left: Tree, ...) }` field has `resolved =
+/// Enum("Tree", _, id)` (or `Struct("Tree", id)` if the parser fell back
+/// to Struct because the type wasn't yet known to be an enum). The
+/// comparison handles both shapes; qualification is the caller's concern
+/// (targets are built in the parent's module prefix).
+@comptime
+fn vt_names_target(vt: ValueType, target: string) -> bool {
+    let n = vt_nominal_name(vt)
+    if n == "" { return false }
+    n == target
+}
+
+/// The nominal name a ValueType carries, "" for structural / primitive
+/// types. Helpers live inline (not imported from `core`) because eval can
+/// only call `@comptime` fns; copying the few lines we need keeps the
+/// classifier eval-safe without leaking @comptime onto core.
+@comptime
+export fn vt_nominal_name(vt: ValueType) -> string {
+    match vt {
+        .Enum(name, _, _) -> name
+        .Struct(name, _, _) -> name
+        .NarrowedEnum(name, _, _) -> name
+        _ -> ""
+    }
+}
+
+/// True when `vt` is `List<X>` where `X` is the target type. Covers the
+/// declared-list shapes like `ValueType.Tuple(elements: List<ValueType>)`.
+/// (Pattern's sub-lists flipped to `List<PatId>` in B-final F2 — id
+/// payloads are Leaves here, exactly why flipped shapes go walker-opaque.)
+@comptime
+fn is_list_of(vt: ValueType, target: string) -> bool {
+    match vt {
+        .List(elem) -> vt_names_target(elem, target)
+        _ -> false
+    }
+}
+
+/// When `vt` is `List<W>` and `W` is a 1-hop wrapper that projects to
+/// `target` via `.node`, return W's short name; else "". Structural
+/// discovery via ctx_unwrap_path_to — zero hardcoded wrapper table.
+@comptime
+fn list_wrapper_name(vt: ValueType, target: string, ctx: ResolverCtx) -> string {
+    let elem = list_elem_or_unknown(vt)
+    node_wrapper_name(type_short_name(vt_nominal_name(elem)), target, ctx)
+}
+
+/// When `vt` is itself a 1-hop wrapper `W` (a struct with a single `.node`
+/// field projecting to `target`), return W's short name; else "". The
+/// single-field analogue of `list_wrapper_name` — same structural
+/// `.node`-projection discovery, no list unwrap. Drives the `Wrapper`
+/// classification so a bare `SExpr` / `SStmt` field is walked like a
+/// direct node with one `.node` hop.
+@comptime
+fn single_wrapper_name(vt: ValueType, target: string, ctx: ResolverCtx) -> string {
+    node_wrapper_name(type_short_name(vt_nominal_name(vt)), target, ctx)
+}
+
+/// Shared tail of the wrapper discoverers: given a candidate wrapper short
+/// name, confirm it resolves to a type whose unwrap path to `target` is
+/// exactly the single hop `.node`. Returns the name on match, "" otherwise.
+/// The 1-hop guard matches what `unwrap_node` / `map_node` assume
+/// (`x.node`); longer chains aren't yet supported.
+@comptime
+fn node_wrapper_name(wrapper: string, target: string, ctx: ResolverCtx) -> string {
+    if wrapper == "" { return "" }
+    let resolved = ctx_lookup_type(ctx, wrapper)
+    if resolved == null { return "" }
+    let path = ctx_unwrap_path_to(ctx, resolved!, target)
+    if path.length == 1 && path[0] == "node" { return wrapper }
+    ""
+}
+
+@comptime
+fn list_elem_or_unknown(vt: ValueType) -> ValueType {
+    match vt {
+        .List(elem) -> elem
+        _ -> ValueType.Unknown
+    }
+}
+
+/// `@comptime` optional probes (value-returning arms, not an empty-block
+/// match — comptime can't eval a `_ -> {}` arm).
+@comptime
+fn vt_is_optional(vt: ValueType) -> bool {
+    match vt {
+        .Optional(_) -> true
+        _ -> false
+    }
+}
+
+@comptime
+fn vt_optional_inner(vt: ValueType) -> ValueType {
+    match vt {
+        .Optional(inner) -> inner
+        _ -> ValueType.Unknown
+    }
+}
+
+/// The module-qualification prefix of `name` (everything up to and
+/// including the last `::`), "" if unqualified — the inverse of
+/// `type_short_name`. Used to build cross-type target names in the SAME
+/// qualification as the decl being derived, so they strict-`==` match the
+/// resolved field types.
+@comptime
+export fn module_prefix(name: string) -> string {
+    let len = name.length
+    mut i = len - 1
+    while i > 0 {
+        if name[i] == ":" && name[i - 1] == ":" {
+            return name.substring(0, i + 1)
+        }
+        i = i - 1
+    }
+    ""
+}

@@ -1,0 +1,75 @@
+// ps3t.6.2: the eq emitter on an enum — the proof that the unified derive
+// engine's emitter interface carries a second generator with zero new
+// traversal code. Covers: leaf equality (==), node recursion (.eq),
+// list-of-self pairing (list_eq_by + the generated lambda), the
+// cross-variant wildcard arm (false), and the empty variant (true).
+//
+// Runs uncached/no-metadata like every @comptime-macro fixture (9p1d:
+// @comptime bodies aren't preserved across the metadata roundtrip yet).
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "derive_eq: structural equality on a recursive enum" {
+    then "same / diff / cross-variant / empty / list cases all answer correctly" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_enum_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "use @std.avrac.list_ops.{list_eq_by}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "    Many(kids: List<Tree>)\n" +
+            "    Empty\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let b = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let c = Tree.Node(Tree.Leaf(1), Tree.Leaf(3))\n" +
+            "    println(\"same=\" + string(a.eq(b)))\n" +
+            "    println(\"diff=\" + string(a.eq(c)))\n" +
+            "    let leaf = Tree.Leaf(1)\n" +
+            "    println(\"variant_diff=\" + string(a.eq(leaf)))\n" +
+            "    let e1 = Tree.Empty\n" +
+            "    let e2 = Tree.Empty\n" +
+            "    println(\"empty=\" + string(e1.eq(e2)))\n" +
+            "    let l1 = Tree.Many([Tree.Leaf(1), Tree.Leaf(2)])\n" +
+            "    let l2 = Tree.Many([Tree.Leaf(1), Tree.Leaf(2)])\n" +
+            "    let l3 = Tree.Many([Tree.Leaf(1)])\n" +
+            "    let l4 = Tree.Many([Tree.Leaf(1), Tree.Leaf(9)])\n" +
+            "    println(\"list_same=\" + string(l1.eq(l2)))\n" +
+            "    println(\"list_len_diff=\" + string(l1.eq(l3)))\n" +
+            "    println(\"list_elem_diff=\" + string(l1.eq(l4)))\n" +
+            "}\n")
+        out.contains("same=true") &&
+            out.contains("diff=false") &&
+            out.contains("variant_diff=false") &&
+            out.contains("empty=true") &&
+            out.contains("list_same=true") &&
+            out.contains("list_len_diff=false") &&
+            out.contains("list_elem_diff=false")
+    }
+}
+
+spec "derive_eq: deep recursion compares whole subtrees" {
+    then "a three-level mismatch is found through nested .eq calls" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_deep_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "enum Deep {\n" +
+            "    L(v: int)\n" +
+            "    N(a: Deep, b: Deep)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let x = Deep.N(Deep.N(Deep.L(1), Deep.L(2)), Deep.L(3))\n" +
+            "    let y = Deep.N(Deep.N(Deep.L(1), Deep.L(2)), Deep.L(3))\n" +
+            "    let z = Deep.N(Deep.N(Deep.L(1), Deep.L(99)), Deep.L(3))\n" +
+            "    println(\"deep_same=\" + string(x.eq(y)))\n" +
+            "    println(\"deep_diff=\" + string(x.eq(z)))\n" +
+            "}\n")
+        out.contains("deep_same=true") && out.contains("deep_diff=false")
+    }
+}

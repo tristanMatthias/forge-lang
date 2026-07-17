@@ -1,0 +1,301 @@
+// WHY: the emitter interface + traversal driver of the unified derive
+// engine (ps3t.6.2). The DRIVER owns everything every derive repeats:
+// read the decl (shape.av), classify each variant's fields once
+// (classify.av), build the per-variant `match self { … }` (enum) or the
+// let-bound straight-line body (struct), assemble the mangled
+// `Type__method` fns, the DeclSymbols, and the MacroProvenance. An
+// EMITTER owns only what code each classified position produces — a
+// record of pure builder hooks (named @comptime fns carried as fn-typed
+// fields; the comptime evaluator dispatches them first-class, verified
+// against the UAP fn-field call path).
+//
+// Two method forms cover every generator shape encountered so far:
+//   - PerVariant: one match arm per variant from the classified fields
+//     (children / all_children_spanned / map / eq / encode …).
+//   - WholeFn: a fixed-shape fn with no variant iteration (the recursive
+//     visit / any / find, which delegate to children()).
+// A plan is an ordered mix of both, so an emitter's method order — and
+// therefore its emitted AST — is exactly what its plan declares.
+
+use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant}
+use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, synth_expr_id, synth_stmt_ids}
+use features.derive.{DeclView, DeclShapeKind, decl_view, FieldShape, classify_field, classify_field_any}
+use diagnostics.{Span}
+
+// ── The emitter interface ──
+
+/// One field of a variant, classified and named for the emitter hooks:
+/// `name` is the source field name, `binding` the pattern-binding name the
+/// method's bind hook chose (`_` = unbound), `kind` the classification.
+export type Classified = { name: string, binding: string, kind: FieldShape }
+
+/// The decl being derived, as hooks see it: its (qualified) name and
+/// whether it is a struct (single synthetic variant) or an enum.
+export type DeclCtx = { parent: string, is_struct: bool }
+
+/// A method's signature beyond the driver-owned `self` param: the extra
+/// params, the return type, and any prologue stmts (e.g. the typed-empty
+/// list binding children() pins its arm type with).
+export type MethodSig = { extra_params: List<ParamEntry>, ret: ValueType, prologue: List<Stmt> }
+
+/// A per-variant match-based method. The driver classifies each variant's
+/// fields (against the parent when `cross_type` is false, against every
+/// AST node kind when true), names each binding via `bind(field_name,
+/// shape, field_index)`, and builds one arm per variant whose body is
+/// `arm_body(decl, variant_name, fields)`.
+export type PerVariantMethod = {
+    method_name: string,
+    cross_type: bool,
+    signature: fn(DeclCtx) -> MethodSig,
+    bind: fn(string, FieldShape, int) -> string,
+    arm_body: fn(DeclCtx, string, List<Classified>) -> Expr,
+}
+
+/// A fixed-shape method — the hook builds the entire fn from the decl
+/// context, no variant iteration (e.g. the recursive visit/any/find).
+export type WholeFnMethod = {
+    method_name: string,
+    build: fn(DeclCtx) -> Stmt,
+}
+
+export enum EmitMethod {
+    PerVariant(m: PerVariantMethod),
+    WholeFn(m: WholeFnMethod),
+}
+
+/// One emitter: the macro identity it reports in provenance/diagnostics,
+/// whether it is restricted to enums (per-variant reconstruction emitters
+/// like walk's map() have no struct form), and its ordered methods.
+export type EmitPlan = {
+    macro_name: string,
+    enum_only: bool,
+    methods: List<EmitMethod>,
+}
+
+// ── The engine ──
+
+/// Drive `plan` over the annotated decl: emit one `Parent__method` fn per
+/// plan method, register each as a Method DeclSymbol, and return the
+/// ResolvedDecls splice (original decl first — the engine never rewrites
+/// the target, only appends to it). On any non-derivable target (not an
+/// enum/struct, or a struct under an enum-only plan) returns the decl
+/// untouched so downstream errors are about the user's intent, not about
+/// the macro hitting an internal corner case.
+@comptime
+export fn derive_engine(target: AnnotatedDecl, ctx: ResolverCtx, plan: EmitPlan) -> ResolvedDecls {
+    let view = decl_view(target.stmt)
+    if view.name == "" || (plan.enum_only && view.kind is .StructShape) {
+        return engine_failsafe(target, plan.macro_name)
+    }
+    let dc = DeclCtx { parent: view.name, is_struct: view.kind is .StructShape }
+    mut decls: List<Stmt> = [target.stmt]
+    mut introduces: List<DeclSymbol> = []
+    let methods = plan.methods
+    for m in methods {
+        let built = match m {
+            .PerVariant(pv) -> BuiltMethod { decl: build_per_variant_fn(view, dc, pv, ctx), method_name: pv.method_name }
+            .WholeFn(w) -> BuiltMethod { decl: build_whole_fn(w, dc), method_name: w.method_name }
+        }
+        decls.push(built.decl)
+        introduces.push(method_symbol(view.name, built.method_name))
+    }
+    ResolvedDecls { decls, introduces, provenance: plan_provenance(plan.macro_name, view.name) }
+}
+
+/// One emitted method: the fn decl + the name it registers under.
+type BuiltMethod = { decl: Stmt, method_name: string }
+
+/// Run a whole-fn method's build hook (through a local — see the
+/// hook-invocation note above classify_bound).
+@comptime
+fn build_whole_fn(w: WholeFnMethod, dc: DeclCtx) -> Stmt {
+    let build = w.build
+    build(dc)
+}
+
+/// Empty-output failsafe — emits just the original decl, no methods.
+/// Keeps the AST shape correct so downstream diagnostics blame the user
+/// code, not a missing decl from a silent macro failure.
+@comptime
+export fn engine_failsafe(target: AnnotatedDecl, macro_name: string) -> ResolvedDecls {
+    let decls: List<Stmt> = [target.stmt]
+    let no_syms: List<DeclSymbol> = []
+    ResolvedDecls { decls, introduces: no_syms, provenance: plan_provenance(macro_name, "") }
+}
+
+@comptime
+fn plan_provenance(macro_name: string, target: string) -> MacroProvenance {
+    MacroProvenance {
+        macro_name,
+        target_canonical: target,
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" },
+    }
+}
+
+/// The mangled `Type__method` DeclSymbol a derived method registers so the
+/// introduces-validation pass can find it in the spliced decl list. The
+/// mangled name matches what `parse_method_declaration` emits for
+/// hand-written impls, so codegen's dot-notation dispatch finds the fn via
+/// the standard method-lookup path.
+@comptime
+fn method_symbol(parent: string, method_name: string) -> DeclSymbol {
+    let mangled = "${parent}__${method_name}"
+    DeclSymbol { name: mangled, kind: DeclKind.Method(parent), canonical_path: mangled }
+}
+
+// ── Per-variant method assembly ──
+
+// Hook invocations below load the fn-typed field into a local first and
+// call through the local (`let hook = m.bind; hook(…)`) instead of the
+// direct `m.bind(…)` method-call form. The pinned seed's codegen types a
+// method-position fn-field call `.Int` (fixed this PR in
+// fn_decl/codegen.av — emit_indirect_call_typed with the field's declared
+// return), but compiler source must keep building from the integration
+// seed (sdmg.2), so the engine dogfoods the direct form only after the
+// seed train advances past the fix.
+
+/// Classify one variant's fields for `m` and stamp each binding name.
+@comptime
+fn classify_bound(v: Variant, parent: string, m: PerVariantMethod, ctx: ResolverCtx) -> List<Classified> {
+    let bind = m.bind
+    mut out: List<Classified> = []
+    mut i = 0
+    let fs = v.fields
+    for f in fs {
+        let k = if m.cross_type {
+            classify_field_any(f.resolved, parent, ctx)
+        } else {
+            classify_field(f.resolved, parent, ctx)
+        }
+        out.push(Classified { name: f.name, binding: bind(f.name, k, i), kind: k })
+        i = i + 1
+    }
+    out
+}
+
+/// `.VariantName(b1, b2, b3)` pattern from the classified bindings — each
+/// becomes a ParamEntry, the same shape the parser produces for the simple
+/// bind form `.Variant(x, y)`. `_` is a valid binding name here. The
+/// single Pattern.Variant builder shared by every per-variant emitter;
+/// only the bind hook's name choice differs.
+@comptime
+fn bound_pattern(variant_name: string, fields: List<Classified>) -> Pattern {
+    mut params: List<ParamEntry> = []
+    for c in fields {
+        params.push(ParamEntry { name: c.binding, vtype: ValueType.Unknown })
+    }
+    Pattern.Variant(variant_name, params)
+}
+
+/// Build one per-variant method fn. Enum: `fn Parent__m(self, extras) ->
+/// ret { prologue; match self { arms } }`. Struct: the single synthetic
+/// variant's arm body over `let binding = self.field` projections instead
+/// of a match — the same arm hook serves both decl forms, so an emitter
+/// gains struct support without writing a second body builder.
+@comptime
+fn build_per_variant_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: ResolverCtx) -> Stmt {
+    if dc.is_struct { return build_struct_fn(view, dc, m, ctx) }
+    let arm_body = m.arm_body
+    mut arms: List<MatchArm> = []
+    let variants = view.variants
+    for v in variants {
+        let fields = classify_bound(v, view.name, m, ctx)
+        let pat = bound_pattern(v.name, fields)
+        let body = arm_body(dc, v.name, fields)
+        arms.push(MatchArm { pattern: pat, guard_id: null, body_id: synth_expr_id(body) })
+    }
+    let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
+    let signature = m.signature
+    let sig = signature(dc)
+    mut body: List<Stmt> = []
+    let prologue = sig.prologue
+    for p in prologue { body.push(p) }
+    body.push(Stmt.Expr(synth_expr_id(match_expr)))
+    method_fn(dc, m.method_name, sig, body)
+}
+
+/// The struct form of a per-variant method: no match — bind each captured
+/// field with `let <binding> = self.<field>` so the arm hook's bindings
+/// resolve exactly as they would from an enum pattern, then run the same
+/// arm body straight-line.
+@comptime
+fn build_struct_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: ResolverCtx) -> Stmt {
+    let v = view.variants[0]
+    let fields = classify_bound(v, view.name, m, ctx)
+    let signature = m.signature
+    let sig = signature(dc)
+    mut body: List<Stmt> = []
+    let prologue = sig.prologue
+    for p in prologue { body.push(p) }
+    for c in fields {
+        if c.binding != "_" {
+            body.push(Stmt.Let(c.binding, ValueType.Unknown, synth_expr_id(ident_field_access("self", c.name))))
+        }
+    }
+    let arm_body = m.arm_body
+    body.push(Stmt.Expr(synth_expr_id(arm_body(dc, v.name, fields))))
+    method_fn(dc, m.method_name, sig, body)
+}
+
+/// Assemble `fn Parent__method(self: Parent, extras…) -> ret { body }`.
+///
+/// Free-fn placement (not inside an Impl) keeps the post-expand register
+/// pass simple — it already handles top-level Function decls; impl-method
+/// registration through macros would need extra plumbing in
+/// `collect_macro_item_from_stmt`.
+@comptime
+fn method_fn(dc: DeclCtx, method_name: string, sig: MethodSig, body: List<Stmt>) -> Stmt {
+    let self_param = ParamEntry { name: "self", vtype: self_vtype(dc) }
+    mut params: List<ParamEntry> = [self_param]
+    let extras = sig.extra_params
+    for p in extras { params.push(p) }
+    let empty_tp: List<TypeParamEntry> = []
+    Stmt.Function("${dc.parent}__${method_name}", empty_tp, params, sig.ret, synth_stmt_ids(body))
+}
+
+/// The ValueType naming the derived decl itself. The macro emits the bare
+/// decl name; the resolver's rewrite_vtype pass qualifies each slot to the
+/// canonical path on its own, just like a hand-written signature would
+/// resolve. A struct slot is emitted as `.Struct` (not `.Enum`) because
+/// rewrite_vtype re-runs a `.Struct` name through `vtype_from_name`,
+/// whereas a `.Enum` slot stays tagged Enum.
+@comptime
+export fn self_vtype(dc: DeclCtx) -> ValueType {
+    let no_type_args: List<ValueType> = []
+    if dc.is_struct { return ValueType.Struct(dc.parent, no_type_args, 0) }
+    ValueType.Enum(dc.parent, no_type_args, 0)
+}
+
+// ── Generated-AST construction primitives (shared by every emitter) ──
+
+/// `callee(args)` as a flipped @comptime-built `Expr.Call`: the callee and
+/// each arg ride the identity id-shims (`synth_expr_id`) so the emitted
+/// payload is the `ExprId` / `List<ExprId>` the flipped `Call` holds. One
+/// place so every generated call site flips consistently.
+@comptime
+export fn emit_call(callee: Expr, args: List<ExprId>) -> Expr {
+    Expr.Call(synth_expr_id(callee), args)
+}
+
+/// `NAME.field` on a synthesised identifier — the receiver is boxed, so
+/// the id-shim `synth_expr_id` supplies the ExprId. Single site to
+/// leaf-wrap.
+@comptime
+export fn ident_field_access(name: string, field: string) -> Expr {
+    Expr.FieldAccess(synth_expr_id(Expr.Ident(name)), field)
+}
+
+/// A nominal ValueType for a generated turbofish type-arg. 5idg:
+/// turbofish type-args are structural `List<ValueType>`, but emitters run
+/// at COMPTIME and cannot call the runtime helper `vtype_from_name` (the
+/// eval sees a non-`@comptime` fn as a type_marker → F4005). Construct the
+/// nominal type directly instead: `resolve_vtype` later upgrades
+/// `Struct`→`Enum` for the parent, exactly as `vtype_from_name` +
+/// `resolve_vtype` did for the old string form. Wrapper/parent are always
+/// nominal struct/enum names (never primitives), so a `Struct` node is
+/// always the right pre-resolve shape.
+@comptime
+export fn name_vtype(name: string) -> ValueType {
+    let no_args: List<ValueType> = []
+    ValueType.Struct(name, no_args, 0)
+}
