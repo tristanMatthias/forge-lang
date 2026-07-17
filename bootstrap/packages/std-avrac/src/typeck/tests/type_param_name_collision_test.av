@@ -18,7 +18,8 @@
 // binds only partially (decode_or-style default arg) — all with a hostile
 // `enum T` and `type E` in scope at the top level.
 
-use @std.avrac.test_runner.{write_fixture_and_run}
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 spec "generics survive a user type named like a type param" {
     then "enum T + type E in scope; @std generics + Result + defaults all compile and run" {
@@ -59,5 +60,41 @@ spec "generics survive a user type named like a type param" {
             out.contains("picked=42") &&
             out.contains("t_is_a=true") &&
             out.contains("e=5")
+    }
+}
+
+// The BOUND side of the collision: `wrap(T.A)` binds param T to the concrete
+// user enum T, whose display name coincides with the param's. The post-subst
+// erasure must be UNBOUND-ONLY (unbound_type_params) — erasing the full tp
+// list matched the substituted binding by name and reverted the known result
+// type to Unknown, silently un-gating `let n: int = wrap(T.A)`.
+fn collision_out(path: string, source: string) -> string {
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "a param bound to a same-named concrete type keeps the concrete result" {
+    then "enum-T result into an int slot is F1000; into a T slot is clean" {
+        let hostile =
+            "enum T { A, B }\n" +
+            "\n" +
+            "fn wrap<T>(x: T) -> T {\n" +
+            "    x\n" +
+            "}\n" +
+            "\n"
+        let bad = collision_out("/tmp/avra_tp_collision_bound_bad.av",
+            hostile +
+            "fn main() {\n" +
+            "    let n: int = wrap(T.A)\n" +
+            "    println(string(n))\n" +
+            "}\n")
+        let good = collision_out("/tmp/avra_tp_collision_bound_good.av",
+            hostile +
+            "fn main() {\n" +
+            "    let t2: T = wrap(T.A)\n" +
+            "    println(\"bound_ok=\" + string(t2 is .A))\n" +
+            "}\n")
+        bad.contains("F1000") && !bad.contains("__AVRA_CHECK_OK__") &&
+            good.contains("__AVRA_CHECK_OK__")
     }
 }

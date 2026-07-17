@@ -73,3 +73,25 @@ spec "derive_eq: deep recursion compares whole subtrees" {
         out.contains("deep_same=true") && out.contains("deep_diff=false")
     }
 }
+
+spec "derive_eq: base-case variant terminates a self-typed recursion" {
+    then "a linked pair compares by structure, not identity" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_enum_chain_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "enum Chain {\n" +
+            "    End\n" +
+            "    Link(label: int, next: Chain)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
+            "    let b = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
+            "    let c = Chain.Link(1, Chain.Link(3, Chain.End))\n" +
+            "    println(\"chain_same=\" + string(a.eq(b)))\n" +
+            "    println(\"chain_diff=\" + string(a.eq(c)))\n" +
+            "}\n")
+        out.contains("chain_same=true") && out.contains("chain_diff=false")
+    }
+}

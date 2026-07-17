@@ -33,16 +33,14 @@ spec "derive_eq: nullable self field none-guards through opt_eq_by" {
             "use @std.avrac.list_ops.{opt_eq_by}\n" +
             "\n" +
             "@expand(derive_eq)\n" +
-            "enum OChain {\n" +
-            "    Link(v: int, next: OChain?)\n" +
-            "}\n" +
+            "type OChain = { v: int, next: OChain? }\n" +
             "\n" +
             "fn main() {\n" +
-            "    let flat1 = OChain.Link(1, null)\n" +
-            "    let flat2 = OChain.Link(1, null)\n" +
-            "    let deep1 = OChain.Link(1, OChain.Link(2, null))\n" +
-            "    let deep2 = OChain.Link(1, OChain.Link(2, null))\n" +
-            "    let deep3 = OChain.Link(1, OChain.Link(9, null))\n" +
+            "    let flat1 = OChain { v: 1, next: null }\n" +
+            "    let flat2 = OChain { v: 1, next: null }\n" +
+            "    let deep1 = OChain { v: 1, next: OChain { v: 2, next: null } }\n" +
+            "    let deep2 = OChain { v: 1, next: OChain { v: 2, next: null } }\n" +
+            "    let deep3 = OChain { v: 1, next: OChain { v: 9, next: null } }\n" +
             "    println(\"both_absent=\" + string(flat1.eq(flat2)))\n" +
             "    println(\"absent_vs_present=\" + string(flat1.eq(deep1)))\n" +
             "    println(\"present_same=\" + string(deep1.eq(deep2)))\n" +
@@ -52,27 +50,5 @@ spec "derive_eq: nullable self field none-guards through opt_eq_by" {
             out.contains("absent_vs_present=false") &&
             out.contains("present_same=true") &&
             out.contains("present_diff=false")
-    }
-}
-
-spec "derive_eq: struct with a self-typed node field recurses" {
-    then "a linked pair compares by structure, not identity" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_struct_node_test.av",
-            "use @std.avrac.features.derive.{derive_eq}\n" +
-            "\n" +
-            "@expand(derive_eq)\n" +
-            "enum Chain {\n" +
-            "    End\n" +
-            "    Link(label: int, next: Chain)\n" +
-            "}\n" +
-            "\n" +
-            "fn main() {\n" +
-            "    let a = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
-            "    let b = Chain.Link(1, Chain.Link(2, Chain.End))\n" +
-            "    let c = Chain.Link(1, Chain.Link(3, Chain.End))\n" +
-            "    println(\"chain_same=\" + string(a.eq(b)))\n" +
-            "    println(\"chain_diff=\" + string(a.eq(c)))\n" +
-            "}\n")
-        out.contains("chain_same=true") && out.contains("chain_diff=false")
     }
 }
