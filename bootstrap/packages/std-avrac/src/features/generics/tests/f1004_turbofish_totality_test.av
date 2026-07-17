@@ -52,6 +52,23 @@ fn wrap<U>(x: U) -> U { x }
 fn main() { let r = wrap<Pair>(5) }")
         out.contains("F1004")
     }
+    then "a bare generic in a NON-FIRST turbofish slot is caught (every arg checked)" {
+        // The gate loops over the whole type-arg list, so an under-applied
+        // generic in the second position is caught exactly like the first.
+        let out = tf_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn two<A, B>(a: A, b: B) -> A { a }
+fn main() { let r = two<int, GenOpt>(1, 2) }")
+        out.contains("F1004")
+    }
+    then "a bare generic turbofish arg on a NON-generic fn is still F1004" {
+        // The type-arg is under-determined regardless of whether the callee is
+        // generic — the gate runs on the written type-args, before the callee's
+        // own arity handling.
+        let out = tf_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn plain(x: int) -> int { x }
+fn main() { let r = plain<GenOpt>(5) }")
+        out.contains("F1004")
+    }
 }
 
 spec "the turbofish type-arg gate does not over-fire" {
@@ -63,6 +80,11 @@ fn main() { let r = id<int>(5) }")
     then "a concrete string turbofish arg compiles" {
         let out = tf_compile_out("fn id<U>(x: U) -> U { x }
 fn main() { let r = id<string>(\"hi\") }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a multi-arg turbofish of concrete types compiles (no false positive)" {
+        let out = tf_compile_out("fn two<A, B>(a: A, b: B) -> A { a }
+fn main() { let r = two<int, string>(1, \"x\") }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "a non-generic named type turbofish arg compiles (only generics are gated)" {

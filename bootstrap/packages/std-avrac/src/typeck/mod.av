@@ -1243,6 +1243,16 @@ export fn tc_gate_expr_type_arg(tc: TC, vt: ValueType) -> TC {
     tc_check_type_applied(tc, resolve_vtype(tc, vt), tc.current_scope_tp)
 }
 
+/// List sibling of `tc_gate_expr_type_arg` — gates every explicit type argument
+/// in a turbofish list (`f<A, B>(…)`), so a bare generic in ANY position is
+/// caught. Mirrors `tc_check_type_applied_list`'s relation to
+/// `tc_check_type_applied`.
+export fn tc_gate_expr_type_arg_list(tc: TC, type_args: List<ValueType>) -> TC {
+    mut cur = tc
+    for ta in type_args { cur = tc_gate_expr_type_arg(cur, ta) }
+    cur
+}
+
 /// Report F1004 when a declared generic (`decl_tps.length > 0`) is given fewer
 /// type arguments than it declares, then recurse into whatever args ARE
 /// present so a nested bare generic (`Box<GenOpt>`) is still caught. A name
@@ -4076,7 +4086,6 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<ValueType>, args: Li
         _ -> ""
     }
     if name == "" { return check_call(tc, callee, args) }
-    mut checked = check_expr_list(tc, args)
     // ps3t.4.6: apply the F1004 totality gate to every explicit turbofish
     // type-arg. A bare generic written as `wrap<GenOpt>(x)` (GenOpt itself
     // generic) reaches mono with no layout — the SAME under-determined hazard
@@ -4086,9 +4095,7 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<ValueType>, args: Li
     // so each arg gates directly through the shared helper — no string re-parse.
     // An in-scope type param (`wrap<T>(x)` inside `fn f<T>()`) rides
     // current_scope_tp and stays exempt.
-    for ta in type_args {
-        checked = tc_gate_expr_type_arg(checked, ta)
-    }
+    let checked = tc_gate_expr_type_arg_list(check_expr_list(tc, args), type_args)
     let r = fn_type_get(checked.fns, name)
     if !r.found { return tc_er(checked, .Unknown) }
     if r.tp.length == 0 || type_args.length == 0 {
