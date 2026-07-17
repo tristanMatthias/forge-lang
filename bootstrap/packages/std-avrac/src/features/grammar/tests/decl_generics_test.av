@@ -1,0 +1,111 @@
+// ps3t.6.5.7 — the DECLARATION family, generics slice: generic type
+// parameters `<T>`, `<T: Bound>`, `<T, U>`, `<T, U: Bound>` on fn / type /
+// enum declarations. parse_function_declaration / parse_type_declaration /
+// parse_enum_declaration STORE the parsed type params (parse_type_params) in
+// the decl's type-param list, rendered `<…>` (render_type_param_list: a bare
+// name, or `name: bound` for a single trait bound). This slice covers the
+// STORED-and-rendered case; trait/impl generics are `skip_angle_brackets`'d by
+// the hand parser (discarded, never rendered), a separate follow-up.
+//
+// The seam adds a CapVal.TParam(TypeParamEntry)/TParams capture kind +
+// MkTypeParam, and generic-arity variants of MkFnDecl (5 args) / MkTypeDecl /
+// MkEnumDecl (3 args) alongside the non-generic ones.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id.
+//
+// Scope: single trait bound per param (`T: Display`) — multi-bound `T: A + B`
+// is a where-clause (separate). Corpus avoids nested generics `List<List<T>>`
+// (the demo lexer merges `>>` into one shift token — the 6.5.8 real-lexer
+// concern) and reserved-word identifiers.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn gen_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  decl          = fn_decl | type_decl | enum_decl\n" +
+    "  fn_decl       = \"fn\" fname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, tparams, params, ret, body)\n" +
+    "  type_decl     = \"type\" tname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, tparams, fields)\n" +
+    "  enum_decl     = \"enum\" edname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, tparams, vars)\n" +
+    "  tparam        = tpname:IDENT ( \":\" bound:IDENT )? -> MkTypeParam(tpname, bound)\n" +
+    "  field         = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
+    "  variant       = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
+    "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── body statement subset ──
+    "  statement     = break_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
+    // ── type family ──
+    "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type       = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type      = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type     = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type    = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type    = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression family (bodies) ──
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un            = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(gen_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: generics == hand-written parser (ps3t.6.5.7)" {
+    given "generic fn declarations (type params stored + rendered)" {
+        then "one/two params, bounds, and the no-generics fallthrough agree" {
+            agree("fn id<T>(x: T) -> T { return x }") &&
+            agree("fn pair<A, B>(a: A, b: B) { }") &&
+            agree("fn bounded<T: Display>(x: T) { }") &&
+            agree("fn mixed<T, U: Ord>() { }") &&
+            agree("fn plain() { }")
+        }
+    }
+    given "generic type (struct) declarations" {
+        then "one/two params and bounds agree" {
+            agree("type Box<T> = { val: T }") &&
+            agree("type Pair<A, B> = { first: A, second: B }") &&
+            agree("type Bounded<T: Clone> = { item: T }")
+        }
+    }
+    given "generic enum declarations" {
+        then "one/two params with payloads agree" {
+            agree("enum Option<T> { Some(value: T), None }") &&
+            agree("enum Result<T, E> { Ok(value: T), Err(error: E) }")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: rendered <…> type params)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("fn f<T: Display>() { }") == "(fn f<T: Display> () -> void )" &&
+            dsl_stmt("type Box<T> = { val: T }") == "(type Box<T> (val:T))" &&
+            dsl_stmt("enum Option<T> { Some(value: T), None }") == "(enum Option<T> (Some(value:T), None()))" &&
+            dsl_stmt("fn mixed<T, U: Ord>() { }") == "(fn mixed<T, U: Ord> () -> void )"
+        }
+    }
+}

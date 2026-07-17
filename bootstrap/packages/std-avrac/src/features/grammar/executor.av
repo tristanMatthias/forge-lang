@@ -84,6 +84,12 @@ enum CapVal {
     // A `( "@" name args? )+` accumulates `Anns`, folded into Stmt.Annotated.
     Ann(a: Annotation)
     Anns(xs: List<Annotation>)
+    // A built TYPE PARAMETER (name + optional single trait bound) + a parallel
+    // list (declaration generics, ps3t.6.5.7). `<T, U: Bound>` on fn/type/enum
+    // is STORED in the decl's type-param list (rendered `<…>`); a `*`/`+` over
+    // the tparam rule accumulates `TParams`, folded into the generic decl build.
+    TParam(tp: TypeParamEntry)
+    TParams(tps: List<TypeParamEntry>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -279,6 +285,22 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.Anns(xs))
+    }
+
+    // Type-parameter-list accumulator (declaration generics, ps3t.6.5.7): a
+    // `*`/`+` over the tparam rule collects each built TypeParamEntry here.
+    fn append_tparam(self, name: string, tp: TypeParamEntry) {
+        let existing = self.get(name)
+        mut tps: List<TypeParamEntry> = []
+        match existing {
+            .TParams(prev) -> {
+                for x in prev { tps.push(x) }
+            }
+            .TParam(prev) -> tps.push(prev)
+            _ -> {}
+        }
+        tps.push(tp)
+        self.set_scalar(name, CapVal.TParams(tps))
     }
 }
 
@@ -664,6 +686,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .Field(f) -> env.append_field(label, f)
             .Var(v) -> env.append_var(label, v)
             .Ann(a) -> env.append_ann(label, a)
+            .TParam(tp) -> env.append_tparam(label, tp)
             _ -> {}
         }
     } else {
@@ -938,6 +961,13 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let pvt = if capval_present(env.get(args[1])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) } else { ValueType.Int }
             CapVal.PEntry(ParamEntry { name: capval_tok_text(env.get(args[0])), vtype: pvt })
         }
+        "MkTypeParam" if args.length == 2 -> {
+            // `name ( ":" bound )?` — one generic type parameter. A single trait
+            // bound only (parse_type_param_entries; multi-bound `T: A + B` is a
+            // where-clause, out of scope), absent ⇒ "" (unbounded).
+            let bound = if capval_present(env.get(args[1])) { capval_tok_text(env.get(args[1])) } else { "" }
+            CapVal.TParam(TypeParamEntry { name: capval_tok_text(env.get(args[0])), bounds: bound })
+        }
         "MkFnDecl" if args.length == 4 -> {
             // `fn name ( params? ) ( "->" ret )? { body }`. No generics in this
             // slice (type_params = []); an absent return type defaults to Void
@@ -945,6 +975,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
             let no_tp: List<TypeParamEntry> = []
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
+        }
+        "MkFnDecl" if args.length == 5 -> {
+            // Generic form: `fn name < tparams > ( params? ) ( "->" ret )? { body }`.
+            // Args shift by one for the type-param list (args[1]); the rest match
+            // the 4-arg form. parse_function_declaration stores parse_type_params
+            // here, rendered `<…>`.
+            let ret_vt = if capval_present(env.get(args[3])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[3]))) } else { ValueType.Void }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), ret_vt, capval_to_stmt_list(env.get(args[4])))))
         }
         "MkField" if args.length == 2 -> {
             // `name : type` — a struct/variant field. The type lowers through the
@@ -959,6 +997,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let no_tp: List<TypeParamEntry> = []
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_field_list(env.get(args[1])))))
         }
+        "MkTypeDecl" if args.length == 3 -> {
+            // Generic struct: `type Name < tparams > = { field* }` — the
+            // type-param list (args[1]) is stored + rendered `<…>`.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))))
+        }
         "MkEVariant" if args.length == 2 -> {
             // `Name` (no payload ⇒ empty fields) or `Name( field, … )` — an enum
             // variant. Field payload reuses MkField (the same `name : type`).
@@ -968,6 +1011,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             // `enum Name { variant* }` (no generics this slice).
             let no_tp: List<TypeParamEntry> = []
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
+        }
+        "MkEnumDecl" if args.length == 3 -> {
+            // Generic enum: `enum Name < tparams > { variant* }` — the type-param
+            // list (args[1]) is stored + rendered `<…>`.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))))
         }
         "MkUse" if args.length == 3 -> {
             // `use ( "@" )? seg ( "." seg )* { names }` — an import. The path is
@@ -1298,6 +1346,15 @@ fn capval_to_ann_list(v: CapVal) -> List<Annotation> {
     match v {
         .Anns(xs) -> xs
         .Ann(a) -> [a]
+        _ -> []
+    }
+}
+
+/// A capture as a type-parameter list (declaration generics, ps3t.6.5.7).
+fn capval_to_tparam_list(v: CapVal) -> List<TypeParamEntry> {
+    match v {
+        .TParams(tps) -> tps
+        .TParam(tp) -> [tp]
         _ -> []
     }
 }
