@@ -1,0 +1,95 @@
+// ps3t.6.5.10 — the gnarly-5% catalogue, entry 2: `>>`-SPLIT in nested
+// generics. The lexer merges two adjacent `>` into ONE `>>` token (Tk.Shr),
+// so a nested generic close like `List<List<T>>` presents its two closing `>`
+// as a single shift token. The hand parser re-splits it in generic-argument
+// position (maybe_split_shr); the pure grammar can't (a `">"` terminal sees
+// `">>"` and fails). The executor now performs the same split in its terminal
+// matcher (PState.split_gt): when a single `>` is expected and the current
+// token is `>>`, consume the first half and leave the second `>` for the next
+// match — WITHOUT advancing. Deeper nesting works too (`>>>` lexes as `>> >`,
+// each `>>` splits once).
+//
+// This is the case the type family (ps3t.6.5.6) and several declaration slices
+// deliberately kept out of their corpora ("avoids nested generics — the `>>`
+// merge, the 6.5.8/6.5.10 concern"). It now works.
+//
+// Oracle: run the DSL type parser AND the hand parser (parse_type_expr, which
+// splits `>>` via maybe_split_shr), lower both via the shared type_expr_to_vtype,
+// and assert identical ValueTypes via render_type_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+
+fn type_grammar_src() -> string {
+    "grammar Type {\n" +
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" r:type_expr )? -> MkFn(lp, p, r)\n" +
+    "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
+    "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
+    "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
+    "  named_type = name:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
+    "}"
+}
+
+fn dsl_type(src: string) -> string {
+    let gp = parse_grammar(type_grammar_src())
+    let r = run_grammar_type(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_type_id(r.store, r.root)
+}
+
+fn hand_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool { dsl_type(src) == hand_type(src) }
+
+spec "grammar-DSL gnarly-5%: nested-generic >>-split == hand parser (ps3t.6.5.10)" {
+    given "double nesting that closes with `>>`" {
+        then "List<List<T>> and friends agree" {
+            agree("List<List<T>>") &&
+            agree("List<List<int>>") &&
+            agree("Box<Pair<A, B>>") &&
+            agree("Option<List<string>>")
+        }
+    }
+    given "nested inside a multi-argument generic" {
+        then "the nested `>>` splits and the outer args still parse" {
+            agree("Map<string, List<int>>") &&
+            agree("Pair<List<A>, List<B>>") &&
+            agree("Result<List<T>, Error>")
+        }
+    }
+    given "triple nesting (`>>>` lexes as `>> >` — each `>>` splits once)" {
+        then "List<List<List<T>>> agrees" {
+            agree("List<List<List<T>>>") &&
+            agree("Box<Box<Box<int>>>")
+        }
+    }
+    given "nested generics combined with nullable / list / union" {
+        then "`>>` split composes with the other type forms" {
+            agree("List<List<T>>?") &&
+            agree("[Map<K, List<V>>]") &&
+            agree("List<List<T>> | Error")
+        }
+    }
+    given "single-level generics are unchanged (no false split)" {
+        then "the non-nested forms still agree" {
+            agree("List<int>") &&
+            agree("Map<K, V>") &&
+            agree("Box<T>?") &&
+            agree("int") &&
+            // sanity: the nested tree really differs from the flat one.
+            dsl_type("List<List<T>>") == hand_type("List<List<T>>") &&
+            dsl_type("List<List<T>>") != dsl_type("List<T>")
+        }
+    }
+}

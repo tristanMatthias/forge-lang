@@ -25,17 +25,21 @@ ps3t.6.5.12 generalises. Adding a case is: an `is_stmt_hand` name, a
 |---|---|---|---|---|
 | **`component`** | `parse_component_decl` | Stateful: `register_component_def` MUTATES the parser's feature registry (so later `name inst { … }` parses keyword-free); char-level `peek_after_ident_*` lookahead; `body: TokenStream` raw bodies | `@hand(component_decl)` | #835 |
 | **`let … else`** | `parse_let_statement` → `build_let_else` | Hygienic block-expr DESUGAR minting a fresh gensym temp (`$letelse$N`); a stateless grammar can't reproduce a gensym-named tree byte-identically | `@hand(let_stmt)` | #839 |
-| **bare `return` (newline)** | `parse_return_statement` | Newline-sensitive: `return\n<expr>` is `ReturnEmpty` + a separate statement (`current_line != prev_line`); the grammar's `?`-optional is greedy on FIRST-set alone and can't see the line boundary | `@hand(return_stmt)` | this slice |
+| **bare `return` (newline)** | `parse_return_statement` | Newline-sensitive: `return\n<expr>` is `ReturnEmpty` + a separate statement (`current_line != prev_line`); the grammar's `?`-optional is greedy on FIRST-set alone and can't see the line boundary | `@hand(return_stmt)` | #840 |
+| **`>>`-split in generics** | `maybe_split_shr` | The lexer merges two adjacent `>` into one `>>` (Tk.Shr); a nested generic close (`List<List<T>>`) presents its two `>` as one shift token, which a `">"` terminal can't match | `PState.split_gt` — the executor's terminal matcher splits a `>>` when a single `>` is expected (consume the first half, leave the second, no advance) | this slice |
 
 Note: the pure-DSL `MkReturn(re?)` build (ps3t.6.5.4) already handles `return` /
 `return expr` where the boundary is `}` / EOF (FIRST-set rejects those tokens);
-`@hand(return_stmt)` is the escape for the residual `return\n<expr>` split.
+`@hand(return_stmt)` is the escape for the residual `return\n<expr>` split. The
+`>>`-split is NOT `@hand` — it's a token-level fix in the executor's terminal
+matcher (the interpreter/emitter both apply it), so nested generics parse purely
+in the grammar; deeper nesting works because `>>>` lexes as `>> >` and each `>>`
+splits once.
 
 ## To route (remaining)
 
 | Case | Hand parser | Why not pure grammar | Planned route |
 |---|---|---|---|
-| **`>>`-split in generics** | `maybe_split_shr` (parse_type_expr) | The lexer merges `>>` into one `Tk.Shr`; in generic-argument position (`List<List<T>>`) the parser re-splits it into two `>`. A token-grammar sees one shift token. | A lexer-mode / `@hand` type-arg disambiguation (ties to ps3t.6.7). The type family (6.5.6) corpus avoids nested generics for now. |
 | **`@pkg::T` / `::` qualified paths** | qualified-name parsing in types/exprs | `::` segment paths with package markers aren't in the type/expr grammar; qualification interacts with enum-ctor-vs-method disambiguation. | `@hand` for the qualified-atom position. |
 | **string interpolation `"…{e}…"`** | lexer emits `Tk.Template`; parser desugars to concat | A lexer MODE (the string body re-enters expression lexing at `{`). `lex_real` surfaces `Tk.Template` but no grammar terminal matches it. | Lexer mode (ps3t.6.7) + an `@hand` template-expr builder. |
 | **`~` prefix (splice vs bitnot)** | `quote_depth`-gated: inside `quote { }` a leading `~` is `Expr.Splice`, else bitwise-NOT | Context-sensitive on a parser mode counter the grammar doesn't carry. | `@hand` for the unary-prefix position, or a mode. |
@@ -43,11 +47,15 @@ Note: the pure-DSL `MkReturn(re?)` build (ps3t.6.5.4) already handles `return` /
 
 ## Status
 
-Newline-sensitivity (`return`), the hygienic `let … else` desugar, and the
-stateful `component` are routed and proven byte-equivalent to the hand parser
-(differential tests: `gnarly_return_newline_test.av`, `stmt_return_letelse_test.av`,
-`decl_component_hand_test.av`). The remaining five entries above are the open
-work of ps3t.6.5.10, several coordinated with ps3t.6.7 (lexer modes); the
-`run_hand_stmt` mechanism generalises to the statement/decl ones, while the
-expression-embedded ones (`>>`, `::`, interpolation, `~`, struct-lit-in-header)
-need either an expression-level `@hand` hook or a lexer/parser mode.
+Four cases are routed and proven byte-equivalent to the hand parser: the
+stateful `component`, the hygienic `let … else` desugar, `return`
+newline-sensitivity (all via `@hand` / `run_hand_stmt`), and nested-generic
+`>>`-split (via `PState.split_gt`, a token-level fix). Differential tests:
+`decl_component_hand_test.av`, `stmt_return_letelse_test.av`,
+`gnarly_return_newline_test.av`, `gnarly_nested_generics_test.av`.
+
+The remaining four entries are the open work of ps3t.6.5.10. `@pkg::T` and `~`
+need an expression-level `@hand` hook (the `run_hand` generalisation from
+stmt → expr/type, mirroring `run_hand_stmt`); string interpolation and
+struct-lit-in-header need lexer/parser MODE support (coordinated with
+ps3t.6.7).
