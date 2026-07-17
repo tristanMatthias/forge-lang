@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -62,6 +62,12 @@ enum CapVal {
     // rule accumulates `Arms`, which a `Match` build folds into Stmt.Match.
     Arm(a: MatchArm)
     Arms(xs: List<MatchArm>)
+    // A built PARAMETER ENTRY + a parallel list of them (declaration family,
+    // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
+    // (defaulting to Int, the hand parser's parse_param_list default); a `*`
+    // over the param rule accumulates `PEntries`, folded into Stmt.Function.
+    PEntry(p: ParamEntry)
+    PEntries(ps: List<ParamEntry>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -193,6 +199,22 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.Arms(xs))
+    }
+
+    // Parameter-list accumulator (declaration family, ps3t.6.5.7): a `*` over
+    // the param rule collects each built ParamEntry here.
+    fn append_pentry(self, name: string, p: ParamEntry) {
+        let existing = self.get(name)
+        mut ps: List<ParamEntry> = []
+        match existing {
+            .PEntries(prev) -> {
+                for x in prev { ps.push(x) }
+            }
+            .PEntry(prev) -> ps.push(prev)
+            _ -> {}
+        }
+        ps.push(p)
+        self.set_scalar(name, CapVal.PEntries(ps))
     }
 }
 
@@ -574,6 +596,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .PNode(id) -> env.append_pnode(label, id)
             .TExpr(te) -> env.append_texpr(label, te)
             .Arm(a) -> env.append_arm(label, a)
+            .PEntry(p) -> env.append_pentry(label, p)
             _ -> {}
         }
     } else {
@@ -849,6 +872,22 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `match subject { arm* }` — statement-position match.
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
     }
+    // ── Declaration builds (target: Stmt, ps3t.6.5.7) ──
+    if name == "MkParam" && args.length == 2 {
+        // `pname ( ":" type )?` — a fn parameter. An UN-annotated param
+        // defaults to Int, matching parse_param_list's `resolved = Int`
+        // (NOT Unknown — fn params differ from bindings here).
+        let pvt = if capval_present(env.get(args[1])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) } else { ValueType.Int }
+        return CapVal.PEntry(ParamEntry { name: capval_tok_text(env.get(args[0])), vtype: pvt })
+    }
+    if name == "MkFnDecl" && args.length == 4 {
+        // `fn name ( params? ) ( "->" ret )? { body }`. No generics in this
+        // slice (type_params = []); an absent return type defaults to Void
+        // (parse_function_declaration's `ret_vtype = Void`).
+        let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
+        let no_tp: List<TypeParamEntry> = []
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
+    }
     CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
@@ -967,6 +1006,16 @@ fn capval_to_arm_list(v: CapVal) -> List<MatchArm> {
     match v {
         .Arms(xs) -> xs
         .Arm(a) -> [a]
+        _ -> []
+    }
+}
+
+/// A capture as a parameter list (declaration family, ps3t.6.5.7): the param
+/// `*` yields `PEntries` for ≥2, a scalar `PEntry` for exactly 1, `Nil` none.
+fn capval_to_pentry_list(v: CapVal) -> List<ParamEntry> {
+    match v {
+        .PEntries(ps) -> ps
+        .PEntry(p) -> [p]
         _ -> []
     }
 }
