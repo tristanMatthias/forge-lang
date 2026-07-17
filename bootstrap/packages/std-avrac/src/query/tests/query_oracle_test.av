@@ -140,4 +140,10 @@ spec "L6 differential oracle: incremental == from-scratch over an edit script (p
         let r = run_leaky_oracle()
         r.mismatches > 0 && !oracle_clean(r)
     }
+    then "an EMPTY edit script (base state only) replays clean — the no-savings-possible edge" {
+        let base = [w(0, FAM_SRC, "solo"), w(1, FAM_SRC, "y"), w(0, FAM_CYC_FLAG, "0")]
+        let script: List<EditStep<string>> = []
+        let r = run_edit_oracle(base, script, [qk(FAM_ROOT, 0)], oracle_compute, render_str)
+        r.steps == 1 && r.checks == 1 && r.mismatches == 0 && oracle_clean(r)
+    }
 }

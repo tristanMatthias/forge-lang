@@ -181,6 +181,17 @@ impl QueryCtx<V> {
     fn note_dep(self, q: QueryKey) { self.deps.push(q) }
 }
 
+impl FamilyMemo<V> {
+    /// Append a fresh cell and index it under `arg` — the shared insert step
+    /// of the two memo writers (input set + recompute). Returns the slot.
+    fn insert(self, arg: int, cell: MemoEntry<V>) -> int {
+        let slot = self.cells.length
+        self.cells.push(cell)
+        avra_intmap_set(self.idx, arg, slot)
+        slot
+    }
+}
+
 /// A fresh, empty database over the driver's compute dispatcher. `V` comes
 /// from the binding annotation (`let mut db: Db<string> = db_new(my_compute)`).
 export fn db_new<V>(compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>) -> Db<V> {
@@ -211,10 +222,8 @@ export fn db_set_input<V>(db: Db<V>, q: QueryKey, value: V, value_hash: int) {
     db.bump_rev()
     let deps: List<QueryKey> = []
     let no_diags: List<Diagnostic> = []
-    let slot = fam.cells.length
     let cell: MemoEntry<V> = MemoEntry { value, answer_hash: value_hash, deps, diags: no_diags, changed_at: db.current_rev, verified_at: db.current_rev }
-    fam.cells.push(cell)
-    avra_intmap_set(fam.idx, q.arg, slot)
+    let _ = fam.insert(q.arg, cell)
 }
 
 /// Fetch a query's answer — THE driver entry point. Runs the red-green
@@ -250,10 +259,8 @@ export fn db_computes_of<V>(db: Db<V>, family: int) -> int {
 /// strictly less computing (else the engine is a very elaborate no-op).
 export fn db_total_computes<V>(db: Db<V>) -> int {
     mut total = 0
-    mut i = 0
-    while i < db.families.length {
+    for i in 0..db.families.length {
         total = total + db.families[i].computes
-        i = i + 1
     }
     total
 }
@@ -350,11 +357,8 @@ fn db_recompute<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
                 e.verified_at = db.current_rev
                 return Result.Ok(slot)
             }
-            let slot = fam.cells.length
             let cell: MemoEntry<V> = MemoEntry { value: out.value, answer_hash: h, deps: ctx.deps, diags: out.diags, changed_at: db.current_rev, verified_at: db.current_rev }
-            fam.cells.push(cell)
-            avra_intmap_set(fam.idx, q.arg, slot)
-            Result.Ok(slot)
+            Result.Ok(fam.insert(q.arg, cell))
         }
     }
 }
@@ -362,19 +366,15 @@ fn db_recompute<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
 /// The cycle probe: is `q` already on the in-progress stack? If so, return
 /// the path from its first occurrence through the repeat.
 fn db_active_cycle<V>(db: Db<V>, q: QueryKey) -> QueryCycle? {
-    mut i = 0
-    while i < db.active.length {
+    for i in 0..db.active.length {
         if qk_eq(db.active[i], q) {
             mut path: List<QueryKey> = []
-            mut j = i
-            while j < db.active.length {
+            for j in i..db.active.length {
                 path.push(db.active[j])
-                j = j + 1
             }
             path.push(q)
             return QueryCycle { path }
         }
-        i = i + 1
     }
     null
 }

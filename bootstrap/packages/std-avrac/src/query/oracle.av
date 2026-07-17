@@ -95,10 +95,8 @@ export fn run_edit_oracle<V>(
         // The from-scratch twin of this state: fresh db, full history replayed.
         let mut scratch: Db<V> = db_new<V>(compute)
         apply_writes<V>(scratch, base)
-        mut k = 0
-        while k < state {
+        for k in 0..state {
             apply_writes<V>(scratch, script[k].writes)
-            k = k + 1
         }
 
         for root in roots {
