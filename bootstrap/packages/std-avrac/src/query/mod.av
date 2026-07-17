@@ -11,9 +11,9 @@
 //
 // THE MODEL (§2). A query is a pure fn `Key -> (Value, Diagnostics)`.
 //  - INPUT queries (graph leaves — `source(file)`, flags) are set explicitly
-//    via `db_set_input`; changing one bumps the db's revision.
+//    via `db.set_input`; changing one bumps the db's revision.
 //  - DERIVED queries are computed by the driver's `compute` dispatcher; their
-//    deps are DISCOVERED by execution (every `ctx_fetch` records into the
+//    deps are DISCOVERED by execution (every `ctx.fetch` records into the
 //    active dep frame), never declared.
 // The engine is generic over ONE value type `V` per database — the driver
 // supplies a value enum (or string) spanning its families; the engine treats
@@ -23,7 +23,7 @@
 // RED-GREEN (§3). Every memo cell tracks `changed_at` (revision its answer
 // last actually CHANGED — red) and `verified_at` (revision it was last
 // CONFIRMED current — green), maintaining changed_at <= verified_at <=
-// current_rev. `db_fetch` re-verifies a stale cell by walking its recorded
+// current_rev. `db.fetch` re-verifies a stale cell by walking its recorded
 // deps in execution order: no dep newer than `verified_at` → green-revalidate
 // without recomputing (the deep win — whole subtrees revalidate by comparing
 // two ints); some dep newer → recompute, then compare the new answer's hash —
@@ -46,14 +46,13 @@
 // the in-progress stack is a `Db` field — so parallel query execution later
 // needs a scheduler, not a redesign.
 //
-// STYLE NOTE (bootstrap window). The engine ships as FREE GENERIC FNS
-// (`db_fetch(db, q)`), and the one nested-generic `Result` seam (the compute
-// call) destructures via `match` — the shapes the PINNED integration seed
-// compiles today. `impl Db<V>` methods and a `?` at that seam need this very
-// branch's mono fixes (t-mju0/t-c6gj) baked into the seed, so the
-// method-ification is queued for after the seed train advances past them —
-// the standard dogfood-after-the-train-advances discipline, tracked as a
-// follow-up on ps3t.8.2.
+// The api is METHOD-shaped (`db.fetch(q)`, `ctx.fetch(q)` — ps3t.8.9):
+// `self` is the resolver's sanctioned mutation channel, so the algorithm and
+// its state writes live together in `impl Db<V>` / `impl QueryCtx<V>`, and
+// the compute seam propagates with `?`. This dogfoods the very capabilities
+// the engine's first landing flushed out and fixed (generic construction in
+// generic impl methods, nested-generic `?` payloads, typed fn-field calls —
+// t-mju0/t-c6gj/t-jgc0), now baked into the pinned integration seed.
 //
 // The engine's correctness oracle — incremental == from-scratch, asserted
 // per edit step over values AND diagnostics — lives in oracle.av (ps3t.8.7).
@@ -114,7 +113,7 @@ export type QueryCycle = { path: List<QueryKey> }
 
 /// A fetched answer: the memoized value plus the diagnostics that ride with
 /// it. What the DRIVER receives; dependents inside compute runs receive just
-/// the value (`ctx_fetch`). Both fields ALIAS the memo cell (no per-fetch
+/// the value (`ctx.fetch`). Both fields ALIAS the memo cell (no per-fetch
 /// copy) — treat them as immutable, like every memoized answer.
 export type Fetched<V> = { value: V, diags: List<Diagnostic> }
 
@@ -139,7 +138,7 @@ type FamilyMemo<V> = { idx: ptr, cells: List<MemoEntry<V>>, computes: int }
 /// The query database (§2.1): the revision counter, the per-family memo
 /// stores, the driver's compute dispatcher (one pure fn from `(ctx, key)` to
 /// the computed answer, matching on `key.family` — reads of other queries
-/// MUST go through `ctx_fetch`, which is what records the dependency edge),
+/// MUST go through `ctx.fetch`, which is what records the dependency edge),
 /// and the in-progress stack that cycle detection walks. Thread it as a
 /// value — never a global (rule 17).
 export type Db<V> = {
@@ -150,36 +149,18 @@ export type Db<V> = {
 }
 
 /// The dep-tracking frame handed to one compute run (§3.1). Every
-/// `ctx_fetch` records the requested key into `deps` — on completion the
+/// `ctx.fetch` records the requested key into `deps` — on completion the
 /// engine stores that list as the query's discovered dependencies. Carried as
 /// a parameter, not a global, so parallel compute runs can't interleave
 /// frames.
 export type QueryCtx<V> = { db: Db<V>, deps: List<QueryKey> }
 
-// ── State-write methods ──
-//
-// The resolver's mutability rule (F3001) makes fn PARAMS immutable; `self`
-// in an impl method is the sanctioned mutation channel ("struct methods use
-// self-by-pointer"). So the algorithm lives in free generic fns (whose
-// bodies the seed's mono collector skips) and every direct field write on a
-// threaded struct goes through one of these single-purpose methods — whose
-// bodies construct nothing generic and call nothing generic, the one method
-// shape the pinned seed compiles (see the WHY's style note).
-
-impl Db<V> {
-    /// Advance the revision counter — every genuine input change is one tick.
-    fn bump_rev(self) { self.current_rev = self.current_rev + 1 }
-    /// Append a (freshly built) family store.
-    fn push_family(self, fam: FamilyMemo<V>) { self.families.push(fam) }
-    /// Mark `q` in-progress (cycle detection).
-    fn push_active(self, q: QueryKey) { self.active.push(q) }
-    /// Unmark the innermost in-progress query.
-    fn pop_active(self) { let _ = self.active.pop() }
-}
-
-impl QueryCtx<V> {
-    /// Record a dependency edge into this compute run's frame.
-    fn note_dep(self, q: QueryKey) { self.deps.push(q) }
+/// A fresh, empty database over the driver's compute dispatcher. `V` comes
+/// from the binding annotation (`let mut db: Db<string> = db_new(my_compute)`).
+export fn db_new<V>(compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>) -> Db<V> {
+    let families: List<FamilyMemo<V>> = []
+    let active: List<QueryKey> = []
+    Db { current_rev: 0, families, compute, active }
 }
 
 impl FamilyMemo<V> {
@@ -193,203 +174,196 @@ impl FamilyMemo<V> {
     }
 }
 
-/// A fresh, empty database over the driver's compute dispatcher. `V` comes
-/// from the binding annotation (`let mut db: Db<string> = db_new(my_compute)`).
-export fn db_new<V>(compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>) -> Db<V> {
-    let families: List<FamilyMemo<V>> = []
-    let active: List<QueryKey> = []
-    Db { current_rev: 0, families, compute, active }
-}
-
-/// Set an INPUT query's value (§2: graph leaves, no deps, never computed).
-/// Setting a genuinely new value bumps the revision and marks the cell
-/// changed; re-setting an equal value (same hash) is a no-op — the revision
-/// doesn't move, so every downstream `verified_at == current_rev` hot path
-/// stays hot.
-export fn db_set_input<V>(db: Db<V>, q: QueryKey, value: V, value_hash: int) {
-    mut fam = db_family<V>(db, q.family)
-    if avra_intmap_has(fam.idx, q.arg) != 0 {
-        mut e = fam.cells[avra_intmap_get(fam.idx, q.arg)]
-        if e.answer_hash == value_hash {
+impl Db<V> {
+    /// Set an INPUT query's value (§2: graph leaves, no deps, never
+    /// computed). Setting a genuinely new value bumps the revision and marks
+    /// the cell changed; re-setting an equal value (same hash) is a no-op —
+    /// the revision doesn't move, so every downstream `verified_at ==
+    /// current_rev` hot path stays hot.
+    fn set_input(self, q: QueryKey, value: V, value_hash: int) {
+        mut fam = self.family(q.family)
+        if avra_intmap_has(fam.idx, q.arg) != 0 {
+            mut e = fam.cells[avra_intmap_get(fam.idx, q.arg)]
+            if e.answer_hash == value_hash {
+                return
+            }
+            self.current_rev = self.current_rev + 1
+            e.value = value
+            e.answer_hash = value_hash
+            // A set cell is a LEAF from now on, whatever its earlier life:
+            // clear any deps a derived past recorded, or a later verification
+            // would walk them and hand an input back to the compute
+            // dispatcher — and clear any diagnostics that past computed, or
+            // the pinned input would keep replaying a derived error it can no
+            // longer produce.
+            let no_deps: List<QueryKey> = []
+            e.deps = no_deps
+            let no_diags: List<Diagnostic> = []
+            e.diags = no_diags
+            e.changed_at = self.current_rev
+            e.verified_at = self.current_rev
             return
         }
-        db.bump_rev()
-        e.value = value
-        e.answer_hash = value_hash
-        // A set cell is a LEAF from now on, whatever its earlier life: clear
-        // any deps a derived past recorded, or a later verification would
-        // walk them and hand an input back to the compute dispatcher — and
-        // clear any diagnostics that past computed, or the pinned input would
-        // keep replaying a derived error it can no longer produce.
-        let no_deps: List<QueryKey> = []
-        e.deps = no_deps
+        self.current_rev = self.current_rev + 1
+        let deps: List<QueryKey> = []
         let no_diags: List<Diagnostic> = []
-        e.diags = no_diags
-        e.changed_at = db.current_rev
-        e.verified_at = db.current_rev
-        return
+        let cell: MemoEntry<V> = MemoEntry { value, answer_hash: value_hash, deps, diags: no_diags, changed_at: self.current_rev, verified_at: self.current_rev }
+        let _ = fam.insert(q.arg, cell)
     }
-    db.bump_rev()
-    let deps: List<QueryKey> = []
-    let no_diags: List<Diagnostic> = []
-    let cell: MemoEntry<V> = MemoEntry { value, answer_hash: value_hash, deps, diags: no_diags, changed_at: db.current_rev, verified_at: db.current_rev }
-    let _ = fam.insert(q.arg, cell)
-}
 
-/// Fetch a query's answer — THE driver entry point. Runs the red-green
-/// algorithm (§3): memo hot path, green revalidation, or recompute with
-/// early cutoff. Errors only on a query cycle.
-export fn db_fetch<V>(db: Db<V>, q: QueryKey) -> Result<Fetched<V>, QueryCycle> {
-    let slot = db_fetch_slot<V>(db, q)?
-    let e = db_family<V>(db, q.family).cells[slot]
-    let f: Fetched<V> = Fetched { value: e.value, diags: e.diags }
-    Result.Ok(f)
-}
-
-/// Read another query from inside a compute run: records the dependency
-/// edge, then fetches through the engine (memo-hit, green-revalidate, or
-/// recursive recompute — the caller can't tell, by design). Propagate the
-/// `QueryCycle` with `?`.
-export fn ctx_fetch<V>(ctx: QueryCtx<V>, q: QueryKey) -> Result<V, QueryCycle> {
-    ctx.note_dep(q)
-    let slot = db_fetch_slot<V>(ctx.db, q)?
-    Result.Ok(db_family<V>(ctx.db, q.family).cells[slot].value)
-}
-
-/// Compute runs performed for `family` so far — the instrumentation the
-/// differential oracle (and the incremental-latency metric, ps3t.10 M1)
-/// reads. A correct engine shows this NOT growing when early cutoff or green
-/// revalidation should have absorbed an edit.
-export fn db_computes_of<V>(db: Db<V>, family: int) -> int {
-    db_family<V>(db, family).computes
-}
-
-/// Compute runs across ALL families — the oracle's work-done tally: an
-/// incremental replay must not just match from-scratch answers, it must do
-/// strictly less computing (else the engine is a very elaborate no-op).
-export fn db_total_computes<V>(db: Db<V>) -> int {
-    mut total = 0
-    for i in 0..db.families.length {
-        total = total + db.families[i].computes
+    /// Fetch a query's answer — THE driver entry point. Runs the red-green
+    /// algorithm (§3): memo hot path, green revalidation, or recompute with
+    /// early cutoff. Errors only on a query cycle.
+    fn fetch(self, q: QueryKey) -> Result<Fetched<V>, QueryCycle> {
+        let slot = self.fetch_slot(q)?
+        let e = self.family(q.family).cells[slot]
+        let f: Fetched<V> = Fetched { value: e.value, diags: e.diags }
+        Result.Ok(f)
     }
-    total
-}
 
-// ── Internals (the §3 algorithm) ──
-
-/// The family's memo store, created on first touch. Family tags are small
-/// dense ints (a driver enum), so a List indexed by tag is the whole
-/// registry.
-fn db_family<V>(db: Db<V>, tag: int) -> FamilyMemo<V> {
-    while db.families.length <= tag {
-        let cells: List<MemoEntry<V>> = []
-        let fresh: FamilyMemo<V> = FamilyMemo { idx: avra_intmap_new(), cells, computes: 0 }
-        db.push_family(fresh)
+    /// Compute runs performed for `family` so far — the instrumentation the
+    /// differential oracle (and the incremental-latency metric, ps3t.10 M1)
+    /// reads. A correct engine shows this NOT growing when early cutoff or
+    /// green revalidation should have absorbed an edit.
+    fn computes_of(self, family: int) -> int {
+        self.family(family).computes
     }
-    db.families[tag]
-}
 
-/// Steps 1-3 dispatch: hot path when already verified this revision;
-/// otherwise guard against re-entry (cycle), push onto the active stack, and
-/// verify-or-recompute. The pop is unconditional — an inner `QueryCycle`
-/// unwinds through `r` with the stack already restored, so the database
-/// stays usable after a reported cycle.
-fn db_fetch_slot<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
-    let fam = db_family<V>(db, q.family)
-    if avra_intmap_has(fam.idx, q.arg) != 0 {
-        let slot = avra_intmap_get(fam.idx, q.arg)
-        if fam.cells[slot].verified_at == db.current_rev {
-            return Result.Ok(slot)
+    /// Compute runs across ALL families — the oracle's work-done tally: an
+    /// incremental replay must not just match from-scratch answers, it must
+    /// do strictly less computing (else the engine is a very elaborate
+    /// no-op).
+    fn total_computes(self) -> int {
+        mut total = 0
+        for i in 0..self.families.length {
+            total = total + self.families[i].computes
         }
+        total
     }
-    let cyc = db_active_cycle<V>(db, q)
-    if cyc != null {
-        return Result.Err(cyc!)
-    }
-    db.push_active(q)
-    let r = db_fetch_unverified<V>(db, q)
-    db.pop_active()
-    r
-}
 
-/// `maybe_changed` (§3 step 3): walk the recorded deps IN EXECUTION ORDER,
-/// verifying each; the first dep whose answer changed after this cell was
-/// last verified forces a recompute (later deps may not even be deps anymore
-/// — the fresh run rediscovers them). No such dep → GREEN: stamp
-/// `verified_at` and return the cached slot untouched.
-fn db_fetch_unverified<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
-    mut fam = db_family<V>(db, q.family)
-    if avra_intmap_has(fam.idx, q.arg) != 0 {
-        let slot = avra_intmap_get(fam.idx, q.arg)
-        mut e = fam.cells[slot]
-        mut dep_changed = false
-        for d in e.deps {
-            let dslot = db_fetch_slot<V>(db, d)?
-            if db_family<V>(db, d.family).cells[dslot].changed_at > e.verified_at {
-                dep_changed = true
-                break
-            }
-        }
-        if !dep_changed {
-            e.verified_at = db.current_rev
-            return Result.Ok(slot)
-        }
-    }
-    db_recompute<V>(db, q)
-}
+    // ── Internals (the §3 algorithm) ──
 
-/// Run the driver's compute under a fresh dep frame and store the answer
-/// (§3 step 3c). EARLY CUTOFF is the hash compare: an unchanged answer keeps
-/// its old `changed_at`, so every dependent's `changed_at > verified_at`
-/// test stays false and the change-wave dies here. Both outcomes replace
-/// `deps` with the freshly-discovered set and stamp `verified_at`. (The
-/// compute result is destructured with `match`, not `?` — see the WHY's
-/// bootstrap-window style note.)
-fn db_recompute<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
-    let fresh_deps: List<QueryKey> = []
-    let ctx: QueryCtx<V> = QueryCtx { db, deps: fresh_deps }
-    // The counter moves BEFORE dispatch: a compute that dies on a cycle
-    // still ran the driver — counting only successes would underreport
-    // cycle-heavy runs and skew the oracle's work comparison.
-    mut fam = db_family<V>(db, q.family)
-    fam.computes = fam.computes + 1
-    match db.compute(ctx, q) {
-        .Err(c) -> Result.Err(c)
-        .Ok(out) -> {
-            let h = answer_hash_of(out.value_hash, out.diags)
-            if avra_intmap_has(fam.idx, q.arg) != 0 {
-                let slot = avra_intmap_get(fam.idx, q.arg)
-                mut e = fam.cells[slot]
-                if e.answer_hash != h {
-                    e.changed_at = db.current_rev
-                }
-                e.value = out.value
-                e.answer_hash = h
-                e.deps = ctx.deps
-                e.diags = out.diags
-                e.verified_at = db.current_rev
+    /// The family's memo store, created on first touch. Family tags are
+    /// small dense ints (a driver enum), so a List indexed by tag is the
+    /// whole registry.
+    fn family(self, tag: int) -> FamilyMemo<V> {
+        while self.families.length <= tag {
+            let cells: List<MemoEntry<V>> = []
+            let fresh: FamilyMemo<V> = FamilyMemo { idx: avra_intmap_new(), cells, computes: 0 }
+            self.families.push(fresh)
+        }
+        self.families[tag]
+    }
+
+    /// Steps 1-3 dispatch: hot path when already verified this revision;
+    /// otherwise guard against re-entry (cycle), push onto the active stack,
+    /// and verify-or-recompute. The pop is unconditional — an inner
+    /// `QueryCycle` unwinds through `r` with the stack already restored, so
+    /// the database stays usable after a reported cycle.
+    fn fetch_slot(self, q: QueryKey) -> Result<int, QueryCycle> {
+        let fam = self.family(q.family)
+        if avra_intmap_has(fam.idx, q.arg) != 0 {
+            let slot = avra_intmap_get(fam.idx, q.arg)
+            if fam.cells[slot].verified_at == self.current_rev {
                 return Result.Ok(slot)
             }
-            let cell: MemoEntry<V> = MemoEntry { value: out.value, answer_hash: h, deps: ctx.deps, diags: out.diags, changed_at: db.current_rev, verified_at: db.current_rev }
-            Result.Ok(fam.insert(q.arg, cell))
         }
+        let cyc = self.active_cycle(q)
+        if cyc != null {
+            return Result.Err(cyc!)
+        }
+        self.active.push(q)
+        let r = self.fetch_unverified(q)
+        let _ = self.active.pop()
+        r
+    }
+
+    /// `maybe_changed` (§3 step 3): walk the recorded deps IN EXECUTION
+    /// ORDER, verifying each; the first dep whose answer changed after this
+    /// cell was last verified forces a recompute (later deps may not even be
+    /// deps anymore — the fresh run rediscovers them). No such dep → GREEN:
+    /// stamp `verified_at` and return the cached slot untouched.
+    fn fetch_unverified(self, q: QueryKey) -> Result<int, QueryCycle> {
+        mut fam = self.family(q.family)
+        if avra_intmap_has(fam.idx, q.arg) != 0 {
+            let slot = avra_intmap_get(fam.idx, q.arg)
+            mut e = fam.cells[slot]
+            mut dep_changed = false
+            for d in e.deps {
+                let dslot = self.fetch_slot(d)?
+                if self.family(d.family).cells[dslot].changed_at > e.verified_at {
+                    dep_changed = true
+                    break
+                }
+            }
+            if !dep_changed {
+                e.verified_at = self.current_rev
+                return Result.Ok(slot)
+            }
+        }
+        self.recompute(q)
+    }
+
+    /// Run the driver's compute under a fresh dep frame and store the answer
+    /// (§3 step 3c). EARLY CUTOFF is the hash compare: an unchanged answer
+    /// keeps its old `changed_at`, so every dependent's `changed_at >
+    /// verified_at` test stays false and the change-wave dies here. Both
+    /// outcomes replace `deps` with the freshly-discovered set and stamp
+    /// `verified_at`.
+    fn recompute(self, q: QueryKey) -> Result<int, QueryCycle> {
+        let fresh_deps: List<QueryKey> = []
+        let ctx: QueryCtx<V> = QueryCtx { db: self, deps: fresh_deps }
+        // The counter moves BEFORE dispatch: a compute that dies on a cycle
+        // still ran the driver — counting only successes would underreport
+        // cycle-heavy runs and skew the oracle's work comparison.
+        mut fam = self.family(q.family)
+        fam.computes = fam.computes + 1
+        let out = self.compute(ctx, q)?
+        let h = answer_hash_of(out.value_hash, out.diags)
+        if avra_intmap_has(fam.idx, q.arg) != 0 {
+            let slot = avra_intmap_get(fam.idx, q.arg)
+            mut e = fam.cells[slot]
+            if e.answer_hash != h {
+                e.changed_at = self.current_rev
+            }
+            e.value = out.value
+            e.answer_hash = h
+            e.deps = ctx.deps
+            e.diags = out.diags
+            e.verified_at = self.current_rev
+            return Result.Ok(slot)
+        }
+        let cell: MemoEntry<V> = MemoEntry { value: out.value, answer_hash: h, deps: ctx.deps, diags: out.diags, changed_at: self.current_rev, verified_at: self.current_rev }
+        Result.Ok(fam.insert(q.arg, cell))
+    }
+
+    /// The cycle probe: is `q` already on the in-progress stack? If so,
+    /// return the path from its first occurrence through the repeat.
+    fn active_cycle(self, q: QueryKey) -> QueryCycle? {
+        for i in 0..self.active.length {
+            if qk_eq(self.active[i], q) {
+                mut path: List<QueryKey> = []
+                for j in i..self.active.length {
+                    path.push(self.active[j])
+                }
+                path.push(q)
+                return QueryCycle { path }
+            }
+        }
+        null
     }
 }
 
-/// The cycle probe: is `q` already on the in-progress stack? If so, return
-/// the path from its first occurrence through the repeat.
-fn db_active_cycle<V>(db: Db<V>, q: QueryKey) -> QueryCycle? {
-    for i in 0..db.active.length {
-        if qk_eq(db.active[i], q) {
-            mut path: List<QueryKey> = []
-            for j in i..db.active.length {
-                path.push(db.active[j])
-            }
-            path.push(q)
-            return QueryCycle { path }
-        }
+impl QueryCtx<V> {
+    /// Read another query from inside a compute run: records the dependency
+    /// edge, then fetches through the engine (memo-hit, green-revalidate, or
+    /// recursive recompute — the caller can't tell, by design). Propagate the
+    /// `QueryCycle` with `?`.
+    fn fetch(self, q: QueryKey) -> Result<V, QueryCycle> {
+        self.deps.push(q)
+        let slot = self.db.fetch_slot(q)?
+        Result.Ok(self.db.family(q.family).cells[slot].value)
     }
-    null
 }
 
 /// The early-cutoff signal over a full answer: value hash + every

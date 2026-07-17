@@ -21,7 +21,7 @@
 // engine that recomputes the world every step, so specs assert BOTH
 // equality and that the incremental replay computed strictly less.
 
-use query.{Db, QueryCtx, QueryKey, Computed, Fetched, QueryCycle, db_new, db_set_input, db_fetch, db_total_computes, qk_render}
+use query.{Db, QueryCtx, QueryKey, Computed, Fetched, QueryCycle, db_new, qk_render}
 use diagnostics.{Diagnostic, diag_canonical}
 
 /// One input assignment: set query `q` to `value` (with its content hash —
@@ -111,15 +111,15 @@ export fn run_edit_oracle<V>(
         }
 
         for root in roots {
-            let inc_ans = render_answer<V>(db_fetch<V>(inc, root), render)
-            let scratch_ans = render_answer<V>(db_fetch<V>(scratch, root), render)
+            let inc_ans = render_answer<V>(inc.fetch(root), render)
+            let scratch_ans = render_answer<V>(scratch.fetch(root), render)
             checks = checks + 1
             if inc_ans != scratch_ans {
                 mismatches = mismatches + 1
                 detail = "${detail}state ${string(state)} root ${qk_render(root)}: inc=[${inc_ans}] scratch=[${scratch_ans}]\n"
             }
         }
-        scratch_computes = scratch_computes + db_total_computes<V>(scratch)
+        scratch_computes = scratch_computes + scratch.total_computes()
         state = state + 1
     }
 
@@ -127,7 +127,7 @@ export fn run_edit_oracle<V>(
         steps: script.length + 1,
         checks,
         mismatches,
-        inc_computes: db_total_computes<V>(inc),
+        inc_computes: inc.total_computes(),
         scratch_computes,
         detail,
     }
@@ -136,7 +136,7 @@ export fn run_edit_oracle<V>(
 /// Apply a batch of input writes to a database.
 fn apply_writes<V>(db: Db<V>, writes: List<InputWrite<V>>) {
     for w in writes {
-        db_set_input<V>(db, w.q, w.value, w.value_hash)
+        db.set_input(w.q, w.value, w.value_hash)
     }
 }
 
