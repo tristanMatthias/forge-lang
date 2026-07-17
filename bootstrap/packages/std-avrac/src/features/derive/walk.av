@@ -314,8 +314,16 @@ fn spanned_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
 
 /// The `List<SpannedChild>` expr for one single child (A2). Boxed and
 /// tagged position-0 via `spanned_bare_one` (spans are side-table-only).
+/// A single WRAPPER child has NO spanned recipe — same loud-failure
+/// convention as the wrapper list shapes below: silently projecting
+/// `.node` here would discard the wrapper's own span, so if a wrapper
+/// single ever reappears in an AST enum, the generated code fails its
+/// COMPILE on the undefined helper instead.
 @comptime
 fn spanned_single_list(c: Classified) -> Expr {
+    if c.kind is .Wrapper {
+        return helper_call("derive_spanned_has_no_cross_type_wrapper_recipe", Expr.Ident(c.binding))
+    }
     helper_call("spanned_bare_one", box_single(c))
 }
 
@@ -342,16 +350,12 @@ fn spanned_list_child(c: Classified) -> Expr {
     helper_call("derive_spanned_has_no_cross_type_wrapper_recipe", Expr.Ident(c.binding))
 }
 
-/// `AnyNode.AnyX(inner)` for a single child — `inner` is the binding
-/// itself (a direct node) or its `.node` projection (a wrapper).
+/// `AnyNode.AnyX(binding)` for a single DIRECT node child. Wrapper
+/// singles never reach here — spanned_single_list (the only caller)
+/// fails them loudly before boxing.
 @comptime
 fn box_single(c: Classified) -> Expr {
-    let inner = if c.kind is .Wrapper {
-        ident_field_access(c.binding, "node")
-    } else {
-        Expr.Ident(c.binding)
-    }
-    let args: List<ExprId> = [synth_expr_id(inner)]
+    let args: List<ExprId> = [synth_expr_id(Expr.Ident(c.binding))]
     Expr.EnumCtor("AnyNode", anynode_ctor(shape_target(c.kind)), args)
 }
 

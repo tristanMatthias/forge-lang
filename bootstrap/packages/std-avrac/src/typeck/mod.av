@@ -3144,8 +3144,25 @@ fn tc_check_shape_args(tc: TC, params: List<ParamEntry>, args: List<ExprId>) -> 
 /// layout conflicts. Erasing by the callee's own declared param list is
 /// exact — no name heuristics — and per-node, so `Pair<T, int>` still flags
 /// a concrete `int`↔`string` conflict while leaving the `T` pair alone.
+/// The nominal name a shadowed type param could have been upgraded to by
+/// resolve_vtype: Struct is the parser default; Enum / NarrowedEnum /
+/// Newtype / Trait are the registry-kind upgrades when a user type shares
+/// the param's name. "" for structural/primitive nodes (never a param
+/// name, so type_param_has skips them). Allocation-free — the erase walk
+/// previously round-tripped every node through vtype_display.
+fn tc_param_shaped_name(t: ValueType) -> string {
+    match t {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        .NarrowedEnum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        .Trait(n, _) -> n
+        _ -> ""
+    }
+}
+
 fn vtype_erase_type_params(ty: ValueType, tp: List<TypeParamEntry>) -> ValueType {
-    if type_param_has(tp, vtype_display(ty)) { return ValueType.Unknown }
+    if type_param_has(tp, tc_param_shaped_name(ty)) { return ValueType.Unknown }
     ty.map((c: ValueType) -> vtype_erase_type_params(c, tp))
 }
 
@@ -3642,16 +3659,14 @@ fn vtype_mentions_typeparam(ty: ValueType, tp: List<TypeParamEntry>) -> bool {
     // List/Task/FnTyped/Enum recursion — and additionally reaches
     // Union / Tuple / Newtype members the old walker skipped.
     //
-    // The Enum arm matters when a USER type shares a param's name: a
-    // top-level `enum T` registers canonical "T", so resolve_vtype
-    // upgrades a declared param slot `T` to Enum-kind — the name is
-    // still lexically this decl's param, and missing it here turns the
-    // skip into a bogus F1000 against every `Result.Ok(x)`-style ctor.
-    ty.any((t: ValueType) -> match t {
-        .Struct(n, _, _) -> type_param_has(tp, n)
-        .Enum(n, _, _) -> type_param_has(tp, n)
-        _ -> false
-    })
+    // The non-Struct kinds matter when a USER type shares a param's name:
+    // a top-level `enum T` (or `type T = UUID`, `trait T`) registers
+    // canonical "T", so resolve_vtype upgrades a declared param slot `T`
+    // to that registry kind — the name is still lexically this decl's
+    // param, and missing the upgraded kind here turns the skip into a
+    // bogus F1000 against every `Result.Ok(x)`-style ctor.
+    // tc_param_shaped_name covers all five nominal kinds.
+    ty.any((t: ValueType) -> type_param_has(tp, tc_param_shaped_name(t)))
 }
 
 /// Resolve a generic-fn call's return type. Walks params/args
