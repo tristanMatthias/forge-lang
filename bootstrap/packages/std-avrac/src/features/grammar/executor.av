@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -1036,6 +1036,22 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
                 }
             }
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
+        }
+        // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
+        "MkExtern" if args.length == 3 -> {
+            // `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI
+            // signature → Stmt.ExternFn (parse_extern_declaration). An absent
+            // return type defaults to Void.
+            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), ret_vt)))
+        }
+        "MkExport" if args.length == 1 -> {
+            // `export <decl>` — parse_declaration wraps the inner exportable
+            // decl (fn / type / enum / extern) in a bare `@export` annotation
+            // (empty args) so name resolution can enforce visibility.
+            let no_args: List<ExprId> = []
+            let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, env.get(args[0])))))
         }
         _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
     }

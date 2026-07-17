@@ -1,0 +1,119 @@
+// ps3t.6.5.7 — the DECLARATION family, modifier slice: `extern fn` and the
+// `export` modifier. `extern fn name(params) -> ret` is a bodyless FFI
+// signature → Stmt.ExternFn (parse_extern_declaration). `export <decl>` wraps
+// the inner exportable declaration (fn / type / enum / extern) in a bare
+// `@export` annotation → Stmt.Annotated([@export], inner) exactly as
+// parse_declaration's KwExport branch does (empty annotation args), so the
+// module system's name resolution can enforce visibility.
+//
+// The seam adds MkExtern (→ ExternFn) and MkExport (→ Annotated([@export], _));
+// the inner fn/type/enum reuse the existing MkFnDecl / MkTypeDecl / MkEnumDecl
+// builds, so `export` is a generic one-level wrapper.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id.
+//
+// Scope: `extern fn` + `export` over fn/type/enum/extern. Generic params
+// (`export fn f<T>`), trait/impl exports, and the general `@annotation`
+// wrappers (arbitrary `@name(args)`) are follow-up slices.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn ee_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  declaration   = export_decl | member\n" +
+    "  export_decl   = \"export\" m:member -> MkExport(m)\n" +
+    "  member        = extern_decl | fn_decl | type_decl | enum_decl\n" +
+    "  extern_decl   = \"extern\" \"fn\" ename:IDENT \"(\" ( eparams:param ( \",\" eparams:param )* )? \")\" ( \"->\" eret:type_expr )? -> MkExtern(ename, eparams, eret)\n" +
+    "  fn_decl       = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
+    "  type_decl     = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
+    "  enum_decl     = \"enum\" edname:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, vars)\n" +
+    "  field         = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
+    "  variant       = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
+    "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── body statement subset ──
+    "  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  continue_stmt = \"continue\" -> Continue()\n" +
+    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
+    // ── type family ──
+    "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type       = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type      = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type     = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type    = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type    = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression family (bodies) ──
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un            = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(ee_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: extern fn + export == hand-written parser (ps3t.6.5.7)" {
+    given "extern fn (bodyless FFI signatures → ExternFn)" {
+        then "no-arg, return types, and single/multi params agree" {
+            agree("extern fn noop()") &&
+            agree("extern fn now() -> int") &&
+            agree("extern fn puts(s: string) -> int") &&
+            agree("extern fn write(fd: int, buf: string, n: int) -> int")
+        }
+    }
+    given "export fn (→ Annotated([@export], Function))" {
+        then "exported fn signatures and bodies agree" {
+            agree("export fn pub() { }") &&
+            agree("export fn get() -> int { return 1 }") &&
+            agree("export fn add(a: int, b: int) -> int { return a }")
+        }
+    }
+    given "export over other exportable decls (extern / type / enum)" {
+        then "export extern, export type, and export enum agree" {
+            agree("export extern fn ffi(x: int) -> int") &&
+            agree("export type P = { x: int, y: int }") &&
+            agree("export enum Color { Red, Green, Blue }")
+        }
+    }
+    given "the non-exported forms still route (declaration = export_decl | member)" {
+        then "a plain fn and a plain extern (no export) agree" {
+            agree("fn plain() { }") &&
+            agree("extern fn raw() -> bool")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built the decls)" {
+        then "canonical renders of representative forms" {
+            // render_annotation_list emits `@export ` (trailing space), and the
+            // Annotated render joins with another space → the double space.
+            dsl_stmt("extern fn puts(s: string) -> int") == "(extern puts (s) -> int)" &&
+            dsl_stmt("export fn get() -> int { return 1 }") == "(@annotated @export  (fn get () -> int (return 1)))" &&
+            dsl_stmt("export extern fn ffi(x: int) -> int") == "(@annotated @export  (extern ffi (x) -> int))"
+        }
+    }
+}
