@@ -1,0 +1,128 @@
+// ps3t.6.5.7 (component) + ps3t.6.5.10 (@hand keystone) — the DECLARATION
+// family's last member: `component`. Unlike fn/type/enum/trait/impl/use/mod,
+// `component` is NOT re-expressed in the pure grammar DSL — it is delegated to
+// the real hand parser via the `@hand(component_decl)` escape hatch. That is
+// the DESIGNED mechanism for the gnarly 5% (GRAMMAR_DSL.md §5): `component` is
+// deeply context-sensitive — `register_component_def` MUTATES the parser's
+// feature registry (so later `name inst { … }` parses keyword-free),
+// `parse_comp_config_pairs` does char-level lookahead, and `body: TokenStream`
+// components capture a VERBATIM raw body — none of which fits a stateless
+// token-grammar. Forcing it into the DSL would be the wrong architecture.
+//
+// The executor runs `@hand(component_decl)` by delegating to the shipping
+// `parse_component_decl` over the ORIGINAL source, SHARING the DSL's NodeStore
+// (so the built id is valid in it) and resyncing the DSL token cursor past
+// what the hand parser consumed — the executor's mini swap-in (the store-
+// sharing hand-off 6.5.12 generalises). Because both the DSL and the oracle
+// end up calling the SAME `parse_component_decl`, equivalence is by
+// construction; this test PROVES the delegation actually runs and produces the
+// identical tree (render + a past-the-render ComponentDef check), and that
+// `@hand` composes as an alternative alongside pure grammar rules.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration() — routes `component` via the registry)
+// over a corpus and assert identical ASTs via render_stmt_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id, NodeStore, StmtId, Stmt, stmt_unwrap}
+
+// A grammar whose only production delegates the whole declaration to the hand
+// `component` parser through the escape hatch.
+fn comp_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  declaration = @hand(component_decl)\n" +
+    "}"
+}
+
+// A MIXED grammar: a pure fn rule OR the `@hand(component_decl)` alternative.
+// Proves the escape hatch composes as one branch among re-expressed rules —
+// FIRST-set routing sends `fn …` to the pure rule and `component …` to @hand.
+fn mixed_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  declaration = fn_decl | @hand(component_decl)\n" +
+    "  fn_decl     = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
+    "  param       = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    "  statement   = break_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt  = \"break\" -> Break()\n" +
+    "  return_stmt = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
+    "  type_expr   = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom   = list_type | named_type\n" +
+    "  list_type   = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  named_type  = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    "  expression  = equality\n" +
+    "  equality    = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison  = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(gsrc: string, src: string) -> string {
+    let gp = parse_grammar(gsrc)
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool { dsl_stmt(comp_grammar_src(), src) == hand_stmt(src) }
+fn agree_mixed(src: string) -> bool { dsl_stmt(mixed_grammar_src(), src) == hand_stmt(src) }
+
+// Reach PAST the render: the DSL root must be a real Stmt.ComponentDef (not an
+// error node), and its name must match — proving the delegation actually built
+// a component (config / children / implements are invisible to render, so this
+// checks the DSL didn't silently degrade to an Error with a matching render).
+fn dsl_component_name(src: string) -> string {
+    let gp = parse_grammar(comp_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.root)) {
+        .ComponentDef(name, _, _, _, _, _) -> name
+        _ -> "<not-component>"
+    }
+}
+
+spec "grammar-DSL declaration family: component via @hand == hand-written parser (ps3t.6.5.7)" {
+    given "component definitions delegated through the @hand escape hatch" {
+        then "config / fields / methods / children / implements / paren forms agree" {
+            agree("component Counter { let count: int = 0 fn tick() { } }") &&
+            agree("component Box { config { width: int } }") &&
+            agree("component Widget implements Drawable { fn draw() { } }") &&
+            agree("component Panel { children { items: [int] } }") &&
+            agree("component Empty { }") &&
+            agree("component Sized(w: int, h: int) { }")
+        }
+    }
+    given "the delegation actually built a ComponentDef (past the render)" {
+        then "the DSL root is Stmt.ComponentDef with the right name" {
+            dsl_component_name("component Counter { let count: int = 0 fn tick() { } }") == "Counter" &&
+            dsl_component_name("component Widget implements Drawable { fn draw() { } }") == "Widget" &&
+            dsl_component_name("component Box { config { width: int } }") == "Box"
+        }
+    }
+    given "@hand composes as an alternative alongside a pure re-expressed rule" {
+        then "fn routes to the pure rule and component routes to @hand — both agree" {
+            agree_mixed("fn add(a: int, b: int) -> int { return a + b }") &&
+            agree_mixed("component Counter { let count: int = 0 fn tick() { } }") &&
+            agree_mixed("fn plain() { }") &&
+            agree_mixed("component Empty { }")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: render matches the hand parser)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt(comp_grammar_src(), "component Widget implements Drawable { fn draw() { } }") == "(component-def Widget () (fn draw () -> void ))" &&
+            dsl_stmt(comp_grammar_src(), "component Box { config { width: int } }") == "(component-def Box () )"
+        }
+    }
+}

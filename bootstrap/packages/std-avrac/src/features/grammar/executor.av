@@ -18,6 +18,7 @@
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real}
+use parse.{parser_new_with_file}
 
 // ── Capture values + environment ──
 
@@ -311,7 +312,12 @@ impl CapEnv {
 /// malformed input yields a partial tree + diagnostics, never a bail).
 export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags: List<string> }
 
-type PState = { toks: List<Token>, pos: int, store: NodeStore, diags: List<string>, had_error: bool }
+// `src` is the ORIGINAL source text (when known) — carried so a `@hand`
+// statement rule can delegate a whole declaration to the real hand parser
+// over that source (the token list alone can't reconstruct a raw body /
+// char-level lookahead). Empty on the caller-provided-token path (the
+// eventual swap-in uses a real Parser for @hand, not this interpreter).
+type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool }
 
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
@@ -422,7 +428,7 @@ export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
 /// the real parser hands its own store + token stream). `run_grammar_expr`
 /// is the thin `(real lexer + fresh store)` wrapper over this.
 export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> RunResult {
-    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -440,13 +446,24 @@ export type StmtRunResult = { store: NodeStore, root: StmtId, had_error: bool, d
 /// `run_grammar_expr`. The grammar's start rule must build a Stmt; its
 /// sub-rules may build Exprs (embedded expressions) or Stmts.
 export fn run_grammar_stmt(grammar: Grammar, src: string) -> StmtRunResult {
-    run_grammar_stmt_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+    run_grammar_stmt_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
 
 /// Caller-provided-store form of `run_grammar_stmt` (ps3t.6.5.8). See
-/// `run_grammar_expr_toks`.
+/// `run_grammar_expr_toks`. No source is threaded — a `@hand` statement rule
+/// that needs the source (e.g. `component`) is unavailable on this path (the
+/// swap-in serves those from a real Parser, not this interpreter).
 export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    run_grammar_stmt_src(grammar, toks, store, "")
+}
+
+/// Shared core of the statement entry. `src` is threaded (empty on the
+/// token-only path) so a `@hand` statement rule can delegate a whole
+/// declaration to the real hand parser over the original source — the token
+/// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
+/// store + ps3t.6.5.7/6.5.10 @hand delegation.)
+fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -470,7 +487,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -495,7 +512,7 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
 /// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -630,7 +647,12 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         }
         .Ref(name) -> exec_rule(g, name, st)
         .Group(inner) -> exec_node(g, inner, st, env, multi)
-        .Hand(hf) -> CapVal.Node(run_hand(hf, st))
+        // Statement/declaration hand rules delegate to the real hand parser and
+        // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
+        // Expr node. Dispatch on the rule name so a mixed declaration grammar
+        // (pure rules + a `@hand(component_decl)` alternative) routes each to
+        // the right builder.
+        .Hand(hf) -> if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) } else { CapVal.Node(run_hand(hf, st)) }
     }
 }
 
@@ -647,7 +669,63 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
 fn hand_starts(name: string, tok: Token) -> bool {
     if name == "ident" { return tok.kind == "IDENT" }
     if name == "number" { return tok.kind == "NUMBER" }
+    // A declaration hand rule's FIRST is its leading keyword.
+    if name == "component_decl" { return tok.text == "component" }
     false
+}
+
+/// True for the hand rules that build a STATEMENT/DECLARATION (delegated to
+/// the real hand parser via `run_hand_stmt`), vs the expression hand rules
+/// (`ident`/`number`) served by `run_hand`. This is the escape hatch for the
+/// gnarly-5% declarations the pure grammar deliberately does NOT re-express —
+/// `component` (stateful registry mutation + char-level lookahead + raw
+/// bodies) is the canonical case.
+fn is_stmt_hand(name: string) -> bool {
+    name == "component_decl"
+}
+
+/// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
+/// parser (ps3t.6.5.7 component / ps3t.6.5.10 gnarly-5%). A `Parser` is built
+/// over the PState's ORIGINAL source, SHARING the PState's store (so the
+/// returned id is valid in it — the parse_program_source_shared pattern) and
+/// repositioned at the current token's byte offset; after the hand parse the
+/// DSL cursor is resynced past the tokens it consumed. This is the executor's
+/// mini swap-in: proving the generated parser can hand off to `@hand` code
+/// over a shared store (the foundation 6.5.12 generalises).
+fn run_hand_stmt(name: string, st: PState) -> StmtId {
+    if !is_stmt_hand(name) {
+        st.report("no hand statement rule `${name}`")
+        return st.store.stmts.add_leaf(Stmt.Error)
+    }
+    if st.src == "" {
+        // Token-only path: no source to delegate over. (The swap-in serves
+        // @hand from a real Parser instead of this interpreter, so this only
+        // trips a caller that ran a @hand-statement grammar via the *_toks
+        // entry — which the differential oracle never does.)
+        st.report("`@hand(${name})` needs the source, unavailable on the token-only path")
+        return st.store.stmts.add_leaf(Stmt.Error)
+    }
+    let start_byte = st.cur().pos
+    // Share the DSL store (so the built ids live where the DSL expects) and
+    // reposition the lexer at the hand rule's first token.
+    mut bp = parser_new_with_file(st.src, "")
+    bp.store = st.store
+    bp.records_roots = 0
+    bp.current = start_byte
+    bp.start = start_byte
+    bp.advance_token()
+    match bp.parse_component_decl() {
+        .Ok(id) -> {
+            // Resync the DSL token cursor past everything the hand parser
+            // consumed (its cursor now sits on the next token's byte offset).
+            while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+            id
+        }
+        .Err(m) -> {
+            st.report(m)
+            st.store.stmts.add_leaf(Stmt.Error)
+        }
+    }
 }
 
 fn run_hand(name: string, st: PState) -> ExprId {
