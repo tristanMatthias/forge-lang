@@ -706,21 +706,25 @@ fn run_hand_stmt(name: string, st: PState) -> StmtId {
         return st.store.stmts.add_leaf(Stmt.Error)
     }
     let start_byte = st.cur().pos
-    // Share the DSL store (so the built ids live where the DSL expects) and
-    // reposition the lexer at the hand rule's first token.
+    // Share the DSL store (so the built ids live where the DSL expects), then
+    // walk the lexer to the hand rule's first token by CONSUMING the input up
+    // to it — advancing token by token, NOT just reassigning the cursor — so
+    // `line`/`column` stay accurate (each skipped newline is counted) for a
+    // component at a nonzero offset; the hand parser records those coordinates
+    // on the component's body spans.
     mut bp = parser_new_with_file(st.src, "")
     bp.store = st.store
     bp.records_roots = 0
-    bp.current = start_byte
-    bp.start = start_byte
-    bp.advance_token()
-    match bp.parse_component_decl() {
-        .Ok(id) -> {
-            // Resync the DSL token cursor past everything the hand parser
-            // consumed (its cursor now sits on the next token's byte offset).
-            while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
-            id
-        }
+    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    let result = bp.parse_component_decl()
+    // Resync the DSL token cursor past everything the hand parser consumed (its
+    // cursor now sits on the next token's byte offset) — on BOTH success AND
+    // failure: a failed hand parse still advanced `bp`, so leaving st.pos on the
+    // stale `component` token would make a following grammar item / repetition
+    // reprocess it and cascade.
+    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    match result {
+        .Ok(id) -> id
         .Err(m) -> {
             st.report(m)
             st.store.stmts.add_leaf(Stmt.Error)

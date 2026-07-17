@@ -93,6 +93,50 @@ fn dsl_component_name(src: string) -> string {
     }
 }
 
+// The config / children / implements payloads are DROPPED from render_stmt_id,
+// so the render comparison + name check above can't see them: a store-sharing
+// bug that dropped or corrupted those id-bearing lists would still render
+// identically. These reach the payloads directly so the delegation's store
+// hand-off is actually exercised end-to-end (the render-hides-detail trap).
+fn dsl_config_first_key(src: string) -> string {
+    let gp = parse_grammar(comp_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.root)) {
+        .ComponentDef(_, _, config, _, _, _) -> if config.length == 0 { "<none>" } else { config[0].key }
+        _ -> "<not-component>"
+    }
+}
+fn dsl_first_child_slot(src: string) -> string {
+    let gp = parse_grammar(comp_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.root)) {
+        .ComponentDef(_, _, _, children, _, _) -> if children.length == 0 { "<none>" } else { children[0].slot_name }
+        _ -> "<not-component>"
+    }
+}
+fn dsl_first_implements(src: string) -> string {
+    let gp = parse_grammar(comp_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.root)) {
+        .ComponentDef(_, _, _, _, impls, _) -> if impls.length == 0 { "<none>" } else { impls[0] }
+        _ -> "<not-component>"
+    }
+}
+// The number of body statements — proves the body id list (also shared through
+// the delegation store) survived intact.
+fn dsl_body_len(src: string) -> int {
+    let gp = parse_grammar(comp_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return -1 }
+    match stmt_unwrap(r.store, r.store.stmts.get(r.root)) {
+        .ComponentDef(_, _, _, _, _, body) -> body.length
+        _ -> -2
+    }
+}
+
 spec "grammar-DSL declaration family: component via @hand == hand-written parser (ps3t.6.5.7)" {
     given "component definitions delegated through the @hand escape hatch" {
         then "config / fields / methods / children / implements / paren forms agree" {
@@ -101,7 +145,11 @@ spec "grammar-DSL declaration family: component via @hand == hand-written parser
             agree("component Widget implements Drawable { fn draw() { } }") &&
             agree("component Panel { children { items: [int] } }") &&
             agree("component Empty { }") &&
-            agree("component Sized(w: int, h: int) { }")
+            agree("component Sized(w: int, h: int) { }") &&
+            // Nonzero byte offset (leading newlines) + a multiline body: the
+            // lexer walks to the component naturally, so line/column stay
+            // accurate and the resync lands on EOF.
+            agree("\n\ncomponent Multi {\n  let a: int = 1\n  fn m() { return a }\n}")
         }
     }
     given "the delegation actually built a ComponentDef (past the render)" {
@@ -109,6 +157,15 @@ spec "grammar-DSL declaration family: component via @hand == hand-written parser
             dsl_component_name("component Counter { let count: int = 0 fn tick() { } }") == "Counter" &&
             dsl_component_name("component Widget implements Drawable { fn draw() { } }") == "Widget" &&
             dsl_component_name("component Box { config { width: int } }") == "Box"
+        }
+    }
+    given "store sharing preserves the render-hidden payloads (config / children / implements / body)" {
+        then "the delegated ComponentDef carries the real config, children, implements, and body" {
+            dsl_config_first_key("component Box { config { width: int } }") == "width" &&
+            dsl_first_child_slot("component Panel { children { items: [int] } }") == "items" &&
+            dsl_first_implements("component Widget implements Drawable { fn draw() { } }") == "Drawable" &&
+            // Counter's body = the `let count` field + the `tick` method.
+            dsl_body_len("component Counter { let count: int = 0 fn tick() { } }") == 2
         }
     }
     given "@hand composes as an alternative alongside a pure re-expressed rule" {
