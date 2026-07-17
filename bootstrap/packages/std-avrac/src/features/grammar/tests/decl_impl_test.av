@@ -1,0 +1,108 @@
+// ps3t.6.5.7 — the DECLARATION family, impl slice: `impl Type { … }` and
+// `impl Trait for Type { … }`. Both build a Stmt.Impl whose members are the
+// impl methods; the impl NAME encodes `Trait:Type` for a trait impl (else
+// just `Type`), and each method's name is MANGLED to `target__method` — the
+// `target` being the concrete type (the `for` type when present, else the
+// header type), exactly parse_impl_declaration.
+//
+// The mangling is the one context-dependent step: the method rule is
+// context-free (it can't see the enclosing impl type), so MkMethod builds a
+// PLAIN-named Function and MkImpl re-keys each to the mangled name where the
+// impl type is in scope. `self` is parsed as a plain first parameter — the
+// hand parser synthesises the receiver TYPE, but render_param_list emits
+// names only, so `self` renders identically either way.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over an impl corpus and assert
+// identical ASTs via render_stmt_id.
+//
+// Scope: the core `impl Type { methods }` and `impl Trait for Type { … }`.
+// Generic impls `impl<T> Foo<T>` (skip_angle_brackets in the hand parser),
+// associated-type definitions `type X = Concrete`, and doc-commented methods
+// are follow-up slices.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn impl_grammar_src() -> string {
+    "grammar Impl {\n" +
+    "  impl_decl     = \"impl\" tn:IDENT ( \"for\" fortn:IDENT )? \"{\" ( methods:impl_method )* \"}\" -> MkImpl(tn, fortn, methods)\n" +
+    "  impl_method   = \"fn\" mname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkMethod(mname, params, ret, body)\n" +
+    "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── body statement subset ──
+    "  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  continue_stmt = \"continue\" -> Continue()\n" +
+    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
+    // ── type family (param + return annotations) ──
+    "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type       = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type      = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type     = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type    = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type    = tn2:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn2, a, opt)\n" +
+    // ── expression family (bodies) ──
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un            = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(impl_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: impl == hand-written parser (ps3t.6.5.7)" {
+    given "plain impl blocks (impl Type { … })" {
+        then "empty, self methods, static methods, and self+params agree (names mangled)" {
+            agree("impl Empty { }") &&
+            agree("impl Point { fn area(self) -> int { return 5 } }") &&
+            agree("impl Point { fn origin() -> int { return 0 } }") &&
+            agree("impl Calc { fn add(self, x: int, y: int) -> int { return x } }") &&
+            agree("impl Multi { fn a(self) -> int { return 1 } fn b(self) -> int { return 2 } }")
+        }
+    }
+    given "trait impls (impl Trait for Type { … })" {
+        then "encoded Trait:Type name + mangled-to-concrete-type methods agree" {
+            agree("impl Display for Point { fn fmt(self) -> int { return 1 } }") &&
+            agree("impl Show for Widget { }") &&
+            agree("impl Eq for Pair { fn eq(self, other: int) -> bool { return true } }")
+        }
+    }
+    given "bodies and return types" {
+        then "empty body, no-return-type, and multi-statement bodies agree" {
+            agree("impl Noop { fn run(self) { } }") &&
+            agree("impl Seq { fn go(self) { break continue } }") &&
+            agree("impl Ret { fn get(self) -> bool { return false } }")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built an Impl, mangled)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("impl Point { fn area(self) -> int { return 5 } }") == "(impl Point (fn Point__area (self) -> int (return 5)))" &&
+            dsl_stmt("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "(impl Display:Point (fn Point__fmt (self) -> int (return 1)))" &&
+            dsl_stmt("impl Empty { }") == "(impl Empty )"
+        }
+    }
+}
