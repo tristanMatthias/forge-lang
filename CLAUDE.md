@@ -24,7 +24,7 @@ Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 - `bootstrap/src/codegen/` — LLVM IR emission (mod.av + helpers + per-feature codegen)
 - `bootstrap/src/typeck/mod.av` — type checker (currently additive, MUST become gating per spec)
 - `bootstrap/src/resolve/` — name resolver (mod.av = scope, names.av = module/import resolution)
-- `bootstrap/src/query/` — L6 red-green query engine (Db<V> memo store, discovered deps, early cutoff, F9200 cycles; oracle.av = the incremental==from-scratch edit-sequence harness every L6 phase gates on; design: docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md)
+- `bootstrap/src/query/` — L6 red-green query engine (Db<V> memo store, discovered deps, early cutoff, F3900 cycles; oracle.av = the incremental==from-scratch edit-sequence harness every L6 phase gates on; design: docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md)
 - `bootstrap/runtime.c` — C runtime (~1900 lines: allocator, string ops, LLVM wrappers, channels, threads)
 - `bootstrap/seed/seed.ll` — bootstrap seed IR
 - `bootstrap/tests/` — spec/given/then test files (`*_test.av`); run via `bs2 test`

@@ -33,7 +33,7 @@
 //
 // CYCLES (§3.2) error by default: one active stack covers both verification
 // and computation, and any re-entry returns `QueryCycle` with the offending
-// path (surface as F9200 via `query_cycle_diag`). Covering VERIFICATION too
+// path (surface as F3900 via `query_cycle_diag`). Covering VERIFICATION too
 // is load-bearing, not conservatism: a dep list recorded at an older revision
 // can point back at a query currently being verified, and serving its
 // possibly-stale value mid-verification would let a dependent revalidate
@@ -109,7 +109,7 @@ export fn computed<V>(value: V, value_hash: int) -> Computed<V> {
 
 /// The error carried out of a fetch whose evaluation re-entered an
 /// in-progress query: the cycle path, first occurrence through the repeat
-/// (`[a, b, a]` for a↔b). Render as an F9200 via `query_cycle_diag`.
+/// (`[a, b, a]` for a↔b). Render as an F3900 via `query_cycle_diag`.
 export type QueryCycle = { path: List<QueryKey> }
 
 /// A fetched answer: the memoized value plus the diagnostics that ride with
@@ -348,11 +348,14 @@ fn db_fetch_unverified<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
 fn db_recompute<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
     let fresh_deps: List<QueryKey> = []
     let ctx: QueryCtx<V> = QueryCtx { db, deps: fresh_deps }
+    // The counter moves BEFORE dispatch: a compute that dies on a cycle
+    // still ran the driver — counting only successes would underreport
+    // cycle-heavy runs and skew the oracle's work comparison.
+    mut fam = db_family<V>(db, q.family)
+    fam.computes = fam.computes + 1
     match db.compute(ctx, q) {
         .Err(c) -> Result.Err(c)
         .Ok(out) -> {
-            mut fam = db_family<V>(db, q.family)
-            fam.computes = fam.computes + 1
             let h = answer_hash_of(out.value_hash, out.diags)
             if avra_intmap_has(fam.idx, q.arg) != 0 {
                 let slot = avra_intmap_get(fam.idx, q.arg)
@@ -405,7 +408,7 @@ fn answer_hash_of(value_hash: int, diags: List<Diagnostic>) -> int {
     content_id_for(acc)
 }
 
-/// Render a QueryCycle as the F9200 diagnostic (§3.2). `render_key` maps a
+/// Render a QueryCycle as the F3900 diagnostic (§3.2). `render_key` maps a
 /// key to the driver's human name for it (`typeck(item foo)`); pass
 /// `qk_render` when no better naming exists. Spanless today — keys carry no
 /// source location until the real passes are query-shaped (P0); the path

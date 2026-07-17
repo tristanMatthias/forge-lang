@@ -51,11 +51,22 @@ export type OracleReport = {
     detail: string,
 }
 
-/// True when the replay proved incremental == from-scratch at every step AND
-/// the incremental replay did strictly less compute work than the
-/// from-scratch replays (given at least one edit step to save work on).
+/// True when the replay proved incremental == from-scratch at every step —
+/// the CORRECTNESS verdict, and nothing else. Work savings is a separate,
+/// script-dependent property (`oracle_saved_work`): a legitimate script
+/// whose every edit invalidates every root saves nothing, and must not read
+/// as a correctness failure.
 export fn oracle_clean(r: OracleReport) -> bool {
-    r.mismatches == 0 && (r.steps <= 1 || r.inc_computes < r.scratch_computes)
+    r.mismatches == 0
+}
+
+/// True when the incremental replay did strictly less compute work than the
+/// from-scratch replays — the MEMOIZATION-EFFECTIVENESS verdict. Scripts
+/// designed with absorbable edits assert BOTH this and `oracle_clean`:
+/// matching answers alone would accept an engine that recomputes the world
+/// every step.
+export fn oracle_saved_work(r: OracleReport) -> bool {
+    r.inc_computes < r.scratch_computes
 }
 
 /// One-line summary for spec assertions / logs.

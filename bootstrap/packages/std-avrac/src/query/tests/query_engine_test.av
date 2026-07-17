@@ -17,7 +17,7 @@
 //   - dependency REPLACEMENT: after PICK flips, SEL re-records its deps —
 //     edits to the now-unselected file no longer recompute SEL;
 //   - diagnostics ride with values (the same Fetched carries them, memoized);
-//   - cycles error with the full path, render as F9200, and leave the
+//   - cycles error with the full path, render as F3900, and leave the
 //     database usable (the active stack unwinds).
 //
 // Each `then` replays the deterministic scenario and asserts one line of its
@@ -207,11 +207,20 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
     then "a recompute re-records deps: edits to a no-longer-read input stop invalidating" {
         scenario()[7] == "sel=1,0"
     }
-    then "a query cycle errors with the full path and renders as F9200" {
-        scenario()[8] == "cycle_len=3 code=F9200 msg=query cycle: 5:0 -> 6:0 -> 5:0"
+    then "a query cycle errors with the full path and renders as F3900" {
+        scenario()[8] == "cycle_len=3 code=F3900 msg=query cycle: 5:0 -> 6:0 -> 5:0"
     }
     then "the database stays usable after a reported cycle" {
         scenario()[9] == "post_cycle=total=22+1"
+    }
+    then "cycle-aborted computes still count as work performed" {
+        // The dispatcher RAN for both cycle families before the abort — a
+        // counter that only moves on success underreports cycle-heavy runs
+        // and skews the oracle's work comparison.
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "x")
+        let _ = fetch_value(db, qk(FAM_CYCLE_A, 0))
+        db_computes_of(db, FAM_CYCLE_A) == 1 && db_computes_of(db, FAM_CYCLE_B) == 1
     }
     then "1000 edit/fetch cycles stay correct with at most one recompute per edit" {
         let mut db: Db<string> = db_new(demo_compute)

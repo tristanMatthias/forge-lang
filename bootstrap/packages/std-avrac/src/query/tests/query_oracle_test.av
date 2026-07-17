@@ -27,7 +27,7 @@
 // reports clean would gate nothing.
 
 use @std.avrac.query.{QueryCtx, QueryKey, Computed, QueryCycle, db_fetch, ctx_fetch, qk, computed}
-use @std.avrac.query.{InputWrite, EditStep, OracleReport, run_edit_oracle, oracle_clean, oracle_render}
+use @std.avrac.query.{InputWrite, EditStep, OracleReport, run_edit_oracle, oracle_clean, oracle_saved_work, oracle_render}
 use @std.avrac.core.{content_id_for}
 use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, span_dummy}
 
@@ -130,11 +130,14 @@ spec "L6 differential oracle: incremental == from-scratch over an edit script (p
     }
     then "the incremental replay did strictly less compute work than from-scratch" {
         let r = run_clean_oracle()
-        r.inc_computes < r.scratch_computes
+        oracle_saved_work(r)
     }
-    then "oracle_clean summarizes both conditions" {
+    then "correctness and savings are separate verdicts — this script earns both" {
+        // oracle_clean is answer equivalence ONLY: a legitimate script whose
+        // every edit invalidates every root saves nothing and must still
+        // read clean. This script has absorbable edits, so it asserts both.
         let r = run_clean_oracle()
-        oracle_clean(r) && oracle_render(r).contains("mismatches=0")
+        oracle_clean(r) && oracle_saved_work(r) && oracle_render(r).contains("mismatches=0")
     }
     then "an UNRECORDED dependency (raw db_fetch inside compute) is DETECTED, not rubber-stamped" {
         let r = run_leaky_oracle()

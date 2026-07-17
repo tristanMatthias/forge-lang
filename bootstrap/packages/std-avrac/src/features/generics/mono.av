@@ -2783,19 +2783,18 @@ type DunderArg = { name: string, vt: ValueType, next: int }
 /// @field next  — index of the first segment after the base.
 type DunderBase = { name: string, arity: int, next: int }
 
-/// Resolve the base occupying `segs[i..]`. A segment naming a registered
-/// generic spans ONE segment — `mangle_base` prefers short names, so a known
-/// short base was emitted as such. Only when the leading segment resolves to
-/// nothing (a module qualifier reads as arity 0) does the LONGEST registered
-/// qualified-flattened base get a chance: an ambiguity-qualified `a::Box`
-/// flattens to `a__Box`, and treating its first `__` as the base/args
-/// boundary would hand back `Box__int` as `a__Box__int`'s argument. Longest
-/// first, because the qualifier itself may be nested (`a::b::Box`).
+/// Resolve the base occupying `segs[i..]`. QUALIFIED candidates resolve
+/// FIRST, longest first: an ambiguity-qualified `a::Box` flattens to
+/// `a__Box`, and treating its first `__` as the base/args boundary would
+/// hand back `Box__int` as `a__Box__int`'s argument. Qualified-first is
+/// safe — a multi-segment candidate only matches a REGISTERED
+/// `::`-qualified declaration's flattening, which a bare short mangle
+/// (`Box__int`) can never coincide with — and it is necessary: checking the
+/// single-segment short name first would let a generic that happens to
+/// share a MODULE's name (`a<T>` + module `a`) swallow the qualifier and
+/// re-create the mis-split. The single-segment short-name resolution is the
+/// fallback for the common bare case.
 fn dunder_base_at(segs: List<string>, i: int, regs: GenRegs) -> DunderBase {
-    let short_arity = generic_arity(regs, segs[i])
-    if short_arity > 0 {
-        return DunderBase { name: segs[i], arity: short_arity, next: i + 1 }
-    }
     mut j = segs.length
     while j >= i + 2 {
         mut cand = segs[i]
@@ -2809,6 +2808,10 @@ fn dunder_base_at(segs: List<string>, i: int, regs: GenRegs) -> DunderBase {
             return DunderBase { name: cand, arity: k, next: j }
         }
         j = j - 1
+    }
+    let short_arity = generic_arity(regs, segs[i])
+    if short_arity > 0 {
+        return DunderBase { name: segs[i], arity: short_arity, next: i + 1 }
     }
     DunderBase { name: segs[i], arity: 0, next: i + 1 }
 }
