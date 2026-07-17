@@ -677,307 +677,281 @@ fn literal_node(st: PState, t: Token) -> ExprId {
 /// `ReturnEmpty`, `Return(e)`, `ExprStmt(e)`. Unknown names are a reported
 /// error, not a silent miss.
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
-    // ── Expression builds (target: Expr) ──
-    if name == "fold_binary" && args.length == 3 {
-        return CapVal.Node(fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
-    }
-    if name == "Unary" && args.length == 2 {
-        return CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
-    }
-    if name == "fold_logical" && args.length == 3 {
-        return CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
-    }
-    if name == "Grouping" && args.length == 1 {
-        // Preserve the parenthesisation node so the produced AST matches
-        // the hand-written parser (which wraps `(e)` in Expr.Grouping),
-        // not merely a grouping-normalised form.
-        return CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0])))))
-    }
-    if name == "field_suffix" && args.length == 1 {
-        // A partial FieldAccess with a sentinel receiver; fold_postfix
-        // rebinds the receiver to the accumulated base.
-        return CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0])))))
-    }
-    if name == "index_suffix" && args.length == 1 {
-        return CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0])))))
-    }
-    if name == "call_suffix" && args.length == 1 {
-        // A partial Call with a sentinel callee + the captured arg list
-        // (a single arg arrives as a scalar Node, many as Nodes, none as
-        // Nil — normalise to a list). fold_postfix rebinds the callee.
-        return CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0])))))
-    }
-    if name == "fold_postfix" && args.length == 2 {
-        return CapVal.Node(fold_postfix_expr(st, env.get(args[0]), env.get(args[1])))
-    }
-    // ── Statement builds (target: Stmt, ps3t.6.5.2) ──
-    if name == "Break" && args.length == 0 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))
-    }
-    if name == "Continue" && args.length == 0 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
-    }
-    if name == "ReturnEmpty" && args.length == 0 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
-    }
-    if name == "Return" && args.length == 1 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
-    }
-    if name == "ExprStmt" && args.length == 1 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
-    }
-    // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) ──
-    if name == "Block" && args.length == 1 {
-        // The statement-list capture → a brace block. An empty body (the
-        // `*` matched nothing) is a `Stmt.Block([])`, exactly the hand
-        // parser's `{ }`.
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(capval_to_stmt_list(env.get(args[0])))))
-    }
-    if name == "While" && args.length == 2 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
-    }
-    if name == "If" && args.length == 3 {
-        // else may be absent — the optional `( "else" e:… )?` leaves `e`
-        // as Nil, which becomes a null else_branch (the hand parser's
-        // else-less If); a present else (a block or a nested if_stmt for
-        // `else if` chains) is an SNode.
-        let cond = capval_to_expr(st, env.get(args[0]))
-        let then_s = capval_to_stmt(st, env.get(args[1]))
-        mut else_opt: StmtId? = none
-        match env.get(args[2]) {
-            .SNode(eid) -> else_opt = eid
-            _ -> {}
+    // Dispatch on the build name — one arm per grammar `-> Build(...)`, the
+    // one target-specific seam (mirroring the derive engine's pluggable
+    // emitters). Each arm is arity-guarded (`if args.length == N`); an
+    // unknown name OR a wrong arity falls to the `_` arm (an error node),
+    // exactly as the prior long if-chain fell through.
+    match name {
+        // ── Expression builds (target: Expr) ──
+        "fold_binary" if args.length == 3 -> CapVal.Node(fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "Unary" if args.length == 2 -> CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
+        "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "Grouping" if args.length == 1 -> {
+            // Preserve the parenthesisation node so the produced AST matches
+            // the hand-written parser (which wraps `(e)` in Expr.Grouping),
+            // not merely a grouping-normalised form.
+            CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0])))))
         }
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(cond, then_s, else_opt)))
-    }
-    if name == "ForLoop" && args.length == 4 {
-        // `for v in lo [.. hi] body`. The optional `.. hi` picks the AST:
-        // present ⇒ integer-range `Stmt.For(v, lo, hi, body)`, absent ⇒
-        // collection `Stmt.ForIn(v, lo, body)` — mirroring the hand
-        // parser's post-expression `..`-lookahead branch (for_stmt/parser.av).
-        let var = capval_tok_text(env.get(args[0]))
-        let lo = capval_to_expr(st, env.get(args[1]))
-        let body = capval_to_stmt(st, env.get(args[3]))
-        match env.get(args[2]) {
-            .Nil -> return CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
-            _ -> {
-                let hi = capval_to_expr(st, env.get(args[2]))
-                return CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
+        "field_suffix" if args.length == 1 -> {
+            // A partial FieldAccess with a sentinel receiver; fold_postfix
+            // rebinds the receiver to the accumulated base.
+            CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(env.get(args[0])))))
+        }
+        "index_suffix" if args.length == 1 -> CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, env.get(args[0])))))
+        "call_suffix" if args.length == 1 -> {
+            // A partial Call with a sentinel callee + the captured arg list
+            // (a single arg arrives as a scalar Node, many as Nodes, none as
+            // Nil — normalise to a list). fold_postfix rebinds the callee.
+            CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0])))))
+        }
+        "fold_postfix" if args.length == 2 -> CapVal.Node(fold_postfix_expr(st, env.get(args[0]), env.get(args[1])))
+        // ── Statement builds (target: Stmt, ps3t.6.5.2) ──
+        "Break" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))
+        "Continue" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
+        "ReturnEmpty" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
+        "Return" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
+        "ExprStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
+        // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) ──
+        "Block" if args.length == 1 -> {
+            // The statement-list capture → a brace block. An empty body (the
+            // `*` matched nothing) is a `Stmt.Block([])`, exactly the hand
+            // parser's `{ }`.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(capval_to_stmt_list(env.get(args[0])))))
+        }
+        "While" if args.length == 2 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
+        "If" if args.length == 3 -> {
+            // else may be absent — the optional `( "else" e:… )?` leaves `e`
+            // as Nil, which becomes a null else_branch (the hand parser's
+            // else-less If); a present else (a block or a nested if_stmt for
+            // `else if` chains) is an SNode.
+            let cond = capval_to_expr(st, env.get(args[0]))
+            let then_s = capval_to_stmt(st, env.get(args[1]))
+            mut else_opt: StmtId? = none
+            match env.get(args[2]) {
+                .SNode(eid) -> else_opt = eid
+                _ -> {}
             }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(cond, then_s, else_opt)))
         }
-    }
-    // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
-    if name == "OrMaybe" && args.length == 2 {
-        // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
-        // Absent `or` ⇒ just the left pattern; present ⇒ `Pattern.Or(l, r)`
-        // (right-associative, since `r` is itself a pattern_or).
-        match env.get(args[1]) {
-            .Nil -> return env.get(args[0])
-            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, env.get(args[0])), capval_to_pat(st, env.get(args[1])))))
-        }
-    }
-    if name == "IdentPat" && args.length == 2 {
-        // A bare identifier pattern: `_` ⇒ Wildcard, `rest` ⇒ Rest (both
-        // contextual — only when NOT followed by `(`), and `name(binding)`
-        // ⇒ TypePattern. Any other bare identifier is not a pattern (the
-        // hand parser errors); we report + fall back to Wildcard.
-        let nm = capval_tok_text(env.get(args[0]))
-        match env.get(args[1]) {
-            .Nil -> {
-                if nm == "_" { return CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard)) }
-                if nm == "rest" { return CapVal.PNode(st.store.pats.add_leaf(Pattern.Rest)) }
-                st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
-                return CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
-            }
-            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(nm, capval_tok_text(env.get(args[1])))))
-        }
-    }
-    if name == "MkVariant" && args.length == 3 {
-        // `.Name` / `.Name(bind, …)` / `.Name(.Sub, …)`. A sub-pattern
-        // payload (first token `.`) ⇒ NestedVariant; a binding payload
-        // (identifiers) or none ⇒ Variant — mirroring the hand parser's
-        // is_pattern_start (`.`-only) branch.
-        let nm = capval_tok_text(env.get(args[0]))
-        match env.get(args[2]) {
-            .Nil -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1])))))
-            _ -> return CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
-        }
-    }
-    if name == "PatStr" && args.length == 1 {
-        // The DSL lexer keeps the bookend quotes in a STRING token; the
-        // Pattern.LitString stores the unquoted content (render re-quotes).
-        let raw = capval_tok_text(env.get(args[0]))
-        let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
-        return CapVal.PNode(st.store.pats.add_leaf(Pattern.LitString(content)))
-    }
-    if name == "PatBool" && args.length == 1 {
-        let v = if capval_tok_text(env.get(args[0])) == "true" { 1 } else { 0 }
-        return CapVal.PNode(st.store.pats.add_leaf(Pattern.LitBool(v)))
-    }
-    if name == "PatNum" && args.length == 1 {
-        return CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
-    }
-    if name == "PatNegNum" && args.length == 1 {
-        return CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
-    }
-    // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) ──
-    if name == "TyUnion" && args.length == 2 {
-        // `l ( "|" r )*` — left-associative union, mirroring parse_type_expr's
-        // while-loop. No `|` ⇒ just the left atom.
-        match env.get(args[1]) {
-            .Nil -> return env.get(args[0])
-            _ -> {
-                mut acc = capval_to_texpr(st, env.get(args[0]))
-                for rt in capval_to_texpr_list(env.get(args[1])) {
-                    acc = TypeExpr.Union(acc, rt)
+        "ForLoop" if args.length == 4 -> {
+            // `for v in lo [.. hi] body`. The optional `.. hi` picks the AST:
+            // present ⇒ integer-range `Stmt.For(v, lo, hi, body)`, absent ⇒
+            // collection `Stmt.ForIn(v, lo, body)` — mirroring the hand
+            // parser's post-expression `..`-lookahead branch (for_stmt/parser.av).
+            let var = capval_tok_text(env.get(args[0]))
+            let lo = capval_to_expr(st, env.get(args[1]))
+            let body = capval_to_stmt(st, env.get(args[3]))
+            match env.get(args[2]) {
+                .Nil -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
+                _ -> {
+                    let hi = capval_to_expr(st, env.get(args[2]))
+                    CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
                 }
-                return CapVal.TExpr(acc)
             }
         }
-    }
-    if name == "MkNamed" && args.length == 3 {
-        // `name ( "<" args ">" )? ( "?" )?` — a named type, optionally generic,
-        // optionally nullable, matching parse_type_atom's identifier branch.
-        let nm = capval_tok_text(env.get(args[0]))
-        mut base = if capval_present(env.get(args[1])) {
-            TypeExpr.Generic(nm, capval_to_texpr_list(env.get(args[1])))
-        } else {
-            TypeExpr.Named(nm)
-        }
-        if capval_present(env.get(args[2])) { base = TypeExpr.Optional(base) }
-        return CapVal.TExpr(base)
-    }
-    if name == "TyList" && args.length == 1 {
-        return CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
-    }
-    if name == "TyParen" && args.length == 1 {
-        // `( t ( "," t )* )` — a single element is grouping (the type itself);
-        // multiple are a tuple `Generic("__tuple", …)`, matching parse_type_atom.
-        match env.get(args[0]) {
-            .TExpr(te) -> return CapVal.TExpr(te)
-            .TExprs(tes) -> return CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
-            _ -> return CapVal.TExpr(TypeExpr.Generic("__tuple", []))
-        }
-    }
-    if name == "TyDyn" && args.length == 1 {
-        // `dyn Trait` lowers to a bare Named(trait) — dynamic dispatch is a
-        // resolve/codegen concern, not a distinct TypeExpr shape.
-        return CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
-    }
-    if name == "MkFn" && args.length == 3 {
-        // `fn ( "(" params? ")" )? ( "->" ret )?`. A bare `fn` (neither a
-        // param list nor an arrow) is the under-determined Named("fn"); any
-        // `(`/`->` makes it a FnType (params default [], ret defaults Infer) —
-        // mirroring parse_type_atom's `fn` branch.
-        let has_params = capval_present(env.get(args[0]))
-        let has_ret = capval_present(env.get(args[2]))
-        if !has_params && !has_ret {
-            return CapVal.TExpr(TypeExpr.Named("fn"))
-        }
-        let ret = if has_ret { capval_to_texpr(st, env.get(args[2])) } else { TypeExpr.Infer }
-        return CapVal.TExpr(TypeExpr.FnType(capval_to_texpr_list(env.get(args[1])), ret))
-    }
-    // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
-    // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
-    // lowers through the SHARED type family (a captured TExpr → ValueType via
-    // type_expr_to_vtype); absent ⇒ Unknown — exactly the hand parser's
-    // `ty_vt = Unknown` default. `let mut` and a bare `mut` both build Mut.
-    if name == "MkLet" && args.length == 3 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Let(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-    }
-    if name == "MkMut" && args.length == 3 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Mut(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-    }
-    if name == "MkConst" && args.length == 3 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Const(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-    }
-    if name == "MkDestructure" && args.length == 2 {
-        // `let (a, b, …) = init` — the ident list becomes ParamEntry bindings
-        // (names only, per parse_destructure_names' Unknown-vtype rows).
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(param_entries_from_toks(env.get(args[0])), capval_to_expr(st, env.get(args[1])))))
-    }
-    if name == "MkDefer" && args.length == 1 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
-    }
-    if name == "MkErrdefer" && args.length == 1 {
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
-    }
-    // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
-    if name == "MkArm" && args.length == 3 {
-        // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
-        // the boxed Pattern (read back from the arena — render_match_arm renders
-        // it) AND its PatId; the guard is nullable (absent ⇒ none).
-        let pat_id = capval_to_pat(st, env.get(args[0]))
-        mut guard: ExprId? = none
-        if capval_present(env.get(args[1])) { guard = capval_to_expr(st, env.get(args[1])) }
-        return CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
-    }
-    if name == "MkMatch" && args.length == 2 {
-        // `match subject { arm* }` — statement-position match.
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
-    }
-    // ── Declaration builds (target: Stmt, ps3t.6.5.7) ──
-    if name == "MkParam" && args.length == 2 {
-        // `pname ( ":" type )?` — a fn parameter. An UN-annotated param
-        // defaults to Int, matching parse_param_list's `resolved = Int`
-        // (NOT Unknown — fn params differ from bindings here).
-        let pvt = if capval_present(env.get(args[1])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) } else { ValueType.Int }
-        return CapVal.PEntry(ParamEntry { name: capval_tok_text(env.get(args[0])), vtype: pvt })
-    }
-    if name == "MkFnDecl" && args.length == 4 {
-        // `fn name ( params? ) ( "->" ret )? { body }`. No generics in this
-        // slice (type_params = []); an absent return type defaults to Void
-        // (parse_function_declaration's `ret_vtype = Void`).
-        let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
-        let no_tp: List<TypeParamEntry> = []
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
-    }
-    // `name : type` — a struct/variant field. The type lowers through the
-    // shared type family; a field ALWAYS carries a type (parse_field_list
-    // requires the `:`), so no default is involved.
-    if name == "MkField" && args.length == 2 {
-        return CapVal.Field(FieldEntry { name: capval_tok_text(env.get(args[0])), resolved: type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) })
-    }
-    if name == "MkTypeDecl" && args.length == 2 {
-        // `type Name = { field* }` — struct declaration (no generics this
-        // slice; type_params = []). Union-alias / newtype / type-operator RHS
-        // forms are follow-ups.
-        let no_tp: List<TypeParamEntry> = []
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_field_list(env.get(args[1])))))
-    }
-    if name == "MkEVariant" && args.length == 2 {
-        // `Name` (no payload ⇒ empty fields) or `Name( field, … )` — an enum
-        // variant. Field payload reuses MkField (the same `name : type`).
-        return CapVal.Var(Variant { name: capval_tok_text(env.get(args[0])), fields: capval_to_field_list(env.get(args[1])) })
-    }
-    if name == "MkEnumDecl" && args.length == 2 {
-        // `enum Name { variant* }` (no generics this slice).
-        let no_tp: List<TypeParamEntry> = []
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
-    }
-    if name == "MkUse" && args.length == 3 {
-        // `use ( "@" )? seg ( "." seg )* { names }` — an import. The path is
-        // the dot-joined segments (leading "@" for a package-qualified path);
-        // the names reuse the bare-name ParamEntry list (parse_use_name_list).
-        mut path = ""
-        match env.get(args[1]) {
-            .Toks(ts) -> {
-                for t in ts { path = if path == "" { t.text } else { path + "." + t.text } }
+        // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
+        "OrMaybe" if args.length == 2 -> {
+            // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
+            // Absent `or` ⇒ just the left pattern; present ⇒ `Pattern.Or(l, r)`
+            // (right-associative, since `r` is itself a pattern_or).
+            match env.get(args[1]) {
+                .Nil -> env.get(args[0])
+                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, env.get(args[0])), capval_to_pat(st, env.get(args[1])))))
             }
-            .Tok(t) -> path = t.text
-            _ -> {}
         }
-        if capval_present(env.get(args[0])) { path = "@" + path }
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2])))))
+        "IdentPat" if args.length == 2 -> {
+            // A bare identifier pattern: `_` ⇒ Wildcard, `rest` ⇒ Rest (both
+            // contextual — only when NOT followed by `(`), and `name(binding)`
+            // ⇒ TypePattern. Any other bare identifier is not a pattern (the
+            // hand parser errors); we report + fall back to Wildcard.
+            let nm = capval_tok_text(env.get(args[0]))
+            match env.get(args[1]) {
+                .Nil -> {
+                    if nm == "_" {
+                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
+                    } else if nm == "rest" {
+                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Rest))
+                    } else {
+                        st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
+                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
+                    }
+                }
+                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(nm, capval_tok_text(env.get(args[1])))))
+            }
+        }
+        "MkVariant" if args.length == 3 -> {
+            // `.Name` / `.Name(bind, …)` / `.Name(.Sub, …)`. A sub-pattern
+            // payload (first token `.`) ⇒ NestedVariant; a binding payload
+            // (identifiers) or none ⇒ Variant — mirroring the hand parser's
+            // is_pattern_start (`.`-only) branch.
+            let nm = capval_tok_text(env.get(args[0]))
+            match env.get(args[2]) {
+                .Nil -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1])))))
+                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
+            }
+        }
+        "PatStr" if args.length == 1 -> {
+            // The DSL lexer keeps the bookend quotes in a STRING token; the
+            // Pattern.LitString stores the unquoted content (render re-quotes).
+            let raw = capval_tok_text(env.get(args[0]))
+            let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
+            CapVal.PNode(st.store.pats.add_leaf(Pattern.LitString(content)))
+        }
+        "PatBool" if args.length == 1 -> {
+            let v = if capval_tok_text(env.get(args[0])) == "true" { 1 } else { 0 }
+            CapVal.PNode(st.store.pats.add_leaf(Pattern.LitBool(v)))
+        }
+        "PatNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
+        "PatNegNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
+        // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) ──
+        "TyUnion" if args.length == 2 -> {
+            // `l ( "|" r )*` — left-associative union, mirroring parse_type_expr's
+            // while-loop. No `|` ⇒ just the left atom.
+            match env.get(args[1]) {
+                .Nil -> env.get(args[0])
+                _ -> {
+                    mut acc = capval_to_texpr(st, env.get(args[0]))
+                    for rt in capval_to_texpr_list(env.get(args[1])) {
+                        acc = TypeExpr.Union(acc, rt)
+                    }
+                    CapVal.TExpr(acc)
+                }
+            }
+        }
+        "MkNamed" if args.length == 3 -> {
+            // `name ( "<" args ">" )? ( "?" )?` — a named type, optionally generic,
+            // optionally nullable, matching parse_type_atom's identifier branch.
+            let nm = capval_tok_text(env.get(args[0]))
+            mut base = if capval_present(env.get(args[1])) {
+                TypeExpr.Generic(nm, capval_to_texpr_list(env.get(args[1])))
+            } else {
+                TypeExpr.Named(nm)
+            }
+            if capval_present(env.get(args[2])) { base = TypeExpr.Optional(base) }
+            CapVal.TExpr(base)
+        }
+        "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
+        "TyParen" if args.length == 1 -> {
+            // `( t ( "," t )* )` — a single element is grouping (the type itself);
+            // multiple are a tuple `Generic("__tuple", …)`, matching parse_type_atom.
+            match env.get(args[0]) {
+                .TExpr(te) -> CapVal.TExpr(te)
+                .TExprs(tes) -> CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
+                _ -> CapVal.TExpr(TypeExpr.Generic("__tuple", []))
+            }
+        }
+        "TyDyn" if args.length == 1 -> {
+            // `dyn Trait` lowers to a bare Named(trait) — dynamic dispatch is a
+            // resolve/codegen concern, not a distinct TypeExpr shape.
+            CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
+        }
+        "MkFn" if args.length == 3 -> {
+            // `fn ( "(" params? ")" )? ( "->" ret )?`. A bare `fn` (neither a
+            // param list nor an arrow) is the under-determined Named("fn"); any
+            // `(`/`->` makes it a FnType (params default [], ret defaults Infer) —
+            // mirroring parse_type_atom's `fn` branch.
+            let has_params = capval_present(env.get(args[0]))
+            let has_ret = capval_present(env.get(args[2]))
+            if !has_params && !has_ret {
+                CapVal.TExpr(TypeExpr.Named("fn"))
+            } else {
+                let ret = if has_ret { capval_to_texpr(st, env.get(args[2])) } else { TypeExpr.Infer }
+                CapVal.TExpr(TypeExpr.FnType(capval_to_texpr_list(env.get(args[1])), ret))
+            }
+        }
+        // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
+        // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
+        // lowers through the SHARED type family (a captured TExpr → ValueType via
+        // type_expr_to_vtype); absent ⇒ Unknown — exactly the hand parser's
+        // `ty_vt = Unknown` default. `let mut` and a bare `mut` both build Mut.
+        "MkLet" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Let(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+        "MkMut" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Mut(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+        "MkConst" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Const(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
+        "MkDestructure" if args.length == 2 -> {
+            // `let (a, b, …) = init` — the ident list becomes ParamEntry bindings
+            // (names only, per parse_destructure_names' Unknown-vtype rows).
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(param_entries_from_toks(env.get(args[0])), capval_to_expr(st, env.get(args[1])))))
+        }
+        "MkDefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
+        "MkErrdefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
+        // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
+        "MkArm" if args.length == 3 -> {
+            // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
+            // the boxed Pattern (read back from the arena — render_match_arm renders
+            // it) AND its PatId; the guard is nullable (absent ⇒ none).
+            let pat_id = capval_to_pat(st, env.get(args[0]))
+            mut guard: ExprId? = none
+            if capval_present(env.get(args[1])) { guard = capval_to_expr(st, env.get(args[1])) }
+            CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
+        }
+        "MkMatch" if args.length == 2 -> {
+            // `match subject { arm* }` — statement-position match.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
+        }
+        // ── Declaration builds (target: Stmt, ps3t.6.5.7) ──
+        "MkParam" if args.length == 2 -> {
+            // `pname ( ":" type )?` — a fn parameter. An UN-annotated param
+            // defaults to Int, matching parse_param_list's `resolved = Int`
+            // (NOT Unknown — fn params differ from bindings here).
+            let pvt = if capval_present(env.get(args[1])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) } else { ValueType.Int }
+            CapVal.PEntry(ParamEntry { name: capval_tok_text(env.get(args[0])), vtype: pvt })
+        }
+        "MkFnDecl" if args.length == 4 -> {
+            // `fn name ( params? ) ( "->" ret )? { body }`. No generics in this
+            // slice (type_params = []); an absent return type defaults to Void
+            // (parse_function_declaration's `ret_vtype = Void`).
+            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
+            let no_tp: List<TypeParamEntry> = []
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
+        }
+        "MkField" if args.length == 2 -> {
+            // `name : type` — a struct/variant field. The type lowers through the
+            // shared type family; a field ALWAYS carries a type (parse_field_list
+            // requires the `:`), so no default is involved.
+            CapVal.Field(FieldEntry { name: capval_tok_text(env.get(args[0])), resolved: type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) })
+        }
+        "MkTypeDecl" if args.length == 2 -> {
+            // `type Name = { field* }` — struct declaration (no generics this
+            // slice; type_params = []). Union-alias / newtype / type-operator RHS
+            // forms are follow-ups.
+            let no_tp: List<TypeParamEntry> = []
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_field_list(env.get(args[1])))))
+        }
+        "MkEVariant" if args.length == 2 -> {
+            // `Name` (no payload ⇒ empty fields) or `Name( field, … )` — an enum
+            // variant. Field payload reuses MkField (the same `name : type`).
+            CapVal.Var(Variant { name: capval_tok_text(env.get(args[0])), fields: capval_to_field_list(env.get(args[1])) })
+        }
+        "MkEnumDecl" if args.length == 2 -> {
+            // `enum Name { variant* }` (no generics this slice).
+            let no_tp: List<TypeParamEntry> = []
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
+        }
+        "MkUse" if args.length == 3 -> {
+            // `use ( "@" )? seg ( "." seg )* { names }` — an import. The path is
+            // the dot-joined segments (leading "@" for a package-qualified path);
+            // the names reuse the bare-name ParamEntry list (parse_use_name_list).
+            mut path = ""
+            match env.get(args[1]) {
+                .Toks(ts) -> {
+                    for t in ts { path = if path == "" { t.text } else { path + "." + t.text } }
+                }
+                .Tok(t) -> path = t.text
+                _ -> {}
+            }
+            if capval_present(env.get(args[0])) { path = "@" + path }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2])))))
+        }
+        "MkModule" if args.length == 1 -> {
+            // `mod name` — a module STUB. The surface form carries no inline body
+            // (parse_module_declaration produces `Stmt.Module(name, [])`); the
+            // resolver fills the body from the corresponding `.av` file later.
+            let empty_body: List<StmtId> = []
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(env.get(args[0])), empty_body)))
+        }
+        _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
     }
-    if name == "MkModule" && args.length == 1 {
-        // `mod name` — a module STUB. The surface form carries no inline body
-        // (parse_module_declaration produces `Stmt.Module(name, [])`); the
-        // resolver fills the body from the corresponding `.av` file later.
-        let empty_body: List<StmtId> = []
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(env.get(args[0])), empty_body)))
-    }
-    CapVal.Node(st.error_node("unknown build `${name}`"))
 }
 
 /// An optional `: type` annotation capture → the declared `ValueType`, via
