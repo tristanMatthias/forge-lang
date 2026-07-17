@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_expr}
 
@@ -676,6 +676,24 @@ fn literal_node(st: PState, t: Token) -> ExprId {
 /// (ps3t.6.5.2): the simplest Stmt ctors — `Break`, `Continue`,
 /// `ReturnEmpty`, `Return(e)`, `ExprStmt(e)`. Unknown names are a reported
 /// error, not a silent miss.
+/// Re-type a method's leading `self` receiver to the concrete impl target,
+/// mirroring parse_method_param_list — which types `self` as
+/// `vtype_from_name(target)` (the receiver type), not as MkMethod's plain-param
+/// default. A static method (no leading `self`) is returned unchanged. Keeps
+/// the DSL's built AST structurally equal to the hand parser's, not merely
+/// render-equal (render_param_list omits param types).
+fn retype_self_param(params: List<ParamEntry>, target: string) -> List<ParamEntry> {
+    if params.length == 0 { return params }
+    if params[0].name != "self" { return params }
+    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: vtype_from_name(target) }]
+    mut i = 1
+    while i < params.length {
+        out.push(params[i])
+        i = i + 1
+    }
+    out
+}
+
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
     // Dispatch on the build name — one arm per grammar `-> Build(...)`, the
     // one target-specific seam (mirroring the derive engine's pluggable
@@ -980,6 +998,44 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             // ExternFn / Function / AssocType), exactly parse_trait_declaration's
             // `Stmt.TraitDecl(name, methods.ids)`.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))))
+        }
+        // ── Impl declaration builds (target: Stmt, ps3t.6.5.7) ──
+        "MkMethod" if args.length == 4 -> {
+            // One impl method, built with its PLAIN name here — the enclosing
+            // impl type isn't in scope in this (context-free) rule, so MkImpl
+            // re-keys the name to the mangled `Type__method` afterwards. `self`
+            // is parsed as a plain first param (render is names-only, so the
+            // hand parser's receiver-type synthesis is a non-issue here).
+            let mname = capval_tok_text(env.get(args[0]))
+            let params = capval_to_pentry_list(env.get(args[1]))
+            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
+            let no_tp: List<TypeParamEntry> = []
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(mname, no_tp, params, ret_vt, capval_to_stmt_list(env.get(args[3])))))
+        }
+        "MkImpl" if args.length == 3 -> {
+            // `impl Type { … }` or `impl Trait for Type { … }`. The mangling
+            // TARGET is the concrete type (the `for` type when present, else the
+            // header type), matching parse_impl_declaration's `target_name`; the
+            // impl name encodes `Trait:Type` for a trait impl, else just `Type`.
+            // Each method (built plain-named by MkMethod) is re-keyed to
+            // `target__method` — the one context-dependent step, done here where
+            // the impl type IS in scope.
+            let header = capval_tok_text(env.get(args[0]))
+            let has_for = capval_present(env.get(args[1]))
+            let target = if has_for { capval_tok_text(env.get(args[1])) } else { header }
+            let impl_name = if has_for { "${header}:${target}" } else { header }
+            mut mangled_ids: List<StmtId> = []
+            for id in capval_to_stmt_list(env.get(args[2])) {
+                match st.store.stmts.get(id) {
+                    // Re-key the plain method name to `target__method` AND
+                    // synthesize the `self` receiver's type from the impl target
+                    // (parse_method_param_list does both) — the two
+                    // context-dependent steps, done here where `target` is known.
+                    .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(ps, target), rv, bd)))
+                    _ -> mangled_ids.push(id)
+                }
+            }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
         }
         _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
     }
