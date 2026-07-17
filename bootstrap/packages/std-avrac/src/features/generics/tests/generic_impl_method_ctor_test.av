@@ -1,0 +1,78 @@
+// WHY: regression for t-mju0 — constructing a GENERIC struct inside a
+// generic impl method body must monomorphize. Before the fix, ANY such
+// construction raised `F1002: cannot infer type parameter `V``, even
+// field-anchored (`Box { v }` with `v: V`) or carrying a `Foo<V>` binding
+// annotation — which blocked the L6 query engine's whole shape (a `Db<V>`
+// whose methods build `MemoEntry<V>` / `QueryCtx<V>` cells, ps3t.8.2).
+//
+// Root cause in features/generics/mono.av: `collect_inst_stmt` skips GENERIC
+// FN bodies (`.Function`: `tp.length > 0`) because their types name unbound
+// params — but the `.Impl(_, methods)` arm descended UNCONDITIONALLY, and a
+// method is a `.Function` with its OWN `tp` empty (the params live on the
+// impl), so the un-specialised body was collected with `V` unbound → F1002.
+// The fix gates the `.Impl` arm on `is_generic_impl` — the impl-side mirror
+// of the generic-fn skip. The specialised copies (bodies substituted by
+// `specialize_method`) are collected by `mono_converge`, exactly as pass 4
+// already drops the un-specialised originals: collect what will be emitted.
+//
+// The `then` blocks RUN the constructed values, so a regression fails at
+// compile time (F1002 returns) or with a wrong value — never silently.
+
+// Field-anchored construction: `v: V` pins the nested instance's param.
+type GmBox<V> = { v: V }
+// Annotation-only construction: `items` is an empty collection, so only the
+// binding's `GmPair<V>` annotation can supply `V`.
+type GmPair<V> = { items: List<V>, n: int }
+// The engine shape: methods that build BOTH, plus a nested generic field.
+type GmHolder<V> = { boxes: List<GmBox<V>> }
+
+impl GmHolder<V> {
+    // Nested generic struct literal, field-anchored by a V-typed param.
+    fn add(self, v: V) {
+        let b: GmBox<V> = GmBox { v }
+        self.boxes.push(b)
+    }
+    // Nested generic struct literal bound ONLY by the binding annotation
+    // (empty-collection field) — the expected-type fill channel, inside a
+    // generic impl method.
+    fn fresh_pair(self) -> GmPair<V> {
+        let items: List<V> = []
+        let p: GmPair<V> = GmPair { items, n: self.boxes.length }
+        p
+    }
+    // Read back through the nested instance, so the mono'd layout is
+    // exercised end-to-end (a wrong stamp fails here, not just at build).
+    fn first_or(self, d: V) -> V {
+        if self.boxes.length > 0 { self.boxes[0].v } else { d }
+    }
+}
+
+fn int_holder() -> GmHolder<int> {
+    let boxes: List<GmBox<int>> = []
+    let mut h: GmHolder<int> = GmHolder { boxes }
+    h.add(7)
+    h.add(9)
+    h
+}
+
+fn str_holder() -> GmHolder<string> {
+    let boxes: List<GmBox<string>> = []
+    let mut h: GmHolder<string> = GmHolder { boxes }
+    h.add("query")
+    h
+}
+
+spec "generic struct literals inside generic impl methods monomorphize (t-mju0)" {
+    then "a field-anchored nested construction round-trips (int instance)" {
+        int_holder().first_or(-1) == 7
+    }
+    then "a second instantiation of the same impl coexists (string instance)" {
+        str_holder().first_or("?") == "query"
+    }
+    then "an annotation-only construction (empty-collection field) binds V from the binding" {
+        int_holder().fresh_pair().n == 2
+    }
+    then "the annotation-only path works on the second instantiation too" {
+        str_holder().fresh_pair().n == 1
+    }
+}

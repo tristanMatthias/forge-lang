@@ -1,0 +1,422 @@
+// WHY: the L6 red-green query engine runtime core (ps3t.8.2 / design doc
+// docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md §2-§3). The compiler stops being
+// an assembly line and becomes a spreadsheet: a graph of pure queries that
+// each remember their answer. Edit one input → recompute only the answers
+// that transitively depended on it, and stop the moment a recomputed answer
+// equals its old one (EARLY CUTOFF). This file is the ENGINE only — the memo
+// store, the dependency graph, red-green (changed_at/verified_at)
+// invalidation, early cutoff, and cycle detection. It knows nothing about
+// passes; drivers (and, until P0/P4 wire the real passes, the specs under
+// tests/) define their query families and one compute dispatcher.
+//
+// THE MODEL (§2). A query is a pure fn `Key -> (Value, Diagnostics)`.
+//  - INPUT queries (graph leaves — `source(file)`, flags) are set explicitly
+//    via `db_set_input`; changing one bumps the db's revision.
+//  - DERIVED queries are computed by the driver's `compute` dispatcher; their
+//    deps are DISCOVERED by execution (every `ctx_fetch` records into the
+//    active dep frame), never declared.
+// The engine is generic over ONE value type `V` per database — the driver
+// supplies a value enum (or string) spanning its families; the engine treats
+// values as opaque bits + a content hash ("value: <per-query type>, opaque to
+// the engine", §2.1).
+//
+// RED-GREEN (§3). Every memo cell tracks `changed_at` (revision its answer
+// last actually CHANGED — red) and `verified_at` (revision it was last
+// CONFIRMED current — green), maintaining changed_at <= verified_at <=
+// current_rev. `db_fetch` re-verifies a stale cell by walking its recorded
+// deps in execution order: no dep newer than `verified_at` → green-revalidate
+// without recomputing (the deep win — whole subtrees revalidate by comparing
+// two ints); some dep newer → recompute, then compare the new answer's hash —
+// equal → keep `changed_at` (the change-wave dies here: early cutoff).
+// Diagnostics ride WITH values (§10): the cutoff hash covers both, so error
+// quality is identical incremental vs from-scratch.
+//
+// CYCLES (§3.2) error by default: one active stack covers both verification
+// and computation, and any re-entry returns `QueryCycle` with the offending
+// path (surface as F3900 via `query_cycle_diag`). Covering VERIFICATION too
+// is load-bearing, not conservatism: a dep list recorded at an older revision
+// can point back at a query currently being verified, and serving its
+// possibly-stale value mid-verification would let a dependent revalidate
+// against data the same wave is about to change. Fixpoint iteration for
+// legitimately recursive queries is the designed opt-in — added with the
+// first query family that needs it.
+//
+// NO MUTABLE GLOBALS (rule 17 / §3.1): the database is a threaded value, the
+// active dep frame lives on the `QueryCtx` handed to each compute run, and
+// the in-progress stack is a `Db` field — so parallel query execution later
+// needs a scheduler, not a redesign.
+//
+// STYLE NOTE (bootstrap window). The engine ships as FREE GENERIC FNS
+// (`db_fetch(db, q)`), and the one nested-generic `Result` seam (the compute
+// call) destructures via `match` — the shapes the PINNED integration seed
+// compiles today. `impl Db<V>` methods and a `?` at that seam need this very
+// branch's mono fixes (t-mju0/t-c6gj) baked into the seed, so the
+// method-ification is queued for after the seed train advances past them —
+// the standard dogfood-after-the-train-advances discipline, tracked as a
+// follow-up on ps3t.8.2.
+//
+// The engine's correctness oracle — incremental == from-scratch, asserted
+// per edit step over values AND diagnostics — lives in oracle.av (ps3t.8.7).
+
+use core.{content_id_for}
+use diagnostics.{Diagnostic, DiagCode, diag_error, diag_canonical, span_dummy}
+
+/// The C int-keyed map primitive (int -> int), declared per-module the same
+/// way core/side_table.av / core/registry.av declare it (extern decls don't
+/// cross modules). Each family's `idx` maps a content-addressed argument key
+/// to its memo-cell slot. (`SparseTable` is not reusable here: its typed-id
+/// keys are `@opaque`-gated to `core`, and a query argument key is a raw
+/// content hash, not a node id.)
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// A query's identity: `(family, arg)` — §2.1's `QueryKey = (QueryTag,
+/// content-addressed argument key)`. `family` is a small dense int the driver
+/// assigns per query kind (`source`, `ast`, `typeck`, …); `arg` is the
+/// content-addressed argument (an L3 content id for per-item queries, a file
+/// id for per-file ones — NEVER per-node, §2.1).
+export type QueryKey = { family: int, arg: int }
+
+/// Construct a QueryKey.
+export fn qk(family: int, arg: int) -> QueryKey {
+    QueryKey { family, arg }
+}
+
+/// Key equality — two queries are the same cell iff family AND arg match.
+export fn qk_eq(a: QueryKey, b: QueryKey) -> bool {
+    a.family == b.family && a.arg == b.arg
+}
+
+/// Debug/diagnostic render of a key (`family:arg`). Drivers with meaningful
+/// family names should render their own (see `query_cycle_diag`).
+export fn qk_render(q: QueryKey) -> string {
+    "${string(q.family)}:${string(q.arg)}"
+}
+
+/// What a compute run returns to the engine: the answer, its content hash
+/// (the early-cutoff signal — drivers hash with `content_id_for` for the one
+/// hash story, §15.2), and the diagnostics produced while computing it.
+/// Diagnostics memoize and invalidate WITH the value (§10).
+export type Computed<V> = { value: V, value_hash: int, diags: List<Diagnostic> }
+
+/// A diagnostic-free answer — the common constructor.
+export fn computed<V>(value: V, value_hash: int) -> Computed<V> {
+    let no_diags: List<Diagnostic> = []
+    Computed { value, value_hash, diags: no_diags }
+}
+
+/// The error carried out of a fetch whose evaluation re-entered an
+/// in-progress query: the cycle path, first occurrence through the repeat
+/// (`[a, b, a]` for a↔b). Render as an F3900 via `query_cycle_diag`.
+export type QueryCycle = { path: List<QueryKey> }
+
+/// A fetched answer: the memoized value plus the diagnostics that ride with
+/// it. What the DRIVER receives; dependents inside compute runs receive just
+/// the value (`ctx_fetch`). Both fields ALIAS the memo cell (no per-fetch
+/// copy) — treat them as immutable, like every memoized answer.
+export type Fetched<V> = { value: V, diags: List<Diagnostic> }
+
+/// One memo cell (§2.1's MemoEntry). `answer_hash` covers value AND
+/// diagnostics — the early-cutoff comparison. Invariant at all times:
+/// `changed_at <= verified_at <= db.current_rev`.
+type MemoEntry<V> = {
+    value: V,
+    answer_hash: int,
+    deps: List<QueryKey>,
+    diags: List<Diagnostic>,
+    changed_at: int,
+    verified_at: int,
+}
+
+/// One query family's memo cells: `idx` maps `arg` -> slot in `cells`, and
+/// `computes` counts compute runs (the instrumentation the differential
+/// oracle asserts cutoff with — a cutoff that "works" but recomputes
+/// everything would otherwise be invisible).
+type FamilyMemo<V> = { idx: ptr, cells: List<MemoEntry<V>>, computes: int }
+
+/// The query database (§2.1): the revision counter, the per-family memo
+/// stores, the driver's compute dispatcher (one pure fn from `(ctx, key)` to
+/// the computed answer, matching on `key.family` — reads of other queries
+/// MUST go through `ctx_fetch`, which is what records the dependency edge),
+/// and the in-progress stack that cycle detection walks. Thread it as a
+/// value — never a global (rule 17).
+export type Db<V> = {
+    current_rev: int,
+    families: List<FamilyMemo<V>>,
+    compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>,
+    active: List<QueryKey>,
+}
+
+/// The dep-tracking frame handed to one compute run (§3.1). Every
+/// `ctx_fetch` records the requested key into `deps` — on completion the
+/// engine stores that list as the query's discovered dependencies. Carried as
+/// a parameter, not a global, so parallel compute runs can't interleave
+/// frames.
+export type QueryCtx<V> = { db: Db<V>, deps: List<QueryKey> }
+
+// ── State-write methods ──
+//
+// The resolver's mutability rule (F3001) makes fn PARAMS immutable; `self`
+// in an impl method is the sanctioned mutation channel ("struct methods use
+// self-by-pointer"). So the algorithm lives in free generic fns (whose
+// bodies the seed's mono collector skips) and every direct field write on a
+// threaded struct goes through one of these single-purpose methods — whose
+// bodies construct nothing generic and call nothing generic, the one method
+// shape the pinned seed compiles (see the WHY's style note).
+
+impl Db<V> {
+    /// Advance the revision counter — every genuine input change is one tick.
+    fn bump_rev(self) { self.current_rev = self.current_rev + 1 }
+    /// Append a (freshly built) family store.
+    fn push_family(self, fam: FamilyMemo<V>) { self.families.push(fam) }
+    /// Mark `q` in-progress (cycle detection).
+    fn push_active(self, q: QueryKey) { self.active.push(q) }
+    /// Unmark the innermost in-progress query.
+    fn pop_active(self) { let _ = self.active.pop() }
+}
+
+impl QueryCtx<V> {
+    /// Record a dependency edge into this compute run's frame.
+    fn note_dep(self, q: QueryKey) { self.deps.push(q) }
+}
+
+impl FamilyMemo<V> {
+    /// Append a fresh cell and index it under `arg` — the shared insert step
+    /// of the two memo writers (input set + recompute). Returns the slot.
+    fn insert(self, arg: int, cell: MemoEntry<V>) -> int {
+        let slot = self.cells.length
+        self.cells.push(cell)
+        avra_intmap_set(self.idx, arg, slot)
+        slot
+    }
+}
+
+/// A fresh, empty database over the driver's compute dispatcher. `V` comes
+/// from the binding annotation (`let mut db: Db<string> = db_new(my_compute)`).
+export fn db_new<V>(compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>) -> Db<V> {
+    let families: List<FamilyMemo<V>> = []
+    let active: List<QueryKey> = []
+    Db { current_rev: 0, families, compute, active }
+}
+
+/// Set an INPUT query's value (§2: graph leaves, no deps, never computed).
+/// Setting a genuinely new value bumps the revision and marks the cell
+/// changed; re-setting an equal value (same hash) is a no-op — the revision
+/// doesn't move, so every downstream `verified_at == current_rev` hot path
+/// stays hot.
+export fn db_set_input<V>(db: Db<V>, q: QueryKey, value: V, value_hash: int) {
+    mut fam = db_family<V>(db, q.family)
+    if avra_intmap_has(fam.idx, q.arg) != 0 {
+        mut e = fam.cells[avra_intmap_get(fam.idx, q.arg)]
+        if e.answer_hash == value_hash {
+            return
+        }
+        db.bump_rev()
+        e.value = value
+        e.answer_hash = value_hash
+        // A set cell is a LEAF from now on, whatever its earlier life: clear
+        // any deps a derived past recorded, or a later verification would
+        // walk them and hand an input back to the compute dispatcher — and
+        // clear any diagnostics that past computed, or the pinned input would
+        // keep replaying a derived error it can no longer produce.
+        let no_deps: List<QueryKey> = []
+        e.deps = no_deps
+        let no_diags: List<Diagnostic> = []
+        e.diags = no_diags
+        e.changed_at = db.current_rev
+        e.verified_at = db.current_rev
+        return
+    }
+    db.bump_rev()
+    let deps: List<QueryKey> = []
+    let no_diags: List<Diagnostic> = []
+    let cell: MemoEntry<V> = MemoEntry { value, answer_hash: value_hash, deps, diags: no_diags, changed_at: db.current_rev, verified_at: db.current_rev }
+    let _ = fam.insert(q.arg, cell)
+}
+
+/// Fetch a query's answer — THE driver entry point. Runs the red-green
+/// algorithm (§3): memo hot path, green revalidation, or recompute with
+/// early cutoff. Errors only on a query cycle.
+export fn db_fetch<V>(db: Db<V>, q: QueryKey) -> Result<Fetched<V>, QueryCycle> {
+    let slot = db_fetch_slot<V>(db, q)?
+    let e = db_family<V>(db, q.family).cells[slot]
+    let f: Fetched<V> = Fetched { value: e.value, diags: e.diags }
+    Result.Ok(f)
+}
+
+/// Read another query from inside a compute run: records the dependency
+/// edge, then fetches through the engine (memo-hit, green-revalidate, or
+/// recursive recompute — the caller can't tell, by design). Propagate the
+/// `QueryCycle` with `?`.
+export fn ctx_fetch<V>(ctx: QueryCtx<V>, q: QueryKey) -> Result<V, QueryCycle> {
+    ctx.note_dep(q)
+    let slot = db_fetch_slot<V>(ctx.db, q)?
+    Result.Ok(db_family<V>(ctx.db, q.family).cells[slot].value)
+}
+
+/// Compute runs performed for `family` so far — the instrumentation the
+/// differential oracle (and the incremental-latency metric, ps3t.10 M1)
+/// reads. A correct engine shows this NOT growing when early cutoff or green
+/// revalidation should have absorbed an edit.
+export fn db_computes_of<V>(db: Db<V>, family: int) -> int {
+    db_family<V>(db, family).computes
+}
+
+/// Compute runs across ALL families — the oracle's work-done tally: an
+/// incremental replay must not just match from-scratch answers, it must do
+/// strictly less computing (else the engine is a very elaborate no-op).
+export fn db_total_computes<V>(db: Db<V>) -> int {
+    mut total = 0
+    for i in 0..db.families.length {
+        total = total + db.families[i].computes
+    }
+    total
+}
+
+// ── Internals (the §3 algorithm) ──
+
+/// The family's memo store, created on first touch. Family tags are small
+/// dense ints (a driver enum), so a List indexed by tag is the whole
+/// registry.
+fn db_family<V>(db: Db<V>, tag: int) -> FamilyMemo<V> {
+    while db.families.length <= tag {
+        let cells: List<MemoEntry<V>> = []
+        let fresh: FamilyMemo<V> = FamilyMemo { idx: avra_intmap_new(), cells, computes: 0 }
+        db.push_family(fresh)
+    }
+    db.families[tag]
+}
+
+/// Steps 1-3 dispatch: hot path when already verified this revision;
+/// otherwise guard against re-entry (cycle), push onto the active stack, and
+/// verify-or-recompute. The pop is unconditional — an inner `QueryCycle`
+/// unwinds through `r` with the stack already restored, so the database
+/// stays usable after a reported cycle.
+fn db_fetch_slot<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
+    let fam = db_family<V>(db, q.family)
+    if avra_intmap_has(fam.idx, q.arg) != 0 {
+        let slot = avra_intmap_get(fam.idx, q.arg)
+        if fam.cells[slot].verified_at == db.current_rev {
+            return Result.Ok(slot)
+        }
+    }
+    let cyc = db_active_cycle<V>(db, q)
+    if cyc != null {
+        return Result.Err(cyc!)
+    }
+    db.push_active(q)
+    let r = db_fetch_unverified<V>(db, q)
+    db.pop_active()
+    r
+}
+
+/// `maybe_changed` (§3 step 3): walk the recorded deps IN EXECUTION ORDER,
+/// verifying each; the first dep whose answer changed after this cell was
+/// last verified forces a recompute (later deps may not even be deps anymore
+/// — the fresh run rediscovers them). No such dep → GREEN: stamp
+/// `verified_at` and return the cached slot untouched.
+fn db_fetch_unverified<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
+    mut fam = db_family<V>(db, q.family)
+    if avra_intmap_has(fam.idx, q.arg) != 0 {
+        let slot = avra_intmap_get(fam.idx, q.arg)
+        mut e = fam.cells[slot]
+        mut dep_changed = false
+        for d in e.deps {
+            let dslot = db_fetch_slot<V>(db, d)?
+            if db_family<V>(db, d.family).cells[dslot].changed_at > e.verified_at {
+                dep_changed = true
+                break
+            }
+        }
+        if !dep_changed {
+            e.verified_at = db.current_rev
+            return Result.Ok(slot)
+        }
+    }
+    db_recompute<V>(db, q)
+}
+
+/// Run the driver's compute under a fresh dep frame and store the answer
+/// (§3 step 3c). EARLY CUTOFF is the hash compare: an unchanged answer keeps
+/// its old `changed_at`, so every dependent's `changed_at > verified_at`
+/// test stays false and the change-wave dies here. Both outcomes replace
+/// `deps` with the freshly-discovered set and stamp `verified_at`. (The
+/// compute result is destructured with `match`, not `?` — see the WHY's
+/// bootstrap-window style note.)
+fn db_recompute<V>(db: Db<V>, q: QueryKey) -> Result<int, QueryCycle> {
+    let fresh_deps: List<QueryKey> = []
+    let ctx: QueryCtx<V> = QueryCtx { db, deps: fresh_deps }
+    // The counter moves BEFORE dispatch: a compute that dies on a cycle
+    // still ran the driver — counting only successes would underreport
+    // cycle-heavy runs and skew the oracle's work comparison.
+    mut fam = db_family<V>(db, q.family)
+    fam.computes = fam.computes + 1
+    match db.compute(ctx, q) {
+        .Err(c) -> Result.Err(c)
+        .Ok(out) -> {
+            let h = answer_hash_of(out.value_hash, out.diags)
+            if avra_intmap_has(fam.idx, q.arg) != 0 {
+                let slot = avra_intmap_get(fam.idx, q.arg)
+                mut e = fam.cells[slot]
+                if e.answer_hash != h {
+                    e.changed_at = db.current_rev
+                }
+                e.value = out.value
+                e.answer_hash = h
+                e.deps = ctx.deps
+                e.diags = out.diags
+                e.verified_at = db.current_rev
+                return Result.Ok(slot)
+            }
+            let cell: MemoEntry<V> = MemoEntry { value: out.value, answer_hash: h, deps: ctx.deps, diags: out.diags, changed_at: db.current_rev, verified_at: db.current_rev }
+            Result.Ok(fam.insert(q.arg, cell))
+        }
+    }
+}
+
+/// The cycle probe: is `q` already on the in-progress stack? If so, return
+/// the path from its first occurrence through the repeat.
+fn db_active_cycle<V>(db: Db<V>, q: QueryKey) -> QueryCycle? {
+    for i in 0..db.active.length {
+        if qk_eq(db.active[i], q) {
+            mut path: List<QueryKey> = []
+            for j in i..db.active.length {
+                path.push(db.active[j])
+            }
+            path.push(q)
+            return QueryCycle { path }
+        }
+    }
+    null
+}
+
+/// The early-cutoff signal over a full answer: value hash + every
+/// diagnostic's canonical identity, folded through `content_id_for` (the one
+/// hash story). Diagnostics participate so a diag-only change re-propagates
+/// — incremental error output must equal from-scratch (§10). The encoding is
+/// structural (count + a length-prefixed frame per canonical), so no crafted
+/// diagnostic content can make two DIFFERENT answers hash the same bytes —
+/// a collision here would silently freeze a stale answer past a real edit.
+fn answer_hash_of(value_hash: int, diags: List<Diagnostic>) -> int {
+    mut acc = "A:${string(value_hash)}|${string(diags.length)}"
+    for d in diags {
+        let c = diag_canonical(d)
+        acc = "${acc}|${string(c.length)}:${c}"
+    }
+    content_id_for(acc)
+}
+
+/// Render a QueryCycle as the F3900 diagnostic (§3.2). `render_key` maps a
+/// key to the driver's human name for it (`typeck(item foo)`); pass
+/// `qk_render` when no better naming exists. Spanless today — keys carry no
+/// source location until the real passes are query-shaped (P0); the path
+/// lives in the message.
+export fn query_cycle_diag(c: QueryCycle, render_key: fn(QueryKey) -> string) -> Diagnostic {
+    mut parts: List<string> = []
+    for q in c.path {
+        parts.push(render_key(q))
+    }
+    diag_error(DiagCode.QueryCycleDetected, "query cycle: ${parts.join(" -> ")}", span_dummy())
+}

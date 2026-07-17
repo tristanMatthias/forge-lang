@@ -1,0 +1,43 @@
+// WHY: regression for the qualified-enum-ctor match-arm parse bug (t-jgc0's
+// parser layer). An arm body of the form `@pkg::mod::Type.Variant(args)`
+// used to STOP the postfix chain at the type: `expr_is_upper_ident` tested
+// `p_starts_with_upper` on the FULL qualified name, which begins with `@`,
+// so `dot_is_postfix` refused the `.Variant` continuation — the `.Err(c)`
+// tail then leaked into the NEXT arm as a pattern and the whole match failed
+// with "expected `->` after pattern". The fix tests the LAST path segment.
+// Unqualified `Result.Err(c)` always worked; the qualified form is what the
+// metadata GenericBodies round-trip emits for every enum-ctor reference, so
+// without this every round-tripped generic body containing one re-parsed to
+// an EMPTY body (parse_body_source's failure fallback) and the consumer's
+// specialization of that fn silently returned null.
+//
+// Asserted via the fixture + `bs2 check` shell-out (the compile-error test
+// pattern): the fixture parses AND resolves cleanly today, and the two
+// historical symptoms ("expected `->` after pattern", the knock-on
+// "unexpected `}`") stay absent.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+fn qc_check_output() -> string {
+    let fixture = "build/_qualified_ctor_arm_fixture.av"
+    let src = "fn probe(x: int) -> int {\n" +
+        "    match x {\n" +
+        "        1 -> @std::avrac::features::error_propagation::Result.Err(x)\n" +
+        "        _ -> 0\n" +
+        "    }\n" +
+        "    0\n" +
+        "}\n" +
+        "fn main() { println(\"ok\") }\n"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check ${fixture} 2>&1 || true")
+}
+
+spec "a qualified enum-ctor arm body doesn't swallow the next arm (t-jgc0 parser layer)" {
+    then "the fixture parses — no arm-pattern leak" {
+        let out = qc_check_output()
+        !out.contains("expected `->` after pattern") && !out.contains("unexpected `}`")
+    }
+    then "the fixture is fully clean (parse + resolve + typecheck)" {
+        !qc_check_output().contains("error[")
+    }
+}

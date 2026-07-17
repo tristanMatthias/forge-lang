@@ -1,0 +1,63 @@
+// WHY: regression for the substitute_expr construction-site gap (t-jgc0's
+// mono layer) — inside a generic fn body, a type-param TURBOFISH nested in an
+// enum-ctor argument (`Result.Ok(helper<V>(x))`) or a struct-literal field
+// init (`Report { n: helper<V>(x) }`) must substitute when the fn
+// specializes. `substitute_expr` had no `.EnumCtor` / `.StructLit` /
+// `.TypeLit` arms, so those payloads fell through `_ -> expr` untouched: the
+// specialized body still carried a raw `V`, and collection either F1002'd
+// ("cannot infer type parameter `V`") or — when a concrete sibling inst
+// existed to merge with — silently mis-monomorphized. Surfaced by the
+// metadata GenericBodies round-trip, whose re-parsed bodies lean on explicit
+// type args everywhere; the shapes below are the minimal in-package repro.
+
+type NsBox<V> = { v: V }
+type NsReport<V> = { first: NsBox<V>, n: int }
+
+fn ns_box<V>(v: V) -> NsBox<V> {
+    NsBox { v }
+}
+
+// Turbofish nested in an ENUM-CTOR argument.
+fn ns_wrap_ok<V>(v: V) -> Result<NsBox<V>, string> {
+    Result.Ok(ns_box<V>(v))
+}
+
+// Turbofish nested in a STRUCT-LITERAL field init.
+fn ns_report<V>(v: V, n: int) -> NsReport<V> {
+    NsReport { first: ns_box<V>(v), n }
+}
+
+// Turbofish nested in a WITH-override init — the same construction-site
+// content as a fresh literal, carried by `.With`'s init list.
+fn ns_swap<V>(r: NsReport<V>, v: V) -> NsReport<V> {
+    r with { first: ns_box<V>(v) }
+}
+
+fn ns_unwrap_int(r: Result<NsBox<int>, string>) -> int {
+    match r {
+        .Ok(b) -> b.v
+        .Err(_) -> -1
+    }
+}
+
+fn ns_unwrap_str(r: Result<NsBox<string>, string>) -> string {
+    match r {
+        .Ok(b) -> b.v
+        .Err(_) -> "?"
+    }
+}
+
+spec "type-param turbofish substitutes inside construction sites (t-jgc0 mono layer)" {
+    then "an enum-ctor argument's nested generic call specializes (int)" {
+        ns_unwrap_int(ns_wrap_ok(41)) == 41
+    }
+    then "the same shape specializes independently at a second type (string)" {
+        ns_unwrap_str(ns_wrap_ok("deep")) == "deep"
+    }
+    then "a struct-literal field init's nested generic call specializes" {
+        ns_report(7, 2).first.v + ns_report(9, 3).n == 10
+    }
+    then "a with-override init's nested generic call specializes" {
+        ns_swap(ns_report(1, 5), 9).first.v == 9
+    }
+}

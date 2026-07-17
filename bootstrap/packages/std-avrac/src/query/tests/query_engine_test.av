@@ -1,0 +1,288 @@
+// WHY: acceptance spec for the L6 red-green query engine core (ps3t.8.2 /
+// design doc §2-§3). Exercises every clause of the fetch algorithm through
+// the PUBLIC api only, against a synthetic mini-compiler driver:
+//
+//   families: SRC (input: per-"file" text) → LEN (derived: text length,
+//   per file) → TOTAL (derived: reads LEN 0 + LEN 1, warns when file 0 is
+//   empty) — plus a SEL family whose dependency SET is data-driven (reads
+//   PICK, then only the selected LEN), and a deliberate A↔B cycle pair.
+//
+// The compute counters (`db_computes_of`) make the invalidation behavior
+// OBSERVABLE: a "cutoff" that recomputes everything would still return right
+// answers, so the specs assert the work profile, not just values —
+//   - memo hit: same revision, zero new computes;
+//   - no-op input write: equal-hash set doesn't move the revision;
+//   - EARLY CUTOFF: an edit that changes a file but not its LENGTH recomputes
+//     LEN (its input changed) but NOT TOTAL (its dep's answer didn't);
+//   - dependency REPLACEMENT: after PICK flips, SEL re-records its deps —
+//     edits to the now-unselected file no longer recompute SEL;
+//   - diagnostics ride with values (the same Fetched carries them, memoized);
+//   - cycles error with the full path, render as F3900, and leave the
+//     database usable (the active stack unwinds).
+//
+// Each `then` replays the deterministic scenario and asserts one line of its
+// log, so a failure names the exact clause that broke.
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, db_set_input, db_fetch, ctx_fetch, db_computes_of, qk, qk_render, computed, query_cycle_diag}
+use @std.avrac.core.{content_id_for}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, diag_code_str, diag_canonical, span_dummy}
+
+// Query families of the synthetic driver.
+const FAM_SRC = 0
+const FAM_LEN = 1
+const FAM_TOTAL = 2
+const FAM_PICK = 3
+const FAM_SEL = 4
+const FAM_CYCLE_A = 5
+const FAM_CYCLE_B = 6
+const FAM_ADV = 7
+const FAM_ADVSUM = 8
+
+fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == FAM_LEN {
+        let src = ctx_fetch(ctx, qk(FAM_SRC, q.arg))?
+        let v = string(src.length)
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == FAM_TOTAL {
+        let a = ctx_fetch(ctx, qk(FAM_LEN, 0))?
+        let b = ctx_fetch(ctx, qk(FAM_LEN, 1))?
+        let v = "total=${a}+${b}"
+        mut out = computed(v, content_id_for(v))
+        if a == "0" {
+            mut diags: List<Diagnostic> = []
+            diags.push(diag_warning(DiagCode.NonExhaustiveMatch, "synthetic: file 0 is empty", span_dummy()))
+            out = out with { diags }
+        }
+        return Result.Ok(out)
+    }
+    if q.family == FAM_SEL {
+        // Data-driven dependency set: which LEN this reads depends on PICK's
+        // VALUE — the shape that proves deps are re-recorded per compute.
+        let pick = ctx_fetch(ctx, qk(FAM_PICK, 0))?
+        let chosen = if pick == "1" { 1 } else { 0 }
+        let v = ctx_fetch(ctx, qk(FAM_LEN, chosen))?
+        return Result.Ok(computed("sel=${v}", content_id_for(v)))
+    }
+    if q.family == FAM_CYCLE_A {
+        let v = ctx_fetch(ctx, qk(FAM_CYCLE_B, 0))?
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == FAM_CYCLE_B {
+        let v = ctx_fetch(ctx, qk(FAM_CYCLE_A, 0))?
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == FAM_ADV {
+        // Same VALUE both ways; only the (delimiter-crafted) diagnostic
+        // differs — the shape that must still move the answer hash.
+        let sel = ctx_fetch(ctx, qk(FAM_SRC, 9))?
+        mut diags: List<Diagnostic> = []
+        diags.push(adv_diag(sel))
+        let out = computed("adv", content_id_for("adv")) with { diags }
+        return Result.Ok(out)
+    }
+    if q.family == FAM_ADVSUM {
+        // A dependent of ADV: its recompute count is how the spec observes
+        // whether ADV's diag-only change bumped `changed_at`.
+        let v = ctx_fetch(ctx, qk(FAM_ADV, 0))?
+        return Result.Ok(computed("sum(${v})", content_id_for(v)))
+    }
+    Result.Ok(computed("?", 0))
+}
+
+/// The delimiter-adversarial pair: under a naive `|`-joined canonical these
+/// two DISTINCT diagnostics encode to the same bytes — the crafted message
+/// absorbs the span render and shifts the help boundary. (`span_dummy` has
+/// file "" and all-zero coordinates, so its canonical span text is
+/// `:0-0:0:0`.) Length-prefixed framing keeps them apart.
+fn adv_diag(which: string) -> Diagnostic {
+    let base = diag_warning(DiagCode.NonExhaustiveMatch, "", span_dummy())
+    if which == "1" {
+        (base with { message: "adv|:0-0:0:0" }) with { help: "tail" }
+    } else {
+        (base with { message: "adv" }) with { help: ":0-0:0:0|tail" }
+    }
+}
+
+fn set_src(db: Db<string>, file: int, text: string) {
+    db_set_input(db, qk(FAM_SRC, file), text, content_id_for(text))
+}
+
+fn fetch_value(db: Db<string>, q: QueryKey) -> string {
+    match db_fetch(db, q) {
+        .Ok(f) -> f.value
+        .Err(_) -> "unexpected-cycle"
+    }
+}
+
+/// One database threaded through a deterministic timeline; each spec asserts
+/// one line of the resulting log.
+fn scenario() -> List<string> {
+    let mut db: Db<string> = db_new(demo_compute)
+    mut log: List<string> = []
+    set_src(db, 0, "hello")
+    set_src(db, 1, "worlds!")
+    db_set_input(db, qk(FAM_PICK, 0), "0", content_id_for("0"))
+
+    // (0) cold fetch computes the whole chain
+    log.push("cold=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db_computes_of(db, FAM_LEN))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+
+    // (1) same revision -> memo hot path, no new computes
+    let _ = fetch_value(db, qk(FAM_TOTAL, 0))
+    log.push("memo tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+
+    // (2) equal-value input write -> revision does not move
+    let rev_before = db.current_rev
+    set_src(db, 0, "hello")
+    log.push("noop_rev_moved=${string(db.current_rev - rev_before)}")
+
+    // (3) same-LENGTH edit: LEN recomputes (its input changed), TOTAL is cut
+    //     off (LEN's answer didn't change)
+    set_src(db, 0, "howdy")
+    log.push("cutoff=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db_computes_of(db, FAM_LEN))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+
+    // (4) real edit -> TOTAL recomputes
+    set_src(db, 1, "!")
+    log.push("edit=${fetch_value(db, qk(FAM_TOTAL, 0))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+
+    // (5) diagnostics ride with the memoized value
+    set_src(db, 0, "")
+    match db_fetch(db, qk(FAM_TOTAL, 0)) {
+        .Ok(f) -> log.push("diags=${string(f.diags.length)} code=${if f.diags.length > 0 { diag_code_str(f.diags[0].code) } else { "-" }}")
+        .Err(_) -> log.push("diags=cycle")
+    }
+    // (6) ...and replay from memo unchanged
+    match db_fetch(db, qk(FAM_TOTAL, 0)) {
+        .Ok(f) -> log.push("diags_memo=${string(f.diags.length)} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+        .Err(_) -> log.push("diags_memo=cycle")
+    }
+
+    // (7) dependency replacement: SEL reads LEN(0) while PICK=0; flip PICK ->
+    //     SEL recomputes reading LEN(1); edits to the now-unselected file 0
+    //     must no longer recompute SEL.
+    let _ = fetch_value(db, qk(FAM_SEL, 0))
+    let sel_c0 = db_computes_of(db, FAM_SEL)
+    db_set_input(db, qk(FAM_PICK, 0), "1", content_id_for("1"))
+    let _ = fetch_value(db, qk(FAM_SEL, 0))
+    let sel_c1 = db_computes_of(db, FAM_SEL)
+    set_src(db, 0, "back to something long")
+    let _ = fetch_value(db, qk(FAM_SEL, 0))
+    let sel_c2 = db_computes_of(db, FAM_SEL)
+    log.push("sel=${string(sel_c1 - sel_c0)},${string(sel_c2 - sel_c1)}")
+
+    // (8) cycles error with the path; (9) the db stays usable afterwards
+    match db_fetch(db, qk(FAM_CYCLE_A, 0)) {
+        .Ok(_) -> log.push("cycle=none")
+        .Err(c) -> {
+            let d = query_cycle_diag(c, qk_render)
+            log.push("cycle_len=${string(c.path.length)} code=${diag_code_str(d.code)} msg=${d.message}")
+        }
+    }
+    log.push("post_cycle=${fetch_value(db, qk(FAM_TOTAL, 0))}")
+    log
+}
+
+spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" {
+    then "a cold fetch computes each LEN once and TOTAL once" {
+        scenario()[0] == "cold=total=5+7 len_c=2 tot_c=1"
+    }
+    then "a second fetch in the same revision is a memo hit (no recompute)" {
+        scenario()[1] == "memo tot_c=1"
+    }
+    then "re-setting an input to an equal value does not move the revision" {
+        scenario()[2] == "noop_rev_moved=0"
+    }
+    then "a same-length edit recomputes LEN but EARLY-CUTS TOTAL (upstream answer unchanged)" {
+        scenario()[3] == "cutoff=total=5+7 len_c=3 tot_c=1"
+    }
+    then "a real edit propagates and TOTAL recomputes" {
+        scenario()[4] == "edit=total=5+1 tot_c=2"
+    }
+    then "diagnostics ride with the computed value" {
+        scenario()[5] == "diags=1 code=F9001"
+    }
+    then "memoized diagnostics replay without recomputing" {
+        scenario()[6] == "diags_memo=1 tot_c=3"
+    }
+    then "a recompute re-records deps: edits to a no-longer-read input stop invalidating" {
+        scenario()[7] == "sel=1,0"
+    }
+    then "a query cycle errors with the full path and renders as F3900" {
+        scenario()[8] == "cycle_len=3 code=F3900 msg=query cycle: 5:0 -> 6:0 -> 5:0"
+    }
+    then "the database stays usable after a reported cycle" {
+        scenario()[9] == "post_cycle=total=22+1"
+    }
+    then "cycle-aborted computes still count as work performed" {
+        // The dispatcher RAN for both cycle families before the abort — a
+        // counter that only moves on success underreports cycle-heavy runs
+        // and skews the oracle's work comparison.
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "x")
+        let _ = fetch_value(db, qk(FAM_CYCLE_A, 0))
+        db_computes_of(db, FAM_CYCLE_A) == 1 && db_computes_of(db, FAM_CYCLE_B) == 1
+    }
+    then "1000 edit/fetch cycles stay correct with at most one recompute per edit" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 1, "?")
+        mut ok = true
+        for i in 0..1000 {
+            set_src(db, 0, "src-${string(i)}")
+            ok = ok && fetch_value(db, qk(FAM_LEN, 0)) == string(4 + string(i).length)
+        }
+        ok && db_computes_of(db, FAM_LEN) <= 1000
+    }
+    then "a re-SET cell becomes a leaf — its derived past never recomputes it" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "abc")
+        set_src(db, 1, "d")
+        let _ = fetch_value(db, qk(FAM_LEN, 0))
+        // The driver pins the formerly-derived cell as an INPUT; an edit to
+        // its former dep must not hand it back to the compute dispatcher.
+        db_set_input(db, qk(FAM_LEN, 0), "pinned", content_id_for("pinned"))
+        set_src(db, 0, "a very different length")
+        fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db_computes_of(db, FAM_LEN) == 1
+    }
+    then "pinning a diagnostic-bearing derived cell sheds its derived diagnostics too" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "")
+        set_src(db, 1, "x")
+        let derived_diags = match db_fetch(db, qk(FAM_TOTAL, 0)) {
+            .Ok(f) -> f.diags.length
+            .Err(_) -> -1
+        }
+        // An input answers for itself: a diagnostic its derived past computed
+        // must not replay against the pinned value.
+        db_set_input(db, qk(FAM_TOTAL, 0), "pinned", content_id_for("pinned"))
+        match db_fetch(db, qk(FAM_TOTAL, 0)) {
+            .Ok(f) -> derived_diags == 1 && f.value == "pinned" && f.diags.length == 0
+            .Err(_) -> false
+        }
+    }
+    then "the delimiter-adversarial diagnostic pair keeps distinct canonical identities" {
+        diag_canonical(adv_diag("1")) != diag_canonical(adv_diag("2"))
+    }
+    then "a diag-only change crafted to collide under delimiter joining still bumps changed_at" {
+        let mut db: Db<string> = db_new(demo_compute)
+        db_set_input(db, qk(FAM_SRC, 9), "1", content_id_for("1"))
+        let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
+        // The edit flips ADV's diagnostic (value unchanged) between the two
+        // crafted shapes. ADV's answer changed, so its dependent must
+        // RECOMPUTE (and then cut off itself) — a canonical-encoding
+        // collision would leave changed_at stale and green-revalidate ADVSUM.
+        db_set_input(db, qk(FAM_SRC, 9), "2", content_id_for("2"))
+        let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
+        let flipped = match db_fetch(db, qk(FAM_ADV, 0)) {
+            .Ok(f) -> f.diags.length == 1 && f.diags[0].message == "adv"
+            .Err(_) -> false
+        }
+        flipped && db_computes_of(db, FAM_ADVSUM) == 2
+    }
+    then "a family grows past the historic 256-slot intmap limit" {
+        let mut db: Db<string> = db_new(demo_compute)
+        for i in 0..300 {
+            set_src(db, i, "f${string(i)}")
+        }
+        fetch_value(db, qk(FAM_SRC, 137)) == "f137" && fetch_value(db, qk(FAM_SRC, 299)) == "f299"
+    }
+}
