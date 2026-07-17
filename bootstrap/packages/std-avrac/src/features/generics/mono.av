@@ -1084,16 +1084,18 @@ fn all_resolved(tp: List<TypeParamEntry>, ta: List<TypeArg>) -> bool {
 /// a `List<TypeArg>` by zipping with the declared
 /// List<TypeParamEntry>. Zips stop at whichever side ends first — same
 /// shortest-zip semantics as the prior recursive shape.
-fn explicit_to_type_args(tp: List<TypeParamEntry>, names: List<string>) -> List<TypeArg> {
+fn explicit_to_type_args(tp: List<TypeParamEntry>, type_args: List<ValueType>) -> List<TypeArg> {
     // Zip stops at whichever side ends first — matches the prior
     // shortest-zip semantics. Source-order push keeps the order
     // type_arg_lookup callers expect (callers don't rely on a
     // particular ordering, but keeping it stable avoids surprises).
+    // 5idg: type-args arrive as structural ValueType now (not parseable
+    // name strings), so the concrete type IS the element — no string parse.
     mut out: List<TypeArg> = []
-    let limit = if tp.length < names.length { tp.length } else { names.length }
+    let limit = if tp.length < type_args.length { tp.length } else { type_args.length }
     mut i = 0
     while i < limit {
-        out.push(TypeArg { param_name: tp[i].name, concrete_vt: vtype_from_type_string(names[i]) })
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: type_args[i] })
         i = i + 1
     }
     out

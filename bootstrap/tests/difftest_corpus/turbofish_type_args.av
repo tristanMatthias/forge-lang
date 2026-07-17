@@ -1,0 +1,24 @@
+// WHY: diff-test corpus — exercises EXPLICIT turbofish type-args on generic
+// calls (`f<T>(x)` → Expr.GenericCall.type_args). 5idg flips that field from
+// List<string> (name-strings round-tripped through the parser/mono) to a
+// structural List<ValueType>; this pins the parse → typeck (check_generic_call)
+// → mono (explicit_to_type_args) path byte-identical across the representation
+// change. A divergence surfaces against ~25 lines instead of the selfhost IR.
+// No @std, no spec/given/then.
+fn id<T>(x: T) -> T { x }
+
+fn pick<T>(a: T, b: T, first: bool) -> T {
+    if first { a } else { b }
+}
+
+fn wrap<T>(x: T) -> List<T> { [x] }
+
+fn main() {
+    let a = id<int>(7)
+    let b = id<string>("hi")
+    let c = pick<int>(3, 9, true)
+    let d = wrap<int>(5)
+    println(string(a + c))
+    println(b)
+    println(string(d[0]))
+}
