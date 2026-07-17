@@ -1,0 +1,78 @@
+// WHY: the @derive(...) surface (design §3.1, ps3t.6.6) — capability
+// dispatch through the registry, the implicit shim imports (a user writes
+// `@derive(Eq)` with ZERO use lines), multi-capability merging (original
+// decl spliced once, every capability's methods appended), and the
+// F4010/F4011 diagnostics (fail-fast, reported exactly ONCE — a failed
+// @derive strips its annotation so the fixpoint doesn't spin to the
+// 16-iteration cap duplicating the error).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run_no_metadata}
+
+// Compile-check a fixture, capturing diagnostics + a sentinel on success.
+fn derive_check_out(path: string, source: string) -> string {
+    write_fixture(path, source)
+    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+spec "@derive(Eq) on a struct needs no imports" {
+    then "the implicit shim injection makes .eq available from a bare fixture" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_eq_test.av",
+            "@derive(Eq)\n" +
+            "type Pt = { x: int, y: int }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Pt { x: 1, y: 2 }\n" +
+            "    let b = Pt { x: 1, y: 2 }\n" +
+            "    let c = Pt { x: 9, y: 2 }\n" +
+            "    println(\"same=\" + string(a.eq(b)))\n" +
+            "    println(\"diff=\" + string(a.eq(c)))\n" +
+            "}\n")
+        out.contains("same=true") && out.contains("diff=false")
+    }
+}
+
+spec "@derive(Walk, Eq) merges capabilities on one enum" {
+    then "walker methods and eq both work; the decl splices once" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_multi_test.av",
+            "@derive(Walk, Eq)\n" +
+            "enum Tree {\n" +
+            "    Leaf(v: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let t = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let u = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    println(\"kids=\" + string(t.children().length))\n" +
+            "    println(\"eq=\" + string(t.eq(u)))\n" +
+            "    println(\"any=\" + string(t.any((n: Tree) -> n is .Leaf)))\n" +
+            "}\n")
+        out.contains("kids=2") && out.contains("eq=true") && out.contains("any=true")
+    }
+}
+
+spec "@derive(Unknown) is F4011, reported once" {
+    then "the unknown capability names the known set and does not spin the fixpoint" {
+        let out = derive_check_out("/tmp/avra_derive_surface_unknown_test.av",
+            "@derive(Json)\n" +
+            "type Pt = { x: int }\n" +
+            "\n" +
+            "fn main() { println(\"x\") }\n")
+        out.contains("F4011") &&
+            out.contains("known: Walk, Eq") &&
+            !out.contains("F4000") &&
+            !out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "@derive() with no capabilities is F4010" {
+    then "deriving nothing is rejected, not silently ignored" {
+        let out = derive_check_out("/tmp/avra_derive_surface_empty_test.av",
+            "@derive()\n" +
+            "type Pt = { x: int }\n" +
+            "\n" +
+            "fn main() { println(\"x\") }\n")
+        out.contains("F4010") && !out.contains("__AVRA_CHECK_OK__")
+    }
+}

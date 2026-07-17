@@ -44,11 +44,12 @@
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
-use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
+use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
+use features.derive_registry.{derive_capability_macro, derive_capabilities_rendered}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -232,6 +233,19 @@ fn collect_expand_targets(store: NodeStore, ids: List<StmtId>) -> List<ExpandTar
                         })
                     }
                 }
+                // A @derive site is work for the eval phase even when a
+                // capability is unknown or missing — the eval walker owns
+                // the F4010/F4011 diagnostics, so collect must not
+                // silently drop the site here.
+                if has_derive_annotation(store, node) {
+                    let p = store.stmt_pos(id)
+                    acc = acc.push(ExpandTarget {
+                        source_file: p.file,
+                        source_line: p.line,
+                        source_col: p.col,
+                        macro_name: "derive",
+                    })
+                }
             }
         }
     }
@@ -280,7 +294,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
-        if !any_expand_annotation(state.nodes, current) && comp_macros.length == 0 {
+        if !any_expand_annotation(state.nodes, current) && !any_derive_annotation(state.nodes, current) && comp_macros.length == 0 {
             return ExpandResult { stmts: current, bag, origins }
         }
         if iters > 0 {
@@ -399,6 +413,28 @@ fn has_expand_annotation(store: NodeStore, stmt: Stmt) -> bool {
     found != null
 }
 
+/// `any_expand_annotation`'s @derive sibling — the fixpoint loop and
+/// the collect gate must both see @derive sites as pending work, for
+/// the same Module-descent reason documented above.
+export fn any_derive_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
+    for id in ids {
+        let node = store.stmts.get(id)
+        if has_derive_annotation(store, node) { return true }
+        match stmt_unwrap(store, node) {
+            .Module(_, body) -> {
+                if any_derive_annotation(store, body) { return true }
+            }
+            _ -> {}
+        }
+    }
+    false
+}
+
+fn has_derive_annotation(store: NodeStore, stmt: Stmt) -> bool {
+    let found = find_annotation(store, stmt, "derive")
+    found != null
+}
+
 // ── Walker ──
 
 fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
@@ -466,7 +502,24 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                 out.push(store.restmt(new_stmt, id))
             }
             _ -> {
-                if has_expand_annotation(store, node) {
+                if has_derive_annotation(store, node) {
+                    avra_rd_set_current_module(current_module)
+                    let p = store.stmt_pos(id)
+                    let attempt = try_derive_all(store, node, reg, current_state, p.line, p.col, p.file, current_module)
+                    bag = bag_merge(bag, attempt.bag)
+                    origins = list_concat(origins, attempt.origins)
+                    if attempt.replacement != null {
+                        splice_expansion(store, out, id, attempt.replacement)
+                        current_state = register_and_repopulate(current_state, attempt.replacement!, current_module)
+                    } else {
+                        // A failed @derive keeps the DECL but drops the
+                        // annotation: the diagnostic is already in the bag,
+                        // and re-walking the still-annotated stmt would spin
+                        // the fixpoint to its 16-iteration cap, duplicating
+                        // the error 16× and adding a misleading F4000.
+                        out.push(store.restmt(strip_derive_annotation(store, node), id))
+                    }
+                } else if has_expand_annotation(store, node) {
                     avra_rd_set_current_module(current_module)
                     let p = store.stmt_pos(id)
                     let attempt = try_expand_one(store, node, reg, p.line, p.col, p.file, current_module)
@@ -572,6 +625,111 @@ fn splice_expansion(store: NodeStore, out: List<StmtId>, id: StmtId, replacement
 /// zero-arg), and decode the result. Returns null `replacement` plus
 /// a bag entry whenever any step fails — the caller treats null as
 /// "leave this stmt alone" and renders the bag for the user.
+/// `@derive(Cap1, Cap2, …)` driver (design §3.1, ps3t.6.6): resolve each
+/// capability through the registry to its @comptime shim and run it
+/// through the SAME `invoke_macro` path as the `@expand` spelling — one
+/// invocation per capability against the same decl. Every capability's
+/// ResolvedDecls leads with the original decl (the engine's contract), so
+/// the merge keeps the first capability's copy and drops the later
+/// duplicates, splicing original + every capability's methods.
+///
+/// Fail-fast on a bad capability list (F4010/F4011): a partially-derived
+/// decl is worse than none — resolve/typeck would blame downstream uses
+/// of the missing methods instead of the real mistake.
+/// Resolve `short` through the resolver state's alias table (the same
+/// short→canonical mapping the resolver's ident rewrite uses for
+/// `@expand`'s macro arg). "" when no alias binds the name.
+fn alias_canonical_for(state: ResolverState, short: string) -> string {
+    for a in state.aliases {
+        if a.short_name == short { return a.canonical }
+    }
+    ""
+}
+
+/// Strip every `derive` annotation layer from `stmt`, keeping the decl
+/// and any other annotations. Used after a FAILED @derive so the
+/// fixpoint doesn't re-walk the site.
+fn strip_derive_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
+    match stmt {
+        .Annotated(annots, inner) -> {
+            mut kept: List<Annotation> = []
+            for a in annots {
+                if a.name != "derive" { kept.push(a) }
+            }
+            let inner_stripped = strip_derive_annotation(store, store.stmts.get(inner))
+            if kept.length == 0 { inner_stripped } else { Stmt.Annotated(kept, store.stmts.add_leaf(inner_stripped)) }
+        }
+        _ -> stmt
+    }
+}
+
+fn try_derive_all(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, state: ResolverState, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
+    let span = span_at(0, 0, line, col, file)
+    let found = find_annotation(store, stmt, "derive")
+    if found == null {
+        return expand_fail(
+            DiagCode.DeriveMissingCapability,
+            "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
+            span
+        )
+    }
+    let arg_ids = found!.arg_ids
+    if arg_ids == none || arg_ids!.length == 0 {
+        return expand_fail(
+            DiagCode.DeriveMissingCapability,
+            "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
+            span
+        )
+    }
+    mut bag = bag_new()
+    mut merged: List<StmtId> = []
+    mut origins: List<MacroFnOrigin> = []
+    mut first = true
+    for eid in arg_ids! {
+        let cap = match store.exprs.get(eid) {
+            .Ident(name) -> name
+            _ -> return expand_fail(
+                DiagCode.DeriveMissingCapability,
+                "@derive capabilities must be bare identifiers (known: ${derive_capabilities_rendered()})",
+                span
+            )
+        }
+        let macro_name = derive_capability_macro(cap)
+        if macro_name == "" {
+            return expand_fail(
+                DiagCode.DeriveUnknownCapability,
+                "@derive — unknown capability `${cap}` (known: ${derive_capabilities_rendered()})",
+                span
+            )
+        }
+        // The comptime registry keys fns by their POST-RESOLUTION names
+        // (module-qualified for anything behind a module boundary). The
+        // registry hands back the shim's source-level name; qualify it
+        // through the state's alias table — the same mapping the resolver
+        // used to rewrite `@expand`'s macro-arg ident — unless the bare
+        // name already resolves (the in-module dogfood case).
+        let effective = if comptime_has(reg, macro_name) {
+            macro_name
+        } else {
+            let canon = alias_canonical_for(state, macro_name)
+            if canon != "" { canon } else { macro_name }
+        }
+        let invoked = invoke_macro(stmt_unwrap(store, stmt), effective, reg, line, col, file, current_module, stmt)
+        bag = bag_merge(bag, invoked.bag)
+        origins = list_concat(origins, invoked.origins)
+        if invoked.replacement == null {
+            return ExpandAttempt { replacement: null, bag, origins }
+        }
+        mut i = 0
+        for rid in invoked.replacement! {
+            if first || i > 0 { merged.push(rid) }
+            i = i + 1
+        }
+        first = false
+    }
+    ExpandAttempt { replacement: merged, bag, origins }
+}
+
 fn try_expand_one(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
     let macro_name = expand_target_name(store, stmt)
     if macro_name == "" {

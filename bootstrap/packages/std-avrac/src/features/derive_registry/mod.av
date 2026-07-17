@@ -1,0 +1,55 @@
+// WHY: the @derive capability registry (design §3.1, ps3t.6.6) — its own
+// import-free leaf module (NOT a features/derive file: that directory-module
+// imports features.comptime, and the registry's consumers ARE
+// features.comptime + features.modules — living there would close an import
+// cycle). The ONE
+// name-keyed mapping from a `@derive(Cap, …)` capability to the @comptime
+// shim fn that runs its engine plan. `@derive` supersedes the per-macro
+// `@expand(derive_walker)` / `@expand(derive_eq)` spellings: a capability
+// is a NAME for an emitter, so adding one is a plan fn + shim + one arm
+// here — no new annotation, no new pipeline pass. Dispatch stays on the
+// interpreter/JIT path (design §3.2): the expander rewrites each
+// capability into an `invoke_macro` of the shim, exactly how the
+// `@expand` spelling runs — so `@derive` works before L2's JIT lands and
+// gets faster when it does, and the two spellings cannot drift.
+//
+// Name-dispatch by design (mirrors `struct_list_helpers` / `anynode_ctor`):
+// the capability set is closed at compiler build time.
+
+/// Every capability `@derive(...)` accepts. The single source for both
+/// dispatch (below) and the unknown-capability diagnostic's "known:"
+/// list — in sync by construction.
+export fn derive_capabilities() -> List<string> {
+    ["Walk", "Eq"]
+}
+
+/// Capability name → the @comptime shim fn the expander invokes
+/// (2-arg macro contract: (AnnotatedDecl, ResolverCtx) -> ResolvedDecls).
+/// "" ⇔ unknown capability — the caller owns the diagnostic (F4011) so
+/// the message carries the @derive site's span; the registry stays a
+/// pure mapping.
+export fn derive_capability_macro(cap: string) -> string {
+    if cap == "Walk" { return "derive_walker" }
+    if cap == "Eq" { return "derive_eq" }
+    ""
+}
+
+/// Capability name → the module the shim is declared in, as a `use`
+/// path. The implicit-import injection needs it (shims live where
+/// their plan does: Walk beside the walker feature, Eq beside the eq
+/// emitter). "" ⇔ unknown capability.
+export fn derive_capability_module(cap: string) -> string {
+    if cap == "Walk" { return "@std.avrac.features.walker" }
+    if cap == "Eq" { return "@std.avrac.features.derive" }
+    ""
+}
+
+/// Render the known-capability list for diagnostics: "Walk, Eq".
+export fn derive_capabilities_rendered() -> string {
+    mut out = ""
+    let caps = derive_capabilities()
+    for c in caps {
+        out = if out == "" { c } else { "${out}, ${c}" }
+    }
+    out
+}

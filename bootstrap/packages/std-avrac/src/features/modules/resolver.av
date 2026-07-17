@@ -3,7 +3,8 @@
 // them, and attaches the parsed bodies. This is the bridge between
 // the pure parser (no I/O) and the file system.
 
-use core.{Stmt, Annotation, NodeStore, SrcPos}
+use core.{Stmt, Annotation, NodeStore, SrcPos, ParamEntry, ValueType, find_annotation, stmt_unwrap}
+use features.derive_registry.{derive_capability_macro, derive_capability_module}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
@@ -402,6 +403,79 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
+/// ps3t.6.6: implicit shim imports for `@derive` — the surface's whole
+/// point is that a user writes `@derive(Eq)` without knowing (or
+/// importing) the engine's shim fns. When any `@derive` annotation is
+/// present, prepend one `use @std.avrac.features.derive.{...}` naming
+/// EXACTLY the shims for the capabilities mentioned (the exact set, so
+/// the unused-import lint stays quiet). Unknown capabilities inject
+/// nothing — the expander owns the F4011 diagnostic with the site's
+/// span. Sits at the head of `resolve_module_files` so every frontend
+/// (compile / run / check / test) inherits it from the one chokepoint —
+/// the same implicit-injection precedent as `inject_intrinsics`.
+fn inject_derive_shim_uses(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    let caps = collect_derive_capabilities(store, ids)
+    if caps.length == 0 { return ids }
+    // One `use` per distinct shim module (shims live beside their plans —
+    // Walk in features.walker, Eq in features.derive), each naming exactly
+    // the shims injected from it.
+    mut modules: List<string> = []
+    for c in caps {
+        let m = derive_capability_module(c)
+        if m != "" && !name_list_has(modules, m) { modules.push(m) }
+    }
+    if modules.length == 0 { return ids }
+    mut out: List<StmtId> = []
+    for m in modules {
+        mut names: List<ParamEntry> = []
+        for c in caps {
+            if derive_capability_module(c) == m {
+                names.push(ParamEntry { name: derive_capability_macro(c), vtype: ValueType.Unknown, ty_id: none })
+            }
+        }
+        out.push(store.stmts.add_leaf(Stmt.Use(m, names)))
+    }
+    for id in ids { out.push(id) }
+    out
+}
+
+/// Every distinct capability named by a `@derive(...)` annotation in the
+/// program (Module-descent included), in first-seen order.
+fn collect_derive_capabilities(store: NodeStore, ids: List<StmtId>) -> List<string> {
+    mut out: List<string> = []
+    for id in ids {
+        let node = store.stmts.get(id)
+        let found = find_annotation(store, node, "derive")
+        if found != null && found!.arg_ids != none {
+            for eid in found!.arg_ids! {
+                match store.exprs.get(eid) {
+                    .Ident(name) -> {
+                        if !name_list_has(out, name) { out.push(name) }
+                    }
+                    _ -> {}
+                }
+            }
+        }
+        match stmt_unwrap(store, node) {
+            .Module(_, body) -> {
+                let sub = collect_derive_capabilities(store, body)
+                for s in sub {
+                    if !name_list_has(out, s) { out.push(s) }
+                }
+            }
+            _ -> {}
+        }
+    }
+    out
+}
+
+fn name_list_has(xs: List<string>, target: string) -> bool {
+    for x in xs {
+        if x == target { return true }
+    }
+    false
+}
+
 export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
     // B-final: the whole resolver is arena-id-native end to end — the
     // desugared program arrives as ids, every internal walk (including the
@@ -409,7 +483,8 @@ export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<stri
     // `ModListResult.stmts` exit leaves as ids. No `List<SStmt>` bridge
     // remains on this path.
     let empty_stack: List<string> = []
-    let inner = resolve_module_files_inner(ids, dir, loaded, empty_stack, store)
+    let with_derive = inject_derive_shim_uses(ids, store)
+    let inner = resolve_module_files_inner(with_derive, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
     let split = hoist_package_modules(store, inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
