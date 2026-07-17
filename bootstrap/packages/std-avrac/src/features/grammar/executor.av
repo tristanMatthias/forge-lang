@@ -1053,6 +1053,22 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, env.get(args[0])))))
         }
+        "MkTypeAlias" if args.length == 2 -> {
+            // `type Name = <type_expr>` (NON-brace RHS). A Union RHS
+            // (`type X = A | B`) → Stmt.UnionAliasDecl; anything else
+            // (`type X = Other`, a nominal/container type) → Stmt.NewtypeDecl
+            // (a nominal wrapper) — mirroring parse_type_declaration's
+            // non-brace branch, which matches on TypeExpr.Union. (The brace
+            // struct form and the `without`/`only` type operators are
+            // separate slices.)
+            let name = capval_tok_text(env.get(args[0]))
+            let te = capval_to_texpr(st, env.get(args[1]))
+            let vt = type_expr_to_vtype(te)
+            match te {
+                .Union(_, _) -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.UnionAliasDecl(name, vt)))
+                _ -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.NewtypeDecl(name, vt)))
+            }
+        }
         "MkAnnotated" if args.length == 2 -> {
             // `( "@" name )+ <decl>` — one or more BARE annotations wrapping a
             // declaration → Stmt.Annotated(annotations, inner), exactly
