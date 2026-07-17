@@ -850,9 +850,14 @@ fn is_expr_hand(name: string) -> bool {
 /// all three live node kinds. `parse_quote` tracks `quote_depth` internally, so
 /// a `~` splice in the quote body is decided identically to the oracle parse.
 fn run_hand_expr(name: string, st: PState) -> ExprId {
-    if !is_expr_hand(name) || st.src == "" {
-        st.report("`@hand(${name})` needs the source, unavailable here")
-        return st.error_node("hand expression rule needs source")
+    // Split preconditions so each reports its OWN cause (a bad rule name vs a
+    // missing source), and rely solely on error_node — which reports the
+    // message itself — so each diagnostic is recorded exactly once.
+    if !is_expr_hand(name) {
+        return st.error_node("no hand expression rule `${name}`")
+    }
+    if st.src == "" {
+        return st.error_node("`@hand(${name})` needs the source, unavailable here")
     }
     let start_byte = st.cur().pos
     mut bp = parser_new_with_file(st.src, "")
@@ -866,10 +871,7 @@ fn run_hand_expr(name: string, st: PState) -> ExprId {
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
     match result {
         .Ok(id) -> id
-        .Err(m) -> {
-            st.report(m)
-            st.error_node(m)
-        }
+        .Err(m) -> st.error_node(m)
     }
 }
 
