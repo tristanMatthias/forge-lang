@@ -330,6 +330,20 @@ impl PState {
         t
     }
 
+    /// Split a `>>` (Tk.Shr) token when a single `>` is expected — the
+    /// gnarly-5% nested-generic close (`List<List<T>>`), the executor-side
+    /// analogue of the hand parser's `maybe_split_shr` (ps3t.6.5.10). The lexer
+    /// merges two adjacent `>` into ONE `>>`; here we CONSUME the first half
+    /// (return a synthetic `>`) and leave the second `>` in the current slot —
+    /// WITHOUT advancing — so the next `>` match takes it. Deeper nesting works
+    /// too: `>>>` lexes as `>> >`, and each `>>` splits once. The mutated slot's
+    /// pos is the second `>`'s byte offset, so spans stay honest.
+    fn split_gt(self) -> Token {
+        let cur = self.cur()
+        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1 })
+        Token { kind: "PUNCT", text: ">", pos: cur.pos }
+    }
+
     fn report(self, msg: string) {
         self.diags.push(msg)
         self.had_error = true
@@ -637,6 +651,10 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
     match prim {
         .Lit(t) -> {
             if st.cur().text == t { return CapVal.Tok(st.advance()) }
+            // >>-split (ps3t.6.5.10): a nested generic close lexes two `>` as one
+            // `>>`; when a single `>` is expected, consume the first half and
+            // leave the second for the next match (the maybe_split_shr analogue).
+            if t == ">" && st.cur().text == ">>" { return CapVal.Tok(st.split_gt()) }
             handle_missing(st, t, annots)
             CapVal.Node(st.missing_node())
         }
