@@ -291,6 +291,14 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     mut current_state = state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
+    // The cycle-detecting memo (ps3t.6.6, design §3.2): every (decl,
+    // mechanism) pair that expands is keyed here; a RE-encounter across
+    // iterations means a macro (transitively) emitted its own annotated
+    // decl — reported as a precise F4012 at the cycle edge, instead of
+    // burning the full iteration bound and reporting a vague F4000. The
+    // bound below stays as the backstop for non-cyclic runaways (a macro
+    // emitting differently-NAMED annotated decls each round).
+    mut seen: List<string> = []
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
@@ -302,11 +310,16 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
             populate_resolver_data(current_state, current)
         }
         let reg = collect_comptime_fns_ids(current, state.nodes)
-        let walked = expand_stmt_list(current, reg, comp_macros, current_state, "")
+        let walked = expand_stmt_list(current, reg, comp_macros, current_state, "", seen)
         current = walked.out
         current_state = walked.state
         bag = bag_merge(bag, walked.bag)
         origins = list_concat(origins, walked.origins)
+        seen = walked.seen
+        // A detected cycle is terminal: the offending annotation was
+        // stripped and the error reported — stop iterating rather than
+        // re-walking a poisoned program.
+        if walked.found_cycle { return ExpandResult { stmts: current, bag, origins } }
         iters = iters + 1
     }
     bag = bag_report(bag, diag_error(
@@ -437,12 +450,14 @@ fn has_derive_annotation(store: NodeStore, stmt: Stmt) -> bool {
 
 // ── Walker ──
 
-fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string) -> WalkerOut {
+fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string, in_seen: List<string>) -> WalkerOut {
     let store = in_state.nodes
     mut out: List<StmtId> = []
     mut current_state = in_state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
+    mut seen = in_seen
+    mut found_cycle = false
     for id in ids {
         let node = store.stmts.get(id)
         let inner = stmt_unwrap(store, node)
@@ -490,10 +505,12 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
             // intact for downstream resolve/typeck.
             .Module(mod_name, body) -> {
                 let child_module = type_qualified_name(current_module, mod_name)
-                let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module)
+                let sub = expand_stmt_list(body, reg, comp_macros, current_state, child_module, seen)
                 current_state = sub.state
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
+                seen = sub.seen
+                if sub.found_cycle { found_cycle = true }
                 // The match subject was stmt_unwrap(node) — rebuild the module
                 // INSIDE the original Annotated layers, or a wrapped module (e.g.
                 // the test assembler's @deferred_init) silently loses its
@@ -505,6 +522,19 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                 if has_derive_annotation(store, node) {
                     avra_rd_set_current_module(current_module)
                     let p = store.stmt_pos(id)
+                    let decl_name = decl_name_of(store, stmt_unwrap(store, node))
+                    let key = "${decl_name}::@derive"
+                    if decl_name != "" && list_contains_str(seen, key) {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.ExpandCycle,
+                            "expansion cycle: `${decl_name}` was already derived in this compile — a macro is (transitively) emitting its own @derive'd declaration",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        found_cycle = true
+                        out.push(store.restmt(strip_derive_annotation(store, node), id))
+                        continue
+                    }
+                    if decl_name != "" { seen = seen.push(key) }
                     let attempt = try_derive_all(store, node, reg, current_state, p.line, p.col, p.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
                     origins = list_concat(origins, attempt.origins)
@@ -522,6 +552,19 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                 } else if has_expand_annotation(store, node) {
                     avra_rd_set_current_module(current_module)
                     let p = store.stmt_pos(id)
+                    let decl_name = decl_name_of(store, stmt_unwrap(store, node))
+                    let key = "${decl_name}::${expand_target_name(store, node)}"
+                    if decl_name != "" && list_contains_str(seen, key) {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.ExpandCycle,
+                            "expansion cycle: `${decl_name}` was already expanded by `${expand_target_name(store, node)}` in this compile — the macro is (transitively) emitting its own annotated declaration",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        found_cycle = true
+                        out.push(id)
+                        continue
+                    }
+                    if decl_name != "" { seen = seen.push(key) }
                     let attempt = try_expand_one(store, node, reg, p.line, p.col, p.file, current_module)
                     bag = bag_merge(bag, attempt.bag)
                     origins = list_concat(origins, attempt.origins)
@@ -535,7 +578,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
             }
         }
     }
-    WalkerOut { out, state: current_state, bag, origins }
+    WalkerOut { out, state: current_state, bag, origins, seen, found_cycle }
 }
 
 /// Walker's per-iter return: the spliced stmts + the state after any
@@ -545,11 +588,16 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
 /// fires later in the same iteration can `ctx_qualify_ident` an
 /// introduced name (doc step 4.4 / test 7), and merges `bag` so
 /// every iteration's diagnostics surface in the final result.
+/// `seen`/`found_cycle` thread the cycle-detecting memo (F4012): the
+/// (decl, mechanism) pairs expanded so far, and whether this walk hit
+/// a re-encounter.
 type WalkerOut = {
     out: List<StmtId>,
     state: ResolverState,
     bag: DiagnosticBag,
     origins: List<MacroFnOrigin>,
+    seen: List<string>,
+    found_cycle: bool,
 }
 
 /// Internal carrier for a single macro-expansion attempt. `replacement`

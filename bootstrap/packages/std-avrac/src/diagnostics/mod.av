@@ -411,6 +411,14 @@ export enum DiagCode {
     /// capability. The registry (features/derive/registry.av) is the
     /// single source of the known set; the message lists it.
     DeriveUnknownCapability
+    /// F4012 — an expansion cycle: the same (declaration, macro) pair
+    /// came up for expansion twice in one compile, i.e. a macro
+    /// (transitively) emits its own annotated declaration. Caught by
+    /// the fixpoint's seen-set the moment the pair re-enters — a
+    /// precise error at the cycle edge instead of 16 identical
+    /// iterations and a vague F4000. The seen-set doubles as the
+    /// memo: each (decl, macro) pair expands at most once.
+    ExpandCycle
     /// F4100 — a `component` instance's body contains a nested
     /// `ComponentBlock` whose type isn't declared in the parent's
     /// `children { ... }` schema. The compiler refuses to splice
@@ -517,6 +525,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .QuoteOutsideComptime -> ErrorDef { code: "F4009", help: "`quote { ... }` builds AST for macros and only works inside a `@comptime` fn or an `@expand` macro; move it into comptime code, or drop the quote if you meant a normal expression" }
         .DeriveMissingCapability -> ErrorDef { code: "F4010", help: "write the capabilities to derive as bare identifiers, e.g. `@derive(Walk)` or `@derive(Walk, Eq)`" }
         .DeriveUnknownCapability -> ErrorDef { code: "F4011", help: "check the capability name against the registered set — the registry in features/derive/registry.av is the source of truth" }
+        .ExpandCycle -> ErrorDef { code: "F4012", help: "a macro is emitting a declaration that carries its own @expand/@derive annotation — break the cycle by emitting the declaration without the annotation, or precompute the result" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ComponentTokenBodyNeedsMacro -> ErrorDef { code: "F4101", help: "a raw token body needs a macro to parse it — annotate the component definition with `@expand(<macro_fn>)`" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }

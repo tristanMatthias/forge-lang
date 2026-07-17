@@ -76,3 +76,41 @@ spec "@derive() with no capabilities is F4010" {
         out.contains("F4010") && !out.contains("__AVRA_CHECK_OK__")
     }
 }
+
+spec "a macro emitting its own @expand'd decl is an F4012 cycle" {
+    then "the cycle edge is named precisely; no 16-iteration spin" {
+        let out = derive_check_out("/tmp/avra_derive_surface_cycle_test.av",
+            "use @std.avrac.core.{Stmt}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn looper(s: Stmt) -> Stmt {\n" +
+            "    quote stmt {\n" +
+            "        @expand(looper)\n" +
+            "        type Q = { x: int }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(looper)\n" +
+            "type Q0 = { x: int }\n" +
+            "\n" +
+            "fn main() { println(\"done\") }\n")
+        out.contains("F4012") &&
+            out.contains("expansion cycle") &&
+            !out.contains("F4000") &&
+            !out.contains("__AVRA_CHECK_OK__")
+    }
+}
+
+spec "memoization: one @derive site expands its decl exactly once" {
+    then "a derived method defined twice would F3000-collide; a clean compile proves single expansion" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_memo_test.av",
+            "@derive(Eq)\n" +
+            "type Once = { v: int }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Once { v: 1 }\n" +
+            "    println(\"memo_ok=\" + string(a.eq(Once { v: 1 })))\n" +
+            "}\n")
+        out.contains("memo_ok=true")
+    }
+}

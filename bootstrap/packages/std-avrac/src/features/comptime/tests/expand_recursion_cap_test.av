@@ -1,19 +1,22 @@
 // docs/2026_05_25_EXPAND_PIPELINE_HANDOFF.md — Step 4 test 4 part 2:
 // "test the recursion cap: a self-referential macro should produce a
-// clean 'macro recursion limit (16) exceeded' error, not a stack
-// overflow."
+// clean error, not a stack overflow."
 //
 // `loop_macro` emits a fn carrying `@expand(loop_macro)` — every
-// fixpoint iteration the loop re-fires. expand_macros_fixpoint caps
-// iterations at 16, prints a recognisable diagnostic, then exits(1)
-// so the compile fails visibly. The captured output carries the cap
-// message, proving the cap fired instead of the process diverging.
+// fixpoint iteration the loop re-fires. Since ps3t.6.6 the fixpoint
+// carries a cycle-detecting memo: the SECOND time the same
+// (decl, macro) pair comes up, the compile stops with a precise F4012
+// naming the decl and macro at the cycle edge — two iterations, not
+// sixteen identical ones capped by a vague F4000. (The 16-iteration
+// bound remains as the backstop for non-cyclic runaways — a macro
+// emitting differently-NAMED annotated decls each round — which the
+// seen-set by construction never matches.)
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
-spec "@expand recursion cap fires on infinite self-recursion" {
-    then "self-referential @expand stops at 16 iterations with a diagnostic" {
-        let out = write_fixture_and_run("/tmp/avra_expand_recursion_cap_test.av", 
+spec "@expand self-recursion stops at the cycle edge with F4012" {
+    then "the self-referential macro reports one precise expansion-cycle error" {
+        let out = write_fixture_and_run("/tmp/avra_expand_recursion_cap_test.av",
             "use @std.avrac.core.{Stmt}\n" +
             "\n" +
             "@comptime\n" +
@@ -28,6 +31,9 @@ spec "@expand recursion cap fires on infinite self-recursion" {
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("recursion limit")
+        out.contains("expansion cycle") &&
+            out.contains("`carrier`") &&
+            out.contains("`loop_macro`") &&
+            !out.contains("recursion limit")
     }
 }
