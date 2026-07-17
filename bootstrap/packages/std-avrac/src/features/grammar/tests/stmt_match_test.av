@@ -1,0 +1,110 @@
+// ps3t.6.5.4 — statement-position `match`, composing the pattern family
+// (6.5.5) with the expression family. A `match subject { pattern (if guard)?
+// -> body, … }` builds a `Stmt.Match(subject, arms)` where each arm is a
+// `MatchArm { pattern, pattern_id, guard_id, body_id }`. The seam adds a
+// match-arm target (CapVal.Arm/Arms + MkArm/MkMatch) that reads the pattern
+// back from the arena (render_match_arm renders the boxed Pattern) and
+// threads an optional guard + a body expression.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_statement() — `match` is a stmt_tag feature) over a
+// match corpus and assert identical ASTs via render_stmt_id.
+//
+// Scope: the core `match subject { … }` form with variant/literal/wildcard/
+// nested/or patterns, optional guards, and expression bodies. Subjectless
+// `match { … }` (lowers to Expr.When) and the `match … table { … }` form are
+// distinct paths, out of scope here. Arms use commas (the DSL demo lexer
+// strips the newlines the hand parser also accepts as separators — the
+// real-lexer wiring, 6.5.8); bodies stay within the proven expression grammar.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+// A statement-match grammar composing the match, pattern, and expression
+// families. `match_arm` = pattern (optional `if` guard) `->` body; arms are
+// comma-separated with an optional trailing comma (as parse_match_arm_list,
+// which consumes an optional `,` after each arm).
+fn match_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  match_stmt  = \"match\" subj:expression \"{\" ( arms:match_arm \",\"? )* \"}\" -> MkMatch(subj, arms)\n" +
+    "  match_arm   = p:pattern_or ( \"if\" g:expression )? \"->\" b:expression -> MkArm(p, g, b)\n" +
+    // ── pattern family ──
+    "  pattern_or  = l:pattern ( \"or\" r:pattern_or )? -> OrMaybe(l, r)\n" +
+    "  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat\n" +
+    "  variant_pat = \".\" name:IDENT ( \"(\" ( binds:IDENT ( \",\" binds:IDENT )* | subs:variant_pat ( \",\" subs:pattern )* ) \")\" )? -> MkVariant(name, binds, subs)\n" +
+    "  ident_pat   = iname:IDENT ( \"(\" ib:IDENT \")\" )? -> IdentPat(iname, ib)\n" +
+    "  bool_pat    = bp:(\"true\" | \"false\") -> PatBool(bp)\n" +
+    "  str_pat     = s:STRING -> PatStr(s)\n" +
+    "  neg_pat     = \"-\" nn:NUMBER -> PatNegNum(nn)\n" +
+    "  num_pat     = pn:NUMBER -> PatNum(pn)\n" +
+    // ── expression family (subject / guard / body) ──
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(match_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL statement family: match == hand-written parser (ps3t.6.5.4)" {
+    given "single- and multi-arm matches over variant patterns" {
+        then "bare variants, bindings, and multiple arms agree" {
+            agree("match x { .A -> 1 }") &&
+            agree("match x { .A -> 1, .B -> 2 }") &&
+            agree("match x { .Ok(v) -> v, .Err(e) -> 0 }") &&
+            agree("match x { .Red -> 1, .Green -> 2, .Blue -> 3 }")
+        }
+    }
+    given "literal, wildcard, and nested patterns as arms" {
+        then "int-literal arms, a wildcard catch-all, and a nested variant agree" {
+            agree("match x { 1 -> 10, 2 -> 20 }") &&
+            agree("match x { 1 -> 10, _ -> 0 }") &&
+            agree("match x { .Some(.Ok(y)) -> y, .None -> 0 }") &&
+            agree("match x { _ -> 0 }")
+        }
+    }
+    given "guards and or-patterns" {
+        then "arm guards (`if`) and or-pattern arms agree" {
+            agree("match x { .A if y -> 1, .B -> 2 }") &&
+            agree("match x { .A or .B -> 1, _ -> 0 }") &&
+            agree("match x { 1 if a -> 10, _ -> 0 }")
+        }
+    }
+    given "expression subjects, bodies, and a trailing comma" {
+        then "arithmetic subject/body and a trailing comma agree" {
+            agree("match a + b { .A -> 1 }") &&
+            agree("match x { .A -> 1 + 2, .B -> c * 2 }") &&
+            agree("match x { .A -> 1, .B -> 2, }")
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built the Stmt)" {
+        then "canonical renders of representative forms" {
+            dsl_stmt("match x { .A -> 1 }") == "(match x (.A() -> 1))" &&
+            dsl_stmt("match x { .A -> 1, .B -> 2 }") == "(match x (.A() -> 1; .B() -> 2))" &&
+            dsl_stmt("match x { _ -> 0 }") == "(match x (_ -> 0))" &&
+            dsl_stmt("match x { .A if y -> 1 }") == "(match x (.A() if y -> 1))"
+        }
+    }
+}
