@@ -469,10 +469,23 @@ fn direct_child_expr(b: Binding) -> Expr {
 /// hits the registered name as-is (the enum_type_has lookup is a
 /// strict string match; bare-vs-qualified tolerance only lives in
 /// vtype_eq, not in the registry probe).
+// 5idg: turbofish type-args are structural `List<ValueType>` now, but the
+// walker runs at COMPTIME and cannot call the runtime helper `vtype_from_name`
+// (the eval sees a non-`@comptime` fn as a type_marker → F4005). Construct the
+// nominal type directly instead: `resolve_vtype` later upgrades `Struct`→`Enum`
+// for the parent, exactly as `vtype_from_name` + `resolve_vtype` did for the old
+// string form. Wrapper/parent are always nominal struct/enum names (never
+// primitives), so a `Struct` node is always the right pre-resolve shape.
+@comptime
+fn name_vtype(name: string) -> ValueType {
+    let no_args: List<ValueType> = []
+    ValueType.Struct(name, no_args, 0)
+}
+
 @comptime
 fn unwrap_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
-    let type_args: List<string> = [wrapper, parent_name]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_list")), type_args, args)
 }
 
@@ -562,7 +575,7 @@ fn block_expr_for_children(bindings: List<Binding>, parent_name: string) -> Expr
 @comptime
 fn self_opt_to_list_call(field_name: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
-    let type_args: List<string> = [parent_name]
+    let type_args: List<ValueType> = [name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("self_opt_to_list")), type_args, args)
 }
 
@@ -571,7 +584,7 @@ fn self_opt_to_list_call(field_name: string, parent_name: string) -> Expr {
 @comptime
 fn unwrap_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
-    let type_args: List<string> = [wrapper, parent_name]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_opt")), type_args, args)
 }
 
@@ -704,7 +717,26 @@ fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx
     if field_is_node(kp) { return CrossBinding { binding_name: "", target: tp, kind: kp } }
     let tt = "${pfx}ValueType"
     let kt = classify_field_kind(vt, tt, ctx)
-    if field_is_node(kt) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
+    // 5idg: a SINGLE cross-type ValueType child (e.g. ChannelNew.elem) is walkable —
+    // the standard parser ingests it as a TypeArena edge, so walker view and store
+    // edges agree. A `List<ValueType>` field, though, splits two ways and this gate
+    // must tell them apart, because `all_children_spanned()` is built SOLELY from
+    // this cross-type classifier (build_all_children_spanned_arms) — even a
+    // ValueType node's OWN self-recursive list flows through here, NOT the same-type
+    // `children()` path:
+    //   * On an AST *expression* node (GenericCall.type_args) it is a type-ANNOTATION
+    //     list the generics parser stores INLINE (alloc_leaf, no edge ingest), so it
+    //     is NOT a walkable sub-node — walking it would make `all_children_spanned()`
+    //     diverge from `children_of()` (the faithfulness oracle, arena.av). Keep it
+    //     Scalar. Here the list element (ValueType) is NOT the parent, so
+    //     `is_list_of_self` is false.
+    //   * On the ValueType enum ITSELF (FnTyped.params, Struct/Enum.type_args) it is
+    //     genuine recursive children that the arena DOES ingest as edges — dropping
+    //     it to Scalar made `all_children_spanned()` under-count and the arena's
+    //     FnTyped ingest read past the recorded edges (SIGABRT, arena_test.av:188).
+    //     Here the element IS the parent, so `is_list_of_self(vt, parent_name)` is
+    //     true and the list must be walked.
+    if field_is_node(kt) && (!(kt is .ListOfSelf) || is_list_of_self(vt, parent_name)) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
     // A `List<Struct>` whose element is a REGISTERED walkable node-container
     // (e.g. `List<MatchArm>`). Classified here rather than in classify_field_kind
     // because such a struct spans multiple node kinds, so the same-type children()
@@ -1153,7 +1185,7 @@ fn map_arm_body(variant_name: string, parent_name: string, bindings: List<Bindin
 @comptime
 fn map_self_opt_call(field_name: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
-    let type_args: List<string> = [parent_name]
+    let type_args: List<ValueType> = [name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("map_self_opt")), type_args, args)
 }
 
@@ -1162,7 +1194,7 @@ fn map_self_opt_call(field_name: string, parent_name: string) -> Expr {
 @comptime
 fn map_node_opt_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
-    let type_args: List<string> = [wrapper, parent_name]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_opt")), type_args, args)
 }
 
@@ -1190,7 +1222,7 @@ fn list_map_call(bind_name: string) -> Expr {
 @comptime
 fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
-    let type_args: List<string> = [wrapper, parent_name]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_list")), type_args, args)
 }
 
@@ -1201,7 +1233,7 @@ fn map_node_list_call(field_name: string, wrapper: string, parent_name: string) 
 @comptime
 fn map_node_call(field_name: string, wrapper: string, parent_name: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
-    let type_args: List<string> = [wrapper, parent_name]
+    let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent_name)]
     Expr.GenericCall(synth_expr_id(Expr.Ident("map_node")), type_args, args)
 }
 

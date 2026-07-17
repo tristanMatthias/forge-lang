@@ -477,10 +477,10 @@ export fn render_type_param_list(params: List<TypeParamEntry>) -> string {
     list_map(params, (p: TypeParamEntry) -> if p.bounds == "" { p.name } else { "${p.name}: ${p.bounds}" }).join(", ")
 }
 
-// `List<string>` replaces the retired `enum TypeNameList`. Used as
-// `type_args: List<string>` on Expr.GenericCall, `implements:
-// List<string>` on Stmt.ComponentDef, and as the parser's
-// `parse_type_name_list` return.
+// Turbofish type-args are structural (5idg): `type_args: List<ValueType>` on
+// Expr.GenericCall, and the parser's `parse_type_name_list` returns
+// `List<ValueType>`. `implements: List<string>` on Stmt.ComponentDef stays a
+// name-string list (trait names, resolved separately — not a turbofish type).
 
 // ── Value types ──
 //
@@ -1935,7 +1935,7 @@ export enum Expr {
     /// Function call: `f(a, b)`.
     Call(callee: ExprId, args: List<ExprId>)
     /// Call with explicit type arguments: `f::<int, string>(x, y)`.
-    GenericCall(callee: ExprId, type_args: List<string>, args: List<ExprId>)
+    GenericCall(callee: ExprId, type_args: List<ValueType>, args: List<ExprId>)
     /// Struct literal: `Foo { x: 1, y: 2 }`.
     StructLit(name: string, inits: List<FieldInit>)
     /// Field access: `obj.field`.
@@ -2648,8 +2648,8 @@ export fn render_field_list(fields: List<FieldEntry>) -> string {
 }
 
 /// Render a `List<string>` of type names as a comma-separated string.
-export fn render_type_name_list(names: List<string>) -> string {
-    names.join(", ")
+export fn render_type_name_list(type_args: List<ValueType>) -> string {
+    list_map(type_args, (t: ValueType) -> vtype_render_full(t)).join(", ")
 }
 
 /// Render a `List<ParamEntry>` as `(name, name2)`.

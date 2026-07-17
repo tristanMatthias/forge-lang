@@ -263,8 +263,8 @@ fn fmt_param_list_typed(params: List<ParamEntry>) -> string {
 
 /// Render a comma-separated list of type names — for explicit
 /// generic-call type arguments `f::<T, U>(x)`.
-fn fmt_type_name_list(names: List<string>) -> string {
-    names.join(", ")
+fn fmt_type_name_list(type_args: List<ValueType>) -> string {
+    list_map(type_args, (t: ValueType) -> vtype_render_full(t)).join(", ")
 }
 
 /// Render a struct/with field-init list — `name: expr, name: expr`.

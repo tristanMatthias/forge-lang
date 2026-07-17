@@ -5010,6 +5010,29 @@ typedef struct AvraTestCrash {
 
 static AvraRecordList _crashes = AVRA_RECORD_LIST_INIT;
 
+// gg-flaky-harness: per-thread "the crash I'm about to cause is EXPECTED"
+// flag. A test that deliberately crashes a spec (to exercise the guard) arms
+// this via `avra_test_expect_crash()` immediately before raising the signal;
+// the guard's crash path (`avra_test_record_crash`) consumes it and drops the
+// live crash count in the SAME breath, on the SAME thread. This replaces the
+// old design where the crash was recorded in one spec and a SEPARATE later
+// spec called `avra_test_ack_expected_crash()` to decrement the global count —
+// a window that, under parallel CI load, let a deliberate crash's live-count
+// contribution survive to summary time and redden an otherwise-green suite
+// (`0 failed, 1 spec(s) crashed`). Arming closes the window: record + ack are
+// now atomic and co-located, so an expected crash can never leak. Touched only
+// in normal (non-async-signal) context — set in the spec body, read/cleared in
+// the guard's return paths — but typed `sig_atomic_t` to match the sibling
+// guard state it lives beside.
+static _Thread_local volatile sig_atomic_t _expect_next_crash = 0;
+
+// Arm the next crash on THIS thread as expected. Intended for `*_test.av`
+// files that deliberately raise a fatal signal to prove the per-spec guard
+// catches it — call this immediately before `avra_test_raise_signal(...)`.
+void avra_test_expect_crash(void) {
+    _expect_next_crash = 1;
+}
+
 // Per-signal label buffer pool — one slot per supported signal so the
 // "SIGNAME (description)" string returned by `avra_signal_label` has
 // a stable storage location. The reporter holds the pointer past the
@@ -5037,19 +5060,34 @@ void avra_test_record_crash(const char* spec, const char* file,
     c->file = test_str_dup(file);
     c->line = line;
     c->signal = signal;
+    // The record is ALWAYS appended so per-file introspection
+    // (avra_test_crash_count_for_file etc.) sees every crash. But if the
+    // crashing spec ARMED an expectation (avra_test_expect_crash) right before
+    // deliberately raising, acknowledge it HERE — atomically, on the same
+    // thread, inside the guard's crash path — rather than trusting a separate
+    // later spec to decrement the count. record_list_append bumped the live
+    // count; undo it in the same breath so the expected crash nets to zero and
+    // can never survive to the summary. gg-flaky-harness.
     record_list_append(&_crashes, c);
+    if (_expect_next_crash) {
+        _expect_next_crash = 0;
+        atomic_fetch_sub(&_crashes.count, 1);
+    }
 }
 
 int64_t avra_test_crash_count(void) {
     return atomic_load(&_crashes.count);
 }
 
-// Hook for tests that DELIBERATELY crash a spec to exercise the
-// guard (e.g. spec_test/tests/crash_isolation_test.av). Decrements
-// the live count so the reporter's exit code stays green AND the
-// "Crashed specs:" section stops walking — the linked list entry
-// is left in place so prior introspection (avra_test_crash_spec etc.)
-// can still see what was recorded before the ack.
+// LEGACY hook for tests that DELIBERATELY crash a spec to exercise the guard.
+// Superseded by `avra_test_expect_crash()` (arm-before-raise), which acks at
+// record time on the crashing thread and so has no lost-decrement window; the
+// in-tree crash-isolation tests all use the arm form now. Kept as a functional
+// blind decrement purely for backward compatibility with any external/cached
+// test binary that still calls it — a bare decrement is only correct when
+// paired 1:1 with a real recorded crash, which was exactly the fragile
+// contract the arm form replaces. Do NOT combine it with arming in the same
+// spec: that double-acks and could mask a real crash.
 void avra_test_ack_expected_crash(void) {
     atomic_fetch_sub(&_crashes.count, 1);
 }
@@ -5180,6 +5218,12 @@ int64_t avra_test_run_spec_guarded(const char* name, const char* file,
     if (sig == 0) {
         _spec_guard_active = 1;
         avra_closure_call_0(closure);
+        // gg-flaky-harness: a spec that armed an expected crash
+        // (avra_test_expect_crash) but returned NORMALLY — the raise never
+        // happened — must not leak the arm into the next spec, where it would
+        // silently ack a genuine crash. The crash path consumes the arm; this
+        // is the matching consume for the no-crash path.
+        _expect_next_crash = 0;
     } else {
         // The longjmp may have skipped balancing sink pops (spec died
         // inside a capture window) — reclaim orphan frames so the next

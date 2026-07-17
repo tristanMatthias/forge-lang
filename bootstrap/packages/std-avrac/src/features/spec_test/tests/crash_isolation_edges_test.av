@@ -8,7 +8,7 @@
 //   * A spec whose ONLY content is a crashing `then` — no given —
 //     still gets caught and named.
 
-// `avra_test_raise_signal`, `avra_test_ack_expected_crash`, and the
+// `avra_test_raise_signal`, `avra_test_expect_crash`, and the
 // SIG* constants come from the inlined spec_test reporter.
 //
 // 4m1e: the crash list is process-global, so under the in-process parallel
@@ -25,6 +25,7 @@ spec "crash isolation edges: spec with empty body wraps without crashing" {
 
 spec "crash isolation edges: first deliberate crash (SIGABRT)" {
     then "crash one" {
+        avra_test_expect_crash()
         avra_test_raise_signal(SIGABRT)
         true
     }
@@ -32,6 +33,7 @@ spec "crash isolation edges: first deliberate crash (SIGABRT)" {
 
 spec "crash isolation edges: second deliberate crash (SIGFPE)" {
     then "crash two" {
+        avra_test_expect_crash()
         avra_test_raise_signal(SIGFPE)
         true
     }
@@ -54,12 +56,12 @@ spec "crash isolation edges: both crashes were recorded with distinct signals" {
         then "crashed spec 1 name was captured" {
             avra_test_crash_spec_for_file(CIE_FILE, 1).contains("second deliberate crash")
         }
-        then "drain both acks so CI stays green" {
-            // The acks drop the GLOBAL live count (green-ness verified by the
-            // shard exit code); the two entries are RETAINED for
-            // introspection, which this asserts (per-file, race-free).
-            avra_test_ack_expected_crash()
-            avra_test_ack_expected_crash()
+        then "both deliberate crashes were already acked at record time" {
+            // Each crash armed itself (avra_test_expect_crash) before raising,
+            // so the guard dropped the global live count as it recorded them —
+            // no separate acks here, and no window for the counts to leak to
+            // the summary. Both entries are RETAINED for introspection, which
+            // this asserts (per-file, race-free).
             avra_test_crash_count_for_file(CIE_FILE) == 2
         }
     }

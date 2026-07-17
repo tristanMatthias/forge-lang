@@ -4069,7 +4069,7 @@ fn check_call(tc: TC, callee: Expr, args: List<ExprId>) -> ExprResult {
 /// Unknown. The W1 derive_walker rewrite emits GenericCall to make
 /// mono's inference unambiguous; this path now matches by carrying
 /// the user-supplied bindings through tc_subst_vtype on ret_ty.
-fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<ExprId>) -> ExprResult {
+fn check_generic_call(tc: TC, callee: Expr, type_args: List<ValueType>, args: List<ExprId>) -> ExprResult {
     let name = match callee {
         .Ident(n) -> n
         .QualifiedIdent(n) -> n
@@ -4093,7 +4093,7 @@ fn check_generic_call(tc: TC, callee: Expr, type_args: List<string>, args: List<
     mut bindings: List<TypeArg> = []
     let n = if r.tp.length < type_args.length { r.tp.length } else { type_args.length }
     for i in 0..n {
-        bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, vtype_from_name(type_args[i])) })
+        bindings.push(TypeArg { param_name: r.tp[i].name, concrete_vt: resolve_vtype(checked, type_args[i]) })
     }
     // Slice B (ps3t.4.5): gate un-annotated lambda args on the RAW
     // params BEFORE substitution — codegen's lambda emit consults the

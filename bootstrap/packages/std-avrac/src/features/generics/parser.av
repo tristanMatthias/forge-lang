@@ -91,16 +91,16 @@ impl Parser {
         .Ok(self.alloc_leaf(node))
     }
 
-    fn parse_type_name_list(self) -> List<string> {
-        mut out: List<string> = []
+    fn parse_type_name_list(self) -> List<ValueType> {
+        mut out: List<ValueType> = []
         if self.check(Tk.Greater) { return out }
         if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
-        out.push(self.current_lexeme)
+        out.push(vtype_from_name(self.current_lexeme))
         self.advance()
         while self.check(Tk.Comma) {
             self.advance()
             if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
-            out.push(self.current_lexeme)
+            out.push(vtype_from_name(self.current_lexeme))
             self.advance()
         }
         out
