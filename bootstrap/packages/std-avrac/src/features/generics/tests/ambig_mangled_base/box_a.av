@@ -1,0 +1,30 @@
+// Module A's AmBox<T> — collides on the short name with box_b's AmBox<T>,
+// so both mangle with the qualified-flattened base (`box_a__AmBox__…`).
+export type AmBox<T> = { v: T }
+
+type AmEngA = { calls: int }
+
+impl AmEngA {
+    // The t-c6gj seam: `?` on a fn-typed param whose Ok payload is a generic
+    // instance, then a field access on the payload — routes the MANGLED
+    // return-type string back through mono's parser, which must split
+    // `box_a__AmBox__int` as base `box_a__AmBox` + args `[int]`, never as
+    // base `box_a` + args `[AmBox__int]`.
+    fn run(self, f: fn(int) -> Result<AmBox<int>, string>) -> Result<int, string> {
+        let out = f(1)?
+        self.calls = self.calls + 1
+        Result.Ok(out.v)
+    }
+}
+
+fn mk_a(n: int) -> Result<AmBox<int>, string> {
+    Result.Ok(AmBox { v: n + 6 })
+}
+
+export fn probe_a() -> int {
+    let mut e = AmEngA { calls: 0 }
+    match e.run(mk_a) {
+        .Ok(v) -> v
+        .Err(_) -> -1
+    }
+}

@@ -164,12 +164,18 @@ spec "P4 extractor: generic_bodies population" {
             "export fn plain(x: int) -> int {\n    return x + 1\n}")
         bodies.length == 0
     }
-    then "private generic fn (no `export`) is NOT in generic_bodies" {
-        // Per design: generic bodies only leak through export.
-        // Private generics stay inside the producer's compile unit.
+    then "private generic fn (no `export`) IS in generic_bodies (t-jgc0)" {
+        // EVERY generic fn ships its body, exported or not: an exported
+        // generic delegates to private same-module generic helpers, and the
+        // producer cannot pre-compile those (nothing instantiates them
+        // producer-side) — the consumer's monomorphizer is the only thing
+        // that ever needs their bodies. Visibility is unaffected: the
+        // synthesizer re-wraps each fn with its real export flag, so
+        // consumer code still can't NAME a private helper (F3000); only
+        // mono clones it. The generic twin of 9p1d's every-@comptime rule.
         let bodies = extract_from_source("@std::test",
             "fn helper<T>(x: T) -> T {\n    return x\n}")
-        bodies.length == 0
+        bodies.length == 1 && bodies[0].qualified_name == "@std::test::helper"
     }
     then "two exported generics each get their own entry, in source order" {
         let bodies = extract_from_source("@std::test",

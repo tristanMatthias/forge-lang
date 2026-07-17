@@ -427,22 +427,33 @@ fn walk_stmt(acc: ExtractAcc, stmt: Stmt, current_module: string, exported: bool
                 ret: ret_vt,
             }
             let with_fn = push_fn(acc, entry)
-            // P4: every exported generic fn ships its body as
-            // fmt-rendered source so the consumer can monomorphize
-            // at consume time. 9p1d: every @comptime fn ships its
-            // body — exported or not — because the consumer's
-            // @expand pipeline invokes the top-level exported macro
-            // (e.g. derive_walker), which then calls private helper
-            // @comptime fns in the same module (unwrap_enum_decl,
-            // build_children_arms, etc.). Without their bodies the
-            // helpers return null and the macro silently fails with
+            // P4: every generic fn ships its body as fmt-rendered
+            // source so the consumer can monomorphize at consume
+            // time — EXPORTED OR NOT. An exported generic delegates
+            // to private same-module generic helpers (the L6 query
+            // engine's `db_fetch` → `db_fetch_slot`/`db_family`
+            // chain), and the producer cannot pre-compile those
+            // (nothing instantiates them producer-side): the
+            // consumer's monomorphizer is the only thing that ever
+            // needs their bodies, and without them the synthesized
+            // helper is an empty stub whose specialization silently
+            // collects nothing (payload types never instantiate —
+            // "field access on non-struct value"). Visibility is
+            // unaffected: the synthesizer re-wraps each fn with its
+            // real export flag, so consumer code still can't NAME a
+            // private helper (F3000) — only mono clones it. This is
+            // the generic twin of 9p1d, which shipped every
+            // @comptime fn's body — exported or not — because the
+            // exported macro calls private helper @comptime fns and
+            // without their bodies the macro silently failed with
             // F4006. Both paths route through GenericBodyEntry;
             // consumers gate parse on which they need (eager for
             // generics, lazy via avra_lazy_comptime_get for
-            // @comptime). Non-generic, non-@comptime exports stay
+            // @comptime). Non-generic, non-@comptime fns stay
             // signature-only (linker resolves against the producer's
-            // .o); private non-@comptime fns never escape.
-            let ships_generic = exported && type_params.length > 0
+            // .o); private non-generic, non-@comptime fns never
+            // escape.
+            let ships_generic = type_params.length > 0
             if ships_generic || is_comptime {
                 let body_entry = GenericBodyEntry {
                     qualified_name: qn,

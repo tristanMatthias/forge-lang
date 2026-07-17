@@ -1,0 +1,26 @@
+// Module B's AmBox<T> — a DIFFERENT layout under the same short name, so a
+// base/args mis-split that resolves the wrong AmBox is a field-offset bug,
+// not just a naming one.
+export type AmBox<T> = { tag: string, u: T }
+
+type AmEngB = { calls: int }
+
+impl AmEngB {
+    fn run(self, f: fn(int) -> Result<AmBox<string>, string>) -> Result<string, string> {
+        let out = f(1)?
+        self.calls = self.calls + 1
+        Result.Ok(out.u)
+    }
+}
+
+fn mk_b(n: int) -> Result<AmBox<string>, string> {
+    Result.Ok(AmBox { tag: "b", u: "eight" })
+}
+
+export fn probe_b() -> string {
+    let mut e = AmEngB { calls: 0 }
+    match e.run(mk_b) {
+        .Ok(v) -> v
+        .Err(_) -> "err"
+    }
+}

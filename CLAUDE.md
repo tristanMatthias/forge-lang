@@ -24,6 +24,7 @@ Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 - `bootstrap/src/codegen/` — LLVM IR emission (mod.av + helpers + per-feature codegen)
 - `bootstrap/src/typeck/mod.av` — type checker (currently additive, MUST become gating per spec)
 - `bootstrap/src/resolve/` — name resolver (mod.av = scope, names.av = module/import resolution)
+- `bootstrap/src/query/` — L6 red-green query engine (Db<V> memo store, discovered deps, early cutoff, F3900 cycles; oracle.av = the incremental==from-scratch edit-sequence harness every L6 phase gates on; design: docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md)
 - `bootstrap/runtime.c` — C runtime (~1900 lines: allocator, string ops, LLVM wrappers, channels, threads)
 - `bootstrap/seed/seed.ll` — bootstrap seed IR
 - `bootstrap/tests/` — spec/given/then test files (`*_test.av`); run via `bs2 test`
@@ -87,7 +88,7 @@ purely about sized-int WIDTH — callers of the wide `resolve_layout` /
 - **Control flow:** `if`/`else` (stmt + expr), `while`, `for i in start..end`, `for x in collection`, `break`, `continue`
 - **Pattern matching:** `match` (stmt + expr), guards, or-patterns, nested patterns, subjectless `match`/`when`
 - **Types:** `type Foo = { fields }` (structs), `enum Foo { variants }`, `trait`, `impl`, `impl Trait for Type`
-- **Generics:** `<T, U: Bound>`, full monomorphization (4-pass), explicit type args `f::<int>(x)`
+- **Generics:** `<T, U: Bound>`, full monomorphization (4-pass), explicit type args `f<int>(x)` (NOT Rust's `f::<int>(x)` — the parser speculatively tries `<` directly after the callee; fmt emits this same form so metadata GenericBodies round-trip)
 - **Closures:** `(x) -> body`, `(x: int) -> body`, `it` pronoun (method-call contexts), captures
 - **Collections:** `[a, b, c]` list literals, `{k: v}` map literals, list comprehensions, table literals
 - **Null safety:** `T?` nullable, `?.` optional chain, `??` null coalesce, `?` try/propagation

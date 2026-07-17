@@ -1,0 +1,127 @@
+// WHY: regression for t-c6gj — a mangled name carrying a NESTED instance arg
+// must reconstruct its type-args faithfully. `vtype_from_type_string` used to
+// split every `__` naively: `Result__RtBox__string__RtCyc` → args
+// [RtBox, string, RtCyc] instead of [RtBox__string, RtCyc]. The fabricated
+// bare `RtBox` arg poisoned every consumer of the reconstructed args —
+// concretely `resolve_ok_type_with` (nce6.3), so the `?`-extracted payload of
+// a fn-typed param returning `Result<RtBox<V>, RtCyc>` inside a specialized
+// impl method was typed as the unmangled generic base and codegen died with
+// F9999 "unknown struct `RtBox`" at the first field access.
+//
+// The fix makes `parse_dunder_args` (features/generics/mono.av) the
+// ARITY-AWARE inverse of `mangle_name_ordered`'s depth-first flattening: a
+// segment naming a registered generic of arity k consumes the next k
+// recursively-reconstructed segments as its own args. This spec exercises the
+// exact end-to-end shape that failed — the L6 query engine's `compute(ctx,
+// q)?` seam (ps3t.8.2) — plus a two-level nesting for the recursive case.
+
+type RtBox<V> = { v: V }
+type RtCyc = { n: int }
+
+type RtEng<V> = { calls: int }
+
+impl RtEng<V> {
+    // The failing seam: `?` on a fn-typed param whose Ok payload is a nested
+    // generic instance, then a FIELD ACCESS on that payload. Before the fix
+    // this was F9999 at codegen ("unknown struct `RtBox`").
+    fn run(self, f: fn(int) -> Result<RtBox<V>, RtCyc>, d: V) -> Result<V, RtCyc> {
+        let out = f(1)?
+        self.calls = self.calls + 1
+        let inner: V = out.v
+        Result.Ok(inner)
+    }
+}
+
+fn mk_str(n: int) -> Result<RtBox<string>, RtCyc> {
+    let b: RtBox<string> = RtBox { v: "payload" }
+    Result.Ok(b)
+}
+
+fn mk_err(n: int) -> Result<RtBox<string>, RtCyc> {
+    Result.Err(RtCyc { n: 42 })
+}
+
+// Two-level nesting: RtBox<RtBox<int>> — the recursive reconstruction case
+// (`RtBox__RtBox__int` must parse as one arg `RtBox__int`, not [RtBox, int]).
+fn mk_nested(n: int) -> Result<RtBox<RtBox<int>>, RtCyc> {
+    let inner: RtBox<int> = RtBox { v: n }
+    let outer: RtBox<RtBox<int>> = RtBox { v: inner }
+    Result.Ok(outer)
+}
+
+type RtEngDeep = { calls: int }
+
+impl RtEngDeep {
+    fn run(self, f: fn(int) -> Result<RtBox<RtBox<int>>, RtCyc>) -> Result<int, RtCyc> {
+        let out = f(5)?
+        self.calls = self.calls + 1
+        Result.Ok(out.v.v)
+    }
+}
+
+fn eng_ok() -> string {
+    let mut e: RtEng<string> = RtEng { calls: 0 }
+    match e.run(mk_str, "?") {
+        .Ok(v) -> v
+        .Err(_) -> "err"
+    }
+}
+
+fn eng_err() -> int {
+    let mut e: RtEng<string> = RtEng { calls: 0 }
+    match e.run(mk_err, "?") {
+        .Ok(_) -> -1
+        .Err(c) -> c.n
+    }
+}
+
+fn eng_deep() -> int {
+    let mut e: RtEngDeep = RtEngDeep { calls: 0 }
+    match e.run(mk_nested) {
+        .Ok(v) -> v
+        .Err(_) -> -1
+    }
+}
+
+// Tuple as a generic ARG: `vtype_mangle_slug` renders it `Tuple<int, string>`
+// inside the flat mangle (`RtBox__Tuple<int, string>`), and the parser must
+// rebuild a REAL ValueType.Tuple — an Enum("Tuple") impostor breaks the
+// destructure below.
+fn mk_pair(n: int) -> Result<RtBox<(int, string)>, RtCyc> {
+    let b: RtBox<(int, string)> = RtBox { v: (n, "pair") }
+    Result.Ok(b)
+}
+
+type RtEngPair = { calls: int }
+
+impl RtEngPair {
+    fn run(self, f: fn(int) -> Result<RtBox<(int, string)>, RtCyc>) -> Result<int, RtCyc> {
+        let out = f(9)?
+        self.calls = self.calls + 1
+        let (n, s) = out.v
+        Result.Ok(n + s.length)
+    }
+}
+
+fn eng_pair() -> int {
+    let mut e: RtEngPair = RtEngPair { calls: 0 }
+    match e.run(mk_pair) {
+        .Ok(v) -> v
+        .Err(_) -> -1
+    }
+}
+
+spec "nested-instance mangles round-trip through mono's string parser (t-c6gj)" {
+    then "`?`-payload of Result<RtBox<string>, RtCyc> is field-accessible in a specialized method" {
+        eng_ok() == "payload"
+    }
+    then "the Err path still propagates through the same seam" {
+        eng_err() == 42
+    }
+    then "a two-level nested instance (RtBox<RtBox<int>>) reconstructs recursively" {
+        eng_deep() == 5
+    }
+    then "a tuple-typed generic arg (RtBox<(int, string)>) keeps its Tuple identity" {
+        eng_pair() == 13
+    }
+}

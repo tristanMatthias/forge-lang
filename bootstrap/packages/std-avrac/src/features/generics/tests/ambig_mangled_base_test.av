@@ -1,0 +1,22 @@
+// WHY: regression for the qualified-mangled-base boundary — two modules
+// declaring the same generic short name (`AmBox<T>`) force `mangle_base`
+// into its ambiguity form, flattening the QUALIFIER into the mangle
+// (`box_a::AmBox<int>` → `box_a__AmBox__int`). The mangled-name parser used
+// to treat the FIRST `__` as the base/args boundary, reconstructing the args
+// as `[AmBox__int]` instead of `[int]` — poisoning every consumer of the
+// reconstructed args at the same `?`-payload seam t-c6gj pinned for the
+// short-name case. `dunder_base_at` now resolves the longest REGISTERED
+// qualified-flattened base before the arity-aware arg parse.
+//
+// Fixture: ambig_mangled_base/{main,box_a,box_b}.av — each module drives the
+// seam against its own AmBox (different layouts, so a mis-resolved base is a
+// field-offset failure, not just a name mismatch).
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "ambiguity-qualified mangled bases keep their base/args boundary" {
+    then "both modules' probes run and read their own AmBox through the `?` seam" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/features/generics/tests/ambig_mangled_base/main.av 2>&1 || true")
+        out.contains("a: 7") && out.contains("b: eight")
+    }
+}

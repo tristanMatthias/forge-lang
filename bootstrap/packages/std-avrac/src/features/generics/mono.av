@@ -1181,7 +1181,7 @@ fn split_annotation_args(tp: List<TypeParamEntry>, args_str: string, regs: GenRe
         let split = top_level_split_idx(remaining)
         let head_arg = if split < 0 { remaining.trim() } else { remaining.substring(0, split).trim() }
         let tail = if split < 0 { "" } else { remaining.substring(split + 1, remaining.length) }
-        out.push(TypeArg { param_name: tp[i].name, concrete_vt: vtype_from_type_string(rewrite_type_name(head_arg, regs, insts)) })
+        out.push(TypeArg { param_name: tp[i].name, concrete_vt: vtype_from_type_string(rewrite_type_name(head_arg, regs, insts), regs) })
         remaining = tail
         i = i + 1
     }
@@ -1297,20 +1297,49 @@ fn rewrite_instance_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> Va
     }
     let full = vtype_render_full(vt)
     let full_mangled = rewrite_type_name(full, regs, insts)
-    // No rewrite ⇒ the type names no registered generic instance (a scalar, a
-    // plain struct, a fn type). The bare-name path would mangle this
-    // identically (both consult the same registries), so skip it and return the
-    // original — the common case, and it avoids a second render+mangle per param.
-    if full_mangled == full { return vt }
+    // No rewrite ⇒ the BASE names no registered generic instance (a scalar, a
+    // plain struct, a fn type, the built-in `Result`). The bare-name path would
+    // mangle this identically (both consult the same registries), so skip it —
+    // but the type's ARGS may still name instances that must mangle:
+    // `Result<Box<string>, Cyc>` (base unregistered) carries a `Box<string>`
+    // payload, and without `Box__string` a field access on the `?`-unwrapped
+    // payload fails ("unknown struct Box"). Rewrite the args in place.
+    if full_mangled == full { return rewrite_nominal_args(vt, regs, insts) }
     // Full mangle names a real collected instance — trust it (this is what
     // disambiguates a nested `Box<Box<int>>` from `Box<int>`).
-    if inst_has(insts, full_mangled) { return vtype_from_type_string(full_mangled) }
+    if inst_has(insts, full_mangled) { return vtype_from_type_string(full_mangled, regs) }
     // Full mangled to a name that ISN'T a collected inst — an incomplete vtype
     // (e.g. a compiler `Result<E>` whose `T` was never threaded) whose full
-    // render mangles to a phantom. Fall back to the historic bare-name path.
+    // render mangles to a phantom. Fall back to the historic bare-name path
+    // (and, failing that too, still mangle the args — see above).
     let disp = vtype_display(vt)
     let disp_mangled = rewrite_type_name(disp, regs, insts)
-    if disp_mangled != disp { vtype_from_type_string(disp_mangled) } else { vt }
+    if disp_mangled != disp { vtype_from_type_string(disp_mangled, regs) } else { rewrite_nominal_args(vt, regs, insts) }
+}
+
+/// Rewrite the type-args of a nominal whose BASE names no generic instance —
+/// the built-in `Result<T, E>` (never a registered user generic), or an
+/// unregistered wrapper — so instances nested in the args (`Result<Box<string>,
+/// Cyc>` → `Result<Box__string, Cyc>`) still reach codegen mangled. Arg-less
+/// nominals (the common scalar/plain-struct case) are returned untouched, so
+/// this costs nothing on the hot path.
+fn rewrite_nominal_args(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueType {
+    match vt {
+        .Struct(name, type_args, id) ->
+            if type_args.length == 0 { vt } else { ValueType.Struct(name, rewrite_instance_vtypes(type_args, regs, insts), id) }
+        .Enum(name, type_args, id) ->
+            if type_args.length == 0 { vt } else { ValueType.Enum(name, rewrite_instance_vtypes(type_args, regs, insts), id) }
+        // A CONCRETE newtype's own name never mangles, but its INNER type may
+        // be a generic instance (`type Pinned = Box<int>`) that must — the
+        // collector recurses through `.Newtype` (collect_inst_from_vtype), so
+        // the rewrite recurses symmetrically or the `.raw()`-unwrapped value
+        // keeps the unmangled base name and field access can't find it. A
+        // GENERIC newtype instance never reaches here: the string path above
+        // mangles it whole, like any registered nominal.
+        .Newtype(name, inner, id) ->
+            ValueType.Newtype(name, rewrite_instance_vtype(inner, regs, insts), id)
+        _ -> vt
+    }
 }
 
 /// Map `rewrite_instance_vtype` over a list of types (Tuple / Union elements,
@@ -1462,6 +1491,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Module(_, body) -> collect_inst_stmt_ids(body, regs, st)
         .Function(_, tp, _, ret_vt, body) -> {
             if tp.length > 0 { return st }
+            
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
             // Tail-position .Expr / .Return statements get ret_vt threaded as
@@ -1483,7 +1513,16 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .ForIn(_, coll, body) -> collect_inst_stmt(regs.store.stmts.get(body), regs, collect_inst_expr(regs.store.exprs.get(coll), regs, st))
         .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, st))
         .Annotated(_, inner) -> collect_inst_stmt(regs.store.stmts.get(inner), regs, st)
-        .Impl(_, methods) -> collect_inst_stmt_ids(methods, regs, st)
+        // An impl targeting a GENERIC struct/enum is specialised
+        // per-instantiation (`specialize_impl_methods`, which substitutes the
+        // impl's type params into every method body) and its un-specialised
+        // original is dropped in pass 4 (`is_generic_impl`). Its method bodies
+        // must therefore not be collected here either: their types still name
+        // the impl's unbound params (`Box { v: V }` → F1002), which only
+        // resolve after substitution. The specialised copies are collected by
+        // `mono_converge` — the impl-side mirror of the generic-fn skip
+        // (`tp.length > 0`) above. Concrete-target impls collect as before.
+        .Impl(_, methods) -> if is_generic_impl(stmt, regs) { st } else { collect_inst_stmt_ids(methods, regs, st) }
         .SpecBlock(_, body) -> collect_inst_stmt_ids(body, regs, st)
         .GivenBlock(_, body) -> collect_inst_stmt_ids(body, regs, st)
         .ThenBlock(_, cond) -> collect_inst_expr(regs.store.exprs.get(cond), regs, st)
@@ -2282,6 +2321,18 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
     }
 }
 
+/// Map `substitute_vtype` over a plain type list (a GenericCall's explicit
+/// type args).
+fn substitute_vtype_list(vts: List<ValueType>, ta: List<TypeArg>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < vts.length {
+        out.push(substitute_vtype(vts[i], ta))
+        i = i + 1
+    }
+    out
+}
+
 /// Substitute type-args into every param's declared type.
 fn substitute_params(params: List<ParamEntry>, ta: List<TypeArg>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
@@ -2370,7 +2421,13 @@ fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
 fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
     match expr {
         .Call(callee, a) -> .Call(substitute_expr_id(store, callee, ta), substitute_expr_list_ids(store, a, ta))
-        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr_id(store, callee, ta), tn, substitute_expr_list_ids(store, a, ta))
+        // The explicit type args substitute too: `helper::<V>(x)` inside a
+        // generic body must become `helper::<string>(x)` in the V=string
+        // specialization, or the nested call is unresolvable (the arg-type
+        // channel can't help — substitution drops recorded arg types by
+        // design). This is what makes generic→generic calls with type-param
+        // turbofish work at all.
+        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr_id(store, callee, ta), substitute_vtype_list(tn, ta), substitute_expr_list_ids(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Logical(l, op, r) -> .Logical(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Unary(op, e) -> .Unary(op, substitute_expr_id(store, e, ta))
@@ -2388,7 +2445,10 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Lambda(params, body) -> .Lambda(substitute_params(params, ta), substitute_expr_id(store, body, ta))
         .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr_id(store, l, ta), substitute_expr_id(store, r, ta))
         .Try(e) -> .Try(substitute_expr_id(store, e, ta))
-        .With(obj, inits) -> .With(substitute_expr_id(store, obj, ta), inits)
+        // The override inits substitute like StructLit's — `r with { first:
+        // helper<V>(x) }` in a generic body carries the same nested-turbofish
+        // content as a fresh literal.
+        .With(obj, inits) -> .With(substitute_expr_id(store, obj, ta), substitute_field_inits(store, inits, ta))
         .ListComp(body, v, coll, filter) -> {
             if filter != null {
                 .ListComp(substitute_expr_id(store, body, ta), v, substitute_expr_id(store, coll, ta), substitute_expr_id(store, filter!, ta))
@@ -2414,8 +2474,32 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Quote(k, body) -> .Quote(k, substitute_expr_id(store, body, ta))
         .Splice(target) -> .Splice(substitute_expr_id(store, target, ta))
         .When(arms) -> .When(substitute_when_arms(store, arms, ta))
+        // Construction sites recurse into their VALUE payloads: a nested
+        // generic call (`Result.Ok(db_family<V>(…))`, `Report { n:
+        // total<V>(db) }`) must have its type-param turbofish substituted
+        // like any other sub-expression, or the specialized body collects a
+        // raw `V` inst (F1002 "cannot infer") — the metadata round-trip
+        // surfaced this because its re-parsed bodies lean on explicit type
+        // args everywhere. The struct's own type-arg binding is inference
+        // territory (collect/rewrite), not substitution — only the inits'
+        // exprs carry substitutable content.
+        .StructLit(name, inits) -> .StructLit(name, substitute_field_inits(store, inits, ta))
+        .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, substitute_expr_list_ids(store, args, ta))
+        .TypeLit(vt) -> .TypeLit(substitute_vtype(vt, ta))
         _ -> expr
     }
+}
+
+/// Map `substitute_expr` over each struct-literal field init's value.
+fn substitute_field_inits(store: NodeStore, inits: List<FieldInit>, ta: List<TypeArg>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        out.push(FieldInit { name: init.name, value_id: substitute_expr_id(store, init.value_id, ta) })
+        i = i + 1
+    }
+    out
 }
 
 /// Substitute T-references in each when-arm's condition + body.
@@ -2563,13 +2647,13 @@ fn ta_vtypes_nonconcrete(types: List<ValueType>, regs: GenRegs) -> bool {
 /// Parse a type-name string back into a ValueType. Used to
 /// turn rewritten / mangled annotations back into structured
 /// types for downstream codegen.
-fn vtype_from_type_string(ty: string) -> ValueType {
+fn vtype_from_type_string(ty: string, regs: GenRegs) -> ValueType {
     // Handle nullable "T?" — strip the marker here. (Preserving `?` is done
     // only in rewrite_fn_ret, the fn-RETURN-type context that needs it; wrapping
     // it broadly in this general string→ValueType parser corrupts other
     // round-trips, e.g. impl-name reconstruction → spurious F3104.)
     if ty.ends_with("?") && ty.length > 1 {
-        return vtype_from_type_string(ty.substring(0, ty.length - 1))
+        return vtype_from_type_string(ty.substring(0, ty.length - 1), regs)
     }
     // Handle function type strings like "fn(int, string) -> bool" — produced by
     // `vtype_render_full(.FnTyped(params, ret))`. Without this, the round-trip
@@ -2583,10 +2667,10 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     if ty.length >= 3 && ty.substring(0, 3) == "fn(" {
         let close = matching_paren(ty, 2)
         if close > 0 {
-            let params = parse_type_args_to_list(ty.substring(3, close))
+            let params = parse_type_args_to_list(ty.substring(3, close), regs)
             let after = ty.substring(close + 1, ty.length).trim()
             let ret_str = if after.length >= 2 && after.substring(0, 2) == "->" { after.substring(2, after.length).trim() } else { after }
-            let ret = if ret_str == "" { ValueType.Void } else { vtype_from_type_string(ret_str) }
+            let ret = if ret_str == "" { ValueType.Void } else { vtype_from_type_string(ret_str, regs) }
             return ValueType.FnTyped(params, ret)
         }
     }
@@ -2602,25 +2686,31 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     // List<T> / Task<T> peel below.
     if ty.length >= 2 && ty.substring(0, 1) == "(" && ty.ends_with(")") {
         let inner = ty.substring(1, ty.length - 1)
-        return ValueType.Tuple(parse_type_args_to_list(inner))
+        return ValueType.Tuple(parse_type_args_to_list(inner, regs))
     }
     // Handle mangled names like "Result__int__string" — when `__` appears
     // BEFORE any `<`, the name is a monomorphized slug, not a generic
     // annotation. The earlier-position check matters because a nested
     // generic arg like `Result__List<int>__string` has BOTH separators;
     // the outer mangling (`__`) must win or we'd mis-parse the base as
-    // "Result__List" and the args as "int>__string".
+    // "Result__List" and the args as "int>__string". The BASE itself may
+    // span several segments (`mangle_base` flattens an ambiguity-qualified
+    // `a::Box` to `a__Box`), so its span is resolved against the registries
+    // before the tail parses as args — `a__Box__int`'s args are `[int]`,
+    // never `[Box__int]`.
     let angle = find_char(ty, "<")
     let dunder = find_dunder(ty)
     if dunder >= 0 && (angle < 0 || dunder < angle) {
-        let args = parse_dunder_args(ty, dunder + 2)
+        let segs = dunder_segments(ty, 0)
+        let base = dunder_base_at(segs, 0, regs)
+        let args = parse_dunder_args(segs, base.next, regs)
         return ValueType.Enum(ty, args, 0)
     }
     // Handle generic type strings like "Result<int, string>"
     if angle >= 0 {
         let base = ty.substring(0, angle)
         let args_str = ty.substring(angle + 1, ty.length - 1)
-        let args = parse_type_args_to_list(args_str)
+        let args = parse_type_args_to_list(args_str, regs)
         // Mirror type_expr_to_vtype: List<T> and Task<T> have dedicated
         // ValueType variants. Without this, the round-trip through
         // vtype_render_full → vtype_from_type_string corrupts them into
@@ -2644,14 +2734,21 @@ fn vtype_from_type_string(ty: string) -> ValueType {
             let v = if args.length > 1 { args[1] } else { ValueType.Unknown }
             return ValueType.Map(k, v)
         }
+        // `vtype_mangle_slug` renders a tuple ARG as `Tuple<A, B>` (the
+        // paren form can't survive inside a flat mangle), so the round-trip
+        // must rebuild the real Tuple — falling through to Enum("Tuple")
+        // loses the tuple identity for every downstream destructure/index.
+        if base == "Tuple" {
+            return ValueType.Tuple(args)
+        }
         return ValueType.Enum(base, args, 0)
     }
     // Handle union types "A | B" — checked AFTER mangled names
     // so "Result__X__A|B" is treated as a mangled name, not a union
     let pipe = find_type_pipe(ty)
     if pipe >= 0 {
-        let left = vtype_from_type_string(ty.substring(0, pipe).trim())
-        let right = vtype_from_type_string(ty.substring(pipe + 1, ty.length).trim())
+        let left = vtype_from_type_string(ty.substring(0, pipe).trim(), regs)
+        let right = vtype_from_type_string(ty.substring(pipe + 1, ty.length).trim(), regs)
         return ValueType.Union(union_type_list_merge(left, right))
     }
     vtype_from_name(ty)
@@ -2661,34 +2758,199 @@ fn vtype_from_type_string(ty: string) -> ValueType {
 /// split `Foo__Int__Bool` into base + type-arg slugs.
 fn find_dunder(s: string) -> int { find_dunder_from(s, 0) }
 
-/// Parse the `__`-separated type-arg slugs from a mangled name
-/// into a `List<ValueType>`. Reverse of mangling — used when
-/// rewriting mangled annotations back into ValueTypes.
-fn parse_dunder_args(s: string, start: int) -> List<ValueType> {
+/// Parse a mangled name's type-arg slugs (`segs[start..]`) into a
+/// `List<ValueType>` — the ARITY-AWARE inverse of `mangle_name_ordered`'s
+/// depth-first flattening. A segment naming a registered generic of arity k
+/// consumes the next k (recursively reconstructed) segments as its own args:
+/// `Result__Box__string__Cyc` → `[Box__string, Cyc]`, never the naive
+/// `[Box, string, Cyc]` — whose bare `Box` arg poisoned every consumer of the
+/// reconstructed args (`resolve_ok_type_with` typed a `?`-extracted payload as
+/// the unmangled generic base → "unknown struct `Box`"). The flat mangle is
+/// only invertible WITH the arities, which is why this takes `regs`.
+fn parse_dunder_args(segs: List<string>, start: int, regs: GenRegs) -> List<ValueType> {
     mut out: List<ValueType> = []
+    mut i = start
+    while i < segs.length {
+        let a = dunder_take_arg(segs, i, regs)
+        out.push(a.vt)
+        i = a.next
+    }
+    out
+}
+
+/// One reconstructed type-arg from a mangled name's segment list.
+/// @field name — the arg's own (possibly re-joined) mangled name.
+/// @field vt   — the reconstructed ValueType.
+/// @field next — index of the first segment after this arg.
+type DunderArg = { name: string, vt: ValueType, next: int }
+
+/// A resolved mangled-name BASE: the segments it spans, its declared arity.
+/// @field name  — the base's (possibly re-joined qualified) mangled name.
+/// @field arity — declared type-param count, 0 when the base is no generic.
+/// @field next  — index of the first segment after the base.
+type DunderBase = { name: string, arity: int, next: int }
+
+/// Resolve the base occupying `segs[i..]`. QUALIFIED candidates resolve
+/// FIRST, longest first: an ambiguity-qualified `a::Box` flattens to
+/// `a__Box`, and treating its first `__` as the base/args boundary would
+/// hand back `Box__int` as `a__Box__int`'s argument. Qualified-first is
+/// safe — a multi-segment candidate only matches a REGISTERED
+/// `::`-qualified declaration's flattening, which a bare short mangle
+/// (`Box__int`) can never coincide with — and it is necessary: checking the
+/// single-segment short name first would let a generic that happens to
+/// share a MODULE's name (`a<T>` + module `a`) swallow the qualifier and
+/// re-create the mis-split. The single-segment short-name resolution is the
+/// fallback for the common bare case.
+fn dunder_base_at(segs: List<string>, i: int, regs: GenRegs) -> DunderBase {
+    mut j = segs.length
+    while j >= i + 2 {
+        mut cand = segs[i]
+        mut s = i + 1
+        while s < j {
+            cand = mangle_join(cand, segs[s])
+            s = s + 1
+        }
+        let k = qualified_generic_arity(regs, cand)
+        if k > 0 {
+            return DunderBase { name: cand, arity: k, next: j }
+        }
+        j = j - 1
+    }
+    let short_arity = generic_arity(regs, segs[i])
+    if short_arity > 0 {
+        return DunderBase { name: segs[i], arity: short_arity, next: i + 1 }
+    }
+    DunderBase { name: segs[i], arity: 0, next: i + 1 }
+}
+
+/// Declared arity of a generic whose AMBIGUITY-QUALIFIED mangled base
+/// (`qualified_mangle_base`: `a::Box` → `a__Box`) equals `mangled`, or 0.
+/// Injective by construction — user identifiers can't contain `__`, so two
+/// distinct qualified declarations never flatten to the same candidate.
+/// Only declarations whose SHORT name is in `regs.ambig` participate: the
+/// decoder must accept exactly what the encoder can emit, and `mangle_base`
+/// qualifies a base only on an ambiguity collision — a qualified match on a
+/// non-ambiguous declaration would consume segments the mangler flattened
+/// as ordinary args.
+fn qualified_generic_arity(regs: GenRegs, mangled: string) -> int {
+    mut i = 0
+    while i < regs.structs.length {
+        let se = regs.structs[i]
+        if list_contains_str(regs.ambig, type_short_name(se.name)) && qualified_mangle_base(se.name) == mangled {
+            return se.tp.length
+        }
+        i = i + 1
+    }
+    mut j = 0
+    while j < regs.enums.length {
+        let ee = regs.enums[j]
+        if list_contains_str(regs.ambig, type_short_name(ee.name)) && qualified_mangle_base(ee.name) == mangled {
+            return ee.tp.length
+        }
+        j = j + 1
+    }
+    0
+}
+
+/// Reconstruct ONE type-arg starting at `segs[i]`: an arity-0 segment is its
+/// own arg; a generic-base segment (single short name or re-joined qualified
+/// base) re-joins itself with its next-k (recursively taken) args into the
+/// nested instance's flat name. A slug without enough trailing segments for
+/// its base's arity is not a real instance flattening — degrade to the naive
+/// single-segment arg rather than erroring.
+fn dunder_take_arg(segs: List<string>, i: int, regs: GenRegs) -> DunderArg {
+    let base = dunder_base_at(segs, i, regs)
+    let k = base.arity
+    if k == 0 || base.next + k > segs.length {
+        return DunderArg { name: segs[i], vt: vtype_from_type_string(segs[i], regs), next: i + 1 }
+    }
+    mut name = base.name
+    mut args: List<ValueType> = []
+    mut j = base.next
+    mut c = 0
+    while c < k {
+        let a = dunder_take_arg(segs, j, regs)
+        name = mangle_join(name, a.name)
+        args.push(a.vt)
+        j = a.next
+        c = c + 1
+    }
+    DunderArg { name, vt: ValueType.Enum(name, args, 0), next: j }
+}
+
+/// Declared type-param count of a registered generic struct/enum base, or 0
+/// for anything else (scalars, concrete types, container slugs like
+/// `List<int>`). The arity data that makes the flat mangle invertible.
+///
+/// Slug segments carry SHORT names (`mangle_base` strips `::` qualifiers)
+/// while the registries key on the declaration's possibly-qualified name, so
+/// after an exact miss the lookup falls back to short-name matching. When two
+/// same-short-named generics DISAGREE on arity the segment is ambiguous —
+/// return 0 so the parse degrades to the historic naive per-segment split
+/// rather than guessing (those bases flatten module-qualified anyway).
+fn generic_arity(regs: GenRegs, name: string) -> int {
+    let se = generic_struct_lookup(regs.structs, name)
+    if se != null { return se!.tp.length }
+    let ee = generic_enum_lookup(regs.enums, name)
+    if ee != null { return ee!.tp.length }
+    mut arity = 0
+    mut i = 0
+    while i < regs.structs.length {
+        let e = regs.structs[i]
+        if type_short_name(e.name) == name {
+            if arity != 0 && arity != e.tp.length { return 0 }
+            arity = e.tp.length
+        }
+        i = i + 1
+    }
+    mut j = 0
+    while j < regs.enums.length {
+        let e = regs.enums[j]
+        if type_short_name(e.name) == name {
+            if arity != 0 && arity != e.tp.length { return 0 }
+            arity = e.tp.length
+        }
+        j = j + 1
+    }
+    arity
+}
+
+/// Split a mangled name's tail (from `start`) into its top-level
+/// `__`-separated segments.
+fn dunder_segments(s: string, start: int) -> List<string> {
+    mut out: List<string> = []
     mut pos = start
     while true {
         let next_dunder = find_dunder_from(s, pos)
         if next_dunder >= 0 {
-            let arg = s.substring(pos, next_dunder)
-            out.push(vtype_from_type_string(arg))
+            out.push(s.substring(pos, next_dunder))
             pos = next_dunder + 2
         } else {
-            let arg = s.substring(pos, s.length)
-            out.push(vtype_from_type_string(arg))
+            out.push(s.substring(pos, s.length))
             return out
         }
     }
     out
 }
 
-/// Find the next `__` boundary in `s` starting from `start`.
+/// Find the next TOP-LEVEL `__` boundary in `s` starting from `start`.
+/// A `__` inside an angle/paren-wrapped slug (`List<Box__int>`) belongs to
+/// the nested instance, not the outer flattening, so bracket depth is
+/// respected — mirroring `top_level_split_idx`'s treatment of commas.
 fn find_dunder_from(s: string, start: int) -> int {
     if start >= s.length - 1 { return -1 }
+    mut depth = 0
     mut idx = start
     while idx < s.length - 1 {
-        if s.substring(idx, idx + 2) == "__" { return idx }
-        idx = idx + 1
+        let ch = s.substring(idx, idx + 1)
+        if ch == "-" && s.substring(idx + 1, idx + 2) == ">" {
+            idx = idx + 2
+        } else {
+            if ch == "<" || ch == "(" { depth = depth + 1 }
+            if ch == ">" || ch == ")" { depth = depth - 1 }
+            if depth == 0 && ch == "_" && s.substring(idx + 1, idx + 2) == "_" { return idx }
+            idx = idx + 1
+        }
     }
     -1
 }
@@ -2696,7 +2958,7 @@ fn find_dunder_from(s: string, start: int) -> int {
 /// Parse a comma-separated type-arg list (`"int, string"`) into a
 /// `List<ValueType>`. Mirror of `split_annotation_args` for the
 /// pre-rewrite path.
-fn parse_type_args_to_list(args_str: string) -> List<ValueType> {
+fn parse_type_args_to_list(args_str: string, regs: GenRegs) -> List<ValueType> {
     mut out: List<ValueType> = []
     if args_str == "" { return out }
     mut rest = args_str
@@ -2704,10 +2966,10 @@ fn parse_type_args_to_list(args_str: string) -> List<ValueType> {
         let comma = top_level_split_idx(rest)
         if comma >= 0 {
             let head = rest.substring(0, comma)
-            out.push(vtype_from_type_string(head.trim()))
+            out.push(vtype_from_type_string(head.trim(), regs))
             rest = rest.substring(comma + 1, rest.length)
         } else {
-            out.push(vtype_from_type_string(rest.trim()))
+            out.push(vtype_from_type_string(rest.trim(), regs))
             return out
         }
     }
@@ -2756,7 +3018,7 @@ fn mangle_ret_vtype(vt: ValueType, regs: GenRegs, insts: List<Inst>) -> ValueTyp
         .Union(types) -> ValueType.Union(mangle_ret_vtypes(types, regs, insts))
         .FnTyped(params, r) -> ValueType.FnTyped(mangle_ret_vtypes(params, regs, insts), mangle_ret_vtype(r, regs, insts))
         .Optional(inner) -> ValueType.Optional(mangle_ret_vtype(inner, regs, insts))
-        _ -> vtype_from_type_string(rewrite_type_name(vtype_render_full(vt), regs, insts))
+        _ -> vtype_from_type_string(rewrite_type_name(vtype_render_full(vt), regs, insts), regs)
     }
 }
 
@@ -2952,6 +3214,11 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: List<Inst>) -> Stmt {
         // missing, so a structurally-substituted payload type kept its bare
         // generic name and codegen failed with "unknown enum".
         .EnumDecl(name, tp, variants) -> .EnumDecl(name, tp, rewrite_variant_field_types(variants, regs, insts))
+        // And a concrete newtype's INNER (`type Pinned = Box<int>`): the
+        // registry serves this vtype to the `.raw()` unwrap, so an unmangled
+        // inner makes the unwrapped value's field access look up a base name
+        // codegen never declared.
+        .NewtypeDecl(name, inner_vt) -> .NewtypeDecl(name, rewrite_instance_vtype(inner_vt, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt_id(inner, regs, insts))
         .Impl(name, methods) -> .Impl(name, rewrite_stmt_ids(methods, regs, insts))
         .Defer(body) -> .Defer(rewrite_expr_id(body, regs, insts))

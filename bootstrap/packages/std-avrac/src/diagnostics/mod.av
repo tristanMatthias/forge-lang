@@ -411,6 +411,17 @@ export enum DiagCode {
     /// `@expand(macro)` annotation. Raw token bodies exist for macros
     /// to parse; the data-component splice cannot consume one.
     ComponentTokenBodyNeedsMacro
+    // ── Query engine (F3900) ────────────────────────────────────────
+    /// F3900 — query cycle (L6 engine, design doc §3.2). A query
+    /// transitively requested itself; the red-green engine errors by
+    /// default (genuinely recursive queries opt in to fixpoint
+    /// iteration instead — not yet needed by any query family). The
+    /// message carries the rendered cycle path. Lives in the resolution
+    /// range (F3000-3999, sibling of F3103 CircularImport): once passes
+    /// are query-shaped, a cycle IS a cyclic dependency in the user's
+    /// program. F9xxx is reserved for warnings (spec Axis 20) and this
+    /// is an error.
+    QueryCycleDetected
     // ── Internal (F9999) ────────────────────────────────────────────
     /// F9999 — internal compiler error. Compiler invariant violated;
     /// the bug is in the compiler, not the user's code. Report.
@@ -508,6 +519,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .QuoteOutsideComptime -> ErrorDef { code: "F4009", help: "`quote { ... }` builds AST for macros and only works inside a `@comptime` fn or an `@expand` macro; move it into comptime code, or drop the quote if you meant a normal expression" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ComponentTokenBodyNeedsMacro -> ErrorDef { code: "F4101", help: "a raw token body needs a macro to parse it — annotate the component definition with `@expand(<macro_fn>)`" }
+        .QueryCycleDetected  -> ErrorDef { code: "F3900", help: "a query transitively requested itself — break the cycle (e.g. a type that contains itself by value), or, for a legitimately recursive query, opt the query family into fixpoint iteration" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "code dereferenced a null pointer — check optional unwraps and trait casts" }
         .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "guard the divisor: `if denom != 0 { num / denom } else { default }`" }
@@ -609,6 +621,33 @@ export fn diag_with_confidence(d: Diagnostic, c: Confidence) -> Diagnostic {
 /// indented underneath the primary, making causality chains visible.
 export fn diag_with_cause(d: Diagnostic, cause_diag: Diagnostic) -> Diagnostic {
     d with { cause: DiagnosticCause.Cause(cause_diag) }
+}
+
+/// Canonical one-line identity of a Diagnostic — every field that makes two
+/// diagnostics "the same diagnostic", rendered deterministically: code,
+/// severity, message, span coordinates (file:start-end:line:col), help,
+/// confidence, and the cause chain (recursively, `<=`-prefixed). This is the
+/// hashing surface for consumers that memoize diagnostics alongside values —
+/// the L6 query engine's early-cutoff signal covers (value + diagnostics), so
+/// a diag-only change must move the answer hash (design doc §10: diagnostics
+/// ride with values and invalidate together). Distinct from `bag_has_seen`'s
+/// looser dedup identity, which deliberately EXCLUDES spans.
+///
+/// The free-text fields (message, span file, help) are LENGTH-PREFIXED
+/// (`${len}:${text}`), so text containing the field separators (`|`, the
+/// span's `:`/`-`, the cause's `<=`) cannot shift a field boundary: two
+/// DIFFERENT diagnostics can never render the same canonical line, which is
+/// what makes this safe to hash for cutoff and to compare in the oracle. The
+/// non-text fields come from fixed enum renderers / ints and need no frame.
+export fn diag_canonical(d: Diagnostic) -> string {
+    let msg = "${string(d.message.length)}:${d.message}"
+    let file = "${string(d.span.file.length)}:${d.span.file}"
+    let help = "${string(d.help.length)}:${d.help}"
+    let base = "${diag_code_str(d.code)}|${severity_str(d.severity)}|${msg}|${file}:${string(d.span.start)}-${string(d.span.end)}:${string(d.span.line)}:${string(d.span.col)}|${help}|${confidence_str(d.confidence)}"
+    match d.cause {
+        .None -> base
+        .Cause(c) -> "${base}<=${diag_canonical(c)}"
+    }
 }
 
 /// Construct an ICE — internal compiler error — diagnostic. Used

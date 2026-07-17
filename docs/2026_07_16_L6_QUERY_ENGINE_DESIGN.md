@@ -122,7 +122,7 @@ save/restore hazard (rule 17).
 ### 3.2 Cycles
 
 A query that transitively requests itself is an **error by default** — a new
-diagnostic `F9200 query cycle` (with the cycle path in secondary spans).
+diagnostic `F3900 query cycle` (with the cycle path in secondary spans).
 Genuinely recursive queries (fixpoint inference, mutual type recursion) **opt in**
 to fixpoint iteration: they declare a bottom value and a convergence predicate,
 and the engine iterates the strongly-connected component to a fixed point instead

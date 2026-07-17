@@ -1,0 +1,14 @@
+// Entry of the ambiguous-mangled-base fixture (driven by
+// ambig_mangled_base_test.av). Two modules declare the same generic short
+// name; each probe exercises the qualified-base mangle round-trip in its own
+// module.
+mod box_a
+mod box_b
+use box_a.{probe_a}
+use box_b.{probe_b}
+
+fn main() -> int {
+    println("a: ${string(probe_a())}")
+    println("b: ${probe_b()}")
+    0
+}

@@ -1,0 +1,54 @@
+// WHY: regression for t-jgc0's final layer — a fn-typed STRUCT FIELD call's
+// result must be typed from the field's DECLARED return type. The untyped
+// indirect-call path stamped every fn-field call `.Int`, so an
+// enum-returning field call fed `match` an unknown subject and dispatch fell
+// back to inferring the enum from the arms' VARIANT NAMES — first registry
+// match wins, so a same-named variant on an UNRELATED enum (declared first,
+// like FfDecoy below) silently hijacked the payload type. The fix threads
+// the declared return through `emit_indirect_call_typed` (with an untyped
+// fallback only for an unresolvable return).
+
+// The bait: declared BEFORE the real enum, with the same variant names but
+// SWAPPED payload types — variant-name inference would pick this one.
+enum FfDecoy {
+    Done(s: string)
+    Boom(code: int)
+}
+
+enum FfReal {
+    Done(n: int)
+    Boom(msg: string)
+}
+
+type FfHandler = { pick: fn(int) -> FfReal }
+
+fn ff_make(n: int) -> FfReal {
+    if n > 0 { FfReal.Done(n * 2) } else { FfReal.Boom("neg") }
+}
+
+fn ff_decoy_alive(d: FfDecoy) -> string {
+    match d {
+        .Done(s) -> s
+        .Boom(_) -> "?"
+    }
+}
+
+spec "an enum-returning fn FIELD call types its match payload from the declared return (t-jgc0)" {
+    then "the Done payload is the declared enum's int, not the decoy's string" {
+        let h = FfHandler { pick: ff_make }
+        match h.pick(21) {
+            .Done(n) -> n == 42
+            .Boom(_) -> false
+        }
+    }
+    then "the Boom payload is the declared enum's string" {
+        let h = FfHandler { pick: ff_make }
+        match h.pick(-1) {
+            .Done(_) -> false
+            .Boom(msg) -> msg == "neg"
+        }
+    }
+    then "the decoy enum still works on its own terms" {
+        ff_decoy_alive(FfDecoy.Done("ok")) == "ok"
+    }
+}
