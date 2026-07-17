@@ -284,6 +284,11 @@ most for free (derived code is exhaustive by construction), so `vndt`'s 2700+
 warnings shrink on their own. *Own epic — maps to existing `vndt`.*
 
 ### Layer 6 — Compiler-as-query *(decided · epic `ps3t.8`; folds `4apk`, `qvfb`, `ggkh`, `re1b`, `pdme`, `jg5z`)*
+> **Detailed design:** `docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md` (`ps3t.8.1`) —
+> productionizes this section + §10.B/C/E/F into the red-green algorithm, the
+> two-level fingerprints, name-res-as-query, the on-disk cache, and the
+> decomposition into `ps3t.8.2`–`.8`. (The L6 analogue of §14/§15.)
+
 Make every derived fact a **memoized, incrementally-invalidated query** keyed by
 node-ID. Delivers incremental builds + LSP. Falls out of Layer 1's
 data-oriented substrate. This is `4apk`/`qvfb`.
