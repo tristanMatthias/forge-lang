@@ -96,7 +96,7 @@ export fn derive_engine(target: AnnotatedDecl, ctx: ResolverCtx, plan: EmitPlan)
     for m in methods {
         let built = match m {
             .PerVariant(pv) -> BuiltMethod { decl: build_per_variant_fn(view, dc, pv, ctx), method_name: pv.method_name }
-            .WholeFn(w) -> BuiltMethod { decl: build_whole_fn(w, dc), method_name: w.method_name }
+            .WholeFn(w) -> BuiltMethod { decl: w.build(dc), method_name: w.method_name }
         }
         decls.push(built.decl)
         introduces.push(method_symbol(view.name, built.method_name))
@@ -106,14 +106,6 @@ export fn derive_engine(target: AnnotatedDecl, ctx: ResolverCtx, plan: EmitPlan)
 
 /// One emitted method: the fn decl + the name it registers under.
 type BuiltMethod = { decl: Stmt, method_name: string }
-
-/// Run a whole-fn method's build hook (through a local — see the
-/// hook-invocation note above classify_bound).
-@comptime
-fn build_whole_fn(w: WholeFnMethod, dc: DeclCtx) -> Stmt {
-    let build = w.build
-    build(dc)
-}
 
 /// Empty-output failsafe — emits just the original decl, no methods.
 /// Keeps the AST shape correct so downstream diagnostics blame the user
@@ -147,19 +139,9 @@ fn method_symbol(parent: string, method_name: string) -> DeclSymbol {
 
 // ── Per-variant method assembly ──
 
-// Hook invocations below load the fn-typed field into a local first and
-// call through the local (`let hook = m.bind; hook(…)`) instead of the
-// direct `m.bind(…)` method-call form. The pinned seed's codegen types a
-// method-position fn-field call `.Int` (fixed this PR in
-// fn_decl/codegen.av — emit_indirect_call_typed with the field's declared
-// return), but compiler source must keep building from the integration
-// seed (sdmg.2), so the engine dogfoods the direct form only after the
-// seed train advances past the fix.
-
 /// Classify one variant's fields for `m` and stamp each binding name.
 @comptime
 fn classify_bound(v: Variant, parent: string, m: PerVariantMethod, ctx: ResolverCtx) -> List<Classified> {
-    let bind = m.bind
     mut out: List<Classified> = []
     mut i = 0
     let fs = v.fields
@@ -169,7 +151,7 @@ fn classify_bound(v: Variant, parent: string, m: PerVariantMethod, ctx: Resolver
         } else {
             classify_field(f.resolved, parent, ctx)
         }
-        out.push(Classified { name: f.name, binding: bind(f.name, k, i), kind: k })
+        out.push(Classified { name: f.name, binding: m.bind(f.name, k, i), kind: k })
         i = i + 1
     }
     out
@@ -208,18 +190,16 @@ fn bound_pattern(variant_name: string, fields: List<Classified>) -> Pattern {
 @comptime
 fn build_per_variant_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: ResolverCtx) -> Stmt {
     if dc.is_struct { return build_struct_fn(view, dc, m, ctx) }
-    let arm_body = m.arm_body
     mut arms: List<MatchArm> = []
     let variants = view.variants
     for v in variants {
         let fields = classify_bound(v, view.name, m, ctx)
         let pat = bound_pattern(v.name, fields)
-        let body = arm_body(dc, v.name, fields)
+        let body = m.arm_body(dc, v.name, fields)
         arms.push(MatchArm { pattern: pat, guard_id: null, body_id: synth_expr_id(body) })
     }
     let match_expr = Expr.MatchExpr(synth_expr_id(Expr.Ident("self")), arms)
-    let signature = m.signature
-    let sig = signature(dc)
+    let sig = m.signature(dc)
     mut body: List<Stmt> = []
     let prologue = sig.prologue
     for p in prologue { body.push(p) }
@@ -235,8 +215,7 @@ fn build_per_variant_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: R
 fn build_struct_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: ResolverCtx) -> Stmt {
     let v = view.variants[0]
     let fields = classify_bound(v, view.name, m, ctx)
-    let signature = m.signature
-    let sig = signature(dc)
+    let sig = m.signature(dc)
     mut body: List<Stmt> = []
     let prologue = sig.prologue
     for p in prologue { body.push(p) }
@@ -245,8 +224,7 @@ fn build_struct_fn(view: DeclView, dc: DeclCtx, m: PerVariantMethod, ctx: Resolv
             body.push(Stmt.Let(c.binding, ValueType.Unknown, synth_expr_id(ident_field_access("self", c.name))))
         }
     }
-    let arm_body = m.arm_body
-    body.push(Stmt.Expr(synth_expr_id(arm_body(dc, v.name, fields))))
+    body.push(Stmt.Expr(synth_expr_id(m.arm_body(dc, v.name, fields))))
     method_fn(dc, m.method_name, sig, body)
 }
 
