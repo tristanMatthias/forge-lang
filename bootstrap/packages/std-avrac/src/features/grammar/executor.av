@@ -950,6 +950,37 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let empty_body: List<StmtId> = []
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(env.get(args[0])), empty_body)))
         }
+        // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
+        "MkAssocType" if args.length == 1 -> {
+            // `type Name` — a trait associated-type member. parse_trait_methods
+            // stores it as `Stmt.AssocType(name, Unknown)` (no `= Concrete` in a
+            // trait; that form belongs to `impl`). Renders `(assoc-type Name)`.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(capval_tok_text(env.get(args[0])), ValueType.Unknown)))
+        }
+        "MkTraitMethod" if args.length == 5 -> {
+            // `fn name ( params? ) ( "->" ret )? ( lb:"{" body "}" )?` — a trait
+            // method member. The brace MARKER `lb` (arg 3, not the body content)
+            // signals a DEFAULT method: present ⇒ `Stmt.Function` (plain name —
+            // trait defaults are NOT mangled; an EMPTY body still counts, since
+            // the braces are there), absent ⇒ signature-only `Stmt.ExternFn` —
+            // matching parse_trait_method_sig. `self` is a plain param here
+            // (parse_param_list, no receiver synthesis), so it renders as `self`.
+            let mname = capval_tok_text(env.get(args[0]))
+            let params = capval_to_pentry_list(env.get(args[1]))
+            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
+            if capval_present(env.get(args[3])) {
+                let no_tp: List<TypeParamEntry> = []
+                CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(mname, no_tp, params, ret_vt, capval_to_stmt_list(env.get(args[4])))))
+            } else {
+                CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(mname, params, ret_vt)))
+            }
+        }
+        "MkTraitDecl" if args.length == 2 -> {
+            // `trait Name { member* }` — the members are a Stmt id list (each an
+            // ExternFn / Function / AssocType), exactly parse_trait_declaration's
+            // `Stmt.TraitDecl(name, methods.ids)`.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))))
+        }
         _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
     }
 }
