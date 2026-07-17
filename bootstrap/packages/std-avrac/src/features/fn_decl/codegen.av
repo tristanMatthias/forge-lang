@@ -607,12 +607,18 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
             if s_lookup.found {
                 let field_ty = ctx.resolve_field_type(s_lookup.fields, method)
                 if vtype_is_fn(field_ty) {
-                    // Load the field value (fn pointer) and call indirectly
+                    // Load the field value (fn pointer) and call indirectly,
+                    // typed by the field's declared return type — the same
+                    // typing the paren-grouped `(obj.f)(x)` path uses above.
+                    // The untyped emit_indirect_call_value tags the result
+                    // `.Int`, which mis-types any non-i64-repr return (a
+                    // struct/list/string field-fn result would flow on as
+                    // int and fail downstream field/method dispatch).
                     let st_ty = ctx.get_type(type_name)
                     let obj_ptr = ctx.to_ptr(r.value, "fn_field_obj")
                     let gep = ctx.gep(st_ty, obj_ptr, field_index_of(s_lookup.fields, method), "fn_field_ptr")
                     let fn_i64 = ctx.load_i64(gep, "fn_field_val")
-                    return emit_indirect_call_value(ctx, env, fn_i64, args)
+                    return emit_indirect_call_typed(ctx, env, fn_i64, args, vtype_fn_ret(field_ty))
                 }
             }
         }
