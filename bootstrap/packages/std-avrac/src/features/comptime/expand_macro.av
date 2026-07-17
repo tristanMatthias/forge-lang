@@ -43,13 +43,14 @@
 
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
-use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses_macro_only, validate_scopes_after_expand}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
-use features.derive_registry.{derive_capability_macro, derive_capabilities_rendered}
+use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
+use features.marshal.{derive_marshal_stmts_for}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -444,8 +445,13 @@ export fn any_derive_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
 }
 
 fn has_derive_annotation(store: NodeStore, stmt: Stmt) -> bool {
-    let found = find_annotation(store, stmt, "derive")
-    found != null
+    if find_annotation(store, stmt, "derive") != null { return true }
+    // ps3t.6.6: `@marshal` is an alias for `@derive(Marshal)` — one
+    // dispatch path for both spellings (design §3.1: the per-macro
+    // annotations become @derive aliases kept working through a shim).
+    // Routing the alias through the derive arm is what retired the
+    // separate pre-resolve derive_marshal splice in build/compile.av.
+    find_annotation(store, stmt, "marshal") != null
 }
 
 // ── Walker ──
@@ -702,7 +708,7 @@ fn strip_derive_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
         .Annotated(annots, inner) -> {
             mut kept: List<Annotation> = []
             for a in annots {
-                if a.name != "derive" { kept.push(a) }
+                if a.name != "derive" && a.name != "marshal" { kept.push(a) }
             }
             let inner_stripped = strip_derive_annotation(store, store.stmts.get(inner))
             if kept.length == 0 { inner_stripped } else { Stmt.Annotated(kept, store.stmts.add_leaf(inner_stripped)) }
@@ -713,34 +719,57 @@ fn strip_derive_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
 
 fn try_derive_all(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, state: ResolverState, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
     let span = span_at(0, 0, line, col, file)
+    // Capability list: the @derive annotation's bare-ident args, or the
+    // single implied `Marshal` for the `@marshal` alias spelling.
+    mut caps: List<string> = []
     let found = find_annotation(store, stmt, "derive")
     if found == null {
-        return expand_fail(
-            DiagCode.DeriveMissingCapability,
-            "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
-            span
-        )
-    }
-    let arg_ids = found!.arg_ids
-    if arg_ids == none || arg_ids!.length == 0 {
-        return expand_fail(
-            DiagCode.DeriveMissingCapability,
-            "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
-            span
-        )
+        if find_annotation(store, stmt, "marshal") != null {
+            caps.push("Marshal")
+        } else {
+            return expand_fail(
+                DiagCode.DeriveMissingCapability,
+                "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
+                span
+            )
+        }
+    } else {
+        let arg_ids = found!.arg_ids
+        if arg_ids == none || arg_ids!.length == 0 {
+            return expand_fail(
+                DiagCode.DeriveMissingCapability,
+                "@derive requires at least one capability argument (known: ${derive_capabilities_rendered()})",
+                span
+            )
+        }
+        for eid in arg_ids! {
+            match store.exprs.get(eid) {
+                .Ident(name) -> caps.push(name)
+                _ -> return expand_fail(
+                    DiagCode.DeriveMissingCapability,
+                    "@derive capabilities must be bare identifiers (known: ${derive_capabilities_rendered()})",
+                    span
+                )
+            }
+        }
     }
     mut bag = bag_new()
     mut merged: List<StmtId> = []
     mut origins: List<MacroFnOrigin> = []
     mut first = true
-    for eid in arg_ids! {
-        let cap = match store.exprs.get(eid) {
-            .Ident(name) -> name
-            _ -> return expand_fail(
-                DiagCode.DeriveMissingCapability,
-                "@derive capabilities must be bare identifiers (known: ${derive_capabilities_rendered()})",
-                span
-            )
+    for cap in caps {
+        if derive_capability_native(cap) {
+            // Native capability (Marshal): compiled arena-direct builders,
+            // no interpreter round-trip. Contributes the stripped original
+            // once + its impls; a non-type/enum decl derives nothing (the
+            // annotation path's historical silent-skip, kept for parity).
+            if first {
+                merged.push(store.stmts.add_leaf(strip_derive_annotation(store, stmt)))
+                first = false
+            }
+            let derived = derive_marshal_stmts_for(store, stmt_unwrap(store, stmt))
+            for d in derived { merged.push(d) }
+            continue
         }
         let macro_name = derive_capability_macro(cap)
         if macro_name == "" {
@@ -1215,7 +1244,21 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
     let post_state = register_macro_decls(pre.state, expanded.stmts)
-    let rewritten = rewrite_uses_macro_only(expanded.stmts, post_state)
+    // ps3t.6.6: when expansion introduced new GLOBAL items (free fns like
+    // marshal's `from_bytes_T` — not just methods), re-run the FULL ident
+    // rewrite: any non-macro caller — same module or cross-module — was
+    // walked by the pre-expand pass while the item didn't exist yet, so
+    // its reference stayed bare/unresolved and only a whole-program
+    // re-rewrite can qualify it ("generated code is re-resolved", design
+    // §3.2 — and so are the references TO it). Idempotent on
+    // already-resolved rows (it IS the pass that resolved them), so
+    // splice-free programs keep the cheap partial walk and the HRN gate
+    // stays byte-identical.
+    let rewritten = if post_state.graph.all_items.length > pre.state.graph.all_items.length {
+        rewrite_uses(expanded.stmts, post_state)
+    } else {
+        rewrite_uses_macro_only(expanded.stmts, post_state)
+    }
     let validated = validate_scopes_after_expand(rewritten, post_state)
     // Fold @expand-time diagnostics into the program-level bag so the
     // unified renderer surfaces F4xxx codes through the same path as

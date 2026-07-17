@@ -81,7 +81,6 @@ use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sid
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
-use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
@@ -308,16 +307,17 @@ fn expand_components_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeS
     comp.stmts
 }
 
-/// derive_marshal + resolve_and_expand_program with built-in
-/// diagnostic rendering and fail-on-hard-error short-circuit.
-/// Wraps the 5-line pattern (marshal → resolve → render bag →
-/// fail) that every compile / check / test pipeline site
-/// repeated immediately after `expand_components_or_fail`.
-/// Returns the NameResolveResult so the caller can continue
-/// with run_comptime → typecheck.
+/// resolve_and_expand_program with built-in diagnostic rendering and
+/// fail-on-hard-error short-circuit. Wraps the pattern (resolve →
+/// render bag → fail) that every compile / check / test pipeline site
+/// repeats immediately after `expand_components_or_fail`. Returns the
+/// NameResolveResult so the caller can continue with run_comptime →
+/// typecheck. (@marshal expansion lives INSIDE
+/// resolve_and_expand_program since ps3t.6.6 — aliased to
+/// @derive(Marshal) — so the former pre-resolve derive_marshal call
+/// here is gone; keeping it double-derived every @marshal type.)
 fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
-    let with_marshal = derive_marshal(ids, store)
-    let named = resolve_and_expand_program(with_marshal, store)
+    let named = resolve_and_expand_program(ids, store)
     render_bag_if_nonempty(ctx, named.bag)
     if named.had_error { fail(named.error_message) }
     named

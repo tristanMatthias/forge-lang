@@ -4,7 +4,7 @@
 // the pure parser (no I/O) and the file system.
 
 use core.{Stmt, Annotation, NodeStore, SrcPos, ParamEntry, ValueType, find_annotation, stmt_unwrap}
-use features.derive_registry.{derive_capability_macro, derive_capability_module}
+use features.derive_registry.{derive_capability_import, derive_capability_module}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
@@ -430,7 +430,7 @@ fn inject_derive_shim_uses(ids: List<StmtId>, store: NodeStore) -> List<StmtId> 
         mut names: List<ParamEntry> = []
         for c in caps {
             if derive_capability_module(c) == m {
-                names.push(ParamEntry { name: derive_capability_macro(c), vtype: ValueType.Unknown, ty_id: none })
+                names.push(ParamEntry { name: derive_capability_import(c), vtype: ValueType.Unknown, ty_id: none })
             }
         }
         out.push(store.stmts.add_leaf(Stmt.Use(m, names)))

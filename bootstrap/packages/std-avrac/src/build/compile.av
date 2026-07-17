@@ -14,7 +14,6 @@ use core.{NodeStore}
 use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
-use features.marshal.{derive_marshal}
 use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
@@ -78,15 +77,13 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let with_intrinsics = inject_intrinsics(desugared, target.store)
     let comp = expand_components(with_intrinsics, target.store)
     let _ = guard_bag(comp.bag, target.diag_filename, "component validation failed")?
-    // @marshal derive: synthesise `impl T { to_bytes; from_bytes }`
-    // next to every `@marshal type T` so the resolver sees the type
-    // AND its methods in the same pass. Zero-cost when no
-    // @marshal annotation exists (early-out).
-    let with_marshal = derive_marshal(comp.stmts, target.store)
     // Option C pipeline: macro-introduced decls register before
     // scope validation runs. Single source of truth in
-    // features/comptime/expand_macro.av.
-    let named = resolve_and_expand_program(with_marshal, target.store)
+    // features/comptime/expand_macro.av — which since ps3t.6.6 also
+    // owns @marshal (aliased to @derive(Marshal)), so the former
+    // pre-resolve derive_marshal splice point is gone: one
+    // derive_program pass expands every derive spelling.
+    let named = resolve_and_expand_program(comp.stmts, target.store)
     if bag_has_errors(named.bag) || named.had_error {
         render_bag("", target.diag_filename, named.bag)
         return Result.Err(named.error_message)

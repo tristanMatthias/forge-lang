@@ -20,7 +20,20 @@
 /// dispatch (below) and the unknown-capability diagnostic's "known:"
 /// list — in sync by construction.
 export fn derive_capabilities() -> List<string> {
-    ["Walk", "Eq"]
+    ["Walk", "Eq", "Marshal"]
+}
+
+/// True for capabilities the expander dispatches NATIVELY (compiled
+/// compiler code operating on the arena directly) instead of through a
+/// @comptime shim in the interpreter. Marshal's generators are
+/// arena-native builders (869 lines of NodeStore construction) — the
+/// eval registry can only reach @comptime fns, and porting them to
+/// value-style would be a rewrite for zero behavior gain. The
+/// interpreter/JIT doctrine (design §3.2) governs USER-authored macros;
+/// a compiler-built-in emitter running compiled is the end state the
+/// JIT aspires to anyway.
+export fn derive_capability_native(cap: string) -> bool {
+    cap == "Marshal"
 }
 
 /// Capability name → the @comptime shim fn the expander invokes
@@ -31,17 +44,31 @@ export fn derive_capabilities() -> List<string> {
 export fn derive_capability_macro(cap: string) -> string {
     if cap == "Walk" { return "derive_walker" }
     if cap == "Eq" { return "derive_eq" }
+    // Marshal is native (derive_capability_native) — no shim to name.
     ""
 }
 
-/// Capability name → the module the shim is declared in, as a `use`
-/// path. The implicit-import injection needs it (shims live where
-/// their plan does: Walk beside the walker feature, Eq beside the eq
-/// emitter). "" ⇔ unknown capability.
+/// Capability name → the module the implicit-import injection pulls
+/// from. For interpreted capabilities that's where the shim lives
+/// (beside its plan: Walk in the walker feature, Eq in the eq
+/// emitter); for native Marshal it's where the generated impls'
+/// TRAIT lives (`@std::process::Marshal` — the impl header the
+/// marshal builders emit references it, so the trait must be in the
+/// module tree). "" ⇔ unknown capability.
 export fn derive_capability_module(cap: string) -> string {
     if cap == "Walk" { return "@std.avrac.features.walker" }
     if cap == "Eq" { return "@std.avrac.features.derive" }
+    if cap == "Marshal" { return "@std.process" }
     ""
+}
+
+/// Capability name → the symbol the implicit injection names in that
+/// module's `use`: the shim fn for interpreted capabilities, the
+/// trait for native Marshal. Distinct from derive_capability_macro,
+/// which is dispatch-only ("" for natives).
+export fn derive_capability_import(cap: string) -> string {
+    if cap == "Marshal" { return "Marshal" }
+    derive_capability_macro(cap)
 }
 
 /// Render the known-capability list for diagnostics: "Walk, Eq".

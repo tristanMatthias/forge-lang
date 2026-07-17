@@ -988,23 +988,76 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
     }
     let new_global_index = global_item_reg_build(new_items_list)
 
+    // ps3t.6.6: sibling lookup (rewrite_ident step 5) resolves through
+    // the TREE's per-module item lists — a module-scoped spliced decl
+    // must join its module's node, or a same-module caller of a
+    // macro-introduced free fn (`from_bytes_T(...)` beside a
+    // `@marshal type T`) can never qualify the reference and dies as
+    // F3000 at scope validation. Top-level splices (canonical ==
+    // short_name) have no module node and skip.
+    mut new_tree = state.tree
+    for added in new_items {
+        let mod_path = canonical_module_prefix(added.canonical, added.short_name)
+        if mod_path != "" {
+            new_tree = module_tree_add_item(new_tree, mod_path, ModuleItemEntry {
+                short_name: added.short_name,
+                canonical: added.canonical,
+                exported: added.exported,
+            })
+        }
+    }
+
     state with {
+        tree: new_tree,
         graph: state.graph with { all_items: updated_all },
         global_index: new_global_index,
+    }
+}
+
+/// The module-path prefix of `canonical` when it qualifies `short`
+/// (`"m::sub::f"`/`"f"` → `"m::sub"`), else "" (top-level decl).
+fn canonical_module_prefix(canonical: string, short: string) -> string {
+    let suffix = "::${short}"
+    if canonical.length <= suffix.length { return "" }
+    if !canonical.ends_with(suffix) { return "" }
+    canonical.substring(0, canonical.length - suffix.length)
+}
+
+/// Rebuild the tree with `item` appended to the items of the node at
+/// `path` (walking siblings + children). Unchanged when the path has
+/// no node.
+fn module_tree_add_item(tree: ModuleNode, path: string, item: ModuleItemEntry) -> ModuleNode {
+    match tree {
+        .End -> ModuleNode.End
+        .Node(name, p, items, children, next) -> {
+            if p == path {
+                mut merged: List<ModuleItemEntry> = []
+                for i in items { merged.push(i) }
+                merged.push(item)
+                ModuleNode.Node(name, p, merged, children, module_tree_add_item(next, path, item))
+            } else {
+                ModuleNode.Node(name, p, items, module_tree_add_item(children, path, item), module_tree_add_item(next, path, item))
+            }
+        }
     }
 }
 
 fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>) {
     mut out = acc
     for id in ids {
-        match store.stmts.get(id) {
+        // Peel Annotated wrappers for the DISPATCH (an
+        // `@deferred_init`-wrapped module — the test assembler's
+        // per-file unit shape — must still descend; d4jv wrapper-
+        // blindness class), while from_macro provenance stays keyed
+        // on the raw row id.
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
                 collect_macro_items(store, body, inner_path, out)
             }
             _ -> {
                 if store.is_from_macro(id) {
-                    collect_macro_item_from_stmt(store, store.stmts.get(id), mod_path, out)
+                    collect_macro_item_from_stmt(store, stmt_unwrap(store, store.stmts.get(id)), mod_path, out)
                 }
             }
         }
@@ -1208,7 +1261,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // re-runs rewrite_uses, and already-qualified names from
             // the first pass must not get doubly-prefixed
             // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
-            let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
+            let already_qualified = (name.length > 0 && name.substring(0, 1) == "@") || name.contains("::")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, params)

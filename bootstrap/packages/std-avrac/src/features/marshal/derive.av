@@ -19,7 +19,7 @@
 // resolver wires up to @std/process the same way a hand-written
 // impl would.
 
-use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
 use core.{NodeStore}
 
 // ── Public entry ──
@@ -100,7 +100,17 @@ fn has_marshal(store: NodeStore, stmt: Stmt) -> bool {
 fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
     let empty: List<StmtId> = []
     if !has_marshal(store, stmt) { return empty }
-    let inner = stmt_unwrap(store, stmt)
+    derive_marshal_stmts_for(store, stmt_unwrap(store, stmt))
+}
+
+/// ps3t.6.6: the per-decl seam for the `Marshal` capability — the same
+/// impls this file has always built, minus the @marshal-annotation gate
+/// (the @derive dispatcher has already routed the decl here). Returns []
+/// for non-type/enum decls, mirroring the annotation path's silent skip
+/// — behavior parity between the `@marshal` and `@derive(Marshal)`
+/// spellings by construction.
+export fn derive_marshal_stmts_for(store: NodeStore, inner: Stmt) -> List<StmtId> {
+    let empty: List<StmtId> = []
     match inner {
         .TypeDecl(name, _, fields) -> derive_stmts(store, name, fields)
         .EnumDecl(name, _, variants) -> derive_enum_stmts(store, name, variants)
@@ -125,6 +135,16 @@ fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
 /// List<T> / nested @marshal / enums.
 ///
 /// Returns a 3-element List<StmtId>: [impl_stmt, from_bytes_fn, isolated_fn].
+/// Mangle a generated artifact name from a type name. Post-ps3t.6.6 the
+/// builders run POST-resolve, so `type_name` arrives module-QUALIFIED
+/// (`mod::MPoint`) — the mangle must use the SHORT name (`from_bytes_MPoint`,
+/// declared inside the same module and qualified by the re-resolve like any
+/// sibling), while type REFERENCES keep the qualified form. Mirrors the
+/// walker engine's `method_symbol` short-name rule.
+fn marshal_artifact_name(prefix: string, type_name: string) -> string {
+    prefix + type_short_name(type_name)
+}
+
 fn derive_stmts(store: NodeStore, type_name: string, fields: List<FieldEntry>) -> List<StmtId> {
     let to_bytes_fn = build_to_bytes_fn(store, fields)
     let methods: List<StmtId> = [store.stmts.add_leaf(to_bytes_fn)]
@@ -391,7 +411,7 @@ fn build_from_bytes_fn(store: NodeStore, type_name: string, fields: List<FieldEn
     // Top-level fn named `from_bytes_<T>` (no static-method syntax
     // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
     // through this naming convention.
-    let fn_name = "from_bytes_" + type_name
+    let fn_name = marshal_artifact_name("from_bytes_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params,
         vtype_struct(type_name, 0), body)
@@ -437,7 +457,7 @@ fn read_one(store: NodeStore, name: string, ty: ValueType) -> List<StmtId> {
         //   let <n> = from_bytes_<InnerT>(__nested_<n>)
         .Struct(inner_name, _, _) -> {
             let stmts = read_then_reassign(store, name, "__nested_" + name, "read_bytes")
-            let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
+            let from_bytes_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", inner_name)),
                 [store.exprs.add_leaf(Expr.Ident("__nested_" + name))])
             let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
             let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
@@ -547,7 +567,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     ]
     let raw_stmt = Stmt.LetDestructure(raw_names, store.exprs.add_leaf(raw_read))
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
-    let from_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
+    let from_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", inner_name)),
         [store.exprs.add_leaf(Expr.Ident(rawname))])
     let push_call = method_call(store, Expr.Ident(aname), "push", [store.exprs.add_leaf(from_call)])
     let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, store.exprs.add_leaf(push_call))))
@@ -742,7 +762,7 @@ fn build_enum_from_bytes_fn(store: NodeStore, type_name: string, variants: List<
     let dispatch = build_enum_dispatch(store, type_name, variants)
     let init_part: List<StmtId> = [store.stmts.add_leaf(init_let)]
     let body = append_ids(init_part, append_ids(tag_reads, dispatch))
-    let fn_name = "from_bytes_" + type_name
+    let fn_name = marshal_artifact_name("from_bytes_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     let empty_args: List<ValueType> = []
     Stmt.Function(fn_name, empty_tp, params,
@@ -846,7 +866,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let isolated_call = mk_call(store, Expr.QualifiedIdent("@std::process::isolated_bytes"),
         [store.exprs.add_leaf(inner_closure)])
     // Ok arm: Result.Ok(from_bytes_<T>(b))
-    let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + type_name),
+    let from_bytes_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", type_name)),
         [store.exprs.add_leaf(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
         [store.exprs.add_leaf(from_bytes_call)])
@@ -862,7 +882,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     arms.push(MatchArm { pattern: err_pattern, guard_id: null, body_id: store.exprs.add_leaf(err_body) })
     let match_expr = Expr.MatchExpr(store.exprs.add_leaf(isolated_call), arms)
     let body_stmts: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(match_expr)))]
-    let fn_name = "isolated_" + type_name
+    let fn_name = marshal_artifact_name("isolated_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params, ret_ty, body_stmts)
 }
