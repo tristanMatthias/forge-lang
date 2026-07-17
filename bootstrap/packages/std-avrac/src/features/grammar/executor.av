@@ -520,13 +520,21 @@ export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, d
 /// `type_expr_to_vtype` (exactly what the hand parser does) and ingest into
 /// the type arena — so equivalence reduces to building the same `TypeExpr`.
 export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
-    run_grammar_type_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+    run_grammar_type_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
 
-/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8). See
-/// `run_grammar_expr_toks`.
+/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8). No source is
+/// threaded — a `@hand` TYPE rule needing the source (e.g. `qualified_type`) is
+/// unavailable on this path (the swap-in serves those from a real Parser).
 export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
+    run_grammar_type_src(grammar, toks, store, "")
+}
+
+/// Shared core of the type entry. `src` is threaded (empty on the token-only
+/// path) so a `@hand` type rule (`@pkg::T` → `run_hand_type` → parse_type_atom)
+/// can delegate over the original source (ps3t.6.5.10).
+fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -670,7 +678,11 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // Expr node. Dispatch on the rule name so a mixed declaration grammar
         // (pure rules + a `@hand(component_decl)` alternative) routes each to
         // the right builder.
-        .Hand(hf) -> if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) } else { CapVal.Node(run_hand(hf, st)) }
+        .Hand(hf) -> {
+            if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
+            else if is_type_hand(hf) { CapVal.TExpr(run_hand_type(hf, st)) }
+            else { CapVal.Node(run_hand(hf, st)) }
+        }
     }
 }
 
@@ -691,6 +703,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "component_decl" { return tok.text == "component" }
     if name == "let_stmt" { return tok.text == "let" }
     if name == "return_stmt" { return tok.text == "return" }
+    // A qualified-type hand rule's FIRST is the `@` package marker.
+    if name == "qualified_type" { return tok.text == "@" }
     false
 }
 
@@ -762,6 +776,40 @@ fn run_hand_stmt(name: string, st: PState) -> StmtId {
         .Err(m) -> {
             st.report(m)
             st.store.stmts.add_leaf(Stmt.Error)
+        }
+    }
+}
+
+/// True for hand rules that build a TYPE (delegated via `run_hand_type`,
+/// returning a `TypeExpr`). `qualified_type` — the `@pkg::mod::Type` form
+/// (parse_type_atom's `@` branch) — is the case: the DSL's `named_type` is a
+/// bare IDENT, so a package-qualified `@`-prefixed name has no pure-grammar
+/// production, and `::`-segment paths interact with the enum-ctor-vs-method
+/// disambiguation the hand parser owns (ps3t.6.5.10).
+fn is_type_hand(name: string) -> bool {
+    name == "qualified_type"
+}
+
+/// Run a TYPE hand rule by delegating to the hand parser's `parse_type_atom`
+/// over the original source, returning the built `TypeExpr` (a VALUE — not
+/// arena-backed, so no store-sharing needed) and resyncing the DSL cursor past
+/// what it consumed. The type family lowers the returned `TypeExpr` via the
+/// shared `type_expr_to_vtype`, exactly as it does the pure-grammar type atoms.
+fn run_hand_type(name: string, st: PState) -> TypeExpr {
+    if !is_type_hand(name) || st.src == "" {
+        st.report("`@hand(${name})` needs the source, unavailable here")
+        return TypeExpr.Named("")
+    }
+    let start_byte = st.cur().pos
+    mut bp = parser_new_with_file(st.src, "")
+    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    let result = bp.parse_type_atom("expected type")
+    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    match result {
+        .Ok(te) -> te
+        .Err(m) -> {
+            st.report(m)
+            TypeExpr.Named("")
         }
     }
 }

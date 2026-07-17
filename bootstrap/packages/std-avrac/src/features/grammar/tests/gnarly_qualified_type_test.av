@@ -1,0 +1,106 @@
+// ps3t.6.5.10 — the gnarly-5% catalogue, entry 3: `@pkg::T` QUALIFIED TYPES,
+// and the first EXPRESSION/TYPE-level @hand hook.
+//
+// A package-qualified type name `@std::core::Foo` (with optional generic /
+// nullable suffixes) has no pure-grammar production — the DSL's `named_type` is
+// a bare IDENT, and `::`-segment paths interact with the enum-ctor-vs-method
+// disambiguation the hand parser owns. The renderer EMITS resolved types this
+// way (a shipped @comptime body's annotation can read `List<@std::core::ExprId>`),
+// so the type parser must accept them.
+//
+// The statement/decl gnarly cases (component/let-else/return) delegate whole
+// STATEMENTS via run_hand_stmt (→ StmtId). This case needs the TYPE analogue:
+// run_hand_type delegates a type ATOM to the hand parser's parse_type_atom and
+// returns a TypeExpr VALUE (not arena-backed, so no store-sharing needed) —
+// exec_primary's .Hand arm now routes a type-hand rule to CapVal.TExpr, which
+// the type family lowers via the shared type_expr_to_vtype exactly like a
+// pure-grammar atom. The escape composes INSIDE the pure grammar: it's just one
+// `type_atom` alternative, so `List<@std::core::Foo>` parses the outer generic
+// in the grammar and the qualified atom via @hand — and stacks with the
+// >>-split (entry 2) for `List<List<@std::core::Foo>>`.
+//
+// Oracle: run the DSL type parser AND the hand parser (parse_type_expr →
+// parse_type_atom's `@` branch), lower both via the shared type_expr_to_vtype,
+// and assert identical ValueTypes via render_type_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+
+fn type_grammar_src() -> string {
+    "grammar Type {\n" +
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    // The @hand(qualified_type) alternative fires on a leading `@` (its FIRST);
+    // every other atom uses its pure-grammar rule.
+    "  type_atom  = @hand(qualified_type) | fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" r:type_expr )? -> MkFn(lp, p, r)\n" +
+    "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
+    "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
+    "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
+    "  named_type = name:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
+    "}"
+}
+
+fn dsl_type(src: string) -> string {
+    let gp = parse_grammar(type_grammar_src())
+    let r = run_grammar_type(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_type_id(r.store, r.root)
+}
+
+fn hand_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool { dsl_type(src) == hand_type(src) }
+
+spec "grammar-DSL gnarly-5%: @pkg::T qualified types via @hand == hand parser (ps3t.6.5.10)" {
+    given "package-qualified type names (the @hand(qualified_type) atom)" {
+        then "plain / multi-segment / generic / nullable qualified forms agree" {
+            agree("@std::core::Foo") &&
+            agree("@pkg::Type") &&
+            agree("@std::core::ExprId?") &&
+            agree("@pkg::Result<T, E>") &&
+            agree("@a::b::c::Deep") &&
+            // canonical: the qualified name round-trips through the render.
+            dsl_type("@std::core::Foo") == "@std::core::Foo" &&
+            dsl_type("@pkg::Result<T, E>") == "@pkg::Result<T, E>"
+        }
+    }
+    given "qualified types NESTED in a pure-grammar generic (the @hand composes)" {
+        then "the outer generic parses in the grammar, the qualified atom via @hand" {
+            agree("List<@std::core::Foo>") &&
+            agree("Map<@pkg::K, @pkg::V>") &&
+            agree("Box<@std::core::ExprId?>")
+        }
+    }
+    given "qualified + nested generics (@hand stacks with the >>-split, entry 2)" {
+        then "List<List<@std::core::Foo>> agrees — both mechanisms fire" {
+            agree("List<List<@std::core::Foo>>") &&
+            agree("Map<string, List<@std::core::ExprId>>")
+        }
+    }
+    given "qualified types in union / list positions" {
+        then "@hand composes with the other type forms" {
+            agree("@pkg::A | @pkg::B") &&
+            agree("[@std::core::Foo]") &&
+            agree("@pkg::Foo | int")
+        }
+    }
+    given "bare (non-qualified) types are unchanged (no false @hand route)" {
+        then "the pure-grammar atoms still agree" {
+            agree("int") &&
+            agree("List<int>") &&
+            agree("Foo") &&
+            agree("dyn Show") &&
+            // sanity: qualified really differs from the bare short name.
+            dsl_type("@std::core::Foo") != dsl_type("Foo")
+        }
+    }
+}
