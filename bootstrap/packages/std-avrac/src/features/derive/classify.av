@@ -1,4 +1,4 @@
-// WHY: the field classifier of the unified derive engine (ps3t.6.2) — the
+// WHY: the field classifier of the unified derive engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1) — the
 // single place a field's ValueType is read into a `FieldShape` every emitter
 // (walk / eq / codec / render) then interprets. Moved down from
 // walker/derive.av (where it was Self-relative `FieldKind`) and generalized:

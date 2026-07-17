@@ -82,7 +82,7 @@ spec "UAP: same-name impl method + fn-typed field disambiguate by position" {
     }
 }
 
-// ps3t.6.2 regression: a method-position fn-field call must carry the
+// Regression: a method-position fn-field call must carry the
 // field's DECLARED return type, not `.Int`. The old fallback emitted the
 // result via the untyped indirect-call helper, so a struct-returning
 // field-fn came back int-typed and any downstream field access on the

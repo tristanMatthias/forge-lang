@@ -1,4 +1,4 @@
-// ps3t.6.2: the eq emitter on an enum — the proof that the unified derive
+// The eq emitter on an enum — the proof that the unified derive
 // engine's emitter interface carries a second generator with zero new
 // traversal code. Covers: leaf equality (==), node recursion (.eq),
 // list-of-self pairing (list_eq_by + the generated lambda), the

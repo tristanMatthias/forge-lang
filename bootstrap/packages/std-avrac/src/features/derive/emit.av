@@ -1,5 +1,5 @@
 // WHY: the emitter interface + traversal driver of the unified derive
-// engine (ps3t.6.2). The DRIVER owns everything every derive repeats:
+// engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1). The DRIVER owns everything every derive repeats:
 // read the decl (shape.av), classify each variant's fields once
 // (classify.av), build the per-variant `match self { … }` (enum) or the
 // let-bound straight-line body (struct), assemble the mangled
@@ -19,7 +19,7 @@
 
 use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, Pattern, MatchArm, ValueType, Variant}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance, synth_expr_id, synth_stmt_ids}
-use features.derive.{DeclView, DeclShapeKind, decl_view, FieldShape, classify_field, classify_field_any}
+use features.derive.{DeclView, decl_view, FieldShape, classify_field, classify_field_any}
 use diagnostics.{Span}
 
 // ── The emitter interface ──

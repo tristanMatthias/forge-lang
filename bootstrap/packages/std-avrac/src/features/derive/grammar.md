@@ -1,4 +1,4 @@
-# derive — the unified derive engine (ps3t.6.2)
+# derive — the unified derive engine
 
 No new surface syntax: derives ride the existing 2-arg `@expand` macro form.
 

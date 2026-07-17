@@ -1,4 +1,4 @@
-// WHY: the decl reader of the unified derive engine (ps3t.6.2) — normalizes
+// WHY: the decl reader of the unified derive engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1) — normalizes
 // an enum decl's variants AND a struct decl's fields to ONE shape so the
 // engine's traversal (emit.av) and every emitter are written once against
 // `DeclView` instead of special-casing EnumDecl vs TypeDecl.

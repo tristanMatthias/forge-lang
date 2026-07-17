@@ -1,6 +1,6 @@
 // WHY: the eq emitter — structural equality, the proof that the derive
 // engine's emitter interface carries a DISTINCT generator with zero new
-// traversal code (ps3t.6.2 §1.5). One per-variant method, both decl forms:
+// traversal code (design doc §1.5). One per-variant method, both decl forms:
 //
 //   enum:    fn T__eq(self: T, other: T) -> bool {
 //                match self {
@@ -17,13 +17,15 @@
 //            }
 //
 // Per-shape comparisons: a Leaf compares with `==`, a Node recurses via
-// the derived `.eq`, a NodeList pairs up through @std's `list_eq_by` with
-// a generated `(x, y) -> x.eq(y)` lambda, a Wrapper hops `.node` then
-// recurses. Consumers of a NodeList-carrying derive must have `list_eq_by`
-// in scope (`use @std.avrac.list_ops.{list_eq_by}`) — the same contract as
-// the walk emitter's unwrap_node_list family.
+// the derived `.eq`, a NodeList pairs up through @std's `list_eq_by`, an
+// OptionalNode none-guards through `opt_eq_by` (both with a generated
+// `(x, y) -> x.eq(y)` lambda), a Wrapper hops `.node` then recurses.
+// Consumers of a list-/optional-carrying derive must have the combinator
+// in scope (`use @std.avrac.list_ops.{list_eq_by, opt_eq_by}`) — the same
+// contract as the walk emitter's unwrap_node_list family.
 //
-// The optional and struct-list shapes have no recipe yet: they emit a
+// The wrapper-list, optional-wrapper, and struct-list shapes have no
+// recipe yet (they only arise on the core AST's own decls): they emit a
 // LOUD undefined helper name so a derive over such a field fails its
 // generated code's compile with a named error (the `anynode_ctor`
 // precedent) instead of producing wrong equality. Extend here when a
@@ -124,10 +126,10 @@ fn pair_eq(a: Expr, b: Expr, kind: FieldShape, parent: string) -> Expr {
         .Leaf -> Expr.Binary(synth_expr_id(a), BinOp.Eq, synth_expr_id(b))
         .Node(_) -> eq_method_call(a, b)
         .NodeList(t) -> list_eq_by_call(a, b, t)
+        .OptionalNode(t) -> opt_eq_by_call(a, b, t)
         .Wrapper(_, _) -> eq_method_call(node_hop(a), node_hop(b))
         // No recipe yet — loud, named compile failure over silent wrong
         // equality (see the file WHY).
-        .OptionalNode(_) -> unsupported_eq_call("optional_node", a, b)
         .OptionalWrapper(_, _) -> unsupported_eq_call("optional_wrapper", a, b)
         .WrapperList(_, _) -> unsupported_eq_call("wrapper_list", a, b)
         .StructList(_) -> unsupported_eq_call("struct_list", a, b)
@@ -147,20 +149,32 @@ fn node_hop(x: Expr) -> Expr {
     Expr.FieldAccess(synth_expr_id(x), "node")
 }
 
-/// `list_eq_by(a, b, (x: T, y: T) -> x.eq(y))` — pairwise list equality via
-/// the @std helper, recursing through the generated lambda. The lambda's
-/// params are ANNOTATED with the list's node type: a lambda bound to a
-/// generic fn param (`eq: fn(T, T) -> bool`) is never threaded a type at
+/// `<helper>(a, b, (x: T, y: T) -> x.eq(y))` — pairwise/none-guarded
+/// equality via an @std combinator, recursing through a generated lambda.
+/// The lambda's params are ANNOTATED with the node type: a lambda bound to
+/// a generic fn param (`eq: fn(T, T) -> bool`) is never threaded a type at
 /// codegen, so un-annotated params trip the F1006 gate — and the emitter
-/// knows the element type exactly (the NodeList's target).
+/// knows the element type exactly (the shape's target).
 @comptime
-fn list_eq_by_call(a: Expr, b: Expr, target: string) -> Expr {
+fn eq_by_helper_call(helper: string, a: Expr, b: Expr, target: string) -> Expr {
     let x = ParamEntry { name: "x", vtype: name_vtype(target) }
     let y = ParamEntry { name: "y", vtype: name_vtype(target) }
     let lambda_params: List<ParamEntry> = [x, y]
     let lambda = Expr.Lambda(lambda_params, synth_expr_id(eq_method_call(Expr.Ident("x"), Expr.Ident("y"))))
     let args: List<ExprId> = [synth_expr_id(a), synth_expr_id(b), synth_expr_id(lambda)]
-    emit_call(Expr.Ident("list_eq_by"), args)
+    emit_call(Expr.Ident(helper), args)
+}
+
+/// `list_eq_by(a, b, …)` — aligned-pair list equality.
+@comptime
+fn list_eq_by_call(a: Expr, b: Expr, target: string) -> Expr {
+    eq_by_helper_call("list_eq_by", a, b, target)
+}
+
+/// `opt_eq_by(a, b, …)` — none-guarded equality over a nullable node field.
+@comptime
+fn opt_eq_by_call(a: Expr, b: Expr, target: string) -> Expr {
+    eq_by_helper_call("opt_eq_by", a, b, target)
 }
 
 /// An undefined-fn call naming the unsupported shape — fails the generated

@@ -1,4 +1,4 @@
-// ps3t.6.2: classifier unit tests — one assertion per FieldShape the
+// Classifier unit tests — one assertion per FieldShape the
 // target-relative classifier can produce from a fixture (StructList is
 // cross-type-only and registry-gated to core's module; it is exercised by
 // the real Stmt/Expr derives in every selfhost compile). A probe macro

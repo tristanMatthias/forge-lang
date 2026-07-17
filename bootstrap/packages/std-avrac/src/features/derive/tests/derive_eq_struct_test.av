@@ -1,4 +1,4 @@
-// ps3t.6.2: the eq emitter on a STRUCT — proves the engine's struct path
+// The eq emitter on a STRUCT — proves the engine's struct path
 // (single synthetic variant, `let __eq_a<i> = self.<field>` projections,
 // no match) drives the same arm hook that serves enums. Mixed leaf kinds
 // (int + string) exercise the `==` leaf comparison across reprs.
@@ -23,6 +23,35 @@ spec "derive_eq: structural equality on a struct" {
             "    println(\"num_diff=\" + string(a.eq(d)))\n" +
             "}\n")
         out.contains("same=true") && out.contains("tag_diff=false") && out.contains("num_diff=false")
+    }
+}
+
+spec "derive_eq: nullable self field none-guards through opt_eq_by" {
+    then "absent/absent, absent/present, and present/present cases all answer correctly" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_optional_test.av",
+            "use @std.avrac.features.derive.{derive_eq}\n" +
+            "use @std.avrac.list_ops.{opt_eq_by}\n" +
+            "\n" +
+            "@expand(derive_eq)\n" +
+            "enum OChain {\n" +
+            "    Link(v: int, next: OChain?)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let flat1 = OChain.Link(1, null)\n" +
+            "    let flat2 = OChain.Link(1, null)\n" +
+            "    let deep1 = OChain.Link(1, OChain.Link(2, null))\n" +
+            "    let deep2 = OChain.Link(1, OChain.Link(2, null))\n" +
+            "    let deep3 = OChain.Link(1, OChain.Link(9, null))\n" +
+            "    println(\"both_absent=\" + string(flat1.eq(flat2)))\n" +
+            "    println(\"absent_vs_present=\" + string(flat1.eq(deep1)))\n" +
+            "    println(\"present_same=\" + string(deep1.eq(deep2)))\n" +
+            "    println(\"present_diff=\" + string(deep1.eq(deep3)))\n" +
+            "}\n")
+        out.contains("both_absent=true") &&
+            out.contains("absent_vs_present=false") &&
+            out.contains("present_same=true") &&
+            out.contains("present_diff=false")
     }
 }
 

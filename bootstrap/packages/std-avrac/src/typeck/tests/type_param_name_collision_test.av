@@ -1,4 +1,4 @@
-// ps3t.6.2 regression: a USER TYPE sharing a generic type-param's name
+// Regression: a USER TYPE sharing a generic type-param's name
 // must not poison the program's generics. A top-level `enum T` registers
 // canonical "T", and four gates used registry-membership-by-name to decide
 // "is this a type param" — so every generic signature mentioning `T`

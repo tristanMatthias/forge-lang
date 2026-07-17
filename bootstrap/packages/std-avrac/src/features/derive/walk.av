@@ -1,6 +1,6 @@
 // WHY: the walk emitter — derive_walker's six methods (children /
 // all_children_spanned / visit / any / find / map) re-homed onto the
-// unified derive engine (ps3t.6.2). The arm-builder bodies are the mature
+// unified derive engine (docs/2026_07_15_L4_DERIVE_FRAMEWORK_DESIGN.md §1). The arm-builder bodies are the mature
 // generators from walker/derive.av, verbatim; what moved OUT of them is
 // everything the engine now owns (decl reading, classification, binding,
 // match/fn assembly). Emitted AST is byte-identical to the pre-engine
@@ -14,7 +14,7 @@
 // split, expressed as plan data.
 
 use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, ValueType, BinOp}
-use features.derive.{FieldShape, shape_is_child, shape_is_single, shape_is_optional, shape_is_listish, shape_target, shape_wrapper, shape_container, struct_list_helpers}
+use features.derive.{FieldShape, shape_is_child, shape_is_single, shape_is_listish, shape_target, shape_wrapper, shape_container, struct_list_helpers}
 use features.derive.{EmitPlan, EmitMethod, PerVariantMethod, WholeFnMethod, MethodSig, DeclCtx, Classified, self_vtype, emit_call, ident_field_access, name_vtype}
 use features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}
 
