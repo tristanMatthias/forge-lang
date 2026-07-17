@@ -11,7 +11,7 @@
 // path (mirroring its existing sink/lock unwinds). This test drives the exact
 // leak: enter comptime, crash, and assert the NEXT spec sees depth reset.
 //
-// avra_test_raise_signal / avra_test_ack_expected_crash / SIG* come from the
+// avra_test_raise_signal / avra_test_expect_crash / SIG* come from the
 // inlined spec_test reporter.
 
 extern fn avra_comptime_enter()
@@ -21,7 +21,9 @@ spec "o092: a crash mid-comptime-fold enters the guard with depth on the stack" 
     then "deliberately enter comptime, then crash — the per-spec guard catches it" {
         // depth 0 -> 1 on THIS worker thread; without the fix the matching
         // avra_comptime_leave is skipped by the crash unwind and the 1 leaks.
+        // Arm the crash as expected first so the guard acks it at record time.
         avra_comptime_enter()
+        avra_test_expect_crash()
         avra_test_raise_signal(SIGABRT)
         true   // unreachable — the signal unwinds to the guard
     }
@@ -33,8 +35,10 @@ spec "o092: the next spec on the same thread sees the comptime depth restored" {
         // loop here would be wrongly ceiling-capped.
         avra_comptime_active() == 0
     }
-    then "ack the deliberate crash so the suite stays green" {
-        avra_test_ack_expected_crash()
+    then "the deliberate crash was already acked at record time" {
+        // The crashing spec armed itself (avra_test_expect_crash), so the
+        // guard dropped the live count when it recorded the crash — nothing to
+        // ack here.
         true
     }
 }

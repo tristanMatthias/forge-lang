@@ -8,7 +8,7 @@
 //   * the crashed spec's name + signal land in the C-side crash list
 //   * subsequent spec blocks pass normally — they ran AFTER the crash
 
-// `avra_test_raise_signal`, `avra_test_ack_expected_crash`, and the
+// `avra_test_raise_signal`, `avra_test_expect_crash`, and the
 // SIGABRT constant come from the inlined spec_test reporter. Only the
 // crash-list getters need explicit extern decls.
 //
@@ -25,10 +25,14 @@ extern fn avra_test_crash_signal_for_file(frag: string, idx: int) -> int
 spec "crash isolation: a spec that aborts is caught" {
     given "first spec triggers SIGABRT mid-body" {
         then "raising SIGABRT does not kill the bundle" {
-            // raise(SIGABRT) → signal handler longjmps back to
-            // avra_test_run_spec_guarded → never returns here. The
-            // `true` is structurally unreachable, kept only so the
+            // Arm the imminent crash as expected, THEN raise: the guard's
+            // crash path records it (per-file introspection below still sees
+            // it) AND drops the live count atomically on this thread, so no
+            // separate later ack is needed. raise(SIGABRT) → signal handler
+            // longjmps back to avra_test_run_spec_guarded → never returns
+            // here. The `true` is structurally unreachable, kept only so the
             // then-block parses.
+            avra_test_expect_crash()
             avra_test_raise_signal(SIGABRT)
             true
         }
@@ -54,15 +58,12 @@ spec "crash isolation: crash bookkeeping" {
         then "the recorded signal is SIGABRT" {
             avra_test_crash_signal_for_file(CIT_FILE, 0) == SIGABRT
         }
-        then "ack the deliberate crash so the suite exits green" {
-            // The first spec crashed on purpose to prove the guard catches
-            // it. Acknowledge it so the orchestrator's "1 spec(s) crashed →
-            // exit 1" path doesn't fail CI on a test whose entire purpose is
-            // to make a spec crash. The ack drops the GLOBAL live count (that
-            // green-ness is verified by the shard's exit code); the recorded
-            // entry is RETAINED for introspection, which this asserts (a
-            // per-file, race-free check — the global count is not).
-            avra_test_ack_expected_crash()
+        then "the deliberate crash was already acked at record time" {
+            // The first spec armed its crash (avra_test_expect_crash) before
+            // raising, so the guard dropped the global live count when it
+            // recorded the crash — no separate ack here, and no window for the
+            // count to leak to the summary. The recorded entry is RETAINED for
+            // introspection, which this asserts (a per-file, race-free check).
             avra_test_crash_count_for_file(CIT_FILE) == 1
         }
     }

@@ -72,11 +72,20 @@ export const SIGSEGV: int = 11
 /// records the spec as crashed.
 extern fn avra_test_raise_signal(sig: int) -> int
 
-/// Decrement the live crash count without removing the recorded
-/// entry. Use this from a spec block that DELIBERATELY caused a crash
-/// (e.g. crash_isolation_test.av) so the shard's exit code stays
-/// green AND the "Crashed specs:" render stops walking — prior
-/// introspection of the recorded entry still works.
+/// Arm the NEXT crash on this thread as expected. Call this immediately
+/// before `avra_test_raise_signal(...)` in a spec block that DELIBERATELY
+/// crashes to exercise the per-spec guard. The guard's crash path records the
+/// crash (so per-file introspection still sees it) AND drops the live count in
+/// the same breath, on the same thread — so an expected crash can never leak
+/// into the shard's exit code. This replaces the fragile pattern of acking
+/// from a SEPARATE later spec (`avra_test_ack_expected_crash`), whose global
+/// decrement could survive to summary time under parallel CI load.
+extern fn avra_test_expect_crash()
+
+/// LEGACY: decrement the live crash count from a SEPARATE spec after a
+/// deliberate crash. Superseded by `avra_test_expect_crash()` (arm-before-
+/// raise), which has no lost-decrement window. Kept for backward compat;
+/// do not pair it with `avra_test_expect_crash` in the same spec.
 extern fn avra_test_ack_expected_crash()
 
 // ── ANSI helpers (no \u escape, no formatting library — reporter
