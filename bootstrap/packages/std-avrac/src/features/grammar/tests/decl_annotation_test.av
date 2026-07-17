@@ -82,7 +82,10 @@ fn agree(src: string) -> bool {
 // as expected.
 fn first_ann_argc(store: NodeStore, id: StmtId) -> int {
     match store.stmts.get(id) {
-        .Annotated(anns, _) -> if anns.length == 0 { -1 } else { anns[0].arg_ids.length }
+        // arg_ids is nullable (sentinel), but every constructor fills it (`[]`
+        // for a bare `@name`), so `!` is safe — matching the ast.av convention
+        // (`store.exprs.get(arg_ids![i])`).
+        .Annotated(anns, _) -> if anns.length == 0 { -1 } else { anns[0].arg_ids!.length }
         _ -> -2
     }
 }
