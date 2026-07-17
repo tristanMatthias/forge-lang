@@ -719,14 +719,24 @@ fn classify_field_crosstype(vt: ValueType, parent_name: string, ctx: ResolverCtx
     let kt = classify_field_kind(vt, tt, ctx)
     // 5idg: a SINGLE cross-type ValueType child (e.g. ChannelNew.elem) is walkable —
     // the standard parser ingests it as a TypeArena edge, so walker view and store
-    // edges agree. But a `List<ValueType>` field on an AST *expression* node
-    // (GenericCall.type_args) is a type-ANNOTATION list the generics parser stores
-    // INLINE (alloc_leaf, no edge ingest), NOT walkable sub-nodes — walking it would
-    // make `all_children_spanned()` diverge from `children_of()` (the faithfulness
-    // oracle, arena.av). Keep such a list Scalar. A ValueType NODE's own
-    // `List<ValueType>` children are walked via the SAME-type classifier (parent ==
-    // ValueType), which this cross-type gate never reaches — so they're unaffected.
-    if field_is_node(kt) && !(kt is .ListOfSelf) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
+    // edges agree. A `List<ValueType>` field, though, splits two ways and this gate
+    // must tell them apart, because `all_children_spanned()` is built SOLELY from
+    // this cross-type classifier (build_all_children_spanned_arms) — even a
+    // ValueType node's OWN self-recursive list flows through here, NOT the same-type
+    // `children()` path:
+    //   * On an AST *expression* node (GenericCall.type_args) it is a type-ANNOTATION
+    //     list the generics parser stores INLINE (alloc_leaf, no edge ingest), so it
+    //     is NOT a walkable sub-node — walking it would make `all_children_spanned()`
+    //     diverge from `children_of()` (the faithfulness oracle, arena.av). Keep it
+    //     Scalar. Here the list element (ValueType) is NOT the parent, so
+    //     `is_list_of_self` is false.
+    //   * On the ValueType enum ITSELF (FnTyped.params, Struct/Enum.type_args) it is
+    //     genuine recursive children that the arena DOES ingest as edges — dropping
+    //     it to Scalar made `all_children_spanned()` under-count and the arena's
+    //     FnTyped ingest read past the recorded edges (SIGABRT, arena_test.av:188).
+    //     Here the element IS the parent, so `is_list_of_self(vt, parent_name)` is
+    //     true and the list must be walked.
+    if field_is_node(kt) && (!(kt is .ListOfSelf) || is_list_of_self(vt, parent_name)) { return CrossBinding { binding_name: "", target: tt, kind: kt } }
     // A `List<Struct>` whose element is a REGISTERED walkable node-container
     // (e.g. `List<MatchArm>`). Classified here rather than in classify_field_kind
     // because such a struct spans multiple node kinds, so the same-type children()
