@@ -78,6 +78,12 @@ enum CapVal {
     // into Stmt.EnumDecl.
     Var(v: Variant)
     Vars(vs: List<Variant>)
+    // A built ANNOTATION (name + arg expression ids) + a parallel list
+    // (declaration family, ps3t.6.5.7). `@name(args)` needs the args built —
+    // unlike the bare-`@name` MkAnnotated, which captures names as plain Toks.
+    // A `( "@" name args? )+` accumulates `Anns`, folded into Stmt.Annotated.
+    Ann(a: Annotation)
+    Anns(xs: List<Annotation>)
 }
 
 type Cap = { name: string, val: CapVal }
@@ -257,6 +263,22 @@ impl CapEnv {
         }
         vs.push(v)
         self.set_scalar(name, CapVal.Vars(vs))
+    }
+
+    // Annotation-list accumulator (@name(args) declarations, ps3t.6.5.7): a `+`
+    // over the annotation rule collects each built Annotation here.
+    fn append_ann(self, name: string, a: Annotation) {
+        let existing = self.get(name)
+        mut xs: List<Annotation> = []
+        match existing {
+            .Anns(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .Ann(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(a)
+        self.set_scalar(name, CapVal.Anns(xs))
     }
 }
 
@@ -641,6 +663,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
             .Var(v) -> env.append_var(label, v)
+            .Ann(a) -> env.append_ann(label, a)
             _ -> {}
         }
     } else {
@@ -1097,6 +1120,20 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
                 _ -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.NewtypeDecl(name, vt)))
             }
         }
+        "MkAnn" if args.length == 2 -> {
+            // One annotation `@name ( "(" args ")" )?` — a name + its built
+            // argument EXPRESSIONS (arg_ids), exactly parse_annotations. Absent
+            // args ⇒ empty arg_ids (a bare `@name`), so this build subsumes the
+            // bare case too. The args reuse the DSL expression family.
+            CapVal.Ann(Annotation { name: capval_tok_text(env.get(args[0])), arg_ids: capval_to_node_list(env.get(args[1])) })
+        }
+        "MkAnnotatedArgs" if args.length == 2 -> {
+            // `( "@" name args? )+ <decl>` — one or more annotations (WITH args)
+            // wrapping a declaration → Stmt.Annotated(annotations, inner), the
+            // args-carrying sibling of MkAnnotated. Since render_annotation_list
+            // drops arg_ids, arg equivalence is asserted directly in the test.
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(capval_to_ann_list(env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
+        }
         "MkAnnotated" if args.length == 2 -> {
             // `( "@" name )+ <decl>` — one or more BARE annotations wrapping a
             // declaration → Stmt.Annotated(annotations, inner), exactly
@@ -1252,6 +1289,15 @@ fn capval_to_field_list(v: CapVal) -> List<FieldEntry> {
     match v {
         .Fields(fs) -> fs
         .Field(f) -> [f]
+        _ -> []
+    }
+}
+
+/// A capture as an annotation list (@name(args) declarations, ps3t.6.5.7).
+fn capval_to_ann_list(v: CapVal) -> List<Annotation> {
+    match v {
+        .Anns(xs) -> xs
+        .Ann(a) -> [a]
         _ -> []
     }
 }
