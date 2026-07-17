@@ -1,0 +1,63 @@
+// ps3t.6.2 regression: a USER TYPE sharing a generic type-param's name
+// must not poison the program's generics. A top-level `enum T` registers
+// canonical "T", and four gates used registry-membership-by-name to decide
+// "is this a type param" — so every generic signature mentioning `T`
+// suddenly read as CONCRETE and an inline-@std compile drowned in F1000s
+// (166 layout conflicts from one user decl). Fixed lexically, four sites:
+//   1. resolve/names.av rewrite_vtype — an in-scope type param stays bare
+//      AND unstamped (id 0), never picking up the same-named user type's id.
+//   2. typeck call-arg gate — the callee's declared tp names are erased to
+//      Unknown for the layout comparison (vtype_erase_type_params).
+//   3. vtype_mentions_typeparam — matches Enum-kind nodes too (resolve
+//      upgrades a poisoned param slot to Enum-kind).
+//   4. tc_subst_generic_ret — a param the args left unbound erases to
+//      Unknown instead of leaking a phantom `Struct("T")` nominal.
+//
+// The fixture exercises the shapes that failed: a generic call through
+// @std (list_concat<T>), Result<T,E> ctors, and a generic whose param
+// binds only partially (decode_or-style default arg) — all with a hostile
+// `enum T` and `type E` in scope at the top level.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "generics survive a user type named like a type param" {
+    then "enum T + type E in scope; @std generics + Result + defaults all compile and run" {
+        let out = write_fixture_and_run("/tmp/avra_type_param_name_collision_test.av",
+            "use @std.avrac.list_ops.{list_concat, list_map}\n" +
+            "\n" +
+            "enum T { A, B }\n" +
+            "type E = { code: int }\n" +
+            "\n" +
+            "fn pick_or<X>(v: X?, d: X) -> X {\n" +
+            "    v ?? d\n" +
+            "}\n" +
+            "\n" +
+            "fn wrap_ok(n: int) -> Result<int, string> {\n" +
+            "    Result.Ok(n)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a: List<int> = [1, 2]\n" +
+            "    let b: List<int> = [3]\n" +
+            "    println(\"concat=\" + string(list_concat(a, b).length))\n" +
+            "    let doubled = list_map(a, (x: int) -> x * 2)\n" +
+            "    println(\"map=\" + string(doubled[1]))\n" +
+            "    match wrap_ok(7) {\n" +
+            "        .Ok(v) -> println(\"ok=\" + string(v))\n" +
+            "        .Err(_) -> println(\"err\")\n" +
+            "    }\n" +
+            "    let m: int? = null\n" +
+            "    println(\"picked=\" + string(pick_or(m, 42)))\n" +
+            "    let t = T.A\n" +
+            "    println(\"t_is_a=\" + string(t is .A))\n" +
+            "    let e = E { code: 5 }\n" +
+            "    println(\"e=\" + string(e.code))\n" +
+            "}\n")
+        out.contains("concat=3") &&
+            out.contains("map=4") &&
+            out.contains("ok=7") &&
+            out.contains("picked=42") &&
+            out.contains("t_is_a=true") &&
+            out.contains("e=5")
+    }
+}
