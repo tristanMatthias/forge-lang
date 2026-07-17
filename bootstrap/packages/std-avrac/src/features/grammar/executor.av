@@ -433,16 +433,29 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// Run `grammar` over `src`, starting at the first rule (the start
 /// symbol). Returns the store + root + diagnostics.
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
-    run_grammar_expr_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+    run_grammar_expr_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
 
 /// The caller-provided-store form of `run_grammar_expr` (ps3t.6.5.8): the
 /// token stream and destination `NodeStore` are supplied by the caller, so
 /// the DSL parser builds INTO an existing store (the eventual swap-in point —
 /// the real parser hands its own store + token stream). `run_grammar_expr`
-/// is the thin `(real lexer + fresh store)` wrapper over this.
+/// is the thin `(real lexer + fresh store)` wrapper over this. No source is
+/// threaded — a `@hand` EXPRESSION rule that needs it (e.g. `quote`) is
+/// unavailable on this path (the swap-in serves those from a real Parser).
 export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
+    run_grammar_expr_src(grammar, toks, store, "")
+}
+
+/// Shared core of the expression entry. `src` is threaded (empty on the
+/// token-only path) so a `@hand` EXPRESSION rule can delegate to the real hand
+/// parser over the original source — the `run_hand_expr` analogue of
+/// `run_grammar_stmt_src`. `quote { … }` is the case: a leading `~` inside a
+/// quote body is `Expr.Splice`, which the hand parser decides on its
+/// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
+/// ps3t.6.5.10).
+fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -681,6 +694,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         .Hand(hf) -> {
             if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
             else if is_type_hand(hf) { CapVal.TExpr(run_hand_type(hf, st)) }
+            else if is_expr_hand(hf) { CapVal.Node(run_hand_expr(hf, st)) }
             else { CapVal.Node(run_hand(hf, st)) }
         }
     }
@@ -705,6 +719,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "return_stmt" { return tok.text == "return" }
     // A qualified-type hand rule's FIRST is the `@` package marker.
     if name == "qualified_type" { return tok.text == "@" }
+    // An expression hand rule's FIRST is its leading keyword.
+    if name == "quote_expr" { return tok.text == "quote" }
     false
 }
 
@@ -810,6 +826,49 @@ fn run_hand_type(name: string, st: PState) -> TypeExpr {
         .Err(m) -> {
             st.report(m)
             TypeExpr.Named("")
+        }
+    }
+}
+
+/// True for hand rules that build an EXPRESSION via REAL hand delegation
+/// (`run_hand_expr` → ExprId over the shared store) — distinct from the
+/// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
+/// construct — is the case: it's parser-mode-STATEFUL (`parse_quote` bumps the
+/// `quote_depth` counter so a leading `~` inside the body is `Expr.Splice`, not
+/// bitwise-NOT), a mode the stateless token-grammar can't carry. Delegating the
+/// whole quote to the hand parser handles the inner `~`→Splice by construction
+/// (ps3t.6.5.10).
+fn is_expr_hand(name: string) -> bool {
+    name == "quote_expr"
+}
+
+/// Run an EXPRESSION hand rule by delegating to the real hand parser over the
+/// PState's ORIGINAL source, SHARING the store (so the returned id is valid in
+/// it — the `run_hand_stmt` pattern, for the Expr arena) and resyncing the DSL
+/// cursor past what it consumed. This is the ExprId sibling of `run_hand_stmt`
+/// (→ StmtId) and `run_hand_type` (→ TypeExpr): the `@hand` delegation now spans
+/// all three live node kinds. `parse_quote` tracks `quote_depth` internally, so
+/// a `~` splice in the quote body is decided identically to the oracle parse.
+fn run_hand_expr(name: string, st: PState) -> ExprId {
+    if !is_expr_hand(name) || st.src == "" {
+        st.report("`@hand(${name})` needs the source, unavailable here")
+        return st.error_node("hand expression rule needs source")
+    }
+    let start_byte = st.cur().pos
+    mut bp = parser_new_with_file(st.src, "")
+    bp.store = st.store
+    bp.records_roots = 0
+    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    let result = match name {
+        "quote_expr" -> bp.parse_quote()
+        _            -> .Err("no hand expression rule `${name}`")
+    }
+    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    match result {
+        .Ok(id) -> id
+        .Err(m) -> {
+            st.report(m)
+            st.error_node(m)
         }
     }
 }

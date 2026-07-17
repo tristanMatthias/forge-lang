@@ -27,7 +27,8 @@ ps3t.6.5.12 generalises. Adding a case is: an `is_stmt_hand` name, a
 | **`let … else`** | `parse_let_statement` → `build_let_else` | Hygienic block-expr DESUGAR minting a fresh gensym temp (`$letelse$N`); a stateless grammar can't reproduce a gensym-named tree byte-identically | `@hand(let_stmt)` | #839 |
 | **bare `return` (newline)** | `parse_return_statement` | Newline-sensitive: `return\n<expr>` is `ReturnEmpty` + a separate statement (`current_line != prev_line`); the grammar's `?`-optional is greedy on FIRST-set alone and can't see the line boundary | `@hand(return_stmt)` | #840 |
 | **`>>`-split in generics** | `maybe_split_shr` | The lexer merges two adjacent `>` into one `>>` (Tk.Shr); a nested generic close (`List<List<T>>`) presents its two `>` as one shift token, which a `">"` terminal can't match | `PState.split_gt` — the executor's terminal matcher splits a `>>` when a single `>` is expected (consume the first half, leave the second, no advance) | #841 |
-| **`@pkg::T` qualified types** | `parse_type_atom`'s `@` branch | A package-qualified type name (`@std::core::Foo`, + generic / nullable suffixes) has no pure-grammar production (`named_type` is a bare IDENT); `::` paths interact with the enum-ctor-vs-method disambiguation | `@hand(qualified_type)` via **`run_hand_type`** — the TYPE analogue of `run_hand_stmt`: delegates a type ATOM to `parse_type_atom`, returns a `TypeExpr` VALUE (no arena → no store-sharing), routed to `CapVal.TExpr`. Composes as one `type_atom` alternative, so it nests inside pure-grammar generics and stacks with `>>`-split | this slice |
+| **`@pkg::T` qualified types** | `parse_type_atom`'s `@` branch | A package-qualified type name (`@std::core::Foo`, + generic / nullable suffixes) has no pure-grammar production (`named_type` is a bare IDENT); `::` paths interact with the enum-ctor-vs-method disambiguation | `@hand(qualified_type)` via **`run_hand_type`** — the TYPE analogue of `run_hand_stmt`: delegates a type ATOM to `parse_type_atom`, returns a `TypeExpr` VALUE (no arena → no store-sharing), routed to `CapVal.TExpr`. Composes as one `type_atom` alternative, so it nests inside pure-grammar generics and stacks with `>>`-split | #842 |
+| **`~` prefix (splice vs bitnot)** | `parse_unary` (`quote_depth`-gated) + `parse_quote` | `~` is overloaded on a parser MODE: inside a `quote { … }` body (`quote_depth > 0`) a leading `~` is `Expr.Splice` (greedy), else bitwise-NOT. A stateless token-grammar has no `quote_depth` counter. The bitnot side is already PURE grammar; the splice side is reachable only inside a quote, and `quote { … }` is itself parser-mode-stateful | `@hand(quote_expr)` via **`run_hand_expr`** — the EXPRESSION analogue of `run_hand_stmt`: delegates the whole `quote` construct to `parse_quote` (which bumps `quote_depth`), SHARING the store, returns an `ExprId` routed to `CapVal.Node`. The inner `~`→Splice falls out by construction. Composes as one `primary` alternative | this slice |
 
 Note: the pure-DSL `MkReturn(re?)` build (ps3t.6.5.4) already handles `return` /
 `return expr` where the boundary is `}` / EOF (FIRST-set rejects those tokens);
@@ -42,23 +43,25 @@ splits once.
 | Case | Hand parser | Why not pure grammar | Planned route |
 |---|---|---|---|
 | **string interpolation `"…{e}…"`** | lexer emits `Tk.Template`; parser desugars to concat | A lexer MODE (the string body re-enters expression lexing at `{`). `lex_real` surfaces `Tk.Template` but no grammar terminal matches it. | Lexer mode (ps3t.6.7) + an `@hand` template-expr builder. |
-| **`~` prefix (splice vs bitnot)** | `quote_depth`-gated: inside `quote { }` a leading `~` is `Expr.Splice`, else bitwise-NOT | Context-sensitive on a parser mode counter the grammar doesn't carry. | `@hand` for the unary-prefix position, or a mode. |
 | **struct-lit-in-header** | `allow_struct_lit=false` in control-flow headers | `if Ident { … }` — the `{` is the loop/if body, NOT a struct literal; the hand parser flips a mode flag while parsing the header. A grammar can't carry that mode. | A grammar mode annotation / `@hand` for the control-header expression. |
 
 ## Status
 
-Five cases are routed and proven byte-equivalent to the hand parser: the
+Six cases are routed and proven byte-equivalent to the hand parser: the
 stateful `component`, the hygienic `let … else` desugar, `return`
 newline-sensitivity (via `@hand` / `run_hand_stmt`), nested-generic `>>`-split
-(via `PState.split_gt`, a token-level fix), and `@pkg::T` qualified types (via
-`@hand` / `run_hand_type`, the TYPE analogue of `run_hand_stmt`). Differential
+(via `PState.split_gt`, a token-level fix), `@pkg::T` qualified types (via
+`@hand` / `run_hand_type`, the TYPE analogue of `run_hand_stmt`), and the `~`
+prefix's splice-vs-bitnot overload (via `@hand(quote_expr)` / `run_hand_expr`,
+the EXPRESSION analogue — delegating the whole `quote { … }` so the inner
+`~`→Splice falls out of the hand parser's `quote_depth` tracking). Differential
 tests: `decl_component_hand_test.av`, `stmt_return_letelse_test.av`,
 `gnarly_return_newline_test.av`, `gnarly_nested_generics_test.av`,
-`gnarly_qualified_type_test.av`.
+`gnarly_qualified_type_test.av`, `gnarly_tilde_splice_test.av`.
 
-The `@hand` delegation now spans all three node kinds: `run_hand_stmt` (→ StmtId,
-store-sharing), `run_hand_type` (→ TypeExpr value), and `run_hand` (→ ExprId, the
-original ident/number). The remaining three entries are the open work of
-ps3t.6.5.10: `~` prefix needs an EXPRESSION `run_hand` analogue that delegates to
-the hand parser (or a `quote_depth` mode); string interpolation and
-struct-lit-in-header need lexer/parser MODE support (coordinated with ps3t.6.7).
+The `@hand` delegation now spans **all three live node kinds via real
+store-sharing hand-off**: `run_hand_stmt` (→ StmtId), `run_hand_type`
+(→ TypeExpr value), and `run_hand_expr` (→ ExprId) — plus the original
+leaf-building `run_hand` (ident/number). The remaining two entries are the open
+work of ps3t.6.5.10: string interpolation and struct-lit-in-header need
+lexer/parser MODE support (coordinated with ps3t.6.7).
