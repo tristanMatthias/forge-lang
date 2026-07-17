@@ -12,12 +12,12 @@
 // F1004 against the enclosing scope's type params, so an in-scope param
 // (`wrap<T>(x)` inside `fn f<T>()`) stays exempt.
 //
-// NOTE on scope: turbofish syntax only accepts BARE type names (the parser's
-// parse_type_name_list captures a lexeme, not a nested `Foo<int>`), so a generic
-// type in turbofish position is ALWAYS bare — hence F1004 is the correct verdict
-// for any generic there, and the positive controls are concrete scalars,
-// non-generic named types, and in-scope params rather than a fully-applied
-// `Foo<int>` (which turbofish cannot express).
+// NOTE on scope: turbofish arguments are full type expressions (ps3t.4.10), so
+// a FULLY-APPLIED generic like `wrap<GenOpt<int>>` is valid and compiles — F1004
+// fires only when the generic is left BARE (`wrap<GenOpt>`), which is under-
+// determined. The positive controls therefore include both bare-free forms
+// (concrete scalars, non-generic names, in-scope params) AND fully-applied
+// nested generics.
 //
 // Fixtures compile real programs through `bs2 compile` and assert the F-code in
 // captured output (or `__AVRA_COMPILE_OK__` for the positive controls). Each
@@ -100,6 +100,21 @@ fn main() { let m: Msg = Msg { id: 1 }  let r = id<Msg>(m) }")
         let out = tf_compile_out("fn wrap<U>(x: U) -> U { x }
 fn outer<T>(seed: T) -> T { wrap<T>(seed) }
 fn main() { let r = outer(5) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a FULLY-APPLIED nested generic turbofish arg compiles (ps3t.4.10)" {
+        // parse_type_name_list now parses a full type expression per arg, so a
+        // nested application like wrap<GenOpt<int>> parses structurally
+        // (List<ValueType> = [GenOpt<int>]) instead of dropping the <int> — and
+        // being fully applied, it is NOT under-determined, so no F1004.
+        let out = tf_compile_out("enum GenOpt<T> { None, Some(value: T) }
+fn wrap<U>(x: U) -> U { x }
+fn main() { let g: GenOpt<int> = GenOpt.Some(1)  let r = wrap<GenOpt<int>>(g) }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a nested list-generic turbofish arg compiles and is not flagged" {
+        let out = tf_compile_out("fn id<U>(x: U) -> U { x }
+fn main() { let xs: List<int> = [1, 2]  let r = id<List<int>>(xs) }")
         out.contains("__AVRA_COMPILE_OK__")
     }
     then "an in-scope param that SHADOWS a declared generic type is not flagged" {

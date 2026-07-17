@@ -2,7 +2,7 @@
 // parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
 // try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
 
-use core.{TypeParamEntry, Expr, Tk, ExprId, byte_span_none}
+use core.{TypeParamEntry, Expr, Tk, ExprId, byte_span_none, type_expr_to_vtype}
 use parse.{Parser}
 
 impl Parser {
@@ -91,17 +91,28 @@ impl Parser {
         .Ok(self.alloc_leaf(node))
     }
 
+    // Parse the turbofish type-argument list: `int`, `List<int>`, `GenOpt<int>`,
+    // `A, B`, etc. Each argument is a FULL type expression (via parse_type_expr →
+    // type_expr_to_vtype), so nested generics parse structurally — `id<List<int>>`
+    // yields List(Int), not a bare `List` with the `<int>` orphaned (the old
+    // lexeme-only capture, which left `<int>` unconsumed and made the whole
+    // speculative generic-call parse backtrack to a comparison chain). Runs inside
+    // `try_parse_generic_call`'s save/restore, so a parse_type_expr that fails —
+    // or a token run that turns out not to be a turbofish — returns what parsed so
+    // far and lets the caller's `>`/`(` checks trigger the backtrack.
     fn parse_type_name_list(self) -> List<ValueType> {
         mut out: List<ValueType> = []
         if self.check(Tk.Greater) { return out }
-        if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
-        out.push(vtype_from_name(self.current_lexeme))
-        self.advance()
+        match self.parse_type_expr("expected type argument") {
+            .Ok(te) -> out.push(type_expr_to_vtype(te))
+            .Err(_) -> return out
+        }
         while self.check(Tk.Comma) {
             self.advance()
-            if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) { return out }
-            out.push(vtype_from_name(self.current_lexeme))
-            self.advance()
+            match self.parse_type_expr("expected type argument after `,`") {
+                .Ok(te) -> out.push(type_expr_to_vtype(te))
+                .Err(_) -> return out
+            }
         }
         out
     }
