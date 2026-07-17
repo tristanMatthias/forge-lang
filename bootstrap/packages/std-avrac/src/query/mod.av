@@ -114,7 +114,8 @@ export type QueryCycle = { path: List<QueryKey> }
 
 /// A fetched answer: the memoized value plus the diagnostics that ride with
 /// it. What the DRIVER receives; dependents inside compute runs receive just
-/// the value (`ctx_fetch`).
+/// the value (`ctx_fetch`). Both fields ALIAS the memo cell (no per-fetch
+/// copy) — treat them as immutable, like every memoized answer.
 export type Fetched<V> = { value: V, diags: List<Diagnostic> }
 
 /// One memo cell (§2.1's MemoEntry). `answer_hash` covers value AND
@@ -215,6 +216,11 @@ export fn db_set_input<V>(db: Db<V>, q: QueryKey, value: V, value_hash: int) {
         db.bump_rev()
         e.value = value
         e.answer_hash = value_hash
+        // A set cell is a LEAF from now on, whatever its earlier life: clear
+        // any deps a derived past recorded, or a later verification would
+        // walk them and hand an input back to the compute dispatcher.
+        let no_deps: List<QueryKey> = []
+        e.deps = no_deps
         e.changed_at = db.current_rev
         e.verified_at = db.current_rev
         return
@@ -397,10 +403,9 @@ fn answer_hash_of(value_hash: int, diags: List<Diagnostic>) -> int {
 /// source location until the real passes are query-shaped (P0); the path
 /// lives in the message.
 export fn query_cycle_diag(c: QueryCycle, render_key: fn(QueryKey) -> string) -> Diagnostic {
-    mut path = ""
+    mut parts: List<string> = []
     for q in c.path {
-        let part = render_key(q)
-        if path == "" { path = part } else { path = "${path} -> ${part}" }
+        parts.push(render_key(q))
     }
-    diag_error(DiagCode.QueryCycleDetected, "query cycle: ${path}", span_dummy())
+    diag_error(DiagCode.QueryCycleDetected, "query cycle: ${parts.join(" -> ")}", span_dummy())
 }

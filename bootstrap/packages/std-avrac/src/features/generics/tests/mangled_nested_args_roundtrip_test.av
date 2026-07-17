@@ -15,7 +15,6 @@
 // exact end-to-end shape that failed — the L6 query engine's `compute(ctx,
 // q)?` seam (ps3t.8.2) — plus a two-level nesting for the recursive case.
 
-
 type RtBox<V> = { v: V }
 type RtCyc = { n: int }
 

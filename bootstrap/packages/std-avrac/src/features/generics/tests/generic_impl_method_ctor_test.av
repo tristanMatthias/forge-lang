@@ -18,7 +18,6 @@
 // The `then` blocks RUN the constructed values, so a regression fails at
 // compile time (F1002 returns) or with a wrong value — never silently.
 
-
 // Field-anchored construction: `v: V` pins the nested instance's param.
 type GmBox<V> = { v: V }
 // Annotation-only construction: `items` is an empty collection, so only the

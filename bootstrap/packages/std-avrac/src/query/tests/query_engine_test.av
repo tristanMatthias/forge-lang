@@ -182,4 +182,32 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
     then "the database stays usable after a reported cycle" {
         scenario()[9] == "post_cycle=total=22+1"
     }
+    then "1000 edit/fetch cycles stay correct with at most one recompute per edit" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 1, "?")
+        mut ok = true
+        for i in 0..1000 {
+            set_src(db, 0, "src-${string(i)}")
+            ok = ok && fetch_value(db, qk(FAM_LEN, 0)) == string(4 + string(i).length)
+        }
+        ok && db_computes_of(db, FAM_LEN) <= 1000
+    }
+    then "a re-SET cell becomes a leaf — its derived past never recomputes it" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "abc")
+        set_src(db, 1, "d")
+        let _ = fetch_value(db, qk(FAM_LEN, 0))
+        // The driver pins the formerly-derived cell as an INPUT; an edit to
+        // its former dep must not hand it back to the compute dispatcher.
+        db_set_input(db, qk(FAM_LEN, 0), "pinned", content_id_for("pinned"))
+        set_src(db, 0, "a very different length")
+        fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db_computes_of(db, FAM_LEN) == 1
+    }
+    then "a family grows past the historic 256-slot intmap limit" {
+        let mut db: Db<string> = db_new(demo_compute)
+        for i in 0..300 {
+            set_src(db, i, "f${string(i)}")
+        }
+        fetch_value(db, qk(FAM_SRC, 137)) == "f137" && fetch_value(db, qk(FAM_SRC, 299)) == "f299"
+    }
 }
