@@ -58,6 +58,8 @@ export type WholeFnMethod = {
     build: fn(DeclCtx) -> Stmt,
 }
 
+/// One method a plan emits — per-variant match-based or whole-fn. A plan
+/// is an ordered mix of both, so the emitted method order is plan order.
 export enum EmitMethod {
     PerVariant(m: PerVariantMethod),
     WholeFn(m: WholeFnMethod),

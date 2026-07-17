@@ -163,6 +163,33 @@ emitter reuses for free.
 - Tests: `features/derive/tests/*` — classifier unit tests per `FieldShape`,
   engine emits-correct-arms tests, and the walk/eq emitter behaviour tests.
 
+**As-built (the ps3t.6.2 PR):** the landed engine follows this section with
+these deviations:
+- **Flat module layout** — `features/derive/{shape,classify,emit,walk,eq}.av`
+  instead of an `emitters/` subdir (no feature uses nested source dirs; the
+  emitter files sit beside the engine).
+- **`FieldShape` is flat**, not `Optional(inner)`-nested: the optional forms
+  are their own variants (`OptionalNode` / `OptionalWrapper`), matching the
+  walker's proven classification set exactly and keeping unrepresentable
+  combinations (`Optional(Leaf)`, `Optional(Optional(…))`) out of the type.
+- **The emitter interface** splits methods into `PerVariant` (per-variant
+  match arms via `signature`/`bind`/`arm_body` hooks) and `WholeFn` (the
+  recursive visit/any/find, whose fixed bodies never iterate variants) —
+  §1.4's single `EmitMethod` sketch didn't distinguish them. Hooks receive a
+  `DeclCtx { parent, is_struct }` instead of a `VariantView`.
+- **Struct support** works by projection: the driver emits
+  `let <binding> = self.<field>` lets and runs the SAME `arm_body` hook
+  straight-line, so an emitter gains struct coverage without a separate
+  `struct_body` hook.
+- **Generic decls failsafe** (untouched decl, no methods): derives don't
+  parameterize their emitted methods yet.
+- **Seed gating:** hook invocations go through locals
+  (`let hook = m.bind; hook(…)`) until the seed train passes this PR's UAP
+  fn-field return-typing fix — tracked as `ps3t.6.8`.
+- The **render emitter** (the `render_expr`/`render_stmt` catamorphism from
+  §1.2's sketch) was not part of the `ps3t.6.2` acceptance and lands with a
+  later client, exactly like `@codec` (`s80z`).
+
 ---
 
 ## 2. Part B — The grammar DSL (`ps3t.6.3`–`.5`, `.7`)

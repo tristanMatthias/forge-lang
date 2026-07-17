@@ -214,6 +214,8 @@ export fn classify_field_any(vt: ValueType, parent_name: string, ctx: ResolverCt
 /// here.
 export type StructListHelpers = { spanned: string }
 
+/// Look up the registered extract helpers for a node-container struct's
+/// short name (`spanned == ""` ⇒ unregistered).
 @comptime
 export fn struct_list_helpers(container: string) -> StructListHelpers {
     if container == "MatchArm" {
