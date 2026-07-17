@@ -17,10 +17,11 @@
 // live on the match ARM, not the pattern node, so they belong to the
 // match-arm/declaration slice, not here.
 //
-// DSL-lexer note: `lex_expr` lexes `42` and `3.14` both as NUMBER (no
-// separate Float token — that awaits the real-lexer wiring, ps3t.6.5.8), so
-// the num build selects LitInt vs LitFloat by a `.` in the token text,
-// reproducing the hand parser's Number/Float split.
+// DSL-lexer note (ps3t.6.5.8 wired the REAL lexer): `42` is `Tk.Number` and
+// `3.14` is `Tk.Float`, but the bridge folds Float into the NUMBER kind (the
+// lexeme still carries the `.`), so the num build keeps selecting LitInt vs
+// LitFloat by a `.` in the token text — reproducing the hand parser's
+// Number/Float split without a separate DSL terminal.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_pat}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_pat_id}

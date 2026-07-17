@@ -17,7 +17,7 @@
 
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
-use features.grammar.{Token, lex_expr}
+use features.grammar.{Token, lex_real}
 
 // ── Capture values + environment ──
 
@@ -413,8 +413,15 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// Run `grammar` over `src`, starting at the first rule (the start
 /// symbol). Returns the store + root + diagnostics.
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
-    let toks = lex_expr(src)
-    let store = new_node_store(build_line_index(src))
+    run_grammar_expr_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+}
+
+/// The caller-provided-store form of `run_grammar_expr` (ps3t.6.5.8): the
+/// token stream and destination `NodeStore` are supplied by the caller, so
+/// the DSL parser builds INTO an existing store (the eventual swap-in point —
+/// the real parser hands its own store + token stream). `run_grammar_expr`
+/// is the thin `(real lexer + fresh store)` wrapper over this.
+export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> RunResult {
     mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
@@ -433,8 +440,12 @@ export type StmtRunResult = { store: NodeStore, root: StmtId, had_error: bool, d
 /// `run_grammar_expr`. The grammar's start rule must build a Stmt; its
 /// sub-rules may build Exprs (embedded expressions) or Stmts.
 export fn run_grammar_stmt(grammar: Grammar, src: string) -> StmtRunResult {
-    let toks = lex_expr(src)
-    let store = new_node_store(build_line_index(src))
+    run_grammar_stmt_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+}
+
+/// Caller-provided-store form of `run_grammar_stmt` (ps3t.6.5.8). See
+/// `run_grammar_expr_toks`.
+export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> StmtRunResult {
     mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
@@ -453,8 +464,12 @@ export type PatRunResult = { store: NodeStore, root: PatId, had_error: bool, dia
 /// The start rule must build a Pattern; its sub-rules build Patterns (and
 /// may capture bare tokens for names/bindings).
 export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
-    let toks = lex_expr(src)
-    let store = new_node_store(build_line_index(src))
+    run_grammar_pat_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+}
+
+/// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
+/// `run_grammar_expr_toks`.
+export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
     mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
@@ -474,8 +489,12 @@ export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, d
 /// `type_expr_to_vtype` (exactly what the hand parser does) and ingest into
 /// the type arena — so equivalence reduces to building the same `TypeExpr`.
 export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
-    let toks = lex_expr(src)
-    let store = new_node_store(build_line_index(src))
+    run_grammar_type_toks(grammar, lex_real(src), new_node_store(build_line_index(src)))
+}
+
+/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8). See
+/// `run_grammar_expr_toks`.
+export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> TypeRunResult {
     mut st = PState { toks, pos: 0, store, diags: [], had_error: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
