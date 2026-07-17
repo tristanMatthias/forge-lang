@@ -218,9 +218,13 @@ export fn db_set_input<V>(db: Db<V>, q: QueryKey, value: V, value_hash: int) {
         e.answer_hash = value_hash
         // A set cell is a LEAF from now on, whatever its earlier life: clear
         // any deps a derived past recorded, or a later verification would
-        // walk them and hand an input back to the compute dispatcher.
+        // walk them and hand an input back to the compute dispatcher — and
+        // clear any diagnostics that past computed, or the pinned input would
+        // keep replaying a derived error it can no longer produce.
         let no_deps: List<QueryKey> = []
         e.deps = no_deps
+        let no_diags: List<Diagnostic> = []
+        e.diags = no_diags
         e.changed_at = db.current_rev
         e.verified_at = db.current_rev
         return
@@ -388,11 +392,15 @@ fn db_active_cycle<V>(db: Db<V>, q: QueryKey) -> QueryCycle? {
 /// The early-cutoff signal over a full answer: value hash + every
 /// diagnostic's canonical identity, folded through `content_id_for` (the one
 /// hash story). Diagnostics participate so a diag-only change re-propagates
-/// — incremental error output must equal from-scratch (§10).
+/// — incremental error output must equal from-scratch (§10). The encoding is
+/// structural (count + a length-prefixed frame per canonical), so no crafted
+/// diagnostic content can make two DIFFERENT answers hash the same bytes —
+/// a collision here would silently freeze a stale answer past a real edit.
 fn answer_hash_of(value_hash: int, diags: List<Diagnostic>) -> int {
-    mut acc = "A:${string(value_hash)}"
+    mut acc = "A:${string(value_hash)}|${string(diags.length)}"
     for d in diags {
-        acc = "${acc}|${diag_canonical(d)}"
+        let c = diag_canonical(d)
+        acc = "${acc}|${string(c.length)}:${c}"
     }
     content_id_for(acc)
 }

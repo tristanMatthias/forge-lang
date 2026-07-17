@@ -131,18 +131,26 @@ fn apply_writes<V>(db: Db<V>, writes: List<InputWrite<V>>) {
 
 /// Canonical render of a fetch outcome — value AND diagnostics (they memoize
 /// together, so they must compare together, §10), or the cycle path (a cycle
-/// must also reproduce identically both ways).
+/// must also reproduce identically both ways). Structurally framed — outcome
+/// tag, length-prefixed value, diag count, a length-prefixed frame per
+/// canonical — so no crafted value/diagnostic content can make two DIFFERENT
+/// outcomes render the same bytes and slip past the comparison (a rendered
+/// value ending in a `;`-joined canonical must not equal value + real diag).
 fn render_answer<V>(r: Result<Fetched<V>, QueryCycle>, render: fn(V) -> string) -> string {
     match r {
         .Ok(f) -> {
-            mut s = render(f.value)
+            let v = render(f.value)
+            mut s = "ok:${string(v.length)}:${v}|${string(f.diags.length)}"
             for d in f.diags {
-                s = "${s};${diag_canonical(d)}"
+                let c = diag_canonical(d)
+                s = "${s}|${string(c.length)}:${c}"
             }
             s
         }
         .Err(c) -> {
-            mut s = "cycle:"
+            // Keys render as `family:arg` int pairs — a fixed alphabet, so
+            // the count frame alone makes the path unambiguous.
+            mut s = "cycle:${string(c.path.length)}"
             for q in c.path {
                 s = "${s} ${qk_render(q)}"
             }

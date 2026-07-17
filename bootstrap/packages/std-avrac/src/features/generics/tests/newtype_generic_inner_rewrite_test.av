@@ -1,0 +1,31 @@
+// WHY: regression for the rewrite/collect asymmetry on newtypes — a CONCRETE
+// newtype whose INNER type is a generic instance (`type NgPinned =
+// NgBox<int>`). The collector recurses through `.Newtype` into the inner
+// (`collect_inst_from_vtype`), so `NgBox__int` is collected and emitted; the
+// rewrite side (`rewrite_instance_vtype` → `rewrite_nominal_args`) had no
+// `.Newtype` arm, so a specialized fn's param/ret carrying the newtype kept
+// an UNMANGLED `NgBox<int>` inner — and the `.raw()`-unwrapped value's field
+// access looked up a base name codegen never declared. The fix mirrors the
+// collector: rewrite the inner through the same instance rewriting.
+
+type NgBox<V> = { v: V }
+type NgPinned = NgBox<int>
+
+// Generic, so specialization runs rewrite_param_types over the newtype-typed
+// param — the exact seam the missing arm broke.
+fn ng_read<T>(p: NgPinned, tag: T) -> int {
+    p.raw().v
+}
+
+fn ng_make(n: int) -> NgPinned {
+    NgPinned(NgBox { v: n })
+}
+
+spec "a concrete newtype's generic-instance inner rewrites in specialized fns" {
+    then "the unwrapped inner's field is reachable (string specialization)" {
+        ng_read(ng_make(41), "t") == 41
+    }
+    then "a second specialization reaches the same inner (int specialization)" {
+        ng_read(ng_make(7), 2) == 7
+    }
+}

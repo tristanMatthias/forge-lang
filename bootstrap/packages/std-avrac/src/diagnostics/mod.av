@@ -628,8 +628,18 @@ export fn diag_with_cause(d: Diagnostic, cause_diag: Diagnostic) -> Diagnostic {
 /// a diag-only change must move the answer hash (design doc §10: diagnostics
 /// ride with values and invalidate together). Distinct from `bag_has_seen`'s
 /// looser dedup identity, which deliberately EXCLUDES spans.
+///
+/// The free-text fields (message, span file, help) are LENGTH-PREFIXED
+/// (`${len}:${text}`), so text containing the field separators (`|`, the
+/// span's `:`/`-`, the cause's `<=`) cannot shift a field boundary: two
+/// DIFFERENT diagnostics can never render the same canonical line, which is
+/// what makes this safe to hash for cutoff and to compare in the oracle. The
+/// non-text fields come from fixed enum renderers / ints and need no frame.
 export fn diag_canonical(d: Diagnostic) -> string {
-    let base = "${diag_code_str(d.code)}|${severity_str(d.severity)}|${d.message}|${d.span.file}:${string(d.span.start)}-${string(d.span.end)}:${string(d.span.line)}:${string(d.span.col)}|${d.help}|${confidence_str(d.confidence)}"
+    let msg = "${string(d.message.length)}:${d.message}"
+    let file = "${string(d.span.file.length)}:${d.span.file}"
+    let help = "${string(d.help.length)}:${d.help}"
+    let base = "${diag_code_str(d.code)}|${severity_str(d.severity)}|${msg}|${file}:${string(d.span.start)}-${string(d.span.end)}:${string(d.span.line)}:${string(d.span.col)}|${help}|${confidence_str(d.confidence)}"
     match d.cause {
         .None -> base
         .Cause(c) -> "${base}<=${diag_canonical(c)}"

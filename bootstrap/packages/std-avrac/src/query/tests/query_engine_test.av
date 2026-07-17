@@ -25,7 +25,7 @@
 
 use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, db_set_input, db_fetch, ctx_fetch, db_computes_of, qk, qk_render, computed, query_cycle_diag}
 use @std.avrac.core.{content_id_for}
-use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, diag_code_str, span_dummy}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, diag_code_str, diag_canonical, span_dummy}
 
 // Query families of the synthetic driver.
 const FAM_SRC = 0
@@ -35,6 +35,8 @@ const FAM_PICK = 3
 const FAM_SEL = 4
 const FAM_CYCLE_A = 5
 const FAM_CYCLE_B = 6
+const FAM_ADV = 7
+const FAM_ADVSUM = 8
 
 fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
     if q.family == FAM_LEN {
@@ -70,7 +72,36 @@ fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, 
         let v = ctx_fetch(ctx, qk(FAM_CYCLE_A, 0))?
         return Result.Ok(computed(v, content_id_for(v)))
     }
+    if q.family == FAM_ADV {
+        // Same VALUE both ways; only the (delimiter-crafted) diagnostic
+        // differs — the shape that must still move the answer hash.
+        let sel = ctx_fetch(ctx, qk(FAM_SRC, 9))?
+        mut diags: List<Diagnostic> = []
+        diags.push(adv_diag(sel))
+        let out = computed("adv", content_id_for("adv")) with { diags }
+        return Result.Ok(out)
+    }
+    if q.family == FAM_ADVSUM {
+        // A dependent of ADV: its recompute count is how the spec observes
+        // whether ADV's diag-only change bumped `changed_at`.
+        let v = ctx_fetch(ctx, qk(FAM_ADV, 0))?
+        return Result.Ok(computed("sum(${v})", content_id_for(v)))
+    }
     Result.Ok(computed("?", 0))
+}
+
+/// The delimiter-adversarial pair: under a naive `|`-joined canonical these
+/// two DISTINCT diagnostics encode to the same bytes — the crafted message
+/// absorbs the span render and shifts the help boundary. (`span_dummy` has
+/// file "" and all-zero coordinates, so its canonical span text is
+/// `:0-0:0:0`.) Length-prefixed framing keeps them apart.
+fn adv_diag(which: string) -> Diagnostic {
+    let base = diag_warning(DiagCode.NonExhaustiveMatch, "", span_dummy())
+    if which == "1" {
+        (base with { message: "adv|:0-0:0:0" }) with { help: "tail" }
+    } else {
+        (base with { message: "adv" }) with { help: ":0-0:0:0|tail" }
+    }
 }
 
 fn set_src(db: Db<string>, file: int, text: string) {
@@ -202,6 +233,41 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
         db_set_input(db, qk(FAM_LEN, 0), "pinned", content_id_for("pinned"))
         set_src(db, 0, "a very different length")
         fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db_computes_of(db, FAM_LEN) == 1
+    }
+    then "pinning a diagnostic-bearing derived cell sheds its derived diagnostics too" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "")
+        set_src(db, 1, "x")
+        let derived_diags = match db_fetch(db, qk(FAM_TOTAL, 0)) {
+            .Ok(f) -> f.diags.length
+            .Err(_) -> -1
+        }
+        // An input answers for itself: a diagnostic its derived past computed
+        // must not replay against the pinned value.
+        db_set_input(db, qk(FAM_TOTAL, 0), "pinned", content_id_for("pinned"))
+        match db_fetch(db, qk(FAM_TOTAL, 0)) {
+            .Ok(f) -> derived_diags == 1 && f.value == "pinned" && f.diags.length == 0
+            .Err(_) -> false
+        }
+    }
+    then "the delimiter-adversarial diagnostic pair keeps distinct canonical identities" {
+        diag_canonical(adv_diag("1")) != diag_canonical(adv_diag("2"))
+    }
+    then "a diag-only change crafted to collide under delimiter joining still bumps changed_at" {
+        let mut db: Db<string> = db_new(demo_compute)
+        db_set_input(db, qk(FAM_SRC, 9), "1", content_id_for("1"))
+        let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
+        // The edit flips ADV's diagnostic (value unchanged) between the two
+        // crafted shapes. ADV's answer changed, so its dependent must
+        // RECOMPUTE (and then cut off itself) — a canonical-encoding
+        // collision would leave changed_at stale and green-revalidate ADVSUM.
+        db_set_input(db, qk(FAM_SRC, 9), "2", content_id_for("2"))
+        let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
+        let flipped = match db_fetch(db, qk(FAM_ADV, 0)) {
+            .Ok(f) -> f.diags.length == 1 && f.diags[0].message == "adv"
+            .Err(_) -> false
+        }
+        flipped && db_computes_of(db, FAM_ADVSUM) == 2
     }
     then "a family grows past the historic 256-slot intmap limit" {
         let mut db: Db<string> = db_new(demo_compute)

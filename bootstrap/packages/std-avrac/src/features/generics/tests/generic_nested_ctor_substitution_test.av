@@ -27,6 +27,12 @@ fn ns_report<V>(v: V, n: int) -> NsReport<V> {
     NsReport { first: ns_box<V>(v), n }
 }
 
+// Turbofish nested in a WITH-override init — the same construction-site
+// content as a fresh literal, carried by `.With`'s init list.
+fn ns_swap<V>(r: NsReport<V>, v: V) -> NsReport<V> {
+    r with { first: ns_box<V>(v) }
+}
+
 fn ns_unwrap_int(r: Result<NsBox<int>, string>) -> int {
     match r {
         .Ok(b) -> b.v
@@ -50,5 +56,8 @@ spec "type-param turbofish substitutes inside construction sites (t-jgc0 mono la
     }
     then "a struct-literal field init's nested generic call specializes" {
         ns_report(7, 2).first.v + ns_report(9, 3).n == 10
+    }
+    then "a with-override init's nested generic call specializes" {
+        ns_swap(ns_report(1, 5), 9).first.v == 9
     }
 }
