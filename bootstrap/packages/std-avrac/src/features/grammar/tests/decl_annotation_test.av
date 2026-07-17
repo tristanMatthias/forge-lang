@@ -1,0 +1,137 @@
+// ps3t.6.5.7 — the DECLARATION family, annotation-wrapper slice: BARE
+// `@name` annotations (one or more, stacked) before a declaration →
+// Stmt.Annotated(annotations, inner), exactly parse_declaration's `@`-branch
+// (parse_annotations collects them in source order, each an
+// Annotation{name, arg_ids}).
+//
+// SCOPE: bare `@name` only — NOT `@name(args)`. The render oracle
+// (render_annotation_list) prints only the annotation NAME, dropping arg_ids,
+// so a DSL that skipped an annotation's args would render identically while
+// building a divergent AST (the same trap as the impl `self` receiver type).
+// A bare `@name` has arg_ids == [] on BOTH sides, so equivalence is REAL, not
+// render-hidden — and this test asserts that directly (first_ann_argc == 0),
+// past the render. `@name(args)` needs the args built + a direct arg-equality
+// assertion; it's a follow-up slice.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id, NodeStore, StmtId}
+
+fn ann_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  declaration    = annotated_decl | member\n" +
+    "  annotated_decl = ( \"@\" anames:IDENT )+ inner:member -> MkAnnotated(anames, inner)\n" +
+    "  member         = fn_decl | type_decl | enum_decl\n" +
+    "  fn_decl        = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
+    "  type_decl      = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
+    "  enum_decl      = \"enum\" edname:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, vars)\n" +
+    "  field          = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
+    "  variant        = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
+    "  param          = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── body statement subset ──
+    "  statement      = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt     = \"break\" -> Break()\n" +
+    "  continue_stmt  = \"continue\" -> Continue()\n" +
+    "  return_stmt    = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt      = es:expression -> ExprStmt(es)\n" +
+    // ── type family ──
+    "  type_expr      = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom      = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type        = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type       = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type      = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type     = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type     = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression family (bodies) ──
+    "  expression     = equality\n" +
+    "  equality       = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison     = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term           = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor         = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un             = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary        = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                 | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(ann_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+// The FIRST annotation's arg count on a built Annotated — reaches PAST the
+// render (which drops annotation args) to prove a bare `@name` really carries
+// empty args on both sides (no render-hidden divergence). -1/-2 = not shaped
+// as expected.
+fn first_ann_argc(store: NodeStore, id: StmtId) -> int {
+    match store.stmts.get(id) {
+        .Annotated(anns, _) -> if anns.length == 0 { -1 } else { anns[0].arg_ids.length }
+        _ -> -2
+    }
+}
+
+fn dsl_argc(src: string) -> int {
+    let gp = parse_grammar(ann_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return -3 }
+    first_ann_argc(r.store, r.root)
+}
+
+fn hand_argc(src: string) -> int {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> first_ann_argc(p.store, id)
+        .Err(_) -> -3
+    }
+}
+
+spec "grammar-DSL declaration family: bare @annotations == hand-written parser (ps3t.6.5.7)" {
+    given "a single bare annotation over fn / type / enum" {
+        then "the wrapped decl and annotation name agree" {
+            agree("@inline fn f() { }") &&
+            agree("@hot fn run() -> bool { return true }") &&
+            agree("@derive type P = { x: int, y: int }") &&
+            agree("@repr enum Color { Red, Green, Blue }")
+        }
+    }
+    given "stacked bare annotations (parse_annotations collects in order)" {
+        then "multiple annotations before a decl agree" {
+            agree("@deprecated @inline fn g() { }") &&
+            agree("@a @b @c fn many() -> int { return 1 }") &&
+            agree("@one @two type Q = { z: int }")
+        }
+    }
+    given "the annotation args match PAST the render (bare ⇒ empty arg_ids)" {
+        then "first annotation carries zero args on both DSL and hand" {
+            dsl_argc("@inline fn f() { }") == 0 &&
+            hand_argc("@inline fn f() { }") == 0 &&
+            dsl_argc("@derive type P = { x: int }") == 0 &&
+            hand_argc("@derive type P = { x: int }") == 0
+        }
+    }
+    given "the DSL trees are the expected shapes (sanity: really built an Annotated)" {
+        then "canonical renders of representative forms" {
+            // render_annotation_list emits `@name ` (trailing space) per
+            // annotation; the Annotated render joins with another space.
+            dsl_stmt("@inline fn f() { }") == "(@annotated @inline  (fn f () -> void ))" &&
+            dsl_stmt("@a @b type Q = { z: int }") == "(@annotated @a @b  (type Q (z:int)))"
+        }
+    }
+}

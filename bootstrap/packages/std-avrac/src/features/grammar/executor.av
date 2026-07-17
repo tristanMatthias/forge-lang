@@ -1053,6 +1053,23 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, env.get(args[0])))))
         }
+        "MkAnnotated" if args.length == 2 -> {
+            // `( "@" name )+ <decl>` — one or more BARE annotations wrapping a
+            // declaration → Stmt.Annotated(annotations, inner), exactly
+            // parse_declaration's `@`-branch (parse_annotations stacks them in
+            // source order). Bare only: an annotation with args (`@name(a, b)`)
+            // isn't parsed here — its arg_ids would be empty while the hand
+            // parser populates them, and the render (render_annotation_list =
+            // name-only) would hide the divergence. Each annotation carries
+            // empty arg_ids, matching a bare `@name`.
+            mut anns: List<Annotation> = []
+            match env.get(args[0]) {
+                .Toks(ts) -> { for t in ts { anns.push(Annotation { name: t.text, arg_ids: [] }) } }
+                .Tok(t) -> anns.push(Annotation { name: t.text, arg_ids: [] })
+                _ -> {}
+            }
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, env.get(args[1])))))
+        }
         _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
     }
 }
