@@ -22,7 +22,10 @@ export enum DeclShapeKind {
 /// One derivable declaration, normalized: an enum's variants, or a struct
 /// as a single synthetic variant named after the decl. `name == ""` marks
 /// a non-derivable stmt (the engine failsafes, leaving the decl untouched).
-export type DeclView = { name: string, kind: DeclShapeKind, variants: List<Variant> }
+/// `generic` marks a decl with type params — derives don't parameterize
+/// their emitted methods yet, so the engine failsafes those too rather
+/// than emitting methods whose `self` type silently drops the params.
+export type DeclView = { name: string, kind: DeclShapeKind, generic: bool, variants: List<Variant> }
 
 /// Read a decl into a `DeclView`. invoke_macro already strips the
 /// Annotated wrapper, so only the bare decl forms need matching.
@@ -30,11 +33,11 @@ export type DeclView = { name: string, kind: DeclShapeKind, variants: List<Varia
 export fn decl_view(s: Stmt) -> DeclView {
     let empty: List<Variant> = []
     match s {
-        .EnumDecl(name, _, variants) -> DeclView { name, kind: DeclShapeKind.EnumShape, variants }
-        .TypeDecl(name, _, fields) -> {
+        .EnumDecl(name, tp, variants) -> DeclView { name, kind: DeclShapeKind.EnumShape, generic: tp.length > 0, variants }
+        .TypeDecl(name, tp, fields) -> {
             let single: List<Variant> = [Variant { name, fields }]
-            DeclView { name, kind: DeclShapeKind.StructShape, variants: single }
+            DeclView { name, kind: DeclShapeKind.StructShape, generic: tp.length > 0, variants: single }
         }
-        _ -> DeclView { name: "", kind: DeclShapeKind.EnumShape, variants: empty }
+        _ -> DeclView { name: "", kind: DeclShapeKind.EnumShape, generic: false, variants: empty }
     }
 }

@@ -13,7 +13,7 @@
 // two probes — the old classify_field_kind / classify_field_crosstype
 // split, expressed as plan data.
 
-use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, ValueType, BinOp}
+use core.{Stmt, Expr, ExprId, ParamEntry, TypeParamEntry, ValueType, BinOp, type_short_name}
 use features.derive.{FieldShape, shape_is_child, shape_is_single, shape_is_listish, shape_target, shape_wrapper, shape_container, struct_list_helpers}
 use features.derive.{EmitPlan, EmitMethod, PerVariantMethod, WholeFnMethod, MethodSig, DeclCtx, Classified, self_vtype, emit_call, ident_field_access, name_vtype}
 use features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}
@@ -373,7 +373,7 @@ fn helper_call(fn_name: string, arg: Expr) -> Expr {
 /// (possibly qualified) type name, so match on its short form.
 @comptime
 fn anynode_ctor(target: string) -> string {
-    let s = short_name(target)
+    let s = type_short_name(target)
     if s == "Expr" { return "AnyExpr" }
     if s == "Stmt" { return "AnyStmt" }
     if s == "Pattern" { return "AnyPat" }
@@ -388,7 +388,7 @@ fn anynode_ctor(target: string) -> string {
 /// The `box_*_list` helper name for a target node kind (matched on short name).
 @comptime
 fn box_list_fn(target: string) -> string {
-    let s = short_name(target)
+    let s = type_short_name(target)
     if s == "Expr" { return "box_expr_list" }
     if s == "Stmt" { return "box_stmt_list" }
     if s == "Pattern" { return "box_pat_list" }
@@ -398,21 +398,6 @@ fn box_list_fn(target: string) -> string {
     "box_list_add_helper_for_${s}"
 }
 
-/// core's `type_short_name`, inlined: eval can only call `@comptime` fns,
-/// and leaking @comptime onto core would drag core into every comptime
-/// registry scan.
-@comptime
-fn short_name(name: string) -> string {
-    let len = name.length
-    mut i = len - 1
-    while i > 0 {
-        if name[i] == ":" && name[i - 1] == ":" {
-            return name.substring(i + 1, len)
-        }
-        i = i - 1
-    }
-    name
-}
 
 // ── map() ──
 //

@@ -84,7 +84,7 @@ export type EmitPlan = {
 @comptime
 export fn derive_engine(target: AnnotatedDecl, ctx: ResolverCtx, plan: EmitPlan) -> ResolvedDecls {
     let view = decl_view(target.stmt)
-    if view.name == "" || (plan.enum_only && view.kind is .StructShape) {
+    if view.name == "" || view.generic || (plan.enum_only && view.kind is .StructShape) {
         return engine_failsafe(target, plan.macro_name)
     }
     let dc = DeclCtx { parent: view.name, is_struct: view.kind is .StructShape }
@@ -173,18 +173,29 @@ fn classify_bound(v: Variant, parent: string, m: PerVariantMethod, ctx: Resolver
     out
 }
 
-/// `.VariantName(b1, b2, b3)` pattern from the classified bindings — each
+/// `.VariantName(n1, n2, n3)` pattern from explicit binding names — each
 /// becomes a ParamEntry, the same shape the parser produces for the simple
-/// bind form `.Variant(x, y)`. `_` is a valid binding name here. The
-/// single Pattern.Variant builder shared by every per-variant emitter;
-/// only the bind hook's name choice differs.
+/// bind form `.Variant(x, y)`. `_` is a valid binding name here. THE
+/// Pattern.Variant builder for generated match arms: the driver's own
+/// arms bind through it, and emitters that synthesize inner matches (eq's
+/// `match other`) reuse it with their own name lists.
 @comptime
-fn bound_pattern(variant_name: string, fields: List<Classified>) -> Pattern {
+export fn pattern_from_names(variant_name: string, names: List<string>) -> Pattern {
     mut params: List<ParamEntry> = []
-    for c in fields {
-        params.push(ParamEntry { name: c.binding, vtype: ValueType.Unknown })
+    for n in names {
+        params.push(ParamEntry { name: n, vtype: ValueType.Unknown })
     }
     Pattern.Variant(variant_name, params)
+}
+
+/// The driver's arm pattern: every classified field's chosen binding.
+@comptime
+fn bound_pattern(variant_name: string, fields: List<Classified>) -> Pattern {
+    mut names: List<string> = []
+    for c in fields {
+        names.push(c.binding)
+    }
+    pattern_from_names(variant_name, names)
 }
 
 /// Build one per-variant method fn. Enum: `fn Parent__m(self, extras) ->
