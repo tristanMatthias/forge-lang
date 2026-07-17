@@ -22,7 +22,7 @@
 // are follow-up slices.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parser_new}
-use @std.avrac.core.{render_stmt_id}
+use @std.avrac.core.{render_stmt_id, vtype_display, NodeStore, StmtId}
 
 fn impl_grammar_src() -> string {
     "grammar Impl {\n" +
@@ -74,6 +74,41 @@ fn agree(src: string) -> bool {
     dsl_stmt(src) == hand_stmt(src)
 }
 
+// Dig the FIRST method's FIRST parameter type out of a built Impl — the
+// render oracle (render_param_list) omits param types, so this reaches PAST
+// the render to prove the DSL synthesizes the same `self` receiver type the
+// hand parser does (vtype_from_name(target)), not MkMethod's plain default.
+fn first_param_type(store: NodeStore, impl_id: StmtId) -> string {
+    match store.stmts.get(impl_id) {
+        .Impl(_, methods) -> {
+            if methods.length == 0 { return "<no methods>" }
+            match store.stmts.get(methods[0]) {
+                .Function(_, _, params, _, _) -> {
+                    if params.length == 0 { return "<no params>" }
+                    vtype_display(params[0].vtype)
+                }
+                _ -> "<not fn>"
+            }
+        }
+        _ -> "<not impl>"
+    }
+}
+
+fn dsl_self_type(src: string) -> string {
+    let gp = parse_grammar(impl_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    first_param_type(r.store, r.root)
+}
+
+fn hand_self_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> first_param_type(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
 spec "grammar-DSL declaration family: impl == hand-written parser (ps3t.6.5.7)" {
     given "plain impl blocks (impl Type { … })" {
         then "empty, self methods, static methods, and self+params agree (names mangled)" {
@@ -103,6 +138,18 @@ spec "grammar-DSL declaration family: impl == hand-written parser (ps3t.6.5.7)" 
             dsl_stmt("impl Point { fn area(self) -> int { return 5 } }") == "(impl Point (fn Point__area (self) -> int (return 5)))" &&
             dsl_stmt("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "(impl Display:Point (fn Point__fmt (self) -> int (return 1)))" &&
             dsl_stmt("impl Empty { }") == "(impl Empty )"
+        }
+    }
+    given "the `self` RECEIVER TYPE matches past the render (not MkMethod's Int default)" {
+        then "self is typed as the concrete impl target for plain and trait impls" {
+            // The render omits param types, so assert the vtype directly: the
+            // DSL must synthesize `self` as the impl TARGET type (the `for` type
+            // for a trait impl, else the header type), == the hand parser.
+            dsl_self_type("impl Point { fn area(self) -> int { return 5 } }") == "Point" &&
+            hand_self_type("impl Point { fn area(self) -> int { return 5 } }") == "Point" &&
+            dsl_self_type("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "Point" &&
+            hand_self_type("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "Point" &&
+            dsl_self_type("impl Calc { fn add(self, x: int) -> int { return x } }") == hand_self_type("impl Calc { fn add(self, x: int) -> int { return x } }")
         }
     }
 }
