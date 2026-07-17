@@ -2734,6 +2734,13 @@ fn vtype_from_type_string(ty: string, regs: GenRegs) -> ValueType {
             let v = if args.length > 1 { args[1] } else { ValueType.Unknown }
             return ValueType.Map(k, v)
         }
+        // `vtype_mangle_slug` renders a tuple ARG as `Tuple<A, B>` (the
+        // paren form can't survive inside a flat mangle), so the round-trip
+        // must rebuild the real Tuple — falling through to Enum("Tuple")
+        // loses the tuple identity for every downstream destructure/index.
+        if base == "Tuple" {
+            return ValueType.Tuple(args)
+        }
         return ValueType.Enum(base, args, 0)
     }
     // Handle union types "A | B" — checked AFTER mangled names

@@ -83,6 +83,34 @@ fn eng_deep() -> int {
     }
 }
 
+// Tuple as a generic ARG: `vtype_mangle_slug` renders it `Tuple<int, string>`
+// inside the flat mangle (`RtBox__Tuple<int, string>`), and the parser must
+// rebuild a REAL ValueType.Tuple — an Enum("Tuple") impostor breaks the
+// destructure below.
+fn mk_pair(n: int) -> Result<RtBox<(int, string)>, RtCyc> {
+    let b: RtBox<(int, string)> = RtBox { v: (n, "pair") }
+    Result.Ok(b)
+}
+
+type RtEngPair = { calls: int }
+
+impl RtEngPair {
+    fn run(self, f: fn(int) -> Result<RtBox<(int, string)>, RtCyc>) -> Result<int, RtCyc> {
+        let out = f(9)?
+        self.calls = self.calls + 1
+        let (n, s) = out.v
+        Result.Ok(n + s.length)
+    }
+}
+
+fn eng_pair() -> int {
+    let mut e: RtEngPair = RtEngPair { calls: 0 }
+    match e.run(mk_pair) {
+        .Ok(v) -> v
+        .Err(_) -> -1
+    }
+}
+
 spec "nested-instance mangles round-trip through mono's string parser (t-c6gj)" {
     then "`?`-payload of Result<RtBox<string>, RtCyc> is field-accessible in a specialized method" {
         eng_ok() == "payload"
@@ -92,5 +120,8 @@ spec "nested-instance mangles round-trip through mono's string parser (t-c6gj)" 
     }
     then "a two-level nested instance (RtBox<RtBox<int>>) reconstructs recursively" {
         eng_deep() == 5
+    }
+    then "a tuple-typed generic arg (RtBox<(int, string)>) keeps its Tuple identity" {
+        eng_pair() == 13
     }
 }
