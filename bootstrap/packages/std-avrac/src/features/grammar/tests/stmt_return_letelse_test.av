@@ -1,0 +1,106 @@
+// ps3t.6.5.4 — the statement family's tail: bare `return` (ReturnEmpty) and
+// `let … else`. These are the two forms the earlier 6.5.4 slices (#817 bindings
+// + defer, #818 statement-match) left open.
+//
+// (1) bare `return` — `return` with no operand builds Stmt.ReturnEmpty, vs
+//     `return expr` → Stmt.Return(expr). The DSL expresses this as an OPTIONAL
+//     operand: `"return" ( re:expression )? -> MkReturn(re)`. A bare `return`
+//     before `}` / EOF simply doesn't match the optional (its FIRST-set rejects
+//     those tokens), so it folds to ReturnEmpty with NO newline info needed —
+//     which is what makes it expressible now. The one residual case,
+//     `return\n<expr>` (a value on the NEXT line, which the hand parser treats
+//     as ReturnEmpty + a separate statement via its `current_line != prev_line`
+//     guard), is a newline/lexer-mode disambiguation for the gnarly-5%
+//     catalogue (ps3t.6.5.10) and is deliberately NOT in this corpus.
+//
+// (2) `let … else` — the bind-fresh guard (`let v = x else { … }`) is a
+//     hygienic block-expr DESUGAR (build_let_else): it mints a fresh temp name
+//     (`$letelse$N`) and synthesizes a `{ let __t = x; if __t != none { __t! }
+//     else { … } }` initializer. A stateless token-grammar can't reproduce a
+//     gensym-named desugar byte-identically, so — like `component` — it routes
+//     through the @hand(let_stmt) escape hatch, delegating to the real
+//     parse_let_statement. The bridging parser's gensym counter starts at 0,
+//     exactly like the single-statement oracle parse, so the temp name matches
+//     (`$letelse$1` on both) and the render is byte-identical by construction.
+//
+// Oracle: run the DSL-generated parser AND the shipping hand parser
+// (parser_new(src).parse_declaration() — `let` dispatches as a decl keyword,
+// `return`/expr fall through to parse_statement) over a corpus; assert
+// identical ASTs via render_stmt_id.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn stmt_grammar_src() -> string {
+    "grammar Stmt {\n" +
+    "  statement   = let_decl | return_stmt | expr_stmt\n" +
+    // `let` (incl. `let … else` and `let mut … else`) delegated to the hand parser.
+    "  let_decl    = @hand(let_stmt)\n" +
+    // bare `return` OR `return expr` — the operand is optional (FIRST-set gated).
+    "  return_stmt = \"return\" ( re:expression )? -> MkReturn(re)\n" +
+    "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
+    // ── expression family ──
+    "  expression  = equality\n" +
+    "  equality    = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison  = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(stmt_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool { dsl_stmt(src) == hand_stmt(src) }
+
+spec "grammar-DSL statement family: bare return + let-else == hand-written parser (ps3t.6.5.4)" {
+    given "bare `return` (ReturnEmpty) vs `return expr` (Return) — optional operand" {
+        then "the FIRST-set folds a bodyless return to ReturnEmpty; a value returns" {
+            agree("return") &&
+            agree("return 42") &&
+            agree("return a + b") &&
+            agree("return (x)") &&
+            // `return` immediately before end-of-input builds ReturnEmpty on both.
+            dsl_stmt("return") == "(return)" &&
+            dsl_stmt("return 42") == "(return 42)"
+        }
+    }
+    given "`let … else` (the hygienic build_let_else desugar) via @hand" {
+        then "let-else and let-mut-else agree, incl. the fresh temp name" {
+            agree("let v = x else { return }") &&
+            agree("let mut v = x else { return }") &&
+            agree("let n = compute() else { return 0 }") &&
+            // The desugar's fresh temp is $letelse$1 on both (gensym starts at 0).
+            dsl_stmt("let v = x else { return }") == hand_stmt("let v = x else { return }")
+        }
+    }
+    given "plain `let` (no else) still routes through @hand equivalently" {
+        then "a bare let binding agrees" {
+            agree("let x = 5") &&
+            agree("let name: string = greeting") &&
+            dsl_stmt("let x = 5") == "(let x:<unknown> 5)"
+        }
+    }
+    given "@hand(let_stmt) composes as an alternative with the pure return/expr rules" {
+        then "let → @hand, return → pure MkReturn, bare expr → ExprStmt all route right" {
+            agree("let a = 1") &&
+            agree("return") &&
+            agree("x + 1")
+        }
+    }
+}

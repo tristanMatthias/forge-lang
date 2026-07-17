@@ -669,19 +669,22 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
 fn hand_starts(name: string, tok: Token) -> bool {
     if name == "ident" { return tok.kind == "IDENT" }
     if name == "number" { return tok.kind == "NUMBER" }
-    // A declaration hand rule's FIRST is its leading keyword.
+    // A declaration/statement hand rule's FIRST is its leading keyword.
     if name == "component_decl" { return tok.text == "component" }
+    if name == "let_stmt" { return tok.text == "let" }
     false
 }
 
 /// True for the hand rules that build a STATEMENT/DECLARATION (delegated to
 /// the real hand parser via `run_hand_stmt`), vs the expression hand rules
 /// (`ident`/`number`) served by `run_hand`. This is the escape hatch for the
-/// gnarly-5% declarations the pure grammar deliberately does NOT re-express —
+/// gnarly-5% forms the pure grammar deliberately does NOT re-express:
 /// `component` (stateful registry mutation + char-level lookahead + raw
-/// bodies) is the canonical case.
+/// bodies) and `let … else` (a hygienic block-expr DESUGAR minting a fresh
+/// temp name — build_let_else — which a stateless token-grammar can't
+/// reproduce byte-identically).
 fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl"
+    name == "component_decl" || name == "let_stmt"
 }
 
 /// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
@@ -710,17 +713,26 @@ fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // walk the lexer to the hand rule's first token by CONSUMING the input up
     // to it — advancing token by token, NOT just reassigning the cursor — so
     // `line`/`column` stay accurate (each skipped newline is counted) for a
-    // component at a nonzero offset; the hand parser records those coordinates
-    // on the component's body spans.
+    // rule at a nonzero offset; the hand parser records those coordinates on
+    // the built node's body spans. The bridging parser's fresh gensym counter
+    // starts at 0 — matching a single-statement oracle parse — so a hygienic
+    // desugar (`let … else`) mints the identical temp name.
     mut bp = parser_new_with_file(st.src, "")
     bp.store = st.store
     bp.records_roots = 0
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
-    let result = bp.parse_component_decl()
+    // Dispatch to the real hand-parser entry (method calls on the local `bp`,
+    // so its cursor advances in place for the resync below). Each builds into
+    // bp's (== the DSL's) shared store.
+    let result = match name {
+        "component_decl" -> bp.parse_component_decl()
+        "let_stmt"       -> bp.parse_let_statement()
+        _                -> .Err("no hand statement rule `${name}`")
+    }
     // Resync the DSL token cursor past everything the hand parser consumed (its
     // cursor now sits on the next token's byte offset) — on BOTH success AND
     // failure: a failed hand parse still advanced `bp`, so leaving st.pos on the
-    // stale `component` token would make a following grammar item / repetition
+    // stale keyword token would make a following grammar item / repetition
     // reprocess it and cascade.
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
     match result {
@@ -876,6 +888,20 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "Continue" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
         "ReturnEmpty" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
         "Return" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
+        // `return` with an OPTIONAL operand: absent ⇒ ReturnEmpty, present ⇒
+        // Return(e). A bare `return` before `}` / EOF simply doesn't match the
+        // optional expression (its FIRST-set rejects those tokens), so it folds
+        // to ReturnEmpty with no newline info needed. The remaining
+        // newline-sensitive case — `return\n<expr>` where the value sits on the
+        // NEXT line (the hand parser's `current_line != prev_line` guard) — is a
+        // lexer-mode disambiguation for the gnarly-5% catalogue (ps3t.6.5.10).
+        "MkReturn" if args.length == 1 -> {
+            if capval_present(env.get(args[0])) {
+                CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
+            } else {
+                CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
+            }
+        }
         "ExprStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
         // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) ──
         "Block" if args.length == 1 -> {
