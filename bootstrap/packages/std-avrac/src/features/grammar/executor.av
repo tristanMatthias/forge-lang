@@ -672,6 +672,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // A declaration/statement hand rule's FIRST is its leading keyword.
     if name == "component_decl" { return tok.text == "component" }
     if name == "let_stmt" { return tok.text == "let" }
+    if name == "return_stmt" { return tok.text == "return" }
     false
 }
 
@@ -680,11 +681,13 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// (`ident`/`number`) served by `run_hand`. This is the escape hatch for the
 /// gnarly-5% forms the pure grammar deliberately does NOT re-express:
 /// `component` (stateful registry mutation + char-level lookahead + raw
-/// bodies) and `let … else` (a hygienic block-expr DESUGAR minting a fresh
-/// temp name — build_let_else — which a stateless token-grammar can't
-/// reproduce byte-identically).
+/// bodies), `let … else` (a hygienic block-expr DESUGAR minting a fresh temp
+/// name — build_let_else — which a stateless token-grammar can't reproduce
+/// byte-identically), and `return` (NEWLINE-SENSITIVE: a bodyless `return\n<expr>`
+/// is ReturnEmpty + a separate statement, decided by the hand parser's
+/// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl" || name == "let_stmt"
+    name == "component_decl" || name == "let_stmt" || name == "return_stmt"
 }
 
 /// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
@@ -727,6 +730,7 @@ fn run_hand_stmt(name: string, st: PState) -> StmtId {
     let result = match name {
         "component_decl" -> bp.parse_component_decl()
         "let_stmt"       -> bp.parse_let_statement()
+        "return_stmt"    -> bp.parse_return_statement()
         _                -> .Err("no hand statement rule `${name}`")
     }
     // Resync the DSL token cursor past everything the hand parser consumed (its
