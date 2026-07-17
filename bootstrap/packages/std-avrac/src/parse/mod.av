@@ -13,7 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser, lookup_expr_parser}
-use core.{gensym_name, FORCE_UNWRAP_FN}
+use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
@@ -315,7 +315,14 @@ fn expr_is_ident(e: Expr) -> bool {
 fn expr_is_upper_ident(e: Expr) -> bool {
     match e {
         .Ident(n) -> p_starts_with_upper(n)
-        .QualifiedIdent(n) -> p_starts_with_upper(n)
+        // Test the LAST path segment: a qualified type reference
+        // (`@std::…::Result`) begins with `@`, so the full-string test read
+        // every qualified name as lowercase — `dot_is_postfix` then refused
+        // the `.Variant` continuation, the chain stopped at the type, and
+        // `.Err(c)` leaked into the NEXT match arm as a pattern ("expected
+        // `->` after pattern"). Bit hardest in metadata round-trips, whose
+        // fmt-rendered bodies qualify every enum-ctor reference.
+        .QualifiedIdent(n) -> p_starts_with_upper(type_short_name(n))
         _ -> false
     }
 }

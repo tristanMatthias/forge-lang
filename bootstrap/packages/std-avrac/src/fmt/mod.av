@@ -79,7 +79,15 @@ export fn fmt_expr(store: NodeStore, se: Expr) -> string {
         .Binary(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${binop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
         .Logical(left, op, right) -> "${fmt_expr(store, store.exprs.get(left))} ${logicop_str(op)} ${fmt_expr(store, store.exprs.get(right))}"
         .Call(callee, args) -> "${fmt_expr(store, store.exprs.get(callee))}(${fmt_expr_ids_comma(store, args)})"
-        .GenericCall(callee, ta, args) -> "${fmt_expr(store, store.exprs.get(callee))}::<${fmt_type_name_list(ta)}>(${fmt_expr_ids_comma(store, args)})"
+        // Explicit-type-arg calls render as the PARSEABLE surface form
+        // `f<T>(x)` — the shape `try_parse_generic_call` speculatively
+        // accepts after a callee. The former `f::<T>(x)` (Rust turbofish)
+        // does NOT parse in Avra, so any fmt-rendered body carrying one —
+        // notably the metadata GenericBodies round-trip — silently
+        // re-parsed to an EMPTY body (parse_body_source's failure
+        // fallback), and every consumer-side monomorphization of that fn
+        // vanished (t-jgc0's second layer).
+        .GenericCall(callee, ta, args) -> "${fmt_expr(store, store.exprs.get(callee))}<${fmt_type_name_list(ta)}>(${fmt_expr_ids_comma(store, args)})"
         .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(store, inits)} }"
         .FieldAccess(obj, field) -> "${fmt_expr(store, store.exprs.get(obj))}.${field}"
         .EnumCtor(tn, variant, args) -> if tn == "" { ".${variant}(${fmt_expr_ids_comma(store, args)})" } else { "${tn}.${variant}(${fmt_expr_ids_comma(store, args)})" }

@@ -1,0 +1,143 @@
+// WHY: acceptance spec for the incremental == from-scratch differential
+// oracle (ps3t.8.7 / design doc §1) — the L6 engine's correctness gate. A
+// scripted edit sequence is replayed INCREMENTALLY (one db) and FROM-SCRATCH
+// (fresh db per step) over the same synthetic mini-compiler driver, and every
+// root's answer AND diagnostics must render byte-identically at every step.
+// The script deliberately walks the engine through every interesting
+// transition:
+//   step 1 — same-length edit          (early cutoff absorbs it)
+//   step 2 — real edit                 (propagates to the root)
+//   step 3 — edit to empty             (a DIAGNOSTIC appears on the root)
+//   step 4 — edit back                 (the diagnostic disappears again)
+//   step 5 — no-op re-write            (equal hash; revision must not move)
+//   step 6 — flip the CYC flag         (the root becomes a query CYCLE — the
+//                                       cycle must reproduce identically in
+//                                       both replays)
+//   step 7 — flip it back              (recovery after a cycle)
+// `oracle_clean` also demands the incremental replay did strictly LESS
+// compute work than the from-scratch replays — matching answers alone would
+// accept an engine that recomputes the world each step.
+//
+// A second spec drives the harness with a compute that commits the classic
+// engine-abuse the oracle exists to catch: reading a query WITHOUT recording
+// the dependency (`db_fetch` on `ctx.db` instead of `ctx_fetch` — the moral
+// equivalent of a pass reading global state). The engine can't know to
+// invalidate the reader, the incremental replay serves the stale answer,
+// from-scratch recomputes — the oracle MUST flag it. A harness that always
+// reports clean would gate nothing.
+
+use @std.avrac.query.{QueryCtx, QueryKey, Computed, QueryCycle, db_fetch, ctx_fetch, qk, computed}
+use @std.avrac.query.{InputWrite, EditStep, OracleReport, run_edit_oracle, oracle_clean, oracle_render}
+use @std.avrac.core.{content_id_for}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, span_dummy}
+
+const FAM_SRC = 0
+const FAM_LEN = 1
+const FAM_TOTAL = 2
+const FAM_CYC_FLAG = 3
+const FAM_ROOT = 4
+const FAM_LOOP = 5
+
+fn oracle_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == FAM_LEN {
+        let src = ctx_fetch(ctx, qk(FAM_SRC, q.arg))?
+        let v = string(src.length)
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == FAM_TOTAL {
+        let a = ctx_fetch(ctx, qk(FAM_LEN, 0))?
+        let b = ctx_fetch(ctx, qk(FAM_LEN, 1))?
+        let v = "total=${a}+${b}"
+        mut out = computed(v, content_id_for(v))
+        if a == "0" {
+            mut diags: List<Diagnostic> = []
+            diags.push(diag_warning(DiagCode.NonExhaustiveMatch, "synthetic: file 0 is empty", span_dummy()))
+            out = out with { diags }
+        }
+        return Result.Ok(out)
+    }
+    if q.family == FAM_ROOT {
+        // The root: normally just TOTAL; when the CYC flag is set it walks
+        // into the self-recursive LOOP family — a cycle both replays must
+        // report identically.
+        let flag = ctx_fetch(ctx, qk(FAM_CYC_FLAG, 0))?
+        if flag == "1" {
+            let v = ctx_fetch(ctx, qk(FAM_LOOP, 0))?
+            return Result.Ok(computed(v, content_id_for(v)))
+        }
+        let t = ctx_fetch(ctx, qk(FAM_TOTAL, 0))?
+        return Result.Ok(computed("root(${t})", content_id_for(t)))
+    }
+    if q.family == FAM_LOOP {
+        let v = ctx_fetch(ctx, qk(FAM_LOOP, 0))?
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    Result.Ok(computed("?", 0))
+}
+
+/// A compute with an UNRECORDED dependency: it answers from SRC but reads it
+/// via a raw `db_fetch` on `ctx.db` — no dep edge is recorded, so the engine
+/// will happily green-revalidate this cell after SRC changes. The bug class
+/// the oracle exists to catch.
+fn unrecorded_dep_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == FAM_LEN {
+        let hidden = match db_fetch(ctx.db, qk(FAM_SRC, 0)) {
+            .Ok(f) -> f.value
+            .Err(_) -> "?"
+        }
+        let v = "leak(${hidden})"
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    Result.Ok(computed("?", 0))
+}
+
+fn w(arg: int, family: int, text: string) -> InputWrite<string> {
+    InputWrite { q: qk(family, arg), value: text, value_hash: content_id_for(text) }
+}
+
+fn render_str(v: string) -> string { v }
+
+fn run_clean_oracle() -> OracleReport {
+    let base = [w(0, FAM_SRC, "hello"), w(1, FAM_SRC, "worlds!"), w(0, FAM_CYC_FLAG, "0")]
+    let script = [
+        EditStep { writes: [w(0, FAM_SRC, "howdy")] },
+        EditStep { writes: [w(1, FAM_SRC, "!")] },
+        EditStep { writes: [w(0, FAM_SRC, "")] },
+        EditStep { writes: [w(0, FAM_SRC, "revived")] },
+        EditStep { writes: [w(0, FAM_SRC, "revived")] },
+        EditStep { writes: [w(0, FAM_CYC_FLAG, "1")] },
+        EditStep { writes: [w(0, FAM_CYC_FLAG, "0")] },
+    ]
+    let roots = [qk(FAM_ROOT, 0), qk(FAM_TOTAL, 0)]
+    run_edit_oracle(base, script, roots, oracle_compute, render_str)
+}
+
+fn run_leaky_oracle() -> OracleReport {
+    let base = [w(0, FAM_SRC, "aaa")]
+    let script = [EditStep { writes: [w(0, FAM_SRC, "bbbb")] }]
+    let roots = [qk(FAM_LEN, 0)]
+    run_edit_oracle(base, script, roots, unrecorded_dep_compute, render_str)
+}
+
+spec "L6 differential oracle: incremental == from-scratch over an edit script (ps3t.8.7)" {
+    then "every (step, root) comparison matches — values, diagnostics, and the cycle step" {
+        let r = run_clean_oracle()
+        r.mismatches == 0 && r.detail == ""
+    }
+    then "all 8 states x 2 roots were actually compared" {
+        let r = run_clean_oracle()
+        r.steps == 8 && r.checks == 16
+    }
+    then "the incremental replay did strictly less compute work than from-scratch" {
+        let r = run_clean_oracle()
+        r.inc_computes < r.scratch_computes
+    }
+    then "oracle_clean summarizes both conditions" {
+        let r = run_clean_oracle()
+        oracle_clean(r) && oracle_render(r).contains("mismatches=0")
+    }
+    then "an UNRECORDED dependency (raw db_fetch inside compute) is DETECTED, not rubber-stamped" {
+        let r = run_leaky_oracle()
+        r.mismatches > 0 && !oracle_clean(r)
+    }
+}

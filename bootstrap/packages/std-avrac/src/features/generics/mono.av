@@ -1482,6 +1482,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Module(_, body) -> collect_inst_stmt_ids(body, regs, st)
         .Function(_, tp, _, ret_vt, body) -> {
             if tp.length > 0 { return st }
+            
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
             // Tail-position .Expr / .Return statements get ret_vt threaded as
@@ -2311,6 +2312,18 @@ fn substitute_vtype(vt: ValueType, ta: List<TypeArg>) -> ValueType {
     }
 }
 
+/// Map `substitute_vtype` over a plain type list (a GenericCall's explicit
+/// type args).
+fn substitute_vtype_list(vts: List<ValueType>, ta: List<TypeArg>) -> List<ValueType> {
+    mut out: List<ValueType> = []
+    mut i = 0
+    while i < vts.length {
+        out.push(substitute_vtype(vts[i], ta))
+        i = i + 1
+    }
+    out
+}
+
 /// Substitute type-args into every param's declared type.
 fn substitute_params(params: List<ParamEntry>, ta: List<TypeArg>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
@@ -2399,7 +2412,13 @@ fn substitute_stmt(store: NodeStore, stmt: Stmt, ta: List<TypeArg>) -> Stmt {
 fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
     match expr {
         .Call(callee, a) -> .Call(substitute_expr_id(store, callee, ta), substitute_expr_list_ids(store, a, ta))
-        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr_id(store, callee, ta), tn, substitute_expr_list_ids(store, a, ta))
+        // The explicit type args substitute too: `helper::<V>(x)` inside a
+        // generic body must become `helper::<string>(x)` in the V=string
+        // specialization, or the nested call is unresolvable (the arg-type
+        // channel can't help — substitution drops recorded arg types by
+        // design). This is what makes generic→generic calls with type-param
+        // turbofish work at all.
+        .GenericCall(callee, tn, a) -> .GenericCall(substitute_expr_id(store, callee, ta), substitute_vtype_list(tn, ta), substitute_expr_list_ids(store, a, ta))
         .Binary(l, op, r) -> .Binary(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Logical(l, op, r) -> .Logical(substitute_expr_id(store, l, ta), op, substitute_expr_id(store, r, ta))
         .Unary(op, e) -> .Unary(op, substitute_expr_id(store, e, ta))
@@ -2443,8 +2462,32 @@ fn substitute_expr(store: NodeStore, expr: Expr, ta: List<TypeArg>) -> Expr {
         .Quote(k, body) -> .Quote(k, substitute_expr_id(store, body, ta))
         .Splice(target) -> .Splice(substitute_expr_id(store, target, ta))
         .When(arms) -> .When(substitute_when_arms(store, arms, ta))
+        // Construction sites recurse into their VALUE payloads: a nested
+        // generic call (`Result.Ok(db_family<V>(…))`, `Report { n:
+        // total<V>(db) }`) must have its type-param turbofish substituted
+        // like any other sub-expression, or the specialized body collects a
+        // raw `V` inst (F1002 "cannot infer") — the metadata round-trip
+        // surfaced this because its re-parsed bodies lean on explicit type
+        // args everywhere. The struct's own type-arg binding is inference
+        // territory (collect/rewrite), not substitution — only the inits'
+        // exprs carry substitutable content.
+        .StructLit(name, inits) -> .StructLit(name, substitute_field_inits(store, inits, ta))
+        .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, substitute_expr_list_ids(store, args, ta))
+        .TypeLit(vt) -> .TypeLit(substitute_vtype(vt, ta))
         _ -> expr
     }
+}
+
+/// Map `substitute_expr` over each struct-literal field init's value.
+fn substitute_field_inits(store: NodeStore, inits: List<FieldInit>, ta: List<TypeArg>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    mut i = 0
+    while i < inits.length {
+        let init = inits[i]
+        out.push(FieldInit { name: init.name, value_id: substitute_expr_id(store, init.value_id, ta) })
+        i = i + 1
+    }
+    out
 }
 
 /// Substitute T-references in each when-arm's condition + body.

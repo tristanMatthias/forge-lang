@@ -1,0 +1,154 @@
+// WHY: the L6 engine's correctness oracle (ps3t.8.7 / design doc §1, §11) —
+// the sequence-of-edits differential harness: replay a scripted edit
+// sequence INCREMENTALLY (one database, edits applied in place) and
+// FROM-SCRATCH (a fresh database per step, all edits up to that step
+// re-applied), and assert byte-identical answers AND diagnostics for every
+// root query at every step. This is the engine analogue of the HRN diff-test
+// (OLD-compiler-as-oracle, byte-identical IR): from-scratch evaluation is
+// trivially correct — it never reuses anything — so any divergence is a
+// memoization/invalidation bug, localized to the exact (step, root) that
+// split.
+//
+// Built FIRST alongside the engine core, per the ticket's charter ("the
+// engine's correctness oracle, not a trailing test"): every later phase
+// (P0-P5 — query-shaped passes, name-res-as-query, fingerprints, codegen
+// cache) gates on this same harness by giving it their compute dispatcher
+// and roots — when the roots are `codegen(item)` queries, "byte-identical
+// answers" IS byte-identical IR, and the harness needs no changes.
+//
+// The report also carries the work-done tally (total compute runs,
+// incremental vs from-scratch): matching answers alone would accept an
+// engine that recomputes the world every step, so specs assert BOTH
+// equality and that the incremental replay computed strictly less.
+
+use query.{Db, QueryCtx, QueryKey, Computed, Fetched, QueryCycle, db_new, db_set_input, db_fetch, db_total_computes, qk_render}
+use diagnostics.{Diagnostic, diag_canonical}
+
+/// One input assignment: set query `q` to `value` (with its content hash —
+/// the driver hashes, engine compares).
+export type InputWrite<V> = { q: QueryKey, value: V, value_hash: int }
+
+/// One edit step: the input writes applied together before re-fetching the
+/// roots (a "keystroke" in compiler terms — e.g. one file's new contents).
+export type EditStep<V> = { writes: List<InputWrite<V>> }
+
+/// The oracle's verdict for one replayed script.
+/// @field steps            — states checked (the base state + one per edit).
+/// @field checks           — individual (state, root) comparisons performed.
+/// @field mismatches       — comparisons where incremental != from-scratch.
+/// @field inc_computes     — TOTAL compute runs by the one incremental db.
+/// @field scratch_computes — total compute runs summed over the per-step
+///                           fresh dbs (the work a non-incremental compiler
+///                           would do).
+/// @field detail           — per-mismatch lines (state, root, both renders);
+///                           empty when clean.
+export type OracleReport = {
+    steps: int,
+    checks: int,
+    mismatches: int,
+    inc_computes: int,
+    scratch_computes: int,
+    detail: string,
+}
+
+/// True when the replay proved incremental == from-scratch at every step AND
+/// the incremental replay did strictly less compute work than the
+/// from-scratch replays (given at least one edit step to save work on).
+export fn oracle_clean(r: OracleReport) -> bool {
+    r.mismatches == 0 && (r.steps <= 1 || r.inc_computes < r.scratch_computes)
+}
+
+/// One-line summary for spec assertions / logs.
+export fn oracle_render(r: OracleReport) -> string {
+    "steps=${string(r.steps)} checks=${string(r.checks)} mismatches=${string(r.mismatches)} inc=${string(r.inc_computes)} scratch=${string(r.scratch_computes)}"
+}
+
+/// Replay `script` both ways and compare every root at every state.
+///
+/// @param base    — the initial input state (state 0).
+/// @param script  — the edit steps; state k applies steps[0..k].
+/// @param roots   — the queries whose answers gate (a compiler driver passes
+///                  its `codegen`/`diagnostics` roots).
+/// @param compute — the driver's query dispatcher (same one both replays use).
+/// @param render  — value renderer; comparison is on rendered bytes, so what
+///                  it prints is what "byte-identical" means for `V`.
+export fn run_edit_oracle<V>(
+    base: List<InputWrite<V>>,
+    script: List<EditStep<V>>,
+    roots: List<QueryKey>,
+    compute: fn(QueryCtx<V>, QueryKey) -> Result<Computed<V>, QueryCycle>,
+    render: fn(V) -> string,
+) -> OracleReport {
+    let mut inc: Db<V> = db_new<V>(compute)
+    apply_writes<V>(inc, base)
+
+    mut checks = 0
+    mut mismatches = 0
+    mut scratch_computes = 0
+    mut detail = ""
+
+    mut state = 0
+    while state <= script.length {
+        if state > 0 {
+            apply_writes<V>(inc, script[state - 1].writes)
+        }
+        // The from-scratch twin of this state: fresh db, full history replayed.
+        let mut scratch: Db<V> = db_new<V>(compute)
+        apply_writes<V>(scratch, base)
+        mut k = 0
+        while k < state {
+            apply_writes<V>(scratch, script[k].writes)
+            k = k + 1
+        }
+
+        for root in roots {
+            let inc_ans = render_answer<V>(db_fetch<V>(inc, root), render)
+            let scratch_ans = render_answer<V>(db_fetch<V>(scratch, root), render)
+            checks = checks + 1
+            if inc_ans != scratch_ans {
+                mismatches = mismatches + 1
+                detail = "${detail}state ${string(state)} root ${qk_render(root)}: inc=[${inc_ans}] scratch=[${scratch_ans}]\n"
+            }
+        }
+        scratch_computes = scratch_computes + db_total_computes<V>(scratch)
+        state = state + 1
+    }
+
+    OracleReport {
+        steps: script.length + 1,
+        checks,
+        mismatches,
+        inc_computes: db_total_computes<V>(inc),
+        scratch_computes,
+        detail,
+    }
+}
+
+/// Apply a batch of input writes to a database.
+fn apply_writes<V>(db: Db<V>, writes: List<InputWrite<V>>) {
+    for w in writes {
+        db_set_input<V>(db, w.q, w.value, w.value_hash)
+    }
+}
+
+/// Canonical render of a fetch outcome — value AND diagnostics (they memoize
+/// together, so they must compare together, §10), or the cycle path (a cycle
+/// must also reproduce identically both ways).
+fn render_answer<V>(r: Result<Fetched<V>, QueryCycle>, render: fn(V) -> string) -> string {
+    match r {
+        .Ok(f) -> {
+            mut s = render(f.value)
+            for d in f.diags {
+                s = "${s};${diag_canonical(d)}"
+            }
+            s
+        }
+        .Err(c) -> {
+            mut s = "cycle:"
+            for q in c.path {
+                s = "${s} ${qk_render(q)}"
+            }
+            s
+        }
+    }
+}
