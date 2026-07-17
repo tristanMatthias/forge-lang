@@ -1,0 +1,98 @@
+// ps3t.6.5.7 — the DECLARATION family, trait/impl skip-generics tail: generic
+// headers on `trait` and `impl`. Unlike fn/type/enum (which STORE + render
+// their type params), the hand parser `skip_angle_brackets` on trait/impl
+// generics — they are CONSUMED and DISCARDED, never stored, never rendered
+// (parse_trait_declaration / parse_impl_declaration). So the DSL just consumes
+// the `<…>` header (unlabeled — matched, not captured) and the MkTraitDecl /
+// MkImpl builds are unchanged; the rendered tree carries no generics on
+// EITHER side, so `agree()` holds.
+//
+// This closes the generics story across all five declaration kinds:
+// fn/type/enum store + render (#832), trait/impl consume + discard (here).
+//
+// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// (parser_new(src).parse_declaration()) over a corpus and assert identical
+// ASTs via render_stmt_id. Corpus uses single type args (`Box<T>`) — nested
+// `Box<List<T>>` trips the demo lexer's `>>` merge (the 6.5.8 concern).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn ti_gen_grammar_src() -> string {
+    "grammar Decl {\n" +
+    "  decl          = trait_decl | impl_decl\n" +
+    // trait Name <T[: B], ...>? { members } — the generic header is consumed, unbound.
+    "  trait_decl    = \"trait\" name:IDENT ( \"<\" IDENT ( \":\" IDENT )? ( \",\" IDENT ( \":\" IDENT )? )* \">\" )? \"{\" ( members:trait_member )* \"}\" -> MkTraitDecl(name, members)\n" +
+    "  trait_member  = assoc_member | method_member\n" +
+    "  assoc_member  = \"type\" atname:IDENT -> MkAssocType(atname)\n" +
+    "  method_member = \"fn\" mname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? ( lb:\"{\" ( body:statement )* \"}\" )? -> MkTraitMethod(mname, params, ret, lb, body)\n" +
+    // impl <T>? Type <T>? ( for Type <T>? )? { methods } — all three generic sites consumed, unbound.
+    "  impl_decl     = \"impl\" ( \"<\" IDENT ( \":\" IDENT )? ( \",\" IDENT ( \":\" IDENT )? )* \">\" )? tn:IDENT ( \"<\" IDENT ( \",\" IDENT )* \">\" )? ( \"for\" fortn:IDENT ( \"<\" IDENT ( \",\" IDENT )* \">\" )? )? \"{\" ( methods:impl_method )* \"}\" -> MkImpl(tn, fortn, methods)\n" +
+    "  impl_method   = \"fn\" imname:IDENT \"(\" ( iparams:param ( \",\" iparams:param )* )? \")\" ( \"->\" iret:type_expr )? \"{\" ( ibody:statement )* \"}\" -> MkMethod(imname, iparams, iret, ibody)\n" +
+    "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── body statement subset ──
+    "  statement     = break_stmt | return_stmt | expr_stmt\n" +
+    "  break_stmt    = \"break\" -> Break()\n" +
+    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
+    // ── type family ──
+    "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type       = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type      = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type     = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type    = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type    = tn2:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn2, a, opt)\n" +
+    // ── expression family (bodies) ──
+    "  expression    = equality\n" +
+    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison    = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor        = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un            = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "}"
+}
+
+fn dsl_stmt(src: string) -> string {
+    let gp = parse_grammar(ti_gen_grammar_src())
+    let r = run_grammar_stmt(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_stmt(src) == hand_stmt(src)
+}
+
+spec "grammar-DSL declaration family: trait/impl skip-generics == hand-written parser (ps3t.6.5.7)" {
+    given "generic trait headers (consumed + discarded, not rendered)" {
+        then "one/two params + bounds agree (no <…> in the render)" {
+            agree("trait Container<T> { fn get(self) -> int }") &&
+            agree("trait Bounded<T: Clone> { fn dup(self) -> int }") &&
+            agree("trait Multi<A, B> { type Item fn make() -> int }")
+        }
+    }
+    given "generic impl headers (impl<T>, Type<T>, for Type<T> — all discarded)" {
+        then "plain and trait impls with generics agree" {
+            agree("impl<T> Box<T> { fn get(self) -> int { return 1 } }") &&
+            agree("impl<T> Display for Box<T> { fn fmt(self) -> int { return 0 } }") &&
+            agree("impl<A, B> Pair<A, B> { fn first(self) -> int { return 1 } }")
+        }
+    }
+    given "the DSL trees carry NO generics (sanity: skip-generics really discards)" {
+        then "generic headers render exactly like the non-generic form" {
+            dsl_stmt("trait Container<T> { fn get(self) -> int }") == "(trait Container (extern get (self) -> int))" &&
+            dsl_stmt("impl<T> Box<T> { fn get(self) -> int { return 1 } }") == "(impl Box (fn Box__get (self) -> int (return 1)))"
+        }
+    }
+}
