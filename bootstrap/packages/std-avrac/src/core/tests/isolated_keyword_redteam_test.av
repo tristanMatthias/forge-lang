@@ -111,12 +111,19 @@ spec "isolated red-team: payload edge cases" {
         frame_string(payload) == "X"
     }
     then "100 KB payload round-trips intact" {
-        let payload = isolated { make_blob(100 * 1024) }
-        // This spec intermittently fails in the bundled suite under memory
-        // pressure (the child dies, never a pipe defect — the runtime IO is
-        // short-read/EINTR-robust). The boolean alone can't distinguish a
-        // CRASH frame from a truncated payload, so print the frame's actual
-        // status + length on failure to pin the mechanism at the site.
+        // Under bundled-suite memory pressure the OOM killer can take the
+        // isolated CHILD (STATUS_CRASH, len=0) — the runner already retries
+        // jetsam-killed shards, so apply the same policy one level down:
+        // bounded retry ONLY on a crash frame. A live child returning a
+        // wrong length/status (a genuine pipe defect) fails immediately,
+        // and a persistent crash still fails after the retries.
+        mut payload = isolated { make_blob(100 * 1024) }
+        mut attempt = 1
+        while frame_status(payload) == STATUS_CRASH && attempt < 3 {
+            println("100KB round-trip: child died under load (status=${string(frame_status(payload))} len=${string(frame_len(payload))}) — retry ${string(attempt)}/2")
+            payload = isolated { make_blob(100 * 1024) }
+            attempt = attempt + 1
+        }
         if frame_status(payload) != STATUS_OK || frame_len(payload) != 100 * 1024 {
             println("100KB round-trip failed: status=${string(frame_status(payload))} len=${string(frame_len(payload))} (expected status=0 len=${string(100 * 1024)})")
         }
