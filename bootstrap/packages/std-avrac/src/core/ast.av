@@ -2635,6 +2635,15 @@ fn render_when_arm_list(store: NodeStore, arms: List<WhenArm>) -> string {
     out
 }
 
+/// Render the arms of a `select` statement as `binding <- chan -> body; ...`.
+/// Faithful arm-by-arm — the historic `"(select ...)"` stub made
+/// `stmt_content_hash` blind to select bodies (two different selects hashed
+/// equal), which no content-hash consumer can tolerate.
+fn render_select_arm_list(store: NodeStore, arms: List<SelectArm>) -> string {
+    if arms.length == 0 { return "()" }
+    "(${list_map(arms, (arm: SelectArm) -> "${arm.binding} <- ${render_expr_id(store, arm.chan_id)} -> ${render_stmt_ids(store, arm.body_ids)}").join("; ")})"
+}
+
 /// Render a `List<FieldInit>` as an S-expression: `(k=v, k2=v2)`.
 export fn render_field_init_list(store: NodeStore, inits: List<FieldInit>) -> string {
     if inits.length == 0 { return "()" }
@@ -2652,10 +2661,16 @@ export fn render_type_name_list(type_args: List<ValueType>) -> string {
     list_map(type_args, (t: ValueType) -> vtype_render_full(t)).join(", ")
 }
 
-/// Render a `List<ParamEntry>` as `(name, name2)`.
+/// Render a `List<ParamEntry>` as `(name:Type, name2)` — the declared type
+/// rides along whenever the parser filled one (an unannotated binder — a bare
+/// lambda param, a `use` name, a destructure slot — stays a bare name, faithful
+/// to source). The type part is load-bearing for the content-hash consumers:
+/// without it `(x: int) -> x` and `(x: string) -> x` rendered identically, so
+/// `expr_content_hash` (and everything composing it) was blind to a lambda
+/// param's declared type.
 export fn render_param_list(params: List<ParamEntry>) -> string {
     if params.length == 0 { return "()" }
-    "(${list_map(params, (p: ParamEntry) -> p.name).join(", ")})"
+    "(${list_map(params, (p: ParamEntry) -> if vtype_is_unknown(p.vtype) { p.name } else { "${p.name}:${vtype_render_decl(p.vtype)}" }).join(", ")})"
 }
 
 /// Render a Stmt as an S-expression. Mirror to `render_expr` —
@@ -2712,7 +2727,7 @@ export fn render_stmt(store: NodeStore, stmt: Stmt) -> string {
         .SpecBlock(name, body) -> "(spec ${name} ${render_stmt_ids(store, body)})"
         .GivenBlock(name, body) -> "(given ${name} ${render_stmt_ids(store, body)})"
         .ThenBlock(name, cond) -> "(then ${name} ${render_expr_id(store, cond)})"
-        .Select(_) -> "(select ...)"
+        .Select(arms) -> "(select ${render_select_arm_list(store, arms)})"
         .Parallel(body) -> "(parallel ${render_stmt_ids(store, body)})"
         .Module(name, body) -> "(module ${name} ${render_stmt_ids(store, body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
@@ -2767,12 +2782,17 @@ export fn render_expr_ids(store: NodeStore, ids: List<ExprId>) -> string {
     "(${list_map(ids, (id: ExprId) -> render_expr(store, store.exprs.get(id))).join(", ")})"
 }
 
-/// Render a `List<Annotation>` in the source `@name @name2` form.
+/// Render a `List<Annotation>` in the source `@name @name2(args)` form.
+/// Args render faithfully — the historic name-only form made
+/// `stmt_content_hash` blind to annotation arguments (`@expand(a)` and
+/// `@expand(b)` hashed equal), which no content-hash consumer can tolerate.
 export fn render_annotation_list(store: NodeStore, annots: List<Annotation>) -> string {
     mut out = ""
     mut i = 0
     while i < annots.length {
-        out = out + "@${annots[i].name} "
+        let a = annots[i]
+        let args_part = if a.arg_ids.length == 0 { "" } else { render_expr_ids(store, a.arg_ids) }
+        out = out + "@${a.name}${args_part} "
         i = i + 1
     }
     out

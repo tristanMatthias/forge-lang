@@ -1048,7 +1048,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             // is_pattern_start (`.`-only) branch.
             let nm = capval_tok_text(env.get(args[0]))
             match env.get(args[2]) {
-                .Nil -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1])))))
+                .Nil -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1]), ValueType.Int))))
                 _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
             }
         }
@@ -1132,7 +1132,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkDestructure" if args.length == 2 -> {
             // `let (a, b, …) = init` — the ident list becomes ParamEntry bindings
             // (names only, per parse_destructure_names' Unknown-vtype rows).
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(param_entries_from_toks(env.get(args[0])), capval_to_expr(st, env.get(args[1])))))
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(param_entries_from_toks(env.get(args[0]), ValueType.Unknown), capval_to_expr(st, env.get(args[1])))))
         }
         "MkDefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
         "MkErrdefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
@@ -1227,7 +1227,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
                 _ -> {}
             }
             if capval_present(env.get(args[0])) { path = "@" + path }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2])))))
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2]), ValueType.Unknown))))
         }
         "MkModule" if args.length == 1 -> {
             // `mod name` — a module STUB. The surface form carries no inline body
@@ -1570,13 +1570,19 @@ fn capval_to_var_list(v: CapVal) -> List<Variant> {
 /// load-bearing for render/equivalence (render_param_list renders names
 /// only), so the vtype is `Unknown`, exactly as the hand parser's
 /// unannotated binding.
-fn param_entries_from_toks(v: CapVal) -> List<ParamEntry> {
+/// `vt` is the caller's parser-default: the hand parser records `Int` for
+/// unannotated VARIANT-PATTERN bindings (they ride `parse_param_list`, whose
+/// no-annotation default is Int) but `Unknown` for destructure/`use` names
+/// (parse_destructure_names' "no type was written" rows). The differential
+/// oracle compares full ASTs through the faithful render, so the DSL must
+/// reproduce each site's exact default, not a single one.
+fn param_entries_from_toks(v: CapVal, vt: ValueType) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     match v {
         .Toks(ts) -> {
-            for t in ts { out.push(ParamEntry { name: t.text, vtype: ValueType.Unknown }) }
+            for t in ts { out.push(ParamEntry { name: t.text, vtype: vt }) }
         }
-        .Tok(t) -> out.push(ParamEntry { name: t.text, vtype: ValueType.Unknown })
+        .Tok(t) -> out.push(ParamEntry { name: t.text, vtype: vt })
         _ -> {}
     }
     out

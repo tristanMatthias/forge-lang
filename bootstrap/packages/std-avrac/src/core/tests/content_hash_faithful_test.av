@@ -1,0 +1,79 @@
+// WHY: regression pins for three render-faithfulness holes that made the
+// ps3t.3.5 content hashes BLIND to real structure (found while building the
+// ps3t.8.5 interface fingerprints, which compose these hashes and cannot
+// tolerate false-equal answers):
+//   1. `Stmt.Select` rendered as the stub "(select ...)" — two selects with
+//      entirely different arms/bodies hashed EQUAL.
+//   2. `render_param_list` rendered names only — `(x: int) -> x` and
+//      `(x: string) -> x` hashed EQUAL (a lambda param's declared type was
+//      invisible).
+//   3. `render_annotation_list` rendered names only — `@expand(a)` and
+//      `@expand(b)` hashed EQUAL (annotation args were invisible).
+// Each `then` asserts the DISTINCTNESS the fix restored, plus the invariance
+// that must survive it (same content, different spans → still equal).
+
+use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
+use @std.avrac.core.{stmt_content_hash, expr_content_hash}
+
+/// Content hash of the first top-level stmt of a parsed program.
+fn first_stmt_hash(source: string) -> int {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return 0 }
+    stmt_content_hash(r.store, r.ids![0])
+}
+
+/// Content hash of a parsed expression.
+fn expr_hash(source: string) -> int {
+    let probe = parse_expression_native_probe(source)
+    if probe.had_error != 0 { return 0 }
+    expr_content_hash(probe.store, probe.root)
+}
+
+spec "content hash faithfulness: select arms, param types, annotation args (ps3t.8.5)" {
+    given "select statements differing only inside their arms" {
+        then "different arm bodies hash apart (the '(select ...)' stub collapsed these)" {
+            let a = first_stmt_hash("fn f() { select { x <- ch1 -> { one() } } }")
+            let b = first_stmt_hash("fn f() { select { x <- ch1 -> { two() } } }")
+            a != 0 && b != 0 && a != b
+        }
+        then "different channel exprs hash apart" {
+            let a = first_stmt_hash("fn f() { select { x <- ch1 -> { go() } } }")
+            let b = first_stmt_hash("fn f() { select { x <- ch2 -> { go() } } }")
+            a != 0 && b != 0 && a != b
+        }
+        then "identical selects hash equal" {
+            let a = first_stmt_hash("fn f() { select { x <- ch1 -> { go() } } }")
+            let b = first_stmt_hash("fn f() { select { x <- ch1 -> { go() } } }")
+            a != 0 && a == b
+        }
+    }
+    given "lambdas differing only in a declared param type" {
+        then "(x: int) -> x and (x: string) -> x hash apart" {
+            let a = expr_hash("(x: int) -> x")
+            let b = expr_hash("(x: string) -> x")
+            a != 0 && b != 0 && a != b
+        }
+        then "an unannotated lambda param still renders bare (faithful to source)" {
+            let a = expr_hash("(x) -> x")
+            let b = expr_hash("(x) -> x")
+            a != 0 && a == b
+        }
+    }
+    given "annotated declarations differing only in annotation args" {
+        then "@derive(walker) and @derive(marshal) hash apart" {
+            let a = first_stmt_hash("@derive(walker) fn f() { }")
+            let b = first_stmt_hash("@derive(marshal) fn f() { }")
+            a != 0 && b != 0 && a != b
+        }
+        then "arg count participates (@config(a) vs @config(a, b))" {
+            let a = first_stmt_hash("@config(a) fn f() { }")
+            let b = first_stmt_hash("@config(a, b) fn f() { }")
+            a != 0 && b != 0 && a != b
+        }
+        then "identical annotated decls hash equal" {
+            let a = first_stmt_hash("@derive(walker) fn f() { }")
+            let b = first_stmt_hash("@derive(walker) fn f() { }")
+            a != 0 && a == b
+        }
+    }
+}
