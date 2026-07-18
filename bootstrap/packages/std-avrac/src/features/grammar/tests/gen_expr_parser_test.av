@@ -1,0 +1,268 @@
+// ps3t.6.5.11 — the GENERATED STATIC PARSER contract, proven for the expression
+// family. Where executor.av INTERPRETS a Grammar value as recursive descent,
+// this is the STATIC form: one straight-line `fn parse_<rule>(st: PState) ->
+// CapVal` per rule (Nystrom's grammar→RD correspondence), driving the real
+// PState primitives + the existing build fns (fold_binary_expr / unary_expr /
+// fold_logical_expr / fold_postfix_expr) directly — NO interpreter, NO Grammar
+// value at runtime. This is EXACTLY the shape emit.av must produce (the next
+// slice wires emit to generate this text); here it's the hand-written GOLDEN
+// REFERENCE that proves the target compiles and parses byte-equivalent to the
+// hand-written parser.
+//
+// It uses ZERO new runtime primitives — only the executor vocabulary now
+// exported for this purpose (ps3t.6.5.11 GAP-1): CapVal, PState, new_pstate,
+// capval_to_expr, literal_node, run_hand, and the fold/unary build fns. A
+// repetition accumulates into a local `mut` list (bypassing CapEnv/bind), then
+// wraps it in CapVal.Toks/Nodes for the fold fn — behaviorally identical to the
+// interpreter's append_* + apply_build path.
+//
+// Oracle: run the generated parser AND the hand parser over the §2 expression
+// corpus and compare the canonical dump_expr trees (the same acceptance path
+// parser_equivalence_test.av's interpreter already passes).
+use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, dump_expr}
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{Expr, ExprId, NodeStore}
+
+// ── The generated static parser (one fn per rule) ──
+
+fn parse_expression(st: PState) -> CapVal { parse_logic_or(st) }
+
+fn parse_logic_or(st: PState) -> CapVal {
+    let l = parse_logic_and(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "||" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_logic_and(st)))
+    }
+    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_logic_and(st: PState) -> CapVal {
+    let l = parse_equality(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "&&" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_equality(st)))
+    }
+    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_equality(st: PState) -> CapVal {
+    let l = parse_bitor(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "!=" || st.cur().text == "==" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_bitor(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_bitor(st: PState) -> CapVal {
+    let l = parse_bitxor(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "|" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_bitxor(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_bitxor(st: PState) -> CapVal {
+    let l = parse_bitand(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "^" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_bitand(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_bitand(st: PState) -> CapVal {
+    let l = parse_comparison(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "&" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_comparison(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_comparison(st: PState) -> CapVal {
+    let l = parse_shift(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "<" || st.cur().text == "<=" || st.cur().text == ">" || st.cur().text == ">=" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_shift(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_shift(st: PState) -> CapVal {
+    let l = parse_term(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "<<" || st.cur().text == ">>" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_term(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_term(st: PState) -> CapVal {
+    let l = parse_factor(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "+" || st.cur().text == "-" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_factor(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_factor(st: PState) -> CapVal {
+    let l = parse_unary(st)
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().text == "*" || st.cur().text == "/" || st.cur().text == "%" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_unary(st)))
+    }
+    CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+}
+
+fn parse_unary(st: PState) -> CapVal {
+    if st.cur().text == "!" || st.cur().text == "-" || st.cur().text == "~" {
+        let op = CapVal.Tok(st.advance())
+        let operand = parse_unary(st)
+        return CapVal.Node(unary_expr(st, op, operand))
+    }
+    parse_postfix(st)
+}
+
+fn parse_postfix(st: PState) -> CapVal {
+    let base = parse_primary(st)
+    mut suffixes: List<ExprId> = []
+    while st.cur().text == "." || st.cur().text == "[" || st.cur().text == "(" {
+        suffixes.push(capval_to_expr(st, parse_suffix(st)))
+    }
+    CapVal.Node(fold_postfix_expr(st, base, CapVal.Nodes(suffixes)))
+}
+
+// Each suffix is a PARTIAL node with a sentinel receiver (missing_node); the
+// postfix fold rebinds the receiver to the accumulated base (left-assoc).
+fn parse_suffix(st: PState) -> CapVal {
+    if st.cur().text == "." {
+        let _ = st.advance()
+        let name = st.advance()
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), name.text)))
+    }
+    if st.cur().text == "[" {
+        let _ = st.advance()
+        let idx = parse_expression(st)
+        if st.cur().text == "]" { let _ = st.advance() }
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, idx))))
+    }
+    // "(" ( a:expression ( "," a:expression )* )? ")"
+    let _ = st.advance()
+    mut args: List<ExprId> = []
+    if st.cur().text != ")" {
+        args.push(capval_to_expr(st, parse_expression(st)))
+        while st.cur().text == "," {
+            let _ = st.advance()
+            args.push(capval_to_expr(st, parse_expression(st)))
+        }
+    }
+    if st.cur().text == ")" { let _ = st.advance() }
+    CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), args)))
+}
+
+fn parse_primary(st: PState) -> CapVal {
+    if st.cur().kind == "NUMBER" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().kind == "STRING" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().text == "true" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().text == "false" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().kind == "IDENT" { return CapVal.Node(run_hand("ident", st)) }
+    if st.cur().text == "(" {
+        let _ = st.advance()
+        let e = parse_expression(st)
+        if st.cur().text == ")" { let _ = st.advance() } else {
+            st.report("expected ')'")
+            st.synchronize(")")
+        }
+        return CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, e))))
+    }
+    CapVal.Node(st.error_node("expected an expression"))
+}
+
+// ── The differential oracle ──
+
+// The generated parser's tree for `src`: build a PState (the run_grammar_expr
+// boundary, minus the interpreter), run the start rule, coerce its CapVal to the
+// root ExprId (exactly run_grammar_expr_src's `capval_to_expr(st, …)`), dump it.
+fn gen_tree(src: string) -> string {
+    let st = new_pstate(src)
+    let root = capval_to_expr(st, parse_expression(st))
+    dump_expr(st.store, root)
+}
+
+fn hand_tree(src: string) -> string {
+    let probe = parse_expression_native_probe(src)
+    if probe.had_error != 0 { return "<parse error>" }
+    dump_expr(probe.store, probe.root)
+}
+
+fn agree(src: string) -> bool {
+    let g = gen_tree(src)
+    let h = hand_tree(src)
+    g == h && !g.contains("<unmodelled-variant>") && !h.contains("<unmodelled-variant>")
+}
+
+spec "grammar-DSL GENERATED static parser == hand-written parser (expression family, ps3t.6.5.11)" {
+    given "arithmetic + precedence" {
+        then "literals, flat operators, and mixed precedence agree" {
+            agree("42") && agree("1 + 2") && agree("7 - 3") && agree("6 * 7") && agree("8 / 2") &&
+            agree("1 + 2 * 3") && agree("1 * 2 + 3 * 4") && agree("10 - 2 * 3 + 1")
+        }
+        then "left-associativity agrees" {
+            agree("1 - 2 - 3") && agree("1 + 2 + 3 + 4") && agree("8 / 4 / 2")
+        }
+    }
+    given "grouping + unary" {
+        then "parentheses produce matching Grouping nodes (losslessly)" {
+            agree("(1 + 2) * 3") && agree("2 * (3 + 4)") && agree("((1))") && agree("(1)")
+        }
+        then "prefix unary agrees (incl. bitwise-not ~)" {
+            agree("-5") && agree("-2 + 3") && agree("!0") && agree("- -5") &&
+            agree("~5") && agree("~a + 2") && agree("~~3") && agree("!~-1")
+        }
+    }
+    given "the full binary chain (logical / bitwise / shift / comparison / modulo)" {
+        then "every stratification level agrees" {
+            agree("1 && 2 || 3") && agree("1 || 2 && 3") && agree("0 && 1 || 2 && 3") &&
+            agree("5 | 2") && agree("1 | 2 & 3") && agree("1 ^ 2 | 3 & 4") &&
+            agree("1 << 4") && agree("256 >> 2") && agree("1 < 2 << 3") &&
+            agree("7 % 3") && agree("2 * 3 % 4") &&
+            agree("1 | 2 ^ 3 & 4 == 5 < 6 << 7 + 8 * 9 % 2")
+        }
+    }
+    given "identifiers (@hand(ident)), strings, and postfix field/index/call" {
+        then "the escape hatch, literals, and postfix chains agree" {
+            agree("x") && agree("foo + bar") && agree("a * b + c") &&
+            agree("\"hello\"") && agree("\"a\" == \"b\"") && agree("x + \"lit\"") &&
+            agree("a.b") && agree("a[0]") && agree("a.b.c") && agree("a[0][1]") &&
+            agree("a.b[0]") && agree("a[0].b") && agree("-a.b")
+        }
+        then "function calls (zero / one / many args) and mixed chains agree" {
+            agree("f()") && agree("f(1)") && agree("f(1, 2, 3)") && agree("g(a + b, c * d)") &&
+            agree("f(1)(2)") && agree("f(a)[0]") && agree("f(g(x), h(y, z))") &&
+            agree("a.b(c)") && agree("a.b(c).d(e)") && agree("obj.method(1, 2)")
+        }
+    }
+}

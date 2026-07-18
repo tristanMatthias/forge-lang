@@ -25,7 +25,10 @@ use parse.{parser_new_with_file}
 /// The value a grammar construct yields: a matched token, a built node,
 /// or (inside a `*`/`+`) a parallel list of either. `Nil` is the empty
 /// value of a repetition/optional that produced nothing.
-enum CapVal {
+///
+/// EXPORTED (ps3t.6.5.11): the generated static parser fns (the emit target)
+/// live in their own module and speak this same capture vocabulary.
+export enum CapVal {
     Nil
     Tok(t: Token)
     Node(id: ExprId)
@@ -317,7 +320,8 @@ export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags
 // over that source (the token list alone can't reconstruct a raw body /
 // char-level lookahead). Empty on the caller-provided-token path (the
 // eventual swap-in uses a real Parser for @hand, not this interpreter).
-type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool }
+// EXPORTED (ps3t.6.5.11): the generated static parser drives a PState directly.
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool }
 
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
@@ -432,6 +436,14 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 
 /// Run `grammar` over `src`, starting at the first rule (the start
 /// symbol). Returns the store + root + diagnostics.
+/// Build a fresh PState over `src` (real lexer + fresh store), the setup a
+/// GENERATED static parser (ps3t.6.5.11) runs against: `let st = new_pstate(src)`
+/// then `parse_<start>(st)`, then `capval_to_expr(st, …)` for the root — exactly
+/// the `run_grammar_expr_src` boundary, minus the interpreter.
+export fn new_pstate(src: string) -> PState {
+    PState { toks: lex_real(src), pos: 0, store: new_node_store(build_line_index(src)), src, diags: [], had_error: false }
+}
+
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
     run_grammar_expr_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
@@ -875,7 +887,7 @@ fn run_hand_expr(name: string, st: PState) -> ExprId {
     }
 }
 
-fn run_hand(name: string, st: PState) -> ExprId {
+export fn run_hand(name: string, st: PState) -> ExprId {
     if name == "ident" {
         if st.cur().kind == "IDENT" {
             let t = st.advance()
@@ -942,7 +954,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
 
 /// Coerce a capture value to an Expr node: a node passes through; a bare
 /// token becomes a literal; anything else is an error node.
-fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
+export fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
     match v {
         .Node(id) -> id
         .Tok(t) -> literal_node(st, t)
@@ -950,7 +962,7 @@ fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
     }
 }
 
-fn literal_node(st: PState, t: Token) -> ExprId {
+export fn literal_node(st: PState, t: Token) -> ExprId {
     if t.kind == "NUMBER" { return st.store.exprs.add_leaf(Expr.Number(t.text)) }
     if t.kind == "STRING" { return st.store.exprs.add_leaf(Expr.String(t.text)) }
     if t.kind == "BOOL" { return st.store.exprs.add_leaf(Expr.Bool(t.text)) }
@@ -1651,7 +1663,7 @@ fn param_entries_from_toks(v: CapVal) -> List<ParamEntry> {
 /// postfix fold live in the grammar (docs/…L4_DERIVE_FRAMEWORK_DESIGN
 /// §2.5). Calls (arg lists) + method dispatch are the harder remaining
 /// case (list-valued builds).
-fn fold_postfix_expr(st: PState, basecap: CapVal, suffixescap: CapVal) -> ExprId {
+export fn fold_postfix_expr(st: PState, basecap: CapVal, suffixescap: CapVal) -> ExprId {
     mut acc = capval_to_expr(st, basecap)
     for s in capval_nodes(suffixescap) {
         acc = rebind_receiver(st, acc, s)
@@ -1672,7 +1684,7 @@ fn rebind_receiver(st: PState, recv: ExprId, suffix: ExprId) -> ExprId {
 /// Node, no args Nil. (The `first ( "," rest )*` comma-list, with
 /// scalar→list promotion in append_node, produces Nodes for ≥2 and a
 /// scalar Node for exactly 1.)
-fn capval_to_node_list(v: CapVal) -> List<ExprId> {
+export fn capval_to_node_list(v: CapVal) -> List<ExprId> {
     match v {
         .Nodes(ns) -> ns
         .Node(id) -> [id]
@@ -1682,7 +1694,7 @@ fn capval_to_node_list(v: CapVal) -> List<ExprId> {
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
 /// (the `&&`/`||` short-circuit ops). Sibling of fold_binary.
-fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+export fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
     mut acc = capval_to_expr(st, lcap)
     let ops = capval_toks(opcap)
     let rs = capval_nodes(rcap)
@@ -1702,7 +1714,7 @@ fn logicop_of(sym: string) -> LogicOp {
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Binary` chain.
 /// With no operators, `l` passes through unchanged.
-fn fold_binary_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+export fn fold_binary_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
     mut acc = capval_to_expr(st, lcap)
     let ops = capval_toks(opcap)
     let rs = capval_nodes(rcap)
@@ -1715,27 +1727,27 @@ fn fold_binary_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> Ex
     acc
 }
 
-fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
+export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
     let operand = capval_to_expr(st, opndcap)
     let sym = capval_tok_text(opcap)
     st.store.exprs.add_leaf(Expr.Unary(unop_of(sym), operand))
 }
 
-fn capval_toks(v: CapVal) -> List<Token> {
+export fn capval_toks(v: CapVal) -> List<Token> {
     match v {
         .Toks(ts) -> ts
         _ -> []
     }
 }
 
-fn capval_nodes(v: CapVal) -> List<ExprId> {
+export fn capval_nodes(v: CapVal) -> List<ExprId> {
     match v {
         .Nodes(ns) -> ns
         _ -> []
     }
 }
 
-fn capval_tok_text(v: CapVal) -> string {
+export fn capval_tok_text(v: CapVal) -> string {
     match v {
         .Tok(t) -> t.text
         _ -> ""
