@@ -1,0 +1,93 @@
+// WHY: acceptance spec for the Step-A coarse pass driver (ps3t.8.3 / design
+// doc §4, §11 P0) — the seam where the compiler's OWN front pipeline runs
+// behind the L6 engine. The diff-test oracle already pins that routing
+// through the engine changes no emitted IR; what it CANNOT see is the work
+// profile, so these specs assert it with real parsed programs:
+//   - the dependency edges recorded by `pass_compute` (a TYPECK fetch pulls
+//     RESOLVE and FOLD exactly once each; a FOLD fetch pulls RESOLVE on its
+//     own, never TYPECK);
+//   - memoization across the whole pass chain;
+//   - the coarse fingerprint contract of `pass_set_src` (equal fingerprint
+//     invalidates nothing, a new one recomputes every pass — and the answers
+//     genuinely track the NEW program, not a stale memo);
+//   - Step-A diagnostic routing (type errors ride the pass result's own bag,
+//     exactly as the pre-engine drivers gated);
+//   - the wrong-variant wiring guard surfacing as an F9999 ICE on the
+//     answer's diags rather than a swallow.
+
+use @std.avrac.query.{Db, PassValue, pass_compute, pass_db_new, pass_set_src}
+use @std.avrac.query.{pass_fetch_resolved, pass_fetch_folded, pass_fetch_typechecked}
+use @std.avrac.query.{PASS_SRC, PASS_RESOLVE, PASS_FOLD, PASS_TYPECK, db_new, qk}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{StmtId, content_id_for}
+use @std.avrac.diagnostics.{bag_new, bag_has_errors, diag_code_str}
+use @std.avrac.features.comptime.{ComptimeResult}
+
+const SRC_OK = "fn main() -> int {\n    let x = 40 + 2\n    x\n}\n"
+const SRC_BAD = "fn main() -> int {\n    let s: string = 1\n    0\n}\n"
+
+/// A pass db over a freshly parsed program — the exact seeding shape the
+/// CLI driver uses (fingerprint = the source's content identity).
+fn db_for(src: string) -> Db<PassValue> {
+    let parsed = parse_program_source(src)
+    pass_db_new(parsed.ids ?? [], parsed.store, content_id_for(src))
+}
+
+spec "coarse pass queries drive the front pipeline through the L6 engine (ps3t.8.3 Step A)" {
+    then "a cold TYPECK fetch computes each pass family exactly once via recorded dep edges" {
+        let db = db_for(SRC_OK)
+        let tc = pass_fetch_typechecked(db)
+        tc != null && db.computes_of(PASS_RESOLVE) == 1 && db.computes_of(PASS_FOLD) == 1 && db.computes_of(PASS_TYPECK) == 1
+    }
+    then "a refetch in the same revision is a memo hit across the whole chain" {
+        let db = db_for(SRC_OK)
+        let _ = pass_fetch_typechecked(db)
+        let before = db.total_computes()
+        let _ = pass_fetch_typechecked(db)
+        let _ = pass_fetch_folded(db)
+        let _ = pass_fetch_resolved(db)
+        db.total_computes() == before
+    }
+    then "fetching FOLD alone pulls RESOLVE through its dependency edge and never runs TYPECK" {
+        let db = db_for(SRC_OK)
+        let folded = pass_fetch_folded(db)
+        folded != null && db.computes_of(PASS_RESOLVE) == 1 && db.computes_of(PASS_TYPECK) == 0
+    }
+    then "a clean program typechecks clean through the engine" {
+        let tc = pass_fetch_typechecked(db_for(SRC_OK))
+        tc != null && tc!.had_error == 0 && !bag_has_errors(tc!.bag)
+    }
+    then "type errors ride the pass result's own bag (Step-A gating unchanged)" {
+        let tc = pass_fetch_typechecked(db_for(SRC_BAD))
+        tc != null && tc!.had_error == 1 && bag_has_errors(tc!.bag)
+    }
+    then "re-pinning an identical source (equal fingerprint) invalidates nothing" {
+        let db = db_for(SRC_OK)
+        let _ = pass_fetch_typechecked(db)
+        let parsed = parse_program_source(SRC_OK)
+        pass_set_src(db, parsed.ids ?? [], parsed.store, content_id_for(SRC_OK))
+        let _ = pass_fetch_typechecked(db)
+        db.computes_of(PASS_TYPECK) == 1
+    }
+    then "an edited source recomputes the coarse chain and the answer tracks the NEW program" {
+        let db = db_for(SRC_OK)
+        let first = pass_fetch_typechecked(db)
+        let clean = first != null && first!.had_error == 0
+        let parsed = parse_program_source(SRC_BAD)
+        pass_set_src(db, parsed.ids ?? [], parsed.store, content_id_for(SRC_BAD))
+        let second = pass_fetch_typechecked(db)
+        let dirty = second != null && second!.had_error == 1
+        clean && dirty && db.computes_of(PASS_TYPECK) == 2
+    }
+    then "a wrong upstream variant surfaces as an F9999 ICE on the answer, never a swallow" {
+        // Deliberately mis-seed the SRC cell with a FOLD-shaped value — the
+        // wiring bug `pass_value_ice` exists to catch.
+        let mut db: Db<PassValue> = db_new(pass_compute)
+        let empty: List<StmtId> = []
+        db.set_input(qk(PASS_SRC, 0), PassValue.Folded(ComptimeResult { stmts: empty, bag: bag_new() }), content_id_for("mis-seeded"))
+        match db.fetch(qk(PASS_RESOLVE, 0)) {
+            .Ok(f) -> f.diags.length == 1 && diag_code_str(f.diags[0].code) == "F9999"
+            .Err(_) -> false
+        }
+    }
+}

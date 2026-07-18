@@ -129,8 +129,17 @@ fn src_fingerprint(v: PassValue) -> int {
 /// passes its entry-source content id).
 export fn pass_db_new(stmts: List<StmtId>, store: NodeStore, fingerprint: int) -> Db<PassValue> {
     let mut db: Db<PassValue> = db_new(pass_compute)
-    db.set_input(qk(PASS_SRC, 0), PassValue.Src(stmts, store, fingerprint), coarse_hash(fingerprint, PASS_SRC))
+    pass_set_src(db, stmts, store, fingerprint)
     db
+}
+
+/// (Re-)pin the SRC input cell — the one write drivers perform. At coarse
+/// granularity an edit arrives as a whole new program keyed by its content
+/// fingerprint: an equal fingerprint hashes equal (nothing invalidates), a
+/// new one turns every downstream pass red. Centralized so the seeding and
+/// editing paths cannot drift on the hash convention.
+export fn pass_set_src(db: Db<PassValue>, stmts: List<StmtId>, store: NodeStore, fingerprint: int) {
+    db.set_input(qk(PASS_SRC, 0), PassValue.Src(stmts, store, fingerprint), coarse_hash(fingerprint, PASS_SRC))
 }
 
 /// Fetch the coarse RESOLVE query. Diagnostics live in `named.bag` (Step A);
