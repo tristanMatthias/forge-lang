@@ -137,16 +137,16 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
     if ctx_args == null {
         return qs_fail("${qs_expected()} — first parameter is `${vt_debug(params[0].vtype)}`, not `QueryCtx<string>`")
     }
-    if ctx_args!.length != 1 || !vt_is_string(ctx_args![0]) {
+    if ctx_args!.length != 1 || !(ctx_args![0] is .Str) {
         return qs_fail("@query value type must be `string` in v1 — the generated adapter hashes with `content_id_for`, which is string-keyed; wrap the engine by hand (db_new + a custom hash) for other value types")
     }
     // Param 1: int — the engine's argument key.
-    if !vt_is_int(params[1].vtype) {
+    if !(params[1].vtype is .Int) {
         return qs_fail("${qs_expected()} — second parameter is `${vt_debug(params[1].vtype)}`, not `int` (the engine keys queries by `(family, int arg)`)")
     }
     // Return: Result<string, QueryCycle>.
     let ret_args = named_type_args(ret, "Result")
-    if ret_args == null || ret_args!.length != 2 || !vt_is_string(ret_args![0]) || named_type_args(ret_args![1], "QueryCycle") == null {
+    if ret_args == null || ret_args!.length != 2 || !(ret_args![0] is .Str) || named_type_args(ret_args![1], "QueryCycle") == null {
         return qs_fail("${qs_expected()} — return type is `${vt_debug(ret)}`, not `Result<string, QueryCycle>`")
     }
 
@@ -205,20 +205,6 @@ fn named_type_args(vt: ValueType, want: string) -> List<ValueType>? {
         .Struct(n, args, _) -> if type_short_name(n) == want { args } else { null }
         .Enum(n, args, _) -> if type_short_name(n) == want { args } else { null }
         _ -> null
-    }
-}
-
-fn vt_is_string(vt: ValueType) -> bool {
-    match vt {
-        .Str -> true
-        _ -> false
-    }
-}
-
-fn vt_is_int(vt: ValueType) -> bool {
-    match vt {
-        .Int -> true
-        _ -> false
     }
 }
 

@@ -220,6 +220,26 @@ spec "@query family constraints" {
             "fn main() {}\n")
         out.contains("F4013") && out.contains("non-negative")
     }
+    then "several family args are F4013 (exactly one int)" {
+        let out = query_check_out("/tmp/avra_query_surface_multiarg_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "@query(1, 2)\n" +
+            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4013") && out.contains("dense family int")
+    }
+    then "@query on an extern fn is F4013 (only fn declarations)" {
+        let out = query_check_out("/tmp/avra_query_surface_extern_test.av",
+            "@query(1)\n" +
+            "extern fn puts(s: string) -> int\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4013") && out.contains("only to `fn`")
+    }
     then "a non-literal family arg is F4013 (idents don't resolve at expansion)" {
         let out = query_check_out("/tmp/avra_query_surface_identfam_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
