@@ -1,0 +1,51 @@
+// WHY: guards the ps3t.8.3 Step-B env-purity invariant. The per-item typeck
+// query split is sound because every env registry write (the *_register
+// helpers, plus trait_impls/assoc_type_defs/shapes pushes) lives in the
+// COLLECT phase (collect_decls + rewrite_fn_ret_tys + their helpers); the
+// check phase threads forward only the bag and depth-0 bindings, making
+// `check_item` a pure fn of (env, preceding bindings, item). A check-phase
+// registry write would re-couple items ORDER-wise — answers drift only on
+// programs the suite happens not to cover — so the boundary is enforced as a
+// source lint (`diagnose.sh --check-typeck-collect-boundary`). This test pins
+// the lint green on the real tree and mutation-verifies it against planted
+// violations (the negative arms ARE the mutation check).
+//
+// @@fixture-stateful@@ — shells out to the SHARED scripts/diagnose.sh
+// (external state not in the fixture-cache key); opt out of failure caching
+// so a repaired lint re-probes instead of replaying a stale `: FAIL`.
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file}
+
+fn tmpdir(slug: string) -> string {
+    let d = "/tmp/avra_collect_lint_${slug}"
+    let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
+    d
+}
+
+fn lint(dir: string) -> int {
+    avra_shell_exec_status("bash scripts/diagnose.sh --check-typeck-collect-boundary '${dir}' >/dev/null 2>&1")
+}
+
+spec "ps3t.8.3 typeck collect-boundary lint" {
+    then "passes on the real typeck tree — no env-registry write outside the collect phase" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-typeck-collect-boundary >/dev/null 2>&1") == 0
+    }
+    then "catches a check-phase registry registration" {
+        let d = tmpdir("bad_register")
+        let _ = avra_selfhost_write_file("${d}/bad.av",
+            "fn check_sneaky(tc: TC, name: string) -> TC {\n    tc with { fns: fn_type_reg_register(tc.fns, name, tp, params, ret, false) }\n}\n")
+        lint(d) != 0
+    }
+    then "catches a check-phase trait_impls push" {
+        let d = tmpdir("bad_impls")
+        let _ = avra_selfhost_write_file("${d}/bad.av",
+            "fn check_other(tc: TC) -> TC {\n    tc with { trait_impls: list_push_copy(tc.trait_impls, e) }\n}\n")
+        lint(d) != 0
+    }
+    then "does NOT flag registry writes inside the collect phase or reads anywhere" {
+        let d = tmpdir("ok")
+        let _ = avra_selfhost_write_file("${d}/ok.av",
+            "fn collect_decls(tc: TC) -> TC {\n    tc with { fns: fn_type_reg_register(tc.fns, name, tp, params, ret, false) }\n}\nfn check_reader(tc: TC) -> bool {\n    type_implements_trait(tc.trait_impls, tn, trn)\n}\n")
+        lint(d) == 0
+    }
+}

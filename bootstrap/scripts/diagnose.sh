@@ -393,6 +393,15 @@ SEED MANAGEMENT
                          integration seed + compiler sources; bypass with
                          AVRA_FORCE_WINDOW=1. Wired into the pre-push hook
                          and the bootstrap-window CI workflow.
+  --check-typeck-collect-boundary [dir|file]
+                         ps3t.8.3 Step-B env-purity lint. Fail if a typeck
+                         env-registry write (the *_register helpers, or a
+                         trait_impls/assoc_type_defs/shapes push) appears
+                         outside the collect phase (collect_decls /
+                         rewrite_fn_ret_tys) — a check-phase write would
+                         re-couple items order-wise and break the per-item
+                         query split. [dir] defaults to the typeck tree;
+                         the guard test passes a temp dir.
   --check-layout-boundary [dir]
                          ps3t.4.5(d) rep-boundary lint. Fail if codegen maps an
                          under-determined `.Unknown` type straight to an LLVM
@@ -2377,6 +2386,53 @@ mode_clean_cache() {
   ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
 }
 
+# ── ps3t.8.3 typeck collect-boundary lint ──
+# The env-purity guard for the Step-B per-item typeck split. The split's
+# soundness rests on one invariant, established by audit (ps3t.8.3): every
+# typeck env registry — fns/structs/enums/newtypes/union_aliases via the
+# `*_reg(istry)_register` helpers, plus the `trait_impls`/`assoc_type_defs`/
+# `shapes` list fields — is written ONLY during the collect phase
+# (`collect_decls` + `rewrite_fn_ret_tys`). The check phase reads the env and
+# threads forward nothing but the diagnostic bag and depth-0 bindings, which
+# is what makes `check_item` a pure fn of (env, preceding bindings, item).
+# A registry write introduced inside the check phase would silently
+# re-couple items order-wise — answers would drift only on programs the
+# suite happens not to cover — so the boundary is enforced at the source
+# level: any registry-write call/field-push whose enclosing top-level fn is
+# not in the collect-phase allowlist fails the lint.
+#
+# $1 (optional) = typeck dir/file to scan (defaults to the real tree; the
+# guard test points it at a temp dir with a planted violation). `tests/` is
+# excluded — fixtures legitimately embed the anti-pattern as string literals.
+mode_check_typeck_collect_boundary() {
+  local target="${1:-$BOOTSTRAP_DIR/packages/std-avrac/src/typeck}"
+  [ -e "$target" ] || die "check-typeck-collect-boundary: not found: $target"
+  local hits=""
+  while IFS= read -r f; do
+    local h
+    h=$(awk -v file="$f" '
+      /^(export )?fn [A-Za-z_0-9]+\(/ {
+        cur = $0
+        sub(/^export /, "", cur); sub(/^fn /, "", cur); sub(/\(.*/, "", cur)
+      }
+      /(fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register)[[:space:]]*\(/ ||
+      /(trait_impls|assoc_type_defs|shapes):[[:space:]]*list_push_copy[[:space:]]*\(/ {
+        if (cur !~ /^(collect_decls|collect_impl_assoc_types|rewrite_fn_ret_tys|fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register)$/) {
+          printf "%s:%d: [in fn %s] %s\n", file, NR, cur, $0
+        }
+      }
+    ' "$f")
+    [ -n "$h" ] && hits="${hits}${h}
+"
+  done < <(find "$target" -name '*.av' -not -path '*/tests/*')
+  if [ -n "$hits" ]; then
+    err "check-typeck-collect-boundary: typeck env-registry write outside the collect phase — the Step-B per-item split (ps3t.8.3) requires ALL registry writes in collect_decls/rewrite_fn_ret_tys; a check-phase write re-couples items order-wise:"
+    printf '%s' "$hits" >&2
+    exit 1
+  fi
+  ok "check-typeck-collect-boundary: all typeck env-registry writes are confined to the collect phase (check_item stays pure over the env)"
+}
+
 # ── ps3t.4.5(d) layout-boundary lint ──
 # The rep-boundary-fallback guard for the type→layout totality invariant. After
 # d-4 + the total resolve_layout / resolve_layout_sized, the SOLE place an
@@ -2457,6 +2513,7 @@ main() {
     --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
+    --check-typeck-collect-boundary) mode_check_typeck_collect_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
     --slot-exec)          mode_slot_exec "$@" ;;

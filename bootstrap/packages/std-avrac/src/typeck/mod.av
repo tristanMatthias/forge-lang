@@ -1352,10 +1352,40 @@ export type TypeCheckResult = {
     trait_impls: List<TraitImplEntry>,
 }
 
+/// Build the typecheck ENV: everything the check phase reads but never
+/// writes — the collect-phase output the Step-B per-item queries key on
+/// (ps3t.8.3). Runs the id-stamp pre-pass with its leak assertion, then the
+/// declaration collect + ret-type upgrade. The env-purity boundary (no
+/// registry writes past this point) is enforced by `diagnose.sh
+/// --check-typeck-collect-boundary`.
+///
+/// Stamp pre-pass: re-stamp registry ids on every nominal slot whose id=0.
+/// Macro/comptime/monomorphizer-emitted AST nodes carry parser-shape
+/// ValueTypes with id=0 even when the name IS registered; the pre-stamp
+/// closes the gap so vtype_eq's nominal arms hit the id-path. Residual id=0
+/// nominals are type-param placeholders (T, U, S, …) — legitimately
+/// unregistered. `report_stamp_leaks` then asserts the invariant: any id=0
+/// nominal whose name IS in the registry surfaces as an F9999 ICE so a
+/// regression of any nominal-construction site fails deterministically
+/// instead of corrupting codegen silently.
+///
+/// Collect: the single walk is order-sensitive — a Function whose return
+/// type references an enum declared later in the AST registers with the
+/// un-upgraded ValueType.Struct(name) — so a SECOND pass
+/// (`rewrite_fn_ret_tys`) upgrades ret-type residue against the complete
+/// registry. Tracked under forge-crafting-intepreters-dnq4.
+export fn typecheck_env(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TC {
+    let tc0_pre = tc_new(type_reg, macro_origins, store)
+    let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
+    let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
+    let tc_first = collect_decls(tc0, ids)
+    tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
+}
+
 /// Top-level entry: run the type-checker over `stmts`. Three
-/// passes: pre-pass `collect_decls` registers types/fns; main
-/// `check_stmt_ids` walks the AST inferring + checking types;
-/// `annotate_*` writes the inferred types back into the arena's
+/// passes: pre-pass `typecheck_env` (id-stamp + collect) registers
+/// types/fns; main `check_stmt_ids` walks the AST inferring + checking
+/// types; `annotate_*` writes the inferred types back into the arena's
 /// `arg_tys` side-table.
 export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
     avra_ice_phase("typeck")
@@ -1365,36 +1395,7 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // before optimising any one of them.
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
-
-    let tc0_pre = tc_new(type_reg, macro_origins, store)
-    // Re-stamp registry ids on every nominal slot whose id=0.
-    // Macro/comptime/monomorphizer-emitted AST nodes carry
-    // parser-shape ValueTypes with id=0 even when the name IS
-    // registered. The pre-stamp pass closes the gap so vtype_eq's
-    // nominal arms hit the id-path for the common in-registry case
-    // instead of the exact-name fallback. Residual id=0 nominals after
-    // the stamp pass are type-param placeholders (T, U, S, …) —
-    // legitimately id=0 because they aren't registered types.
-    let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
-    // Unconditional invariant assertion: any id=0 nominal whose name
-    // IS in the registry is a stamp-pass leak — codegen would fall
-    // back to slower name lookup AND id-based equality would
-    // mis-compare. Each leak surfaces as an F9999 (ICE) so a
-    // downstream regression of any nominal-construction site (e.g.
-    // resolve_vtype's Trait/Newtype branches, ctor-return synthesis,
-    // a future ValueType variant added without registry plumbing)
-    // fails compilation deterministically instead of corrupting
-    // codegen silently.
-    let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
-    // Pass 1: collect declarations (types, enums, functions). The
-    // single walk is order-sensitive — a Function whose return type
-    // references an enum declared later in the AST will be registered
-    // with the un-upgraded ValueType.Struct(name) instead of the
-    // proper ValueType.Enum(name). Run a SECOND collect pass against
-    // the now-complete registry to upgrade ret-type residue from the
-    // first walk. Tracked under forge-crafting-intepreters-dnq4.
-    let tc_first = collect_decls(tc0, ids)
-    let tc1 = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
+    let tc1 = typecheck_env(ids, type_reg, macro_origins, store)
     let t_collect = avra_uptime_ms()
     // Pass 2: check + annotate in one traversal.
     // check_stmt_ids validates types and accumulates errors in TC.bag.
@@ -1748,26 +1749,38 @@ export fn check_stmt_ids(tc: TC, ids: List<StmtId>) -> TC {
     mut cur = lint_index_loops(tc, ids)
     mut i = 0
     for id in ids {
-        let pos = tc.nodes.stmt_pos(id)
-        avra_ice_at(pos.file, pos.line, pos.col)
-        mut with_pos = cur with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
-        // Row 20 (ps3t.4.5): a NON-TAIL expression-statement lambda's
-        // value is discarded — nothing can thread its param types, so
-        // an un-annotated one is F1006. The TAIL statement is exempt
-        // here: as a fn-body tail it threads from the declared fn-type
-        // return, and as a block value its owner decides (the gated
-        // positions peel block tails via tc_gate_unthreaded_lambda;
-        // fn bodies gate the non-fn-return case in tc_check_fn_body).
-        if i < ids.length - 1 {
-            match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
-                .Expr(e) -> { with_pos = tc_gate_unthreaded_lambda(with_pos, tc.nodes.exprs.get(e)) }
-                _ -> {}
-            }
-        }
-        cur = check_stmt(with_pos, tc.nodes.stmts.get(id))
+        cur = check_item(cur, id, i < ids.length - 1)
         i = i + 1
     }
     cur
+}
+
+/// Check ONE statement of a statement list: position the TC on the item's
+/// span and dispatch to `check_stmt`. This is the per-item seam the L6
+/// engine's Step-B split wraps (ps3t.8.3) — the whole-list walk above is a
+/// plain fold of it. The fold is pure over the env by invariant: every env
+/// registry is written ONLY in the collect phase (collect_decls /
+/// rewrite_fn_ret_tys), so checking item N threads forward nothing but the
+/// bag and depth-0 bindings — enforced by `diagnose.sh
+/// --check-typeck-collect-boundary` (guard: tests/collect_boundary_lint_test.av).
+/// `has_tail` is true when a later sibling exists: a
+/// NON-TAIL expression-statement lambda's value is discarded — nothing can
+/// thread its param types, so an un-annotated one is F1006. The TAIL
+/// statement is exempt: as a fn-body tail it threads from the declared
+/// fn-type return, and as a block value its owner decides (the gated
+/// positions peel block tails via tc_gate_unthreaded_lambda; fn bodies gate
+/// the non-fn-return case in tc_check_fn_body).
+fn check_item(tc: TC, id: StmtId, has_tail: bool) -> TC {
+    let pos = tc.nodes.stmt_pos(id)
+    avra_ice_at(pos.file, pos.line, pos.col)
+    mut with_pos = tc with { current_line: pos.line, current_col: pos.col, current_file: pos.file }
+    if has_tail {
+        match stmt_unwrap(tc.nodes, tc.nodes.stmts.get(id)) {
+            .Expr(e) -> { with_pos = tc_gate_unthreaded_lambda(with_pos, tc.nodes.exprs.get(e)) }
+            _ -> {}
+        }
+    }
+    check_stmt(with_pos, tc.nodes.stmts.get(id))
 }
 
 /// True when `e` is the integer literal 0 (the `mut i = 0` seed).
