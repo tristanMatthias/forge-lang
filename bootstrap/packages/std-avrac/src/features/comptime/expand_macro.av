@@ -51,6 +51,7 @@ use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_repo
 use list_ops.{list_concat, list_contains_str}
 use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
 use features.marshal.{derive_marshal_stmts_for}
+use features.query_surface.{query_surface_stmts_for}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -247,6 +248,18 @@ fn collect_expand_targets(store: NodeStore, ids: List<StmtId>) -> List<ExpandTar
                         macro_name: "derive",
                     })
                 }
+                // Same reasoning for @query: the eval walker owns the
+                // F4013 shape diagnostic, so a malformed site is still
+                // work — collect must not silently drop it.
+                if has_query_annotation(store, node) {
+                    let p = store.stmt_pos(id)
+                    acc = acc.push(ExpandTarget {
+                        source_file: p.file,
+                        source_line: p.line,
+                        source_col: p.col,
+                        macro_name: "query",
+                    })
+                }
             }
         }
     }
@@ -303,7 +316,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
-        if !any_expand_annotation(state.nodes, current) && !any_derive_annotation(state.nodes, current) && comp_macros.length == 0 {
+        if !any_expand_annotation(state.nodes, current) && !any_derive_annotation(state.nodes, current) && !any_query_annotation(state.nodes, current) && comp_macros.length == 0 {
             return ExpandResult { stmts: current, bag, origins }
         }
         if iters > 0 {
@@ -454,6 +467,26 @@ fn has_derive_annotation(store: NodeStore, stmt: Stmt) -> bool {
     find_annotation(store, stmt, "marshal") != null
 }
 
+/// `any_derive_annotation`'s @query sibling — same Module-descent, same
+/// two consumers (fixpoint gate + collect).
+export fn any_query_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
+    for id in ids {
+        let node = store.stmts.get(id)
+        if has_query_annotation(store, node) { return true }
+        match stmt_unwrap(store, node) {
+            .Module(_, body) -> {
+                if any_query_annotation(store, body) { return true }
+            }
+            _ -> {}
+        }
+    }
+    false
+}
+
+fn has_query_annotation(store: NodeStore, stmt: Stmt) -> bool {
+    find_annotation(store, stmt, "query") != null
+}
+
 // ── Walker ──
 
 fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<CompMacroEntry>, in_state: ResolverState, current_module: string, in_seen: List<string>) -> WalkerOut {
@@ -525,7 +558,44 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                 out.push(store.restmt(new_stmt, id))
             }
             _ -> {
-                if has_derive_annotation(store, node) {
+                if has_query_annotation(store, node) {
+                    // @query is NATIVE by construction (the generated
+                    // decls are rendered source, no interpreter round
+                    // trip) and cycle-free (they carry no annotations,
+                    // so the fixpoint converges without a cycle key).
+                    // The seen-set instead guards FAMILY uniqueness: two
+                    // @query sites claiming one dense family int would
+                    // silently share a memo family — wrong answers, no
+                    // symptom — so the collision is an error here, at
+                    // the second site, while the walk can still see it.
+                    let p = store.stmt_pos(id)
+                    let gen = query_surface_stmts_for(store, node, stmt_unwrap(store, node))
+                    let fam_key = "query-family:${string(gen.family)}"
+                    if gen.stmts != null && list_contains_str(seen, fam_key) {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.QueryBadShape,
+                            "duplicate @query family ${string(gen.family)} — another @query fn in this program already claims it; each query needs its own dense family int",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        out.push(store.restmt(strip_query_annotation(store, node), id))
+                    } else if gen.stmts == null {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.QueryBadShape,
+                            gen.error,
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        // Failed @query keeps the DECL but drops the
+                        // annotation — same no-respin contract as a
+                        // failed @derive.
+                        out.push(store.restmt(strip_query_annotation(store, node), id))
+                    } else {
+                        seen = seen.push(fam_key)
+                        mut repl: List<StmtId> = [store.stmts.add_leaf(strip_query_annotation(store, node))]
+                        for g in gen.stmts! { repl.push(g) }
+                        splice_expansion(store, out, id, repl)
+                        current_state = register_and_repopulate(current_state, repl, current_module)
+                    }
+                } else if has_derive_annotation(store, node) {
                     avra_rd_set_current_module(current_module)
                     let p = store.stmt_pos(id)
                     let decl_name = decl_name_of(store, stmt_unwrap(store, node))
@@ -700,21 +770,30 @@ fn alias_canonical_for(state: ResolverState, short: string) -> string {
     ""
 }
 
-/// Strip every `derive` annotation layer from `stmt`, keeping the decl
-/// and any other annotations. Used after a FAILED @derive so the
-/// fixpoint doesn't re-walk the site.
-fn strip_derive_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
+/// Strip every annotation layer whose name is in `names` from `stmt`,
+/// keeping the decl and any other annotations. Used on both the
+/// spliced original (its trigger annotation is consumed) and after a
+/// FAILED expansion (so the fixpoint doesn't re-walk the site).
+fn strip_annotations_named(store: NodeStore, stmt: Stmt, names: List<string>) -> Stmt {
     match stmt {
         .Annotated(annots, inner) -> {
             mut kept: List<Annotation> = []
             for a in annots {
-                if a.name != "derive" && a.name != "marshal" { kept.push(a) }
+                if !list_contains_str(names, a.name) { kept.push(a) }
             }
-            let inner_stripped = strip_derive_annotation(store, store.stmts.get(inner))
+            let inner_stripped = strip_annotations_named(store, store.stmts.get(inner), names)
             if kept.length == 0 { inner_stripped } else { Stmt.Annotated(kept, store.stmts.add_leaf(inner_stripped)) }
         }
         _ -> stmt
     }
+}
+
+fn strip_derive_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
+    strip_annotations_named(store, stmt, ["derive", "marshal"])
+}
+
+fn strip_query_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
+    strip_annotations_named(store, stmt, ["query"])
 }
 
 fn try_derive_all(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, state: ResolverState, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {

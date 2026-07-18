@@ -1,0 +1,109 @@
+// WHY: regression net for the N-way null-mix merge (ps3t.6.6, found by
+// the @query surface's annotation validation): a match/when EXPRESSION
+// arm returning `null` alongside tagged-scalar value arms used to store
+// its raw 0 into the shared result slot while the match reported the
+// value arms' scalar type — a downstream return/binding coercion then
+// boxed BOTH into `Some(v)`, silently turning `null` into `Some(0)`.
+// The fix (codegen/optional_repr.av arm_store_value_mixed +
+// arm_merge_ty_mixed, wired into all three arm walks) boxes value arms
+// at their store and lifts the merged type to `T?`, so the null arm's
+// null-pointer stays `none`. These specs pin every walk: enum-subject
+// match, primitive-subject match, and subjectless `when`.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+spec "match-expr arms mixing null and int merge as int?" {
+    then "a primitive-subject match returns none (not Some(0)) from the null arm" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_prim_test.av",
+            "fn f(x: int) -> int? {\n" +
+            "    match x {\n" +
+            "        1 -> 42\n" +
+            "        _ -> null\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let hit = f(1)\n" +
+            "    let miss = f(2)\n" +
+            "    println(if hit == null { \"hit=null\" } else { \"hit=\" + string(hit!) })\n" +
+            "    println(if miss == null { \"miss=null\" } else { \"miss=\" + string(miss!) })\n" +
+            "}\n")
+        out.contains("hit=42") && out.contains("miss=null")
+    }
+    then "Some(0) from a value arm stays distinct from the null arm's none" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_zero_test.av",
+            "fn f(x: int) -> int? {\n" +
+            "    match x {\n" +
+            "        1 -> 0\n" +
+            "        _ -> null\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let zero = f(1)\n" +
+            "    let miss = f(2)\n" +
+            "    println(if zero == null { \"zero=null\" } else { \"zero=some(\" + string(zero!) + \")\" })\n" +
+            "    println(if miss == null { \"miss=null\" } else { \"miss=some\" })\n" +
+            "}\n")
+        out.contains("zero=some(0)") && out.contains("miss=null")
+    }
+    then "an enum-subject match with a null arm merges as T? too" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_enum_test.av",
+            "enum Shape {\n" +
+            "    Dot\n" +
+            "    Box(w: int)\n" +
+            "}\n" +
+            "\n" +
+            "fn width(s: Shape) -> int? {\n" +
+            "    match s {\n" +
+            "        .Box(w) -> w\n" +
+            "        .Dot -> null\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let b = width(Shape.Box(9))\n" +
+            "    let d = width(Shape.Dot)\n" +
+            "    println(if b == null { \"b=null\" } else { \"b=\" + string(b!) })\n" +
+            "    println(if d == null { \"d=null\" } else { \"d=\" + string(d!) })\n" +
+            "}\n")
+        out.contains("b=9") && out.contains("d=null")
+    }
+}
+
+spec "when-expr arms mixing null and int merge as int?" {
+    then "the else-null when returns none from the miss path" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_when_null_arm_test.av",
+            "fn g(x: int) -> int? {\n" +
+            "    when {\n" +
+            "        x == 1 -> 42\n" +
+            "        else -> null\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = g(1)\n" +
+            "    let b = g(2)\n" +
+            "    println(if a == null { \"a=null\" } else { \"a=\" + string(a!) })\n" +
+            "    println(if b == null { \"b=null\" } else { \"b=\" + string(b!) })\n" +
+            "}\n")
+        out.contains("a=42") && out.contains("b=null")
+    }
+    then "a null-FIRST when still reports the value type (not the null arm's void)" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_when_null_first_test.av",
+            "fn g(x: int) -> int? {\n" +
+            "    when {\n" +
+            "        x == 0 -> null\n" +
+            "        else -> x * 2\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = g(0)\n" +
+            "    let b = g(3)\n" +
+            "    println(if a == null { \"a=null\" } else { \"a=\" + string(a!) })\n" +
+            "    println(if b == null { \"b=null\" } else { \"b=\" + string(b!) })\n" +
+            "}\n")
+        out.contains("a=null") && out.contains("b=6")
+    }
+}

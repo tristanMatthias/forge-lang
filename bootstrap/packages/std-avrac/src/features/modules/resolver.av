@@ -5,6 +5,7 @@
 
 use core.{Stmt, Annotation, NodeStore, SrcPos, ParamEntry, ValueType, find_annotation, stmt_unwrap}
 use features.derive_registry.{derive_capability_import, derive_capability_module}
+use features.query_surface.{query_surface_engine_imports, query_surface_engine_module, query_surface_core_imports, query_surface_core_module}
 use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
@@ -476,6 +477,75 @@ fn name_list_has(xs: List<string>, target: string) -> bool {
     false
 }
 
+/// ps3t.6.6: implicit engine imports for `@query` — the derive-shim
+/// injection's sibling. The generated boilerplate (family/fetch/compute)
+/// references `qk`/`computed`/`QueryKey`/`Computed`/`content_id_for`,
+/// which the user never wrote; when any `@query` annotation is present,
+/// prepend `use` stmts naming exactly those. Unlike derive shims, a
+/// `@query` user often ALREADY imports part of this set for their
+/// hand-written dispatcher (`computed`, `qk`), so the injection is
+/// deduped against the program's top-level imports — the injected set
+/// is only what's missing, keeping the unused-import lint quiet and the
+/// alias table free of same-name double entries.
+fn inject_query_uses(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    if !any_query_annotated(store, ids) { return ids }
+    let existing = collect_top_level_imports(store, ids)
+    mut prepend: List<StmtId> = []
+    push_missing_use(prepend, store, query_surface_engine_module(), query_surface_engine_imports(), existing)
+    push_missing_use(prepend, store, query_surface_core_module(), query_surface_core_imports(), existing)
+    if prepend.length == 0 { return ids }
+    for id in ids { prepend.push(id) }
+    prepend
+}
+
+/// Append one `use module.{names − existing}` to `out` (nothing when
+/// every name is already imported). Lists are heap refs — the local
+/// `mut` rebind makes the append visible to the caller (the
+/// `splice_expansion` idiom).
+fn push_missing_use(out: List<StmtId>, store: NodeStore, module: string, wanted: List<string>, existing: List<string>) {
+    mut acc = out
+    mut entries: List<ParamEntry> = []
+    for n in wanted {
+        if !name_list_has(existing, n) {
+            entries.push(ParamEntry { name: n, vtype: ValueType.Unknown, ty_id: none })
+        }
+    }
+    if entries.length > 0 {
+        acc.push(store.stmts.add_leaf(Stmt.Use(module, entries)))
+    }
+}
+
+/// Every name the program's top-level `use` stmts already import.
+fn collect_top_level_imports(store: NodeStore, ids: List<StmtId>) -> List<string> {
+    mut out: List<string> = []
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Use(_, names) -> {
+                for n in names {
+                    if !name_list_has(out, n.name) { out.push(n.name) }
+                }
+            }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// Any `@query` annotation anywhere in the program (Module-descent).
+fn any_query_annotated(store: NodeStore, ids: List<StmtId>) -> bool {
+    for id in ids {
+        let node = store.stmts.get(id)
+        if find_annotation(store, node, "query") != null { return true }
+        match stmt_unwrap(store, node) {
+            .Module(_, body) -> {
+                if any_query_annotated(store, body) { return true }
+            }
+            _ -> {}
+        }
+    }
+    false
+}
+
 export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<string>, store: NodeStore) -> ModListResult {
     // B-final: the whole resolver is arena-id-native end to end — the
     // desugared program arrives as ids, every internal walk (including the
@@ -484,7 +554,8 @@ export fn resolve_module_files(ids: List<StmtId>, dir: string, loaded: List<stri
     // remains on this path.
     let empty_stack: List<string> = []
     let with_derive = inject_derive_shim_uses(ids, store)
-    let inner = resolve_module_files_inner(with_derive, dir, loaded, empty_stack, store)
+    let with_query = inject_query_uses(with_derive, store)
+    let inner = resolve_module_files_inner(with_query, dir, loaded, empty_stack, store)
     if inner.had_error { return inner }
     let split = hoist_package_modules(store, inner.stmts)
     // Dedup hoisted package wrappers by qualified name. Without this,
