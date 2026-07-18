@@ -62,6 +62,20 @@ spec "type_structure_fingerprints: deterministic, cycle-safe, Merkle (sh48)" {
                 fp_in(a, "Wrap") == fp_in(b, "Wrap") &&
                 fp_in(a, "Lone") == fp_in(b, "Lone")
         }
+        then "REGISTRATION ORDER does not move any fingerprint (SCC membership, FQN order, and child digests are order-invariant)" {
+            let a = graph_registry(ValueType.Int)
+            // Same graph, reversed registration: bystander first, consumer
+            // next, then the recursive pair in the opposite order.
+            let b = type_registry_new()
+            let _ = reg_struct(b, "Lone", [field("q", ValueType.Int)])
+            let _ = reg_struct(b, "Wrap", [field("inner", struct_ref("SNode"))])
+            let _ = reg_struct(b, "ENode", [field("s", struct_ref("SNode"))])
+            let _ = reg_struct(b, "SNode", [field("e", struct_ref("ENode")), field("payload", ValueType.Int)])
+            fp_in(a, "SNode") == fp_in(b, "SNode") &&
+                fp_in(a, "ENode") == fp_in(b, "ENode") &&
+                fp_in(a, "Wrap") == fp_in(b, "Wrap") &&
+                fp_in(a, "Lone") == fp_in(b, "Lone")
+        }
     }
     given "a mutually-recursive pair (SNode <-> ENode)" {
         then "fingerprinting terminates and members of the cycle hash apart" {

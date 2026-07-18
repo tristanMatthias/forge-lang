@@ -41,9 +41,11 @@ spec "content hash faithfulness: select arms, param types, annotation args (ps3t
             let b = first_stmt_hash("fn f() { select { x <- ch2 -> { go() } } }")
             a != 0 && b != 0 && a != b
         }
-        then "identical selects hash equal" {
+        then "identical selects hash equal ACROSS different spans (span-exclusion)" {
             let a = first_stmt_hash("fn f() { select { x <- ch1 -> { go() } } }")
-            let b = first_stmt_hash("fn f() { select { x <- ch1 -> { go() } } }")
+            let b = first_stmt_hash("// shifted
+
+fn f() {  select { x <- ch1 -> { go() } }  }")
             a != 0 && a == b
         }
     }
@@ -53,9 +55,9 @@ spec "content hash faithfulness: select arms, param types, annotation args (ps3t
             let b = expr_hash("(x: string) -> x")
             a != 0 && b != 0 && a != b
         }
-        then "an unannotated lambda param still renders bare (faithful to source)" {
+        then "an unannotated lambda param still renders bare (faithful to source, span-free)" {
             let a = expr_hash("(x) -> x")
-            let b = expr_hash("(x) -> x")
+            let b = expr_hash("  (x) ->  x")
             a != 0 && a == b
         }
     }
@@ -70,9 +72,10 @@ spec "content hash faithfulness: select arms, param types, annotation args (ps3t
             let b = first_stmt_hash("@config(a, b) fn f() { }")
             a != 0 && b != 0 && a != b
         }
-        then "identical annotated decls hash equal" {
+        then "identical annotated decls hash equal ACROSS different spans" {
             let a = first_stmt_hash("@derive(walker) fn f() { }")
-            let b = first_stmt_hash("@derive(walker) fn f() { }")
+            let b = first_stmt_hash("// moved
+@derive(walker)  fn f() { }")
             a != 0 && a == b
         }
     }

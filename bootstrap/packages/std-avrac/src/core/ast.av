@@ -2791,7 +2791,13 @@ export fn render_annotation_list(store: NodeStore, annots: List<Annotation>) -> 
     mut i = 0
     while i < annots.length {
         let a = annots[i]
-        let args_part = if a.arg_ids.length == 0 { "" } else { render_expr_ids(store, a.arg_ids) }
+        // `arg_ids` is nullable only as a pre-population sentinel — render
+        // null exactly like a bare `@name` (zero args), as every consumer
+        // of this field does.
+        let args_part = if a.arg_ids == null { "" } else {
+            let arg_ids = a.arg_ids!
+            if arg_ids.length == 0 { "" } else { render_expr_ids(store, arg_ids) }
+        }
         out = out + "@${a.name}${args_part} "
         i = i + 1
     }

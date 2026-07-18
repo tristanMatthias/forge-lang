@@ -556,11 +556,26 @@ impl CanonEnv {
 }
 
 /// Rebind a parameter list into the current scope, rewriting each entry to
-/// its canonical name (types and type rows ride along unchanged).
+/// its canonical name (types and type rows ride along unchanged — a param's
+/// or lambda param's WRITTEN annotation is source structure).
 fn canon_params_bind(env: CanonEnv, params: List<ParamEntry>) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     for p in params {
         out.push(ParamEntry { name: env.bind(p.name), vtype: p.vtype, ty_id: p.ty_id })
+    }
+    out
+}
+
+/// The PATTERN-binding twin of canon_params_bind: canonical names, but the
+/// type slots are NEUTRALIZED (Unknown / no row). A pattern binding cannot
+/// carry a written annotation — its vtype is parser-default or, on resolved
+/// trees, INFERRED from the subject's type — so leaving it in would let a
+/// signature-side type edit leak into the body fingerprint through match
+/// arms. Structure-only means source structure, never inferred metadata.
+fn canon_pattern_binds(env: CanonEnv, bindings: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for p in bindings {
+        out.push(ParamEntry { name: env.bind(p.name), vtype: ValueType.Unknown, ty_id: null })
     }
     out
 }
@@ -852,7 +867,7 @@ fn canon_pattern(store: NodeStore, env: CanonEnv, p: Pattern) -> Pattern {
     match p {
         .Wildcard -> p
         .Rest -> p
-        .Variant(name, bindings) -> Pattern.Variant(name, canon_params_bind(env, bindings))
+        .Variant(name, bindings) -> Pattern.Variant(name, canon_pattern_binds(env, bindings))
         .LitString(_) -> p
         .LitInt(_) -> p
         .LitBool(_) -> p

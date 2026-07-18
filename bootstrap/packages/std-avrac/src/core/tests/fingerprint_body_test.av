@@ -9,6 +9,29 @@
 
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{item_body_fp, item_sig_fp}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, byte_span}
+use @std.avrac.core.{Expr, Stmt, Pattern, MatchArm, ParamEntry, TypeParamEntry, ValueType}
+
+/// Body fingerprint of a hand-built `fn f(o) { match o { .Some(v) -> v, _ -> 0 } }`
+/// whose pattern BINDING carries `bind_vt` in its vtype slot — the shape a
+/// RESOLVED tree has after typeck infers binding types from the subject.
+/// The canonicalizer must neutralize that inferred metadata: two trees
+/// differing only here are the same source structure.
+fn body_fp_with_binding_vtype(bind_vt: ValueType) -> int {
+    let store = new_node_store(build_line_index(""))
+    let subj = store.add_expr(Expr.Ident("o"), byte_span(0, 1), [])
+    let arm_body = store.add_expr(Expr.Ident("v"), byte_span(2, 3), [])
+    let binds: List<ParamEntry> = [ParamEntry { name: "v", vtype: bind_vt, ty_id: null }]
+    let arm = MatchArm { pattern: Pattern.Variant("Some", binds), pattern_id: null, guard_id: null, body_id: arm_body }
+    let fallback = store.add_expr(Expr.Number("0"), byte_span(4, 5), [])
+    let arm2 = MatchArm { pattern: Pattern.Wildcard, pattern_id: null, guard_id: null, body_id: fallback }
+    let m = store.add_expr(Expr.MatchExpr(subj, [arm, arm2]), byte_span(0, 5), [])
+    let body_stmt = store.add_stmt(Stmt.Expr(m), byte_span(0, 5), [])
+    let no_tps: List<TypeParamEntry> = []
+    let params: List<ParamEntry> = [ParamEntry { name: "o", vtype: ValueType.Int, ty_id: null }]
+    let item = store.add_stmt(Stmt.Function("f", no_tps, params, ValueType.Int, [body_stmt]), byte_span(0, 5), [])
+    item_body_fp(store, item)
+}
 
 /// Body fingerprint of the first top-level item of `source`, or 0 on a
 /// parse error (asserted non-zero everywhere below).
@@ -118,6 +141,13 @@ spec "item_body_fp: rename-invariant, structure-sensitive (ps3t.8.5)" {
             let a = body_of("fn f() { select { x <- ch -> { one() } } }")
             let b = body_of("fn f() { select { x <- ch -> { two() } } }")
             a != 0 && b != 0 && a != b
+        }
+    }
+    given "inferred pattern-binding types are NOT structure" {
+        then "arms differing only in a binding's INFERRED vtype hash identically (resolved-tree shape)" {
+            let a = body_fp_with_binding_vtype(ValueType.Int)
+            let b = body_fp_with_binding_vtype(ValueType.Str)
+            a != 0 && a == b
         }
     }
     given "select bindings are locals like any other" {
