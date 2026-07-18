@@ -1,26 +1,40 @@
-// WHY: ps3t.6.4 — the code-generation face of the generator. Where
-// executor.av RUNS the grammar as recursive descent, emit.av RENDERS
-// the same lowering as parser-fn *source* — one `fn parse_<rule>` per
-// rule, by Nystrom's grammar→RD correspondence (GRAMMAR_DSL.md §4):
+// WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
+// executor.av INTERPRETS a Grammar value as error-tolerant recursive
+// descent, emit.av RENDERS the same lowering as a STATIC parser's
+// *source*: one straight-line `fn parse_<rule>(st: PState) -> CapVal`
+// per rule (Nystrom's grammar→RD correspondence, GRAMMAR_DSL.md §4), no
+// interpreter and no Grammar value at run time.
 //
-//   rule name = …      → fn parse_name(p: Parser) -> ExprId { … }
-//   nonterminal foo    → parse_foo(p)
-//   terminal "+" / NUM → p.match("+") / p.match(NUM)
-//   a b c   (seq)      → statements in order (captures → let bindings)
-//   a | b   (alt)      → if p.starts(FIRST(a)) { … } else if …
-//   ( … )*             → while p.match(FIRST) { … }
-//   ( … )?             → if p.match(FIRST) { … }
-//   -> Ctor(a, b)      → return p.node(Ctor(a, b))
-//   -> helper(l, op, r)→ return helper(l, op, r)
-//   @recover(sync_to)  → p.synchronize(sync_to) on a missing terminal
+// The emitted text is REAL, COMPILABLE Avra that drives the executor
+// vocabulary now exported for exactly this (ps3t.6.5.11 GAP-1): a PState
+// (the real-lexer token cursor + shared NodeStore), the `CapVal` capture
+// union, and the existing build helpers (fold_binary_expr / fold_logical_expr
+// / unary_expr / fold_postfix_expr) + leaf builders (literal_node, run_hand).
+// The GOLDEN REFERENCE this must match, behaviourally, is the hand-written
+// tests/gen_expr_parser_test.av; the emitter's output is verified by
+// COMPILING + RUNNING it against the same differential oracle
+// (tests/emit_generated_run_test.av) — the ticket's "generated fns compile +
+// pass the differential test", proven behaviourally rather than by a brittle
+// byte-for-byte format match.
 //
-// The emitted text is the readable, general lowering (matches the
-// executor's semantics — a repetition accumulates captures then the
-// build folds them). §4 shows a *fused* hand-optimisation of the fold
-// loop; the unfused form here is equally faithful and shape-agnostic
-// (no pattern-matching special rule shapes — rule 16). The parser-fn
-// AST emission that splices into a real compile is ps3t.6.5's job;
-// this renders the correspondence so it can be inspected + tested.
+// The lowering, construct by construct (mirrors executor.av's model):
+//   rule name = …             → fn parse_name(st: PState) -> CapVal { … }
+//   nonterminal foo           → parse_foo(st)                (returns a CapVal)
+//   terminal "+" / NUMBER      → st.advance() under a st.cur().text/kind guard
+//   l:X ( op:(…) r:X )* -> B  → a fold loop: seed `let l =`, `mut`-list
+//                               accumulators, `while <FIRST>`, then B(…)
+//   a | b   (alternation)     → an if/else-if chain on each branch's FIRST,
+//                               a bare-ref last branch as the fallthrough tail
+//   ( … )?                    → if <FIRST> { … }
+//   -> Ctor(a, b)             → apply_build's twin: one emission per build name
+//   @hand(fn)                 → run_hand / run_hand_expr / run_hand_stmt /
+//                               run_hand_type by rule class (executor's dispatch)
+//   @expect / @recover        → a checked consume with st.report + st.synchronize
+//
+// The build-name → emission map (emit_call_build) is the single
+// target-specific seam, mirroring executor.av's apply_build one-to-one — so
+// a build added there is added HERE, in lockstep (rule 8: one seam, not a
+// forest of special cases).
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 
@@ -28,249 +42,628 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 export fn emit_parser_source(g: Grammar) -> string {
     mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
     for r in g.rules {
-        out = out + emit_rule_fn(r) + "\n"
+        out = out + emit_rule_fn_in(g, r) + "\n"
     }
     out
 }
 
-/// Render one rule as its `parse_<name>` function.
-export fn emit_rule_fn(r: Rule) -> string {
-    let body = emit_node(r.body, "    ")
-    "fn parse_${r.name}(p: Parser) -> ExprId {\n${body}}\n"
+/// Render one rule as its `parse_<name>` function. Takes the grammar so a
+/// referenced rule's FIRST set (a repetition/optional guard) resolves.
+export fn emit_rule_fn(g: Grammar, r: Rule) -> string {
+    emit_rule_fn_in(g, r)
 }
 
-// alt = seq ( "|" seq )*
-fn emit_node(node: GNode, ind: string) -> string {
+fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
+    "fn parse_${r.name}(st: PState) -> CapVal {\n${emit_rule_body(g, r.body)}}\n"
+}
+
+// ── Rule body: single-branch (pass-through / fold / general) or dispatch ──
+
+fn emit_rule_body(g: Grammar, node: GNode) -> string {
     match node {
         .Alt(branches) -> {
             if branches.length == 1 {
-                return emit_seq(branches[0], ind)
+                emit_single_branch(g, branches[0])
+            } else {
+                emit_dispatch(g, branches)
             }
-            emit_alt_chain(branches, ind)
         }
     }
 }
 
-/// Multi-branch alternation → an if/else-if chain guarded by each
-/// branch's FIRST set, with a trailing error node (Nystrom's `|` → if).
-fn emit_alt_chain(branches: List<GSeq>, ind: string) -> string {
-    mut out = ""
-    mut i = 0
-    for b in branches {
-        let guard = seq_first_guard(b)
-        let kw = if i == 0 { "if" } else { "} else if" }
-        out = out + "${ind}${kw} ${guard} {\n"
-        out = out + emit_seq(b, ind + "    ")
-        i = i + 1
+/// A single-branch rule. Three shapes, in order of specificity:
+///   pass-through (`a = b`)         → `parse_b(st)`
+///   fold (`l:X ( … )* -> Build`)   → seed + accumulator loop + build
+///   general sequence               → item statements then the build as the tail
+fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
+    if is_passthrough(seq) {
+        return "    ${emit_ref_call(seq.items[0].prim)}\n"
     }
-    out = out + "${ind}} else {\n"
-    out = out + "${ind}    return p.error_node(\"expected an expression\")\n"
-    out = out + "${ind}}\n"
-    out
+    if is_fold(seq) {
+        return emit_fold(g, seq)
+    }
+    // General: emit the item statements, then the build as the (returned) tail.
+    emit_seq_stmts(g, seq, "    ") + "    ${emit_seq_result(g, seq)}\n"
 }
 
-/// seq = labeled+ ( "->" build | annot )*
-fn emit_seq(seq: GSeq, ind: string) -> string {
-    // Pass-through: a lone `One` item with no build returns that item
-    // directly (`expression = equality` -> `return parse_equality(p)`),
-    // rather than emitting it as a statement then a placeholder return.
-    let one_item = seq.items.length == 1 && (match seq.items[0].rep {
-        .One -> true
-        _ -> false
-    })
-    if one_item && gbuild_is_none(seq.build) {
-        return emit_annots(seq.annots, ind) + "${ind}return ${emit_primary(seq.items[0].prim)}\n"
-    }
-    mut out = ""
-    for item in seq.items {
-        out = out + emit_item(item, ind)
-    }
-    // Error annotations (@expect / @recover) — the generated parser
-    // asserts the expected token and synchronises on a miss.
-    out = out + emit_annots(seq.annots, ind)
-    out = out + emit_build(seq.build, ind)
-    out
+/// True for `name = otherrule` — one One-item nonterminal, no build.
+fn is_passthrough(seq: GSeq) -> bool {
+    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
+        prim_is_ref(seq.items[0].prim) && build_is_none(seq.build)
 }
 
-/// Render a sequence's error annotations as the parser's expect/recover
-/// calls (Nystrom's by-hand `synchronize()`, lifted into the grammar).
-fn emit_annots(annots: List<GAnnot>, ind: string) -> string {
-    mut out = ""
-    for a in annots {
-        match a {
-            .Expect(tok, msg) -> out = out + "${ind}p.expect(\"${tok}\", \"${msg}\")\n"
-            .Recover(sync_to) -> out = out + "${ind}p.recover_to(\"${sync_to}\")\n"
+/// True for the operator-fold shape `l:X ( <accumulators> )* -> Build(…)`:
+/// a leading labelled One item (the seed) followed by a starred group, with
+/// a Call build. Covers the whole binary/logical/postfix stratification.
+fn is_fold(seq: GSeq) -> bool {
+    seq.items.length == 2 &&
+        rep_is_one(seq.items[0].rep) && seq.items[0].label != "" &&
+        rep_is_star(seq.items[1].rep) && prim_is_group(seq.items[1].prim) &&
+        build_is_call(seq.build)
+}
+
+// ── Fold rules ──
+
+fn emit_fold(g: Grammar, seq: GSeq) -> string {
+    let seed = seq.items[0]
+    let inner = group_inner_seq(seq.items[1].prim)
+    mut out = "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
+    // One accumulator list per labelled item inside the starred group.
+    for it in inner.items {
+        if it.label != "" {
+            let ty = if prim_yields_token(it.prim) { "Token" } else { "ExprId" }
+            out = out + "    mut ${it.label}s: List<${ty}> = []\n"
         }
     }
+    out = out + "    while ${seq_first_guard(g, inner, [])} {\n"
+    for it in inner.items {
+        out = out + emit_accumulate(it, "        ")
+    }
+    out = out + "    }\n"
+    out = out + "    ${emit_fold_build(seq.build, seed.label, inner)}\n"
     out
 }
 
-fn emit_item(item: GItem, ind: string) -> string {
-    let bind = if item.label == "" { "" } else { "let ${item.label} = " }
-    match item.rep {
-        // Guards use non-consuming p.check(...) — emit_primary performs
-        // the actual consumption, so the leading token isn't eaten twice.
-        .One -> "${ind}${bind}${emit_primary(item.prim)}\n"
-        .Opt -> "${ind}if p.check(${emit_first(item.prim)}) { ${bind}${emit_primary(item.prim)} }\n"
-        .Star -> emit_repeat(item, ind, "while")
-        .Plus -> emit_primary_once(item, ind) + emit_repeat(item, ind, "while")
+/// One loop-body line per starred-group item: a labelled terminal pushes the
+/// consumed token, a labelled ref pushes its coerced node, an unlabelled
+/// item (a separator) is consumed and dropped.
+fn emit_accumulate(it: GItem, ind: string) -> string {
+    if it.label == "" {
+        return "${ind}let _ = st.advance()\n"
     }
-}
-
-fn emit_primary_once(item: GItem, ind: string) -> string {
-    let bind = if item.label == "" { "" } else { "collect ${item.label} += " }
-    "${ind}${bind}${emit_primary(item.prim)}\n"
-}
-
-fn emit_repeat(item: GItem, ind: string, kw: string) -> string {
-    let bind = if item.label == "" { "" } else { "collect ${item.label} += " }
-    mut out = "${ind}${kw} p.check(${emit_first(item.prim)}) {\n"
-    out = out + "${ind}    ${bind}${emit_primary(item.prim)}\n"
-    out = out + "${ind}}\n"
-    out
-}
-
-fn emit_primary(prim: GPrim) -> string {
-    match prim {
-        .Ref(name) -> "parse_${name}(p)"
-        .Lit(text) -> "p.match(\"${text}\")"
-        .Named(tok) -> "p.match(${tok})"
-        .Group(inner) -> "( ${emit_group_inline(inner)} )"
-        .Hand(hf) -> "parse_${hf}(p)"
-    }
-}
-
-/// A group inlines its captured sub-structure. For the common
-/// `( op:(…) r:X )` shape this reads as the loop body's captures.
-fn emit_group_inline(node: GNode) -> string {
-    match node {
-        .Alt(branches) -> {
-            mut out = ""
-            mut i = 0
-            for b in branches {
-                if i > 0 { out = out + " | " }
-                out = out + emit_seq_inline(b)
-                i = i + 1
-            }
-            out
-        }
-    }
-}
-
-fn emit_seq_inline(seq: GSeq) -> string {
-    mut out = ""
-    mut i = 0
-    for item in seq.items {
-        if i > 0 { out = out + ", " }
-        let bind = if item.label == "" { "" } else { "${item.label}=" }
-        out = out + bind + emit_primary(item.prim)
-        i = i + 1
-    }
-    out
-}
-
-fn emit_build(build: GBuild, ind: string) -> string {
-    match build {
-        // The single-item pass-through is handled in emit_seq; reaching
-        // here means a multi-item sequence with no build directive.
-        .None -> "${ind}return error_node(\"sequence has no build directive\")\n"
-        .Var(name) -> "${ind}return ${name}\n"
-        .Call(name, args) -> "${ind}return ${name}(${join_args(args)})\n"
-    }
-}
-
-fn join_args(args: List<string>) -> string {
-    mut out = ""
-    mut i = 0
-    for a in args {
-        if i > 0 { out = out + ", " }
-        out = out + a
-        i = i + 1
-    }
-    out
-}
-
-// ── FIRST-set rendering (the `p.check(...)` guard args) ──
-//
-// FIRST entries carry their terminal KIND so a named terminal renders
-// unquoted (`p.check(NUMBER)`, matching consumption's `p.match(NUMBER)`)
-// while a literal stays quoted (`p.check("+")`). Computation crosses
-// NULLABLE leading items (a `*`/`?` prefix) rather than stopping at the
-// first item.
-
-type FTerm = { by_kind: bool, val: string }
-
-/// The leading terminals of a primary, as guard args. A ref/hand renders
-/// as `starts(parse_<name>)` since its FIRST is computed at run time.
-fn emit_first(prim: GPrim) -> string {
-    let ts = first_terms(prim)
-    if ts.length == 0 {
-        match prim {
-            .Ref(name) -> "starts(parse_${name})"
-            .Hand(hf) -> "starts(parse_${hf})"
-            _ -> "…"
-        }
+    if prim_yields_token(it.prim) {
+        "${ind}${it.label}s.push(st.advance())\n"
     } else {
-        join_fterms(ts)
+        "${ind}${it.label}s.push(capval_to_expr(st, ${emit_ref_call(it.prim)}))\n"
     }
 }
 
-fn seq_first_guard(seq: GSeq) -> string {
-    if seq.items.length == 0 { return "true" }
-    let ts = seq_first_terms(seq)
-    if ts.length == 0 {
-        // Leading nonterminal / hand-rule — its FIRST is a runtime check.
-        return "p.check(${emit_first(seq.items[0].prim)})"
-    }
-    "p.check(${join_fterms(ts)})"
-}
-
-/// FIRST of a primary: Lit/Named directly (kind-tagged), Group unions
-/// its branches. Ref/Hand cross a rule boundary → empty (runtime check).
-fn first_terms(prim: GPrim) -> List<FTerm> {
-    match prim {
-        .Lit(text) -> [FTerm { by_kind: false, val: text }]
-        .Named(tok) -> [FTerm { by_kind: true, val: tok }]
-        .Group(inner) -> node_first_terms(inner)
-        .Ref(_) -> []
-        .Hand(_) -> []
-    }
-}
-
-fn node_first_terms(node: GNode) -> List<FTerm> {
-    match node {
-        .Alt(branches) -> {
-            mut out: List<FTerm> = []
-            for b in branches {
-                for t in seq_first_terms(b) { out.push(t) }
+/// A fold's build call: the seed label maps to its scalar CapVal var, an
+/// accumulator label to CapVal.Toks(<l>s) / CapVal.Nodes(<l>s).
+fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
+    match build {
+        .Call(name, args) -> {
+            mut rendered: List<string> = []
+            for a in args {
+                rendered.push(emit_fold_arg(a, seed_label, inner))
             }
-            out
+            "CapVal.Node(${build_fn(name)}(st, ${join_commas(rendered)}))"
+        }
+        _ -> "CapVal.Node(st.error_node(\"fold rule without a build\"))"
+    }
+}
+
+fn emit_fold_arg(arg: string, seed_label: string, inner: GSeq) -> string {
+    if arg == seed_label { return arg }
+    for it in inner.items {
+        if it.label == arg {
+            if prim_yields_token(it.prim) { return "CapVal.Toks(${arg}s)" }
+            return "CapVal.Nodes(${arg}s)"
+        }
+    }
+    arg
+}
+
+// ── Multi-branch dispatch ──
+
+/// An alternation → an if/else chain guarded by each branch's FIRST. A branch
+/// whose FIRST is a bare nonterminal (statically unguardable, e.g. unary's
+/// `| postfix`) becomes the UNGUARDED fallthrough tail; otherwise the tail is
+/// a whole-construct error node (executor.exec_node's no-match arm).
+fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
+    mut out = ""
+    mut tail = ""
+    for b in branches {
+        if is_bare_ref(b) {
+            tail = "    ${emit_ref_call(b.items[0].prim)}\n"
+        } else {
+            let guard = seq_first_guard(g, b, [])
+            out = out + "    if ${guard} {\n"
+            out = out + emit_seq_stmts(g, b, "        ")
+            out = out + "        return ${emit_seq_result(g, b)}\n"
+            out = out + "    }\n"
+        }
+    }
+    if tail != "" {
+        out = out + tail
+    } else {
+        out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
+    }
+    out
+}
+
+/// True for `| otherrule` — a lone One nonterminal branch (no build).
+fn is_bare_ref(seq: GSeq) -> bool {
+    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
+        prim_is_ref(seq.items[0].prim) && build_is_none(seq.build)
+}
+
+// ── Sequence statements (a dispatch branch's / general seq's body) ──
+
+/// The statement lines for a sequence: list accumulators declared once at the
+/// top (for every label captured under a repetition anywhere in the branch),
+/// then one emission per item in order. A lone primary with no build is
+/// consumed BY its result (literal_node / run_hand), so it emits no statements.
+fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
+    if is_lone_primary_result(seq) { return "" }
+    let labels = list_labels_of(seq)
+    mut out = ""
+    for l in labels {
+        out = out + "${ind}mut ${l}_list: List<ExprId> = []\n"
+    }
+    out = out + emit_seq_items(g, seq, ind, labels)
+    out
+}
+
+/// A sequence whose result consumes its sole primary itself: a lone unlabelled
+/// terminal (the default literal build) or a lone @hand primary. These emit no
+/// pre-consume — emit_seq_result's `st.advance()` / run_hand does it.
+fn is_lone_primary_result(seq: GSeq) -> bool {
+    if seq.items.length != 1 || !rep_is_one(seq.items[0].rep) || !build_is_none(seq.build) {
+        return false
+    }
+    let p = seq.items[0].prim
+    (prim_is_terminal(p) && seq.items[0].label == "") || prim_is_hand(p)
+}
+
+/// The per-item lines (no list declarations — those are hoisted by the
+/// enclosing emit_seq_stmts so a nested group shares the branch's lists).
+fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>) -> string {
+    mut out = ""
+    mut idx = 0
+    for item in seq.items {
+        out = out + emit_item(g, item, idx, seq.annots, ind, list_labels)
+        idx = idx + 1
+    }
+    out
+}
+
+/// One item. `idx == 0` is the branch's guard token (already matched by the
+/// enclosing `if`/`while`), so it is consumed unconditionally; a later
+/// terminal is consumed defensively (checked), honouring @expect/@recover.
+fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>) -> string {
+    match item.rep {
+        .One -> emit_one(g, item, idx, annots, ind, list_labels)
+        .Opt -> emit_opt(g, item, ind, list_labels)
+        .Star -> emit_repeat_group(g, item, ind, list_labels)
+        .Plus -> emit_repeat_group(g, item, ind, list_labels)
+    }
+}
+
+fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>) -> string {
+    match item.prim {
+        .Ref(name) -> {
+            if str_in(list_labels, item.label) {
+                return "${ind}${item.label}_list.push(capval_to_expr(st, parse_${name}(st)))\n"
+            }
+            if item.label == "" { return "${ind}let _ = parse_${name}(st)\n" }
+            "${ind}let ${item.label} = parse_${name}(st)\n"
+        }
+        .Hand(hf) -> {
+            if item.label == "" { return "${ind}let _ = ${emit_hand_result(hf)}\n" }
+            "${ind}let ${item.label} = ${emit_hand_result(hf)}\n"
+        }
+        _ -> emit_one_terminal(item, idx, annots, ind)
+    }
+}
+
+/// A One terminal (Lit / Named / a terminal group). The guard token (idx 0)
+/// is consumed unconditionally; a later terminal is checked — @expect swaps
+/// the message and @recover synchronises, else it's a lenient consume.
+fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string) -> string {
+    if idx == 0 {
+        if item.label == "" { return "${ind}let _ = st.advance()\n" }
+        return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
+    }
+    if item.label != "" {
+        return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
+    }
+    let t = prim_lit_text(item.prim)
+    let cond = term_guard(item.prim)
+    let exp = expect_for(annots, t)
+    if exp.found {
+        mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
+        out = out + "${ind}    st.report(\"${exp.msg}\")\n"
+        let sync = recover_target(annots)
+        if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
+        out = out + "${ind}}\n"
+        return out
+    }
+    "${ind}if ${cond} { let _ = st.advance() }\n"
+}
+
+/// An optional group `( … )?` → an if guarded by the group's FIRST. The
+/// group's captures accumulate into the branch's already-declared lists.
+fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>) -> string {
+    match item.prim {
+        .Group(inner) -> {
+            "${ind}if ${node_first_guard(g, inner, [])} {\n" +
+                emit_node_items(g, inner, ind + "    ", list_labels) +
+                "${ind}}\n"
+        }
+        _ -> {
+            "${ind}if ${prim_first_guard(g, item.prim, [])} { let _ = st.advance() }\n"
         }
     }
 }
 
-/// FIRST of a sequence — the first item's FIRST, extended through any
-/// nullable (Opt/Star) leading items, stopping at the first One/Plus.
-fn seq_first_terms(seq: GSeq) -> List<FTerm> {
-    mut out: List<FTerm> = []
+/// A starred/plus group `( … )*` → a while guarded by the group's FIRST.
+fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<string>) -> string {
+    match item.prim {
+        .Group(inner) -> {
+            "${ind}while ${node_first_guard(g, inner, [])} {\n" +
+                emit_node_items(g, inner, ind + "    ", list_labels) +
+                "${ind}}\n"
+        }
+        _ -> {
+            "${ind}while ${prim_first_guard(g, item.prim, [])} { let _ = st.advance() }\n"
+        }
+    }
+}
+
+/// Emit the items of a group's single sequence (a group is an Alt whose one
+/// branch carries the sub-structure — the executor's group-inline shape).
+fn emit_node_items(g: Grammar, node: GNode, ind: string, list_labels: List<string>) -> string {
+    match node {
+        .Alt(branches) -> {
+            if branches.length == 0 { return "" }
+            emit_seq_items(g, branches[0], ind, list_labels)
+        }
+    }
+}
+
+// ── A sequence's result (the build), apply_build's emission twin ──
+
+fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
+    // A lone unlabelled terminal with no build is the default literal build
+    // (executor coerces the boundary Tok via literal_node).
+    if seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
+        seq.items[0].label == "" && prim_is_terminal(seq.items[0].prim) &&
+        build_is_none(seq.build) {
+        return "CapVal.Node(literal_node(st, st.advance()))"
+    }
+    // A lone @hand primary is its own result.
+    if seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
+        prim_is_hand(seq.items[0].prim) && build_is_none(seq.build) {
+        return emit_hand_result(hand_name(seq.items[0].prim))
+    }
+    match seq.build {
+        .None -> "CapVal.Nil"
+        .Var(name) -> name
+        .Call(name, args) -> emit_call_build(name, args)
+    }
+}
+
+/// The build-name → emission map — executor.apply_build's one-to-one twin.
+/// Scalar captures are their CapVal vars; a `_list` suffix names an
+/// accumulated arg (only call_suffix's, which takes the whole arg list).
+fn emit_call_build(name: string, args: List<string>) -> string {
+    match name {
+        "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"
+        "fold_logical" -> "CapVal.Node(fold_logical_expr(st, ${arg3(args)}))"
+        "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
+        "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
+        "Grouping" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, ${args[0]}))))"
+        "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
+        "index_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, ${args[0]}))))"
+        "call_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), ${args[0]}_list)))"
+        _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
+    }
+}
+
+fn arg3(args: List<string>) -> string { "${args[0]}, ${args[1]}, ${args[2]}" }
+fn arg2(args: List<string>) -> string { "${args[0]}, ${args[1]}" }
+
+fn build_fn(name: string) -> string {
+    if name == "fold_binary" { return "fold_binary_expr" }
+    if name == "fold_logical" { return "fold_logical_expr" }
+    if name == "fold_postfix" { return "fold_postfix_expr" }
+    if name == "Unary" { return "unary_expr" }
+    name
+}
+
+// ── @hand → the run_hand* family (executor.exec_primary's Hand dispatch) ──
+
+fn emit_hand_result(hf: string) -> string {
+    if is_stmt_hand_name(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
+    if is_type_hand_name(hf) { return "CapVal.TExpr(run_hand_type(\"${hf}\", st))" }
+    if is_expr_hand_name(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
+    "CapVal.Node(run_hand(\"${hf}\", st))"
+}
+
+// The rule-class tables mirror executor.av's is_stmt_hand / is_type_hand /
+// is_expr_hand (kept local — file-private there; the classes are small and
+// stable). A new @hand class is added in BOTH places (rule 8's one seam).
+fn is_stmt_hand_name(n: string) -> bool {
+    n == "component_decl" || n == "let_stmt" || n == "return_stmt"
+}
+fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
+fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" }
+
+// ── FIRST-set guards (branch selection + repetition guards) ──
+//
+// A guard is a boolean over `st.cur()`: a literal tests `.text`, a named
+// terminal `.kind`. A ref crosses into the referenced rule (cycle-guarded);
+// a group unions its branches. Nullable leading items (Opt/Star) are crossed
+// so a guard spans them (executor.tok_starts_seq).
+
+fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
+    match prim {
+        .Lit(t) -> "st.cur().text == \"${t}\""
+        .Named(tok) -> "st.cur().kind == \"${tok}\""
+        .Hand(hf) -> hand_first_guard(hf)
+        .Group(inner) -> node_first_guard(g, inner, visited)
+        .Ref(name) -> rule_first_guard(g, name, visited)
+    }
+}
+
+/// Mirrors executor.hand_starts as a guard expression.
+fn hand_first_guard(hf: string) -> string {
+    if hf == "ident" { return "st.cur().kind == \"IDENT\"" }
+    if hf == "number" { return "st.cur().kind == \"NUMBER\"" }
+    if hf == "component_decl" { return "st.cur().text == \"component\"" }
+    if hf == "let_stmt" { return "st.cur().text == \"let\"" }
+    if hf == "return_stmt" { return "st.cur().text == \"return\"" }
+    if hf == "qualified_type" { return "st.cur().text == \"@\"" }
+    if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
+    "false"
+}
+
+fn node_first_guard(g: Grammar, node: GNode, visited: List<string>) -> string {
+    match node {
+        .Alt(branches) -> {
+            mut parts: List<string> = []
+            for b in branches {
+                parts.push(seq_first_guard(g, b, visited))
+            }
+            guard_join_dedup(parts)
+        }
+    }
+}
+
+fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
+    mut parts: List<string> = []
     for item in seq.items {
-        for t in first_terms(item.prim) { out.push(t) }
+        parts.push(prim_first_guard(g, item.prim, visited))
         match item.rep {
-            .One -> return out
-            .Plus -> return out
+            .One -> return guard_join_dedup(parts)
+            .Plus -> return guard_join_dedup(parts)
             _ -> {}
         }
     }
+    guard_join_dedup(parts)
+}
+
+fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
+    if str_in(visited, name) { return "false" }
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return "false" }
+    node_first_guard(g, r.body, v2)
+}
+
+/// Join FIRST-set guard fragments with `||`, dropping `false`/empty and
+/// de-duplicating (a deep expression FIRST re-collects the same terminals).
+fn guard_join_dedup(parts: List<string>) -> string {
+    mut seen: List<string> = []
+    for p in parts {
+        if p != "false" && p != "" && !str_in(seen, p) { seen.push(p) }
+    }
+    if seen.length == 0 { return "false" }
+    mut out = ""
+    mut i = 0
+    for p in seen {
+        if i > 0 { out = out + " || " }
+        out = out + p
+        i = i + 1
+    }
     out
 }
 
-fn join_fterms(xs: List<FTerm>) -> string {
+// ── Small structural helpers ──
+
+/// Every label captured under a repetition (`*`/`+`) anywhere in the sequence
+/// — these become list accumulators (`<label>_list`), shared across the branch
+/// so a scalar-then-repeated label (`a:expr ( "," a:expr )*`) collects into one.
+fn list_labels_of(seq: GSeq) -> List<string> {
+    mut out: List<string> = []
+    for item in seq.items {
+        let multi = rep_is_star(item.rep) || rep_is_plus(item.rep)
+        if item.label != "" && multi && !str_in(out, item.label) { out.push(item.label) }
+        for l in prim_labels_of(item.prim, multi) {
+            if !str_in(out, l) { out.push(l) }
+        }
+    }
+    out
+}
+
+fn prim_labels_of(prim: GPrim, under_multi: bool) -> List<string> {
+    match prim {
+        .Group(inner) -> node_labels_of(inner, under_multi)
+        _ -> []
+    }
+}
+
+fn node_labels_of(node: GNode, under_multi: bool) -> List<string> {
+    match node {
+        .Alt(branches) -> {
+            mut out: List<string> = []
+            for b in branches {
+                for item in b.items {
+                    let multi = under_multi || rep_is_star(item.rep) || rep_is_plus(item.rep)
+                    if item.label != "" && multi && !str_in(out, item.label) { out.push(item.label) }
+                    for l in prim_labels_of(item.prim, multi) {
+                        if !str_in(out, l) { out.push(l) }
+                    }
+                }
+            }
+            out
+        }
+    }
+}
+
+fn emit_ref_call(prim: GPrim) -> string {
+    match prim {
+        .Ref(name) -> "parse_${name}(st)"
+        _ -> "st.error_node(\"expected a nonterminal\")"
+    }
+}
+
+fn group_inner_seq(prim: GPrim) -> GSeq {
+    match prim {
+        .Group(inner) -> match inner {
+            .Alt(branches) -> {
+                if branches.length == 0 { return empty_seq() }
+                branches[0]
+            }
+        }
+        _ -> empty_seq()
+    }
+}
+
+fn empty_seq() -> GSeq { GSeq { items: [], build: GBuild.None, annots: [] } }
+
+/// A primary whose match yields a Token (a terminal or an all-terminal group)
+/// vs a node (a ref / hand rule).
+fn prim_yields_token(prim: GPrim) -> bool {
+    match prim {
+        .Lit(_) -> true
+        .Named(_) -> true
+        .Group(inner) -> node_all_terminal(inner)
+        _ -> false
+    }
+}
+
+fn node_all_terminal(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    if !prim_is_terminal(item.prim) { return false }
+                }
+            }
+            true
+        }
+    }
+}
+
+fn prim_is_terminal(prim: GPrim) -> bool {
+    match prim {
+        .Lit(_) -> true
+        .Named(_) -> true
+        _ -> false
+    }
+}
+
+fn prim_lit_text(prim: GPrim) -> string {
+    match prim {
+        .Lit(t) -> t
+        .Named(tok) -> tok
+        _ -> ""
+    }
+}
+
+/// A single terminal's guard (no rule crossing) — a literal on `.text`, a
+/// named terminal on `.kind`.
+fn term_guard(prim: GPrim) -> string {
+    match prim {
+        .Lit(t) -> "st.cur().text == \"${t}\""
+        .Named(tok) -> "st.cur().kind == \"${tok}\""
+        _ -> "false"
+    }
+}
+
+fn prim_is_ref(prim: GPrim) -> bool {
+    match prim { .Ref(_) -> true  _ -> false }
+}
+
+fn prim_is_group(prim: GPrim) -> bool {
+    match prim { .Group(_) -> true  _ -> false }
+}
+
+fn prim_is_hand(prim: GPrim) -> bool {
+    match prim { .Hand(_) -> true  _ -> false }
+}
+
+fn hand_name(prim: GPrim) -> string {
+    match prim { .Hand(hf) -> hf  _ -> "" }
+}
+
+fn rep_is_one(rep: GRep) -> bool { match rep { .One -> true  _ -> false } }
+fn rep_is_star(rep: GRep) -> bool { match rep { .Star -> true  _ -> false } }
+fn rep_is_plus(rep: GRep) -> bool { match rep { .Plus -> true  _ -> false } }
+
+fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> false } }
+fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -> false } }
+
+fn str_in(xs: List<string>, s: string) -> bool {
+    if s == "" { return false }
+    for x in xs { if x == s { return true } }
+    false
+}
+
+fn join_commas(xs: List<string>) -> string {
     mut out = ""
     mut i = 0
     for x in xs {
         if i > 0 { out = out + ", " }
-        out = out + (if x.by_kind { x.val } else { "\"${x.val}\"" })
+        out = out + x
         i = i + 1
     }
     out
+}
+
+fn emit_lookup_rule(g: Grammar, name: string) -> Rule {
+    for r in g.rules {
+        if r.name == name { return r }
+    }
+    Rule { name: "", body: GNode.Alt([]) }
+}
+
+// ── @expect / @recover lookup ──
+
+type ExpectHit = { found: bool, msg: string }
+
+fn expect_for(annots: List<GAnnot>, tok: string) -> ExpectHit {
+    for a in annots {
+        match a {
+            .Expect(t, m) -> {
+                if t == tok { return ExpectHit { found: true, msg: m } }
+            }
+            _ -> {}
+        }
+    }
+    ExpectHit { found: false, msg: "" }
+}
+
+fn recover_target(annots: List<GAnnot>) -> string {
+    for a in annots {
+        match a {
+            .Recover(sync_to) -> return sync_to
+            _ -> {}
+        }
+    }
+    ""
 }

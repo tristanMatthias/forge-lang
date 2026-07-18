@@ -56,9 +56,12 @@ spec "grammar @hand escape-hatch: delegate a rule position to hand code" {
         parse_expr("1 + b - c") == "(- (+ 1 b) c)"
     }
 
-    then "the emitter lowers @hand(ident) to a hand-fn call parse_ident(p)" {
+    then "the emitter lowers @hand(ident) to the run_hand escape-hatch call" {
+        // ps3t.6.5.11: the generated static parser calls the real leaf hand
+        // rule `run_hand("ident", st)` (executor.exec_primary's Hand dispatch),
+        // not the old pseudo-form `parse_ident(p)`.
         let gp = parse_grammar(grammar_with_hand())
-        emit_parser_source(gp.grammar).contains("parse_ident(p)")
+        emit_parser_source(gp.grammar).contains("run_hand(\"ident\", st)")
     }
 
     then "the pure §2 primary still rejects a bare identifier (hatch is opt-in)" {
