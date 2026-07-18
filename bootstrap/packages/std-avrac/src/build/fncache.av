@@ -1,4 +1,4 @@
-// WHY: the abstract per-function codegen cache unit (L6 design §8, ps3t.8.6).
+// WHY: the abstract per-function codegen cache unit (L6 codegen-cache design).
 //
 // codegen(fn) becomes cacheable: a function's emitted artifact (LLVM bitcode
 // today; a MIR unit later — the interface is artifact-format-agnostic) is

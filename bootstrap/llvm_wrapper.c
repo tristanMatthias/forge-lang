@@ -717,7 +717,7 @@ int avra_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
     return 0;
 }
 
-// ps3t.8.6: per-function IR extraction. Print ONE function's textual IR
+// Per-function IR extraction. Print ONE function's textual IR
 // to `path`, atomically (pid-scoped temp + rename — same discipline as
 // avra_llvm_print_module_to_file above, same reason: a concurrent reader
 // must see whole-old or whole-new, never mid-stream). Text IR is the v1

@@ -1,4 +1,4 @@
-// WHY: ps3t.8.6 increment 2, the WRITE side of the per-fn codegen cache.
+// WHY: the WRITE side of the per-function codegen cache.
 // After body emission, walk the program's fn items, extract each emitted
 // function's textual IR (avra_llvm_fn_print_to_file — the v1 artifact
 // format behind the abstract unit; bitcode slots in later), and publish
@@ -7,14 +7,15 @@
 //
 // Opt-in: AVRA_FN_CACHE=<project root> names the store root; unset means
 // this pass is a no-op. The READ side (cache replay during emission) is
-// the next increment — until it lands, publishing is a warm-only phase
+// a later change — until the reader lands, publishing is a warm-only phase
 // that never touches the emitted module, so cache-on and cache-off
 // compiles are byte-identical by construction.
 //
 // Mono note: a @mono_spec item publishes under its SUBSTITUTED body's
 // fp — a valid content key (the substituted text ⊕ table fp determines
 // the IR), just not decomposable into (generic base, type args). The
-// decomposed mono key arrives with mono-time stamping (increment 4).
+// decomposed mono key (generic base + type-arg fps) arrives with mono-time
+// stamping, a later change.
 
 use core.{
     StmtId, NodeStore, stmt_unwrap, find_annotation,
@@ -52,9 +53,7 @@ export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>) -> int {
 
 fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int, toolchain: string) -> int {
     mut published = 0
-    mut i = 0
-    while i < stmts.length {
-        let id = stmts[i]
+    for id in stmts {
         let node = ctx.nodes.stmts.get(id)
         let is_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
         // Mirror emit_function_bodies' skip conditions EXACTLY: a fn whose
@@ -85,7 +84,6 @@ fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int
             }
             _ -> {}
         }
-        i = i + 1
     }
     published
 }

@@ -1,4 +1,4 @@
-// ps3t.8.6 increment 1: the abstract per-fn cache unit (build/fncache.av).
+// Spec for the abstract per-fn cache unit (build/fncache.av).
 // Key composition is total and component-sensitive; publish/lookup is an
 // atomic, completeness-validated round-trip; identical artifacts collapse
 // to one stored unit (the §8 explosion control).

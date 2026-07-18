@@ -1,4 +1,4 @@
-// ps3t.8.6 increment 2 (write side): AVRA_FN_CACHE=<root> makes a compile
+// Write-side spec: AVRA_FN_CACHE=<root> makes a compile
 // extract + publish every emitted fn's IR into <root>/build/cache/fnunits/.
 // Off by default (no env → no store side-effects); republishing an
 // unchanged program dedupes to the same artifact set (content addressing
@@ -16,7 +16,7 @@ fn bs2() -> string {
     avra_shell_exec("pwd").trim() + "/build/bs2"
 }
 
-spec "ps3t.8.6 write side: per-fn units publish behind AVRA_FN_CACHE" {
+spec "per-fn cache write side: units publish behind AVRA_FN_CACHE" {
     then "opt-in compile publishes units; rerun dedupes; default compile publishes nothing" {
         let root = "/tmp/avra_fnunits_${string(avra_getpid())}"
         avra_shell_exec("rm -rf '${root}'")

@@ -444,8 +444,8 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
         }
     }
 
-    // ps3t.8.6 write side: extract + publish each emitted fn's IR into the
-    // per-fn unit store. Opt-in (AVRA_FN_CACHE env) and read-free for now —
+    // Per-fn cache write side: extract + publish each emitted fn's IR into the
+    // per-fn unit store. Opt-in (AVRA_FN_CACHE env) and read-free by design —
     // never touches the module, so emission stays byte-identical.
     let _ = publish_fn_units(ctx, stmts)
 
