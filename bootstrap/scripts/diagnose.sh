@@ -2420,9 +2420,9 @@ mode_check_typeck_collect_boundary() {
   while IFS= read -r f; do
     local h
     h=$(awk -v file="$f" '
-      /^(export )?fn [A-Za-z_0-9]+\(/ {
+      /^(export )?fn [A-Za-z_0-9]+[[:space:]]*[<(]/ {
         cur = $0
-        sub(/^export /, "", cur); sub(/^fn /, "", cur); sub(/\(.*/, "", cur)
+        sub(/^export /, "", cur); sub(/^fn /, "", cur); sub(/[<(].*/, "", cur)
       }
       /(fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register)[[:space:]]*\(/ ||
       /(trait_impls|assoc_type_defs|shapes):[[:space:]]*list_push_copy[[:space:]]*\(/ {

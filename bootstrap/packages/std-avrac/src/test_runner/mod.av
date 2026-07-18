@@ -615,12 +615,14 @@ fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string
     let fast_key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
     let fast_path = "${cache_dir}/${fast_key}.out"
     if avra_selfhost_file_exists(fast_path) == 1 {
-        // Serve only a capture the write gate would publish today: a
-        // dead-silent slot (a pre-gate poisoning, or a half-materialised
-        // write) demotes to an honest MISS and re-runs — reuse is gated on
-        // completeness, matching the compile-cache discipline.
+        // Serve only a capture the write gate would publish TODAY — the full
+        // publishability predicate, not just non-emptiness: a slot poisoned
+        // before the gate existed (a frozen `Killed`, a half-materialised
+        // write, a diagnose.sh error line) demotes to an honest MISS and
+        // re-runs — reuse is gated on completeness, matching the
+        // compile-cache discipline.
         let cached = avra_selfhost_read_file(fast_path)
-        if cached.trim() != "" {
+        if fixture_output_is_publishable(cached, fixture_is_stateful(fixture_path)) {
             return cached
         }
     }
@@ -650,7 +652,7 @@ fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string
     let cache_path = "${cache_dir}/${run_key}.out"
     if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
         let cached = avra_selfhost_read_file(cache_path)
-        if cached.trim() != "" {
+        if fixture_output_is_publishable(cached, fixture_is_stateful(fixture_path)) {
             avra_file_unlock(lock_fd)
             return cached
         }
