@@ -24,6 +24,15 @@ fn hold_param_once(inner: InnerBox) -> int {
     h.n + inner.items.length
 }
 
+/// Overrides a `with`-copy's field with the PARAM itself — the with-expr
+/// twin of hold_param_once (apply_overrides must retain like
+/// fill_struct_fields does).
+fn with_override_once(inner: InnerBox) -> int {
+    let base = Holder { inner: make_inner(), n: 5 }
+    let h = base with { inner: inner }
+    h.inner.items.length
+}
+
 /// Stores a FIELD READ of a param into a struct-literal field.
 fn hold_field_read(h: Holder) -> int {
     let o = Outer { grabbed: h.inner.items }
@@ -47,6 +56,14 @@ spec "struct-literal alias inits retain: source survives the holder (RC)" {
             let x = hold_field_read(h)
             let y = hold_field_read(h)
             x == 3 && y == 3 && h.inner.items.length == 3
+        }
+    }
+    given "a with-expression override sharing an alias (same rule, sibling emitter)" {
+        then "an aliased override's source survives the with-result's release" {
+            let inner = make_inner()
+            let a = with_override_once(inner)
+            let b = with_override_once(inner)
+            a == 3 && b == 3 && inner.items.length == 3
         }
     }
     given "a local ALIASED into a holder within one scope" {
