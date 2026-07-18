@@ -19,7 +19,7 @@ use @std.avrac.test_runner.{write_fixture}
 fn check_with_mem_limit(tag: string, limit: string, source: string) -> string {
     let path = "/tmp/avra_ct54mem_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("AVRA_COMPTIME_MEM_LIMIT=${limit} AVRA_COMPTIME_LOOP_LIMIT=100000000 timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+    avra_shell_exec("AVRA_COMPTIME_MEM_LIMIT=${limit} AVRA_COMPTIME_LOOP_LIMIT=100000000 timeout 300 ./build/bs2 check '${path}' 2>&1 || true")
 }
 
 spec "ps3t.5.4: a runaway comptime allocation traps, not OOMs" {

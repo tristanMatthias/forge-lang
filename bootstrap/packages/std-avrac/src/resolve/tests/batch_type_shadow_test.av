@@ -1,0 +1,82 @@
+// WHY: when several `*_test.av` files are batched into ONE shard, each file
+// becomes its own module, and a type reference inside a module must resolve
+// to the MODULE'S OWN declaration even when a sibling batch member declares
+// a same-short-named type. The hazard is registration ORDER: the resolver's
+// TypeRegistry fills lazily during the rewrite walk, so a SELF-reference (a
+// recursive enum's variant field) or a FORWARD reference (a sibling type
+// declared later in the same module) used to probe the registry before its
+// target registered, fall through to the flat first-write-wins global
+// index, and acquire the OTHER module's type — a self-recursive plain enum
+// whose short name collided with another module's generic then tripped the
+// F1004 arity gate at its own declaration ("takes 1 type argument(s) but 0
+// given" citing the sibling module's qualified name). The
+// declared-canonicals set in `resolve_type_in_ctx` makes the local probe
+// registration-order-independent.
+//
+// This drives the REAL collision shape end to end: one generated file
+// declares generic `ShadowProbe<T>`, the other declares a SELF-RECURSIVE
+// plain `enum ShadowProbe`, both forced into one shard via one
+// `bs2 test <dir>` invocation. The inner run is a fresh `bs2 test` each
+// time (raw avra_shell_exec, never the fixture-stdout cache), so no
+// transient result is ever frozen.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+use @std.avrac.test_runner.{write_fixture}
+
+fn generic_member_src() -> string {
+    "enum ShadowProbe<T> {\n" +
+    "    Full(v: T),\n" +
+    "    Nothing,\n" +
+    "}\n" +
+    "\n" +
+    "fn probe_kind<T>(w: ShadowProbe<T>) -> int {\n" +
+    "    match w {\n" +
+    "        .Full(_)  -> 1\n" +
+    "        .Nothing  -> 0\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "spec \"generic ShadowProbe batch member\" {\n" +
+    "    then \"instantiates with its own generic decl\" {\n" +
+    "        probe_kind<int>(ShadowProbe.Full(7)) == 1\n" +
+    "    }\n" +
+    "}\n"
+}
+
+fn recursive_member_src() -> string {
+    "enum ShadowProbe {\n" +
+    "    Empty,\n" +
+    "    Nest(inner: ShadowProbe),\n" +
+    "}\n" +
+    "\n" +
+    "fn probe_depth(w: ShadowProbe) -> int {\n" +
+    "    match w {\n" +
+    "        .Empty   -> 0\n" +
+    "        .Nest(_) -> 1\n" +
+    "    }\n" +
+    "}\n" +
+    "\n" +
+    "spec \"self-recursive plain ShadowProbe batch member\" {\n" +
+    "    then \"its self-reference resolves to its OWN decl, not the sibling's generic\" {\n" +
+    "        probe_depth(ShadowProbe.Nest(ShadowProbe.Empty)) == 1\n" +
+    "    }\n" +
+    "}\n"
+}
+
+spec "batched test files with same-named types resolve self-references module-locally" {
+    then "the self-recursive enum compiles and both units pass in one shard" {
+        let dir = "/tmp/avra_batch_type_shadow_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        write_fixture("${dir}/aaa_generic_shadow_probe_test.av", generic_member_src())
+        write_fixture("${dir}/bbb_recursive_shadow_probe_test.av", recursive_member_src())
+        let out = avra_shell_exec("./build/bs2 test '${dir}' 2>&1 || true")
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        // Preconditions first so a runner-shape change can't make the probe
+        // vacuous: both files must ride ONE shard, the shard must COMPILE
+        // (the old order-dependent lookup dies here with F1004), and both
+        // units must pass.
+        out.contains("[batch] 2 files")
+            && !out.contains("F1004")
+            && out.contains("pass=2 fail=0 total=2")
+    }
+}

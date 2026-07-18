@@ -145,6 +145,31 @@ type GlobalItemReg = {
     idx: ptr,
 }
 
+/// Membership set of every declared item's CANONICAL name (C-side cstr map,
+/// value 1), built in the same pre-pass as the global index. It answers
+/// "does module M declare name N" (`M::N` present) BEFORE the rewrite walk
+/// has registered anything — the local-shadowing probe in
+/// `resolve_type_in_ctx` needs it because the TypeRegistry fills LAZILY
+/// during the walk: a SELF-reference (a recursive enum's variant field) or a
+/// FORWARD reference (a sibling type declared later in the same module)
+/// probes the registry before its target registers, and without this set
+/// the lookup fell through to the flat first-write-wins global index. Under
+/// batched compilation, two modules each declaring a same-short-named type
+/// then cross-resolved — module B's self-recursive `Wrap` acquired module
+/// A's generic `Wrap<T>` and tripped the F1004 arity gate at its own
+/// declaration (the type-name sibling of the per-module const-scoping fix).
+fn declared_canonicals_build(items: List<ModuleItemEntry>) -> ptr {
+    let set = avra_map_new_cstr()
+    mut i = 0
+    while i < items.length {
+        let it = items[i]
+        let canon = it.canonical
+        avra_map_set_cstr(set, canon, 1)
+        i = i + 1
+    }
+    set
+}
+
 fn global_item_reg_build(items: List<ModuleItemEntry>) -> GlobalItemReg {
     let idx = avra_map_new_cstr()
     mut canonicals: List<string> = []
@@ -606,6 +631,9 @@ type NameCtx = {
     current_module: string,
     locals: List<LocalBinding>,
     global_index: GlobalItemReg,
+    // Canonical-name membership set (see `declared_canonicals_build`) — the
+    // registration-order-independent half of the local-shadowing probe.
+    declared: ptr,
     type_reg: TypeRegistry,
     // The program's NodeStore (B-final F2+): pattern children are ids,
     // resolved through here when binding/rewriting.
@@ -841,6 +869,10 @@ export type ResolverState = {
     graph: ModuleGraph,
     aliases: List<AliasBinding>,
     global_index: GlobalItemReg,
+    // Membership set of every declared item's CANONICAL name (C-side cstr
+    // map, value 1) — see `declared_canonicals_build` for why the local-
+    // shadowing probe needs it alongside the lazily-filled type registry.
+    declared: ptr,
     type_reg: TypeRegistry,
     bag: DiagnosticBag,
     // The program's NodeStore (B-final F2+): expansion-time transforms
@@ -870,6 +902,7 @@ export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
         graph,
         aliases: use_result.aliases,
         global_index,
+        declared: declared_canonicals_build(global_index_list),
         type_reg: reg,
         bag: use_result.bag,
         nodes: store,
@@ -890,6 +923,7 @@ export fn rewrite_uses(ids: List<StmtId>, state: ResolverState) -> List<StmtId> 
         current_module: "",
         locals: [],
         global_index: state.global_index,
+        declared: state.declared,
         type_reg: state.type_reg,
         nodes: state.nodes,
         type_params: [],
@@ -919,6 +953,7 @@ export fn rewrite_uses_macro_only(ids: List<StmtId>, state: ResolverState) -> Li
         current_module: "",
         locals: [],
         global_index: state.global_index,
+        declared: state.declared,
         type_reg: state.type_reg,
         nodes: state.nodes,
         type_params: [],
@@ -1011,6 +1046,7 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
         tree: new_tree,
         graph: state.graph with { all_items: updated_all },
         global_index: new_global_index,
+        declared: declared_canonicals_build(new_items_list),
     }
 }
 
@@ -1460,7 +1496,14 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
     if type_param_has(ctx.type_params, type_name) { return type_name }
     if ctx.current_module != "" {
         let local_qn = type_qualified_name(ctx.current_module, type_name)
-        if type_registry_id_for(ctx.type_reg, local_qn) != 0 {
+        // Two probes: the registry catches types the walk (or a macro
+        // splice) already registered; the declared-canonicals set catches
+        // the module's OWN not-yet-registered decls — the registry fills
+        // lazily during this very walk, so a self-recursive enum field or a
+        // forward reference to a later sibling would otherwise miss here
+        // and fall through to the first-write-wins global index (wrong
+        // module under batched compilation).
+        if type_registry_id_for(ctx.type_reg, local_qn) != 0 || avra_map_has_cstr(ctx.declared, local_qn) == 1 {
             return local_qn
         }
     }

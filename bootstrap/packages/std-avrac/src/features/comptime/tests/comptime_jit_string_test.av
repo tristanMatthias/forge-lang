@@ -67,7 +67,7 @@ spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct val
 fn check_fixture(tag: string, source: string) -> string {
     let path = "/tmp/avra_jits_err_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+    avra_shell_exec("timeout 300 ./build/bs2 check '${path}' 2>&1 || true")
 }
 
 // The string JIT codegens BEFORE the type checker runs, so it can reach an

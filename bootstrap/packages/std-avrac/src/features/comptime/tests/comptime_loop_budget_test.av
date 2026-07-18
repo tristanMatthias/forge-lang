@@ -17,11 +17,14 @@ use @std.avrac.test_runner.{write_fixture}
 
 /// Compile `source` with the comptime loop ceiling forced to `limit`, capturing
 /// diagnostics. `timeout` bounds the run so a REGRESSION (the guard removed →
-/// genuine hang) fails loudly instead of wedging the suite.
+/// genuine hang) fails loudly instead of wedging the suite. 300, not 60: the
+/// timer guards a HANG, not latency — a cold fixture compile under full-suite
+/// congestion (sweep, 17-way shard compiles) was observed blowing 60s and
+/// flaking the healthy path; a real hang still fails loudly at 300.
 fn compile_with_limit(tag: string, limit: string, source: string) -> string {
     let path = "/tmp/avra_ct54_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 ./build/bs2 compile '${path}' 2>&1 || true")
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 300 ./build/bs2 compile '${path}' 2>&1 || true")
 }
 
 /// Run `source` (compile + execute) with the comptime ceiling forced low, to
@@ -29,7 +32,7 @@ fn compile_with_limit(tag: string, limit: string, source: string) -> string {
 fn run_with_limit(tag: string, limit: string, source: string) -> string {
     let path = "/tmp/avra_ct54run_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 300 bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
 }
 
 spec "ps3t.5.4: a non-terminating comptime loop traps, not hangs" {

@@ -11,97 +11,18 @@
 //   - `from_bytes` + nested types + List<T> + enums live in
 //     follow-up sub-tickets (nce6.1.B–F).
 //
-// Pipeline placement: this pass runs after expand_components and
-// before resolve_names. Synthesising pre-resolution lets the
-// resolver bind both the original TypeDecl and the synthesised
-// methods in the same pass; the call sites in the generated bodies
-// use unqualified names (`bytes_builder`, `write_int`) that the
-// resolver wires up to @std/process the same way a hand-written
-// impl would.
+// Pipeline placement: synthesis runs inside the unified
+// derive_program pass (features/comptime/expand_macro.av) — the
+// @derive dispatcher routes `@marshal` (aliased to @derive(Marshal))
+// to the per-decl seam below. The historical whole-program pre-resolve
+// walker is gone: a pre-resolve splice would now double-derive every
+// @marshal type, since resolve_and_expand_program expands the
+// annotation itself.
 
-use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
+use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
 use core.{NodeStore}
 
-// ── Public entry ──
-
-/// Walk `stmts`, emit a paired `impl` next to every `@marshal`-
-/// annotated TypeDecl. Original decls stay in place — the resolver
-/// sees the type AND its methods together.
-///
-/// Fast-path: when no `@marshal` annotation is present, returns
-/// the input unchanged (matches the expand_macros zero-cost
-/// pattern).
-export fn derive_marshal(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
-    if !any_marshal_annotation(store, ids) { return ids }
-    walk(store, ids)
-}
-
-fn walk(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
-    mut out: List<StmtId> = []
-    mut i = 0
-    while i < ids.length {
-        let id = ids[i]
-        // Module bodies host TypeDecls too — recurse so a
-        // `@marshal type T` declared inside a submodule still
-        // gets its impl synthesised. Match on the PEELED node so
-        // annotated module wrappers (e.g. the test assembler's
-        // @deferred_init) stay transparent, and rebuild inside
-        // the original annotation layers so the wrapper survives.
-        // Module bodies are already `List<StmtId>`, so the recursion
-        // stays arena-native — no sstmts_of/rows_of round-trip.
-        match stmt_unwrap(store, store.stmts.get(id)) {
-            .Module(name, body) -> {
-                let walked = walk(store, body)
-                let new_mod = rewrap_annotations(store, store.stmts.get(id), Stmt.Module(name, walked))
-                out.push(store.stmts.add_leaf(new_mod))
-            }
-            _ -> {
-                out.push(id)
-                let derived = derive_for(store, store.stmts.get(id))
-                mut di = 0
-                while di < derived.length {
-                    out.push(derived[di])
-                    di = di + 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    out
-}
-
-// ── Annotation detection ──
-
-fn any_marshal_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
-    mut i = 0
-    while i < ids.length {
-        let id = ids[i]
-        if has_marshal(store, store.stmts.get(id)) { return true }
-        match stmt_unwrap(store, store.stmts.get(id)) {
-            .Module(_, body) -> {
-                if any_marshal_annotation(store, body) { return true }
-            }
-            _ -> {}
-        }
-        i = i + 1
-    }
-    false
-}
-
-fn has_marshal(store: NodeStore, stmt: Stmt) -> bool {
-    find_annotation(store, stmt, "marshal") != null
-}
-
 // ── Synthesis ──
-
-/// If `stmt` is an `@marshal`-annotated TypeDecl, return the
-/// synthesised `[impl T {...}, fn from_bytes_T(b) -> T {...}]`
-/// as arena `StmtId`s. Empty list when no synthesis applies.
-fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
-    let empty: List<StmtId> = []
-    if !has_marshal(store, stmt) { return empty }
-    derive_marshal_stmts_for(store, stmt_unwrap(store, stmt))
-}
 
 /// The per-decl seam for the `Marshal` capability — the same
 /// impls this file has always built, minus the @marshal-annotation gate

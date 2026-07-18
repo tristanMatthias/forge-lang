@@ -190,16 +190,36 @@ impl Db<V> {
     /// the revision doesn't move, so every downstream `verified_at ==
     /// current_rev` hot path stays hot.
     fn set_input(self, q: QueryKey, value: V, value_hash: int) {
+        // Stored cells use ONE hash convention: `answer_hash_of(value_hash,
+        // diags)` — an input's diag set is empty. Composing here (instead of
+        // storing the raw value_hash) is what makes pinning a derived cell
+        // to its CURRENT diag-free answer compare EQUAL, and it means a pin
+        // over a diag-BEARING derived answer correctly reads as a change
+        // (the pin sheds those diagnostics, so downstream must re-verify).
+        let no_input_diags: List<Diagnostic> = []
+        let stored_hash = answer_hash_of(value_hash, no_input_diags)
         mut fam = self.family(q.family)
         let existing = fam.slot_of(q.arg)
         if existing != null {
             mut e = fam.cells[existing!]
-            if e.answer_hash == value_hash {
+            if e.answer_hash == stored_hash {
+                // Equal value: the revision must NOT move (downstream hot
+                // paths stay hot) — but the SET still declares the cell an
+                // input. Clear the derived past (deps + diags) so later
+                // verification sees a leaf instead of walking stale deps
+                // back into the compute dispatcher; without this, pinning a
+                // derived cell to its CURRENT value silently left it
+                // derived and the next upstream edit recomputed it anyway.
+                e.value = value
+                let no_deps: List<QueryKey> = []
+                e.deps = no_deps
+                let no_diags: List<Diagnostic> = []
+                e.diags = no_diags
                 return
             }
             self.current_rev = self.current_rev + 1
             e.value = value
-            e.answer_hash = value_hash
+            e.answer_hash = stored_hash
             // A set cell is a LEAF from now on, whatever its earlier life:
             // clear any deps a derived past recorded, or a later verification
             // would walk them and hand an input back to the compute
@@ -217,7 +237,7 @@ impl Db<V> {
         self.current_rev = self.current_rev + 1
         let deps: List<QueryKey> = []
         let no_diags: List<Diagnostic> = []
-        let cell: MemoEntry<V> = MemoEntry { value, answer_hash: value_hash, deps, diags: no_diags, changed_at: self.current_rev, verified_at: self.current_rev }
+        let cell: MemoEntry<V> = MemoEntry { value, answer_hash: stored_hash, deps, diags: no_diags, changed_at: self.current_rev, verified_at: self.current_rev }
         let _ = fam.insert(q.arg, cell)
     }
 
