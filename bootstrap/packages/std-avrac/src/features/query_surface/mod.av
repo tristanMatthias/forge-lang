@@ -151,15 +151,21 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
     }
 
     let fam = string(family)
+    // Every engine/core reference is FULLY QUALIFIED — the same rendering
+    // the metadata roundtrip re-parses — so the generated code resolves
+    // regardless of the driver's imports: no implicit injection to keep in
+    // sync, and a user's own same-named symbol (their `computed`, say)
+    // can never capture a generated reference.
+    let q = "@std::avrac::query::"
     let src = "fn ${name}_family() -> int {\n" +
         "    ${fam}\n" +
         "}\n" +
-        "fn ${name}_fetch(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
-        "    ctx.fetch(qk(${fam}, arg))\n" +
+        "fn ${name}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
+        "    ctx.fetch(${q}qk(${fam}, arg))\n" +
         "}\n" +
-        "fn ${name}_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {\n" +
-        "    let v = ${name}(ctx, q.arg)?\n" +
-        "    Result.Ok(computed(v, content_id_for(v)))\n" +
+        "fn ${name}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+        "    let v = ${name}(ctx, qkey.arg)?\n" +
+        "    Result.Ok(${q}computed(v, @std::avrac::core::content_id_for(v)))\n" +
         "}\n"
     let parsed = parse_program_source_shared(src, "<@query ${name}>", store)
     if parsed.had_error == 1 || parsed.ids == null {
@@ -169,30 +175,6 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
         return qs_fail("internal: generated @query surface for `${name}` failed to parse")
     }
     QuerySurfaceOut { stmts: parsed.ids, family, error: "" }
-}
-
-/// The names the generated code references beyond the original decl's
-/// own signature — the implicit-import injection's exact set (mirrors
-/// derive_capability_import): `qk`/`QueryKey`/`computed`/`Computed`
-/// appear only in generated bodies; `QueryCtx`/`QueryCycle` are
-/// re-stated in generated signatures.
-export fn query_surface_engine_imports() -> List<string> {
-    ["QueryCtx", "QueryCycle", "QueryKey", "Computed", "qk", "computed"]
-}
-
-/// The core import the generated compute adapter references.
-export fn query_surface_core_imports() -> List<string> {
-    ["content_id_for"]
-}
-
-/// The module the engine imports come from, as user code spells it.
-export fn query_surface_engine_module() -> string {
-    "@std.avrac.query"
-}
-
-/// The module `content_id_for` comes from, as user code spells it.
-export fn query_surface_core_module() -> string {
-    "@std.avrac.core"
 }
 
 // ── ValueType shape probes (local, pre/post-resolve tolerant) ──────────

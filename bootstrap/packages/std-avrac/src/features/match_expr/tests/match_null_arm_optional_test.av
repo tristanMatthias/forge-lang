@@ -71,6 +71,63 @@ spec "match-expr arms mixing null and int merge as int?" {
     }
 }
 
+spec "null-mix arms in the remaining walks merge as int? too" {
+    then "a block-bodied null arm (`-> { null }`) is detected like `-> null`" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_block_test.av",
+            "fn f(x: int) -> int? {\n" +
+            "    match x {\n" +
+            "        1 -> 42\n" +
+            "        _ -> { null }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let hit = f(1)\n" +
+            "    let miss = f(2)\n" +
+            "    println(if hit == null { \"hit=null\" } else { \"hit=\" + string(hit!) })\n" +
+            "    println(if miss == null { \"miss=null\" } else { \"miss=\" + string(miss!) })\n" +
+            "}\n")
+        out.contains("hit=42") && out.contains("miss=null")
+    }
+    then "a guarded optional-subject present arm returning null stays none" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_optsubj_test.av",
+            "fn pick(o: int?) -> int? {\n" +
+            "    match o {\n" +
+            "        let v if v > 2 -> v\n" +
+            "        let v -> null\n" +
+            "        none -> 0\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let big = pick(9)\n" +
+            "    let small = pick(1)\n" +
+            "    let absent = pick(null)\n" +
+            "    println(if big == null { \"big=null\" } else { \"big=\" + string(big!) })\n" +
+            "    println(if small == null { \"small=null\" } else { \"small=\" + string(small!) })\n" +
+            "    println(if absent == null { \"absent=null\" } else { \"absent=some(\" + string(absent!) + \")\" })\n" +
+            "}\n")
+        out.contains("big=9") && out.contains("small=null") && out.contains("absent=some(0)")
+    }
+    then "a union-subject match with a null arm merges as T?" {
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_union_test.av",
+            "fn width(u: int | string) -> int? {\n" +
+            "    match u {\n" +
+            "        int(n) -> n\n" +
+            "        string(s) -> null\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let n = width(7)\n" +
+            "    let s = width(\"hey\")\n" +
+            "    println(if n == null { \"n=null\" } else { \"n=\" + string(n!) })\n" +
+            "    println(if s == null { \"s=null\" } else { \"s=\" + string(s!) })\n" +
+            "}\n")
+        out.contains("n=7") && out.contains("s=null")
+    }
+}
+
 spec "when-expr arms mixing null and int merge as int?" {
     then "the else-null when returns none from the miss path" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_when_null_arm_test.av",

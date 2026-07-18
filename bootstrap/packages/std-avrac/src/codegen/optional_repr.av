@@ -297,12 +297,26 @@ export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty:
 /// reject; the adjacent-arm mismatch warning surfaces it today.)
 export fn body_ids_mix_null(ctx: Ctx, body_ids: List<ExprId>) -> bool {
     for id in body_ids {
-        match ctx.nodes.exprs.get(id) {
-            .None -> { return true }
-            _ -> {}
-        }
+        if expr_yields_null_literal(ctx, id) { return true }
     }
     false
+}
+
+/// True when `id`'s value position is the `null` literal — directly, or
+/// as the tail expression of a (nested) block body, so `-> { null }`
+/// is recognised like `-> null`.
+fn expr_yields_null_literal(ctx: Ctx, id: ExprId) -> bool {
+    match ctx.nodes.exprs.get(id) {
+        .None -> true
+        .Block(body) -> {
+            if body.length == 0 { return false }
+            match ctx.nodes.stmts.get(body[body.length - 1]) {
+                .Expr(tail) -> expr_yields_null_literal(ctx, tail)
+                _ -> false
+            }
+        }
+        _ -> false
+    }
 }
 
 /// The value an arm stores into the shared result slot when the arm set

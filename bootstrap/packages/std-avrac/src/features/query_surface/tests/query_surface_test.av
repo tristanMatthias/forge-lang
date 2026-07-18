@@ -78,6 +78,24 @@ spec "@query implicit imports dedupe against the driver's own" {
     }
 }
 
+spec "a user symbol shadowing an engine name cannot capture generated code" {
+    then "a same-named local `computed` fn leaves the generated adapter untouched" {
+        // Generated code references the engine FULLY QUALIFIED, so the
+        // driver's own `computed` — a plausible name for query code —
+        // neither collides nor gets captured.
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_shadow_test.av",
+            "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
+            "\n" +
+            "fn computed(tag: string) -> string {\n" +
+            "    \"user-\" + tag\n" +
+            "}\n" +
+            "\n" +
+            query_fn_decl() +
+            query_driver_tail())
+        out.contains("len=5") && out.contains("again=5 computes=1")
+    }
+}
+
 spec "the generated fetch helper is itself dependency-recording" {
     then "a second query reading through text_len_fetch memoizes and recomputes correctly" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_fetch_helper_test.av",

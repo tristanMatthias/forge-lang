@@ -47,9 +47,10 @@ fn dispatch(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, Quer
 }
 ```
 
-Imports the generated code needs beyond the fn's own signature
-(`qk`, `computed`, `QueryKey`, `Computed`, `content_id_for`) are
-injected implicitly, deduped against what the module already imports.
+The generated code references the engine fully qualified
+(`@std::avrac::query::…`), so it resolves regardless of the driver's
+imports — nothing is injected, and a driver's own same-named symbol
+(a local `computed`, say) can never capture a generated reference.
 
 ## Errors (all F4013)
 

@@ -31,7 +31,8 @@ spec "@expand self-recursion stops at the cycle edge with F4012" {
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("expansion cycle") &&
+        out.contains("F4012") &&
+            out.contains("expansion cycle") &&
             out.contains("`carrier`") &&
             out.contains("`loop_macro`") &&
             !out.contains("recursion limit")

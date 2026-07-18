@@ -110,10 +110,10 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
 /// store-and-branch its value to the merge, and reposition at `next_bb`.
 /// Returns the body's type (the walkers keep the FIRST as the match's
 /// result type).
-fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     ctx.position(body_bb)
     let br = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
-    ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+    ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, br), result_slot, merge_bb)
     ctx.position(next_bb)
     ok_match_ty(emit_value_ty(br))
 }
@@ -126,7 +126,7 @@ fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_b
 /// type patterns) are not supported here — unwrap first with `if let` — and
 /// raise a clear error rather than silently dropping the arm. On no match
 /// (no catch-all), traps like any non-exhaustive primitive match.
-fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     let subj = EmitValue { value: v, ty: inner }
     mut first_ty: ValueType = ValueType.Unknown
     mut i = 0
@@ -170,7 +170,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
             } else {
                 return err_match_ty("matching the inner value of an optional with this pattern isn't supported — unwrap first: `if let v = x { match v { … } }`. Optional `match` supports `let <name>` (present), `none` (absent), `_`, and literal patterns.")
             }
-            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb, mixed)?
             if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 // Unguarded catch-all: the trailing block is unreachable.
@@ -190,7 +190,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
 /// Absent-branch arm walk: the optional is known `none`. Only `none` and
 /// `_` arms apply (guard-aware, in order); everything else is skipped. On
 /// no match, traps like any non-exhaustive match.
-fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     mut first_ty: ValueType = ValueType.Unknown
     mut i = 0
     while i < arms.length {
@@ -207,7 +207,7 @@ fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>
                 ctx.br(body_bb)
                 is_catch_all = true
             }
-            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb, mixed)?
             if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 ctx.br_if_open(merge_bb)
@@ -233,12 +233,22 @@ fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     let some_bb = ctx.bb("optm_some")
     let none_bb = ctx.bb("optm_none")
     ctx.cond_br(is_none, none_bb, some_bb)
+    // A null-LITERAL arm body (e.g. a guarded `let v -> null` beside a
+    // value arm) mixes WITHIN a branch — the 2-way post-merge canon
+    // below can't discriminate arms inside one branch, so mixing
+    // switches to store-time boxing (every store canonical, canon
+    // skipped — boxing twice would corrupt).
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     ctx.position(some_bb)
     let v = emit_optional_unwrap(ctx, inner, opt)
-    let present_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb)?
+    let present_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb, mixed)?
     ctx.position(none_bb)
-    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb)?
+    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb, mixed)?
     ctx.position(merge_bb)
+    if mixed {
+        let base = if arm_produces_value(present_ty) { present_ty } else { none_ty }
+        return ok_emit(ctx.load_i64(result_slot, "optm_val"), arm_merge_ty_mixed(true, base))
+    }
     // `is_none` selects the branch (true → none arm, false → present arm), so
     // it maps to the canon's (then = none_ty, else = present_ty).
     let canon = emit_if_optional_canon(ctx, is_none, result_slot, none_ty, present_ty)
@@ -292,6 +302,10 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
     // and the outermost was the first arm).
     mut first_ty: ValueType = ValueType.Unknown
     mut first_ty_set = false
+    // Same null-mix store-time canonicalisation as the enum/primitive
+    // walks: value arms box at their store so a `null` arm merges as
+    // `none`, never a raw 0 a downstream coercion re-boxes to Some(0).
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -321,7 +335,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         ctx.position(next_bb)
                         emit_value_ty(body_result)
                     }
@@ -333,14 +347,14 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         // Cap the type and exit early — no trap
                         // (everything is matched) and no further arms
                         // would execute. If this is the very first
                         // arm, its type is what we report; otherwise
                         // the already-captured `first_ty` wins.
                         let ty = emit_value_ty(body_result)
-                        return ok_match_ty(if first_ty_set { first_ty } else { ty })
+                        return ok_match_ty(arm_merge_ty_mixed(mixed, if first_ty_set { first_ty } else { ty }))
                     }
                 }
             }
@@ -359,7 +373,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         ctx.position(next_bb)
                         emit_value_ty(body_result)
                     }
@@ -375,7 +389,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
     }
     // Fell through every arm (no wildcard) — trap on unmatched tag.
     ctx.match_trap(tag_val)
-    ok_match_ty(first_ty)
+    ok_match_ty(arm_merge_ty_mixed(mixed, first_ty))
 }
 
 /// True when any arm uses a type-pattern (`int(n)` /

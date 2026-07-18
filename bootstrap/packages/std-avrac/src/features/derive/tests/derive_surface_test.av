@@ -15,6 +15,27 @@ fn derive_check_out(path: string, source: string) -> string {
     avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
+spec "@derive inside a loaded module file gets its implicit imports" {
+    then "a `mod helper` file using @derive(Eq) resolves with zero imports" {
+        // The shim injection runs per LOADED BODY, not only on the root
+        // file — a @derive inside a module file the resolver pulls in
+        // must see the same implicit `use`.
+        write_fixture("/tmp/avra_dsm_helper.av",
+            "@derive(Eq)\n" +
+            "export type Pt = { x: int, y: int }\n")
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_modfile_main_test.av",
+            "mod avra_dsm_helper\n" +
+            "use avra_dsm_helper.{Pt}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Pt { x: 1, y: 2 }\n" +
+            "    let b = Pt { x: 1, y: 2 }\n" +
+            "    println(\"modeq=\" + string(a.eq(b)))\n" +
+            "}\n")
+        out.contains("modeq=true")
+    }
+}
+
 spec "@derive(Eq) on a struct needs no imports" {
     then "the implicit shim injection makes .eq available from a bare fixture" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_eq_test.av",
