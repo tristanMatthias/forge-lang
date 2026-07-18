@@ -1,8 +1,8 @@
-// WHY: acceptance spec for the Step-A coarse pass driver (ps3t.8.3 / design
-// doc §4, §11 P0) — the seam where the compiler's OWN front pipeline runs
-// behind the L6 engine. The diff-test oracle already pins that routing
-// through the engine changes no emitted IR; what it CANNOT see is the work
-// profile, so these specs assert it with real parsed programs:
+// WHY: acceptance spec for the compiler's pass driver over the L6 engine
+// (ps3t.8.3 / design doc §4, §11 P0) — the seam where the compiler's OWN
+// front pipeline runs as queries. The diff-test oracle already pins that
+// routing through the engine changes no emitted IR; what it CANNOT see is
+// the work profile, so these specs assert it with real parsed programs:
 //   - the dependency edges recorded by `pass_compute` (a TYPECK fetch pulls
 //     RESOLVE and FOLD exactly once each; a FOLD fetch pulls RESOLVE on its
 //     own, never TYPECK);
@@ -10,15 +10,19 @@
 //   - the coarse fingerprint contract of `pass_set_src` (equal fingerprint
 //     invalidates nothing, a new one recomputes every pass — and the answers
 //     genuinely track the NEW program, not a stale memo);
-//   - Step-A diagnostic routing (type errors ride the pass result's own bag,
+//   - diagnostic routing (type errors ride the pass result's own bag,
 //     exactly as the pre-engine drivers gated);
 //   - the wrong-variant wiring guard surfacing as an F9999 ICE on the
-//     answer's diags rather than a swallow.
+//     answer's diags rather than a swallow;
+//   - the Step-B per-item split's work profile: one ITEM per top-level item
+//     cold; with a frozen ENV a body-only edit recomputes exactly ONE item,
+//     a same-type binding edit cuts off at CHAINS, and a type-changing
+//     binding edit propagates to its dependent.
 
 use @std.avrac.query.{Db, PassValue, pass_compute, pass_db_new, pass_set_src, pass_pin_typeck_env}
 use @std.avrac.query.{pass_fetch_resolved, pass_fetch_folded, pass_fetch_typechecked}
 use @std.avrac.query.{PASS_SRC, PASS_RESOLVE, PASS_FOLD, PASS_TYPECK, db_new, qk}
-use @std.avrac.query.{PASS_TYPECK_ENV, PASS_TYPECK_ITEM, PASS_TYPECK_CHAINS}
+use @std.avrac.query.{PASS_TYPECK_ENV, PASS_TYPECK_ITEM}
 use @std.avrac.parse.{parse_program_source, parse_program_source_shared}
 use @std.avrac.core.{StmtId, content_id_for}
 use @std.avrac.diagnostics.{bag_new, bag_has_errors, diag_code_str}
@@ -115,6 +119,39 @@ spec "coarse pass queries drive the front pipeline through the L6 engine (ps3t.8
         pass_set_src(db, parsed.ids ?? [], parsed.store, content_id_for(SRC_TRIO_B8))
         let second = pass_fetch_typechecked(db)
         first != null && second != null && !bag_has_errors(second!.bag) && second!.stmts.length == first!.stmts.length
+    }
+    then "an EMPTY program aggregates cleanly through the per-item TYPECK path" {
+        let tc = pass_fetch_typechecked(db_for(""))
+        tc != null && tc!.had_error == 0 && tc!.stmts.length == 0
+    }
+    then "an out-of-range ITEM index surfaces as an F9999 ICE on the answer" {
+        let db = db_for(SRC_TRIO)
+        match db.fetch(qk(PASS_TYPECK_ITEM, 99)) {
+            .Ok(f) -> f.diags.length == 1 && diag_code_str(f.diags[0].code) == "F9999"
+            .Err(_) -> false
+        }
+    }
+    then "per-item split: CHAINS cut off a same-TYPE binding edit but propagate a type change" {
+        // The chains carry name→TYPE bindings, so a value-only edit to the
+        // first binding recomputes ONLY it (its dependent's types are
+        // untouched — the chain hash stays equal), while a TYPE-changing
+        // edit must recompute the dependent too: its answer was computed
+        // against `x: Int` and under-propagation would serve it stale. The
+        // work profile IS the contract here — what the dependent's
+        // recompute reports is typeck's own business.
+        let parsed = parse_program_source("let x = 40\nlet y = x + 2\n")
+        let db = pass_db_new(parsed.ids ?? [], parsed.store, content_id_for("chain-a"))
+        let _ = pass_fetch_typechecked(db)
+        let pinned = pass_pin_typeck_env(db)
+        let base = db.computes_of(PASS_TYPECK_ITEM)
+        let value_edit = parse_program_source_shared("let x = 41\nlet y = x + 2\n", "", parsed.store)
+        pass_set_src(db, value_edit.ids ?? [], parsed.store, content_id_for("chain-b"))
+        let _ = pass_fetch_typechecked(db)
+        let after_value = db.computes_of(PASS_TYPECK_ITEM)
+        let type_edit = parse_program_source_shared("let x = \"s\"\nlet y = x + 2\n", "", parsed.store)
+        pass_set_src(db, type_edit.ids ?? [], parsed.store, content_id_for("chain-c"))
+        let tc = pass_fetch_typechecked(db)
+        pinned && tc != null && after_value == base + 1 && db.computes_of(PASS_TYPECK_ITEM) == after_value + 2
     }
     then "a wrong upstream variant surfaces as an F9999 ICE on the answer, never a swallow" {
         // Deliberately mis-seed the SRC cell with a FOLD-shaped value — the

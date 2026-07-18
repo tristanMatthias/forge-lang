@@ -1373,7 +1373,7 @@ export type TypeCheckResult = {
 /// type references an enum declared later in the AST registers with the
 /// un-upgraded ValueType.Struct(name) — so a SECOND pass
 /// (`rewrite_fn_ret_tys`) upgrades ret-type residue against the complete
-/// registry. Tracked under forge-crafting-intepreters-dnq4.
+/// registry.
 export fn typecheck_env(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TC {
     let tc0_pre = tc_new(type_reg, macro_origins, store)
     let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
@@ -1395,10 +1395,9 @@ export fn typecheck_env(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins
 /// `arg_tys` side-table.
 export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TypeCheckResult {
     avra_ice_phase("typeck")
-    // Per-pass wall-clock timings — emitted to stderr at the end
-    // when AVRA_TIMINGS_TYPECK=1 is set, so kkgf can rank the
-    // four typeck passes (collect / check / naming / annotate)
-    // before optimising any one of them.
+    // Wall-clock timings — emitted to stderr at the end when
+    // AVRA_TIMINGS_TYPECK=1 is set: the collect/env phase vs the
+    // per-item fold (check+naming+annotate interleaved per item).
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
     let env = typecheck_env(ids, type_reg, macro_origins, store)
@@ -1422,10 +1421,9 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     }
     let t_items = avra_uptime_ms()
     if timings_on {
-        // Pre-Step-B this printed per-phase check/naming/annotate times; the
-        // phases now interleave inside the per-item fold, so the fold reports
-        // as one figure (instrument inside typecheck_item if kkgf needs the
-        // per-phase ranking again).
+        // The three phases interleave inside the per-item fold, so the fold
+        // reports as one figure (instrument inside typecheck_item if a perf
+        // investigation needs the per-phase ranking again).
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms items=${string(t_items - t_collect)}ms total=${string(t_items - t_start)}ms")
     }
     typecheck_assemble(env, outs, type_reg)
