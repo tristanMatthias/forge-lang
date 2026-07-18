@@ -27,7 +27,11 @@ concurrency:
 jobs:
   rc-strict:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 60, not 45: the ps3t.6.6 surface work grew the suite by ~30
+    # fixture-heavy specs (whole-program compile+link+run each — no warm
+    # fixture cache on CI), and the 45-min ceiling started timing the job
+    # out (reported as "cancelled") on cold runners.
+    timeout-minutes: 60
     steps:
       # Pinned to a commit (what @v4 resolves to at pin time): tags are
       # mutable and this workflow is a trust gate.
