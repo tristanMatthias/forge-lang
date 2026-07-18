@@ -41,6 +41,9 @@ extern fn avra_intmap_has(map: ptr, key: int) -> int
 /// (`export use mod.{name}`): an alias names another module's definition,
 /// so it carries the DEFINITION's path and is never interned as a symbol
 /// of its own (the definition interns when its own module is walked).
+/// `MethodSym` interns during the use-site rewrite — the point where the
+/// impl target has resolved, so the identity is the qualified
+/// `mod::Type__method`, never the collect-time bare mangling.
 export enum SymbolKind {
     FnSym,
     TypeSym,

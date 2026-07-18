@@ -675,6 +675,11 @@ type NameCtx = {
     // Canonical names of every module-level const declaration; lets the
     // uppercase-ident rewrite qualify const references specifically.
     const_index: ConstIndex,
+    // The resolver's symbol interner (ResolverState.symbols). The rewrite
+    // interns impl METHODS here — the one item kind whose qualified
+    // identity (`mod::Foo__run`) only exists once the impl target has
+    // resolved. Insert-once, so re-resolve passes are no-ops.
+    symbols: SymbolTable,
 }
 
 /// One generic type declaration's type-params, indexed for impl-method
@@ -933,9 +938,16 @@ export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
     }
 }
 
-/// Intern every collected item's (path, kind) identity. Alias entries
-/// (re-exports) are skipped — an alias names another module's
-/// definition, which interns when its own module is walked.
+/// Intern every collected item's (path, kind) identity. Two kinds are
+/// skipped here:
+///  - AliasSym (re-exports): an alias names another module's definition,
+///    which interns when its own module is walked.
+///  - MethodSym (impl methods): at collect time the mangled name still
+///    carries the impl target's BARE type (`Foo__run`), so same-named
+///    types in different modules would collapse into one symbol. The
+///    method interns during the use-site rewrite instead
+///    (`rewrite_impl_method_stmt`), where the target has resolved to its
+///    qualified name and the identity is the true `mod::Foo__run`.
 fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
     mut i = 0
     while i < items.length {
@@ -944,8 +956,8 @@ fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
         // global_item_reg_build's bind-to-locals comment).
         let entry = items[i]
         match entry.kind {
-            .AliasSym -> {}
-            .FnSym or .TypeSym or .EnumSym or .TraitSym or .NewtypeSym or .UnionAliasSym or .ShapeSym or .ConstSym or .MethodSym -> {
+            .AliasSym or .MethodSym -> {}
+            .FnSym or .TypeSym or .EnumSym or .TraitSym or .NewtypeSym or .UnionAliasSym or .ShapeSym or .ConstSym -> {
                 let _ = table.intern(entry.canonical, entry.kind, entry.exported)
             }
         }
@@ -987,6 +999,7 @@ export fn rewrite_uses(ids: List<StmtId>, state: ResolverState) -> List<StmtId> 
         type_decl_tps: tps,
         module_top: false,
         const_index: const_index_build(state.nodes, ids),
+        symbols: state.symbols,
     }
     rewrite_stmt_ids(ctx, ids)
 }
@@ -1017,6 +1030,7 @@ export fn rewrite_uses_macro_only(ids: List<StmtId>, state: ResolverState) -> Li
         type_decl_tps: tps,
         module_top: false,
         const_index: const_index_build(state.nodes, ids),
+        symbols: state.symbols,
     }
     rewrite_macro_stmts(ctx, ids)
 }
@@ -1713,6 +1727,11 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
         .Function(name, tp, params, rvt, body) -> {
             let mn = method_from_mangled(name)
             let qualified_name = method_mangled_name(qualified_type, mn)
+            // Intern the method's symbol identity HERE — the one place the
+            // impl target has resolved to its qualified name, so
+            // `a::Foo__run` and `b::Foo__run` are distinct symbols
+            // (collect-time skips MethodSym; see intern_item_symbols).
+            let _ = ctx.symbols.intern(qualified_name, SymbolKind.MethodSym, true)
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
             Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_ids(bind_params_ctx(ctx_tp, rp), body))

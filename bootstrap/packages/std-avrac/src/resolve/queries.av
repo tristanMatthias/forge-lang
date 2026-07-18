@@ -91,6 +91,14 @@ export type RqImport = {
 /// One reference site: the name being resolved, the enclosing module
 /// paths innermost-first (the scope chain), and the imports visible
 /// there. This descriptor IS the query key material — see `rq_ref_key`.
+///
+/// Resolution selects by NAME, mirroring the batch rewriter's value
+/// lookup (`rewrite_ident`); when a fn and a type share a qualified
+/// path, the syntactic NAMESPACE of the ref site (value vs type
+/// position) is what disambiguates — the batch resolver separates those
+/// walks structurally. The wired driver (the pass-wiring lane) threads
+/// that namespace into this descriptor when it builds real refs; the
+/// standalone model keeps the descriptor minimal until then.
 export type RqRef = {
     name: string,
     scope_chain: List<string>,

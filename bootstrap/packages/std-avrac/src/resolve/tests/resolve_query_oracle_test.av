@@ -21,6 +21,7 @@ use @std.avrac.resolve.{RqDecl, RqImport, RqRef, RqValue, RqInput, rq_db_new, rq
 use @std.avrac.resolve.{RQ_FAM_RESOLVE, RQ_FAM_SURFACE, RQ_FAM_INDEX}
 use @std.avrac.query.{Db, QueryKey, qk}
 use @std.avrac.query.{InputWrite, EditStep, OracleReport, run_edit_oracle, oracle_clean, oracle_saved_work}
+use @std.avrac.diagnostics.{diag_code_str}
 
 fn d(name: string, kind: SymbolKind, sig: string, body: string, exported: bool) -> RqDecl {
     RqDecl { name, kind, sig, body, exported }
@@ -57,10 +58,20 @@ fn apply(db: Db<RqValue>, w: RqInput) {
     db.set_input(w.q, w.value, w.value_hash)
 }
 
-/// Fetch + render a root (values AND diagnostics — they memoize together).
+/// Fetch + render a root — value AND full diagnostic identity (codes,
+/// not just counts), so a diagnostic-only change can never compare
+/// equal here. The engine-level guarantee is stronger still: its memo
+/// answer hash folds every diagnostic canonical (`answer_hash_of`), and
+/// the run_edit_oracle harness compares full canonicals too.
 fn answer(db: Db<RqValue>, q: QueryKey) -> string {
     match db.fetch(q) {
-        .Ok(f) -> "${rq_render(f.value)}|diags:${string(f.diags.length)}"
+        .Ok(f) -> {
+            mut s = "${rq_render(f.value)}|diags:${string(f.diags.length)}"
+            for dg in f.diags {
+                s = "${s}|${diag_code_str(dg.code)}"
+            }
+            s
+        }
         .Err(_) -> "cycle"
     }
 }
@@ -120,7 +131,7 @@ spec "private-internal edits do NOT invalidate importers (ps3t.8.4 acceptance)" 
         let db = warmed_db()
         apply(db, lib_state("fn(int)->int", "body:v1", false, "helper", "hbody:v1"))
         let after = answer(db, resolve_key(importer_ref()))
-        after == "sym:0|diags:1" && db.computes_of(RQ_FAM_RESOLVE) == 2
+        after == "sym:0|diags:1|F3102" && db.computes_of(RQ_FAM_RESOLVE) == 2
     }
     then "flipping it back re-resolves to the SAME stable sym_id (content-addressed, no counter drift)" {
         let db = warmed_db()
