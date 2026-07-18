@@ -1,0 +1,150 @@
+// sh48 — structure-content-addressed type fingerprints (Merkle), the FIRST
+// SLICE of the ps3t.8.5 sig_fp story (design:
+// docs/2026_07_14_SH48_STRUCTURE_CONTENT_ADDRESSED_TYPEID_DESIGN.md §4).
+// `type_structure_fingerprints` snapshots every registered type's structure
+// hash: deterministic across builds, cycle-safe over mutually-recursive
+// graphs (Tarjan SCC condensation — total, no fixed-point iteration),
+// nominally distinct (FQN mixed in), and Merkle-transitive (a child's
+// structure change moves every transitive referencer; an unrelated type's
+// fingerprint stays put — the cache-invalidation property). The nominal
+// TypeId is untouched: this is additive.
+
+use @std.avrac.core.{TypeRegistry, TypeKind, FieldEntry, Variant, ValueType}
+use @std.avrac.core.{type_registry_new, type_registry_register, type_registry_id_for}
+use @std.avrac.core.{TypeStructureFps, type_structure_fingerprints}
+
+fn field(name: string, vt: ValueType) -> FieldEntry {
+    FieldEntry { name, resolved: vt }
+}
+
+fn struct_ref(name: string) -> ValueType {
+    let no_args: List<ValueType> = []
+    ValueType.Struct(name, no_args, 0)
+}
+
+fn reg_struct(reg: TypeRegistry, name: string, fields: List<FieldEntry>) -> int {
+    let no_variants: List<Variant> = []
+    type_registry_register(reg, name, TypeKind.StructKind, fields, no_variants, ValueType.Unknown)
+}
+
+fn reg_newtype(reg: TypeRegistry, name: string, inner: ValueType) -> int {
+    let no_fields: List<FieldEntry> = []
+    let no_variants: List<Variant> = []
+    type_registry_register(reg, name, TypeKind.NewtypeKind, no_fields, no_variants, inner)
+}
+
+/// A registry with a mutually-recursive pair (SNode <-> ENode), a chained
+/// consumer (Wrap -> SNode), and an unrelated bystander (Lone). `leaf_vt`
+/// parameterises SNode's payload so specs can build "same shape" and
+/// "one leaf changed" registries from one constructor.
+fn graph_registry(leaf_vt: ValueType) -> TypeRegistry {
+    let reg = type_registry_new()
+    let _ = reg_struct(reg, "SNode", [field("e", struct_ref("ENode")), field("payload", leaf_vt)])
+    let _ = reg_struct(reg, "ENode", [field("s", struct_ref("SNode"))])
+    let _ = reg_struct(reg, "Wrap", [field("inner", struct_ref("SNode"))])
+    let _ = reg_struct(reg, "Lone", [field("q", ValueType.Int)])
+    reg
+}
+
+fn fp_in(reg: TypeRegistry, name: string) -> int {
+    let t = type_structure_fingerprints(reg)
+    let opt = t.fp_of(type_registry_id_for(reg, name))
+    if opt == null { 0 } else { opt! }
+}
+
+spec "type_structure_fingerprints: deterministic, cycle-safe, Merkle (sh48)" {
+    given "two identically-built registries" {
+        then "every type's fingerprint is identical (determinism-by-construction)" {
+            let a = graph_registry(ValueType.Int)
+            let b = graph_registry(ValueType.Int)
+            fp_in(a, "SNode") == fp_in(b, "SNode") &&
+                fp_in(a, "ENode") == fp_in(b, "ENode") &&
+                fp_in(a, "Wrap") == fp_in(b, "Wrap") &&
+                fp_in(a, "Lone") == fp_in(b, "Lone")
+        }
+    }
+    given "a mutually-recursive pair (SNode <-> ENode)" {
+        then "fingerprinting terminates and members of the cycle hash apart" {
+            let reg = graph_registry(ValueType.Int)
+            let s = fp_in(reg, "SNode")
+            let e = fp_in(reg, "ENode")
+            s != 0 && e != 0 && s != e
+        }
+        then "a field change ANYWHERE in the cycle moves EVERY member (whole-SCC digest)" {
+            let a = graph_registry(ValueType.Int)
+            let b = graph_registry(ValueType.Str)
+            fp_in(a, "SNode") != fp_in(b, "SNode") &&
+                fp_in(a, "ENode") != fp_in(b, "ENode")
+        }
+    }
+    given "the Merkle propagation boundary" {
+        then "a leaf change reaches the transitive referencer (Wrap -> SNode)" {
+            let a = graph_registry(ValueType.Int)
+            let b = graph_registry(ValueType.Str)
+            fp_in(a, "Wrap") != fp_in(b, "Wrap")
+        }
+        then "an UNRELATED type's fingerprint stays put (the invalidation precision)" {
+            let a = graph_registry(ValueType.Int)
+            let b = graph_registry(ValueType.Str)
+            fp_in(a, "Lone") == fp_in(b, "Lone") && fp_in(a, "Lone") != 0
+        }
+    }
+    given "nominal distinctness (FQN is the primary discriminator)" {
+        then "two newtypes over the SAME inner type hash apart (UserId != ProductId)" {
+            let reg = type_registry_new()
+            let _ = reg_newtype(reg, "UserId", ValueType.Str)
+            let _ = reg_newtype(reg, "ProductId", ValueType.Str)
+            let u = fp_in(reg, "UserId")
+            let p = fp_in(reg, "ProductId")
+            u != 0 && p != 0 && u != p
+        }
+    }
+    given "structure sensitivity in source order" {
+        then "reordering fields MOVES the fingerprint (GEP indices are structure)" {
+            let a = type_registry_new()
+            let _ = reg_struct(a, "Foo", [field("x", ValueType.Int), field("y", ValueType.Str)])
+            let b = type_registry_new()
+            let _ = reg_struct(b, "Foo", [field("y", ValueType.Str), field("x", ValueType.Int)])
+            fp_in(a, "Foo") != fp_in(b, "Foo")
+        }
+        then "a same-count field-NAME reassociation cannot collide (framing: ab|c vs a|bc)" {
+            let a = type_registry_new()
+            let _ = reg_struct(a, "Foo", [field("ab", ValueType.Int), field("c", ValueType.Int)])
+            let b = type_registry_new()
+            let _ = reg_struct(b, "Foo", [field("a", ValueType.Int), field("bc", ValueType.Int)])
+            fp_in(a, "Foo") != fp_in(b, "Foo")
+        }
+        then "enum variant payloads participate (variant field type change moves the fp)" {
+            let a = type_registry_new()
+            let no_fields: List<FieldEntry> = []
+            let _ = type_registry_register(a, "E", TypeKind.EnumKind, no_fields, [Variant { name: "V", fields: [field("p", ValueType.Int)] }], ValueType.Unknown)
+            let b = type_registry_new()
+            let _ = type_registry_register(b, "E", TypeKind.EnumKind, no_fields, [Variant { name: "V", fields: [field("p", ValueType.Str)] }], ValueType.Unknown)
+            fp_in(a, "E") != fp_in(b, "E") && fp_in(a, "E") != 0
+        }
+    }
+    given "self-recursive and generic-instance shapes" {
+        then "a directly self-referential type terminates and is deterministic" {
+            let a = type_registry_new()
+            let _ = reg_struct(a, "Cell", [field("next", struct_ref("Cell")), field("v", ValueType.Int)])
+            let b = type_registry_new()
+            let _ = reg_struct(b, "Cell", [field("next", struct_ref("Cell")), field("v", ValueType.Int)])
+            fp_in(a, "Cell") == fp_in(b, "Cell") && fp_in(a, "Cell") != 0
+        }
+        then "type args distinguish generic instances (Box<int> field vs Box<string> field)" {
+            let a = type_registry_new()
+            let _ = reg_struct(a, "Holder", [field("b", ValueType.Struct("Box", [ValueType.Int], 0))])
+            let b = type_registry_new()
+            let _ = reg_struct(b, "Holder", [field("b", ValueType.Struct("Box", [ValueType.Str], 0))])
+            fp_in(a, "Holder") != fp_in(b, "Holder")
+        }
+    }
+    given "the snapshot's presence contract" {
+        then "fp_of on an unregistered id is null (0 is a legal fingerprint, never a sentinel)" {
+            let reg = type_registry_new()
+            let _ = reg_struct(reg, "Only", [field("x", ValueType.Int)])
+            let t = type_structure_fingerprints(reg)
+            t.fp_of(12345) == null && t.fp_of(type_registry_id_for(reg, "Only")) != null
+        }
+    }
+}

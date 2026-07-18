@@ -1,0 +1,184 @@
+// ps3t.8.5 — the END-TO-END cutoff proof (ticket acceptance): a mini
+// compiler driver whose queries key on the REAL two-level fingerprints
+// (`item_sig_fp` / `item_body_fp` over genuinely parsed items), replayed
+// through the L6 engine and gated by the differential oracle.
+//
+// The query graph mirrors the design (§7): per-item `sig`/`body` queries
+// parse the item's source and return its fingerprint; `typeck(item)`
+// depends on the item's own sig+body and — for the caller — on the
+// CALLEE'S `sig`; `codegen(item)` depends on the item's `typeck` + `body`.
+// The scripted edits then prove each §7 claim at the ENGINE level, with
+// per-family compute counts (the instrumentation the oracle exists for):
+//
+//   body-only edit of callee  → callee's codegen recomputes; the CALLER'S
+//                               typeck GREEN-REVALIDATES with ZERO
+//                               recomputes (sig_fp absorbed the wave)
+//   whitespace/comment edit   → sig/body queries rerun but both
+//                               fingerprints hold → typeck AND codegen
+//                               absorb it completely
+//   local-rename-only edit    → body query reruns but body_fp holds →
+//                               codegen absorbed too (alpha-canonicalization)
+//   param-TYPE (sig) edit     → the wave finally reaches the caller: both
+//                               typecks and both codegens recompute
+//
+// The same script replays under `run_edit_oracle` — incremental answers
+// must equal from-scratch at every step AND do strictly less work.
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, qk, computed, db_new}
+use @std.avrac.query.{InputWrite, EditStep, run_edit_oracle, oracle_clean, oracle_saved_work}
+use @std.avrac.core.{content_id_for, item_sig_fp, item_body_fp}
+use @std.avrac.parse.{parse_program_source}
+
+const FAM_SRC = 0
+const FAM_SIG = 1
+const FAM_BODY = 2
+const FAM_TYPECK = 3
+const FAM_CODEGEN = 4
+
+const CALLEE = 0
+const CALLER = 1
+
+/// The REAL signature fingerprint of the (single) item in `src`, 0 on a
+/// parse error (a distinct answer, so a broken edit can't masquerade as
+/// an absorbed one).
+fn src_sig_fp(src: string) -> int {
+    let r = parse_program_source(src)
+    if r.had_error != 0 { return 0 }
+    item_sig_fp(r.store, r.ids![0])
+}
+
+fn src_body_fp(src: string) -> int {
+    let r = parse_program_source(src)
+    if r.had_error != 0 { return 0 }
+    item_body_fp(r.store, r.ids![0])
+}
+
+/// The driver: five query families over two items. Every cross-query read
+/// goes through `ctx.fetch` — the engine discovers the dependency graph.
+fn fp_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == FAM_SIG {
+        let src = ctx.fetch(qk(FAM_SRC, q.arg))?
+        let fp = src_sig_fp(src)
+        // let-bound (not inline) — the builtin string() cast as a generic
+        // V-inferring argument fails inference and ICEs (t-pbtd).
+        let v = string(fp)
+        return Result.Ok(computed(v, fp))
+    }
+    if q.family == FAM_BODY {
+        let src = ctx.fetch(qk(FAM_SRC, q.arg))?
+        let fp = src_body_fp(src)
+        let v = string(fp)
+        return Result.Ok(computed(v, fp))
+    }
+    if q.family == FAM_TYPECK {
+        // An item's typeck reads its own interface AND body (both are
+        // checked), plus the callee's INTERFACE when it calls out — never
+        // the callee's body. That asymmetry IS the §7 cutoff.
+        let own_sig = ctx.fetch(qk(FAM_SIG, q.arg))?
+        let _own_body = ctx.fetch(qk(FAM_BODY, q.arg))?
+        mut v = "typeck-ok(${string(q.arg)}, sig=${own_sig})"
+        if q.arg == CALLER {
+            let callee_sig = ctx.fetch(qk(FAM_SIG, CALLEE))?
+            v = "${v}|callee_sig=${callee_sig}"
+        }
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == FAM_CODEGEN {
+        let t = ctx.fetch(qk(FAM_TYPECK, q.arg))?
+        let b = ctx.fetch(qk(FAM_BODY, q.arg))?
+        let v = "code(${string(q.arg)}, body=${b}, [${t}])"
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    Result.Ok(computed("?", 0))
+}
+
+// The item corpus: one callee, one caller, plus the four edits of the
+// callee. Every edit is REAL source the fingerprints must classify.
+fn callee_v0() -> string { "fn callee(a: int) -> int { let t = a + 1\n return t }" }
+fn caller_src() -> string { "fn caller() -> int { return callee(4) }" }
+/// Body-only: different arithmetic, same signature.
+fn callee_body_edit() -> string { "fn callee(a: int) -> int { let t = a + 2\n return t }" }
+/// Whitespace/comment-only relative to the body edit.
+fn callee_ws_edit() -> string { "// docs\nfn callee( a: int ) -> int {\n    let t = a + 2\n    return t\n}" }
+/// Local-rename-only relative to the body edit (t -> tmp).
+fn callee_rename_edit() -> string { "fn callee(a: int) -> int { let tmp = a + 2\n return tmp }" }
+/// Signature edit: the param type flips — callers must re-typecheck.
+fn callee_sig_edit() -> string { "fn callee(a: string) -> int { let tmp = 9\n return tmp }" }
+
+fn w(item: int, src: string) -> InputWrite<string> {
+    InputWrite { q: qk(FAM_SRC, item), value: src, value_hash: content_id_for(src) }
+}
+
+fn render_str(v: string) -> string { v }
+
+/// Drive one incremental database through the four edits, refetching both
+/// codegen roots after each, and render the PER-FAMILY compute deltas.
+/// Format per step: sig+body reruns, typeck reruns, codegen reruns.
+fn drive_counts() -> string {
+    let mut db: Db<string> = db_new<string>(fp_compute)
+    db.set_input(qk(FAM_SRC, CALLEE), callee_v0(), content_id_for(callee_v0()))
+    db.set_input(qk(FAM_SRC, CALLER), caller_src(), content_id_for(caller_src()))
+    if !fetch_roots(db) { return "cycle" }
+
+    mut out = ""
+    let edits: List<string> = [callee_body_edit(), callee_ws_edit(), callee_rename_edit(), callee_sig_edit()]
+    let labels: List<string> = ["body", "ws", "rename", "sig"]
+    mut i = 0
+    while i < edits.length {
+        let src = edits[i]
+        let s0 = db.computes_of(FAM_SIG) + db.computes_of(FAM_BODY)
+        let t0 = db.computes_of(FAM_TYPECK)
+        let c0 = db.computes_of(FAM_CODEGEN)
+        db.set_input(qk(FAM_SRC, CALLEE), src, content_id_for(src))
+        if !fetch_roots(db) { return "cycle" }
+        let ds = db.computes_of(FAM_SIG) + db.computes_of(FAM_BODY) - s0
+        let dt = db.computes_of(FAM_TYPECK) - t0
+        let dc = db.computes_of(FAM_CODEGEN) - c0
+        out = "${out}${labels[i]}:sb${string(ds)},t${string(dt)},c${string(dc)};"
+        i = i + 1
+    }
+    out
+}
+
+/// Fetch both codegen roots (typeck rides transitively). False on a cycle.
+fn fetch_roots(db: Db<string>) -> bool {
+    match db.fetch(qk(FAM_CODEGEN, CALLEE)) {
+        .Ok(_) -> {}
+        .Err(_) -> { return false }
+    }
+    match db.fetch(qk(FAM_CODEGEN, CALLER)) {
+        .Ok(_) -> {}
+        .Err(_) -> { return false }
+    }
+    true
+}
+
+spec "L6 fingerprints drive the engine's cutoff end-to-end (ps3t.8.5)" {
+    given "the per-family compute deltas across the four scripted edits" {
+        then "body edit: codegen(callee) reruns, caller typeck+codegen GREEN with zero recomputes; ws + rename edits are fully absorbed; sig edit reaches everything" {
+            // body: sig+body rerun (2, answers: sig holds, body moves),
+            //       typeck reruns for the CALLEE only (its own body dep
+            //       moved; its answer holds -> cutoff), the CALLER'S typeck
+            //       green-revalidates (0 of its deps changed) -> t1;
+            //       codegen reruns for the callee only -> c1.
+            // ws:   sig+body rerun and BOTH answers hold -> t0, c0.
+            // rename: same — body_fp is alpha-canonical -> t0, c0.
+            // sig:  sig moves -> both typecks, both codegens rerun.
+            drive_counts() == "body:sb2,t1,c1;ws:sb2,t0,c0;rename:sb2,t0,c0;sig:sb2,t2,c2;"
+        }
+    }
+    given "the same script under the differential oracle" {
+        then "incremental == from-scratch at every step, with strictly less work" {
+            let base = [w(CALLEE, callee_v0()), w(CALLER, caller_src())]
+            let script = [
+                EditStep { writes: [w(CALLEE, callee_body_edit())] },
+                EditStep { writes: [w(CALLEE, callee_ws_edit())] },
+                EditStep { writes: [w(CALLEE, callee_rename_edit())] },
+                EditStep { writes: [w(CALLEE, callee_sig_edit())] },
+            ]
+            let roots = [qk(FAM_CODEGEN, CALLEE), qk(FAM_CODEGEN, CALLER), qk(FAM_TYPECK, CALLER)]
+            let r = run_edit_oracle(base, script, roots, fp_compute, render_str)
+            oracle_clean(r) && oracle_saved_work(r) && r.steps == 5
+        }
+    }
+}
