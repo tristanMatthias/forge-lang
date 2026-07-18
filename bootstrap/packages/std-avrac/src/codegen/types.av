@@ -70,6 +70,11 @@ export type Ctx = {
     // function bodies all use it.
     current_fn: ptr,
     current_fn_name: string,
+    // The CURRENT fn's parameter NAMES (empty outside a user body). The
+    // ownership-policy predicate `expr_is_shared_alias` reads it: a bare
+    // ident stored into a struct field shares FOREIGN ownership only when
+    // it names a param — a local's tick transfers instead.
+    current_fn_params: List<string>,
     i64_type: ptr,
     i1_type: ptr,
     ptr_type: ptr,
@@ -1578,9 +1583,10 @@ impl Ctx {
 
     fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
         let empty: List<string> = []
+        let no_params: List<string> = []
         let empty_defers: List<DeferEntry> = []
         let empty_rc: List<RcCleanupEntry> = []
-        self with { current_fn: fn_val, current_fn_name: fn_name, defers: empty_defers, rc_cleanup: empty_rc, rc_releasable: empty, task_group: null }
+        self with { current_fn: fn_val, current_fn_name: fn_name, current_fn_params: no_params, defers: empty_defers, rc_cleanup: empty_rc, rc_releasable: empty, task_group: null }
     }
 
     fn with_loops(self, loops: List<LoopStackFrame>) -> Ctx {

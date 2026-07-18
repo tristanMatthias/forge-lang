@@ -299,42 +299,59 @@ fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: Lis
     mut acc = set
     mut i = 0
     while i < inits.length {
-        // A DIRECT alias init (`Foo { f: x }` / `f: obj.g` / `f: xs[i]`) no
-        // longer escapes the source: fill_struct_fields retains the stored
-        // pointer (the struct owns its own RC tick — the with_expr model),
-        // so the source binding stays owner of ITS tick and must still be
-        // released at scope exit. Removing it here would leak that tick;
-        // NOT retaining in codegen would let the holder's recursive
-        // __release free contents the source (a param, another struct's
-        // field) still owns — the over-release this pairing fixed.
-        // Anything more complex sweeps exactly as before.
-        let init_expr = store.exprs.get(inits[i].value_id)
-        if !expr_is_direct_alias(store, init_expr) {
-            acc = remove_escaped_expr(store, init_expr, acc)
-        }
+        acc = remove_escaped_expr(store, store.exprs.get(inits[i].value_id), acc)
         i = i + 1
     }
     acc
 }
 
-/// The init shapes whose emitted value ALIASES existing data rather than
-/// allocating fresh: a PURE ACCESS PATH — a bare name, or a chain of field
-/// reads / tuple slots rooted at one (plus parenthesised forms). Chains
-/// containing calls or index reads are NOT treated as aliases here (their
-/// sub-expressions carry escaping uses that must still be swept; indexed
-/// element reads are a recorded residual of the same ownership bug).
-/// Must stay in lockstep with the retain in struct_decl/codegen.av's
-/// `fill_struct_fields` — the retain and the keep-releasable decision are
-/// two halves of one ownership rule.
-export fn expr_is_direct_alias(store: NodeStore, expr: Expr) -> bool {
+/// OWNERSHIP-POLICY PREDICATE for a value stored into a struct field
+/// (struct-literal init / with-expr override): true when the value is
+/// owned by someone the current scope does NOT own outright, so the store
+/// must RETAIN (the holder gets its own RC tick):
+///  - a bare ident naming a PARAM or lambda CAPTURE (`foreign_names`) —
+///    the caller / enclosing scope keeps its reference;
+///  - a module-level global (QualifiedIdent);
+///  - a field / tuple-slot READ of any pure access path — the read struct
+///    keeps owning its field.
+/// A bare ident naming a LOCAL is NOT foreign: escape analysis removes the
+/// local from the releasable set (it escapes into the holder) and its tick
+/// TRANSFERS — the historical model, load-bearing twice over: the local
+/// must not be released separately, and `try_copy_stack_target` treats
+/// releasable as the stack-allocation escape proof, so a transferred local
+/// must drop out of that set. Chains containing calls or index reads are
+/// not classified (indexed element reads are the recorded t-c6y7
+/// residual of the same ownership bug).
+export fn expr_is_shared_alias(store: NodeStore, expr: Expr, foreign_names: List<string>) -> bool {
+    match expr {
+        .Ident(name) -> name_in_names(foreign_names, name)
+        .QualifiedIdent(_) -> true
+        .FieldAccess(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
+        .TupleIndex(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
+        .Grouping(inner) -> expr_is_shared_alias(store, store.exprs.get(inner), foreign_names)
+        _ -> false
+    }
+}
+
+/// A pure access path: a bare/qualified name or a chain of field reads /
+/// tuple slots over one (plus parenthesised forms).
+fn expr_is_access_path(store: NodeStore, expr: Expr) -> bool {
     match expr {
         .Ident(_) -> true
         .QualifiedIdent(_) -> true
-        .FieldAccess(obj, _) -> expr_is_direct_alias(store, store.exprs.get(obj))
-        .TupleIndex(obj, _) -> expr_is_direct_alias(store, store.exprs.get(obj))
-        .Grouping(inner) -> expr_is_direct_alias(store, store.exprs.get(inner))
+        .FieldAccess(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
+        .TupleIndex(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
+        .Grouping(inner) -> expr_is_access_path(store, store.exprs.get(inner))
         _ -> false
     }
+}
+
+/// Membership probe over a name list (params/captures are tiny).
+fn name_in_names(names: List<string>, name: string) -> bool {
+    for n in names {
+        if n == name { return true }
+    }
+    false
 }
 
 // ── Arena eligibility (spec Axis 9.6) ─────────────────────────────

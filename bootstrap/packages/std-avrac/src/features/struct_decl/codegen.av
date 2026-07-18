@@ -2,7 +2,7 @@
 
 use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr}
 use features.closures.{emit_expected}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, expr_is_direct_alias}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, expr_is_shared_alias}
 use core.{type_registry_id_for, vtype_struct}
 use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
@@ -138,17 +138,18 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
                 // threading); every other init is a plain emit.
                 mut r = emit_expected(ctx, env, init_expr, fld_ty)?
                 let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-                // A pure access-path init (`f: x` / `f: obj.g` — see
-                // expr_is_direct_alias) stores a pointer the SOURCE still
-                // owns: a param's caller, another struct, another binding.
-                // The new struct must own its own RC tick or its recursive
-                // __release frees contents the source keeps using (the
-                // with_expr precedent, extended to literals — found when a
-                // registry stored into a fingerprint state struct was freed
-                // out from under its caller). The retain pairs with escape
-                // analysis KEEPING such a source releasable — two halves of
-                // one ownership rule.
-                let aliases_source = expr_is_direct_alias(ctx.nodes, init_expr) && vtype_is_ptr_type(r.ty)
+                // A FOREIGN-owned init (`f: some_param` / `f: obj.g` — see
+                // expr_is_shared_alias) stores a pointer the source still
+                // owns: the caller's argument, a captured value, another
+                // struct's field. The new struct must own its own RC tick
+                // or its recursive __release frees contents the source
+                // keeps using (the with_expr precedent, extended to
+                // literals — found when a registry param stored into a
+                // fingerprint state struct was freed out from under its
+                // caller). LOCAL idents are excluded — their tick
+                // TRANSFERS (escape analysis removes them from the
+                // releasable set, which also gates Copy stack allocation).
+                let aliases_source = expr_is_shared_alias(ctx.nodes, init_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
                 let pre_coerce = r.value
                 // Optional box/unbox into the field's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, fld_ty)

@@ -179,6 +179,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
     ctx.position(entry)
 
     mut body_cg = ctx.with_fn(fn_val, name)
+    body_cg.current_fn_params = param_names_of(params)
     body_cg.cov_fn_entry()
     body_cg.rc_releasable = analyze_releasable(ctx.nodes, body_ids)
 
@@ -920,4 +921,14 @@ fn emit_newtype_ctor(ctx: Ctx, env: List<VarBinding>, name: string, args: List<E
     let r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     let inner_ty = ctx.resolve_codegen_vtype(cg_newtype_vtype_lookup(ctx.newtypes, name))
     ok_emit(r.value, .Newtype(name, inner_ty, type_registry_id_for(ctx.type_reg, name)))
+}
+
+/// The bare parameter NAMES of a fn — stamped onto `Ctx.current_fn_params`
+/// so the struct-store ownership predicate (`expr_is_shared_alias`) can
+/// tell a param reference (foreign ownership — retain) from a local
+/// reference (ownership transfer).
+fn param_names_of(params: List<ParamEntry>) -> List<string> {
+    mut out: List<string> = []
+    for p in params { out.push(p.name) }
+    out
 }
