@@ -372,6 +372,7 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
 
     let copy_types = analyze_copy_types(structs, enums)
     let empty_releasable: List<string> = []
+    let empty_fn_param_names: List<string> = []
     let empty_loops: List<LoopStackFrame> = []
     let empty_defers: List<DeferEntry> = []
     let empty_rc: List<RcCleanupEntry> = []
@@ -381,6 +382,8 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
         builder,
         current_fn: main_fn,
         current_fn_name: main_name,
+        current_fn_params: empty_fn_param_names,
+        alias_retain_scope: false,
         i64_type: i64t,
         i1_type: i1t,
         ptr_type: pt,

@@ -1,0 +1,115 @@
+// ps3t.8.5 — signature-fingerprint contract (design doc §7). `item_sig_fp`
+// is the TYPECK early-cutoff key: BODY-INDEPENDENT (a body edit must keep
+// it), and sensitive to every signature-visible fact — name, param/return
+// types including a declared error union, generic bounds, visibility
+// (`export` rides the annotation surface), and effect-bearing annotations.
+// Adversarial cases pin the length-prefix framing (no part-boundary
+// reassociation) and the param-NAME exclusion (callers can't observe
+// parameter names, so renaming one must reuse callers' typeck).
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{item_sig_fp}
+
+/// Signature fingerprint of the first top-level item of `source`, or 0 on a
+/// parse error (asserted non-zero everywhere below).
+fn sig_of(source: string) -> int {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return 0 }
+    item_sig_fp(r.store, r.ids![0])
+}
+
+spec "item_sig_fp: body-independent, signature-sensitive (ps3t.8.5)" {
+    given "edits a caller cannot observe" {
+        then "a BODY-ONLY edit keeps sig_fp (the typeck-cutoff property)" {
+            let a = sig_of("fn f(a: int) -> int { return a }")
+            let b = sig_of("fn f(a: int) -> int { return a + 1 }")
+            a != 0 && a == b
+        }
+        then "whitespace/comment-only edits keep sig_fp" {
+            let a = sig_of("fn f(a: int) -> int { return a }")
+            let b = sig_of("// leading comment\nfn f(  a: int  ) -> int {\n    return a\n}")
+            a != 0 && a == b
+        }
+        then "renaming a PARAM keeps sig_fp (names are excluded by design)" {
+            let a = sig_of("fn f(alpha: int) -> int { return alpha }")
+            let b = sig_of("fn f(beta: int) -> int { return beta }")
+            a != 0 && a == b
+        }
+    }
+    given "signature-visible changes" {
+        then "renaming the fn moves sig_fp" {
+            let a = sig_of("fn f(a: int) -> int { return a }")
+            let b = sig_of("fn g(a: int) -> int { return a }")
+            a != 0 && b != 0 && a != b
+        }
+        then "changing a param TYPE moves sig_fp" {
+            let a = sig_of("fn f(a: int) -> int { return 1 }")
+            let b = sig_of("fn f(a: string) -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "adding a param moves sig_fp" {
+            let a = sig_of("fn f(a: int) -> int { return 1 }")
+            let b = sig_of("fn f(a: int, b: int) -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "changing the return type moves sig_fp" {
+            let a = sig_of("fn f() -> int { return 1 }")
+            let b = sig_of("fn f() -> string { return \"1\" }")
+            a != 0 && b != 0 && a != b
+        }
+        then "WIDENING the declared error union moves sig_fp" {
+            let a = sig_of("fn f() -> Result<int, IoError> { return Result.Ok(1) }")
+            let b = sig_of("fn f() -> Result<int, IoError | ParseError> { return Result.Ok(1) }")
+            a != 0 && b != 0 && a != b
+        }
+        then "adding a generic BOUND moves sig_fp (<T> vs <T: Display>)" {
+            let a = sig_of("fn f<T>(x: T) -> T { return x }")
+            let b = sig_of("fn f<T: Display>(x: T) -> T { return x }")
+            a != 0 && b != 0 && a != b
+        }
+        then "flipping VISIBILITY moves sig_fp (export is interface)" {
+            let a = sig_of("fn f() -> int { return 1 }")
+            let b = sig_of("export fn f() -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "an effect-bearing annotation moves sig_fp (@comptime)" {
+            let a = sig_of("fn f() -> int { return 1 }")
+            let b = sig_of("@comptime\nfn f() -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "annotation ARGS move sig_fp (@derive(walker) vs @derive(marshal))" {
+            let a = sig_of("@derive(walker)\nfn f() -> int { return 1 }")
+            let b = sig_of("@derive(marshal)\nfn f() -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "fn and extern fn with the same shape hash apart (kind participates)" {
+            let a = sig_of("fn f(a: int) -> int { return 1 }")
+            let b = sig_of("extern fn f(a: int) -> int")
+            a != 0 && b != 0 && a != b
+        }
+    }
+    given "delimiter-collision attempts (length-prefix framing)" {
+        then "generic name/bound boundary cannot reassociate (<TE: q> vs <T: Eq>)" {
+            let a = sig_of("fn f<TE: q>() -> int { return 1 }")
+            let b = sig_of("fn f<T: Eq>() -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "fn-name/annotation boundary cannot reassociate" {
+            let a = sig_of("@ab\nfn f() -> int { return 1 }")
+            let b = sig_of("@a\nfn bf() -> int { return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+    }
+    given "items without a fn-shaped signature (whole decl = interface)" {
+        then "identical type decls hash equal" {
+            let a = sig_of("type Foo = { x: int }")
+            let b = sig_of("type Foo = { x: int }")
+            a != 0 && a == b
+        }
+        then "a field change moves the decl's sig_fp" {
+            let a = sig_of("type Foo = { x: int }")
+            let b = sig_of("type Foo = { x: string }")
+            a != 0 && b != 0 && a != b
+        }
+    }
+}

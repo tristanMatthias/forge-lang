@@ -48,4 +48,14 @@ jobs:
         run: bash bootstrap/scripts/diagnose.sh --build-bs2
 
       - name: Spec suite under AVRA_RC_STRICT=1
+        env:
+          # SERIAL unit workers on the hosted runner: heavy fixtures each
+          # spawn their own ~3.5GB `bs2 --emit_metadata @std::avrac` rebuild,
+          # and two overlapping (AVRA_TEST_JOBS=2) exceed the runner's memory
+          # — the kernel silently SIGKILLs the biggest child and the suite
+          # reports "1 shard failed to compile/run" with zero test failures
+          # (or, pre-cap, OOM-killed the runner service itself: the bogus
+          # "runner received a shutdown signal"). One worker keeps the peak
+          # to a single heavy rebuild. Local boxes keep the faster defaults.
+          AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite

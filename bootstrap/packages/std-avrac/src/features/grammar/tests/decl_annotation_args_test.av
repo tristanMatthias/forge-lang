@@ -156,9 +156,9 @@ spec "grammar-DSL declaration family: @name(args) == hand-written parser (ps3t.6
             dsl_arg0("@config(a, b) fn h() { }") == hand_arg0("@config(a, b) fn h() { }")
         }
     }
-    given "the DSL trees are the expected shapes (sanity: Annotated, args dropped in render)" {
+    given "the DSL trees are the expected shapes (sanity: Annotated, args rendered faithfully)" {
         then "canonical render + arg count" {
-            dsl_stmt("@derive(walker) fn f() { }") == "(@annotated @derive  (fn f () -> void ))" &&
+            dsl_stmt("@derive(walker) fn f() { }") == "(@annotated @derive(walker)  (fn f () -> void ))" &&
             dsl_argc("@config(a, b) fn h() { }") == 2
         }
     }

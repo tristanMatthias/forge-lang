@@ -111,9 +111,9 @@ spec "grammar-DSL declaration family: extern fn + export == hand-written parser 
         then "canonical renders of representative forms" {
             // render_annotation_list emits `@export ` (trailing space), and the
             // Annotated render joins with another space → the double space.
-            dsl_stmt("extern fn puts(s: string) -> int") == "(extern puts (s) -> int)" &&
+            dsl_stmt("extern fn puts(s: string) -> int") == "(extern puts (s:string) -> int)" &&
             dsl_stmt("export fn get() -> int { return 1 }") == "(@annotated @export  (fn get () -> int (return 1)))" &&
-            dsl_stmt("export extern fn ffi(x: int) -> int") == "(@annotated @export  (extern ffi (x) -> int))"
+            dsl_stmt("export extern fn ffi(x: int) -> int") == "(@annotated @export  (extern ffi (x:int) -> int))"
         }
     }
 }

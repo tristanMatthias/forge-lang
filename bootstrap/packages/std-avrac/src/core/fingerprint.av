@@ -1,0 +1,883 @@
+// WHY: the L6 two-level interface fingerprints (ps3t.8.5 / design doc
+// docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md §7) — the incremental linchpin.
+// Every item carries TWO content-hashes:
+//
+//  - `item_sig_fp` — the SIGNATURE fingerprint: name, parameter/return types
+//    (including a declared error union), generic bounds, and the annotation
+//    surface (visibility — `export` is an annotation — and effect-bearing
+//    markers like `@comptime`). BODY-INDEPENDENT, so a body edit can never
+//    move it: every caller's `typeck` query keys on it and early-cutoffs.
+//    Parameter NAMES are deliberately excluded — callers cannot observe them,
+//    so renaming a param must not invalidate callers.
+//
+//  - `item_body_fp` — the BODY fingerprint: a structure-only, span-excluded
+//    hash of the item's body, with LOCAL NAMES ALPHA-CANONICALIZED (a scoped
+//    rewrite maps every locally-bound name to a positional `%N` — a spelling
+//    no source identifier can take, so canonical names can never collide with
+//    real ones). Whitespace/comment/span edits and local-rename-only edits
+//    keep it; any structural or literal change moves it. Drives the
+//    codegen/comptime early cutoff.
+//
+// COMPOSITION, NOT INVENTION (§7): both fingerprints fold through the ONE
+// hash story — `content_id_for` (FNV-1a-64) over length-prefix-framed parts,
+// composing the L3 node content-hash family (`stmt_content_hash` for body
+// statements, `type_content_hash` for every type in a signature — signature
+// types are ingested into the type arena and hashed through the very same
+// primitive the parser-populated rows use). Framing follows the engine's
+// `answer_hash_of` discipline: every variable-length part is length-prefixed,
+// so no crafted name/annotation content can make two DIFFERENT interfaces
+// hash the same bytes.
+//
+// The sh48 slice — `type_structure_fingerprints` — lives here too: the
+// structure-content-addressed (Merkle) TYPE fingerprint the sig_fp story is
+// built on (design: docs/2026_07_14_SH48_STRUCTURE_CONTENT_ADDRESSED_TYPEID_DESIGN.md).
+// It is ADDITIVE: the nominal TypeId (`content_id_for(FQN)`) is untouched —
+// this is a cache-invalidation key, not identity. Computed as a SNAPSHOT
+// TABLE over a TypeRegistry (a total, cycle-safe canonical graph hash:
+// Tarjan SCC condensation, children-first), so there is no frozen-registry
+// lifecycle to police — a table is derived data; recompute it when the
+// registry has grown, exactly like any other query answer.
+//
+// DESIGN DEVIATION (grounded): the sh48 design doc suggested sorting struct
+// fields / variant payload fields by name for reorder-invariance. That is
+// UNSOUND for this fingerprint's purpose: codegen GEPs address fields by
+// declaration index, so reordering fields IS a structure change consumers
+// must re-verify against (a false-stable hash would serve stale field
+// offsets — a miscompile, not a perf loss). Fields and variant payloads
+// therefore hash in SOURCE ORDER. Enum VARIANTS also keep source order: tags
+// are stable name-hashes, so sorting would be safe — but source order is
+// deterministic too, and uniformly over-invalidating beats a per-shape
+// argument about which reorders are observable.
+
+use core.{NodeStore, StmtId, ExprId, PatId, Stmt, Expr, Pattern, ValueType, ParamEntry, TypeParamEntry, Annotation}
+use core.{MatchArm, WhenArm, SelectArm, FieldInit}
+use core.{TypeRegistry, TypeInfo, TypeKind}
+use core.{content_id_for, type_registry_id_for, type_registry_lookup}
+use core.{stmt_content_hash, type_content_hash, render_expr_id, byte_span}
+
+/// The int-keyed map primitive (int -> int), declared per-module the same way
+/// query/mod.av and core/side_table.av declare it (extern decls don't cross
+/// modules).
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// Length-prefix framing — the engine's `answer_hash_of` discipline: a
+/// variable-length part contributes its length AND its bytes, so
+/// concatenated parts can never re-associate into a colliding encoding
+/// (`("ab","c")` vs `("a","bc")` frame differently).
+fn frame(s: string) -> string {
+    "${string(s.length)}:${s}"
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Signature fingerprint
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The signature fingerprint of the item rooted at `item` (its `Annotated`
+/// wrappers are peeled and their annotations folded in — visibility and
+/// effects are part of the interface). Body-independent for fn items.
+///
+/// For items that have no fn-shaped signature (type/enum/trait/... decls),
+/// the whole declaration IS the interface: the fingerprint covers the full
+/// node content, so sig and body fingerprints move together — every edit to
+/// such an item is interface-visible.
+export fn item_sig_fp(store: NodeStore, item: StmtId) -> int {
+    let peeled = peel_annotations(store, item)
+    let annots_part = sig_annotations_part(store, peeled.annotations)
+    match store.stmts.get(peeled.inner) {
+        .Function(name, tps, params, ret_vt, _) ->
+            content_id_for("SIG:fn|${frame(name)}|${annots_part}|${sig_type_params_part(tps)}|${sig_params_part(store, params)}|R${frame(string(sig_type_fp(store, ret_vt)))}")
+        .ExternFn(name, params, ret_vt) ->
+            content_id_for("SIG:extern|${frame(name)}|${annots_part}|T0|${sig_params_part(store, params)}|R${frame(string(sig_type_fp(store, ret_vt)))}")
+        _ ->
+            content_id_for("SIG:decl|${annots_part}|${frame(string(stmt_content_hash(store, peeled.inner)))}")
+    }
+}
+
+/// An item's `Annotated` peel: the accumulated annotations (outermost first)
+/// and the innermost declaration row.
+type PeeledItem = { annotations: List<Annotation>, inner: StmtId }
+
+/// Peel every `Annotated` wrapper off an item (rewrap_annotations can stack
+/// them), accumulating the annotation lists in source order.
+fn peel_annotations(store: NodeStore, item: StmtId) -> PeeledItem {
+    mut annotations: List<Annotation> = []
+    mut cur = item
+    mut peeling = true
+    while peeling {
+        match store.stmts.get(cur) {
+            .Annotated(annots, inner) -> {
+                for a in annots { annotations.push(a) }
+                cur = inner
+            }
+            _ -> { peeling = false }
+        }
+    }
+    PeeledItem { annotations, inner: cur }
+}
+
+/// The annotation surface of a signature: names AND rendered args, in source
+/// order (annotation order can be semantically load-bearing for expansion
+/// macros, so reordering conservatively moves the fingerprint).
+fn sig_annotations_part(store: NodeStore, annots: List<Annotation>) -> string {
+    mut acc = "A${string(annots.length)}"
+    for a in annots {
+        // `arg_ids` is nullable only as a pre-population sentinel — treat
+        // null exactly like a bare `@name` (zero args).
+        if a.arg_ids == null {
+            acc = "${acc}|${frame(a.name)}|0"
+        } else {
+            let arg_ids = a.arg_ids!
+            acc = "${acc}|${frame(a.name)}|${string(arg_ids.length)}"
+            for id in arg_ids {
+                acc = "${acc}|${frame(render_expr_id(store, id))}"
+            }
+        }
+    }
+    acc
+}
+
+/// Generic parameters: name AND bound both participate (a bound change is a
+/// signature change — callers' instantiations re-check against it).
+fn sig_type_params_part(tps: List<TypeParamEntry>) -> string {
+    mut acc = "T${string(tps.length)}"
+    for tp in tps {
+        acc = "${acc}|${frame(tp.name)}|${frame(tp.bounds)}"
+    }
+    acc
+}
+
+/// Parameter TYPES only — names excluded (callers cannot observe them).
+fn sig_params_part(store: NodeStore, params: List<ParamEntry>) -> string {
+    mut acc = "P${string(params.length)}"
+    for p in params {
+        acc = "${acc}|${frame(string(sig_type_fp(store, p.vtype)))}"
+    }
+    acc
+}
+
+/// A signature type's fingerprint, COMPOSED from the L3 `type_content_hash`
+/// primitive: the ValueType is ingested as a type-arena row and hashed
+/// through the exact same span-free faithful render every parser-populated
+/// row uses — one hash story, no shadow formula. Ingestion allocates a row
+/// per call (transforms allocate; rows are immutable — the stamp_ids
+/// contract), so fingerprint an item once per (item, revision) and memoize
+/// the answer in the query engine, not by re-calling this.
+fn sig_type_fp(store: NodeStore, vt: ValueType) -> int {
+    type_content_hash(store, store.ingest_type(vt, byte_span(0, 0)))
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// sh48: structure-content-addressed type fingerprints (Merkle, additive)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// A snapshot of every registered type's STRUCTURE fingerprint: the id
+/// changes iff the type's own structure (or name) changes, or the structure
+/// of anything it transitively references does. The nominal TypeId is
+/// untouched — this is a cache-invalidation key, orthogonal to identity.
+///
+/// A snapshot is derived data: it reflects the registry at computation time,
+/// and a consumer holding one across further registrations must recompute —
+/// the same contract as any memoized query answer. (Signed i64 values; 0 is
+/// a legal fingerprint — presence is `fp_of != null`, never a zero test.)
+export type TypeStructureFps = { fps: ptr }
+
+impl TypeStructureFps {
+    /// The structure fingerprint stamped for `id`, or null when the id was
+    /// not registered when the snapshot was taken.
+    fn fp_of(self, id: int) -> int? {
+        if avra_intmap_has(self.fps, id) != 0 {
+            return avra_intmap_get(self.fps, id)
+        }
+        null
+    }
+}
+
+/// Compute the structure fingerprint of every type in `reg` — a total,
+/// cycle-safe canonical graph hash (sh48 design §4.2):
+///
+///  1. The type-reference graph (edge A→B when a field/variant/inner
+///     ValueType of A names registered type B) is condensed into strongly-
+///     connected components with Tarjan's algorithm. Tarjan emits SCCs
+///     children-first, so every cross-SCC reference target is already
+///     fingerprinted when a component is serialized (the Merkle step).
+///  2. Within an SCC, members are ordered canonically (sorted by FQN) and a
+///     reference to a fellow member serializes as its SCC-LOCAL INDEX — a
+///     value that exists without hashing the not-yet-hashed member. The
+///     whole component serializes into one canonical string; its digest is
+///     the SCC digest.
+///  3. Each member's fingerprint re-mixes the SCC digest with its local
+///     index and FQN, preserving nominal distinctness (UserId != ProductId)
+///     even inside one cycle.
+///
+/// Deterministic by construction: registration order, SCC membership, and
+/// the canonical orders are all pure functions of the source; FNV is pure.
+export fn type_structure_fingerprints(reg: TypeRegistry) -> TypeStructureFps {
+    mut st = SccState {
+        reg,
+        tarjan_index: avra_intmap_new(),
+        tarjan_lowlink: avra_intmap_new(),
+        on_stack: avra_intmap_new(),
+        stack: [],
+        next_index: 0,
+        done: avra_intmap_new(),
+    }
+    for info in reg.infos {
+        if avra_intmap_has(st.tarjan_index, info.id) == 0 {
+            st.visit(info.id)
+        }
+    }
+    TypeStructureFps { fps: st.done }
+}
+
+/// Small dense tag per TypeKind for the canonical serialization.
+fn kind_tag(kind: TypeKind) -> int {
+    match kind {
+        .StructKind -> 0
+        .EnumKind -> 1
+        .TraitKind -> 2
+        .NewtypeKind -> 3
+        .UnionAliasKind -> 4
+        .ShapeKind -> 5
+    }
+}
+
+/// The nominal name a ValueType references, or "" for structural shapes.
+fn structure_ref_name(vt: ValueType) -> string {
+    match vt {
+        .Struct(name, _, _) -> name
+        .Enum(name, _, _) -> name
+        .Trait(name, _) -> name
+        .Newtype(name, _, _) -> name
+        .NarrowedEnum(enum_name, _, _) -> enum_name
+        _ -> ""
+    }
+}
+
+/// Tarjan traversal state + the incrementally-filled fingerprint map. All
+/// keys are type ids (sparse content hashes), so every table is an intmap.
+type SccState = {
+    reg: TypeRegistry,
+    tarjan_index: ptr,
+    tarjan_lowlink: ptr,
+    on_stack: ptr,
+    stack: List<int>,
+    next_index: int,
+    done: ptr,
+}
+
+impl SccState {
+    /// Standard Tarjan strongconnect over type ids. When `id` turns out to
+    /// be an SCC root, the popped component is fingerprinted immediately —
+    /// children-first emission guarantees every cross-SCC reference is
+    /// already in `done`.
+    fn visit(self, id: int) {
+        let my_index = self.next_index
+        self.next_index = self.next_index + 1
+        avra_intmap_set(self.tarjan_index, id, my_index)
+        avra_intmap_set(self.tarjan_lowlink, id, my_index)
+        self.stack.push(id)
+        avra_intmap_set(self.on_stack, id, 1)
+
+        for succ in self.successors_of(id) {
+            if avra_intmap_has(self.tarjan_index, succ) == 0 {
+                self.visit(succ)
+                let child_low = avra_intmap_get(self.tarjan_lowlink, succ)
+                if child_low < avra_intmap_get(self.tarjan_lowlink, id) {
+                    avra_intmap_set(self.tarjan_lowlink, id, child_low)
+                }
+            } else if avra_intmap_get(self.on_stack, succ) == 1 {
+                let succ_index = avra_intmap_get(self.tarjan_index, succ)
+                if succ_index < avra_intmap_get(self.tarjan_lowlink, id) {
+                    avra_intmap_set(self.tarjan_lowlink, id, succ_index)
+                }
+            }
+        }
+
+        if avra_intmap_get(self.tarjan_lowlink, id) == avra_intmap_get(self.tarjan_index, id) {
+            mut members: List<int> = []
+            mut popping = true
+            while popping {
+                let popped = self.stack[self.stack.length - 1]
+                let _ = self.stack.pop()
+                avra_intmap_set(self.on_stack, popped, 0)
+                members.push(popped)
+                if popped == id { popping = false }
+            }
+            self.finish_scc(members)
+        }
+    }
+
+    /// The registered types referenced from `id`'s structure — its
+    /// out-edges in the reference graph.
+    fn successors_of(self, id: int) -> List<int> {
+        mut out: List<int> = []
+        let opt = type_registry_lookup(self.reg, id)
+        if opt == null { return out }
+        let info = opt!
+        for f in info.fields { self.collect_refs(f.resolved, out) }
+        for v in info.variants {
+            for f in v.fields { self.collect_refs(f.resolved, out) }
+        }
+        self.collect_refs(info.inner_vt, out)
+        out
+    }
+
+    /// Push every REGISTERED type referenced by `vt` (by name — the id slot
+    /// on the ValueType may be unstamped pre-resolve) onto `out`, recursing
+    /// through compound shapes.
+    fn collect_refs(self, vt: ValueType, out: List<int>) {
+        mut acc = out
+        let nm = structure_ref_name(vt)
+        if nm != "" {
+            let id = type_registry_id_for(self.reg, nm)
+            if id != 0 { acc.push(id) }
+        }
+        for c in vt.children() { self.collect_refs(c, acc) }
+    }
+
+    /// Fingerprint one popped SCC: canonical member order (FQN-sorted),
+    /// one concatenated canonical serialization, one SCC digest, and a
+    /// per-member fingerprint re-mixing digest + local index + FQN.
+    fn finish_scc(self, members: List<int>) {
+        mut names: List<string> = []
+        for id in members {
+            let opt = type_registry_lookup(self.reg, id)
+            names.push(if opt == null { "" } else { opt!.name })
+        }
+        names.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
+        mut local: ptr = avra_intmap_new()
+        mut ordered_ids: List<int> = []
+        mut li = 0
+        for nm in names {
+            let id = type_registry_id_for(self.reg, nm)
+            ordered_ids.push(id)
+            avra_intmap_set(local, id, li)
+            li = li + 1
+        }
+        mut acc = "SCC${string(ordered_ids.length)}"
+        for id in ordered_ids {
+            let opt = type_registry_lookup(self.reg, id)
+            if opt != null {
+                acc = "${acc}|${frame(self.serialize_info(local, opt!))}"
+            }
+        }
+        let scc_digest = content_id_for(acc)
+        mut mi = 0
+        for id in ordered_ids {
+            let opt = type_registry_lookup(self.reg, id)
+            let nm = if opt == null { "" } else { opt!.name }
+            avra_intmap_set(self.done, id, content_id_for("M:${string(scc_digest)}|${string(mi)}|${frame(nm)}"))
+            mi = mi + 1
+        }
+    }
+
+    /// One member's canonical serialization (sh48 design §4.1): FQN + kind +
+    /// fields + variants + inner, all framed, with nested type references
+    /// substituted (`#local` intra-SCC, `&fp` cross-SCC — the Merkle step).
+    /// Source order throughout — see the module header's design deviation.
+    fn serialize_info(self, local: ptr, info: TypeInfo) -> string {
+        mut acc = "${frame(info.name)}|k${string(kind_tag(info.kind))}"
+        acc = "${acc}|F${string(info.fields.length)}"
+        for f in info.fields {
+            acc = "${acc}|${frame(f.name)}|${frame(self.structure_render(local, f.resolved))}"
+        }
+        acc = "${acc}|V${string(info.variants.length)}"
+        for v in info.variants {
+            acc = "${acc}|${frame(v.name)}|f${string(v.fields.length)}"
+            for f in v.fields {
+                acc = "${acc}|${frame(f.name)}|${frame(self.structure_render(local, f.resolved))}"
+            }
+        }
+        "${acc}|I${frame(self.structure_render(local, info.inner_vt))}"
+    }
+
+    /// Canonical structural render of a ValueType with reference
+    /// substitution: a REGISTERED nominal renders as its fellow-member local
+    /// index (`#i`) or its already-computed structure fingerprint (`&fp`) —
+    /// never its bare name — so the result is a true Merkle hash (a child's
+    /// structure change propagates to every transitive referencer). An
+    /// UNREGISTERED name (builtin spelled nominally, or a generic type
+    /// param) renders as the framed name. Exhaustive over ValueType so a new
+    /// variant cannot silently vanish from the fingerprint.
+    fn structure_render(self, local: ptr, vt: ValueType) -> string {
+        match vt {
+            .Int -> "int"
+            .U8 -> "u8"
+            .U16 -> "u16"
+            .U32 -> "u32"
+            .U64 -> "u64"
+            .I8 -> "i8"
+            .I16 -> "i16"
+            .I32 -> "i32"
+            .Str -> "str"
+            .Bytes -> "bytes"
+            .Bool -> "bool"
+            .Ptr -> "ptr"
+            .Void -> "void"
+            .Float -> "float"
+            .Unknown -> "unknown"
+            .Struct(name, type_args, _) -> "S(${self.nominal_ref(local, name)}${self.args_render(local, type_args)})"
+            .Enum(name, type_args, _) -> "E(${self.nominal_ref(local, name)}${self.args_render(local, type_args)})"
+            .Trait(name, _) -> "W(${self.nominal_ref(local, name)})"
+            .Newtype(name, inner, _) -> "N(${self.nominal_ref(local, name)},${frame(self.structure_render(local, inner))})"
+            .NarrowedEnum(enum_name, variant_name, _) -> "X(${self.nominal_ref(local, enum_name)},${frame(variant_name)})"
+            .Tuple(elements) -> "T(${self.args_render(local, elements)})"
+            .Union(types) -> "U(${self.args_render(local, types)})"
+            .List(elem) -> "L(${frame(self.structure_render(local, elem))})"
+            .Map(key, value) -> "M(${frame(self.structure_render(local, key))},${frame(self.structure_render(local, value))})"
+            .Fn(ret) -> "F(${frame(self.structure_render(local, ret))})"
+            .Closure(num_captures, ret) -> "C(${string(num_captures)},${frame(self.structure_render(local, ret))})"
+            .FnTyped(params, ret) -> "FT(${self.args_render(local, params)},${frame(self.structure_render(local, ret))})"
+            .Task(result_ty) -> "K(${frame(self.structure_render(local, result_ty))})"
+            .Channel(elem) -> "H(${frame(self.structure_render(local, elem))})"
+            .Optional(inner) -> "O(${frame(self.structure_render(local, inner))})"
+        }
+    }
+
+    /// A nominal reference's substituted render: `#local-index` for a fellow
+    /// SCC member, `&fingerprint` for an already-hashed type, the framed
+    /// name for anything unregistered.
+    fn nominal_ref(self, local: ptr, name: string) -> string {
+        let id = type_registry_id_for(self.reg, name)
+        if id != 0 {
+            if avra_intmap_has(local, id) != 0 {
+                return "#${string(avra_intmap_get(local, id))}"
+            }
+            if avra_intmap_has(self.done, id) != 0 {
+                return "&${string(avra_intmap_get(self.done, id))}"
+            }
+        }
+        frame(name)
+    }
+
+    /// Framed comma-joined renders of a type-argument/element list.
+    fn args_render(self, local: ptr, types: List<ValueType>) -> string {
+        mut acc = ",${string(types.length)}"
+        for t in types {
+            acc = "${acc},${frame(self.structure_render(local, t))}"
+        }
+        acc
+    }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Body fingerprint (alpha-canonicalized)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The body fingerprint of the item rooted at `item`: a structure-only,
+/// span-excluded hash of the body with every LOCALLY-BOUND name rewritten to
+/// a positional `%N` before hashing. Canonical names are assigned in
+/// traversal order, so two bodies that differ only in the SPELLING of their
+/// locals (params, lets, loop vars, pattern bindings, lambda params, catch
+/// bindings) hash identically, while any change to structure, literals,
+/// binding SHAPE, or which binder a reference resolves to moves the hash.
+/// Names that do not resolve to a local binder (globals, fns, `it`, module
+/// paths) pass through verbatim. `quote { … }` bodies are hashed VERBATIM —
+/// quoted code is data, and renaming inside it changes the constructed AST.
+///
+/// Composes `stmt_content_hash` over the canonicalized statements — the L3
+/// primitive, not a shadow render. Annotations on the ITEM are excluded
+/// (they are `item_sig_fp`'s surface); annotations on statements INSIDE the
+/// body participate verbatim.
+export fn item_body_fp(store: NodeStore, item: StmtId) -> int {
+    let peeled = peel_annotations(store, item)
+    match store.stmts.get(peeled.inner) {
+        .Function(_, _, params, _, body) -> {
+            mut env = canon_env_new()
+            env.push_scope()
+            for p in params { let _ = env.bind(p.name) }
+            mut acc = "BODY:fn|${string(body.length)}"
+            for id in body {
+                acc = "${acc}|${string(stmt_content_hash(store, canon_stmt_id(store, env, id)))}"
+            }
+            env.pop_scope()
+            content_id_for(acc)
+        }
+        .ExternFn(_, _, _) -> content_id_for("BODY:extern")
+        _ -> content_id_for("BODY:decl|${frame(string(stmt_content_hash(store, peeled.inner)))}")
+    }
+}
+
+/// The canonicalization environment: a scope-marked stack of
+/// (source name -> canonical `%N`) bindings plus the positional counter.
+/// `%` cannot appear in a source identifier, so a canonical name can never
+/// collide with a real one.
+type CanonEnv = { names: List<string>, canons: List<string>, marks: List<int>, counter: int }
+
+fn canon_env_new() -> CanonEnv {
+    let names: List<string> = []
+    let canons: List<string> = []
+    let marks: List<int> = []
+    CanonEnv { names, canons, marks, counter: 0 }
+}
+
+impl CanonEnv {
+    fn push_scope(self) {
+        self.marks.push(self.names.length)
+    }
+
+    fn pop_scope(self) {
+        let mark = self.marks[self.marks.length - 1]
+        let _ = self.marks.pop()
+        while self.names.length > mark {
+            let _ = self.names.pop()
+            let _ = self.canons.pop()
+        }
+    }
+
+    /// Bind `name` in the current scope to the next canonical name and
+    /// return it. `_` stays `_` (a wildcard binds nothing — and skipping it
+    /// keeps the counter deterministic: the rule is positional, never
+    /// name-dependent).
+    fn bind(self, name: string) -> string {
+        if name == "_" { return "_" }
+        let canon = "%${string(self.counter)}"
+        self.counter = self.counter + 1
+        self.names.push(name)
+        self.canons.push(canon)
+        canon
+    }
+
+    /// The canonical name `name` resolves to under lexical scoping
+    /// (innermost binding wins), or `name` itself when no local binds it —
+    /// globals, fns, and pronouns pass through verbatim.
+    fn resolve(self, name: string) -> string {
+        mut i = self.names.length - 1
+        while i >= 0 {
+            if self.names[i] == name { return self.canons[i] }
+            i = i - 1
+        }
+        name
+    }
+}
+
+/// Rebind a parameter list into the current scope, rewriting each entry to
+/// its canonical name (types and type rows ride along unchanged — a param's
+/// or lambda param's WRITTEN annotation is source structure).
+fn canon_params_bind(env: CanonEnv, params: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for p in params {
+        out.push(ParamEntry { name: env.bind(p.name), vtype: p.vtype, ty_id: p.ty_id })
+    }
+    out
+}
+
+/// The PATTERN-binding twin of canon_params_bind: canonical names, but the
+/// type slots are NEUTRALIZED (Unknown / no row). A pattern binding cannot
+/// carry a written annotation — its vtype is parser-default or, on resolved
+/// trees, INFERRED from the subject's type — so leaving it in would let a
+/// signature-side type edit leak into the body fingerprint through match
+/// arms. Structure-only means source structure, never inferred metadata.
+fn canon_pattern_binds(env: CanonEnv, bindings: List<ParamEntry>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for p in bindings {
+        out.push(ParamEntry { name: env.bind(p.name), vtype: ValueType.Unknown, ty_id: null })
+    }
+    out
+}
+
+/// Canonicalize one statement row into a NEW row (transforms allocate; rows
+/// are immutable — the stamp_ids precedent). `restmt` inherits the source
+/// row's span/pos/provenance; the render that feeds the hash is span-free.
+fn canon_stmt_id(store: NodeStore, env: CanonEnv, id: StmtId) -> StmtId {
+    store.restmt(canon_stmt(store, env, store.stmts.get(id)), id)
+}
+
+/// A branch/loop-body statement gets its own scope even when it is not a
+/// `Block` row — cheap insurance that a binding in a single-statement body
+/// can never leak into the enclosing scope.
+fn canon_stmt_id_scoped(store: NodeStore, env: CanonEnv, id: StmtId) -> StmtId {
+    env.push_scope()
+    let out = canon_stmt_id(store, env, id)
+    env.pop_scope()
+    out
+}
+
+/// A statement list in its own scope, canonicalized SEQUENTIALLY — each
+/// binding statement extends the environment for its later siblings,
+/// exactly like execution order does.
+fn canon_stmt_ids_scoped(store: NodeStore, env: CanonEnv, ids: List<StmtId>) -> List<StmtId> {
+    env.push_scope()
+    mut out: List<StmtId> = []
+    for id in ids { out.push(canon_stmt_id(store, env, id)) }
+    env.pop_scope()
+    out
+}
+
+/// The statement walk. Binder variants bind AFTER their initializer is
+/// canonicalized (`let f = f` reads the OUTER f); scope-introducing
+/// variants push/pop; declaration variants that cannot meaningfully appear
+/// in a fn body (types, modules, components) pass through verbatim —
+/// conservative: an edit inside one moves the hash. Exhaustive over Stmt so
+/// a new variant cannot silently skip canonicalization.
+fn canon_stmt(store: NodeStore, env: CanonEnv, s: Stmt) -> Stmt {
+    match s {
+        .Let(n, vt, init) -> {
+            let ci = canon_expr_id(store, env, init)
+            Stmt.Let(env.bind(n), vt, ci)
+        }
+        .Mut(n, vt, init) -> {
+            let ci = canon_expr_id(store, env, init)
+            Stmt.Mut(env.bind(n), vt, ci)
+        }
+        .Const(n, vt, init) -> {
+            let ci = canon_expr_id(store, env, init)
+            Stmt.Const(env.bind(n), vt, ci)
+        }
+        .Expr(e) -> Stmt.Expr(canon_expr_id(store, env, e))
+        .Block(body) -> Stmt.Block(canon_stmt_ids_scoped(store, env, body))
+        .If(cond, then_b, else_b) -> {
+            let cc = canon_expr_id(store, env, cond)
+            let ct = canon_stmt_id_scoped(store, env, then_b)
+            if else_b == null {
+                Stmt.If(cc, ct, null)
+            } else {
+                Stmt.If(cc, ct, canon_stmt_id_scoped(store, env, else_b!))
+            }
+        }
+        .While(cond, body) -> {
+            let cc = canon_expr_id(store, env, cond)
+            Stmt.While(cc, canon_stmt_id_scoped(store, env, body))
+        }
+        .For(v, start, end, body) -> {
+            let cs = canon_expr_id(store, env, start)
+            let ce = canon_expr_id(store, env, end)
+            env.push_scope()
+            let cv = env.bind(v)
+            let cb = canon_stmt_id(store, env, body)
+            env.pop_scope()
+            Stmt.For(cv, cs, ce, cb)
+        }
+        .ForIn(v, coll, body) -> {
+            let ccoll = canon_expr_id(store, env, coll)
+            env.push_scope()
+            let cv = env.bind(v)
+            let cb = canon_stmt_id(store, env, body)
+            env.pop_scope()
+            Stmt.ForIn(cv, ccoll, cb)
+        }
+        .Function(name, tps, params, ret_vt, body) -> {
+            // A nested fn: its NAME stays verbatim (it is item-like, not a
+            // local slot); its params bind in a fresh scope over its body.
+            env.push_scope()
+            let cparams = canon_params_bind(env, params)
+            mut cbody: List<StmtId> = []
+            for id in body { cbody.push(canon_stmt_id(store, env, id)) }
+            env.pop_scope()
+            Stmt.Function(name, tps, cparams, ret_vt, cbody)
+        }
+        .Return(v) -> Stmt.Return(canon_expr_id(store, env, v))
+        .ReturnEmpty -> s
+        .TypeDecl(_, _, _) -> s
+        .NewtypeDecl(_, _) -> s
+        .UnionAliasDecl(_, _) -> s
+        .ShapeDecl(_, _) -> s
+        .EnumDecl(_, _, _) -> s
+        .Match(subj, arms) -> Stmt.Match(canon_expr_id(store, env, subj), canon_match_arms(store, env, arms))
+        .Impl(name, methods) -> {
+            mut out: List<StmtId> = []
+            for id in methods { out.push(canon_stmt_id_scoped(store, env, id)) }
+            Stmt.Impl(name, out)
+        }
+        .NoOp -> s
+        .ExternFn(_, _, _) -> s
+        .Break -> s
+        .Continue -> s
+        .TraitDecl(_, _) -> s
+        .LetDestructure(names, init) -> {
+            let ci = canon_expr_id(store, env, init)
+            Stmt.LetDestructure(canon_params_bind(env, names), ci)
+        }
+        .Defer(body) -> Stmt.Defer(canon_expr_id(store, env, body))
+        .Errdefer(body) -> Stmt.Errdefer(canon_expr_id(store, env, body))
+        .Annotated(annots, inner) -> Stmt.Annotated(annots, canon_stmt_id(store, env, inner))
+        .SpecBlock(name, body) -> Stmt.SpecBlock(name, canon_stmt_ids_scoped(store, env, body))
+        .GivenBlock(name, body) -> Stmt.GivenBlock(name, canon_stmt_ids_scoped(store, env, body))
+        .ThenBlock(name, cond) -> Stmt.ThenBlock(name, canon_expr_id(store, env, cond))
+        .Select(arms) -> Stmt.Select(canon_select_arms(store, env, arms))
+        .Parallel(body) -> Stmt.Parallel(canon_stmt_ids_scoped(store, env, body))
+        .Module(_, _) -> s
+        .Use(_, _) -> s
+        .AssocType(_, _) -> s
+        .ComponentDef(_, _, _, _, _, _) -> s
+        .ComponentBlock(_, _, _, _) -> s
+        .TokenBody(_) -> s
+        .Error -> s
+        .Missing -> s
+    }
+}
+
+/// Canonicalize one expression row into a new row (span inherited).
+fn canon_expr_id(store: NodeStore, env: CanonEnv, id: ExprId) -> ExprId {
+    store.reexpr(canon_expr(store, env, store.exprs.get(id)), id)
+}
+
+fn canon_expr_ids(store: NodeStore, env: CanonEnv, ids: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids { out.push(canon_expr_id(store, env, id)) }
+    out
+}
+
+fn canon_field_inits(store: NodeStore, env: CanonEnv, inits: List<FieldInit>) -> List<FieldInit> {
+    mut out: List<FieldInit> = []
+    for init in inits {
+        out.push(FieldInit { name: init.name, value_id: canon_expr_id(store, env, init.value_id) })
+    }
+    out
+}
+
+/// The expression walk. `Ident`/`Assign` resolve through the environment;
+/// binder-introducing forms (lambda, list-comp, catch, match arms) scope
+/// their bodies; `quote` bodies pass through VERBATIM (code-as-data).
+/// Exhaustive over Expr — see `canon_stmt`.
+fn canon_expr(store: NodeStore, env: CanonEnv, e: Expr) -> Expr {
+    match e {
+        .Number(_) -> e
+        .String(_) -> e
+        .Bool(_) -> e
+        .None -> e
+        .Ident(name) -> Expr.Ident(env.resolve(name))
+        .Assign(name, value) -> {
+            let cv = canon_expr_id(store, env, value)
+            Expr.Assign(env.resolve(name), cv)
+        }
+        .Grouping(inner) -> Expr.Grouping(canon_expr_id(store, env, inner))
+        .Unary(op, right) -> Expr.Unary(op, canon_expr_id(store, env, right))
+        .Binary(left, op, right) -> Expr.Binary(canon_expr_id(store, env, left), op, canon_expr_id(store, env, right))
+        .Logical(left, op, right) -> Expr.Logical(canon_expr_id(store, env, left), op, canon_expr_id(store, env, right))
+        .Call(callee, args) -> Expr.Call(canon_expr_id(store, env, callee), canon_expr_ids(store, env, args))
+        .GenericCall(callee, type_args, args) -> Expr.GenericCall(canon_expr_id(store, env, callee), type_args, canon_expr_ids(store, env, args))
+        .StructLit(name, inits) -> Expr.StructLit(name, canon_field_inits(store, env, inits))
+        .FieldAccess(obj, field) -> Expr.FieldAccess(canon_expr_id(store, env, obj), field)
+        .EnumCtor(type_name, variant, args) -> Expr.EnumCtor(type_name, variant, canon_expr_ids(store, env, args))
+        .Index(obj, idx) -> Expr.Index(canon_expr_id(store, env, obj), canon_expr_id(store, env, idx))
+        .Block(body) -> Expr.Block(canon_stmt_ids_scoped(store, env, body))
+        .MatchExpr(subj, arms) -> Expr.MatchExpr(canon_expr_id(store, env, subj), canon_match_arms(store, env, arms))
+        .FieldAssign(obj, field, value) -> Expr.FieldAssign(canon_expr_id(store, env, obj), field, canon_expr_id(store, env, value))
+        .IfExpr(cond, t, f) -> Expr.IfExpr(canon_expr_id(store, env, cond), canon_expr_id(store, env, t), canon_expr_id(store, env, f))
+        .NullCoalesce(left, right) -> Expr.NullCoalesce(canon_expr_id(store, env, left), canon_expr_id(store, env, right))
+        .OptionalChain(obj, field) -> Expr.OptionalChain(canon_expr_id(store, env, obj), field)
+        .OptionalMethodCall(obj, method, args) -> Expr.OptionalMethodCall(canon_expr_id(store, env, obj), method, canon_expr_ids(store, env, args))
+        .Try(inner) -> Expr.Try(canon_expr_id(store, env, inner))
+        .Tuple(elements) -> Expr.Tuple(canon_expr_ids(store, env, elements))
+        .TupleIndex(obj, index) -> Expr.TupleIndex(canon_expr_id(store, env, obj), index)
+        .With(obj, overrides) -> Expr.With(canon_expr_id(store, env, obj), canon_field_inits(store, env, overrides))
+        .ListLit(elements) -> Expr.ListLit(canon_expr_ids(store, env, elements))
+        .Lambda(params, body) -> {
+            env.push_scope()
+            let cparams = canon_params_bind(env, params)
+            let cbody = canon_expr_id(store, env, body)
+            env.pop_scope()
+            Expr.Lambda(cparams, cbody)
+        }
+        .MapLit(entries) -> Expr.MapLit(canon_expr_ids(store, env, entries))
+        .Slice(obj, start, end) -> Expr.Slice(canon_expr_id(store, env, obj), canon_expr_id(store, env, start), canon_expr_id(store, env, end))
+        .FloatLit(_) -> e
+        .IsCheck(subj, variant_name) -> Expr.IsCheck(canon_expr_id(store, env, subj), variant_name)
+        .InCheck(needle, items) -> Expr.InCheck(canon_expr_id(store, env, needle), canon_expr_ids(store, env, items))
+        .ListComp(body, v, coll, filter) -> {
+            let ccoll = canon_expr_id(store, env, coll)
+            env.push_scope()
+            let cv = env.bind(v)
+            let cbody = canon_expr_id(store, env, body)
+            let cfilter = if filter == null { null } else { canon_expr_id(store, env, filter!) }
+            env.pop_scope()
+            Expr.ListComp(cbody, cv, ccoll, cfilter)
+        }
+        .QualifiedIdent(_) -> e
+        .When(arms) -> Expr.When(canon_when_arms(store, env, arms))
+        .Catch(inner, binding, body, line, col) -> {
+            let ci = canon_expr_id(store, env, inner)
+            env.push_scope()
+            let cb = env.bind(binding)
+            let cbody = canon_expr_id(store, env, body)
+            env.pop_scope()
+            Expr.Catch(ci, cb, cbody, line, col)
+        }
+        .Spawn(body) -> Expr.Spawn(canon_expr_id(store, env, body))
+        .ChannelNew(elem, capacity) -> {
+            if capacity == null {
+                Expr.ChannelNew(elem, null)
+            } else {
+                Expr.ChannelNew(elem, canon_expr_id(store, env, capacity!))
+            }
+        }
+        .Isolated(body) -> Expr.Isolated(canon_expr_id(store, env, body))
+        .Quote(_, _) -> e
+        .Splice(_) -> e
+        .TypeLit(_) -> e
+        .Error -> e
+        .Missing -> e
+    }
+}
+
+/// Match arms: the pattern's bindings scope over the guard AND the body.
+/// Rebuilt arms carry the canonical pattern VALUE (`pattern_id` drops to
+/// null — these rows exist only to be rendered/hashed, and the render reads
+/// the value).
+fn canon_match_arms(store: NodeStore, env: CanonEnv, arms: List<MatchArm>) -> List<MatchArm> {
+    mut out: List<MatchArm> = []
+    for arm in arms {
+        env.push_scope()
+        let cpat = canon_pattern(store, env, arm.pattern)
+        let cguard = if arm.guard_id == null { null } else { canon_expr_id(store, env, arm.guard_id!) }
+        let cbody = canon_expr_id(store, env, arm.body_id)
+        env.pop_scope()
+        out.push(MatchArm { pattern: cpat, pattern_id: null, guard_id: cguard, body_id: cbody })
+    }
+    out
+}
+
+fn canon_when_arms(store: NodeStore, env: CanonEnv, arms: List<WhenArm>) -> List<WhenArm> {
+    mut out: List<WhenArm> = []
+    for arm in arms {
+        let ccond = if arm.cond_id == null { null } else { canon_expr_id(store, env, arm.cond_id!) }
+        out.push(WhenArm { cond_id: ccond, body_id: canon_expr_id(store, env, arm.body_id) })
+    }
+    out
+}
+
+fn canon_select_arms(store: NodeStore, env: CanonEnv, arms: List<SelectArm>) -> List<SelectArm> {
+    mut out: List<SelectArm> = []
+    for arm in arms {
+        let cchan = canon_expr_id(store, env, arm.chan_id)
+        env.push_scope()
+        let cbind = env.bind(arm.binding)
+        mut cbody: List<StmtId> = []
+        for id in arm.body_ids { cbody.push(canon_stmt_id(store, env, id)) }
+        env.pop_scope()
+        out.push(SelectArm { binding: cbind, chan_id: cchan, body_ids: cbody })
+    }
+    out
+}
+
+/// Canonicalize a nested pattern row (NestedVariant children / Or branches
+/// are arena rows) — allocated via `ingest_pat` with the source row's span.
+fn canon_pat_id(store: NodeStore, env: CanonEnv, id: PatId) -> PatId {
+    store.ingest_pat(canon_pattern(store, env, store.pats.get(id)), store.pats.span_of(id))
+}
+
+/// Pattern bindings bind into the CURRENT scope (the caller pushed the
+/// arm's scope). Literal patterns pass through; nested forms recurse.
+fn canon_pattern(store: NodeStore, env: CanonEnv, p: Pattern) -> Pattern {
+    match p {
+        .Wildcard -> p
+        .Rest -> p
+        .Variant(name, bindings) -> Pattern.Variant(name, canon_pattern_binds(env, bindings))
+        .LitString(_) -> p
+        .LitInt(_) -> p
+        .LitBool(_) -> p
+        .LitFloat(_) -> p
+        .NestedVariant(name, sub_patterns) -> {
+            mut out: List<PatId> = []
+            for pid in sub_patterns { out.push(canon_pat_id(store, env, pid)) }
+            Pattern.NestedVariant(name, out)
+        }
+        .Or(left, right) -> Pattern.Or(canon_pat_id(store, env, left), canon_pat_id(store, env, right))
+        .TypePattern(type_name, binding) -> Pattern.TypePattern(type_name, env.bind(binding))
+    }
+}
