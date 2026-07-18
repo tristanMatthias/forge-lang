@@ -26,10 +26,20 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
     // (non-escaping), pre-allocate a stack buffer and pass it through
     // Ctx so emit_struct_lit writes directly into it. No heap alloc needed.
     let copy_target = try_copy_stack_target(ctx, name, ty_vt, initializer)
-    let emit_ctx = if copy_target.active {
+    mut emit_ctx = if copy_target.active {
         ctx with { copy_alloc_target: copy_target.alloca_ptr }
     } else {
         ctx
+    }
+    // A RELEASABLE binding's holder is recursively released at scope exit,
+    // so alias inits inside its initializer must retain (see Ctx field doc).
+    // Never-released holders (arg temporaries, returned literals) keep the
+    // historical no-retain behavior — this scoping is what keeps the retain
+    // from pinning sources compiler-wide. (A nested literal in a CALL
+    // argument inside this initializer over-retains harmlessly — bounded,
+    // rare, and safe-direction.)
+    if releasable_has(ctx.rc_releasable, name) {
+        emit_ctx = emit_ctx with { alias_retain_scope: true }
     }
     // The resolved declared type (or Unknown when unannotated) — the
     // expected type every emit below is directed by.

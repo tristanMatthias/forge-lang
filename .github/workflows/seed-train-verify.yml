@@ -88,8 +88,12 @@ jobs:
           AVRA_SEED_REPO: ${{ github.repository }}
           # Match the train's exact suite parallelism (seed-train.yml) so the
           # same sharding that surfaces order-dependent flakes is exercised
-          # here, pre-merge, rather than post-merge on the train.
-          AVRA_TEST_JOBS: "2"
+          # here, pre-merge, rather than post-merge on the train. SERIAL
+          # because heavy fixtures each spawn a ~3.5GB @std rebuild and two
+          # overlapping exceed the hosted runner's memory — the kernel
+          # silently SIGKILLs the biggest child ("1 shard failed to
+          # compile/run", zero test failures).
+          AVRA_TEST_JOBS: "1"
           # Cap the shard-compile fan-out (default 8): a COLD suite — any PR
           # whose source change rotates the compile-cache key — runs 8
           # concurrent bs2+llc shard compiles, which OOMs the 16GB hosted

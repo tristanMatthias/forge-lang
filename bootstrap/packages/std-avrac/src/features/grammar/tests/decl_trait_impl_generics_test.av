@@ -91,8 +91,8 @@ spec "grammar-DSL declaration family: trait/impl skip-generics == hand-written p
     }
     given "the DSL trees carry NO generics (sanity: skip-generics really discards)" {
         then "generic headers render exactly like the non-generic form" {
-            dsl_stmt("trait Container<T> { fn get(self) -> int }") == "(trait Container (extern get (self) -> int))" &&
-            dsl_stmt("impl<T> Box<T> { fn get(self) -> int { return 1 } }") == "(impl Box (fn Box__get (self) -> int (return 1)))"
+            dsl_stmt("trait Container<T> { fn get(self) -> int }") == "(trait Container (extern get (self:int) -> int))" &&
+            dsl_stmt("impl<T> Box<T> { fn get(self) -> int { return 1 } }") == "(impl Box (fn Box__get (self:Box) -> int (return 1)))"
         }
     }
 }

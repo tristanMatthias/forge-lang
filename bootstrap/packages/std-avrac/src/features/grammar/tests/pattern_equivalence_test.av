@@ -130,8 +130,8 @@ spec "grammar-DSL pattern family: generated parser == hand-written parser (ps3t.
         then "canonical renders of representative forms" {
             dsl_pat("_") == "_" &&
             dsl_pat("rest") == "rest" &&
-            dsl_pat(".Ok(x)") == ".Ok(x)" &&
-            dsl_pat(".Some(.Ok(x))") == ".Some(.Ok(x))" &&
+            dsl_pat(".Ok(x)") == ".Ok(x:int)" &&
+            dsl_pat(".Some(.Ok(x))") == ".Some(.Ok(x:int))" &&
             dsl_pat("int(n)") == "int(n)" &&
             dsl_pat(".Red or .Green") == ".Red() or .Green()"
         }

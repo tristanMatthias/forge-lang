@@ -1,0 +1,177 @@
+// ps3t.8.5 — body-fingerprint contract (design doc §7). `item_body_fp` is
+// the CODEGEN/COMPTIME early-cutoff key: structure-only, span-excluded, and
+// ALPHA-CANONICALIZED — renaming locals (params, lets, loop vars, pattern
+// bindings, lambda params, catch bindings) keeps it, as do whitespace/
+// comment/span edits; any structural, literal, or binding-shape change
+// moves it, and so does an edit that changes WHICH binder a reference
+// resolves to (the shadowing adversarials). Signature edits (name, types,
+// annotations) never touch it — the two fingerprints partition the item.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{item_body_fp, item_sig_fp}
+use @std.avrac.core.{NodeStore, new_node_store, build_line_index, byte_span}
+use @std.avrac.core.{Expr, Stmt, Pattern, MatchArm, ParamEntry, TypeParamEntry, ValueType}
+
+/// Body fingerprint of a hand-built `fn f(o) { match o { .Some(v) -> v, _ -> 0 } }`
+/// whose pattern BINDING carries `bind_vt` in its vtype slot — the shape a
+/// RESOLVED tree has after typeck infers binding types from the subject.
+/// The canonicalizer must neutralize that inferred metadata: two trees
+/// differing only here are the same source structure.
+fn body_fp_with_binding_vtype(bind_vt: ValueType) -> int {
+    let store = new_node_store(build_line_index(""))
+    let subj = store.add_expr(Expr.Ident("o"), byte_span(0, 1), [])
+    let arm_body = store.add_expr(Expr.Ident("v"), byte_span(2, 3), [])
+    let binds: List<ParamEntry> = [ParamEntry { name: "v", vtype: bind_vt, ty_id: null }]
+    let arm = MatchArm { pattern: Pattern.Variant("Some", binds), pattern_id: null, guard_id: null, body_id: arm_body }
+    let fallback = store.add_expr(Expr.Number("0"), byte_span(4, 5), [])
+    let arm2 = MatchArm { pattern: Pattern.Wildcard, pattern_id: null, guard_id: null, body_id: fallback }
+    let m = store.add_expr(Expr.MatchExpr(subj, [arm, arm2]), byte_span(0, 5), [])
+    let body_stmt = store.add_stmt(Stmt.Expr(m), byte_span(0, 5), [])
+    let no_tps: List<TypeParamEntry> = []
+    let params: List<ParamEntry> = [ParamEntry { name: "o", vtype: ValueType.Int, ty_id: null }]
+    let item = store.add_stmt(Stmt.Function("f", no_tps, params, ValueType.Int, [body_stmt]), byte_span(0, 5), [])
+    item_body_fp(store, item)
+}
+
+/// Body fingerprint of the first top-level item of `source`, or 0 on a
+/// parse error (asserted non-zero everywhere below).
+fn body_of(source: string) -> int {
+    let r = parse_program_source(source)
+    if r.had_error != 0 { return 0 }
+    item_body_fp(r.store, r.ids![0])
+}
+
+spec "item_body_fp: rename-invariant, structure-sensitive (ps3t.8.5)" {
+    given "edits that must KEEP the body fingerprint" {
+        then "whitespace/comment-only edits keep body_fp" {
+            let a = body_of("fn f(a: int) -> int { let x = a + 1\n return x }")
+            let b = body_of("// comment\nfn f(a: int) -> int {\n    let x = a + 1  // trailing\n    return x\n}")
+            a != 0 && a == b
+        }
+        then "renaming a LET keeps body_fp" {
+            let a = body_of("fn f() -> int { let alpha = 1\n return alpha }")
+            let b = body_of("fn f() -> int { let beta = 1\n return beta }")
+            a != 0 && a == b
+        }
+        then "renaming a PARAM keeps body_fp (references canonicalize positionally)" {
+            let a = body_of("fn f(alpha: int) -> int { return alpha + 1 }")
+            let b = body_of("fn f(beta: int) -> int { return beta + 1 }")
+            a != 0 && a == b
+        }
+        then "SWAPPING two local names keeps body_fp (pure alpha-equivalence)" {
+            let a = body_of("fn f() -> int { let x = 1\n let y = 2\n return x + y }")
+            let b = body_of("fn f() -> int { let y = 1\n let x = 2\n return y + x }")
+            a != 0 && a == b
+        }
+        then "renaming a FOR variable keeps body_fp" {
+            let a = body_of("fn f() -> int { mut s = 0\n for i in 0..3 { s = s + i }\n return s }")
+            let b = body_of("fn f() -> int { mut s = 0\n for k in 0..3 { s = s + k }\n return s }")
+            a != 0 && a == b
+        }
+        then "renaming a LAMBDA param keeps body_fp" {
+            let a = body_of("fn f() -> int { let g = (v: int) -> v + 1\n return g(1) }")
+            let b = body_of("fn f() -> int { let g = (w: int) -> w + 1\n return g(1) }")
+            a != 0 && a == b
+        }
+        then "renaming a MATCH-arm pattern binding keeps body_fp (guard included)" {
+            let a = body_of("fn f(o: int?) -> int { match o { .Some(v) if v > 0 -> v, _ -> 0 } }")
+            let b = body_of("fn f(o: int?) -> int { match o { .Some(w) if w > 0 -> w, _ -> 0 } }")
+            a != 0 && a == b
+        }
+        then "renaming a CATCH binding keeps body_fp" {
+            let a = body_of("fn f() -> int { let x = risky() catch (e) { 0 }\n return x }")
+            let b = body_of("fn f() -> int { let x = risky() catch (err) { 0 }\n return x }")
+            a != 0 && a == b
+        }
+        then "a local that SHADOWS a global rename-tracks (let f = f keeps the outer read)" {
+            let a = body_of("fn g() -> int { let a = foo\n return a }")
+            let b = body_of("fn g() -> int { let foo = foo\n return foo }")
+            a != 0 && a == b
+        }
+        then "signature-only edits keep body_fp (ret type / annotation / fn name)" {
+            let a = body_of("fn f(a: int) -> int { return 1 }")
+            let b = body_of("export fn renamed(a: int) -> string { return 1 }")
+            a != 0 && a == b
+        }
+    }
+    given "edits that must MOVE the body fingerprint" {
+        then "a literal change moves body_fp" {
+            let a = body_of("fn f() -> int { return 1 }")
+            let b = body_of("fn f() -> int { return 2 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "a structural change moves body_fp" {
+            let a = body_of("fn f() -> int { return 1 }")
+            let b = body_of("fn f() -> int { let x = 1\n return x }")
+            a != 0 && b != 0 && a != b
+        }
+        then "changing WHICH local a reference reads moves body_fp (x vs y)" {
+            let a = body_of("fn f() -> int { let x = 1\n let y = 2\n return x }")
+            let b = body_of("fn f() -> int { let x = 1\n let y = 2\n return y }")
+            a != 0 && b != 0 && a != b
+        }
+        then "shadow-vs-outer reference moves body_fp (the scoping adversarial)" {
+            // Inner block reads the INNER x in one body, the OUTER x in the
+            // other — spelled identically apart from the inner binder's name.
+            let a = body_of("fn f() -> int { let x = 1\n { let x = 2\n return x } }")
+            let b = body_of("fn f() -> int { let x = 1\n { let y = 2\n return x } }")
+            a != 0 && b != 0 && a != b
+        }
+        then "a GLOBAL reference is not canonicalized (foo() vs bar() move it)" {
+            let a = body_of("fn f() -> int { return foo() }")
+            let b = body_of("fn f() -> int { return bar() }")
+            a != 0 && b != 0 && a != b
+        }
+        then "binding SHAPE participates (let vs mut)" {
+            let a = body_of("fn f() -> int { let x = 1\n return x }")
+            let b = body_of("fn f() -> int { mut x = 1\n return x }")
+            a != 0 && b != 0 && a != b
+        }
+        then "a local TYPE ANNOTATION participates (it changes codegen)" {
+            let a = body_of("fn f() -> int { let x: int = 1\n return 1 }")
+            let b = body_of("fn f() -> int { let x: u32 = 1\n return 1 }")
+            a != 0 && b != 0 && a != b
+        }
+        then "renaming a local REFERENCED INSIDE a quote moves body_fp (quote bodies are verbatim data — canonicalization must not reach in)" {
+            let a = body_of("fn f() -> int { let v = 1\n let q = quote { v }\n return v }")
+            let b = body_of("fn f() -> int { let w = 1\n let q = quote { w }\n return w }")
+            a != 0 && b != 0 && a != b
+        }
+        then "select-arm bodies participate (the render-stub regression, end to end)" {
+            let a = body_of("fn f() { select { x <- ch -> { one() } } }")
+            let b = body_of("fn f() { select { x <- ch -> { two() } } }")
+            a != 0 && b != 0 && a != b
+        }
+    }
+    given "inferred pattern-binding types are NOT structure" {
+        then "arms differing only in a binding's INFERRED vtype hash identically (resolved-tree shape)" {
+            let a = body_fp_with_binding_vtype(ValueType.Int)
+            let b = body_fp_with_binding_vtype(ValueType.Str)
+            a != 0 && a == b
+        }
+    }
+    given "select bindings are locals like any other" {
+        then "renaming a select-arm BINDING keeps body_fp" {
+            let a = body_of("fn f() { select { x <- ch -> { use_it(x) } } }")
+            let b = body_of("fn f() { select { y <- ch -> { use_it(y) } } }")
+            a != 0 && a == b
+        }
+    }
+    given "the two fingerprints partition an item's content" {
+        then "a body edit moves body_fp but keeps sig_fp; a sig edit does the reverse" {
+            let base = "fn f(a: int) -> int { return a }"
+            let body_edit = "fn f(a: int) -> int { return a + 1 }"
+            let sig_edit = "fn f(a: string) -> int { return a }"
+            let rb = parse_program_source(base)
+            let re = parse_program_source(body_edit)
+            let rs = parse_program_source(sig_edit)
+            let base_item = rb.ids![0]
+            let edit_item = re.ids![0]
+            let sig_item = rs.ids![0]
+            item_body_fp(rb.store, base_item) != item_body_fp(re.store, edit_item) &&
+                item_sig_fp(rb.store, base_item) == item_sig_fp(re.store, edit_item) &&
+                item_sig_fp(rb.store, base_item) != item_sig_fp(rs.store, sig_item) &&
+                item_body_fp(rb.store, base_item) == item_body_fp(rs.store, sig_item)
+        }
+    }
+}

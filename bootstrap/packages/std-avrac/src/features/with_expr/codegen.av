@@ -6,7 +6,7 @@
 // then overwrite the specified fields with new values.
 
 use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_render_full}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit, vtype_is_ptr_type}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, vtype_is_ptr_type, expr_is_shared_alias}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.closures.{emit_expected}
 use codegen.{emit_optional_coerce}
@@ -134,9 +134,17 @@ fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: strin
             // emit_expected threads a fn-typed field's declared param types
             // into a lambda override (the layout-totality threading);
             // every other override is a plain emit.
-            mut r = emit_expected(ctx, env, ctx.nodes.exprs.get(ov.value_id), fld_ty)?
+            let ov_expr = ctx.nodes.exprs.get(ov.value_id)
+            mut r = emit_expected(ctx, env, ov_expr, fld_ty)?
             let st_ty = ctx.get_type(struct_name)
             let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
+            // A FOREIGN-owned override (`h with { f: some_param }` /
+            // `f: obj.g`) shares a pointer its source still owns — retain,
+            // exactly like the struct-literal path (fill_struct_fields)
+            // and this file's own copied-field retains. Local idents
+            // transfer their tick instead (see expr_is_shared_alias).
+            let aliases_source = ctx.alias_retain_scope && expr_is_shared_alias(ctx.nodes, ov_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
+            let pre_coerce = r.value
             // Optional box/unbox into the field's slot (no-op when neither applies).
             r = emit_optional_coerce(ctx, r, fld_ty)
             // store_field truncates / casts to the field's LLVM type
@@ -148,6 +156,9 @@ fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: strin
                 ctx.store_field(wrapped.value, gep, fld_ty)
             } else {
                 ctx.store_field(r.value, gep, fld_ty)
+                if aliases_source && r.value == pre_coerce {
+                    let _ = ctx.rc_retain(r.value)
+                }
             }
         }
         i = i + 1

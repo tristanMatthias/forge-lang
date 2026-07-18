@@ -1,0 +1,107 @@
+// ps3t.6.5.10 — the gnarly-5% catalogue, entry 6: the `~` PREFIX (splice vs
+// bitnot), and the first EXPRESSION-level REAL @hand delegation.
+//
+// The `~` token is overloaded on a parser MODE the grammar can't carry: inside
+// a `quote { … }` body (quote_depth > 0) a leading `~` is `Expr.Splice`
+// (greedy — `~f(x)` splices the whole call), everywhere else it is bitwise-NOT
+// (`Expr.Unary(BitNot, …)`). A stateless token-grammar has no quote_depth
+// counter, so it can't decide which `~` it's looking at.
+//
+// The bitnot side is already PURE grammar (parser_equivalence_test covers
+// `~5` / `~a + 2` / `~~3` as `Unary`). The gnarly side is the SPLICE, reachable
+// only inside a quote — and `quote { … }` is itself parser-mode-stateful
+// (`parse_quote` bumps quote_depth). So the route is to delegate the whole
+// `quote` construct to the hand parser via an EXPRESSION-level @hand:
+// run_hand_expr — the ExprId sibling of run_hand_stmt (→ StmtId, #835) and
+// run_hand_type (→ TypeExpr, #842). It shares the DSL store, delegates to
+// `parse_quote`, and the inner `~`→Splice falls out by construction (the
+// delegated parse tracks quote_depth). The `@hand` delegation now spans all
+// three live node kinds.
+//
+// Oracle: run the DSL expression parser (with `@hand(quote_expr)` as a primary
+// alternative and a pure `~`/`-`/`!` unary rule) AND the hand parser
+// (parse_expression_native_probe), and assert identical Exprs via the TOTAL
+// render_expr_id (which models Quote/Splice/Block — dump_expr does not).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.core.{render_expr_id}
+
+fn expr_grammar_src() -> string {
+    "grammar Expr {\n" +
+    "  expression = unary\n" +
+    // `~`/`-`/`!` prefix — the pure BITNOT side (outside a quote). Inside a
+    // quote the `~` is never seen here: the whole quote is one @hand primary.
+    "  unary      = op:(\"!\" | \"-\" | \"~\") operand:unary -> Unary(op, operand) | postfix\n" +
+    "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
+    "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
+    "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
+    // @hand(quote_expr) FIRST is the `quote` keyword; bare names/numbers use the
+    // pure atoms. So `quote { ~x }` routes to parse_quote (splice), `~x` doesn't.
+    "  primary    = @hand(quote_expr) | NUMBER | @hand(ident)\n" +
+    "}"
+}
+
+fn dsl_expr(src: string) -> string {
+    let gp = parse_grammar(expr_grammar_src())
+    let r = run_grammar_expr(gp.grammar, src)
+    if r.had_error { return "<dsl parse error>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand_expr(src: string) -> string {
+    let probe = parse_expression_native_probe(src)
+    if probe.had_error != 0 { return "<parse error>" }
+    render_expr_id(probe.store, probe.root)
+}
+
+fn agree(src: string) -> bool { dsl_expr(src) == hand_expr(src) }
+
+spec "grammar-DSL gnarly-5%: ~ splice-vs-bitnot via @hand(quote_expr) == hand parser (ps3t.6.5.10)" {
+    given "`~` OUTSIDE a quote is bitwise-NOT (pure grammar, no false splice)" {
+        then "the bitnot / neg / not prefixes agree with the hand parser" {
+            agree("~5") &&
+            agree("~x") &&
+            agree("~a") &&
+            agree("-x") &&
+            agree("!y") &&
+            // canonical: an outside-quote `~` renders as a bitnot unary, NOT a splice.
+            dsl_expr("~x") == "(~ x)" &&
+            !dsl_expr("~x").contains("splice")
+        }
+    }
+    given "`~` INSIDE a quote body is a Splice (the @hand(quote_expr) route)" {
+        then "the quote construct + inner splice agree with the hand parser" {
+            agree("quote { ~x }") &&
+            agree("quote { ~foo }") &&
+            // greedy: `~f(x)` splices the WHOLE call inside the quote.
+            agree("quote { ~f(x) }") &&
+            agree("quote { ~a + ~b }") &&
+            // an explicit quote KIND keyword (stmt) — the splice fires the same.
+            agree("quote stmt { ~x }") &&
+            // a splice buried in a binding initializer inside the quote body.
+            agree("quote { let a = ~b }") &&
+            // canonical: the delegated parse REALLY built a Splice (not swallowed
+            // to an error / bitnot) — reaching past the render.
+            dsl_expr("quote { ~x }").contains("(splice ") &&
+            !dsl_expr("quote { ~x }").contains("(~ ")
+        }
+    }
+    given "a quote WITHOUT a splice still routes and agrees (no false splice)" {
+        then "a plain quote body carries no splice" {
+            agree("quote { x }") &&
+            agree("quote { 1 + 2 }") &&
+            !dsl_expr("quote { x }").contains("splice")
+        }
+    }
+    given "`@hand(quote_expr)` composes with the pure grammar around it" {
+        then "the quote nests as one primary among the pure unary/postfix rules" {
+            // A splice inside a quote differs from a bitnot outside it — the two
+            // meanings of `~` are routed to the two different builders.
+            dsl_expr("quote { ~x }") != dsl_expr("~x") &&
+            // bare atoms and outside-quote unary are unchanged by the new route.
+            agree("42") &&
+            agree("~~3") &&
+            agree("!~-1")
+        }
+    }
+}
