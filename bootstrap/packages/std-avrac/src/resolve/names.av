@@ -69,6 +69,9 @@ type ModuleItemEntry = {
     short_name: string,
     canonical: string,
     exported: bool,
+    // True for nominal TYPE declarations — mirrors GraphItem.is_type;
+    // the declared-canonicals probe (type resolution) filters on it.
+    is_type: bool,
 }
 
 /// Hierarchical module tree built from `Stmt.Module` nodes. Each
@@ -145,9 +148,9 @@ type GlobalItemReg = {
     idx: ptr,
 }
 
-/// Membership set of every declared item's CANONICAL name (C-side cstr map,
+/// Membership set of every declared TYPE's CANONICAL name (C-side cstr map,
 /// value 1), built in the same pre-pass as the global index. It answers
-/// "does module M declare name N" (`M::N` present) BEFORE the rewrite walk
+/// "does module M declare TYPE N" (`M::N` present) BEFORE the rewrite walk
 /// has registered anything — the local-shadowing probe in
 /// `resolve_type_in_ctx` needs it because the TypeRegistry fills LAZILY
 /// during the walk: a SELF-reference (a recursive enum's variant field) or a
@@ -158,13 +161,19 @@ type GlobalItemReg = {
 /// then cross-resolved — module B's self-recursive `Wrap` acquired module
 /// A's generic `Wrap<T>` and tripped the F1004 arity gate at its own
 /// declaration (the type-name sibling of the per-module const-scoping fix).
+/// TYPE-ONLY by design: this set feeds `resolve_type_in_ctx`'s local
+/// probe, whose registry half (`type_registry_id_for`) is inherently
+/// type-only. Adding fns/consts made a same-module `fn Foo` shadow an
+/// explicitly imported `type Foo` — the annotation resolved to the fn's
+/// canonical and the struct value silently collapsed to null.
 fn declared_canonicals_build(items: List<ModuleItemEntry>) -> ptr {
     let set = avra_map_new_cstr()
     mut i = 0
     while i < items.length {
         let it = items[i]
-        let canon = it.canonical
-        avra_map_set_cstr(set, canon, 1)
+        if it.is_type {
+            avra_map_set_cstr(set, it.canonical, 1)
+        }
         i = i + 1
     }
     set
@@ -267,7 +276,7 @@ fn build_global_index_from_graph(items: List<GraphItem>) -> List<ModuleItemEntry
     mut i = items.length - 1
     while i >= 0 {
         let it = items[i]
-        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported })
+        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported, is_type: it.is_type })
         i = i - 1
     }
     out
@@ -352,42 +361,42 @@ fn collect_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, export
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: false })
         }
         .ExternFn(name, _, _) -> {
             // Extern fns keep bare names (C ABI) but are registered
             // for visibility tracking
-            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
+            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, is_type: false })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
         }
         // Module-level consts are visible to `use mod.{NAME}` callers
         // exactly like fns and types.
         .Const(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: false })
         }
         .Impl(_, methods) -> collect_impl_items(store, methods, mod_path, out)
         .Annotated(annotations, inner) -> {
@@ -422,7 +431,10 @@ fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: 
     while i < names.length {
         let name = names[i].name
         let canonical = type_qualified_name(source_mod, name)
-        out.push(ModuleItemEntry { short_name: name, canonical, exported: true })
+        // Re-exports don't carry the source item's kind; is_type: false is
+        // safe — their canonical anchors at the SOURCE module, so the
+        // local-decl type probe (current module) can never match them.
+        out.push(ModuleItemEntry { short_name: name, canonical, exported: true, is_type: false })
         i = i + 1
     }
 }
@@ -438,7 +450,7 @@ fn collect_impl_items(store: NodeStore, methods: List<StmtId>, mod_path: string,
             .Function(name, _, _, _, _) -> {
                 // Impl methods are already mangled as Type__method.
                 // Keep bare name — method call codegen uses Type__method directly.
-                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true })
+                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, is_type: false })
             }
             _ -> {}
         }
@@ -869,7 +881,7 @@ export type ResolverState = {
     graph: ModuleGraph,
     aliases: List<AliasBinding>,
     global_index: GlobalItemReg,
-    // Membership set of every declared item's CANONICAL name (C-side cstr
+    // Membership set of every declared TYPE's CANONICAL name (C-side cstr
     // map, value 1) — see `declared_canonicals_build` for why the local-
     // shadowing probe needs it alongside the lazily-filled type registry.
     declared: ptr,
@@ -1019,7 +1031,7 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
         let sn = it.short_name
         let canon = it.canonical
         let exp = it.exported
-        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp })
+        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp, is_type: it.is_type })
     }
     let new_global_index = global_item_reg_build(new_items_list)
 
@@ -1038,6 +1050,7 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
                 short_name: added.short_name,
                 canonical: added.canonical,
                 exported: added.exported,
+                is_type: added.is_type,
             })
         }
     }
@@ -1108,34 +1121,34 @@ fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, 
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: false })
         }
         .ExternFn(name, _, _) -> {
-            out.push(GraphItem { short_name: name, canonical: name, exported: true })
+            out.push(GraphItem { short_name: name, canonical: name, exported: true, is_type: false })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
+            out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .Annotated(_, inner) -> collect_macro_item_from_stmt(store, store.stmts.get(inner), mod_path, out)
         _ -> {}
