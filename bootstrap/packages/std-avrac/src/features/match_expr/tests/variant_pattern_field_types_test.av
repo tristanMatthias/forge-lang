@@ -26,12 +26,17 @@ fn shape_children(self: Shape) -> List<Shape> {
 }
 
 // Single-Self-field variant — exercises the direct-binding case.
-enum Wrap {
+// (Named WrapNest, not Wrap: generics/tests declares a generic `Wrap<T>`,
+// and when the test runner batches both files into one shard the bare
+// name resolves against the sibling's generic — F1004, the xozi residual
+// of the xvv5 batched-shard type-scoping bug. The name is incidental to
+// what this file tests, so it stays collision-free.)
+enum WrapNest {
     Empty,
-    Single(inner: Wrap),
+    Single(inner: WrapNest),
 }
 
-fn wrap_depth(w: Wrap) -> int {
+fn wrap_depth(w: WrapNest) -> int {
     match w {
         .Empty       -> 0
         .Single(_) -> 1
@@ -60,7 +65,7 @@ spec "so07.5: variant pattern bindings carry Self-recursive field types" {
         shape_children(Shape.Leaf).length == 0
     }
     then "single Self-field binding compiles without Unknown leakage" {
-        wrap_depth(Wrap.Single(Wrap.Empty)) == 1
+        wrap_depth(WrapNest.Single(WrapNest.Empty)) == 1
     }
     then "scalar+list mixed variant binds the list correctly" {
         tagged_item_count(Tagged.Group("g", [Tagged.Leaf, Tagged.Leaf])) == 2

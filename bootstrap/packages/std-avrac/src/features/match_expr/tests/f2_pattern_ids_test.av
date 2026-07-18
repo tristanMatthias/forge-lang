@@ -25,13 +25,13 @@ spec "F2: nested-variant patterns carry id children that render faithfully" {
     given "a two-level nested destructure" {
         then "the store-resolved render reproduces the nested shape" {
             first_arm_pattern_render("match v { .Some(.Ok(x)) -> 1, _ -> 2 }")
-                .contains(".Some(.Ok(x))")
+                .contains(".Some(.Ok(x:int))")
         }
     }
     given "a three-level nested destructure" {
         then "deep ids resolve level by level" {
             first_arm_pattern_render("match v { .A(.B(.C(x))) -> 1, _ -> 2 }")
-                .contains(".A(.B(.C(x)))")
+                .contains(".A(.B(.C(x:int)))")
         }
     }
     given "an or-pattern chain" {
@@ -43,7 +43,7 @@ spec "F2: nested-variant patterns carry id children that render faithfully" {
     given "an or of nested variants" {
         then "or branches that are themselves nested resolve recursively" {
             first_arm_pattern_render("match v { .Some(.A(x)) or .Some(.B(y)) -> 1, _ -> 2 }")
-                .contains(".Some(.A(x)) or .Some(.B(y))")
+                .contains(".Some(.A(x:int)) or .Some(.B(y:int))")
         }
     }
 }

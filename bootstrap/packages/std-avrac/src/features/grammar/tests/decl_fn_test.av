@@ -100,8 +100,8 @@ spec "grammar-DSL declaration family: fn == hand-written parser (ps3t.6.5.7)" {
     given "the DSL trees are the expected shapes (sanity: really built a Function)" {
         then "canonical renders of representative forms" {
             dsl_stmt("fn f() { }") == "(fn f () -> void )" &&
-            dsl_stmt("fn add(a: int, b: int) -> int { }") == "(fn add (a, b) -> int )" &&
-            dsl_stmt("fn f(x) { }") == "(fn f (x) -> void )" &&
+            dsl_stmt("fn add(a: int, b: int) -> int { }") == "(fn add (a:int, b:int) -> int )" &&
+            dsl_stmt("fn f(x) { }") == "(fn f (x:int) -> void )" &&
             dsl_stmt("fn k() { break }") == "(fn k () -> void (break))"
         }
     }

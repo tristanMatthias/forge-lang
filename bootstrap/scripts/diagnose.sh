@@ -1693,10 +1693,19 @@ mode_rc_strict_suite() {
   # root. Same `( cd "$BOOTSTRAP_DIR" && "$BS2" test )` form the seed-train's
   # spec-suite check uses; without it every shard fails to resolve the test
   # runner (`undefined variable run_test_suite`).
+  #
+  # Concurrency is CAPPED under strict mode (explicit env still wins): the
+  # strict allocator's reuse quarantine + poison pages inflate every
+  # process's footprint, and at the default fan-out (AVRA_JOBS=8 shard
+  # compiles, worker threads = core count) the suite peaks past a 16GB CI
+  # runner's memory — the runner service gets OOM-killed, surfacing as a
+  # bogus "runner received a shutdown signal" mid-suite. Same capacity
+  # discipline as the degraded-shard jobs=2 cap and `make sweep`.
+  local jobs="${AVRA_JOBS:-4}" test_jobs="${AVRA_TEST_JOBS:-2}"
   if [ -n "${1:-}" ]; then
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test -f "$1" )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_JOBS="$jobs" AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
   else
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_JOBS="$jobs" AVRA_TEST_JOBS="$test_jobs" "$BS2" test )
   fi
 }
 

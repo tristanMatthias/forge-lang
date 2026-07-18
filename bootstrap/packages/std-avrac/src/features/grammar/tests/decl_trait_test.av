@@ -103,9 +103,9 @@ spec "grammar-DSL declaration family: trait == hand-written parser (ps3t.6.5.7)"
         then "canonical renders of representative forms" {
             // render_stmt_ids joins members with a newline (no wrapping
             // parens/commas); an empty body renders as the bare `(trait N )`.
-            dsl_stmt("trait Greet { fn hello(self) -> string }") == "(trait Greet (extern hello (self) -> string))" &&
+            dsl_stmt("trait Greet { fn hello(self) -> string }") == "(trait Greet (extern hello (self:int) -> string))" &&
             dsl_stmt("trait Empty { }") == "(trait Empty )" &&
-            dsl_stmt("trait Iter { type Item fn next(self) -> int }") == "(trait Iter (assoc-type Item)\n(extern next (self) -> int))"
+            dsl_stmt("trait Iter { type Item fn next(self) -> int }") == "(trait Iter (assoc-type Item)\n(extern next (self:int) -> int))"
         }
     }
 }

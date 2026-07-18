@@ -83,7 +83,11 @@ jobs:
           # Belt and suspenders with the cross-process fixture-compile
           # throttle (--slot-exec): 4-vCPU runners still benefit from
           # reduced unit-thread width for the non-compile workload.
-          AVRA_TEST_JOBS: "2"
+          # SERIAL unit workers — two overlapping heavy-fixture @std rebuilds
+          # (~3.5GB each) exceed the hosted runner's memory; the kernel
+          # silently SIGKILLs the biggest child. Keep in lockstep with
+          # seed-train-verify.yml.
+          AVRA_TEST_JOBS: "1"
           # Skip the redundant suite ONLY when the merged PR's seed-train-verify
           # published a PASS status for this exact seed×source fingerprint. Any
           # miss → empty → the suite runs (today's behaviour). Build + fixed point

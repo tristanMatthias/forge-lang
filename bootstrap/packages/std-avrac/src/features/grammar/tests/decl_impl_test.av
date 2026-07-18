@@ -135,8 +135,8 @@ spec "grammar-DSL declaration family: impl == hand-written parser (ps3t.6.5.7)" 
     }
     given "the DSL trees are the expected shapes (sanity: really built an Impl, mangled)" {
         then "canonical renders of representative forms" {
-            dsl_stmt("impl Point { fn area(self) -> int { return 5 } }") == "(impl Point (fn Point__area (self) -> int (return 5)))" &&
-            dsl_stmt("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "(impl Display:Point (fn Point__fmt (self) -> int (return 1)))" &&
+            dsl_stmt("impl Point { fn area(self) -> int { return 5 } }") == "(impl Point (fn Point__area (self:Point) -> int (return 5)))" &&
+            dsl_stmt("impl Display for Point { fn fmt(self) -> int { return 1 } }") == "(impl Display:Point (fn Point__fmt (self:Point) -> int (return 1)))" &&
             dsl_stmt("impl Empty { }") == "(impl Empty )"
         }
     }
