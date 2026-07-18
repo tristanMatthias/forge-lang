@@ -81,7 +81,6 @@ use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sid
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
-use @std.avrac.features.marshal.{derive_marshal}
 use @std.avrac.resolve.{NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
@@ -111,8 +110,10 @@ extern fn avra_stderr_write_raw(s: string)
 use @std.avrac.build.{
     DepGraph, Unit, build_graph,
 }
-use @std.avrac.typeck.{typecheck_program}
-use @std.avrac.features.comptime.{run_comptime, resolve_and_expand_program}
+use @std.avrac.typeck.{TypeCheckResult}
+use @std.avrac.features.comptime.{ComptimeResult}
+use @std.avrac.query.{Db, PassValue, pass_db_new, pass_fetch_resolved, pass_fetch_folded, pass_fetch_typechecked}
+use @std.avrac.core.{content_id_for}
 use @std.avrac.features.quote_expr.{lower_quotes_via_store, report_runtime_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
@@ -308,19 +309,34 @@ fn expand_components_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeS
     comp.stmts
 }
 
-/// derive_marshal + resolve_and_expand_program with built-in
-/// diagnostic rendering and fail-on-hard-error short-circuit.
-/// Wraps the 5-line pattern (marshal → resolve → render bag →
-/// fail) that every compile / check / test pipeline site
-/// repeated immediately after `expand_components_or_fail`.
-/// Returns the NameResolveResult so the caller can continue
-/// with run_comptime → typecheck.
-fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
-    let with_marshal = derive_marshal(ids, store)
-    let named = resolve_and_expand_program(with_marshal, store)
-    render_bag_if_nonempty(ctx, named.bag)
-    if named.had_error { fail(named.error_message) }
-    named
+/// Fetch the coarse RESOLVE query with built-in diagnostic rendering and
+/// fail-on-hard-error short-circuit — the query-path successor of the old
+/// marshal→resolve→render→fail helper (the marshal derive + name resolution
+/// now run INSIDE the query, ps3t.8.3 Step A). A null fetch is an
+/// engine-wiring bug (wrong variant / unexpected cycle), never a user error.
+fn pass_resolved_or_fail(db: Db<PassValue>, ctx: RenderContext) -> NameResolveResult {
+    let named = pass_fetch_resolved(db)
+    if named == null { fail("internal: RESOLVE query produced no value") }
+    render_bag_if_nonempty(ctx, named!.bag)
+    if named!.had_error { fail(named!.error_message) }
+    named!
+}
+
+/// Fetch the coarse comptime-FOLD query. The fold's bag rides back
+/// UNRENDERED — callers gate or format it per their own policy, exactly as
+/// they did around the direct run_comptime call.
+fn pass_folded_or_fail(db: Db<PassValue>) -> ComptimeResult {
+    let folded = pass_fetch_folded(db)
+    if folded == null { fail("internal: FOLD query produced no value") }
+    folded!
+}
+
+/// Fetch the coarse TYPECK query. The result's bag rides back unrendered
+/// for the caller's gate, mirroring the direct typecheck_program call.
+fn pass_typechecked_or_fail(db: Db<PassValue>) -> TypeCheckResult {
+    let tc = pass_fetch_typechecked(db)
+    if tc == null { fail("internal: TYPECK query produced no value") }
+    tc!
 }
 
 /// What the parse→comptime FRONT of the pipeline hands to a subcommand:
@@ -334,6 +350,10 @@ type FrontEndResult = {
     stmts: List<StmtId>,
     comptime_bag: DiagnosticBag,
     resolved: NameResolveResult,
+    // The pass database the front's queries ran in — callers that continue
+    // the pipeline (check's typecheck) fetch their pass from the SAME db so
+    // the dependency chain stays in one place (ps3t.8.3 Step A).
+    db: Db<PassValue>,
 }
 
 /// The pipeline front shared by `check` and `expand`: parse, lower
@@ -352,13 +372,15 @@ fn front_pipeline_or_fail(fa: FileArg, ctx: RenderContext) -> FrontEndResult {
     fail_on_module_resolve_error(mod_resolved, ctx)
     let with_intrinsics = inject_intrinsics(mod_resolved.stmts, parsed_prog.store)
     let expanded = expand_components_or_fail(with_intrinsics, ctx, parsed_prog.store)
-    let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
-    let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
+    let db = pass_db_new(expanded, parsed_prog.store, content_id_for(fa.source))
+    let named = pass_resolved_or_fail(db, ctx)
+    let post_comptime = pass_folded_or_fail(db)
     FrontEndResult {
         store: parsed_prog.store,
         stmts: post_comptime.stmts,
         comptime_bag: post_comptime.bag,
         resolved: named,
+        db,
     }
 }
 
@@ -3732,7 +3754,7 @@ fn cmd_check(args: CliResult) -> int {
     }
     let front = front_pipeline_or_fail(fa, ctx)
     render_and_fail_on_errors(front.comptime_bag, ctx, "comptime fold failed")
-    let tc_result = typecheck_program(front.stmts, front.resolved.type_reg, front.resolved.macro_origins, front.store)
+    let tc_result = pass_typechecked_or_fail(front.db)
     render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
     if !check_json { println("ok") }
     0
@@ -4003,19 +4025,24 @@ fn cmd_compile(args: CliResult) -> int {
         // definitions in any module are visible to the expander.
         let expanded = expand_components_or_fail(post_filter_stmts, ctx, parsed_prog.store)
         let t_expand = avra_uptime_ms()
-        let named = marshal_and_resolve_or_fail(expanded, ctx, parsed_prog.store)
+        // The coarse pass database (ps3t.8.3 Step A): resolve / comptime /
+        // typeck run as chained whole-program queries. Each fetch below is
+        // the pass's ONE compute for this compile; the inter-pass gates and
+        // their rendering stay exactly where they were.
+        let db = pass_db_new(expanded, parsed_prog.store, content_id_for(csource))
+        let named = pass_resolved_or_fail(db, ctx)
         let t_names = avra_uptime_ms()
         if stop_after_matches(stop_after, "names") { return 0 }
         // Comptime fold: replace `@comptime` calls with their literal results.
-        // Runs after resolve_and_expand_program so names are bound, before typeck
+        // Runs after the RESOLVE query so names are bound, before typeck
         // so the typechecker sees the post-fold (literal-typed) AST.
-        let post_comptime = run_comptime(named.stmts, parsed_prog.store, named.type_reg)
+        let post_comptime = pass_folded_or_fail(db)
         // A genuine @comptime fold error (F4007) gates before typeck, mirroring
         // how @expand's F4005 halts — a call that couldn't fold must not slip
         // through as an unfolded runtime call.
         render_and_fail_on_errors(post_comptime.bag, ctx, "comptime fold failed")
         // Type check — gates compilation on errors
-        let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, parsed_prog.store)
+        let tc_result = pass_typechecked_or_fail(db)
         let t_typeck = avra_uptime_ms()
         render_and_fail_on_errors(tc_result.bag, ctx, "type check failed")
         if stop_after_matches(stop_after, "check") { return 0 }

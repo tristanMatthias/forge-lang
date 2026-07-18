@@ -1,0 +1,174 @@
+// WHY: Step A of the query-shaped-passes migration (ps3t.8.3 / design doc
+// §4, §11 P0): the front-of-pipeline whole-program passes — marshal+resolve,
+// comptime fold, typecheck — each wrapped as ONE coarse query over the L6
+// engine. No incrementality is claimed at this stage: a one-shot compile
+// sets the source once and fetches each pass exactly once. What the wrap
+// BUYS is the §4 proof obligation — each pass runs behind the engine as a
+// pure fn of its fetched inputs (the arena is append-only, so node rewrites
+// version rows instead of mutating them), every inter-pass read is a
+// recorded dependency edge, and the byte-identical diff-test oracle pins
+// that routing through the engine changes nothing. Step B (per-item
+// queries, where incrementality actually appears) splits these families
+// once each pass is proven to read only what it declares.
+//
+// Diagnostics stay INSIDE each pass's result bag for Step A — the drivers
+// render and gate on them exactly as before the wrap (behavior-identical is
+// the whole point). Moving them onto `Computed.diags` (so the engine's
+// cutoff hash covers them, §10) is part of the Step B split.
+
+use query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed}
+use core.{NodeStore, StmtId, content_id_for}
+use diagnostics.{diag_ice}
+use resolve.{NameResolveResult}
+use features.marshal.{derive_marshal}
+use features.comptime.{run_comptime, resolve_and_expand_program, ComptimeResult}
+use typeck.{typecheck_program, TypeCheckResult}
+
+// Coarse pass families (Step A): one whole-program cell per family, arg 0.
+export const PASS_SRC = 0
+export const PASS_RESOLVE = 1
+export const PASS_FOLD = 2
+export const PASS_TYPECK = 3
+
+/// The one value type the compiler's pass database carries (§2: the engine
+/// is generic over ONE `V` per db). Each variant is one coarse pass's
+/// whole-program outcome; the variants are 1:1 with the families above.
+/// `Src` carries the pipeline input (the post-expand statement vector and
+/// its arena) plus the input fingerprint the coarse answer hashes chain
+/// from.
+export enum PassValue {
+    Src(stmts: List<StmtId>, store: NodeStore, fingerprint: int)
+    Resolved(named: NameResolveResult, store: NodeStore)
+    Folded(folded: ComptimeResult)
+    Typechecked(tc: TypeCheckResult)
+}
+
+/// A driver handed the WRONG variant for the family it fetched — a wiring
+/// bug in this module, never a user error. Surface as an ICE diagnostic on
+/// the answer (drivers gate on it) rather than swallowing.
+fn pass_value_ice(v: PassValue, family: int) -> Computed<PassValue> {
+    let mut out = computed(v, 0)
+    mut diags = out.diags
+    diags.push(diag_ice("query pass family ${string(family)} fetched an unexpected upstream variant"))
+    out with { diags }
+}
+
+/// The coarse answer hash: family chained onto the source fingerprint. At
+/// whole-program granularity an input edit always recomputes every pass, so
+/// this hash exists to satisfy the engine's contract deterministically —
+/// real per-item fingerprints are ps3t.8.5's two-level scheme.
+fn coarse_hash(fingerprint: int, family: int) -> int {
+    content_id_for("pass:${string(family)}:${string(fingerprint)}")
+}
+
+/// The compiler's coarse compute dispatcher (§2.1: one pure fn from
+/// `(ctx, key)` to the computed answer, matching on `key.family`; every
+/// upstream read goes through `ctx.fetch`, which records the edge).
+export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    if q.family == PASS_RESOLVE {
+        let src = ctx.fetch(qk(PASS_SRC, 0))?
+        return match src {
+            .Src(stmts, store, fp) -> {
+                let with_marshal = derive_marshal(stmts, store)
+                let named = resolve_and_expand_program(with_marshal, store)
+                Result.Ok(computed(PassValue.Resolved(named, store), coarse_hash(fp, PASS_RESOLVE)))
+            }
+            .Resolved(_, _) -> Result.Ok(pass_value_ice(src, q.family))
+            .Folded(_) -> Result.Ok(pass_value_ice(src, q.family))
+            .Typechecked(_) -> Result.Ok(pass_value_ice(src, q.family))
+        }
+    }
+    if q.family == PASS_FOLD {
+        let src = ctx.fetch(qk(PASS_SRC, 0))?
+        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+        return match resolved {
+            .Resolved(named, store) -> {
+                let folded = run_comptime(named.stmts, store, named.type_reg)
+                Result.Ok(computed(PassValue.Folded(folded), coarse_hash(src_fingerprint(src), PASS_FOLD)))
+            }
+            .Src(_, _, _) -> Result.Ok(pass_value_ice(resolved, q.family))
+            .Folded(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+            .Typechecked(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+        }
+    }
+    if q.family == PASS_TYPECK {
+        let src = ctx.fetch(qk(PASS_SRC, 0))?
+        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+        return match resolved {
+            .Resolved(named, store) -> match folded {
+                .Folded(f) -> {
+                    let tc = typecheck_program(f.stmts, named.type_reg, named.macro_origins, store)
+                    Result.Ok(computed(PassValue.Typechecked(tc), coarse_hash(src_fingerprint(src), PASS_TYPECK)))
+                }
+                .Src(_, _, _) -> Result.Ok(pass_value_ice(folded, q.family))
+                .Resolved(_, _) -> Result.Ok(pass_value_ice(folded, q.family))
+                .Typechecked(_) -> Result.Ok(pass_value_ice(folded, q.family))
+            }
+            .Src(_, _, _) -> Result.Ok(pass_value_ice(resolved, q.family))
+            .Folded(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+            .Typechecked(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+        }
+    }
+    Result.Ok(pass_value_ice(ctx.fetch(qk(PASS_SRC, 0))?, q.family))
+}
+
+/// The input fingerprint carried by a `Src` value (0 for any other variant —
+/// unreachable when the wiring is correct).
+fn src_fingerprint(v: PassValue) -> int {
+    match v {
+        .Src(_, _, fp) -> fp
+        .Resolved(_, _) -> 0
+        .Folded(_) -> 0
+        .Typechecked(_) -> 0
+    }
+}
+
+/// A pass database seeded with the program: the one entry point drivers
+/// use. `fingerprint` is the compile input's content identity (the CLI
+/// passes its entry-source content id).
+export fn pass_db_new(stmts: List<StmtId>, store: NodeStore, fingerprint: int) -> Db<PassValue> {
+    let mut db: Db<PassValue> = db_new(pass_compute)
+    db.set_input(qk(PASS_SRC, 0), PassValue.Src(stmts, store, fingerprint), coarse_hash(fingerprint, PASS_SRC))
+    db
+}
+
+/// Fetch the coarse RESOLVE query. Diagnostics live in `named.bag` (Step A);
+/// the ICE arm fires only on an engine-wiring bug.
+export fn pass_fetch_resolved(db: Db<PassValue>) -> NameResolveResult? {
+    match db.fetch(qk(PASS_RESOLVE, 0)) {
+        .Ok(f) -> match f.value {
+            .Resolved(named, _) -> named
+            .Src(_, _, _) -> null
+            .Folded(_) -> null
+            .Typechecked(_) -> null
+        }
+        .Err(_) -> null
+    }
+}
+
+/// Fetch the coarse comptime-FOLD query (depends on RESOLVE).
+export fn pass_fetch_folded(db: Db<PassValue>) -> ComptimeResult? {
+    match db.fetch(qk(PASS_FOLD, 0)) {
+        .Ok(f) -> match f.value {
+            .Folded(folded) -> folded
+            .Src(_, _, _) -> null
+            .Resolved(_, _) -> null
+            .Typechecked(_) -> null
+        }
+        .Err(_) -> null
+    }
+}
+
+/// Fetch the coarse TYPECK query (depends on RESOLVE + FOLD).
+export fn pass_fetch_typechecked(db: Db<PassValue>) -> TypeCheckResult? {
+    match db.fetch(qk(PASS_TYPECK, 0)) {
+        .Ok(f) -> match f.value {
+            .Typechecked(tc) -> tc
+            .Src(_, _, _) -> null
+            .Resolved(_, _) -> null
+            .Folded(_) -> null
+        }
+        .Err(_) -> null
+    }
+}
