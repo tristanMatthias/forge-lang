@@ -1719,12 +1719,79 @@ fn collect_decl_type_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> C
         // collected here (see `collect_inst_from_ret_vtype`) — a top-level nominal
         // return is left to the main pass to avoid a representation-mismatch
         // divergence. Generic fns (tp>0) are skipped.
-        .Function(_, tp, _, ret_vt, _) -> if tp.length > 0 { st } else { collect_inst_from_ret_vtype(ret_vt, regs, st) }
+        //
+        // PARAM types are the signature's other half (ps3t.8.4): a concrete fn
+        // whose param names a generic instance the program never constructs —
+        // `rq_compute(ctx: QueryCtx<RqValue>, ..)`, a callback invoked by a
+        // driver outside this unit — reaches it only here, and its method calls
+        // (`ctx.fetch`) died with `undefined method` before this channel walked
+        // params. Unlike returns, NO other pass collects param annotations, so
+        // the walk is the full structural one (top-level nominal included).
+        .Function(_, tp, params, ret_vt, _) -> if tp.length > 0 { st } else { collect_inst_from_ret_vtype(ret_vt, regs, collect_inst_from_param_decls(params, regs, st)) }
+        // Concrete-target impls: their methods are ordinary concrete fns whose
+        // signatures deserve the same channel. Generic impls are skipped
+        // exactly like the main pass (`is_generic_impl`) — their types still
+        // name unbound params; the specialised copies are walked via all_specs.
+        .Impl(_, methods) -> if is_generic_impl(stmt, regs) { st } else { collect_decl_type_insts_ids(methods, regs, st) }
         .Module(_, body) -> collect_decl_type_insts_ids(body, regs, st)
         .Annotated(_, inner) -> collect_decl_type_inst_stmt(regs.store.stmts.get(inner), regs, st)
         .Block(body) -> collect_decl_type_insts_ids(body, regs, st)
         _ -> st
     }
+}
+
+/// Map `collect_inst_from_vtype` over a concrete fn's declared param
+/// types — the param half of the signature channel above. A param whose
+/// annotation is not fully determined (an `Unknown` anywhere in it —
+/// un-annotated bindings, partially-inferred shapes) is SKIPPED: an
+/// instance keyed on Unknown cannot be laid out (spec §6 layout
+/// totality), and registering one turns a silently-uncollected param
+/// into a codegen F9999. The other channels never see Unknown (field
+/// decls and return annotations are always fully written); params are
+/// the one place the parser leaves holes.
+fn collect_inst_from_param_decls(params: List<ParamEntry>, regs: GenRegs, st: CollectState) -> CollectState {
+    mut cur = st
+    mut i = 0
+    while i < params.length {
+        let vt = params[i].vtype
+        if !vtype_has_unknown(vt) {
+            cur = collect_inst_from_vtype(vt, regs, cur)
+        }
+        i = i + 1
+    }
+    cur
+}
+
+/// True when `vt` contains `Unknown` anywhere in its structure — the
+/// under-determined shapes the param channel must not register.
+fn vtype_has_unknown(vt: ValueType) -> bool {
+    match vt {
+        .Unknown -> true
+        .Struct(_, args, _) -> vtypes_have_unknown(args)
+        .Enum(_, args, _) -> vtypes_have_unknown(args)
+        .List(elem) -> vtype_has_unknown(elem)
+        .Optional(inner) -> vtype_has_unknown(inner)
+        .Map(k, v) -> vtype_has_unknown(k) || vtype_has_unknown(v)
+        .Tuple(elems) -> vtypes_have_unknown(elems)
+        .Channel(elem) -> vtype_has_unknown(elem)
+        .Task(r) -> vtype_has_unknown(r)
+        .Newtype(_, inner, _) -> vtype_has_unknown(inner)
+        .Union(types) -> vtypes_have_unknown(types)
+        .FnTyped(params, r) -> vtype_has_unknown(r) || vtypes_have_unknown(params)
+        .Fn(r) -> vtype_has_unknown(r)
+        .Closure(_, r) -> vtype_has_unknown(r)
+        _ -> false
+    }
+}
+
+/// List fold of `vtype_has_unknown`.
+fn vtypes_have_unknown(vts: List<ValueType>) -> bool {
+    mut i = 0
+    while i < vts.length {
+        if vtype_has_unknown(vts[i]) { return true }
+        i = i + 1
+    }
+    false
 }
 
 /// Walk every arm of a `select { ... }` collecting

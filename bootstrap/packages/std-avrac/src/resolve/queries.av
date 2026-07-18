@@ -1,0 +1,489 @@
+// WHY: name-resolution-as-query (ps3t.8.4 / design doc
+// docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md §6) — the resolver's lookup
+// rules re-shaped as PURE QUERIES behind the L6 red-green engine
+// (query/mod.av), with dependencies DISCOVERED via ctx.fetch. This is the
+// query seam the ps3t.8.3 lane wires into the compiler's driver after it
+// lands; standalone it runs against its own Db with explicit inputs, and
+// its correctness harness is the edit-sequence oracle (query/oracle.av).
+//
+// THE FAMILIES (§5-§6 granularity: per-module / per-ref-site, content-
+// addressed keys, never per-node):
+//
+//   decls(mod)    INPUT   — the module's declared items (kind, signature,
+//                           body, visibility). The driver sets it; in the
+//                           wired compiler this is fed by item_tree(file).
+//   ref(site)     INPUT   — one reference site: the name plus the scope
+//                           chain and visible imports at that site (§6:
+//                           "resolve(ref) is a query keyed by (scope
+//                           chain, visible imports)").
+//   index(mod)    DERIVED — the module's FULL item index (name, kind,
+//                           sym_id, visibility — no signatures, no
+//                           bodies). The sibling-lookup surface: sig/body
+//                           edits early-cutoff here, add/remove/rename
+//                           propagate.
+//   surface(mod)  DERIVED — the module's EXPORTED surface: the public
+//                           items' signature fingerprints (§6/§7).
+//                           Private items are EXCLUDED, so a private-
+//                           internal edit recomputes the cell to an
+//                           identical answer and the change-wave dies —
+//                           importers are NOT invalidated. Visibility is
+//                           folded in by construction: an item is either
+//                           in the surface (public) or absent (private),
+//                           so a pub<->private flip changes the answer.
+//   resolve(ref)  DERIVED — the resolution: visible imports first (via
+//                           the exporter's SURFACE — never its private
+//                           internals), then the scope chain innermost-
+//                           first (via each module's INDEX). Returns the
+//                           winning symbol's content-addressed sym_id
+//                           (symbols.av), or 0 with the diagnostic riding
+//                           on the answer (§10: diagnostics memoize with
+//                           values).
+//
+// WHY resolution through an import reads the SURFACE, not the exporter's
+// decls: that is the §6 invalidation property. resolve(ref) records only
+// (ref, surface(exporter)) as deps on the happy path, so any edit that
+// leaves the exported surface unchanged green-revalidates every importer
+// with ZERO recomputes. The error path additionally reads index(exporter)
+// to distinguish "not found" from "private" — an erroring ref legitimately
+// depends on the exporter's private name set (the diagnostic changes when
+// the private item appears/disappears), and discovered deps make that
+// per-execution distinction free.
+//
+//   read this file when:  working on query-shaped resolution or the
+//                         exported-surface fingerprint
+//   do NOT read this file when:  the issue is the batch rewriter
+//                                (names.av) or scope validation (mod.av)
+
+use core.{content_id_for}
+use diagnostics.{Diagnostic, DiagCode, diag_error, span_dummy}
+use query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed}
+use resolve.{SymbolKind, symbol_kind_tag, symbol_id}
+
+// ── Query families ──
+// Small dense ints, engine-style (query/mod.av `QueryKey.family`).
+
+export const RQ_FAM_DECLS: int = 0
+export const RQ_FAM_REF: int = 1
+export const RQ_FAM_INDEX: int = 2
+export const RQ_FAM_SURFACE: int = 3
+export const RQ_FAM_RESOLVE: int = 4
+
+// ── The value vocabulary ──
+
+/// One declared item as the DECLS input carries it. `sig` is the rendered
+/// signature (name-independent parts: params, return, bounds); `body` is
+/// the item's body text. Both are opaque strings here — the wired
+/// compiler substitutes real renders (see the ps3t.8.5 note below).
+export type RqDecl = {
+    name: string,
+    kind: SymbolKind,
+    sig: string,
+    body: string,
+    exported: bool,
+}
+
+/// One visible import at a ref site: `use from_module.{short_name}`.
+export type RqImport = {
+    short_name: string,
+    from_module: string,
+}
+
+/// One reference site: the name being resolved, the enclosing module
+/// paths innermost-first (the scope chain), and the imports visible
+/// there. This descriptor IS the query key material — see `rq_ref_key`.
+///
+/// Resolution selects by NAME, mirroring the batch rewriter's value
+/// lookup (`rewrite_ident`); when a fn and a type share a qualified
+/// path, the syntactic NAMESPACE of the ref site (value vs type
+/// position) is what disambiguates — the batch resolver separates those
+/// walks structurally. The wired driver (the pass-wiring lane) threads
+/// that namespace into this descriptor when it builds real refs; the
+/// standalone model keeps the descriptor minimal until then.
+export type RqRef = {
+    name: string,
+    scope_chain: List<string>,
+    imports: List<RqImport>,
+}
+
+/// One entry of a module's full item index: identity + visibility only —
+/// deliberately NO signature and NO body, so those edits cannot move
+/// this query's answer hash.
+export type RqIndexEntry = {
+    name: string,
+    kind: SymbolKind,
+    sym: int,
+    exported: bool,
+}
+
+/// One entry of a module's exported surface: identity + the item's
+/// signature fingerprint.
+export type RqSurfaceEntry = {
+    name: string,
+    kind: SymbolKind,
+    sym: int,
+    sig_fp: int,
+}
+
+/// The one value type the resolve-query database is generic over (the
+/// engine is generic over ONE `V` per Db — query/mod.av).
+export enum RqValue {
+    Decls(path: string, items: List<RqDecl>)
+    Ref(site: RqRef)
+    Index(entries: List<RqIndexEntry>)
+    Surface(entries: List<RqSurfaceEntry>, fp: int)
+    Resolved(sym: int)
+}
+
+// ── Keys ──
+
+/// A module's query key: the content id of its qualified path (§2.1 —
+/// content-addressed argument keys).
+export fn rq_module_key(path: string) -> int {
+    content_id_for(path)
+}
+
+/// A ref site's query key: the content id of the full site descriptor —
+/// name + scope chain + visible imports. Two refs with identical
+/// descriptors share one memo cell by construction; any change to what
+/// is visible at the site is a different key.
+export fn rq_ref_key(site: RqRef) -> int {
+    content_id_for(rq_render_ref(site))
+}
+
+// ── Fingerprints ──
+//
+// CONVERGENCE NOTE (ps3t.8.5): these helpers are the resolve-local
+// composition of the design's §7 fingerprints, built from the one
+// content-hash primitive (content_id_for) over RENDERED signatures.
+// ps3t.8.5 owns the real two-level scheme — sig_fp/body_fp computed from
+// the AST content-hash family (`E:`/`S:`/`P:` node hashes +
+// type_content_hash). When it lands, `rq_sig_fp` swaps its rendered-string
+// hash for that per-item sig_fp; `rq_surface_fp`'s fold shape (sorted-by-
+// construction item frames over per-item fingerprints) is the part that
+// stays.
+
+/// Signature fingerprint of one PUBLIC item: identity frame + rendered
+/// signature. Body-independent by construction — `body` is not read.
+fn rq_sig_fp(d: RqDecl) -> int {
+    content_id_for("S:${string(d.name.length)}:${d.name}#${symbol_kind_tag(d.kind)}|${string(d.sig.length)}:${d.sig}")
+}
+
+/// The exported-surface fingerprint: a structural fold of every public
+/// item's (identity, sig_fp) frame. Equal iff the public surface is
+/// equal; private items never participate.
+fn rq_surface_fp(entries: List<RqSurfaceEntry>) -> int {
+    mut acc = "F:${string(entries.length)}"
+    mut i = 0
+    while i < entries.length {
+        let e = entries[i]
+        acc = "${acc}|${string(e.name.length)}:${e.name}#${symbol_kind_tag(e.kind)}:${string(e.sig_fp)}"
+        i = i + 1
+    }
+    content_id_for(acc)
+}
+
+// ── Value hashing + rendering ──
+// The driver hashes (engine compares) — one render doubles as the
+// oracle's byte-identical comparison surface, so what it prints is what
+// "equal answers" means for RqValue.
+
+fn rq_bool_tag(b: bool) -> string {
+    if b { "1" } else { "0" }
+}
+
+/// Canonical render of an RqValue. Structurally framed (counts +
+/// length-prefixed free-text fields) so no crafted decl/name content can
+/// make two DIFFERENT values render the same bytes — a collision here
+/// would freeze a stale answer past a real edit (same reasoning as the
+/// engine's `answer_hash_of`).
+export fn rq_render(v: RqValue) -> string {
+    match v {
+        .Decls(path, items) -> {
+            mut acc = "D:${string(path.length)}:${path}|${string(items.length)}"
+            mut i = 0
+            while i < items.length {
+                let d = items[i]
+                acc = "${acc}|${string(d.name.length)}:${d.name}#${symbol_kind_tag(d.kind)}|${rq_bool_tag(d.exported)}|${string(d.sig.length)}:${d.sig}|${string(d.body.length)}:${d.body}"
+                i = i + 1
+            }
+            acc
+        }
+        .Ref(site) -> rq_render_ref(site)
+        .Index(entries) -> {
+            mut acc = "I:${string(entries.length)}"
+            mut i = 0
+            while i < entries.length {
+                let e = entries[i]
+                acc = "${acc}|${string(e.name.length)}:${e.name}#${symbol_kind_tag(e.kind)}|${rq_bool_tag(e.exported)}|${string(e.sym)}"
+                i = i + 1
+            }
+            acc
+        }
+        .Surface(entries, fp) -> {
+            mut acc = "X:${string(entries.length)}:${string(fp)}"
+            mut i = 0
+            while i < entries.length {
+                let e = entries[i]
+                acc = "${acc}|${string(e.name.length)}:${e.name}#${symbol_kind_tag(e.kind)}|${string(e.sym)}|${string(e.sig_fp)}"
+                i = i + 1
+            }
+            acc
+        }
+        .Resolved(sym) -> "sym:${string(sym)}"
+    }
+}
+
+/// Render of a ref-site descriptor — shared by `rq_ref_key` (the key is
+/// the content id of exactly this) and `rq_render`.
+fn rq_render_ref(site: RqRef) -> string {
+    mut acc = "R:${string(site.name.length)}:${site.name}|chain:${string(site.scope_chain.length)}"
+    mut i = 0
+    while i < site.scope_chain.length {
+        let m = site.scope_chain[i]
+        acc = "${acc}|${string(m.length)}:${m}"
+        i = i + 1
+    }
+    acc = "${acc}|imports:${string(site.imports.length)}"
+    mut j = 0
+    while j < site.imports.length {
+        let imp = site.imports[j]
+        acc = "${acc}|${string(imp.short_name.length)}:${imp.short_name}<${string(imp.from_module.length)}:${imp.from_module}"
+        j = j + 1
+    }
+    acc
+}
+
+/// Content hash of an RqValue — the early-cutoff signal the driver hands
+/// the engine with every input write and computed answer.
+export fn rq_value_hash(v: RqValue) -> int {
+    content_id_for(rq_render(v))
+}
+
+// ── Input construction (driver/spec convenience) ──
+
+/// The DECLS input write for a module: `(qk, value, hash)` ready for
+/// `db.set_input` / the oracle's `InputWrite`.
+export fn rq_decls_input(path: string, items: List<RqDecl>) -> RqInput {
+    let v = RqValue.Decls(path, items)
+    RqInput { q: qk(RQ_FAM_DECLS, rq_module_key(path)), value: v, value_hash: rq_value_hash(v) }
+}
+
+/// The REF input write for a reference site.
+export fn rq_ref_input(site: RqRef) -> RqInput {
+    let v = RqValue.Ref(site)
+    RqInput { q: qk(RQ_FAM_REF, rq_ref_key(site)), value: v, value_hash: rq_value_hash(v) }
+}
+
+/// One ready-to-apply input write. Mirrors oracle.av's `InputWrite`
+/// field-for-field; a local type keeps this file importable without the
+/// oracle (drivers convert trivially).
+export type RqInput = {
+    q: QueryKey,
+    value: RqValue,
+    value_hash: int,
+}
+
+// ── Construction ──
+
+/// A fresh resolve-query database over `rq_compute` — what a driver (or
+/// spec) starts from before writing DECLS/REF inputs and fetching
+/// RESOLVE roots. Also this module's instantiation anchor: constructing
+/// `Db<RqValue>` here keeps every engine instance constructor-reachable,
+/// so the module compiles identically under compilers with and without
+/// the param-signature mono channel (the pinned bootstrap seed predates
+/// it).
+export fn rq_db_new() -> Db<RqValue> {
+    db_new<RqValue>(rq_compute)
+}
+
+// ── The compute dispatcher ──
+
+/// The resolve-query family dispatcher — the pure fn a `Db<RqValue>` is
+/// constructed over (`db_new<RqValue>(rq_compute)`). Reads of other
+/// queries go through `ctx.fetch` ONLY: that is what records the
+/// dependency edges the red-green algorithm re-verifies.
+export fn rq_compute(ctx: QueryCtx<RqValue>, q: QueryKey) -> Result<Computed<RqValue>, QueryCycle> {
+    if q.family == RQ_FAM_INDEX { return rq_compute_index(ctx, q.arg) }
+    if q.family == RQ_FAM_SURFACE { return rq_compute_surface(ctx, q.arg) }
+    if q.family == RQ_FAM_RESOLVE { return rq_compute_resolve(ctx, q.arg) }
+    // DECLS / REF are inputs. The engine only dispatches an input family
+    // when a compute read one the driver never set — answer the empty
+    // module / empty site so resolution degrades to honest diagnostics
+    // instead of tearing the whole fetch down.
+    if q.family == RQ_FAM_REF {
+        let no_chain: List<string> = []
+        let no_imports: List<RqImport> = []
+        let v = RqValue.Ref(RqRef { name: "", scope_chain: no_chain, imports: no_imports })
+        return Result.Ok(computed(v, rq_value_hash(v)))
+    }
+    let no_items: List<RqDecl> = []
+    let v = RqValue.Decls("", no_items)
+    Result.Ok(computed(v, rq_value_hash(v)))
+}
+
+/// The decls of `mod_arg`, or the empty module when the driver set
+/// nothing — shared head of the two per-module derived queries.
+///
+/// NOTE (in-package V binding, ticket t-4dla): every `ctx.fetch` result in
+/// this file is bound with an explicit `: RqValue` annotation. Inside the
+/// @std::avrac package an UNANNOTATED `let x = ctx.fetch(..)?` leaves the
+/// generic return un-substituted (typeck loses V), and a direct `match x`
+/// then drops its pattern bindings at codegen ("undefined variable") —
+/// the same code compiles fine from an external program. The annotation
+/// is the engine's documented idiom (V binds via annotations), not a
+/// workaround for the semantics.
+fn rq_fetch_decls(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<RqValue, QueryCycle> {
+    let dv: RqValue = ctx.fetch(qk(RQ_FAM_DECLS, mod_arg))?
+    Result.Ok(dv)
+}
+
+/// index(mod): every item's (name, kind, sym_id, visibility). The sym_id
+/// is the symbols.av content-addressed identity over the item's
+/// QUALIFIED path — the module path joined with the item name.
+fn rq_compute_index(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
+    let dv: RqValue = rq_fetch_decls(ctx, mod_arg)?
+    mut entries: List<RqIndexEntry> = []
+    match dv {
+        .Decls(path, items) -> {
+            mut i = 0
+            while i < items.length {
+                let d = items[i]
+                let qualified = rq_qualified(path, d.name)
+                entries.push(RqIndexEntry { name: d.name, kind: d.kind, sym: symbol_id(qualified, d.kind), exported: d.exported })
+                i = i + 1
+            }
+        }
+        // A non-Decls value under the DECLS family means the driver
+        // misfed the cell — index as the empty module.
+        .Ref(_) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
+    }
+    let v = RqValue.Index(entries)
+    Result.Ok(computed(v, rq_value_hash(v)))
+}
+
+/// surface(mod): the exported items' signature fingerprints — §6's
+/// "module exported surface". Private items never enter, so their edits
+/// can't move this answer.
+fn rq_compute_surface(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
+    let dv: RqValue = rq_fetch_decls(ctx, mod_arg)?
+    mut entries: List<RqSurfaceEntry> = []
+    match dv {
+        .Decls(path, items) -> {
+            mut i = 0
+            while i < items.length {
+                let d = items[i]
+                if d.exported {
+                    let qualified = rq_qualified(path, d.name)
+                    entries.push(RqSurfaceEntry { name: d.name, kind: d.kind, sym: symbol_id(qualified, d.kind), sig_fp: rq_sig_fp(d) })
+                }
+                i = i + 1
+            }
+        }
+        // A non-Decls value under the DECLS family means the driver
+        // misfed the cell — the surface is empty.
+        .Ref(_) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
+    }
+    let v = RqValue.Surface(entries, rq_surface_fp(entries))
+    Result.Ok(computed(v, rq_value_hash(v)))
+}
+
+/// resolve(ref): imports first (through the exporter's SURFACE), then
+/// the scope chain innermost-first (through each module's INDEX) —
+/// mirroring the batch rewriter's value-lookup order (alias before
+/// sibling, `rewrite_ident`). Returns the winning sym_id, or 0 with the
+/// diagnostic riding on the answer.
+fn rq_compute_resolve(ctx: QueryCtx<RqValue>, ref_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
+    let rv: RqValue = ctx.fetch(qk(RQ_FAM_REF, ref_arg))?
+    let no_chain: List<string> = []
+    let no_imports: List<RqImport> = []
+    mut site = RqRef { name: "", scope_chain: no_chain, imports: no_imports }
+    match rv {
+        .Ref(found) -> { site = found }
+        // A non-Ref value under the REF family means the driver misfed
+        // the cell — resolve degrades to the empty site's diagnostic.
+        .Decls(_, _) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
+    }
+    // 1. Visible imports — authoritative for the site (rewrite_ident's
+    //    alias-first rule). Only the exporter's surface is read on the
+    //    happy path; the error path also reads its index to tell
+    //    "not found" from "private".
+    mut i = 0
+    while i < site.imports.length {
+        let imp = site.imports[i]
+        if imp.short_name == site.name {
+            let sv: RqValue = ctx.fetch(qk(RQ_FAM_SURFACE, rq_module_key(imp.from_module)))?
+            let sym = rq_surface_lookup(sv, site.name)
+            if sym != 0 { return Result.Ok(rq_resolved(sym)) }
+            let iv: RqValue = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(imp.from_module)))?
+            if rq_index_lookup(iv, site.name) != 0 {
+                return Result.Ok(rq_unresolved(DiagCode.ImportPrivate, "`${site.name}` is private in module `${imp.from_module}`"))
+            }
+            return Result.Ok(rq_unresolved(DiagCode.ImportNotFound, "`${site.name}` not found in module `${imp.from_module}`"))
+        }
+        i = i + 1
+    }
+    // 2. Scope chain, innermost first — sibling lookup sees private
+    //    items (a module's own refs may name its internals).
+    mut j = 0
+    while j < site.scope_chain.length {
+        let m = site.scope_chain[j]
+        let iv: RqValue = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(m)))?
+        let sym = rq_index_lookup(iv, site.name)
+        if sym != 0 { return Result.Ok(rq_resolved(sym)) }
+        j = j + 1
+    }
+    Result.Ok(rq_unresolved(DiagCode.UndefinedVariable, "undefined name `${site.name}`"))
+}
+
+/// Join a module path and an item name into the item's qualified path.
+/// Root-level items (empty path) keep their bare name — same rule as
+/// `type_qualified_name`.
+fn rq_qualified(path: string, name: string) -> string {
+    if path == "" { name } else { "${path}::${name}" }
+}
+
+/// The sym of `name` in a Surface answer, or 0 when not exported.
+fn rq_surface_lookup(v: RqValue, name: string) -> int {
+    match v {
+        .Surface(entries, _) -> {
+            mut i = 0
+            while i < entries.length {
+                if entries[i].name == name { return entries[i].sym }
+                i = i + 1
+            }
+            0
+        }
+        .Decls(_, _) or .Ref(_) or .Index(_) or .Resolved(_) -> 0
+    }
+}
+
+/// The sym of `name` in an Index answer, or 0 when absent.
+fn rq_index_lookup(v: RqValue, name: string) -> int {
+    match v {
+        .Index(entries) -> {
+            mut i = 0
+            while i < entries.length {
+                if entries[i].name == name { return entries[i].sym }
+                i = i + 1
+            }
+            0
+        }
+        .Decls(_, _) or .Ref(_) or .Surface(_, _) or .Resolved(_) -> 0
+    }
+}
+
+/// A successful resolution answer.
+fn rq_resolved(sym: int) -> Computed<RqValue> {
+    let v = RqValue.Resolved(sym)
+    computed(v, rq_value_hash(v))
+}
+
+/// A failed resolution answer: sym 0 with the diagnostic riding on the
+/// value (§10 — they memoize, invalidate, and compare together).
+fn rq_unresolved(code: DiagCode, message: string) -> Computed<RqValue> {
+    let v = RqValue.Resolved(0)
+    mut out = computed(v, rq_value_hash(v))
+    mut diags: List<Diagnostic> = []
+    diags.push(diag_error(code, message, span_dummy()))
+    out with { diags }
+}
