@@ -1,0 +1,60 @@
+// RC ownership regression (found by ps3t.8.5): a struct literal whose field
+// init is a PURE ACCESS PATH (`Hold { r: x }`, `Hold { m: st.done }`) stores
+// a pointer the source still owns — a caller's param, another binding,
+// another struct's field. The holder's scope-exit __release recurses into
+// its fields, so without a retain-on-store the shared contents were freed
+// out from under the source: calling a fn that builds such a holder TWICE
+// on the same argument crashed on the second call (SIGSEGV — the first
+// call's holder release had already freed the argument's heap innards).
+// The fix pairs a codegen retain (fill_struct_fields, the with_expr
+// precedent) with escape analysis KEEPING the aliased source releasable —
+// two halves of one ownership rule. These specs pin the survival shapes.
+
+type InnerBox = { items: List<int>, label: string }
+type Holder = { inner: InnerBox, n: int }
+type Outer = { grabbed: List<int> }
+
+fn make_inner() -> InnerBox {
+    InnerBox { items: [1, 2, 3], label: "shared" }
+}
+
+/// Stores its PARAM into a struct-literal field and lets the holder die.
+fn hold_param_once(inner: InnerBox) -> int {
+    let h = Holder { inner, n: 1 }
+    h.n + inner.items.length
+}
+
+/// Stores a FIELD READ of a param into a struct-literal field.
+fn hold_field_read(h: Holder) -> int {
+    let o = Outer { grabbed: h.inner.items }
+    o.grabbed.length
+}
+
+spec "struct-literal alias inits retain: source survives the holder (RC)" {
+    given "a param stored into a struct field by a fn called repeatedly" {
+        then "the argument's contents survive every call (was: SIGSEGV on call 2)" {
+            let inner = make_inner()
+            let a = hold_param_once(inner)
+            let b = hold_param_once(inner)
+            let c = hold_param_once(inner)
+            a == 4 && b == 4 && c == 4 && inner.label == "shared" && inner.items.length == 3
+        }
+    }
+    given "a field READ of a live struct stored into another struct's field" {
+        then "the source struct's field survives the holder's release" {
+            let inner = make_inner()
+            let h = Holder { inner, n: 9 }
+            let x = hold_field_read(h)
+            let y = hold_field_read(h)
+            x == 3 && y == 3 && h.inner.items.length == 3
+        }
+    }
+    given "a local ALIASED into a holder within one scope" {
+        then "both the local and the holder read the shared contents correctly" {
+            let inner = make_inner()
+            let h1 = Holder { inner, n: 1 }
+            let h2 = Holder { inner, n: 2 }
+            h1.inner.items.length == 3 && h2.inner.items.length == 3 && inner.items.length == 3
+        }
+    }
+}
