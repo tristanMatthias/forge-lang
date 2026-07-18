@@ -324,13 +324,23 @@ fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: Lis
 /// residual of the same ownership bug).
 export fn expr_is_shared_alias(store: NodeStore, expr: Expr, foreign_names: List<string>) -> bool {
     match expr {
-        .Ident(name) -> name_in_names(foreign_names, name)
+        .Ident(name) -> is_foreign_name(foreign_names, name)
         .QualifiedIdent(_) -> true
         .FieldAccess(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
         .TupleIndex(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
         .Grouping(inner) -> expr_is_shared_alias(store, store.exprs.get(inner), foreign_names)
         _ -> false
     }
+}
+
+/// Membership probe for the param/capture name list. (`x in xs` is not an
+/// option: the grammar's `in` membership takes a literal-list right operand
+/// only — a variable there parses as a range head.)
+fn is_foreign_name(names: List<string>, name: string) -> bool {
+    for n in names {
+        if n == name { return true }
+    }
+    false
 }
 
 /// A pure access path: a bare/qualified name or a chain of field reads /
@@ -344,14 +354,6 @@ fn expr_is_access_path(store: NodeStore, expr: Expr) -> bool {
         .Grouping(inner) -> expr_is_access_path(store, store.exprs.get(inner))
         _ -> false
     }
-}
-
-/// Membership probe over a name list (params/captures are tiny).
-fn name_in_names(names: List<string>, name: string) -> bool {
-    for n in names {
-        if n == name { return true }
-    }
-    false
 }
 
 // ── Arena eligibility (spec Axis 9.6) ─────────────────────────────

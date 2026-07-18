@@ -903,8 +903,7 @@ fn bind_lambda_params_typed(ctx: Ctx, env: List<VarBinding>, params: List<ParamE
 /// value is owned by the ENCLOSING scope, so storing one into a struct
 /// field inside the lambda shares foreign ownership exactly like a param.
 fn lambda_foreign_names_of(params: List<ParamEntry>, captures: List<Capture>) -> List<string> {
-    mut out: List<string> = []
-    for p in params { out.push(p.name) }
+    mut out = list_map(params, (p: ParamEntry) -> p.name)
     for c in captures { out.push(c.name) }
     out
 }

@@ -928,7 +928,5 @@ fn emit_newtype_ctor(ctx: Ctx, env: List<VarBinding>, name: string, args: List<E
 /// tell a param reference (foreign ownership — retain) from a local
 /// reference (ownership transfer).
 fn param_names_of(params: List<ParamEntry>) -> List<string> {
-    mut out: List<string> = []
-    for p in params { out.push(p.name) }
-    out
+    list_map(params, (p: ParamEntry) -> p.name)
 }
