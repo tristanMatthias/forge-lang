@@ -10,8 +10,10 @@
 // into a Stmt.Block (the 6.5.3 Block build) whose children we render via
 // render_stmt_ids; the hand parser's parse_program_source yields ids: the two
 // rendered statement lists must match. The gnarly-5% forms compose via @hand
-// (return newline-sensitivity, let-else, @pkg::T types) exactly as in their own
-// slices — the composition doesn't re-express them, it reuses the escape hatch.
+// (return newline-sensitivity, let-else, @pkg::T types, quote expressions with
+// the ~ splice-vs-bitnot overload) exactly as in their own slices — the
+// composition doesn't re-express them, it reuses the escape hatch. The `use`
+// path also accepts the real dotted import form (`@std.core.{…}`).
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
@@ -29,7 +31,11 @@ fn avra_grammar_src() -> string {
     "  enum_decl   = \"enum\" ename:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(ename, vars)\n" +
     "  trait_decl  = \"trait\" trname:IDENT \"{\" ( tmembers:trait_member )* \"}\" -> MkTraitDecl(trname, tmembers)\n" +
     "  impl_decl   = \"impl\" itn:IDENT ( \"for\" ifortn:IDENT )? \"{\" ( imethods:impl_method )* \"}\" -> MkImpl(itn, ifortn, imethods)\n" +
-    "  use_decl    = \"use\" ( uat:\"@\" )? useg:IDENT ( \".\" useg:IDENT )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUse(uat, useg, unames)\n" +
+    // The path allows a trailing `.` before `{` (the real import form
+    // `@std.core.{…}`); the segment IDENT after each `.` is optional so the
+    // greedy `*` absorbs that trailing dot without erroring on `{`. The hand
+    // parser renders `@std.core.{…}` and `@std.core {…}` identically.
+    "  use_decl    = \"use\" ( uat:\"@\" )? useg:IDENT ( \".\" ( useg:IDENT )? )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUse(uat, useg, unames)\n" +
     "  mod_decl    = \"mod\" mdname:IDENT -> MkModule(mdname)\n" +
     // Declaration sub-structure.
     "  field       = fname:IDENT \":\" ftype:type_expr -> MkField(fname, ftype)\n" +
@@ -66,11 +72,13 @@ fn avra_grammar_src() -> string {
     "  comparison  = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
-    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | postfix\n" +
+    // `~` outside a quote is bitwise-NOT (pure grammar); inside a quote body it
+    // is Splice — handled by @hand(quote_expr) below (the 6.5.10 ~ slice).
+    "  un          = op:(\"!\" | \"-\" | \"~\") operand:un -> Unary(op, operand) | postfix\n" +
     "  postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
     "  suffix      = \".\" sn:IDENT -> field_suffix(sn)\n" +
     "              | \"(\" ( ca:expression ( \",\" ca:expression )* )? \")\" -> call_suffix(ca)\n" +
-    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(quote_expr) | @hand(ident)\n" +
     "}"
 }
 
@@ -129,7 +137,21 @@ spec "grammar-DSL composed whole-program == hand parser (ps3t.6.5.11 precursor)"
         then "the remaining declaration forms agree" {
             agree("trait Show {\n    fn show() -> string\n}\n") &&
             agree("impl Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
-            agree("use @std.core { List, Map }\n")
+            agree("use @std.core { List, Map }\n") &&
+            // the real dotted import form (`@std.core.{…}`) + a deep path.
+            agree("use @std.core.{ List, Map }\n") &&
+            agree("use @std.avrac.features.grammar.{ parse_grammar, run_grammar_stmt }\n")
+        }
+    }
+    given "quote expressions + the ~ prefix compose (the 6.5.10 ~ slice)" {
+        then "bitwise-NOT, bare quote, and splice-in-quote agree at the program level" {
+            // `~x` outside a quote → un's `~` → Unary(BitNot) (pure grammar).
+            agree("fn f() {\n    ~x\n}\n") &&
+            agree("fn f() {\n    return ~y\n}\n") &&
+            // a bare quote expression-statement → @hand(quote_expr) → parse_quote.
+            agree("fn f() {\n    quote {\n        x\n    }\n}\n") &&
+            // splice inside a quote (quote_depth-gated) + bitnot outside, together.
+            agree("fn f() {\n    let q = quote {\n        ~x + 1\n    }\n    return ~q\n}\n")
         }
     }
     given "multi-statement fn bodies (the statement list composes)" {
