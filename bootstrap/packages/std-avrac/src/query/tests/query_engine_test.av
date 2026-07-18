@@ -7,7 +7,7 @@
 //   empty) — plus a SEL family whose dependency SET is data-driven (reads
 //   PICK, then only the selected LEN), and a deliberate A↔B cycle pair.
 //
-// The compute counters (`db_computes_of`) make the invalidation behavior
+// The compute counters (`db.computes_of`) make the invalidation behavior
 // OBSERVABLE: a "cutoff" that recomputes everything would still return right
 // answers, so the specs assert the work profile, not just values —
 //   - memo hit: same revision, zero new computes;
@@ -23,7 +23,7 @@
 // Each `then` replays the deterministic scenario and asserts one line of its
 // log, so a failure names the exact clause that broke.
 
-use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, db_set_input, db_fetch, ctx_fetch, db_computes_of, qk, qk_render, computed, query_cycle_diag}
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, qk_render, computed, query_cycle_diag}
 use @std.avrac.core.{content_id_for}
 use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, diag_code_str, diag_canonical, span_dummy}
 
@@ -40,13 +40,13 @@ const FAM_ADVSUM = 8
 
 fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
     if q.family == FAM_LEN {
-        let src = ctx_fetch(ctx, qk(FAM_SRC, q.arg))?
+        let src = ctx.fetch(qk(FAM_SRC, q.arg))?
         let v = string(src.length)
         return Result.Ok(computed(v, content_id_for(v)))
     }
     if q.family == FAM_TOTAL {
-        let a = ctx_fetch(ctx, qk(FAM_LEN, 0))?
-        let b = ctx_fetch(ctx, qk(FAM_LEN, 1))?
+        let a = ctx.fetch(qk(FAM_LEN, 0))?
+        let b = ctx.fetch(qk(FAM_LEN, 1))?
         let v = "total=${a}+${b}"
         mut out = computed(v, content_id_for(v))
         if a == "0" {
@@ -59,23 +59,23 @@ fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, 
     if q.family == FAM_SEL {
         // Data-driven dependency set: which LEN this reads depends on PICK's
         // VALUE — the shape that proves deps are re-recorded per compute.
-        let pick = ctx_fetch(ctx, qk(FAM_PICK, 0))?
+        let pick = ctx.fetch(qk(FAM_PICK, 0))?
         let chosen = if pick == "1" { 1 } else { 0 }
-        let v = ctx_fetch(ctx, qk(FAM_LEN, chosen))?
+        let v = ctx.fetch(qk(FAM_LEN, chosen))?
         return Result.Ok(computed("sel=${v}", content_id_for(v)))
     }
     if q.family == FAM_CYCLE_A {
-        let v = ctx_fetch(ctx, qk(FAM_CYCLE_B, 0))?
+        let v = ctx.fetch(qk(FAM_CYCLE_B, 0))?
         return Result.Ok(computed(v, content_id_for(v)))
     }
     if q.family == FAM_CYCLE_B {
-        let v = ctx_fetch(ctx, qk(FAM_CYCLE_A, 0))?
+        let v = ctx.fetch(qk(FAM_CYCLE_A, 0))?
         return Result.Ok(computed(v, content_id_for(v)))
     }
     if q.family == FAM_ADV {
         // Same VALUE both ways; only the (delimiter-crafted) diagnostic
         // differs — the shape that must still move the answer hash.
-        let sel = ctx_fetch(ctx, qk(FAM_SRC, 9))?
+        let sel = ctx.fetch(qk(FAM_SRC, 9))?
         mut diags: List<Diagnostic> = []
         diags.push(adv_diag(sel))
         let out = computed("adv", content_id_for("adv")) with { diags }
@@ -84,7 +84,7 @@ fn demo_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, 
     if q.family == FAM_ADVSUM {
         // A dependent of ADV: its recompute count is how the spec observes
         // whether ADV's diag-only change bumped `changed_at`.
-        let v = ctx_fetch(ctx, qk(FAM_ADV, 0))?
+        let v = ctx.fetch(qk(FAM_ADV, 0))?
         return Result.Ok(computed("sum(${v})", content_id_for(v)))
     }
     Result.Ok(computed("?", 0))
@@ -105,11 +105,11 @@ fn adv_diag(which: string) -> Diagnostic {
 }
 
 fn set_src(db: Db<string>, file: int, text: string) {
-    db_set_input(db, qk(FAM_SRC, file), text, content_id_for(text))
+    db.set_input(qk(FAM_SRC, file), text, content_id_for(text))
 }
 
 fn fetch_value(db: Db<string>, q: QueryKey) -> string {
-    match db_fetch(db, q) {
+    match db.fetch(q) {
         .Ok(f) -> f.value
         .Err(_) -> "unexpected-cycle"
     }
@@ -122,14 +122,14 @@ fn scenario() -> List<string> {
     mut log: List<string> = []
     set_src(db, 0, "hello")
     set_src(db, 1, "worlds!")
-    db_set_input(db, qk(FAM_PICK, 0), "0", content_id_for("0"))
+    db.set_input(qk(FAM_PICK, 0), "0", content_id_for("0"))
 
     // (0) cold fetch computes the whole chain
-    log.push("cold=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db_computes_of(db, FAM_LEN))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+    log.push("cold=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db.computes_of(FAM_LEN))} tot_c=${string(db.computes_of(FAM_TOTAL))}")
 
     // (1) same revision -> memo hot path, no new computes
     let _ = fetch_value(db, qk(FAM_TOTAL, 0))
-    log.push("memo tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+    log.push("memo tot_c=${string(db.computes_of(FAM_TOTAL))}")
 
     // (2) equal-value input write -> revision does not move
     let rev_before = db.current_rev
@@ -139,21 +139,21 @@ fn scenario() -> List<string> {
     // (3) same-LENGTH edit: LEN recomputes (its input changed), TOTAL is cut
     //     off (LEN's answer didn't change)
     set_src(db, 0, "howdy")
-    log.push("cutoff=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db_computes_of(db, FAM_LEN))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+    log.push("cutoff=${fetch_value(db, qk(FAM_TOTAL, 0))} len_c=${string(db.computes_of(FAM_LEN))} tot_c=${string(db.computes_of(FAM_TOTAL))}")
 
     // (4) real edit -> TOTAL recomputes
     set_src(db, 1, "!")
-    log.push("edit=${fetch_value(db, qk(FAM_TOTAL, 0))} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+    log.push("edit=${fetch_value(db, qk(FAM_TOTAL, 0))} tot_c=${string(db.computes_of(FAM_TOTAL))}")
 
     // (5) diagnostics ride with the memoized value
     set_src(db, 0, "")
-    match db_fetch(db, qk(FAM_TOTAL, 0)) {
+    match db.fetch(qk(FAM_TOTAL, 0)) {
         .Ok(f) -> log.push("diags=${string(f.diags.length)} code=${if f.diags.length > 0 { diag_code_str(f.diags[0].code) } else { "-" }}")
         .Err(_) -> log.push("diags=cycle")
     }
     // (6) ...and replay from memo unchanged
-    match db_fetch(db, qk(FAM_TOTAL, 0)) {
-        .Ok(f) -> log.push("diags_memo=${string(f.diags.length)} tot_c=${string(db_computes_of(db, FAM_TOTAL))}")
+    match db.fetch(qk(FAM_TOTAL, 0)) {
+        .Ok(f) -> log.push("diags_memo=${string(f.diags.length)} tot_c=${string(db.computes_of(FAM_TOTAL))}")
         .Err(_) -> log.push("diags_memo=cycle")
     }
 
@@ -161,17 +161,17 @@ fn scenario() -> List<string> {
     //     SEL recomputes reading LEN(1); edits to the now-unselected file 0
     //     must no longer recompute SEL.
     let _ = fetch_value(db, qk(FAM_SEL, 0))
-    let sel_c0 = db_computes_of(db, FAM_SEL)
-    db_set_input(db, qk(FAM_PICK, 0), "1", content_id_for("1"))
+    let sel_c0 = db.computes_of(FAM_SEL)
+    db.set_input(qk(FAM_PICK, 0), "1", content_id_for("1"))
     let _ = fetch_value(db, qk(FAM_SEL, 0))
-    let sel_c1 = db_computes_of(db, FAM_SEL)
+    let sel_c1 = db.computes_of(FAM_SEL)
     set_src(db, 0, "back to something long")
     let _ = fetch_value(db, qk(FAM_SEL, 0))
-    let sel_c2 = db_computes_of(db, FAM_SEL)
+    let sel_c2 = db.computes_of(FAM_SEL)
     log.push("sel=${string(sel_c1 - sel_c0)},${string(sel_c2 - sel_c1)}")
 
     // (8) cycles error with the path; (9) the db stays usable afterwards
-    match db_fetch(db, qk(FAM_CYCLE_A, 0)) {
+    match db.fetch(qk(FAM_CYCLE_A, 0)) {
         .Ok(_) -> log.push("cycle=none")
         .Err(c) -> {
             let d = query_cycle_diag(c, qk_render)
@@ -220,7 +220,7 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
         let mut db: Db<string> = db_new(demo_compute)
         set_src(db, 0, "x")
         let _ = fetch_value(db, qk(FAM_CYCLE_A, 0))
-        db_computes_of(db, FAM_CYCLE_A) == 1 && db_computes_of(db, FAM_CYCLE_B) == 1
+        db.computes_of(FAM_CYCLE_A) == 1 && db.computes_of(FAM_CYCLE_B) == 1
     }
     then "1000 edit/fetch cycles stay correct with at most one recompute per edit" {
         let mut db: Db<string> = db_new(demo_compute)
@@ -230,7 +230,7 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
             set_src(db, 0, "src-${string(i)}")
             ok = ok && fetch_value(db, qk(FAM_LEN, 0)) == string(4 + string(i).length)
         }
-        ok && db_computes_of(db, FAM_LEN) <= 1000
+        ok && db.computes_of(FAM_LEN) <= 1000
     }
     then "a re-SET cell becomes a leaf — its derived past never recomputes it" {
         let mut db: Db<string> = db_new(demo_compute)
@@ -239,22 +239,22 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
         let _ = fetch_value(db, qk(FAM_LEN, 0))
         // The driver pins the formerly-derived cell as an INPUT; an edit to
         // its former dep must not hand it back to the compute dispatcher.
-        db_set_input(db, qk(FAM_LEN, 0), "pinned", content_id_for("pinned"))
+        db.set_input(qk(FAM_LEN, 0), "pinned", content_id_for("pinned"))
         set_src(db, 0, "a very different length")
-        fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db_computes_of(db, FAM_LEN) == 1
+        fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db.computes_of(FAM_LEN) == 1
     }
     then "pinning a diagnostic-bearing derived cell sheds its derived diagnostics too" {
         let mut db: Db<string> = db_new(demo_compute)
         set_src(db, 0, "")
         set_src(db, 1, "x")
-        let derived_diags = match db_fetch(db, qk(FAM_TOTAL, 0)) {
+        let derived_diags = match db.fetch(qk(FAM_TOTAL, 0)) {
             .Ok(f) -> f.diags.length
             .Err(_) -> -1
         }
         // An input answers for itself: a diagnostic its derived past computed
         // must not replay against the pinned value.
-        db_set_input(db, qk(FAM_TOTAL, 0), "pinned", content_id_for("pinned"))
-        match db_fetch(db, qk(FAM_TOTAL, 0)) {
+        db.set_input(qk(FAM_TOTAL, 0), "pinned", content_id_for("pinned"))
+        match db.fetch(qk(FAM_TOTAL, 0)) {
             .Ok(f) -> derived_diags == 1 && f.value == "pinned" && f.diags.length == 0
             .Err(_) -> false
         }
@@ -264,19 +264,19 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
     }
     then "a diag-only change crafted to collide under delimiter joining still bumps changed_at" {
         let mut db: Db<string> = db_new(demo_compute)
-        db_set_input(db, qk(FAM_SRC, 9), "1", content_id_for("1"))
+        db.set_input(qk(FAM_SRC, 9), "1", content_id_for("1"))
         let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
         // The edit flips ADV's diagnostic (value unchanged) between the two
         // crafted shapes. ADV's answer changed, so its dependent must
         // RECOMPUTE (and then cut off itself) — a canonical-encoding
         // collision would leave changed_at stale and green-revalidate ADVSUM.
-        db_set_input(db, qk(FAM_SRC, 9), "2", content_id_for("2"))
+        db.set_input(qk(FAM_SRC, 9), "2", content_id_for("2"))
         let _ = fetch_value(db, qk(FAM_ADVSUM, 0))
-        let flipped = match db_fetch(db, qk(FAM_ADV, 0)) {
+        let flipped = match db.fetch(qk(FAM_ADV, 0)) {
             .Ok(f) -> f.diags.length == 1 && f.diags[0].message == "adv"
             .Err(_) -> false
         }
-        flipped && db_computes_of(db, FAM_ADVSUM) == 2
+        flipped && db.computes_of(FAM_ADVSUM) == 2
     }
     then "a family grows past the historic 256-slot intmap limit" {
         let mut db: Db<string> = db_new(demo_compute)

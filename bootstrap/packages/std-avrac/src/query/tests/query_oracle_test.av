@@ -21,13 +21,13 @@
 //
 // A second spec drives the harness with a compute that commits the classic
 // engine-abuse the oracle exists to catch: reading a query WITHOUT recording
-// the dependency (`db_fetch` on `ctx.db` instead of `ctx_fetch` — the moral
+// the dependency (`ctx.db.fetch` instead of `ctx.fetch` — the moral
 // equivalent of a pass reading global state). The engine can't know to
 // invalidate the reader, the incremental replay serves the stale answer,
 // from-scratch recomputes — the oracle MUST flag it. A harness that always
 // reports clean would gate nothing.
 
-use @std.avrac.query.{QueryCtx, QueryKey, Computed, QueryCycle, db_fetch, ctx_fetch, qk, computed}
+use @std.avrac.query.{QueryCtx, QueryKey, Computed, QueryCycle, qk, computed}
 use @std.avrac.query.{InputWrite, EditStep, OracleReport, run_edit_oracle, oracle_clean, oracle_saved_work, oracle_render}
 use @std.avrac.core.{content_id_for}
 use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, span_dummy}
@@ -41,13 +41,13 @@ const FAM_LOOP = 5
 
 fn oracle_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
     if q.family == FAM_LEN {
-        let src = ctx_fetch(ctx, qk(FAM_SRC, q.arg))?
+        let src = ctx.fetch(qk(FAM_SRC, q.arg))?
         let v = string(src.length)
         return Result.Ok(computed(v, content_id_for(v)))
     }
     if q.family == FAM_TOTAL {
-        let a = ctx_fetch(ctx, qk(FAM_LEN, 0))?
-        let b = ctx_fetch(ctx, qk(FAM_LEN, 1))?
+        let a = ctx.fetch(qk(FAM_LEN, 0))?
+        let b = ctx.fetch(qk(FAM_LEN, 1))?
         let v = "total=${a}+${b}"
         mut out = computed(v, content_id_for(v))
         if a == "0" {
@@ -61,28 +61,28 @@ fn oracle_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>
         // The root: normally just TOTAL; when the CYC flag is set it walks
         // into the self-recursive LOOP family — a cycle both replays must
         // report identically.
-        let flag = ctx_fetch(ctx, qk(FAM_CYC_FLAG, 0))?
+        let flag = ctx.fetch(qk(FAM_CYC_FLAG, 0))?
         if flag == "1" {
-            let v = ctx_fetch(ctx, qk(FAM_LOOP, 0))?
+            let v = ctx.fetch(qk(FAM_LOOP, 0))?
             return Result.Ok(computed(v, content_id_for(v)))
         }
-        let t = ctx_fetch(ctx, qk(FAM_TOTAL, 0))?
+        let t = ctx.fetch(qk(FAM_TOTAL, 0))?
         return Result.Ok(computed("root(${t})", content_id_for(t)))
     }
     if q.family == FAM_LOOP {
-        let v = ctx_fetch(ctx, qk(FAM_LOOP, 0))?
+        let v = ctx.fetch(qk(FAM_LOOP, 0))?
         return Result.Ok(computed(v, content_id_for(v)))
     }
     Result.Ok(computed("?", 0))
 }
 
 /// A compute with an UNRECORDED dependency: it answers from SRC but reads it
-/// via a raw `db_fetch` on `ctx.db` — no dep edge is recorded, so the engine
+/// via a raw `ctx.db.fetch` — no dep edge is recorded, so the engine
 /// will happily green-revalidate this cell after SRC changes. The bug class
 /// the oracle exists to catch.
 fn unrecorded_dep_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
     if q.family == FAM_LEN {
-        let hidden = match db_fetch(ctx.db, qk(FAM_SRC, 0)) {
+        let hidden = match ctx.db.fetch(qk(FAM_SRC, 0)) {
             .Ok(f) -> f.value
             .Err(_) -> "?"
         }
@@ -140,7 +140,7 @@ spec "L6 differential oracle: incremental == from-scratch over an edit script (p
         let r = run_clean_oracle()
         oracle_clean(r) && oracle_saved_work(r) && oracle_render(r).contains("mismatches=0")
     }
-    then "an UNRECORDED dependency (raw db_fetch inside compute) is DETECTED, not rubber-stamped" {
+    then "an UNRECORDED dependency (raw ctx.db.fetch inside compute) is DETECTED, not rubber-stamped" {
         let r = run_leaky_oracle()
         r.mismatches > 0 && !oracle_clean(r)
     }
