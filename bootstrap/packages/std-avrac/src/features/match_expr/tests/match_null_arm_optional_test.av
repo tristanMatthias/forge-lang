@@ -1,4 +1,4 @@
-// WHY: regression net for the N-way null-mix merge (ps3t.6.6, found by
+// WHY: regression net for the N-way null-mix merge (found by
 // the @query surface's annotation validation): a match/when EXPRESSION
 // arm returning `null` alongside tagged-scalar value arms used to store
 // its raw 0 into the shared result slot while the match reported the

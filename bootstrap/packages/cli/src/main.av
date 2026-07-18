@@ -313,9 +313,9 @@ fn expand_components_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeS
 /// repeats immediately after `expand_components_or_fail`. Returns the
 /// NameResolveResult so the caller can continue with run_comptime →
 /// typecheck. (@marshal expansion lives INSIDE
-/// resolve_and_expand_program since ps3t.6.6 — aliased to
-/// @derive(Marshal) — so the former pre-resolve derive_marshal call
-/// here is gone; keeping it double-derived every @marshal type.)
+/// resolve_and_expand_program — aliased to @derive(Marshal) — so there
+/// is no pre-resolve derive_marshal call here; adding one back would
+/// double-derive every @marshal type.)
 fn marshal_and_resolve_or_fail(ids: List<StmtId>, ctx: RenderContext, store: NodeStore) -> NameResolveResult {
     let named = resolve_and_expand_program(ids, store)
     render_bag_if_nonempty(ctx, named.bag)

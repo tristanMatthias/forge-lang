@@ -1,7 +1,7 @@
 # `@query(N)` — the memoized-query surface
 
 The ergonomic layer over the L6 query engine (`src/query/`), design
-§3.1/§3.3 + §10.B (ps3t.6.6).
+§3.1/§3.3 + §10.B.
 
 ## Syntax
 

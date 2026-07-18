@@ -305,7 +305,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     mut current_state = state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
-    // The cycle-detecting memo (ps3t.6.6, design §3.2): every (decl,
+    // The cycle-detecting memo (design §3.2): every (decl,
     // mechanism) pair that expands is keyed here; a RE-encounter across
     // iterations means a macro (transitively) emitted its own annotated
     // decl — reported as a precise F4012 at the cycle edge, instead of
@@ -316,7 +316,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     mut iters = 0
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
-        if !any_expand_annotation(state.nodes, current) && !any_derive_annotation(state.nodes, current) && !any_query_annotation(state.nodes, current) && comp_macros.length == 0 {
+        if !any_annotation_named(state.nodes, current, expansion_annotation_names()) && comp_macros.length == 0 {
             return ExpandResult { stmts: current, bag, origins }
         }
         if iters > 0 {
@@ -422,17 +422,7 @@ fn component_def_name(store: NodeStore, stmt: Stmt) -> string {
 /// silently slips past, leading to F9999 'undefined method T.children'
 /// downstream when callers try to use the would-be-derived method.
 export fn any_expand_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
-    for id in ids {
-        let node = store.stmts.get(id)
-        if has_expand_annotation(store, node) { return true }
-        match stmt_unwrap(store, node) {
-            .Module(_, body) -> {
-                if any_expand_annotation(store, body) { return true }
-            }
-            _ -> {}
-        }
-    }
-    false
+    any_annotation_named(store, ids, ["expand"])
 }
 
 fn has_expand_annotation(store: NodeStore, stmt: Stmt) -> bool {
@@ -440,47 +430,49 @@ fn has_expand_annotation(store: NodeStore, stmt: Stmt) -> bool {
     found != null
 }
 
-/// `any_expand_annotation`'s @derive sibling — the fixpoint loop and
-/// the collect gate must both see @derive sites as pending work, for
-/// the same Module-descent reason documented above.
-export fn any_derive_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
+/// The one Module-descending "any stmt carries one of these
+/// annotations?" walker behind every `any_*_annotation` entry point —
+/// and, with the full name set, the fixpoint gate's single-walk
+/// pending-work probe.
+fn any_annotation_named(store: NodeStore, ids: List<StmtId>, names: List<string>) -> bool {
     for id in ids {
         let node = store.stmts.get(id)
-        if has_derive_annotation(store, node) { return true }
+        for n in names {
+            if find_annotation(store, node, n) != null { return true }
+        }
         match stmt_unwrap(store, node) {
             .Module(_, body) -> {
-                if any_derive_annotation(store, body) { return true }
+                if any_annotation_named(store, body, names) { return true }
             }
             _ -> {}
         }
     }
     false
+}
+
+/// Every annotation name that marks a stmt as expansion work. `marshal`
+/// rides with `derive` because `@marshal` is an alias for
+/// `@derive(Marshal)` — one dispatch path for both spellings (design
+/// §3.1: the per-macro annotations become @derive aliases kept working
+/// through a shim); folding the alias into the derive arm is what
+/// retired the separate pre-resolve derive_marshal splice.
+fn expansion_annotation_names() -> List<string> {
+    ["expand", "derive", "marshal", "query"]
+}
+
+/// `any_expand_annotation`'s @derive sibling.
+export fn any_derive_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
+    any_annotation_named(store, ids, ["derive", "marshal"])
 }
 
 fn has_derive_annotation(store: NodeStore, stmt: Stmt) -> bool {
     if find_annotation(store, stmt, "derive") != null { return true }
-    // ps3t.6.6: `@marshal` is an alias for `@derive(Marshal)` — one
-    // dispatch path for both spellings (design §3.1: the per-macro
-    // annotations become @derive aliases kept working through a shim).
-    // Routing the alias through the derive arm is what retired the
-    // separate pre-resolve derive_marshal splice in build/compile.av.
     find_annotation(store, stmt, "marshal") != null
 }
 
-/// `any_derive_annotation`'s @query sibling — same Module-descent, same
-/// two consumers (fixpoint gate + collect).
+/// `any_derive_annotation`'s @query sibling.
 export fn any_query_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
-    for id in ids {
-        let node = store.stmts.get(id)
-        if has_query_annotation(store, node) { return true }
-        match stmt_unwrap(store, node) {
-            .Module(_, body) -> {
-                if any_query_annotation(store, body) { return true }
-            }
-            _ -> {}
-        }
-    }
-    false
+    any_annotation_named(store, ids, ["query"])
 }
 
 fn has_query_annotation(store: NodeStore, stmt: Stmt) -> bool {
@@ -749,17 +741,6 @@ fn splice_expansion(store: NodeStore, out: List<StmtId>, id: StmtId, replacement
 /// zero-arg), and decode the result. Returns null `replacement` plus
 /// a bag entry whenever any step fails — the caller treats null as
 /// "leave this stmt alone" and renders the bag for the user.
-/// `@derive(Cap1, Cap2, …)` driver (design §3.1, ps3t.6.6): resolve each
-/// capability through the registry to its @comptime shim and run it
-/// through the SAME `invoke_macro` path as the `@expand` spelling — one
-/// invocation per capability against the same decl. Every capability's
-/// ResolvedDecls leads with the original decl (the engine's contract), so
-/// the merge keeps the first capability's copy and drops the later
-/// duplicates, splicing original + every capability's methods.
-///
-/// Fail-fast on a bad capability list (F4010/F4011): a partially-derived
-/// decl is worse than none — resolve/typeck would blame downstream uses
-/// of the missing methods instead of the real mistake.
 /// Resolve `short` through the resolver state's alias table (the same
 /// short→canonical mapping the resolver's ident rewrite uses for
 /// `@expand`'s macro arg). "" when no alias binds the name.
@@ -796,6 +777,17 @@ fn strip_query_annotation(store: NodeStore, stmt: Stmt) -> Stmt {
     strip_annotations_named(store, stmt, ["query"])
 }
 
+/// `@derive(Cap1, Cap2, …)` driver (design §3.1): resolve each
+/// capability through the registry to its @comptime shim and run it
+/// through the SAME `invoke_macro` path as the `@expand` spelling — one
+/// invocation per capability against the same decl. Every capability's
+/// ResolvedDecls leads with the original decl (the engine's contract), so
+/// the merge keeps the first capability's copy and drops the later
+/// duplicates, splicing original + every capability's methods.
+///
+/// Fail-fast on a bad capability list (F4010/F4011): a partially-derived
+/// decl is worse than none — resolve/typeck would blame downstream uses
+/// of the missing methods instead of the real mistake.
 fn try_derive_all(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, state: ResolverState, line: int, col: int, file: string, current_module: string) -> ExpandAttempt {
     let span = span_at(0, 0, line, col, file)
     // Capability list: the @derive annotation's bare-ident args, or the
@@ -1323,7 +1315,7 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
     let post_state = register_macro_decls(pre.state, expanded.stmts)
-    // ps3t.6.6: when expansion introduced new GLOBAL items (free fns like
+    // When expansion introduced new GLOBAL items (free fns like
     // marshal's `from_bytes_T` — not just methods), re-run the FULL ident
     // rewrite: any non-macro caller — same module or cross-module — was
     // walked by the pre-expand pass while the item didn't exist yet, so

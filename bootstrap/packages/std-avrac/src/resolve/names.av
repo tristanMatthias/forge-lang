@@ -988,7 +988,7 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
     }
     let new_global_index = global_item_reg_build(new_items_list)
 
-    // ps3t.6.6: sibling lookup (rewrite_ident step 5) resolves through
+    // Sibling lookup (rewrite_ident step 5) resolves through
     // the TREE's per-module item lists — a module-scoped spliced decl
     // must join its module's node, or a same-module caller of a
     // macro-introduced free fn (`from_bytes_T(...)` beside a
@@ -1047,7 +1047,7 @@ fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, ac
     for id in ids {
         // Peel Annotated wrappers for the DISPATCH (an
         // `@deferred_init`-wrapped module — the test assembler's
-        // per-file unit shape — must still descend; d4jv wrapper-
+        // per-file unit shape — must still descend; the wrapper-
         // blindness class), while from_macro provenance stays keyed
         // on the raw row id.
         match stmt_unwrap(store, store.stmts.get(id)) {

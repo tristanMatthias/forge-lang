@@ -1,4 +1,4 @@
-// WHY: the @derive capability registry (design §3.1, ps3t.6.6) — its own
+// WHY: the @derive capability registry (design §3.1) — its own
 // import-free leaf module (NOT a features/derive file: that directory-module
 // imports features.comptime, and the registry's consumers ARE
 // features.comptime + features.modules — living there would close an import

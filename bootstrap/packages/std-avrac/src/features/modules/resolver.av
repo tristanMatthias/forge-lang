@@ -404,7 +404,7 @@ export fn resolve_package_path(pkg_path: string, packages_dir: string) -> string
 /// `@std.avrac.indexer` which uses @std.lsp internally) — hoisting
 /// guarantees package paths exist at root regardless of where they
 /// were first imported.
-/// ps3t.6.6: implicit shim imports for `@derive` — the surface's whole
+/// Implicit shim imports for `@derive` — the surface's whole
 /// point is that a user writes `@derive(Eq)` without knowing (or
 /// importing) the engine's shim fns. When any `@derive` annotation is
 /// present, prepend one `use @std.avrac.features.derive.{...}` naming
@@ -477,7 +477,7 @@ fn name_list_has(xs: List<string>, target: string) -> bool {
     false
 }
 
-/// ps3t.6.6: implicit engine imports for `@query` — the derive-shim
+/// Implicit engine imports for `@query` — the derive-shim
 /// injection's sibling. The generated boilerplate (family/fetch/compute)
 /// references `qk`/`computed`/`QueryKey`/`Computed`/`content_id_for`,
 /// which the user never wrote; when any `@query` annotation is present,

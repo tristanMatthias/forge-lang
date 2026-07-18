@@ -287,7 +287,7 @@ export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty:
 // null-pointer. Without this the raw scalar store made the merged value
 // indistinguishable from the null arm's 0, and a downstream
 // return/binding coercion boxed BOTH into `Some(v)` — the silent
-// `Some(0)`-instead-of-`none` corruption (found by ps3t.6.6's @query
+// `Some(0)`-instead-of-`none` corruption (found by the @query
 // surface, bit any `match` arm returning `null` into a `T?` context).
 
 /// Pre-scan: does any arm body in `body_ids` spell the `null` literal?

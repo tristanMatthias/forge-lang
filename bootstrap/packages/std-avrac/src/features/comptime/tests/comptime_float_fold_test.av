@@ -26,7 +26,7 @@ extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 /// Compile `source` with the current `./build/bs2`, link, run the binary, and
-/// return its stdout — via the standard content-keyed fixture cache (t-wl4t:
+/// return its stdout — via the standard content-keyed fixture cache (why:
 /// the previous raw `timeout 90 … 2>/dev/null` shell-out raced genuine
 /// suite congestion on its wall-clock and swallowed the evidence, the exact
 /// generator of this family's bundled-only flakes).

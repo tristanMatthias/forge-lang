@@ -103,7 +103,7 @@ fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
     derive_marshal_stmts_for(store, stmt_unwrap(store, stmt))
 }
 
-/// ps3t.6.6: the per-decl seam for the `Marshal` capability — the same
+/// The per-decl seam for the `Marshal` capability — the same
 /// impls this file has always built, minus the @marshal-annotation gate
 /// (the @derive dispatcher has already routed the decl here). Returns []
 /// for non-type/enum decls, mirroring the annotation path's silent skip
@@ -119,6 +119,17 @@ export fn derive_marshal_stmts_for(store: NodeStore, inner: Stmt) -> List<StmtId
 }
 
 
+/// Mangle a generated artifact name from a type name. The builders run
+/// POST-resolve (inside the unified derive pass), so `type_name` arrives
+/// module-QUALIFIED (`mod::MPoint`) — the mangle must use the SHORT name
+/// (`from_bytes_MPoint`, declared inside the same module and qualified by
+/// the re-resolve like any sibling), while type REFERENCES keep the
+/// qualified form. Mirrors the walker engine's `method_symbol` short-name
+/// rule.
+fn marshal_artifact_name(prefix: string, type_name: string) -> string {
+    prefix + type_short_name(type_name)
+}
+
 /// Build the synthesised stmts for a `@marshal type T = {...}`:
 ///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)
 ///   - `fn from_bytes_T(b: bytes) -> T { ... }` (top-level fn)
@@ -127,24 +138,14 @@ export fn derive_marshal_stmts_for(store: NodeStore, inner: Stmt) -> List<StmtId
 /// Avra has no static-method syntax — `T.from_bytes(...)` parses
 /// as enum-variant access. The naming convention `<Type>_from_bytes`
 /// mirrors what generic `isolated<T: Marshal>(body)` will look up
-/// once nce6.1.E lands.
+/// once generic marshal bounds land.
 ///
 /// Field types outside {int, bool, string} fall through to a
 /// no-op write so the impl still type-checks but the round-trip
-/// would be lossy; nce6.1.B/C/D extend the codec table to handle
+/// would be lossy; the codec-table extensions handle
 /// List<T> / nested @marshal / enums.
 ///
 /// Returns a 3-element List<StmtId>: [impl_stmt, from_bytes_fn, isolated_fn].
-/// Mangle a generated artifact name from a type name. Post-ps3t.6.6 the
-/// builders run POST-resolve, so `type_name` arrives module-QUALIFIED
-/// (`mod::MPoint`) — the mangle must use the SHORT name (`from_bytes_MPoint`,
-/// declared inside the same module and qualified by the re-resolve like any
-/// sibling), while type REFERENCES keep the qualified form. Mirrors the
-/// walker engine's `method_symbol` short-name rule.
-fn marshal_artifact_name(prefix: string, type_name: string) -> string {
-    prefix + type_short_name(type_name)
-}
-
 fn derive_stmts(store: NodeStore, type_name: string, fields: List<FieldEntry>) -> List<StmtId> {
     let to_bytes_fn = build_to_bytes_fn(store, fields)
     let methods: List<StmtId> = [store.stmts.add_leaf(to_bytes_fn)]

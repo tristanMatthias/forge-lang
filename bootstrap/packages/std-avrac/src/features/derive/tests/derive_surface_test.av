@@ -1,4 +1,4 @@
-// WHY: the @derive(...) surface (design §3.1, ps3t.6.6) — capability
+// WHY: the @derive(...) surface (design §3.1) — capability
 // dispatch through the registry, the implicit shim imports (a user writes
 // `@derive(Eq)` with ZERO use lines), multi-capability merging (original
 // decl spliced once, every capability's methods appended), and the

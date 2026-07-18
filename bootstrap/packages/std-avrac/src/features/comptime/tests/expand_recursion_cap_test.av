@@ -3,7 +3,7 @@
 // clean error, not a stack overflow."
 //
 // `loop_macro` emits a fn carrying `@expand(loop_macro)` — every
-// fixpoint iteration the loop re-fires. Since ps3t.6.6 the fixpoint
+// fixpoint iteration the loop re-fires. Now that the fixpoint
 // carries a cycle-detecting memo: the SECOND time the same
 // (decl, macro) pair comes up, the compile stops with a precise F4012
 // naming the decl and macro at the cycle edge — two iterations, not

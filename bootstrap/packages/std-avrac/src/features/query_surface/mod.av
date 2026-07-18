@@ -1,4 +1,4 @@
-// WHY: the `@query` surface (design §3.1/§3.3, ps3t.6.6) — the ergonomic
+// WHY: the `@query` surface (design §3.1/§3.3) — the ergonomic
 // layer over the L6 query engine (src/query/mod.av), now that L4 exists to
 // host it (§10.B: hand-wrapped memo until L4; L4 is here). `@query(N)` on a fn
 //
