@@ -22,8 +22,16 @@ spec "fixture cache: legitimate output is publishable" {
     then "normal PROBE output caches" {
         fixture_output_is_publishable("PROBE thing: ok\nmore output\n", false)
     }
-    then "empty output caches" {
-        fixture_output_is_publishable("", false)
+    then "a dead-silent (empty) capture is NOT cached — the producer died before printing" {
+        // A direct SIGKILL of the fixture child leaves no shell noise line
+        // (`|| true` swallows the death), so the only trace is silence.
+        // Caching it replays an inexplicable no-diff FAIL forever — the
+        // 2026-07-18 incident froze six fixtures red this way after an
+        // OOM-storm kill. Genuinely-empty fixtures just re-run.
+        !fixture_output_is_publishable("", false)
+    }
+    then "a whitespace-only capture is NOT cached either" {
+        !fixture_output_is_publishable("\n", false)
     }
     then "output mentioning a signal IN PROSE still caches" {
         // A test that legitimately prints the word in running text must not

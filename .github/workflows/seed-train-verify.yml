@@ -94,6 +94,12 @@ jobs:
           # silently SIGKILLs the biggest child ("1 shard failed to
           # compile/run", zero test failures).
           AVRA_TEST_JOBS: "1"
+          # Cap the shard-compile fan-out (default 8): a COLD suite — any PR
+          # whose source change rotates the compile-cache key — runs 8
+          # concurrent bs2+llc shard compiles, which OOMs the 16GB hosted
+          # runner VM and kills the runner service mid-suite (surfaces as
+          # "runner received a shutdown signal" ~3 min into the suite phase).
+          AVRA_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an

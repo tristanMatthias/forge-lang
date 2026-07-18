@@ -243,6 +243,22 @@ spec "L6 query engine core: red-green memoization with early cutoff (ps3t.8.2)" 
         set_src(db, 0, "a very different length")
         fetch_value(db, qk(FAM_LEN, 0)) == "pinned" && db.computes_of(FAM_LEN) == 1
     }
+    then "an EQUAL-hash re-SET still pins a derived cell as a leaf (no revision bump)" {
+        let mut db: Db<string> = db_new(demo_compute)
+        set_src(db, 0, "abc")
+        set_src(db, 1, "d")
+        let v = fetch_value(db, qk(FAM_LEN, 0))
+        let rev_before = db.current_rev
+        // Pin LEN(0) to its CURRENT computed value+hash: the revision must
+        // not move — but the cell must still become an INPUT, so a later
+        // edit to its former dep must NOT hand it back to the dispatcher
+        // (the silent stay-derived bug: an equal-hash pin used to early
+        // return with the derived deps intact).
+        db.set_input(qk(FAM_LEN, 0), v, content_id_for(v))
+        let rev_moved = db.current_rev != rev_before
+        set_src(db, 0, "a very different length")
+        !rev_moved && fetch_value(db, qk(FAM_LEN, 0)) == "3" && db.computes_of(FAM_LEN) == 1
+    }
     then "pinning a diagnostic-bearing derived cell sheds its derived diagnostics too" {
         let mut db: Db<string> = db_new(demo_compute)
         set_src(db, 0, "")

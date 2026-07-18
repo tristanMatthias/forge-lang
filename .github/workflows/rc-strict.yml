@@ -49,13 +49,19 @@ jobs:
 
       - name: Spec suite under AVRA_RC_STRICT=1
         env:
-          # SERIAL unit workers on the hosted runner: heavy fixtures each
-          # spawn their own ~3.5GB `bs2 --emit_metadata @std::avrac` rebuild,
-          # and two overlapping (AVRA_TEST_JOBS=2) exceed the runner's memory
-          # — the kernel silently SIGKILLs the biggest child and the suite
-          # reports "1 shard failed to compile/run" with zero test failures
-          # (or, pre-cap, OOM-killed the runner service itself: the bogus
-          # "runner received a shutdown signal"). One worker keeps the peak
-          # to a single heavy rebuild. Local boxes keep the faster defaults.
+          # Two independent OOM sources on the 16GB hosted runner, one cap
+          # each (local boxes keep the faster defaults):
+          # - AVRA_JOBS=2 bounds the shard-COMPILE fan-out (default 8): a
+          #   COLD suite — any PR whose source change rotates the
+          #   compile-cache key — runs 8 concurrent bs2+llc shard compiles,
+          #   which OOMs the VM and kills the runner service mid-suite
+          #   (surfaces as "runner received a shutdown signal").
+          # - AVRA_TEST_JOBS=1 serializes RUN-time unit workers: heavy
+          #   fixtures each spawn their own ~3.5GB `bs2 --emit_metadata
+          #   @std::avrac` rebuild, and two overlapping exceed the runner's
+          #   memory — the kernel silently SIGKILLs the biggest child and
+          #   the suite reports "1 shard failed to compile/run" with zero
+          #   test failures.
+          AVRA_JOBS: "2"
           AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite
