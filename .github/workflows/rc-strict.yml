@@ -52,4 +52,16 @@ jobs:
         run: bash bootstrap/scripts/diagnose.sh --build-bs2
 
       - name: Spec suite under AVRA_RC_STRICT=1
+        # Concurrency caps, or the runner dies: rc-strict's quarantine
+        # HOLDS freed memory, so the suite's footprint is far above the
+        # plain runs'. Uncapped (8-wide shards × per-CPU worker threads)
+        # it exhausts the 16GB hosted runner, which kills the runner
+        # agent itself — surfacing as "The runner has received a shutdown
+        # signal" mid-suite (observed 4/4 uncapped attempts; the capped
+        # seed-train-verify suite survives). AVRA_JOBS caps the shard
+        # fan-out (the memory axis), AVRA_TEST_JOBS the in-process
+        # workers — mirroring seed-train-verify's existing cap.
+        env:
+          AVRA_JOBS: 2
+          AVRA_TEST_JOBS: 2
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite
