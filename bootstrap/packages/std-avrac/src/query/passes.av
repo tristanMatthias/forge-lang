@@ -1,46 +1,66 @@
-// WHY: Step A of the query-shaped-passes migration (ps3t.8.3 / design doc
-// §4, §11 P0): the front-of-pipeline whole-program passes — marshal+resolve,
-// comptime fold, typecheck — each wrapped as ONE coarse query over the L6
-// engine. No incrementality is claimed at this stage: a one-shot compile
-// sets the source once and fetches each pass exactly once. What the wrap
-// BUYS is the §4 proof obligation — each pass runs behind the engine as a
-// pure fn of its fetched inputs (the arena is append-only, so node rewrites
-// version rows instead of mutating them), every inter-pass read is a
-// recorded dependency edge, and the byte-identical diff-test oracle pins
-// that routing through the engine changes nothing. Step B (per-item
-// queries, where incrementality actually appears) splits these families
-// once each pass is proven to read only what it declares.
+// WHY: the query-shaped-passes migration (ps3t.8.3 / design doc §4, §11 P0).
+// Step A wrapped the front-of-pipeline whole-program passes — marshal+resolve,
+// comptime fold, typecheck — as coarse queries over the L6 engine, proving
+// each runs as a pure fn of its fetched inputs (the arena is append-only, so
+// node rewrites version rows instead of mutating them) with every inter-pass
+// read a recorded dependency edge, pinned byte-identical by the diff-test
+// oracle. Step B splits TYPECK per item: the collect ENV, each item's source
+// cell, the per-item check+naming+annotate unit (`typecheck_item`), and the
+// scope-chain projections are separate families, and the coarse PASS_TYPECK
+// becomes an aggregator over per-item fetches (`typecheck_assemble` — the
+// same merge the direct fold uses, so the two drivers cannot drift).
 //
-// Diagnostics stay INSIDE each pass's result bag for Step A — the drivers
-// render and gate on them exactly as before the wrap (behavior-identical is
-// the whole point). Moving them onto `Computed.diags` (so the engine's
-// cutoff hash covers them, §10) is part of the Step B split.
+// The invalidation shape that makes the split pay: ITEM(i) reads ENV,
+// ITEM_SRC(i), and CHAINS(i-1) — never a sibling ITEM directly. CHAINS(i)
+// projects only item i's forward scope contributions (empty deltas for
+// fn/type/impl items), so a body edit to item k moves ITEM_SRC(k)'s
+// content hash and recomputes ITEM(k), while CHAINS(k) recomputes to an
+// EQUAL hash and every later item green-revalidates — the edit's blast
+// radius is one item. ENV's answer hash is still the coarse fingerprint
+// chain (any edit reddens it); ps3t.8.5's sig_fp upgrades it to a
+// signature fingerprint so body-only edits stop invalidating it — the
+// per-item specs pin ENV as an input to demonstrate exactly that contract.
+//
+// Diagnostics stay INSIDE each pass's result value (per-phase bags on the
+// item outs; whole-program bags on the coarse answers) — the drivers render
+// and gate on them exactly as before the wrap. The item answer hash COVERS
+// the diagnostics (canonical, length-prefixed), so a diag-only change still
+// moves `changed_at` (§10).
 
 use query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed}
-use core.{NodeStore, StmtId, content_id_for}
-use diagnostics.{diag_ice}
+use core.{NodeStore, StmtId, content_id_for, stmt_content_hash, vtype_render_full}
+use diagnostics.{DiagnosticBag, diag_ice, diag_canonical}
 use resolve.{NameResolveResult}
 use features.marshal.{derive_marshal}
 use features.comptime.{run_comptime, resolve_and_expand_program, ComptimeResult}
-use typeck.{typecheck_program, TypeCheckResult}
+use typeck.{typecheck_program, TypeCheckResult, TC, TypeEntry, TypeckItemOut, typecheck_env, typecheck_item, typecheck_assemble}
 
 // Coarse pass families (Step A): one whole-program cell per family, arg 0.
 export const PASS_SRC = 0
 export const PASS_RESOLVE = 1
 export const PASS_FOLD = 2
 export const PASS_TYPECK = 3
+// Per-item typeck families (Step B): ENV is whole-program (arg 0); the
+// others are keyed by top-level item index.
+export const PASS_TYPECK_ENV = 4
+export const PASS_TYPECK_ITEM_SRC = 5
+export const PASS_TYPECK_ITEM = 6
+export const PASS_TYPECK_CHAINS = 7
 
 /// The one value type the compiler's pass database carries (§2: the engine
-/// is generic over ONE `V` per db). Each variant is one coarse pass's
-/// whole-program outcome; the variants are 1:1 with the families above.
-/// `Src` carries the pipeline input (the post-expand statement vector and
-/// its arena) plus the input fingerprint the coarse answer hashes chain
-/// from.
+/// is generic over ONE `V` per db). Each variant is one family's answer;
+/// the variants are 1:1 with the families above. `Src` carries the pipeline
+/// input (the post-expand statement vector and its arena) plus the input
+/// fingerprint the coarse answer hashes chain from.
 export enum PassValue {
     Src(stmts: List<StmtId>, store: NodeStore, fingerprint: int)
     Resolved(named: NameResolveResult, store: NodeStore)
     Folded(folded: ComptimeResult)
     Typechecked(tc: TypeCheckResult)
+    TypeckEnv(env: TC)
+    TypeckItemSrc(id: StmtId, has_tail: bool)
+    TypeckItem(out: TypeckItemOut)
+    TypeckChains(bindings: List<TypeEntry>, ann_types: List<TypeEntry>)
 }
 
 /// A driver handed the WRONG variant for the family it fetched — a wiring
@@ -61,9 +81,48 @@ fn coarse_hash(fingerprint: int, family: int) -> int {
     content_id_for("pass:${string(family)}:${string(fingerprint)}")
 }
 
-/// The compiler's coarse compute dispatcher (§2.1: one pure fn from
-/// `(ctx, key)` to the computed answer, matching on `key.family`; every
-/// upstream read goes through `ctx.fetch`, which records the edge).
+/// Canonical render of a scope chain, length-prefixed per entry so crafted
+/// names/types can't collide across field boundaries (the engine tests'
+/// delimiter-adversarial discipline).
+fn type_entries_render(entries: List<TypeEntry>) -> string {
+    mut s = "TE:${string(entries.length)}"
+    for e in entries {
+        let ty = vtype_render_full(e.ty)
+        s = s + "|${string(e.name.length)}:${e.name}|${string(e.depth)}|${string(if e.mutable { 1 } else { 0 })}|${string(ty.length)}:${ty}"
+    }
+    s
+}
+
+/// Canonical render of an item-local diagnostic bag (count + each diag's
+/// length-prefixed canonical form).
+fn bag_render(bag: DiagnosticBag) -> string {
+    mut s = "D:${string(bag.diagnostics.length)}"
+    for d in bag.diagnostics {
+        let c = diag_canonical(d)
+        s = s + "|${string(c.length)}:${c}"
+    }
+    s
+}
+
+/// The per-item answer hash: annotated-content hash + both phase bags +
+/// both forward chains. Content-composed (never arena row ids), so an
+/// identical recompute — which allocates FRESH annotated rows — hashes
+/// equal and cuts off downstream.
+fn item_out_hash(store: NodeStore, out: TypeckItemOut) -> int {
+    let body = "I:${string(stmt_content_hash(store, out.annotated))}|${bag_render(out.check_diags)}|${bag_render(out.naming_diags)}|${type_entries_render(out.bindings)}|${type_entries_render(out.ann_types)}"
+    content_id_for(body)
+}
+
+/// The chains answer hash — ONLY the forward scope contributions, which is
+/// what lets a body edit's recompute wave die here.
+fn chains_hash(bindings: List<TypeEntry>, ann_types: List<TypeEntry>) -> int {
+    content_id_for("C:${type_entries_render(bindings)}|${type_entries_render(ann_types)}")
+}
+
+/// The compiler's compute dispatcher (§2.1: one pure fn from `(ctx, key)`
+/// to the computed answer, matching on `key.family`; every upstream read
+/// goes through `ctx.fetch`, which records the edge). Wrong-variant arms
+/// collapse to `pass_value_ice` — any upstream mismatch is a wiring bug.
 export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
     if q.family == PASS_RESOLVE {
         let src = ctx.fetch(qk(PASS_SRC, 0))?
@@ -73,9 +132,7 @@ export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed
                 let named = resolve_and_expand_program(with_marshal, store)
                 Result.Ok(computed(PassValue.Resolved(named, store), coarse_hash(fp, PASS_RESOLVE)))
             }
-            .Resolved(_, _) -> Result.Ok(pass_value_ice(src, q.family))
-            .Folded(_) -> Result.Ok(pass_value_ice(src, q.family))
-            .Typechecked(_) -> Result.Ok(pass_value_ice(src, q.family))
+            _ -> Result.Ok(pass_value_ice(src, q.family))
         }
     }
     if q.family == PASS_FOLD {
@@ -86,28 +143,101 @@ export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed
                 let folded = run_comptime(named.stmts, store, named.type_reg)
                 Result.Ok(computed(PassValue.Folded(folded), coarse_hash(src_fingerprint(src), PASS_FOLD)))
             }
-            .Src(_, _, _) -> Result.Ok(pass_value_ice(resolved, q.family))
-            .Folded(_) -> Result.Ok(pass_value_ice(resolved, q.family))
-            .Typechecked(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+            _ -> Result.Ok(pass_value_ice(resolved, q.family))
         }
     }
-    if q.family == PASS_TYPECK {
+    if q.family == PASS_TYPECK_ENV {
         let src = ctx.fetch(qk(PASS_SRC, 0))?
         let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
         let folded = ctx.fetch(qk(PASS_FOLD, 0))?
         return match resolved {
             .Resolved(named, store) -> match folded {
                 .Folded(f) -> {
-                    let tc = typecheck_program(f.stmts, named.type_reg, named.macro_origins, store)
-                    Result.Ok(computed(PassValue.Typechecked(tc), coarse_hash(src_fingerprint(src), PASS_TYPECK)))
+                    let env = typecheck_env(f.stmts, named.type_reg, named.macro_origins, store)
+                    Result.Ok(computed(PassValue.TypeckEnv(env), coarse_hash(src_fingerprint(src), PASS_TYPECK_ENV)))
                 }
-                .Src(_, _, _) -> Result.Ok(pass_value_ice(folded, q.family))
-                .Resolved(_, _) -> Result.Ok(pass_value_ice(folded, q.family))
-                .Typechecked(_) -> Result.Ok(pass_value_ice(folded, q.family))
+                _ -> Result.Ok(pass_value_ice(folded, q.family))
             }
-            .Src(_, _, _) -> Result.Ok(pass_value_ice(resolved, q.family))
-            .Folded(_) -> Result.Ok(pass_value_ice(resolved, q.family))
-            .Typechecked(_) -> Result.Ok(pass_value_ice(resolved, q.family))
+            _ -> Result.Ok(pass_value_ice(resolved, q.family))
+        }
+    }
+    if q.family == PASS_TYPECK_ITEM_SRC {
+        let src = ctx.fetch(qk(PASS_SRC, 0))?
+        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+        return match src {
+            .Src(_, store, _) -> match folded {
+                .Folded(f) -> {
+                    if q.arg < 0 || q.arg >= f.stmts.length {
+                        return Result.Ok(pass_value_ice(folded, q.family))
+                    }
+                    let id = f.stmts[q.arg]
+                    let has_tail = q.arg < f.stmts.length - 1
+                    let h = content_id_for("IS:${string(stmt_content_hash(store, id))}|${string(if has_tail { 1 } else { 0 })}")
+                    Result.Ok(computed(PassValue.TypeckItemSrc(id, has_tail), h))
+                }
+                _ -> Result.Ok(pass_value_ice(folded, q.family))
+            }
+            _ -> Result.Ok(pass_value_ice(src, q.family))
+        }
+    }
+    if q.family == PASS_TYPECK_ITEM {
+        let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
+        let isrc = ctx.fetch(qk(PASS_TYPECK_ITEM_SRC, q.arg))?
+        return match env_v {
+            .TypeckEnv(env) -> match isrc {
+                .TypeckItemSrc(id, has_tail) -> {
+                    let chains = if q.arg == 0 {
+                        PassValue.TypeckChains(env.types, env.types)
+                    } else {
+                        ctx.fetch(qk(PASS_TYPECK_CHAINS, q.arg - 1))?
+                    }
+                    match chains {
+                        .TypeckChains(bindings, ann_types) -> {
+                            let out = typecheck_item(env, bindings, ann_types, id, has_tail)
+                            Result.Ok(computed(PassValue.TypeckItem(out), item_out_hash(env.nodes, out)))
+                        }
+                        _ -> Result.Ok(pass_value_ice(chains, q.family))
+                    }
+                }
+                _ -> Result.Ok(pass_value_ice(isrc, q.family))
+            }
+            _ -> Result.Ok(pass_value_ice(env_v, q.family))
+        }
+    }
+    if q.family == PASS_TYPECK_CHAINS {
+        let item = ctx.fetch(qk(PASS_TYPECK_ITEM, q.arg))?
+        return match item {
+            .TypeckItem(out) -> Result.Ok(computed(PassValue.TypeckChains(out.bindings, out.ann_types), chains_hash(out.bindings, out.ann_types)))
+            _ -> Result.Ok(pass_value_ice(item, q.family))
+        }
+    }
+    if q.family == PASS_TYPECK {
+        let src = ctx.fetch(qk(PASS_SRC, 0))?
+        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+        let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
+        return match resolved {
+            .Resolved(named, _) -> match folded {
+                .Folded(f) -> match env_v {
+                    .TypeckEnv(env) -> {
+                        mut outs: List<TypeckItemOut> = []
+                        mut i = 0
+                        while i < f.stmts.length {
+                            let item = ctx.fetch(qk(PASS_TYPECK_ITEM, i))?
+                            match item {
+                                .TypeckItem(out) -> { outs.push(out) }
+                                _ -> { return Result.Ok(pass_value_ice(item, q.family)) }
+                            }
+                            i = i + 1
+                        }
+                        let tc = typecheck_assemble(env, outs, named.type_reg)
+                        Result.Ok(computed(PassValue.Typechecked(tc), coarse_hash(src_fingerprint(src), PASS_TYPECK)))
+                    }
+                    _ -> Result.Ok(pass_value_ice(env_v, q.family))
+                }
+                _ -> Result.Ok(pass_value_ice(folded, q.family))
+            }
+            _ -> Result.Ok(pass_value_ice(resolved, q.family))
         }
     }
     Result.Ok(pass_value_ice(ctx.fetch(qk(PASS_SRC, 0))?, q.family))
@@ -118,9 +248,7 @@ export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed
 fn src_fingerprint(v: PassValue) -> int {
     match v {
         .Src(_, _, fp) -> fp
-        .Resolved(_, _) -> 0
-        .Folded(_) -> 0
-        .Typechecked(_) -> 0
+        _ -> 0
     }
 }
 
@@ -142,15 +270,35 @@ export fn pass_set_src(db: Db<PassValue>, stmts: List<StmtId>, store: NodeStore,
     db.set_input(qk(PASS_SRC, 0), PassValue.Src(stmts, store, fingerprint), coarse_hash(fingerprint, PASS_SRC))
 }
 
+/// Freeze the typeck ENV at its current value: fetch it, then re-SET it as
+/// an INPUT under its own coarse hash — the equal-hash set converts the
+/// cell to a leaf without moving the revision, so later source edits stop
+/// invalidating it (and therefore stop invalidating items whose content
+/// didn't change). This is the incremental-driver shape until ps3t.8.5's
+/// sig_fp makes ENV stability automatic; an edit that ADDS/REMOVES/RESIGNS
+/// declarations needs a fresh db (the frozen env is stale for it by
+/// definition). Returns false only on an engine-wiring failure.
+export fn pass_pin_typeck_env(db: Db<PassValue>) -> bool {
+    let src = match db.fetch(qk(PASS_SRC, 0)) {
+        .Ok(s) -> s.value
+        .Err(_) -> { return false }
+    }
+    match db.fetch(qk(PASS_TYPECK_ENV, 0)) {
+        .Ok(f) -> {
+            db.set_input(qk(PASS_TYPECK_ENV, 0), f.value, coarse_hash(src_fingerprint(src), PASS_TYPECK_ENV))
+            true
+        }
+        .Err(_) -> false
+    }
+}
+
 /// Fetch the coarse RESOLVE query. Diagnostics live in `named.bag` (Step A);
 /// the ICE arm fires only on an engine-wiring bug.
 export fn pass_fetch_resolved(db: Db<PassValue>) -> NameResolveResult? {
     match db.fetch(qk(PASS_RESOLVE, 0)) {
         .Ok(f) -> match f.value {
             .Resolved(named, _) -> named
-            .Src(_, _, _) -> null
-            .Folded(_) -> null
-            .Typechecked(_) -> null
+            _ -> null
         }
         .Err(_) -> null
     }
@@ -161,22 +309,19 @@ export fn pass_fetch_folded(db: Db<PassValue>) -> ComptimeResult? {
     match db.fetch(qk(PASS_FOLD, 0)) {
         .Ok(f) -> match f.value {
             .Folded(folded) -> folded
-            .Src(_, _, _) -> null
-            .Resolved(_, _) -> null
-            .Typechecked(_) -> null
+            _ -> null
         }
         .Err(_) -> null
     }
 }
 
-/// Fetch the coarse TYPECK query (depends on RESOLVE + FOLD).
+/// Fetch the coarse TYPECK query — now the AGGREGATOR over the per-item
+/// families (depends on RESOLVE + FOLD + ENV + every ITEM).
 export fn pass_fetch_typechecked(db: Db<PassValue>) -> TypeCheckResult? {
     match db.fetch(qk(PASS_TYPECK, 0)) {
         .Ok(f) -> match f.value {
             .Typechecked(tc) -> tc
-            .Src(_, _, _) -> null
-            .Resolved(_, _) -> null
-            .Folded(_) -> null
+            _ -> null
         }
         .Err(_) -> null
     }

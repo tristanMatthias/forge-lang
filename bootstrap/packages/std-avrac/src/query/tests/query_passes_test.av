@@ -15,16 +15,20 @@
 //   - the wrong-variant wiring guard surfacing as an F9999 ICE on the
 //     answer's diags rather than a swallow.
 
-use @std.avrac.query.{Db, PassValue, pass_compute, pass_db_new, pass_set_src}
+use @std.avrac.query.{Db, PassValue, pass_compute, pass_db_new, pass_set_src, pass_pin_typeck_env}
 use @std.avrac.query.{pass_fetch_resolved, pass_fetch_folded, pass_fetch_typechecked}
 use @std.avrac.query.{PASS_SRC, PASS_RESOLVE, PASS_FOLD, PASS_TYPECK, db_new, qk}
-use @std.avrac.parse.{parse_program_source}
+use @std.avrac.query.{PASS_TYPECK_ENV, PASS_TYPECK_ITEM, PASS_TYPECK_CHAINS}
+use @std.avrac.parse.{parse_program_source, parse_program_source_shared}
 use @std.avrac.core.{StmtId, content_id_for}
 use @std.avrac.diagnostics.{bag_new, bag_has_errors, diag_code_str}
 use @std.avrac.features.comptime.{ComptimeResult}
 
 const SRC_OK = "fn main() -> int {\n    let x = 40 + 2\n    x\n}\n"
 const SRC_BAD = "fn main() -> int {\n    let s: string = 1\n    0\n}\n"
+// The per-item pair: three fns; the edit changes ONLY fn b's body (7 → 8).
+const SRC_TRIO = "fn a() -> int { 5 }\nfn b() -> int { 7 }\nfn main() -> int { a() + b() }\n"
+const SRC_TRIO_B8 = "fn a() -> int { 5 }\nfn b() -> int { 8 }\nfn main() -> int { a() + b() }\n"
 
 /// A pass db over a freshly parsed program — the exact seeding shape the
 /// CLI driver uses (fingerprint = the source's content identity).
@@ -78,6 +82,39 @@ spec "coarse pass queries drive the front pipeline through the L6 engine (ps3t.8
         let second = pass_fetch_typechecked(db)
         let dirty = second != null && second!.had_error == 1
         clean && dirty && db.computes_of(PASS_TYPECK) == 2
+    }
+    then "per-item split: a cold TYPECK fetch computes one ITEM per top-level item" {
+        let db = db_for(SRC_TRIO)
+        let tc = pass_fetch_typechecked(db)
+        tc != null && db.computes_of(PASS_TYPECK_ITEM) >= 3 && db.computes_of(PASS_TYPECK_ENV) == 1
+    }
+    then "per-item split: with a stable ENV, a body-only edit recomputes exactly ONE item" {
+        // The sig_fp contract in miniature (ps3t.8.5 makes ENV stability
+        // automatic; here the spec pins ENV as an input — the engine's
+        // re-SET-cell-becomes-a-leaf behavior — to isolate the per-item
+        // machinery): edit fn b's BODY only. Its ITEM_SRC content hash
+        // moves, its ITEM recomputes; its CHAINS recomputes to an EQUAL
+        // hash (a fn contributes no forward bindings), so every later
+        // item green-revalidates without recomputing. The edit re-parses
+        // into the SAME arena (the append-only single-store model), so the
+        // pinned env's node store resolves the new rows.
+        let parsed = parse_program_source(SRC_TRIO)
+        let db = pass_db_new(parsed.ids ?? [], parsed.store, content_id_for(SRC_TRIO))
+        let _ = pass_fetch_typechecked(db)
+        let pinned = pass_pin_typeck_env(db)
+        let items_before = db.computes_of(PASS_TYPECK_ITEM)
+        let reparsed = parse_program_source_shared(SRC_TRIO_B8, "", parsed.store)
+        pass_set_src(db, reparsed.ids ?? [], parsed.store, content_id_for(SRC_TRIO_B8))
+        let tc = pass_fetch_typechecked(db)
+        pinned && tc != null && db.computes_of(PASS_TYPECK_ITEM) == items_before + 1
+    }
+    then "per-item split: the edited item's answer reflects the NEW body downstream" {
+        let db = db_for(SRC_TRIO)
+        let first = pass_fetch_typechecked(db)
+        let parsed = parse_program_source(SRC_TRIO_B8)
+        pass_set_src(db, parsed.ids ?? [], parsed.store, content_id_for(SRC_TRIO_B8))
+        let second = pass_fetch_typechecked(db)
+        first != null && second != null && !bag_has_errors(second!.bag) && second!.stmts.length == first!.stmts.length
     }
     then "a wrong upstream variant surfaces as an F9999 ICE on the answer, never a swallow" {
         // Deliberately mis-seed the SRC cell with a FOLD-shaped value — the

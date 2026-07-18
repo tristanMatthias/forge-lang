@@ -1379,7 +1379,13 @@ export fn typecheck_env(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins
     let stamped_ids = stamp_ids_stmt_ids(store, ids, type_reg)
     let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
     let tc_first = collect_decls(tc0, ids)
-    tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
+    let collected = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
+    // The index-loop lint belongs to the env phase: it walks the whole item
+    // list once (its loop-shape signals pair a seed stmt with its loop
+    // sibling ACROSS items, so it can't ride the per-item unit), reporting
+    // into the env bag ahead of every check diagnostic — the position it
+    // held inside the old whole-list check walk.
+    lint_index_loops(collected, ids)
 }
 
 /// Top-level entry: run the type-checker over `stmts`. Three
@@ -1395,35 +1401,25 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // before optimising any one of them.
     let timings_on = avra_process_env_get("AVRA_TIMINGS_TYPECK") != ""
     let t_start = avra_uptime_ms()
-    let tc1 = typecheck_env(ids, type_reg, macro_origins, store)
+    let env = typecheck_env(ids, type_reg, macro_origins, store)
     let t_collect = avra_uptime_ms()
-    // The index-loop lint walks the whole item list once (its loop-shape
-    // signals pair a seed stmt with its loop sibling across items), reporting
-    // into the env bag ahead of every check diagnostic — the same position it
-    // held inside the old whole-list check walk.
-    let linted = lint_index_loops(tc1, ids)
     // Passes 2 (check), 2.5 (naming), 3 (annotate) as ONE per-item fold over
     // `typecheck_item` (ps3t.8.3 Step B): each item is checked, named, and
     // annotated as a pure unit over (env, check-bindings chain, annotate-scope
-    // chain). Per-phase diagnostics come back in item-local bags and are
-    // re-merged in PHASE order (all check, then all naming) so the rendered
-    // stream matches the old three-walk structure exactly.
-    mut bindings = linted.types
-    mut ann_types = linted.types
-    mut check_acc = bag_new()
-    mut naming_acc = bag_new()
-    mut annotated: List<StmtId> = []
+    // chain). The engine's per-item TYPECK families (query/passes.av) run the
+    // SAME unit with ctx.fetch-recorded chain deps and hand their outs to the
+    // same `typecheck_assemble` — one fold semantics, two drivers.
+    mut bindings = env.types
+    mut ann_types = env.types
+    mut outs: List<TypeckItemOut> = []
     mut i = 0
     for id in ids {
-        let out = typecheck_item(linted, bindings, ann_types, id, i < ids.length - 1)
+        let out = typecheck_item(env, bindings, ann_types, id, i < ids.length - 1)
         bindings = out.bindings
         ann_types = out.ann_types
-        check_acc = bag_merge(check_acc, out.check_diags)
-        naming_acc = bag_merge(naming_acc, out.naming_diags)
-        annotated.push(out.annotated)
+        outs.push(out)
         i = i + 1
     }
-    let bag = bag_merge(bag_merge(linted.bag, check_acc), naming_acc)
     let t_items = avra_uptime_ms()
     if timings_on {
         // Pre-Step-B this printed per-phase check/naming/annotate times; the
@@ -1432,6 +1428,25 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
         // per-phase ranking again).
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms items=${string(t_items - t_collect)}ms total=${string(t_items - t_start)}ms")
     }
+    typecheck_assemble(env, outs, type_reg)
+}
+
+/// Assemble the whole-program TypeCheckResult from the per-item outs — the
+/// ONE place item results merge, shared by the direct fold above and the L6
+/// per-item aggregator so the two drivers cannot drift. Per-phase item bags
+/// re-merge in PHASE order (env+lint, then all check, then all naming) so
+/// the rendered diagnostic stream matches the pre-Step-B three-walk
+/// structure exactly; stamping runs on the assembled vector as before.
+export fn typecheck_assemble(env: TC, outs: List<TypeckItemOut>, type_reg: TypeRegistry) -> TypeCheckResult {
+    mut check_acc = bag_new()
+    mut naming_acc = bag_new()
+    mut annotated: List<StmtId> = []
+    for out in outs {
+        check_acc = bag_merge(check_acc, out.check_diags)
+        naming_acc = bag_merge(naming_acc, out.naming_diags)
+        annotated.push(out.annotated)
+    }
+    let bag = bag_merge(bag_merge(env.bag, check_acc), naming_acc)
     // Hand mono + codegen the stamped form. Typeck itself ran
     // on the parser-shape AST (changing inputs mid-pipeline broke
     // shard linkage in earlier iterations — codegen looks up types
@@ -1439,10 +1454,10 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // Stamping AFTER annotation keeps the typeck-internal registries
     // unchanged while still letting downstream stages see the
     // resolved ids.
-    let stamped_final = stamp_ids_stmt_ids(linted.nodes, annotated, type_reg)
+    let stamped_final = stamp_ids_stmt_ids(env.nodes, annotated, type_reg)
     // The post-stamp vector is already `List<StmtId>` — hand it out
     // directly; monomorphize (id-native at its boundary) takes it straight.
-    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(bag), bag, trait_impls: linted.trait_impls }
+    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(bag), bag, trait_impls: env.trait_impls }
 }
 
 /// One item's complete typecheck outcome — the value the L6 per-item
