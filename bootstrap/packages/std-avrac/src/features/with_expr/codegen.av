@@ -143,7 +143,7 @@ fn apply_overrides(ctx: Ctx, env: List<VarBinding>, dst: ptr, struct_name: strin
             // exactly like the struct-literal path (fill_struct_fields)
             // and this file's own copied-field retains. Local idents
             // transfer their tick instead (see expr_is_shared_alias).
-            let aliases_source = expr_is_shared_alias(ctx.nodes, ov_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
+            let aliases_source = ctx.alias_retain_scope && expr_is_shared_alias(ctx.nodes, ov_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
             let pre_coerce = r.value
             // Optional box/unbox into the field's slot (no-op when neither applies).
             r = emit_optional_coerce(ctx, r, fld_ty)

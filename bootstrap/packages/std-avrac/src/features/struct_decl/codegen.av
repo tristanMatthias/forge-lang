@@ -149,7 +149,7 @@ fn fill_struct_fields(ctx: Ctx, env: List<VarBinding>, st_ty: ptr, alloca: ptr, 
                 // caller). LOCAL idents are excluded — their tick
                 // TRANSFERS (escape analysis removes them from the
                 // releasable set, which also gates Copy stack allocation).
-                let aliases_source = expr_is_shared_alias(ctx.nodes, init_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
+                let aliases_source = ctx.alias_retain_scope && expr_is_shared_alias(ctx.nodes, init_expr, ctx.current_fn_params) && vtype_is_ptr_type(r.ty)
                 let pre_coerce = r.value
                 // Optional box/unbox into the field's slot (no-op when neither applies).
                 r = emit_optional_coerce(ctx, r, fld_ty)
