@@ -945,7 +945,9 @@ fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
         let entry = items[i]
         match entry.kind {
             .AliasSym -> {}
-            _ -> { let _ = table.intern(entry.canonical, entry.kind, entry.exported) }
+            .FnSym or .TypeSym or .EnumSym or .TraitSym or .NewtypeSym or .UnionAliasSym or .ShapeSym or .ConstSym or .MethodSym -> {
+                let _ = table.intern(entry.canonical, entry.kind, entry.exported)
+            }
         }
         i = i + 1
     }

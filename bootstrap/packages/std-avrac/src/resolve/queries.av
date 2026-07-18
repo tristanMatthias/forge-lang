@@ -345,7 +345,9 @@ fn rq_compute_index(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqV
                 i = i + 1
             }
         }
-        _ -> {}
+        // A non-Decls value under the DECLS family means the driver
+        // misfed the cell — index as the empty module.
+        .Ref(_) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
     }
     let v = RqValue.Index(entries)
     Result.Ok(computed(v, rq_value_hash(v)))
@@ -369,7 +371,9 @@ fn rq_compute_surface(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<R
                 i = i + 1
             }
         }
-        _ -> {}
+        // A non-Decls value under the DECLS family means the driver
+        // misfed the cell — the surface is empty.
+        .Ref(_) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
     }
     let v = RqValue.Surface(entries, rq_surface_fp(entries))
     Result.Ok(computed(v, rq_value_hash(v)))
@@ -387,7 +391,9 @@ fn rq_compute_resolve(ctx: QueryCtx<RqValue>, ref_arg: int) -> Result<Computed<R
     mut site = RqRef { name: "", scope_chain: no_chain, imports: no_imports }
     match rv {
         .Ref(found) -> { site = found }
-        _ -> {}
+        // A non-Ref value under the REF family means the driver misfed
+        // the cell — resolve degrades to the empty site's diagnostic.
+        .Decls(_, _) or .Index(_) or .Surface(_, _) or .Resolved(_) -> {}
     }
     // 1. Visible imports — authoritative for the site (rewrite_ident's
     //    alias-first rule). Only the exporter's surface is read on the
@@ -439,7 +445,7 @@ fn rq_surface_lookup(v: RqValue, name: string) -> int {
             }
             0
         }
-        _ -> 0
+        .Decls(_, _) or .Ref(_) or .Index(_) or .Resolved(_) -> 0
     }
 }
 
@@ -454,7 +460,7 @@ fn rq_index_lookup(v: RqValue, name: string) -> int {
             }
             0
         }
-        _ -> 0
+        .Decls(_, _) or .Ref(_) or .Surface(_, _) or .Resolved(_) -> 0
     }
 }
 
