@@ -112,6 +112,14 @@ spec "isolated red-team: payload edge cases" {
     }
     then "100 KB payload round-trips intact" {
         let payload = isolated { make_blob(100 * 1024) }
+        // This spec intermittently fails in the bundled suite under memory
+        // pressure (the child dies, never a pipe defect — the runtime IO is
+        // short-read/EINTR-robust). The boolean alone can't distinguish a
+        // CRASH frame from a truncated payload, so print the frame's actual
+        // status + length on failure to pin the mechanism at the site.
+        if frame_status(payload) != STATUS_OK || frame_len(payload) != 100 * 1024 {
+            println("100KB round-trip failed: status=${string(frame_status(payload))} len=${string(frame_len(payload))} (expected status=0 len=${string(100 * 1024)})")
+        }
         frame_len(payload) == 100 * 1024
     }
     then "embedded NUL bytes survive (bytes layout is len-prefixed)" {
