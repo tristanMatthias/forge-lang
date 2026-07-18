@@ -161,7 +161,10 @@ fn sig_params_part(store: NodeStore, params: List<ParamEntry>) -> string {
 /// A signature type's fingerprint, COMPOSED from the L3 `type_content_hash`
 /// primitive: the ValueType is ingested as a type-arena row and hashed
 /// through the exact same span-free faithful render every parser-populated
-/// row uses — one hash story, no shadow formula.
+/// row uses — one hash story, no shadow formula. Ingestion allocates a row
+/// per call (transforms allocate; rows are immutable — the stamp_ids
+/// contract), so fingerprint an item once per (item, revision) and memoize
+/// the answer in the query engine, not by re-calling this.
 fn sig_type_fp(store: NodeStore, vt: ValueType) -> int {
     type_content_hash(store, store.ingest_type(vt, byte_span(0, 0)))
 }
