@@ -63,6 +63,10 @@ export type FnUnitStore = {
 ///                      replay would materialize the wrong symbol. Identical
 ///                      IR still collapses — at the ARTIFACT level, where
 ///                      content-addressing dedupes bytes, not keys.
+///   * `sig_fp`       — item_sig_fp(store, item): param/return types + bounds
+///                      + annotations. The emitted `define` signature depends
+///                      on it, and body_fp deliberately excludes it, so it is
+///                      keyed explicitly (belt-and-suspenders with the name).
 ///   * `body_fp`      — item_body_fp(store, item): alpha-canonicalized,
 ///                      span-invariant body content (core/fingerprint.av).
 ///   * `type_table_fp` — the type_structure_fingerprints snapshot hash: the
@@ -70,28 +74,32 @@ export type FnUnitStore = {
 ///                      reach" (see WHY).
 ///   * `erased`       — @mono_erased bodies lay out unbound T as wide i64;
 ///                      the same body text emits different IR per regime.
+///   * `modes`        — a canonical fingerprint of the IR-affecting codegen
+///                      flags (debug_null_checks, coverage): the same source
+///                      emits DIFFERENT IR per mode, so a debug and a coverage
+///                      build must not share a slot.
 ///   * `toolchain`    — toolchain_fingerprint(): a compiler change owes a
 ///                      re-emit even for identical source.
-export fn fn_unit_key(name: string, body_fp: int, type_table_fp: int, erased: bool, toolchain: string) -> FnUnitKey {
+export fn fn_unit_key(name: string, sig_fp: int, body_fp: int, type_table_fp: int, erased: bool, modes: string, toolchain: string) -> FnUnitKey {
     let erased_tag = if erased { "1" } else { "0" }
-    let canonical = "fnunit:v2:" + string(name.length) + ":" + name + ":"
-        + string(body_fp) + ":" + string(type_table_fp)
-        + ":" + erased_tag + ":" + toolchain
+    let canonical = "fnunit:v3:" + string(name.length) + ":" + name + ":"
+        + string(sig_fp) + ":" + string(body_fp) + ":" + string(type_table_fp)
+        + ":" + erased_tag + ":" + modes + ":" + toolchain
     FnUnitKey { hash: sha256_hex(canonical) }
 }
 
 /// Key for a monomorphized instance: the instance's mangled symbol name,
-/// the generic base's body_fp, and each type argument's structure
-/// fingerprint, order-significant. Stamped at mono time (the base/args
-/// link is erased from the AST by emission time).
-export fn fn_unit_key_mono(name: string, base_body_fp: int, type_arg_fps: List<int>, type_table_fp: int, toolchain: string) -> FnUnitKey {
+/// its signature fp, the generic base's body_fp, and each type argument's
+/// structure fingerprint, order-significant. Stamped at mono time (the
+/// base/args link is erased from the AST by emission time).
+export fn fn_unit_key_mono(name: string, sig_fp: int, base_body_fp: int, type_arg_fps: List<int>, type_table_fp: int, modes: string, toolchain: string) -> FnUnitKey {
     mut args = ""
     for fp in type_arg_fps {
         args = args + string(fp) + ","
     }
-    let canonical = "fnunit-mono:v2:" + string(name.length) + ":" + name + ":"
-        + string(base_body_fp) + ":[" + args + "]:"
-        + string(type_table_fp) + ":" + toolchain
+    let canonical = "fnunit-mono:v3:" + string(name.length) + ":" + name + ":"
+        + string(sig_fp) + ":" + string(base_body_fp) + ":[" + args + "]:"
+        + string(type_table_fp) + ":" + modes + ":" + toolchain
     FnUnitKey { hash: sha256_hex(canonical) }
 }
 
@@ -127,7 +135,9 @@ export fn fn_unit_lookup(s: FnUnitStore, k: FnUnitKey) -> string? {
         return null
     }
     let art_hash = avra_selfhost_read_file(kp)
-    if art_hash.length == 0 {
+    // A well-formed pointer names a 64-char artifact hash (our own
+    // sha256_hex output); a truncated/corrupt pointer is an honest miss.
+    if art_hash.length != 64 {
         return null
     }
     let ap = art_path(s, art_hash)
@@ -155,7 +165,9 @@ export fn fn_unit_publish(s: FnUnitStore, k: FnUnitKey, artifact_src: string) ->
         return null
     }
     let ap = art_path(s, art_hash)
-    if !avra_selfhost_file_exists(ap) {
+    // Reinstall when the slot is absent OR a damaged zero-byte remnant —
+    // a content-addressed slot should never stay corrupt-and-unpublishable.
+    if !avra_selfhost_file_exists(ap) || avra_file_size(ap) <= 0 {
         if !atomic_install(artifact_src, ap) {
             return null
         }

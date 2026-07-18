@@ -24,7 +24,9 @@ spec "per-fn cache write side: units publish behind AVRA_FN_CACHE" {
         let _ = avra_selfhost_write_file("${root}/prog.av",
             "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nfn main() { println(string(twice(20) + 2)) }\n")
         let units = "${root}/build/cache/fnunits"
-        let cmd = "cd '${root}' && AVRA_FN_CACHE='${root}' '${bs2()}' compile prog.av 2>&1"
+        // Each compile appends its exit status so the test proves successful
+        // end-to-end compilation, not merely that some keys got left behind.
+        let cmd = "cd '${root}' && AVRA_FN_CACHE='${root}' '${bs2()}' compile prog.av 2>&1; echo RC:$?"
         let first = avra_shell_exec(cmd)
         let keys1 = avra_shell_exec("ls '${units}/key' 2>/dev/null | wc -l").trim()
         let arts1 = avra_shell_exec("ls '${units}/art' 2>/dev/null | wc -l").trim()
@@ -35,13 +37,15 @@ spec "per-fn cache write side: units publish behind AVRA_FN_CACHE" {
         let bare_root = "${root}/bare"
         let _ = avra_mkdir_p(bare_root)
         let _ = avra_selfhost_write_file("${bare_root}/prog.av", "fn main() { println(\"x\") }\n")
-        avra_shell_exec("cd '${bare_root}' && '${bs2()}' compile prog.av 2>&1")
+        let bare_out = avra_shell_exec("cd '${bare_root}' && '${bs2()}' compile prog.av 2>&1; echo RC:$?")
         let bare_absent = !avra_selfhost_file_exists("${bare_root}/build/cache/fnunits/key")
-        let ok = keys1 != "0" && keys1.length > 0
+        let all_compiled = first.contains("RC:0") && second.contains("RC:0") && bare_out.contains("RC:0")
+        let ok = all_compiled
+            && keys1 != "0" && arts1 != "0"
             && keys2 == keys1 && arts2 == arts1
             && bare_absent
         if !ok {
-            println("fnunits publish: keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2} bare_absent=${string(bare_absent)}")
+            println("fnunits publish: compiled=${string(all_compiled)} keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2} bare_absent=${string(bare_absent)}")
             println("first compile tail: ${first.substring(first.length - 200, first.length)}")
             println("second compile tail: ${second.substring(second.length - 200, second.length)}")
         }

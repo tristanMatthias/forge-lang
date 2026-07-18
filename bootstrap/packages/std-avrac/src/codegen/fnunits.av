@@ -19,7 +19,7 @@
 
 use core.{
     StmtId, NodeStore, stmt_unwrap, find_annotation,
-    item_body_fp, type_table_fp,
+    item_sig_fp, item_body_fp, type_table_fp,
     avra_process_env_get, avra_remove_file, avra_getpid, avra_mkdir_p,
 }
 use codegen.{Ctx}
@@ -48,10 +48,15 @@ export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>) -> int {
     }
     let table_fp = type_table_fp(ctx.type_reg)
     let toolchain = toolchain_fingerprint()
-    publish_walk(ctx, stmts, store, table_fp, toolchain)
+    // Canonical fingerprint of the IR-affecting codegen flags: the same
+    // source lowers to DIFFERENT IR under null-check debug instrumentation
+    // or coverage counters, so a slot must not be shared across modes.
+    let cov_tag = if ctx.coverage { "1" } else { "0" }
+    let modes = "d${string(ctx.debug_null_checks)}c${cov_tag}"
+    publish_walk(ctx, stmts, store, table_fp, modes, toolchain)
 }
 
-fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int, toolchain: string) -> int {
+fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int, modes: string, toolchain: string) -> int {
     mut published = 0
     for id in stmts {
         let node = ctx.nodes.stmts.get(id)
@@ -66,7 +71,7 @@ fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int
             .Function(name, _, _, _, _) -> {
                 let fn_val = ctx.get_fn(name)
                 if fn_val != null && !is_external && fn_belongs_to_lib_pkg(ctx, name) {
-                    let key = fn_unit_key(name, item_body_fp(ctx.nodes, id), table_fp, is_erased, toolchain)
+                    let key = fn_unit_key(name, item_sig_fp(ctx.nodes, id), item_body_fp(ctx.nodes, id), table_fp, is_erased, modes, toolchain)
                     let tmp = "${store.tmp_dir}extract.${string(avra_getpid())}.${string(published)}.ll"
                     if avra_llvm_fn_print_to_file(fn_val, tmp) != 0 {
                         if fn_unit_publish(store, key, tmp) != null {
@@ -77,10 +82,15 @@ fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int
                 }
             }
             .Impl(_, methods) -> {
-                published = published + publish_walk(ctx, methods, store, table_fp, toolchain)
+                published = published + publish_walk(ctx, methods, store, table_fp, modes, toolchain)
             }
             .Module(_, body) -> {
-                published = published + publish_walk(ctx, body, store, table_fp, toolchain)
+                // An @external_unit module is skipped wholesale by
+                // emit_function_bodies — its children are only `declare`s
+                // here, so recursing would publish declaration stubs.
+                if !is_external {
+                    published = published + publish_walk(ctx, body, store, table_fp, modes, toolchain)
+                }
             }
             _ -> {}
         }

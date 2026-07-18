@@ -444,11 +444,6 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
         }
     }
 
-    // Per-fn cache write side: extract + publish each emitted fn's IR into the
-    // per-fn unit store. Opt-in (AVRA_FN_CACHE env) and read-free by design —
-    // never touches the module, so emission stays byte-identical.
-    let _ = publish_fn_units(ctx, stmts)
-
     // After emitting any function bodies, the builder may be sitting
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
@@ -511,6 +506,15 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
             return Result.Err("verify-rc: ${string(rc_bad)} ptr alloca(s) lack the entry null store — zero-init guard regressed (rcsf.2)")
         }
     }
+
+    // Per-fn cache write side: extract + publish each emitted fn's IR into
+    // the per-fn unit store. Placed AFTER all function mutations (the
+    // __bs_top_level/main wrapper) and the module verification gate, so a
+    // cached artifact is the fn's FINAL, verified form — never a stale
+    // pre-wrapper `main` or an artifact from a module that failed to verify.
+    // Opt-in (AVRA_FN_CACHE env) and read-free: it never touches the module,
+    // so emission stays byte-identical.
+    let _ = publish_fn_units(ctx, stmts)
 
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
