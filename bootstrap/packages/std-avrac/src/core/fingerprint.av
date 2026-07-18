@@ -232,6 +232,22 @@ export fn type_structure_fingerprints(reg: TypeRegistry) -> TypeStructureFps {
     TypeStructureFps { fps: st.done }
 }
 
+/// One snapshot hash over EVERY registered type's structure fingerprint,
+/// folded in registration order (deterministic — the registry's `infos`
+/// list preserves it, and compilation order is a selfhost invariant).
+/// This is the coarse type-environment component of the per-fn cache key
+/// (ps3t.8.6 v1): any structural type change anywhere perturbs it, so a
+/// cached fn can never replay against a changed layout. Same hash story
+/// as everything here — canonical string through `content_id_for`.
+export fn type_table_fp(reg: TypeRegistry) -> int {
+    let fps = type_structure_fingerprints(reg)
+    mut acc = "TT1"
+    for info in reg.infos {
+        acc = "${acc}|${string(info.id)}:${string(fps.fp_of(info.id) ?? 0)}"
+    }
+    content_id_for(acc)
+}
+
 /// Small dense tag per TypeKind for the canonical serialization.
 fn kind_tag(kind: TypeKind) -> int {
     match kind {

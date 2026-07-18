@@ -56,6 +56,13 @@ export type FnUnitStore = {
 /// Key for a plain (non-generic) function unit.
 ///
 /// Components:
+///   * `name`         — the fn's resolved (mangled) symbol name. body_fp
+///                      deliberately excludes it (it's the typeck cutoff
+///                      key), but the emitted IR EMBEDS it (`define @name`),
+///                      so two identically-bodied fns need distinct keys or
+///                      replay would materialize the wrong symbol. Identical
+///                      IR still collapses — at the ARTIFACT level, where
+///                      content-addressing dedupes bytes, not keys.
 ///   * `body_fp`      — item_body_fp(store, item): alpha-canonicalized,
 ///                      span-invariant body content (core/fingerprint.av).
 ///   * `type_table_fp` — the type_structure_fingerprints snapshot hash: the
@@ -65,22 +72,25 @@ export type FnUnitStore = {
 ///                      the same body text emits different IR per regime.
 ///   * `toolchain`    — toolchain_fingerprint(): a compiler change owes a
 ///                      re-emit even for identical source.
-export fn fn_unit_key(body_fp: int, type_table_fp: int, erased: bool, toolchain: string) -> FnUnitKey {
+export fn fn_unit_key(name: string, body_fp: int, type_table_fp: int, erased: bool, toolchain: string) -> FnUnitKey {
     let erased_tag = if erased { "1" } else { "0" }
-    let canonical = "fnunit:v1:" + string(body_fp) + ":" + string(type_table_fp)
+    let canonical = "fnunit:v2:" + string(name.length) + ":" + name + ":"
+        + string(body_fp) + ":" + string(type_table_fp)
         + ":" + erased_tag + ":" + toolchain
     FnUnitKey { hash: sha256_hex(canonical) }
 }
 
-/// Key for a monomorphized instance: the generic base's body_fp plus each
-/// type argument's structure fingerprint, order-significant. Stamped at mono
-/// time (the base/args link is erased from the AST by emission time).
-export fn fn_unit_key_mono(base_body_fp: int, type_arg_fps: List<int>, type_table_fp: int, toolchain: string) -> FnUnitKey {
+/// Key for a monomorphized instance: the instance's mangled symbol name,
+/// the generic base's body_fp, and each type argument's structure
+/// fingerprint, order-significant. Stamped at mono time (the base/args
+/// link is erased from the AST by emission time).
+export fn fn_unit_key_mono(name: string, base_body_fp: int, type_arg_fps: List<int>, type_table_fp: int, toolchain: string) -> FnUnitKey {
     mut args = ""
     for fp in type_arg_fps {
         args = args + string(fp) + ","
     }
-    let canonical = "fnunit-mono:v1:" + string(base_body_fp) + ":[" + args + "]:"
+    let canonical = "fnunit-mono:v2:" + string(name.length) + ":" + name + ":"
+        + string(base_body_fp) + ":[" + args + "]:"
         + string(type_table_fp) + ":" + toolchain
     FnUnitKey { hash: sha256_hex(canonical) }
 }

@@ -1,0 +1,91 @@
+// WHY: ps3t.8.6 increment 2, the WRITE side of the per-fn codegen cache.
+// After body emission, walk the program's fn items, extract each emitted
+// function's textual IR (avra_llvm_fn_print_to_file — the v1 artifact
+// format behind the abstract unit; bitcode slots in later), and publish
+// it into the fn-unit store (build/fncache.av) under the composed key
+// body_fp ⊕ type-table fp ⊕ erased regime ⊕ toolchain.
+//
+// Opt-in: AVRA_FN_CACHE=<project root> names the store root; unset means
+// this pass is a no-op. The READ side (cache replay during emission) is
+// the next increment — until it lands, publishing is a warm-only phase
+// that never touches the emitted module, so cache-on and cache-off
+// compiles are byte-identical by construction.
+//
+// Mono note: a @mono_spec item publishes under its SUBSTITUTED body's
+// fp — a valid content key (the substituted text ⊕ table fp determines
+// the IR), just not decomposable into (generic base, type args). The
+// decomposed mono key arrives with mono-time stamping (increment 4).
+
+use core.{
+    StmtId, NodeStore, stmt_unwrap, find_annotation,
+    item_body_fp, type_table_fp,
+    avra_process_env_get, avra_remove_file, avra_getpid, avra_mkdir_p,
+}
+use codegen.{Ctx}
+use features.fn_decl.{fn_belongs_to_lib_pkg}
+use build.{
+    cache_for, toolchain_fingerprint,
+    FnUnitStore, fn_unit_key, fn_unit_store_for, fn_unit_store_init, fn_unit_publish,
+}
+
+extern fn avra_llvm_fn_print_to_file(fn_val: ptr, path: string) -> int
+
+/// Publish every emitted function's IR into the per-fn unit store.
+/// Called once after emit_function_bodies; returns the number of units
+/// published (0 when the cache is disabled or nothing was extractable).
+/// Failures are per-unit and silent by design: a unit that fails to
+/// extract or publish simply stays a future MISS — the cache must never
+/// be able to fail a compile.
+export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>) -> int {
+    let root = avra_process_env_get("AVRA_FN_CACHE")
+    if root.length == 0 {
+        return 0
+    }
+    let store = fn_unit_store_for(cache_for(root))
+    if !fn_unit_store_init(store) {
+        return 0
+    }
+    let table_fp = type_table_fp(ctx.type_reg)
+    let toolchain = toolchain_fingerprint()
+    publish_walk(ctx, stmts, store, table_fp, toolchain)
+}
+
+fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int, toolchain: string) -> int {
+    mut published = 0
+    mut i = 0
+    while i < stmts.length {
+        let id = stmts[i]
+        let node = ctx.nodes.stmts.get(id)
+        let is_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
+        // Mirror emit_function_bodies' skip conditions EXACTLY: a fn whose
+        // body this compile did not emit (@external_unit, or outside the
+        // lib ownership roots) exists in the module only as a `declare` —
+        // which prints fine, so an extract-side guard is the only thing
+        // keeping declaration stubs out of the cache.
+        let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
+        match stmt_unwrap(ctx.nodes, node) {
+            .Function(name, _, _, _, _) -> {
+                let fn_val = ctx.get_fn(name)
+                if fn_val != null && !is_external && fn_belongs_to_lib_pkg(ctx, name) {
+                    let key = fn_unit_key(name, item_body_fp(ctx.nodes, id), table_fp, is_erased, toolchain)
+                    let tmp = "${store.tmp_dir}extract.${string(avra_getpid())}.${string(published)}.ll"
+                    if avra_llvm_fn_print_to_file(fn_val, tmp) != 0 {
+                        if fn_unit_publish(store, key, tmp) != null {
+                            published = published + 1
+                        }
+                        let _ = avra_remove_file(tmp)
+                    }
+                }
+            }
+            .Impl(_, methods) -> {
+                published = published + publish_walk(ctx, methods, store, table_fp, toolchain)
+            }
+            .Module(_, body) -> {
+                published = published + publish_walk(ctx, body, store, table_fp, toolchain)
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    published
+}

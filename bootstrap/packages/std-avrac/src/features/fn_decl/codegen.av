@@ -97,7 +97,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<StmtId>) -> Result<List<Var
 ///     OR has no `::` at all. Unqualified names are synthesized
 ///     wrappers (main, __init_<mod>, __avra_lib_top_level) that
 ///     always live in this unit.
-fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
+export fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
     if ctx.lib_pkg_roots.length == 0 { return true }
     if fn_name.index_of("::") < 0 { return true }
     for root in ctx.lib_pkg_roots {

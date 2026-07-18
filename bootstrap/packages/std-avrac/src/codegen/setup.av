@@ -8,6 +8,7 @@ extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
+use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
@@ -442,6 +443,11 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
             return Result.Err(e)
         }
     }
+
+    // ps3t.8.6 write side: extract + publish each emitted fn's IR into the
+    // per-fn unit store. Opt-in (AVRA_FN_CACHE env) and read-free for now —
+    // never touches the module, so emission stays byte-identical.
+    let _ = publish_fn_units(ctx, stmts)
 
     // After emitting any function bodies, the builder may be sitting
     // in a function-body block. Reposition it back at main's entry
