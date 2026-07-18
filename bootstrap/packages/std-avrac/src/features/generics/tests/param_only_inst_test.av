@@ -1,0 +1,59 @@
+// WHY: regression guard for the PARAM half of the declared-type
+// instantiation channel (ps3t.8.4, `collect_decl_type_inst_stmt`). A
+// concrete fn whose PARAM type names a generic instance the program
+// never constructs — a callback invoked by a driver outside the unit,
+// e.g. a query compute dispatcher `rq_compute(ctx: QueryCtx<RqValue>)` —
+// reaches that instance only through the signature. Before the channel
+// walked params, the instance never specialised and every method call on
+// the param died at codegen with `undefined method` (first hit: the L6
+// resolve-as-query dispatcher, the compiler's first in-package
+// cross-module engine instantiation).
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn compile_capture(tag: string, source: string) -> string {
+    let path = "/tmp/avra_param_inst_${tag}.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "mono: generic instances reachable only through a concrete fn's PARAM type (ps3t.8.4)" {
+    then "a never-constructed nominal param instance specialises — its methods dispatch" {
+        let out = compile_capture("plain",
+            "type Box<T> = { v: T }\n" +
+            "impl Box<T> {\n" +
+            "    fn get(self) -> T { self.v }\n" +
+            "}\n" +
+            "fn use_box(b: Box<int>) -> int { b.get() }\n" +
+            "fn main() { println(\"ok\") }\n")
+        !out.contains("undefined method") && !out.contains("error")
+    }
+    then "a WRAPPED param instance (List<Box<int>>) is reached structurally too" {
+        let out = compile_capture("wrapped",
+            "type Box<T> = { v: T }\n" +
+            "impl Box<T> {\n" +
+            "    fn get(self) -> T { self.v }\n" +
+            "}\n" +
+            "fn sum_boxes(bs: List<Box<int>>) -> int {\n" +
+            "    mut total = 0\n" +
+            "    for b in bs { total = total + b.get() }\n" +
+            "    total\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+        !out.contains("undefined method") && !out.contains("error")
+    }
+    then "a concrete impl METHOD's param instance is collected as well" {
+        let out = compile_capture("implmeth",
+            "type Box<T> = { v: T }\n" +
+            "impl Box<T> {\n" +
+            "    fn get(self) -> T { self.v }\n" +
+            "}\n" +
+            "type Reader = { n: int }\n" +
+            "impl Reader {\n" +
+            "    fn read(self, b: Box<int>) -> int { self.n + b.get() }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+        !out.contains("undefined method") && !out.contains("error")
+    }
+}
