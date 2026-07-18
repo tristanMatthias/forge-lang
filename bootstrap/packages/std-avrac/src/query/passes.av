@@ -120,127 +120,158 @@ fn chains_hash(bindings: List<TypeEntry>, ann_types: List<TypeEntry>) -> int {
 }
 
 /// The compiler's compute dispatcher (§2.1: one pure fn from `(ctx, key)`
-/// to the computed answer, matching on `key.family`; every upstream read
-/// goes through `ctx.fetch`, which records the edge). Wrong-variant arms
-/// collapse to `pass_value_ice` — any upstream mismatch is a wiring bug.
+/// to the computed answer; every upstream read goes through `ctx.fetch`,
+/// which records the edge). Reads as the family table — each family's
+/// logic lives in its named compute fn below. Wrong-variant arms collapse
+/// to `pass_value_ice` — any upstream mismatch is a wiring bug.
 export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
-    if q.family == PASS_RESOLVE {
-        let src = ctx.fetch(qk(PASS_SRC, 0))?
-        return match src {
-            .Src(stmts, store, fp) -> {
-                let with_marshal = derive_marshal(stmts, store)
-                let named = resolve_and_expand_program(with_marshal, store)
-                Result.Ok(computed(PassValue.Resolved(named, store), coarse_hash(fp, PASS_RESOLVE)))
-            }
-            _ -> Result.Ok(pass_value_ice(src, q.family))
-        }
-    }
-    if q.family == PASS_FOLD {
-        let src = ctx.fetch(qk(PASS_SRC, 0))?
-        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
-        return match resolved {
-            .Resolved(named, store) -> {
-                let folded = run_comptime(named.stmts, store, named.type_reg)
-                Result.Ok(computed(PassValue.Folded(folded), coarse_hash(src_fingerprint(src), PASS_FOLD)))
-            }
-            _ -> Result.Ok(pass_value_ice(resolved, q.family))
-        }
-    }
-    if q.family == PASS_TYPECK_ENV {
-        let src = ctx.fetch(qk(PASS_SRC, 0))?
-        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
-        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
-        return match resolved {
-            .Resolved(named, store) -> match folded {
-                .Folded(f) -> {
-                    let env = typecheck_env(f.stmts, named.type_reg, named.macro_origins, store)
-                    Result.Ok(computed(PassValue.TypeckEnv(env), coarse_hash(src_fingerprint(src), PASS_TYPECK_ENV)))
-                }
-                _ -> Result.Ok(pass_value_ice(folded, q.family))
-            }
-            _ -> Result.Ok(pass_value_ice(resolved, q.family))
-        }
-    }
-    if q.family == PASS_TYPECK_ITEM_SRC {
-        let src = ctx.fetch(qk(PASS_SRC, 0))?
-        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
-        return match src {
-            .Src(_, store, _) -> match folded {
-                .Folded(f) -> {
-                    if q.arg < 0 || q.arg >= f.stmts.length {
-                        return Result.Ok(pass_value_ice(folded, q.family))
-                    }
-                    let id = f.stmts[q.arg]
-                    let has_tail = q.arg < f.stmts.length - 1
-                    let h = content_id_for("IS:${string(stmt_content_hash(store, id))}|${string(if has_tail { 1 } else { 0 })}")
-                    Result.Ok(computed(PassValue.TypeckItemSrc(id, has_tail), h))
-                }
-                _ -> Result.Ok(pass_value_ice(folded, q.family))
-            }
-            _ -> Result.Ok(pass_value_ice(src, q.family))
-        }
-    }
-    if q.family == PASS_TYPECK_ITEM {
-        let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
-        let isrc = ctx.fetch(qk(PASS_TYPECK_ITEM_SRC, q.arg))?
-        return match env_v {
-            .TypeckEnv(env) -> match isrc {
-                .TypeckItemSrc(id, has_tail) -> {
-                    let chains = if q.arg == 0 {
-                        PassValue.TypeckChains(env.types, env.types)
-                    } else {
-                        ctx.fetch(qk(PASS_TYPECK_CHAINS, q.arg - 1))?
-                    }
-                    match chains {
-                        .TypeckChains(bindings, ann_types) -> {
-                            let out = typecheck_item(env, bindings, ann_types, id, has_tail)
-                            Result.Ok(computed(PassValue.TypeckItem(out), item_out_hash(env.nodes, out)))
-                        }
-                        _ -> Result.Ok(pass_value_ice(chains, q.family))
-                    }
-                }
-                _ -> Result.Ok(pass_value_ice(isrc, q.family))
-            }
-            _ -> Result.Ok(pass_value_ice(env_v, q.family))
-        }
-    }
-    if q.family == PASS_TYPECK_CHAINS {
-        let item = ctx.fetch(qk(PASS_TYPECK_ITEM, q.arg))?
-        return match item {
-            .TypeckItem(out) -> Result.Ok(computed(PassValue.TypeckChains(out.bindings, out.ann_types), chains_hash(out.bindings, out.ann_types)))
-            _ -> Result.Ok(pass_value_ice(item, q.family))
-        }
-    }
-    if q.family == PASS_TYPECK {
-        let src = ctx.fetch(qk(PASS_SRC, 0))?
-        let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
-        let folded = ctx.fetch(qk(PASS_FOLD, 0))?
-        let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
-        return match resolved {
-            .Resolved(named, _) -> match folded {
-                .Folded(f) -> match env_v {
-                    .TypeckEnv(env) -> {
-                        mut outs: List<TypeckItemOut> = []
-                        mut i = 0
-                        while i < f.stmts.length {
-                            let item = ctx.fetch(qk(PASS_TYPECK_ITEM, i))?
-                            match item {
-                                .TypeckItem(out) -> { outs.push(out) }
-                                _ -> { return Result.Ok(pass_value_ice(item, q.family)) }
-                            }
-                            i = i + 1
-                        }
-                        let tc = typecheck_assemble(env, outs, named.type_reg)
-                        Result.Ok(computed(PassValue.Typechecked(tc), coarse_hash(src_fingerprint(src), PASS_TYPECK)))
-                    }
-                    _ -> Result.Ok(pass_value_ice(env_v, q.family))
-                }
-                _ -> Result.Ok(pass_value_ice(folded, q.family))
-            }
-            _ -> Result.Ok(pass_value_ice(resolved, q.family))
-        }
-    }
+    if q.family == PASS_RESOLVE { return compute_resolve(ctx, q) }
+    if q.family == PASS_FOLD { return compute_fold(ctx, q) }
+    if q.family == PASS_TYPECK_ENV { return compute_typeck_env(ctx, q) }
+    if q.family == PASS_TYPECK_ITEM_SRC { return compute_typeck_item_src(ctx, q) }
+    if q.family == PASS_TYPECK_ITEM { return compute_typeck_item(ctx, q) }
+    if q.family == PASS_TYPECK_CHAINS { return compute_typeck_chains(ctx, q) }
+    if q.family == PASS_TYPECK { return compute_typeck_aggregate(ctx, q) }
     Result.Ok(pass_value_ice(ctx.fetch(qk(PASS_SRC, 0))?, q.family))
+}
+
+/// RESOLVE: marshal derives + name resolution + template expansion over the
+/// SRC program.
+fn compute_resolve(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let src = ctx.fetch(qk(PASS_SRC, 0))?
+    match src {
+        .Src(stmts, store, fp) -> {
+            let with_marshal = derive_marshal(stmts, store)
+            let named = resolve_and_expand_program(with_marshal, store)
+            Result.Ok(computed(PassValue.Resolved(named, store), coarse_hash(fp, PASS_RESOLVE)))
+        }
+        _ -> Result.Ok(pass_value_ice(src, q.family))
+    }
+}
+
+/// FOLD: comptime constant folding over the RESOLVED program.
+fn compute_fold(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let src = ctx.fetch(qk(PASS_SRC, 0))?
+    let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+    match resolved {
+        .Resolved(named, store) -> {
+            let folded = run_comptime(named.stmts, store, named.type_reg)
+            Result.Ok(computed(PassValue.Folded(folded), coarse_hash(src_fingerprint(src), PASS_FOLD)))
+        }
+        _ -> Result.Ok(pass_value_ice(resolved, q.family))
+    }
+}
+
+/// TYPECK_ENV: the collect phase (id-stamp + declarations + ret-type
+/// upgrade + the index-loop lint) over the FOLDED program — everything the
+/// per-item checks read but never write.
+fn compute_typeck_env(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let src = ctx.fetch(qk(PASS_SRC, 0))?
+    let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+    let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+    match resolved {
+        .Resolved(named, store) -> match folded {
+            .Folded(f) -> {
+                let env = typecheck_env(f.stmts, named.type_reg, named.macro_origins, store)
+                Result.Ok(computed(PassValue.TypeckEnv(env), coarse_hash(src_fingerprint(src), PASS_TYPECK_ENV)))
+            }
+            _ -> Result.Ok(pass_value_ice(folded, q.family))
+        }
+        _ -> Result.Ok(pass_value_ice(resolved, q.family))
+    }
+}
+
+/// TYPECK_ITEM_SRC(i): the i-th folded top-level item as its own cell,
+/// hashed by CONTENT — the per-item cutoff anchor (an edit elsewhere
+/// recomputes this cheaply to an equal hash and the item above stays green).
+fn compute_typeck_item_src(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let src = ctx.fetch(qk(PASS_SRC, 0))?
+    let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+    match src {
+        .Src(_, store, _) -> match folded {
+            .Folded(f) -> {
+                if q.arg < 0 || q.arg >= f.stmts.length {
+                    return Result.Ok(pass_value_ice(folded, q.family))
+                }
+                let id = f.stmts[q.arg]
+                let has_tail = q.arg < f.stmts.length - 1
+                let h = content_id_for("IS:${string(stmt_content_hash(store, id))}|${string(if has_tail { 1 } else { 0 })}")
+                Result.Ok(computed(PassValue.TypeckItemSrc(id, has_tail), h))
+            }
+            _ -> Result.Ok(pass_value_ice(folded, q.family))
+        }
+        _ -> Result.Ok(pass_value_ice(src, q.family))
+    }
+}
+
+/// TYPECK_ITEM(i): check + name-lint + annotate ONE item over the ENV and
+/// the preceding item's scope chains (item 0 seeds from the env itself).
+/// Never reads a sibling ITEM — the chains cell is the only lateral edge.
+fn compute_typeck_item(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
+    let isrc = ctx.fetch(qk(PASS_TYPECK_ITEM_SRC, q.arg))?
+    match env_v {
+        .TypeckEnv(env) -> match isrc {
+            .TypeckItemSrc(id, has_tail) -> {
+                let chains = if q.arg == 0 {
+                    PassValue.TypeckChains(env.types, env.types)
+                } else {
+                    ctx.fetch(qk(PASS_TYPECK_CHAINS, q.arg - 1))?
+                }
+                match chains {
+                    .TypeckChains(bindings, ann_types) -> {
+                        let out = typecheck_item(env, bindings, ann_types, id, has_tail)
+                        Result.Ok(computed(PassValue.TypeckItem(out), item_out_hash(env.nodes, out)))
+                    }
+                    _ -> Result.Ok(pass_value_ice(chains, q.family))
+                }
+            }
+            _ -> Result.Ok(pass_value_ice(isrc, q.family))
+        }
+        _ -> Result.Ok(pass_value_ice(env_v, q.family))
+    }
+}
+
+/// TYPECK_CHAINS(i): project item i's forward scope contributions. Hashed
+/// on the chains ALONE so a body edit's recompute wave dies here.
+fn compute_typeck_chains(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let item = ctx.fetch(qk(PASS_TYPECK_ITEM, q.arg))?
+    match item {
+        .TypeckItem(out) -> Result.Ok(computed(PassValue.TypeckChains(out.bindings, out.ann_types), chains_hash(out.bindings, out.ann_types)))
+        _ -> Result.Ok(pass_value_ice(item, q.family))
+    }
+}
+
+/// TYPECK: the whole-program aggregate — fetch every ITEM in order and
+/// merge through the same `typecheck_assemble` the direct fold uses.
+fn compute_typeck_aggregate(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
+    let src = ctx.fetch(qk(PASS_SRC, 0))?
+    let resolved = ctx.fetch(qk(PASS_RESOLVE, 0))?
+    let folded = ctx.fetch(qk(PASS_FOLD, 0))?
+    let env_v = ctx.fetch(qk(PASS_TYPECK_ENV, 0))?
+    match resolved {
+        .Resolved(named, _) -> match folded {
+            .Folded(f) -> match env_v {
+                .TypeckEnv(env) -> {
+                    mut outs: List<TypeckItemOut> = []
+                    mut i = 0
+                    while i < f.stmts.length {
+                        let item = ctx.fetch(qk(PASS_TYPECK_ITEM, i))?
+                        match item {
+                            .TypeckItem(out) -> { outs.push(out) }
+                            _ -> { return Result.Ok(pass_value_ice(item, q.family)) }
+                        }
+                        i = i + 1
+                    }
+                    let tc = typecheck_assemble(env, outs, named.type_reg)
+                    Result.Ok(computed(PassValue.Typechecked(tc), coarse_hash(src_fingerprint(src), PASS_TYPECK)))
+                }
+                _ -> Result.Ok(pass_value_ice(env_v, q.family))
+            }
+            _ -> Result.Ok(pass_value_ice(folded, q.family))
+        }
+        _ -> Result.Ok(pass_value_ice(resolved, q.family))
+    }
 }
 
 /// The input fingerprint carried by a `Src` value (0 for any other variant —
