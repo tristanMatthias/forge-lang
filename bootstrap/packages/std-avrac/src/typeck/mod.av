@@ -5,7 +5,7 @@
 
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
-use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
 use features.match_expr.{tc_check_match_arm_returns, tc_check_exhaustive, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
@@ -46,7 +46,7 @@ extern fn avra_ice_at(file: string, line: int, col: int)
 /// can never be invalidated by a later write, so narrowing it is
 /// always sound; a `mut` can be reassigned, so the variable form is
 /// not narrowed (use `if let` instead). See `tc_narrow_present`.
-type TypeEntry = { name: string, ty: ValueType, depth: int, mutable: bool }
+export type TypeEntry = { name: string, ty: ValueType, depth: int, mutable: bool }
 
 /// Walk the type-environment looking for `name`. Returns
 /// `ValueType.Unknown` when not bound — typecheck callers branch
@@ -676,7 +676,7 @@ fn assoc_type_vt_lookup(reg: List<AssocTypeEntry>, key: string) -> ValueType {
 /// lookup table the checker needs plus the diagnostics bag and
 /// current source position. Like Resolver, threaded purely
 /// functionally despite the imperative-looking call sites.
-type TC = {
+export type TC = {
     types: List<TypeEntry>,
     fns: FnTypeReg,
     structs: StructTypeReg,
@@ -1397,26 +1397,40 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     let t_start = avra_uptime_ms()
     let tc1 = typecheck_env(ids, type_reg, macro_origins, store)
     let t_collect = avra_uptime_ms()
-    // Pass 2: check + annotate in one traversal.
-    // check_stmt_ids validates types and accumulates errors in TC.bag.
-    // annotate_stmt_ids stamps resolved types onto the expr rows (calls
-    // check_expr internally for annotation, but since check_stmt_ids already
-    // caught errors, the annotation pass just extracts types without
-    // re-reporting).
-    let tc2 = check_stmt_ids(tc1, ids)
-    let t_check = avra_uptime_ms()
-    // Pass 2.5: naming convention warnings
-    let tc3 = check_naming_stmt_ids(tc2, ids)
-    let t_naming = avra_uptime_ms()
-    // Pass 3: annotate AST — uses fast paths for leaf expressions.
-    // Silent by contract (see TC.reporting): annotate re-runs check_expr
-    // only to extract types; its context is stale, so reporting here
-    // would misattribute diagnostics and false-fire context-sensitive
-    // checks on legal code.
-    let annotated = annotate_stmt_ids(tc3 with { reporting: false }, ids)
-    let t_annotate = avra_uptime_ms()
+    // The index-loop lint walks the whole item list once (its loop-shape
+    // signals pair a seed stmt with its loop sibling across items), reporting
+    // into the env bag ahead of every check diagnostic — the same position it
+    // held inside the old whole-list check walk.
+    let linted = lint_index_loops(tc1, ids)
+    // Passes 2 (check), 2.5 (naming), 3 (annotate) as ONE per-item fold over
+    // `typecheck_item` (ps3t.8.3 Step B): each item is checked, named, and
+    // annotated as a pure unit over (env, check-bindings chain, annotate-scope
+    // chain). Per-phase diagnostics come back in item-local bags and are
+    // re-merged in PHASE order (all check, then all naming) so the rendered
+    // stream matches the old three-walk structure exactly.
+    mut bindings = linted.types
+    mut ann_types = linted.types
+    mut check_acc = bag_new()
+    mut naming_acc = bag_new()
+    mut annotated: List<StmtId> = []
+    mut i = 0
+    for id in ids {
+        let out = typecheck_item(linted, bindings, ann_types, id, i < ids.length - 1)
+        bindings = out.bindings
+        ann_types = out.ann_types
+        check_acc = bag_merge(check_acc, out.check_diags)
+        naming_acc = bag_merge(naming_acc, out.naming_diags)
+        annotated.push(out.annotated)
+        i = i + 1
+    }
+    let bag = bag_merge(bag_merge(linted.bag, check_acc), naming_acc)
+    let t_items = avra_uptime_ms()
     if timings_on {
-        eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms check=${string(t_check - t_collect)}ms naming=${string(t_naming - t_check)}ms annotate=${string(t_annotate - t_naming)}ms total=${string(t_annotate - t_start)}ms")
+        // Pre-Step-B this printed per-phase check/naming/annotate times; the
+        // phases now interleave inside the per-item fold, so the fold reports
+        // as one figure (instrument inside typecheck_item if kkgf needs the
+        // per-phase ranking again).
+        eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms items=${string(t_items - t_collect)}ms total=${string(t_items - t_start)}ms")
     }
     // Hand mono + codegen the stamped form. Typeck itself ran
     // on the parser-shape AST (changing inputs mid-pipeline broke
@@ -1425,10 +1439,55 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     // Stamping AFTER annotation keeps the typeck-internal registries
     // unchanged while still letting downstream stages see the
     // resolved ids.
-    let stamped_final = stamp_ids_stmt_ids(tc3.nodes, annotated, type_reg)
+    let stamped_final = stamp_ids_stmt_ids(linted.nodes, annotated, type_reg)
     // The post-stamp vector is already `List<StmtId>` — hand it out
     // directly; monomorphize (id-native at its boundary) takes it straight.
-    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
+    TypeCheckResult { stmts: stamped_final, had_error: bag_has_errors(bag), bag, trait_impls: linted.trait_impls }
+}
+
+/// One item's complete typecheck outcome — the value the L6 per-item
+/// queries memoize (ps3t.8.3 Step B). Phase diagnostics ride in separate
+/// item-local bags so the aggregator can reproduce whole-program PHASE
+/// ordering; the two scope chains it advances are the item's forward
+/// contributions (empty deltas for fn/type/impl items, which is what makes
+/// per-item early cutoff effective on real programs).
+export type TypeckItemOut = {
+    annotated: StmtId,
+    check_diags: DiagnosticBag,
+    naming_diags: DiagnosticBag,
+    bindings: List<TypeEntry>,
+    ann_types: List<TypeEntry>,
+}
+
+/// Check + name-lint + annotate ONE top-level item as a pure fn of the
+/// collect ENV plus the two scope chains the preceding items produced:
+/// `bindings` (check-phase depth-0 bindings via bind_decl) and `ann_types`
+/// (the annotate-scope chain via annotate_scope_step — kept separate
+/// because annotate_bind refines destructure/binding types the check chain
+/// doesn't carry). Purity over `env` is the enforced collect-boundary
+/// invariant; the bags are seeded fresh so item diagnostics never leak into
+/// the shared env bag. Sequential-chain visibility: an item sees only the
+/// bindings of items BEFORE it — a forward reference to a later top-level
+/// binding (invalid anyway) is Unknown here, where the old whole-program
+/// annotate walk could still see it.
+export fn typecheck_item(env: TC, bindings: List<TypeEntry>, ann_types: List<TypeEntry>, id: StmtId, has_tail: bool) -> TypeckItemOut {
+    let seeded = (env with { types: bindings }) with { bag: bag_new() }
+    let checked = check_item(seeded, id, has_tail)
+    let named = check_naming_stmt(checked with { bag: bag_new() }, env.nodes.stmts.get(id))
+    // Annotate exactly as the old pass-3 walk: silent by contract (see
+    // TC.reporting — its context is stale and a report here would
+    // misattribute), on the annotate-scope chain, then advance the chain.
+    let node = env.nodes.stmts.get(id)
+    let ann_tc = (named with { reporting: false }) with { types: ann_types }
+    let annotated = env.nodes.restmt(annotate_stmt(ann_tc, node), id)
+    let ann_after = annotate_scope_step(ann_tc, node)
+    TypeckItemOut {
+        annotated,
+        check_diags: checked.bag,
+        naming_diags: named.bag,
+        bindings: checked.types,
+        ann_types: ann_after.types,
+    }
 }
 
 /// Names of registered nominals (struct/enum/newtype) that still
