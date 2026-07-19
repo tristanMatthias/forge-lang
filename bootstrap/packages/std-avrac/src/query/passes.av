@@ -31,7 +31,6 @@ use query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed}
 use core.{NodeStore, StmtId, content_id_for, stmt_content_hash, vtype_render_full}
 use diagnostics.{DiagnosticBag, diag_ice, diag_canonical}
 use resolve.{NameResolveResult}
-use features.marshal.{derive_marshal}
 use features.comptime.{run_comptime, resolve_and_expand_program, ComptimeResult}
 use typeck.{typecheck_program, TypeCheckResult, TC, TypeEntry, TypeckItemOut, typecheck_env, typecheck_item, typecheck_assemble}
 
@@ -135,14 +134,16 @@ export fn pass_compute(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed
     Result.Ok(pass_value_ice(ctx.fetch(qk(PASS_SRC, 0))?, q.family))
 }
 
-/// RESOLVE: marshal derives + name resolution + template expansion over the
-/// SRC program.
+/// RESOLVE: name resolution + template/derive expansion over the SRC
+/// program. @marshal expansion lives INSIDE resolve_and_expand_program
+/// (aliased to @derive(Marshal) in the unified derive_program pass), so
+/// there is no pre-resolve derive_marshal splice here — adding one back
+/// would double-derive every @marshal type.
 fn compute_resolve(ctx: QueryCtx<PassValue>, q: QueryKey) -> Result<Computed<PassValue>, QueryCycle> {
     let src = ctx.fetch(qk(PASS_SRC, 0))?
     match src {
         .Src(stmts, store, fp) -> {
-            let with_marshal = derive_marshal(stmts, store)
-            let named = resolve_and_expand_program(with_marshal, store)
+            let named = resolve_and_expand_program(stmts, store)
             Result.Ok(computed(PassValue.Resolved(named, store), coarse_hash(fp, PASS_RESOLVE)))
         }
         _ -> Result.Ok(pass_value_ice(src, q.family))

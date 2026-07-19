@@ -1,0 +1,11 @@
+// Declares a same-named fn beside an explicit type import: the
+// `Payload` ANNOTATION must resolve to tlib's type via the import, not
+// to this module's fn through the declared-canonicals probe.
+use tlib.{Payload}
+
+export fn run_probe() -> int {
+    let p: Payload = Payload { n: 5 }
+    p.n
+}
+
+fn Payload() -> int { 0 }

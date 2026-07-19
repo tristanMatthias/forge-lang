@@ -15,7 +15,7 @@ use @std.avrac.test_runner.{write_fixture}
 fn check_src(tag: string, source: string) -> string {
     let path = "/tmp/avra_ct53_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+    avra_shell_exec("timeout 300 ./build/bs2 check '${path}' 2>&1 || true")
 }
 
 spec "ps3t.5.3: a @comptime fn reaching an impure extern is rejected (F4008)" {

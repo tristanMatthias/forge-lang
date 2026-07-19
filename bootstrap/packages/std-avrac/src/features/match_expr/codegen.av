@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types, vtype_is_optional, vtype_strip_optional}
-use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap, emit_if_optional_canon}
+use core.{Expr, Pattern, MatchArm, WhenArm, ParamEntry, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types, vtype_is_optional, vtype_strip_optional, ExprId}
+use codegen.{Ctx, EmitValue, StmtResult, err_emit, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap, emit_if_optional_canon, body_ids_mix_null, arm_store_value_mixed, arm_merge_ty_mixed}
 use core.{vtype_from_name, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding}
 use codegen.{ok_sr, err_sr}
 use features.union_type.{emit_union_tag, emit_union_extract}
@@ -110,10 +110,10 @@ export fn emit_match_expr(ctx: Ctx, env: List<VarBinding>, subject: Expr, arms: 
 /// store-and-branch its value to the merge, and reposition at `next_bb`.
 /// Returns the body's type (the walkers keep the FIRST as the match's
 /// result type).
-fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_bb: ptr, next_bb: ptr, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     ctx.position(body_bb)
     let br = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
-    ctx.store_br_if_open(emit_value_ptr(br), result_slot, merge_bb)
+    ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, br), result_slot, merge_bb)
     ctx.position(next_bb)
     ok_match_ty(emit_value_ty(br))
 }
@@ -126,7 +126,7 @@ fn emit_optional_arm_body(ctx: Ctx, env: List<VarBinding>, arm: MatchArm, body_b
 /// type patterns) are not supported here — unwrap first with `if let` — and
 /// raise a clear error rather than silently dropping the arm. On no match
 /// (no catch-all), traps like any non-exhaustive primitive match.
-fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: ValueType, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     let subj = EmitValue { value: v, ty: inner }
     mut first_ty: ValueType = ValueType.Unknown
     mut i = 0
@@ -170,7 +170,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
             } else {
                 return err_match_ty("matching the inner value of an optional with this pattern isn't supported — unwrap first: `if let v = x { match v { … } }`. Optional `match` supports `let <name>` (present), `none` (absent), `_`, and literal patterns.")
             }
-            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            let body_ty = emit_optional_arm_body(ctx, arm_env, arm, body_bb, next_bb, result_slot, merge_bb, mixed)?
             if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 // Unguarded catch-all: the trailing block is unreachable.
@@ -190,7 +190,7 @@ fn emit_optional_some_arms(ctx: Ctx, env: List<VarBinding>, v: ptr, inner: Value
 /// Absent-branch arm walk: the optional is known `none`. Only `none` and
 /// `_` arms apply (guard-aware, in order); everything else is skipped. On
 /// no match, traps like any non-exhaustive match.
-fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr) -> Result<ValueType, string> {
+fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, result_slot: ptr, merge_bb: ptr, mixed: bool) -> Result<ValueType, string> {
     mut first_ty: ValueType = ValueType.Unknown
     mut i = 0
     while i < arms.length {
@@ -207,7 +207,7 @@ fn emit_optional_none_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>
                 ctx.br(body_bb)
                 is_catch_all = true
             }
-            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb)?
+            let body_ty = emit_optional_arm_body(ctx, env, arm, body_bb, next_bb, result_slot, merge_bb, mixed)?
             if vtype_is_unknown(first_ty) { first_ty = body_ty }
             if is_catch_all {
                 ctx.br_if_open(merge_bb)
@@ -233,12 +233,22 @@ fn emit_optional_match_core(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     let some_bb = ctx.bb("optm_some")
     let none_bb = ctx.bb("optm_none")
     ctx.cond_br(is_none, none_bb, some_bb)
+    // A null-LITERAL arm body (e.g. a guarded `let v -> null` beside a
+    // value arm) mixes WITHIN a branch — the 2-way post-merge canon
+    // below can't discriminate arms inside one branch, so mixing
+    // switches to store-time boxing (every store canonical, canon
+    // skipped — boxing twice would corrupt).
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     ctx.position(some_bb)
     let v = emit_optional_unwrap(ctx, inner, opt)
-    let present_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb)?
+    let present_ty = emit_optional_some_arms(ctx, env, v, inner, arms, result_slot, merge_bb, mixed)?
     ctx.position(none_bb)
-    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb)?
+    let none_ty = emit_optional_none_arms(ctx, env, arms, result_slot, merge_bb, mixed)?
     ctx.position(merge_bb)
+    if mixed {
+        let base = if arm_produces_value(present_ty) { present_ty } else { none_ty }
+        return ok_emit(ctx.load_i64(result_slot, "optm_val"), arm_merge_ty_mixed(true, base))
+    }
     // `is_none` selects the branch (true → none arm, false → present arm), so
     // it maps to the canon's (then = none_ty, else = present_ty).
     let canon = emit_if_optional_canon(ctx, is_none, result_slot, none_ty, present_ty)
@@ -292,6 +302,10 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
     // and the outermost was the first arm).
     mut first_ty: ValueType = ValueType.Unknown
     mut first_ty_set = false
+    // Same null-mix store-time canonicalisation as the enum/primitive
+    // walks: value arms box at their store so a `null` arm merges as
+    // `none`, never a raw 0 a downstream coercion re-boxes to Some(0).
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -321,7 +335,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         ctx.position(next_bb)
                         emit_value_ty(body_result)
                     }
@@ -333,14 +347,14 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         // Cap the type and exit early — no trap
                         // (everything is matched) and no further arms
                         // would execute. If this is the very first
                         // arm, its type is what we report; otherwise
                         // the already-captured `first_ty` wins.
                         let ty = emit_value_ty(body_result)
-                        return ok_match_ty(if first_ty_set { first_ty } else { ty })
+                        return ok_match_ty(arm_merge_ty_mixed(mixed, if first_ty_set { first_ty } else { ty }))
                     }
                 }
             }
@@ -359,7 +373,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
                 match ctx.emit(arm_env, body) {
                     .Err(msg) -> return err_match_ty(msg)
                     .Ok(body_result) -> {
-                        ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                        ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                         ctx.position(next_bb)
                         emit_value_ty(body_result)
                     }
@@ -375,7 +389,7 @@ fn emit_union_match_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, 
     }
     // Fell through every arm (no wildcard) — trap on unmatched tag.
     ctx.match_trap(tag_val)
-    ok_match_ty(first_ty)
+    ok_match_ty(arm_merge_ty_mixed(mixed, first_ty))
 }
 
 /// True when any arm uses a type-pattern (`int(n)` /
@@ -432,6 +446,11 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
     mut first_ty_set = false
     mut prev_ty: ValueType = ValueType.Unknown
     mut prev_ty_set = false
+    // Arms mixing `null` bodies with tagged scalars merge as `T?`;
+    // the decision must precede the first arm's store (see
+    // arm_store_value_mixed — the N-way sibling of the 2-way
+    // emit_if_optional_canon).
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -459,7 +478,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
         let body_ty = match ctx.emit(arm_env, ctx.nodes.exprs.get(arm.body_id)) {
             .Err(msg) -> return err_match_ty(msg)
             .Ok(body_result) -> {
-                ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_result), result_slot, merge_bb)
                 ctx.position(next_bb)
                 emit_value_ty(body_result)
             }
@@ -480,7 +499,14 @@ fn emit_match_expr_arms(ctx: Ctx, env: List<VarBinding>, arms: List<MatchArm>, s
         i = i + 1
     }
     ctx.match_trap(tag_val)
-    ok_match_ty(first_ty)
+    ok_match_ty(arm_merge_ty_mixed(mixed, first_ty))
+}
+
+/// The arm bodies' expr ids, for the null-mix pre-scan.
+fn arm_body_ids(arms: List<MatchArm>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in arms { out.push(a.body_id) }
+    out
 }
 
 // ── Match as statement ──
@@ -875,6 +901,8 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     mut first_ty_set = false
     mut prev_ty: ValueType = ValueType.Unknown
     mut prev_ty_set = false
+    // Same null-mix store-time canonicalisation as the enum-side walk.
+    let mixed = body_ids_mix_null(ctx, arm_body_ids(arms))
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
@@ -924,7 +952,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
         let body_ty = match ctx.emit(env, ctx.nodes.exprs.get(arm.body_id)) {
             .Err(msg) -> return err_match_ty(msg)
             .Ok(body_r) -> {
-                ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)
+                ctx.store_br_if_open(arm_store_value_mixed(ctx, mixed, body_r), result_slot, merge_bb)
                 ctx.position(next_bb)
                 emit_value_ty(body_r)
             }
@@ -942,7 +970,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: List<VarBinding>, subj: EmitValue, ar
     }
     ctx.match_trap(ctx.i64(-1))
     ctx.position(merge_bb)
-    ok_match_ty(first_ty)
+    ok_match_ty(arm_merge_ty_mixed(mixed, first_ty))
 }
 
 /// Statement-position primitive match. Mirror of
@@ -968,16 +996,25 @@ export fn emit_when_expr(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>) -
     let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
     ctx.store(ctx.i64(0), result_slot)
-    let ty = emit_when_arms(ctx, env, arms, 0, merge_bb, result_slot)?
+    // Same null-mix store-time canonicalisation as the match walks.
+    let mixed = body_ids_mix_null(ctx, when_body_ids(arms))
+    let ty = emit_when_arms(ctx, env, arms, 0, merge_bb, result_slot, mixed)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "when_val")
-    ok_emit(loaded, ty)
+    ok_emit(loaded, arm_merge_ty_mixed(mixed, ty))
+}
+
+/// The when arms' body expr ids, for the null-mix pre-scan.
+fn when_body_ids(arms: List<WhenArm>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in arms { out.push(a.body_id) }
+    out
 }
 
 /// Recursive worker for `emit_when_expr`. Threads through each
 /// arm emitting its condition + body and unifying result types
 /// across arms via `warn_arm_type_mismatch` on disagreement.
-fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int, merge_bb: ptr, result_slot: ptr, mixed: bool) -> Result<ValueType, string> {
     if idx >= arms.length {
         // No (more) arms matched. Terminate the trailing `when_next`
         // fallthrough block by branching to merge, where the result
@@ -994,7 +1031,7 @@ fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int
     if arm.cond_id == null {
         // Else arm — emit body directly, store, branch to merge
         let r = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
-        ctx.store(emit_value_ptr(r), result_slot)
+        ctx.store(arm_store_value_mixed(ctx, mixed, r), result_slot)
         ctx.br_if_open(merge_bb)
         ok_match_ty(emit_value_ty(r))
     } else {
@@ -1006,12 +1043,15 @@ fn emit_when_arms(ctx: Ctx, env: List<VarBinding>, arms: List<WhenArm>, idx: int
         // Arm body
         ctx.position(arm_bb)
         let body_r = ctx.emit(env, ctx.nodes.exprs.get(arm.body_id))?
-        ctx.store(emit_value_ptr(body_r), result_slot)
+        ctx.store(arm_store_value_mixed(ctx, mixed, body_r), result_slot)
         let arm_ty = emit_value_ty(body_r)
         ctx.br_if_open(merge_bb)
         // Check next arm
         ctx.position(next_bb)
-        let rest_ty = emit_when_arms(ctx, env, arms, idx + 1, merge_bb, result_slot)?
-        if vtype_is_unknown(arm_ty) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
+        let rest_ty = emit_when_arms(ctx, env, arms, idx + 1, merge_bb, result_slot, mixed)?
+        // Skip non-value arm types (Unknown, and a `null` arm's Void) so
+        // the first VALUE-producing arm names the result — the when-side
+        // mirror of the match walks' arm_produces_value gate.
+        if !arm_produces_value(arm_ty) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
     }
 }

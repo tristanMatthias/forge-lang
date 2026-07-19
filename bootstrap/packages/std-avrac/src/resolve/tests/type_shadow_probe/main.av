@@ -1,0 +1,11 @@
+// Entry of the type-shadow-probe fixture (driven by
+// declared_probe_type_only_test.av). tapp declares a fn named like the
+// type it imports from tlib; the annotation must resolve to the import.
+mod tlib
+mod tapp
+use tapp.{run_probe}
+
+fn main() -> int {
+    println("probe: ${run_probe()}")
+    0
+}

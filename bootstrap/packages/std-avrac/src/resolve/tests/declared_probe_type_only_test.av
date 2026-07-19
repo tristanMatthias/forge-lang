@@ -1,0 +1,24 @@
+// WHY: the declared-canonicals membership set (declared_canonicals_build)
+// is TYPE-ONLY. It feeds resolve_type_in_ctx's local-shadowing probe,
+// whose registry half (type_registry_id_for) is inherently type-only —
+// when the set also carried fns/consts, a same-module `fn Payload`
+// hijacked the probe for the TYPE `Payload` explicitly imported from a
+// sibling module: the annotation resolved to the fn's canonical
+// (`tapp::Payload`) and the compile died with `undefined struct type
+// tapp::Payload` (or, in looser shapes, the struct value silently
+// collapsed to null). The probe fires BEFORE the explicit-import step,
+// so only kind-filtering the set fixes the ordering without weakening
+// the SELF/FORWARD lazy-registry cases the probe exists for.
+//
+// Fixture: type_shadow_probe/{main,tlib,tapp}.av — tapp imports tlib's
+// `Payload` type AND declares a fn of the same (convention-violating)
+// name; the annotated let + struct literal must resolve to the import.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "declared-canonicals probe is type-only (fn cannot shadow an imported type)" {
+    then "a same-module fn named like an imported type does not capture the type annotation" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/resolve/tests/type_shadow_probe/main.av 2>&1 || true")
+        out.contains("probe: 5") && !out.contains("undefined struct type")
+    }
+}

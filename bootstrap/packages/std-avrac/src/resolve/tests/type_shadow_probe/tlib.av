@@ -1,0 +1,2 @@
+// The type-owning module of the type-shadow-probe fixture.
+export type Payload = { n: int }

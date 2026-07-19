@@ -1,0 +1,215 @@
+// WHY: the `@query` surface (design §3.1/§3.3) — the ergonomic
+// layer over the L6 query engine (src/query/mod.av), now that L4 exists to
+// host it (§10.B: hand-wrapped memo until L4; L4 is here). `@query(N)` on a fn
+//
+//     @query(1)
+//     fn text_len(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> { … }
+//
+// generates the three per-query boilerplate pieces a hand-wrapped driver
+// needs, leaving the DISPATCHER hand-written (that is the §10.B contract —
+// the engine's compute dispatcher stays the driver's, each arm becomes a
+// one-liner):
+//
+//     fn text_len_family() -> int              — the annotation's family int
+//     fn text_len_fetch(ctx, arg) -> Result<V, QueryCycle>
+//         — the ergonomic call-through: `ctx.fetch(qk(family, arg))`,
+//         recording the dependency edge like any engine read.
+//     fn text_len_compute(ctx, q) -> Result<Computed<V>, QueryCycle>
+//         — the compute-arm adapter: runs the original fn, wraps its answer
+//         in `computed(v, content_id_for(v))` for the memo store.
+//
+// The family is the DRIVER AUTHOR'S dense int, stated in the annotation —
+// per the engine's §2.1 contract ("family is a small dense int the driver
+// assigns"; `Db.family(tag)` grows a dense list to `tag`, so a fabricated
+// wide id — a content hash, say — is not an option: content-addressing is
+// the ARG key's scheme, not the family's). The surface enforces what it can
+// see: a non-negative int literal per site, and no two `@query` sites in
+// one program claiming the same family (the expansion walk's seen-set).
+// Collisions with HAND-assigned input families remain the driver author's
+// contract, exactly as with a hand-written arm.
+//
+// Generated names use SINGLE-underscore suffixes: the dispatcher references
+// them by hand, and spec Axis 28 reserves `__` for compiler-generated
+// dispatch symbols users never type.
+//
+// V is `string` in v1: the adapter's early-cutoff hash is `content_id_for`,
+// which is string-keyed. The engine itself stays fully generic over V —
+// non-string value types keep the raw hand-wrapped path (db_new + a custom
+// hash) until per-type content hashing lands. A non-string V is a precise
+// F4013, never a confusing downstream typeck error.
+//
+// Generation renders SOURCE TEXT and parses it back through
+// `parse_program_source_shared` into the caller's arena — the same
+// synthesize-then-parse route the metadata roundtrip trusts — so the
+// generated decls flow through the expansion pipeline's re-resolve +
+// re-typecheck exactly like interpreted macro output ("generated code is
+// re-resolved", design §3.2). Placement note: design §3.3 names
+// features/derive/ for the surface, but that directory-module imports
+// features.comptime while THIS module's consumer IS features.comptime —
+// the same cycle that moved the capability registry to its own leaf
+// (features/derive_registry); the query surface lives beside it for the
+// same reason.
+
+use core.{NodeStore, StmtId, Stmt, Expr, ValueType, ParamEntry, find_annotation, type_short_name}
+use parse.{parse_program_source_shared}
+
+/// C runtime int parse (extern decls don't cross modules) — the
+/// annotation's family literal arrives as `Expr.Number`'s source string.
+extern fn avra_parse_int(s: string) -> int
+
+/// Result of one `@query` expansion: the generated decl ids (family +
+/// fetch + compute, NOT the original — the caller re-splices the
+/// stripped original itself, mirroring the native-Marshal contract) and
+/// the family int the site claimed (for the caller's program-wide
+/// duplicate check), or a shape-violation message for the caller's
+/// F4013 (the caller owns the diagnostic so it carries the annotation
+/// site's span).
+export type QuerySurfaceOut = { stmts: List<StmtId>?, family: int, error: string }
+
+fn qs_fail(msg: string) -> QuerySurfaceOut {
+    QuerySurfaceOut { stmts: null, family: 0, error: msg }
+}
+
+/// The one shape `@query` accepts, stated once for every diagnostic.
+fn qs_expected() -> string {
+    "`@query(N)` fn must be `fn name(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle>`"
+}
+
+/// Expand one `@query`-annotated declaration. `node` is the decl WITH
+/// its annotation layers (the family int lives on the annotation),
+/// `inner` the same decl unwrapped.
+export fn query_surface_stmts_for(store: NodeStore, node: Stmt, inner: Stmt) -> QuerySurfaceOut {
+    let family = query_family_of(store, node)
+    if family == null {
+        return qs_fail("@query needs the query's dense family int as its one argument — `@query(N)`, the same int a hand-written driver would pass to `qk` (the engine's §2.1 family contract)")
+    }
+    if family! < 0 {
+        return qs_fail("@query family must be non-negative — the engine's memo store is dense-indexed by family")
+    }
+    match inner {
+        .Function(name, type_params, params, ret, _) ->
+            build_query_surface(store, name, family!, type_params, params, ret)
+        _ -> qs_fail("@query applies only to `fn` declarations")
+    }
+}
+
+/// The `N` of `@query(N)`: the annotation's single int-literal argument,
+/// null for any other arg shape (missing, several, non-literal).
+/// Statement-match + early returns rather than a match EXPRESSION with
+/// `null` arms: the null-mix `T?` merge fix (arm_store_value_mixed)
+/// landed WITH this feature, so the pinned seed compiling THIS file
+/// still mis-merges `null` arms into `Some(0)` — the standard "don't
+/// dogfood just-fixed semantics in compiler src until the seed
+/// advances" discipline. Rewritable as a match expression after the
+/// next seed cycle.
+fn query_family_of(store: NodeStore, node: Stmt) -> int? {
+    let found = find_annotation(store, node, "query")
+    if found == null || found!.arg_ids == none || found!.arg_ids!.length != 1 { return null }
+    match store.exprs.get(found!.arg_ids![0]) {
+        .Number(n) -> { return avra_parse_int(n) }
+        .Unary(op, operand) -> {
+            // `-N` parses as unary minus on a literal; fold it so the
+            // negative-family diagnostic (not the arg-shape one) fires.
+            if op is .Neg {
+                match store.exprs.get(operand) {
+                    .Number(n) -> { return 0 - avra_parse_int(n) }
+                    _ -> {}
+                }
+            }
+        }
+        _ -> {}
+    }
+    null
+}
+
+fn build_query_surface(store: NodeStore, name: string, family: int, type_params: List<string>, params: List<ParamEntry>, ret: ValueType) -> QuerySurfaceOut {
+    if type_params.length > 0 {
+        return qs_fail("@query fn cannot be generic — the memo key is `(family, arg)`, monomorphic by construction")
+    }
+    if params.length != 2 {
+        return qs_fail("${qs_expected()} — got ${string(params.length)} parameter(s)")
+    }
+    // Param 0: QueryCtx<string>. Kind-agnostic base-name match (a
+    // parser-default Struct and a resolved nominal of the same name are
+    // the same type pre/post-rewrite), short-name so an already-qualified
+    // reference still matches.
+    let ctx_args = named_type_args(params[0].vtype, "QueryCtx")
+    if ctx_args == null {
+        return qs_fail("${qs_expected()} — first parameter is `${vt_debug(params[0].vtype)}`, not `QueryCtx<string>`")
+    }
+    if ctx_args!.length != 1 || !(ctx_args![0] is .Str) {
+        return qs_fail("@query value type must be `string` in v1 — the generated adapter hashes with `content_id_for`, which is string-keyed; wrap the engine by hand (db_new + a custom hash) for other value types")
+    }
+    // Param 1: int — the engine's argument key.
+    if !(params[1].vtype is .Int) {
+        return qs_fail("${qs_expected()} — second parameter is `${vt_debug(params[1].vtype)}`, not `int` (the engine keys queries by `(family, int arg)`)")
+    }
+    // Return: Result<string, QueryCycle>.
+    let ret_args = named_type_args(ret, "Result")
+    if ret_args == null || ret_args!.length != 2 || !(ret_args![0] is .Str) || named_type_args(ret_args![1], "QueryCycle") == null {
+        return qs_fail("${qs_expected()} — return type is `${vt_debug(ret)}`, not `Result<string, QueryCycle>`")
+    }
+
+    let fam = string(family)
+    // Every engine/core reference is FULLY QUALIFIED — the same rendering
+    // the metadata roundtrip re-parses — so the generated code resolves
+    // regardless of the driver's imports: no implicit injection to keep in
+    // sync, and a user's own same-named symbol (their `computed`, say)
+    // can never capture a generated reference.
+    let q = "@std::avrac::query::"
+    let src = "fn ${name}_family() -> int {\n" +
+        "    ${fam}\n" +
+        "}\n" +
+        "fn ${name}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
+        "    ctx.fetch(${q}qk(${fam}, arg))\n" +
+        "}\n" +
+        "fn ${name}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+        "    let v = ${name}(ctx, qkey.arg)?\n" +
+        "    Result.Ok(${q}computed(v, @std::avrac::core::content_id_for(v)))\n" +
+        "}\n"
+    let parsed = parse_program_source_shared(src, "<@query ${name}>", store)
+    if parsed.had_error == 1 || parsed.ids == null {
+        // Unreachable by construction — the template is closed over a
+        // validated identifier + an int literal. Surfaced as an error
+        // (not a silent skip) so a template regression is loud.
+        return qs_fail("internal: generated @query surface for `${name}` failed to parse")
+    }
+    QuerySurfaceOut { stmts: parsed.ids, family, error: "" }
+}
+
+// ── ValueType shape probes (local, pre/post-resolve tolerant) ──────────
+
+/// The type args of a named (Struct/Enum) type whose SHORT base name is
+/// `want`; null when `vt` isn't that named type. Kind-agnostic: the
+/// parser defaults named types to Struct, resolve may re-kind them.
+fn named_type_args(vt: ValueType, want: string) -> List<ValueType>? {
+    match vt {
+        .Struct(n, args, _) -> if type_short_name(n) == want { args } else { null }
+        .Enum(n, args, _) -> if type_short_name(n) == want { args } else { null }
+        _ -> null
+    }
+}
+
+/// Render a type for shape diagnostics. Local minimal renderer: the
+/// full `vtype_display` lives in core/ast.av but drops type-arg detail
+/// for named types; diagnostics here need the base shape with args.
+fn vt_debug(vt: ValueType) -> string {
+    match vt {
+        .Struct(n, args, _) -> named_debug(n, args)
+        .Enum(n, args, _) -> named_debug(n, args)
+        .Int -> "int"
+        .Str -> "string"
+        .Bool -> "bool"
+        _ -> "<non-nominal type>"
+    }
+}
+
+fn named_debug(n: string, args: List<ValueType>) -> string {
+    if args.length == 0 { return n }
+    mut inner = ""
+    for a in args {
+        let r = vt_debug(a)
+        inner = if inner == "" { r } else { "${inner}, ${r}" }
+    }
+    "${n}<${inner}>"
+}

@@ -156,6 +156,11 @@ export type GraphItem = {
     short_name: string,
     canonical: string,
     exported: bool,
+    // True for nominal TYPE declarations (type/enum/newtype/union-alias/
+    // shape/trait) — the resolver's declared-canonicals probe is TYPE
+    // resolution and must not let a same-module fn/const shadow an
+    // imported type of the same name.
+    is_type: bool,
 }
 
 /// The whole graph.
@@ -217,9 +222,9 @@ export fn module_graph_set_export(g: ModuleGraph, canonical: string, exported: b
 /// shared list identity — the returned graph is the same struct value
 /// with the same pointer; the prior cons-list version returned a new
 /// graph because cons was the only way to extend.
-export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: bool) -> ModuleGraph {
+export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical: string, exported: bool, is_type: bool) -> ModuleGraph {
     mut items = g.all_items
-    items.push(GraphItem { short_name, canonical, exported })
+    items.push(GraphItem { short_name, canonical, exported, is_type })
     g
 }
 

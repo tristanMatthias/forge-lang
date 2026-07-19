@@ -17,14 +17,13 @@
 // separate step); part b (string returns) is still interpreter-only.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 /// Compile `source` with the current `./build/bs2` (which JIT-folds the
 /// eligible float @comptime calls), link, run, and return stdout.
 fn run_fixture(tag: string, source: string) -> string {
     let path = "/tmp/avra_jitf_${tag}.av"
-    write_fixture(path, source)
-    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+    write_fixture_and_run(path, source)
 }
 
 spec "ps3t.5.2.1.1: a float-returning @comptime fn JIT-folds to its correct value" {

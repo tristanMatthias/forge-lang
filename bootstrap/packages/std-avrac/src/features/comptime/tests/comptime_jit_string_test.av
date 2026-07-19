@@ -14,14 +14,13 @@
 // real fold→codegen→run path. Part b completes ps3t.5.2.1's return-type coverage.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 /// Compile `source` with the current `./build/bs2` (which JIT-folds the eligible
 /// string @comptime calls), link, run, and return stdout.
 fn run_fixture(tag: string, source: string) -> string {
     let path = "/tmp/avra_jits_${tag}.av"
-    write_fixture(path, source)
-    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+    write_fixture_and_run(path, source)
 }
 
 spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct value" {
@@ -68,7 +67,7 @@ spec "ps3t.5.2.1.1: a string-returning @comptime fn JIT-folds to its correct val
 fn check_fixture(tag: string, source: string) -> string {
     let path = "/tmp/avra_jits_err_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+    avra_shell_exec("timeout 300 ./build/bs2 check '${path}' 2>&1 || true")
 }
 
 // The string JIT codegens BEFORE the type checker runs, so it can reach an

@@ -374,6 +374,28 @@ the per-macro `@expand(derive_walker)` / `@marshal` annotations, which become
   typecheck via JIT; generated code re-resolved+typechecked; memoized bounded/
   cycle-detected fixpoint.
 
+**As built (2026-07-18).** Three deviations from the sketch above, each with
+its reason recorded at the definition site:
+
+- **Placement:** the capability registry lives in `features/derive_registry/`
+  (import-free leaf) and the `@query` builders in `features/query_surface/`,
+  NOT `features/derive/` — that directory-module imports `features.comptime`
+  while these modules' consumer IS `features.comptime` (import cycle).
+- **`@query(N)` carries the family int.** The engine's §2.1 contract makes
+  families dense list indices (content-addressing is the *argument* key's
+  scheme), so the surface cannot fabricate ids — the driver author states the
+  dense int and the compiler enforces literal/non-negative/no-duplicate
+  (F4013). Named families and a *generated* dispatcher are direction, tracked
+  as `ps3t.8.10`/`ps3t.8.12` (the whole-program expansion pass makes the
+  generated dispatcher feasible — §10.B's hand-wrapped rationale is
+  obsolete); per-type value hashing (lifting v1's `string`-only `V`) is
+  `ps3t.8.11` via a `@derive(Hash)` capability.
+- **Marshal dispatches natively** (compiled arena-direct builders, no
+  interpreter round-trip): its 869 lines of NodeStore construction are a
+  compiler built-in — the interpreter/JIT doctrine of §3.2 governs
+  user-authored macros, and compiled execution is the end state the JIT
+  aspires to anyway.
+
 ---
 
 ## 4. Sequencing + bootstrap-window discipline

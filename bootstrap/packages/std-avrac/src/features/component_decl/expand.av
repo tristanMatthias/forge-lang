@@ -60,8 +60,8 @@ export type ComponentExpandResult = {
 /// B-final: the whole pass is arena-id-native — the program vector
 /// arrives as `List<StmtId>` (the flipped inject_intrinsics upstream hands
 /// ids straight in), the registry scan / validator / splicer all thread
-/// ids, and it leaves as `List<StmtId>` (derive_marshal downstream takes
-/// ids). The empty-registry fast-path returns the original `ids`
+/// ids, and it leaves as `List<StmtId>` (the resolve/derive pipeline
+/// downstream takes ids). The empty-registry fast-path returns the original `ids`
 /// unchanged (identity); the spliced path allocates rewritten/synthesized
 /// rows into the store.
 ///

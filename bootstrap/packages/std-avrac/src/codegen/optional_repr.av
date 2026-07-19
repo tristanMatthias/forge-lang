@@ -276,6 +276,71 @@ export fn emit_if_optional_canon(ctx: Ctx, cond_i1: ptr, result_slot: ptr, t_ty:
     EmitValue { value: ctx.load_i64(obox_slot, "ifopt_val"), ty: opt_ty }
 }
 
+// ── N-way arm merges mixing `null` with tagged scalars ─────────────────
+// A match/when EXPRESSION whose arms mix `null` bodies with value bodies
+// must merge as `T?` — but its N arms share one result slot and there is
+// no single cond to re-select on afterwards (the 2-way `if` gets away
+// with `emit_if_optional_canon`; N-way cannot). So the canonicalisation
+// happens AT EACH ARM'S STORE instead: a syntactic pre-scan of the arm
+// bodies decides the mix up front, then every tagged-scalar arm boxes its
+// value as it stores while `null` arms keep storing the none
+// null-pointer. Without this the raw scalar store made the merged value
+// indistinguishable from the null arm's 0, and a downstream
+// return/binding coercion boxed BOTH into `Some(v)` — the silent
+// `Some(0)`-instead-of-`none` corruption (found by the @query
+// surface, bit any `match` arm returning `null` into a `T?` context).
+
+/// Pre-scan: does any arm body in `body_ids` spell the `null` literal?
+/// Syntactic by design — the store-time boxing needs the answer BEFORE
+/// the first arm emits. (An optional-TYPED arm body mixing with scalar
+/// arms and no `null` literal anywhere is typeck's cross-arm gate to
+/// reject; the adjacent-arm mismatch warning surfaces it today.)
+export fn body_ids_mix_null(ctx: Ctx, body_ids: List<ExprId>) -> bool {
+    for id in body_ids {
+        if expr_yields_null_literal(ctx, id) { return true }
+    }
+    false
+}
+
+/// True when `id`'s value position is the `null` literal — directly, or
+/// as the tail expression of a (nested) block body, so `-> { null }`
+/// is recognised like `-> null`.
+fn expr_yields_null_literal(ctx: Ctx, id: ExprId) -> bool {
+    match ctx.nodes.exprs.get(id) {
+        .None -> true
+        .Block(body) -> {
+            if body.length == 0 { return false }
+            match ctx.nodes.stmts.get(body[body.length - 1]) {
+                .Expr(tail) -> expr_yields_null_literal(ctx, tail)
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
+/// The value an arm stores into the shared result slot when the arm set
+/// `mixed` (per `body_ids_mix_null`): a present tagged scalar boxes into
+/// its optional repr; everything else (null arms' `.Void` 0, already-
+/// optional bodies, pointer-backed types) stores raw. No-op when not
+/// mixed.
+export fn arm_store_value_mixed(ctx: Ctx, mixed: bool, body: EmitValue) -> ptr {
+    if !mixed { return body.value }
+    let bty = body.ty
+    if vtype_is_optional(bty) || !optional_repr_tagged(bty) { return body.value }
+    if bty is .Void { return body.value }
+    emit_optional_some(ctx, bty, body.value)
+}
+
+/// The merged result type under the same rule: a tagged-scalar first
+/// arm type lifts to `T?` when the arm set mixed in a `null` body.
+export fn arm_merge_ty_mixed(mixed: bool, first_ty: ValueType) -> ValueType {
+    if mixed && !vtype_is_optional(first_ty) && optional_repr_tagged(first_ty) {
+        return ValueType.Optional(first_ty)
+    }
+    first_ty
+}
+
 // ── List<T?> construction from emitted values (single box-loop) ──
 // `List<T?>` must box each present scalar element into the tagged-optional
 // repr (otherwise a later unwrap derefs a raw scalar as a box pointer and

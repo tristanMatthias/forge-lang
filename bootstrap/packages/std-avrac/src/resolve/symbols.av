@@ -76,6 +76,26 @@ export fn symbol_kind_tag(kind: SymbolKind) -> string {
     }
 }
 
+/// True for the nominal TYPE kinds (type/enum/trait/newtype/union/shape)
+/// — everything that names a type in type position, as opposed to a
+/// value (fn/const/method) or an alias. The declared-canonicals probe
+/// (resolve/names.av) filters on this so a same-module fn/const can never
+/// shadow an imported type during type resolution.
+export fn symbol_kind_is_type(kind: SymbolKind) -> bool {
+    match kind {
+        .TypeSym -> true
+        .EnumSym -> true
+        .TraitSym -> true
+        .NewtypeSym -> true
+        .UnionAliasSym -> true
+        .ShapeSym -> true
+        .FnSym -> false
+        .ConstSym -> false
+        .MethodSym -> false
+        .AliasSym -> false
+    }
+}
+
 /// A symbol's content-addressed identity: FNV-1a-64 over
 /// `qualified-path#kind-tag`. `#` cannot appear in a qualified path
 /// (identifier chars + `::` only), so the encoding is injective — no

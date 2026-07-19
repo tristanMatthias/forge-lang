@@ -11,96 +11,27 @@
 //   - `from_bytes` + nested types + List<T> + enums live in
 //     follow-up sub-tickets (nce6.1.B–F).
 //
-// Pipeline placement: this pass runs after expand_components and
-// before resolve_names. Synthesising pre-resolution lets the
-// resolver bind both the original TypeDecl and the synthesised
-// methods in the same pass; the call sites in the generated bodies
-// use unqualified names (`bytes_builder`, `write_int`) that the
-// resolver wires up to @std/process the same way a hand-written
-// impl would.
+// Pipeline placement: synthesis runs inside the unified
+// derive_program pass (features/comptime/expand_macro.av) — the
+// @derive dispatcher routes `@marshal` (aliased to @derive(Marshal))
+// to the per-decl seam below. The historical whole-program pre-resolve
+// walker is gone: a pre-resolve splice would now double-derive every
+// @marshal type, since resolve_and_expand_program expands the
+// annotation itself.
 
-use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, find_annotation, rewrap_annotations, stmt_unwrap, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
 use core.{NodeStore}
-
-// ── Public entry ──
-
-/// Walk `stmts`, emit a paired `impl` next to every `@marshal`-
-/// annotated TypeDecl. Original decls stay in place — the resolver
-/// sees the type AND its methods together.
-///
-/// Fast-path: when no `@marshal` annotation is present, returns
-/// the input unchanged (matches the expand_macros zero-cost
-/// pattern).
-export fn derive_marshal(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
-    if !any_marshal_annotation(store, ids) { return ids }
-    walk(store, ids)
-}
-
-fn walk(store: NodeStore, ids: List<StmtId>) -> List<StmtId> {
-    mut out: List<StmtId> = []
-    mut i = 0
-    while i < ids.length {
-        let id = ids[i]
-        // Module bodies host TypeDecls too — recurse so a
-        // `@marshal type T` declared inside a submodule still
-        // gets its impl synthesised. Match on the PEELED node so
-        // annotated module wrappers (e.g. the test assembler's
-        // @deferred_init) stay transparent, and rebuild inside
-        // the original annotation layers so the wrapper survives.
-        // Module bodies are already `List<StmtId>`, so the recursion
-        // stays arena-native — no sstmts_of/rows_of round-trip.
-        match stmt_unwrap(store, store.stmts.get(id)) {
-            .Module(name, body) -> {
-                let walked = walk(store, body)
-                let new_mod = rewrap_annotations(store, store.stmts.get(id), Stmt.Module(name, walked))
-                out.push(store.stmts.add_leaf(new_mod))
-            }
-            _ -> {
-                out.push(id)
-                let derived = derive_for(store, store.stmts.get(id))
-                mut di = 0
-                while di < derived.length {
-                    out.push(derived[di])
-                    di = di + 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    out
-}
-
-// ── Annotation detection ──
-
-fn any_marshal_annotation(store: NodeStore, ids: List<StmtId>) -> bool {
-    mut i = 0
-    while i < ids.length {
-        let id = ids[i]
-        if has_marshal(store, store.stmts.get(id)) { return true }
-        match stmt_unwrap(store, store.stmts.get(id)) {
-            .Module(_, body) -> {
-                if any_marshal_annotation(store, body) { return true }
-            }
-            _ -> {}
-        }
-        i = i + 1
-    }
-    false
-}
-
-fn has_marshal(store: NodeStore, stmt: Stmt) -> bool {
-    find_annotation(store, stmt, "marshal") != null
-}
 
 // ── Synthesis ──
 
-/// If `stmt` is an `@marshal`-annotated TypeDecl, return the
-/// synthesised `[impl T {...}, fn from_bytes_T(b) -> T {...}]`
-/// as arena `StmtId`s. Empty list when no synthesis applies.
-fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
+/// The per-decl seam for the `Marshal` capability — the same
+/// impls this file has always built, minus the @marshal-annotation gate
+/// (the @derive dispatcher has already routed the decl here). Returns []
+/// for non-type/enum decls, mirroring the annotation path's silent skip
+/// — behavior parity between the `@marshal` and `@derive(Marshal)`
+/// spellings by construction.
+export fn derive_marshal_stmts_for(store: NodeStore, inner: Stmt) -> List<StmtId> {
     let empty: List<StmtId> = []
-    if !has_marshal(store, stmt) { return empty }
-    let inner = stmt_unwrap(store, stmt)
     match inner {
         .TypeDecl(name, _, fields) -> derive_stmts(store, name, fields)
         .EnumDecl(name, _, variants) -> derive_enum_stmts(store, name, variants)
@@ -108,6 +39,17 @@ fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
     }
 }
 
+
+/// Mangle a generated artifact name from a type name. The builders run
+/// POST-resolve (inside the unified derive pass), so `type_name` arrives
+/// module-QUALIFIED (`mod::MPoint`) — the mangle must use the SHORT name
+/// (`from_bytes_MPoint`, declared inside the same module and qualified by
+/// the re-resolve like any sibling), while type REFERENCES keep the
+/// qualified form. Mirrors the walker engine's `method_symbol` short-name
+/// rule.
+fn marshal_artifact_name(prefix: string, type_name: string) -> string {
+    prefix + type_short_name(type_name)
+}
 
 /// Build the synthesised stmts for a `@marshal type T = {...}`:
 ///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)
@@ -117,11 +59,11 @@ fn derive_for(store: NodeStore, stmt: Stmt) -> List<StmtId> {
 /// Avra has no static-method syntax — `T.from_bytes(...)` parses
 /// as enum-variant access. The naming convention `<Type>_from_bytes`
 /// mirrors what generic `isolated<T: Marshal>(body)` will look up
-/// once nce6.1.E lands.
+/// once generic marshal bounds land.
 ///
 /// Field types outside {int, bool, string} fall through to a
 /// no-op write so the impl still type-checks but the round-trip
-/// would be lossy; nce6.1.B/C/D extend the codec table to handle
+/// would be lossy; the codec-table extensions handle
 /// List<T> / nested @marshal / enums.
 ///
 /// Returns a 3-element List<StmtId>: [impl_stmt, from_bytes_fn, isolated_fn].
@@ -391,7 +333,7 @@ fn build_from_bytes_fn(store: NodeStore, type_name: string, fields: List<FieldEn
     // Top-level fn named `from_bytes_<T>` (no static-method syntax
     // in Avra). nce6.1.E will route generic `isolated<T: Marshal>`
     // through this naming convention.
-    let fn_name = "from_bytes_" + type_name
+    let fn_name = marshal_artifact_name("from_bytes_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params,
         vtype_struct(type_name, 0), body)
@@ -437,7 +379,7 @@ fn read_one(store: NodeStore, name: string, ty: ValueType) -> List<StmtId> {
         //   let <n> = from_bytes_<InnerT>(__nested_<n>)
         .Struct(inner_name, _, _) -> {
             let stmts = read_then_reassign(store, name, "__nested_" + name, "read_bytes")
-            let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
+            let from_bytes_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", inner_name)),
                 [store.exprs.add_leaf(Expr.Ident("__nested_" + name))])
             let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
             let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
@@ -547,7 +489,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
     ]
     let raw_stmt = Stmt.LetDestructure(raw_names, store.exprs.add_leaf(raw_read))
     // __acc = __acc.push(from_bytes_<Inner>(__raw))
-    let from_call = mk_call(store, Expr.Ident("from_bytes_" + inner_name),
+    let from_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", inner_name)),
         [store.exprs.add_leaf(Expr.Ident(rawname))])
     let push_call = method_call(store, Expr.Ident(aname), "push", [store.exprs.add_leaf(from_call)])
     let acc_assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(aname, store.exprs.add_leaf(push_call))))
@@ -742,7 +684,7 @@ fn build_enum_from_bytes_fn(store: NodeStore, type_name: string, variants: List<
     let dispatch = build_enum_dispatch(store, type_name, variants)
     let init_part: List<StmtId> = [store.stmts.add_leaf(init_let)]
     let body = append_ids(init_part, append_ids(tag_reads, dispatch))
-    let fn_name = "from_bytes_" + type_name
+    let fn_name = marshal_artifact_name("from_bytes_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     let empty_args: List<ValueType> = []
     Stmt.Function(fn_name, empty_tp, params,
@@ -846,7 +788,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     let isolated_call = mk_call(store, Expr.QualifiedIdent("@std::process::isolated_bytes"),
         [store.exprs.add_leaf(inner_closure)])
     // Ok arm: Result.Ok(from_bytes_<T>(b))
-    let from_bytes_call = mk_call(store, Expr.Ident("from_bytes_" + type_name),
+    let from_bytes_call = mk_call(store, Expr.Ident(marshal_artifact_name("from_bytes_", type_name)),
         [store.exprs.add_leaf(Expr.Ident("b"))])
     let ok_body = Expr.EnumCtor("Result", "Ok",
         [store.exprs.add_leaf(from_bytes_call)])
@@ -862,7 +804,7 @@ fn build_isolated_fn(store: NodeStore, type_name: string, ty: ValueType) -> Stmt
     arms.push(MatchArm { pattern: err_pattern, guard_id: null, body_id: store.exprs.add_leaf(err_body) })
     let match_expr = Expr.MatchExpr(store.exprs.add_leaf(isolated_call), arms)
     let body_stmts: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(match_expr)))]
-    let fn_name = "isolated_" + type_name
+    let fn_name = marshal_artifact_name("isolated_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     Stmt.Function(fn_name, empty_tp, params, ret_ty, body_stmts)
 }

@@ -51,7 +51,7 @@ use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Patt
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
-use resolve.{SymbolKind, SymbolTable, symbol_table_new}
+use resolve.{SymbolKind, SymbolTable, symbol_table_new, symbol_kind_is_type}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
 use core.{TypeParamEntry, type_param_has}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
@@ -149,9 +149,9 @@ type GlobalItemReg = {
     idx: ptr,
 }
 
-/// Membership set of every declared item's CANONICAL name (C-side cstr map,
+/// Membership set of every declared TYPE's CANONICAL name (C-side cstr map,
 /// value 1), built in the same pre-pass as the global index. It answers
-/// "does module M declare name N" (`M::N` present) BEFORE the rewrite walk
+/// "does module M declare TYPE N" (`M::N` present) BEFORE the rewrite walk
 /// has registered anything — the local-shadowing probe in
 /// `resolve_type_in_ctx` needs it because the TypeRegistry fills LAZILY
 /// during the walk: a SELF-reference (a recursive enum's variant field) or a
@@ -162,13 +162,19 @@ type GlobalItemReg = {
 /// then cross-resolved — module B's self-recursive `Wrap` acquired module
 /// A's generic `Wrap<T>` and tripped the F1004 arity gate at its own
 /// declaration (the type-name sibling of the per-module const-scoping fix).
+/// TYPE-ONLY by design: this set feeds `resolve_type_in_ctx`'s local
+/// probe, whose registry half (`type_registry_id_for`) is inherently
+/// type-only. Adding fns/consts made a same-module `fn Foo` shadow an
+/// explicitly imported `type Foo` — the annotation resolved to the fn's
+/// canonical and the struct value silently collapsed to null.
 fn declared_canonicals_build(items: List<ModuleItemEntry>) -> ptr {
     let set = avra_map_new_cstr()
     mut i = 0
     while i < items.length {
         let it = items[i]
-        let canon = it.canonical
-        avra_map_set_cstr(set, canon, 1)
+        if symbol_kind_is_type(it.kind) {
+            avra_map_set_cstr(set, it.canonical, 1)
+        }
         i = i + 1
     }
     set
@@ -278,7 +284,13 @@ fn build_global_index_from_graph(items: List<GraphItem>) -> List<ModuleItemEntry
     mut i = items.length - 1
     while i >= 0 {
         let it = items[i]
-        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported, kind: SymbolKind.FnSym })
+        // GraphItem (core layer) can't name SymbolKind — it carries the
+        // coarse is_type bit; map it back so the probe (declared_canonicals_build)
+        // sees types as types. Non-types collapse to FnSym: the graph-path index
+        // never distinguishes fn/const/method downstream, and this set is used
+        // only for the type probe.
+        let k = if it.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym }
+        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported, kind: k })
         i = i - 1
     }
     out
@@ -435,6 +447,8 @@ fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: 
         let canonical = type_qualified_name(source_mod, name)
         // AliasSym: names another module's definition — never interned
         // as a symbol of its own (the definition interns in its module).
+        // Not a type kind, so the declared-canonicals probe skips it — safe:
+        // its canonical anchors at the SOURCE module, never the current one.
         out.push(ModuleItemEntry { short_name: name, canonical, exported: true, kind: SymbolKind.AliasSym })
         i = i + 1
     }
@@ -887,7 +901,7 @@ export type ResolverState = {
     graph: ModuleGraph,
     aliases: List<AliasBinding>,
     global_index: GlobalItemReg,
-    // Membership set of every declared item's CANONICAL name (C-side cstr
+    // Membership set of every declared TYPE's CANONICAL name (C-side cstr
     // map, value 1) — see `declared_canonicals_build` for why the local-
     // shadowing probe needs it alongside the lazily-filled type registry.
     declared: ptr,
@@ -1095,14 +1109,64 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
         let sn = it.short_name
         let canon = it.canonical
         let exp = it.exported
-        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp, kind: SymbolKind.FnSym })
+        let k = if it.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym }
+        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp, kind: k })
     }
     let new_global_index = global_item_reg_build(new_items_list)
 
+    // Sibling lookup (rewrite_ident step 5) resolves through
+    // the TREE's per-module item lists — a module-scoped spliced decl
+    // must join its module's node, or a same-module caller of a
+    // macro-introduced free fn (`from_bytes_T(...)` beside a
+    // `@marshal type T`) can never qualify the reference and dies as
+    // F3000 at scope validation. Top-level splices (canonical ==
+    // short_name) have no module node and skip.
+    mut new_tree = state.tree
+    for added in new_items {
+        let mod_path = canonical_module_prefix(added.canonical, added.short_name)
+        if mod_path != "" {
+            new_tree = module_tree_add_item(new_tree, mod_path, ModuleItemEntry {
+                short_name: added.short_name,
+                canonical: added.canonical,
+                exported: added.exported,
+                kind: if added.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym },
+            })
+        }
+    }
+
     state with {
+        tree: new_tree,
         graph: state.graph with { all_items: updated_all },
         global_index: new_global_index,
         declared: declared_canonicals_build(new_items_list),
+    }
+}
+
+/// The module-path prefix of `canonical` when it qualifies `short`
+/// (`"m::sub::f"`/`"f"` → `"m::sub"`), else "" (top-level decl).
+fn canonical_module_prefix(canonical: string, short: string) -> string {
+    let suffix = "::${short}"
+    if canonical.length <= suffix.length { return "" }
+    if !canonical.ends_with(suffix) { return "" }
+    canonical.substring(0, canonical.length - suffix.length)
+}
+
+/// Rebuild the tree with `item` appended to the items of the node at
+/// `path` (walking siblings + children). Unchanged when the path has
+/// no node.
+fn module_tree_add_item(tree: ModuleNode, path: string, item: ModuleItemEntry) -> ModuleNode {
+    match tree {
+        .End -> ModuleNode.End
+        .Node(name, p, items, children, next) -> {
+            if p == path {
+                mut merged: List<ModuleItemEntry> = []
+                for i in items { merged.push(i) }
+                merged.push(item)
+                ModuleNode.Node(name, p, merged, children, module_tree_add_item(next, path, item))
+            } else {
+                ModuleNode.Node(name, p, items, module_tree_add_item(children, path, item), module_tree_add_item(next, path, item))
+            }
+        }
     }
 }
 
@@ -1116,7 +1180,12 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
 fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
     mut out = acc
     for id in ids {
-        match store.stmts.get(id) {
+        // Peel Annotated wrappers for the DISPATCH (an
+        // `@deferred_init`-wrapped module — the test assembler's
+        // per-file unit shape — must still descend; the wrapper-
+        // blindness class), while from_macro provenance stays keyed
+        // on the raw row id.
+        match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
                 collect_macro_items(store, body, inner_path, out, symbols)
@@ -1131,7 +1200,7 @@ fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, ac
                     collect_item_from_stmt(store, store.stmts.get(id), mod_path, false, entries)
                     intern_item_symbols(symbols, entries)
                     for e in entries {
-                        out.push(GraphItem { short_name: e.short_name, canonical: e.canonical, exported: e.exported })
+                        out.push(GraphItem { short_name: e.short_name, canonical: e.canonical, exported: e.exported, is_type: symbol_kind_is_type(e.kind) })
                     }
                 }
             }
@@ -1294,7 +1363,7 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             // re-runs rewrite_uses, and already-qualified names from
             // the first pass must not get doubly-prefixed
             // (`@std::crypto::foo` → `@std::crypto::@std::crypto::foo`).
-            let already_qualified = name.length > 0 && name.substring(0, 1) == "@"
+            let already_qualified = (name.length > 0 && name.substring(0, 1) == "@") || name.contains("::")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method && !already_qualified { type_qualified_name(ctx.current_module, name) } else { name }
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, params)

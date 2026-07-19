@@ -23,16 +23,16 @@
 // float @comptime call), so plain `make diff-test` stays green.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 /// Compile `source` with the current `./build/bs2`, link, run the binary, and
-/// return its stdout. `diagnose.sh --run` emits ONLY the program's stdout
-/// (compiler diagnostics are captured separately), and its fixture-binary cache
-/// keys on the bs2 mtime, so a rebuilt compiler always recompiles the fixture.
+/// return its stdout — via the standard content-keyed fixture cache (why:
+/// the previous raw `timeout 90 … 2>/dev/null` shell-out raced genuine
+/// suite congestion on its wall-clock and swallowed the evidence, the exact
+/// generator of this family's bundled-only flakes).
 fn run_fixture(tag: string, source: string) -> string {
     let path = "/tmp/avra_uabd_${tag}.av"
-    write_fixture(path, source)
-    avra_shell_exec("timeout 90 bash scripts/diagnose.sh --run '${path}' 2>/dev/null || true")
+    write_fixture_and_run(path, source)
 }
 
 spec "uabd: a float @comptime fold reaches stdout as its correct value" {

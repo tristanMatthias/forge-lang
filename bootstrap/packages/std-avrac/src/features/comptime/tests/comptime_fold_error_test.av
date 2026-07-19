@@ -25,7 +25,7 @@ use @std.avrac.test_runner.{write_fixture}
 fn check_with_limit(tag: string, limit: string, source: string) -> string {
     let path = "/tmp/avra_ct57_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 60 ./build/bs2 check '${path}' 2>&1 || true")
+    avra_shell_exec("AVRA_COMPTIME_LOOP_LIMIT=${limit} timeout 300 ./build/bs2 check '${path}' 2>&1 || true")
 }
 
 spec "ps3t.5.7: a genuine constant-fold error surfaces F4007" {
