@@ -315,7 +315,15 @@ DIFF & ANALYSIS
   --cache-gc [DAYS]    Age-based cache GC across the bootstrap root AND
                        every packages/*/ root (`bs2 cache prune` is
                        per-project-root). mtime == last use (hits touch),
-                       so only cold entries go. Default DAYS=30.
+                       so only cold entries go. Default DAYS=30. Also
+                       reclaims orphaned /tmp test scratch older than 10m.
+  --prune-tmp-scratch [MIN]
+                       Reclaim orphaned /tmp test scratch (/tmp/avra_* +
+                       /tmp/build) that escapes the per-root cache prune —
+                       the t-2qn0 leak. MIN = mtime guard in minutes (0 =
+                       unconditional; spares in-flight `bs2 test` scratch
+                       above 0). Folded into --cache-gc (10m) and
+                       --clean-cache (0).
   --cache-stats [ROOT] [DAYS]
                        Cache observability: per-package entry counts,
                        sizes, and cold-entry counts (older than DAYS,
@@ -2556,6 +2564,44 @@ mode_cache_fuzz_parallel() {
 # (it reads $PWD), but the heavyweight slots live in the PER-PACKAGE
 # caches (packages/*/build/cache — a single std-avrac producer slot is
 # ~40MB). Sweep the bootstrap root plus every package root in one go.
+# ── t-2qn0: reclaim orphaned /tmp test scratch ──
+# The build-cache spec tests (build/tests/*_test.av) stand up isolated PROJECT
+# roots under /tmp — /tmp/avra_<probe>/ each with its own build/cache — to
+# exercise cache behaviour OUTSIDE the repo tree (project-root detection,
+# clean-project cache flows). They rm-rf their dir at START for a clean slate
+# but not at END, so the last run's tree lingers and pid-suffixed probes leave a
+# fresh tree EVERY run. A bare `bs2 compile /tmp/foo.av` likewise parks its cache
+# at /tmp/build (project_dir == $PWD). Because all of this lives under /tmp,
+# neither `bs2 cache prune` (per-project-root) nor `make clean` (drops
+# bootstrap/build) ever reclaims it — it accrues until the fixed-allowance
+# container ENOSPCs (t-2qn0). This sweep brings that scratch back under the
+# disk-hygiene tooling. An mtime guard (minutes) spares scratch a CONCURRENT
+# `bs2 test` is still writing to; 0 = unconditional (the explicit-wipe path).
+prune_tmp_scratch() {
+  local min_age="${1:-0}"
+  local reclaimed=0 d list
+  if [ "$min_age" -gt 0 ]; then
+    list=$(find /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) -mmin "+${min_age}" 2>/dev/null)
+  else
+    list=$(find /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) 2>/dev/null)
+  fi
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    rm -rf "$d" && reclaimed=$(( reclaimed + 1 ))
+  done <<EOF
+$list
+EOF
+  log "[tmp-scratch] reclaimed $reclaimed orphaned /tmp scratch dir(s) (min age ${min_age}m)"
+}
+
+# Usage: --prune-tmp-scratch [MIN_AGE_MINUTES]   (default 0 = unconditional)
+# Standalone entry point for the /tmp reclaim above — invoked by the spec test
+# (build/tests/tmp_scratch_gc_test.av) and available for manual disk recovery.
+mode_prune_tmp_scratch() {
+  prune_tmp_scratch "${1:-0}"
+  ok "tmp-scratch prune done"
+}
+
 # Usage: --cache-gc [DAYS]   (default 30)
 mode_cache_gc() {
   local days="${1:-30}"
@@ -2566,6 +2612,10 @@ mode_cache_gc() {
     log "[cache-gc] $root"
     ( cd "$root" && "$BS2" cache prune --max_age_days="$days" )
   done
+  # Also reclaim the /tmp test scratch that escapes the per-root prune above.
+  # Guard at 10m so an in-flight `bs2 test` (which touches its scratch every few
+  # seconds) is spared while session-accumulated junk goes.
+  prune_tmp_scratch 10
   ok "cache-gc done (max age ${days}d; mtime == last use, so only cold entries went)"
 }
 
@@ -2664,6 +2714,13 @@ mode_clean_cache() {
     log "[clean-cache] wiped $d (legacy compile-cache location)"
     wiped=$(( wiped + 1 ))
   done
+  # A full wipe of the REAL bootstrap tree reclaims the /tmp test scratch too
+  # (unconditional — the caller asked for everything cold). Gated on the default
+  # root so a sandbox-root invocation (the cache spec tests pass a /tmp root)
+  # cleans only that root and never sweeps sibling /tmp scratch. t-2qn0.
+  if [ "$root" = "$BOOTSTRAP_DIR" ]; then
+    prune_tmp_scratch 0
+  fi
   ok "clean-cache: $wiped cache dir(s) wiped — next build is cold"
 }
 
@@ -2801,6 +2858,7 @@ main() {
     --slot-exec)          mode_slot_exec "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
+    --prune-tmp-scratch)  mode_prune_tmp_scratch "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
     --cache-stats)        mode_cache_stats "$@" ;;
     --clean-cache)        mode_clean_cache "$@" ;;

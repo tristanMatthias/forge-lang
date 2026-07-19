@@ -1,0 +1,50 @@
+// t-2qn0: the /tmp test-scratch leak is now reachable by the disk-hygiene
+// tooling. The build-cache specs stand up isolated PROJECT roots under
+// /tmp (/tmp/avra_<probe>/build/cache) to exercise cache behaviour outside
+// the repo tree, and a bare `bs2 compile /tmp/foo.av` parks its cache at
+// /tmp/build (project_dir == $PWD). Neither `bs2 cache prune` (per-project
+// root) nor `make clean` (drops bootstrap/build) ever walked /tmp, so it
+// accrued until the fixed-allowance container ENOSPCed. `diagnose.sh
+// --prune-tmp-scratch [MIN]` (folded into --cache-gc at 10m and
+// --clean-cache at 0) reclaims it.
+//
+// The invariant that matters for a PARALLEL suite: the prune reclaims STALE
+// scratch (a finished run's leftovers) but SPARES scratch a concurrent
+// `bs2 test` is still writing to — enforced by an mtime guard in minutes.
+// This test only ever prunes with a wide guard, so it can never delete a
+// sibling test's active /tmp scratch.
+
+use @std.avrac.core.{avra_shell_exec, avra_mkdir_p, avra_getpid, avra_selfhost_file_exists}
+
+spec "t-2qn0: --prune-tmp-scratch reclaims stale /tmp scratch and spares fresh" {
+    then "an aged /tmp/avra_* project root is reclaimed; a just-touched one survives the guard" {
+        let pid = string(avra_getpid())
+        let stale = "/tmp/avra_t2qn0gc_stale_${pid}"
+        let fresh = "/tmp/avra_t2qn0gc_fresh_${pid}"
+        avra_shell_exec("rm -rf '${stale}' '${fresh}'")
+        // Both are real scratch project roots with a build/cache inside.
+        let _ = avra_mkdir_p("${stale}/build/cache/slot")
+        let _ = avra_mkdir_p("${fresh}/build/cache/slot")
+        // Backdate the stale root past the guard; the fresh one keeps its
+        // now-mtime (touch the top dir LAST so the inner mkdir doesn't bump it).
+        avra_shell_exec("touch -d '3 hours ago' '${stale}'")
+
+        // Guard at 90m: stale (mtime 3h) goes, fresh (mtime ~0) stays. A wide
+        // guard also means every SIBLING test's fresh scratch is untouched.
+        let out = avra_shell_exec("bash scripts/diagnose.sh --prune-tmp-scratch 90 2>&1")
+
+        let ok = out.contains("[tmp-scratch] reclaimed")
+            && avra_selfhost_file_exists(stale) == 0
+            && avra_selfhost_file_exists(fresh) == 1
+
+        avra_shell_exec("rm -rf '${stale}' '${fresh}'")
+        ok
+    }
+}
+
+spec "t-2qn0: cache-gc's help advertises the /tmp reclaim" {
+    then "the --prune-tmp-scratch mode is documented and wired" {
+        let help = avra_shell_exec("bash scripts/diagnose.sh --help 2>&1")
+        help.contains("--prune-tmp-scratch") && help.contains("t-2qn0 leak")
+    }
+}

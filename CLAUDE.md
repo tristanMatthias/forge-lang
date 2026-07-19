@@ -116,7 +116,7 @@ make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-id
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
-make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d.
+make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d. Also reclaims orphaned /tmp test scratch >10m (t-2qn0).
 make clean-cache           # wipe EVERY cache (per-package + top-level). Guarded: never touches src/.
 make clean                 # remove all build artifacts (3-min seed rebuild on next make)
 make help                  # show all targets
@@ -332,7 +332,7 @@ If you discover a missing language feature or infrastructure gap while working, 
 
 ## CRITICAL RULE: Out-of-Space Recovery
 
-When any command fails with ENOSPC / "no space left on device" / similar disk-full errors, do NOT ask the user to clean up manually. Run `make clean` from `bootstrap/` first (drops `build/` — caches, test-shard logs, coverage artifacts, staged binaries; tens of GB recoverable on a warm tree). Then retry the failing command. The bootstrap rebuilds itself from `seed/seed.ll`, so wiping `build/` is always safe — never destroys uncommitted source.
+When any command fails with ENOSPC / "no space left on device" / similar disk-full errors, do NOT ask the user to clean up manually. Run `make clean` from `bootstrap/` first (drops `build/` — caches, test-shard logs, coverage artifacts, staged binaries; tens of GB recoverable on a warm tree). Then retry the failing command. The bootstrap rebuilds itself from `seed/seed.ll`, so wiping `build/` is always safe — never destroys uncommitted source. If the pressure is the **/tmp test-scratch leak** (build-cache specs stand up `/tmp/avra_*` project roots; a bare `bs2 compile /tmp/foo.av` parks its cache at `/tmp/build` — both escape the repo-relative caches), reclaim it with `bash scripts/diagnose.sh --prune-tmp-scratch 0` (unconditional) — this is now folded into `make cache-gc` (10m guard) and `make clean-cache` (t-2qn0).
 
 ## Adding a Feature — MANDATORY PROCESS
 
@@ -472,7 +472,7 @@ spawning, so a stale artifact can no longer mask a crashed child (the old
 
 Do NOT rebuild `bs2` (or clear caches) while a sweep is running; the runner re-invokes `./build/bs2` per compile and a mid-sweep rebuild silently invalidates the run.
 
-**Sweep-first COMMITS on a small box.** The pre-commit hook's parallel per-file suite OOMs when it runs COLD — and any compiler-source edit (comments included) changes source fingerprints, so every shard compile goes cold. The commit pattern that survives: `make build-quick && make sweep FRESH=1` first (sequential, restart-resumable), THEN `git commit` — the hook's suite replays the sweep-warmed fixture captures at low load (a warm gate is ~2-3 min). Doc/test-only commits (no compiler source) skip the sweep. Also check `du -sh /tmp/build` when disk runs low: fixtures compiling with cwd=/tmp leak a compile cache outside `make cache-gc`'s reach (t-wrgc).
+**Sweep-first COMMITS on a small box.** The pre-commit hook's parallel per-file suite OOMs when it runs COLD — and any compiler-source edit (comments included) changes source fingerprints, so every shard compile goes cold. The commit pattern that survives: `make build-quick && make sweep FRESH=1` first (sequential, restart-resumable), THEN `git commit` — the hook's suite replays the sweep-warmed fixture captures at low load (a warm gate is ~2-3 min). Doc/test-only commits (no compiler source) skip the sweep. Also check `du -sh /tmp/build` when disk runs low: fixtures compiling with cwd=/tmp leak a compile cache; `make cache-gc` now reaches it (t-2qn0 — `--prune-tmp-scratch` sweeps `/tmp/avra_*` + `/tmp/build`; the residual cwd=/tmp compile foot-gun is t-wrgc).
 
 ### C-side debug tools (runtime.c)
 - `avra_trace_i64(v1, v2)` / `avra_trace_ptr(label, val)` — safe tracing (no string alloc)
