@@ -47,7 +47,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, Variant, stmt_unwrap, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
+use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, Variant, stmt_unwrap, rewrap_annotations, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
@@ -1056,12 +1056,17 @@ fn rewrite_macro_stmts(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
             out.push(ctx.nodes.restmt(rewrite_stmt(ctx, ctx.nodes.stmts.get(id)), id))
         } else {
             // Descend into Module bodies so spliced stmts nested
-            // inside a Module wrapper are still picked up.
-            match ctx.nodes.stmts.get(id) {
+            // inside a Module wrapper are still picked up. Dispatch on
+            // the UNWRAPPED node so an `@export mod` / metadata-wrapped
+            // `Annotated(annots, Module(..))` is recursed into too
+            // (t-oj2h) — then rebuild through `rewrap_annotations` so the
+            // module keeps its annotation layers.
+            match stmt_unwrap(ctx.nodes, ctx.nodes.stmts.get(id)) {
                 .Module(name, body) -> {
                     let mod_ctx = ctx with { current_module: type_qualified_name(ctx.current_module, name), module_top: true }
                     let new_body = rewrite_macro_stmts(mod_ctx, body)
-                    out.push(ctx.nodes.restmt(Stmt.Module(name, new_body), id))
+                    let rebuilt = rewrap_annotations(ctx.nodes, ctx.nodes.stmts.get(id), Stmt.Module(name, new_body))
+                    out.push(ctx.nodes.restmt(rebuilt, id))
                 }
                 _ -> out.push(id)
             }
@@ -1180,11 +1185,15 @@ fn module_tree_add_item(tree: ModuleNode, path: string, item: ModuleItemEntry) -
 fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
     mut out = acc
     for id in ids {
-        // Peel Annotated wrappers for the DISPATCH (an
-        // `@deferred_init`-wrapped module — the test assembler's
-        // per-file unit shape — must still descend; the wrapper-
-        // blindness class), while from_macro provenance stays keyed
-        // on the raw row id.
+        // Peel Annotated wrappers for the DISPATCH so a macro spliced
+        // inside an annotated module — an `@deferred_init`-wrapped module
+        // (the test assembler's per-file unit shape), an `@export mod foo
+        // { .. }`, or a metadata-synthesized `Annotated(annots,
+        // Module(..))` — still descends and is registered (t-oj2h; the
+        // wrapper-blindness class). from_macro provenance stays keyed on
+        // the raw row id, and the non-Module arm passes the ORIGINAL
+        // (possibly annotated) stmt to `collect_item_from_stmt`, which
+        // threads `@export` itself.
         match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
