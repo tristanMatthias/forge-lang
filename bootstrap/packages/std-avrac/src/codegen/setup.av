@@ -17,7 +17,7 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body, fn_belongs_to_lib_pkg}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -76,7 +76,7 @@ type DeclaredCtx = {
 /// wrapper (`main` / `__bs_top_level` / `__avra_lib_top_level`). No user
 /// function BODY is emitted here — that is the caller's next phase. The
 /// returned Ctx has its builder positioned at the wrapper's entry block.
-fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool) -> DeclaredCtx {
+fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool, define_release: bool) -> DeclaredCtx {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -462,7 +462,16 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     // Generate __release_TypeName functions for recursive RC field cleanup.
     // Must happen after Ctx is built (needs all type registries) but before
     // function bodies (they may call release functions via emit_rc_release_typed).
-    emit_release_functions(ctx, cycles)
+    // Per-fn CGU (define_release=false): declare the release fns as externs
+    // only — the wrapper unit owns their single definition, and a per-fn
+    // module resolves its __release_* calls against it at link time. Emitting
+    // the bodies in every per-fn module would duplicate-symbol at link.
+    if define_release {
+        emit_release_functions(ctx, cycles)
+    } else {
+        declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
+        declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
+    }
 
     // Reposition builder at main's entry after release fn emission
     // (whole-program path only — the per-fn path never gave main a body).
@@ -479,7 +488,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
 /// Ctx (caller writes IR / disposes).
 fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
-    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, true)
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, true, true)
     mut ctx = dc.ctx
     let entry = dc.entry
     let user_main = dc.user_main
@@ -588,7 +597,7 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
 /// multi-unit linking is a later increment.)
 export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
-    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false)
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false, false)
     mut ctx = dc.ctx
     match emit_one_fn_body(ctx, stmts, target) {
         .Ok(found) -> {
@@ -623,6 +632,103 @@ export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: 
             if write_result != 0 {
                 return Result.Err("codegen error: failed to write per-fn module IR to ${output_path}")
             }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// Per-fn CGU (ps3t.8.6.1): collect the qualified names of every non-external
+/// fn — the targets, each of which becomes its own per-fn module. Mirrors
+/// emit_function_bodies' walk (recurses Impl + non-external Module; skips
+/// @external_unit), so the target set is precisely the bodies the
+/// whole-program module would have defined. The synthesized wrapper
+/// (main/__bs_top_level) is NOT here — it's the wrapper unit, emitted
+/// separately. (Whole-program scope: lib-ownership filtering, for the
+/// library CGU path, is a later concern — emit_one_fn_body already re-checks
+/// ownership per target.)
+export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    for id in stmts {
+        let node = store.stmts.get(id)
+        let is_external = find_annotation(store, node, "external_unit") != null
+        match stmt_unwrap(store, node) {
+            .Function(name, _, _, _, _) -> {
+                if !is_external {
+                    out = out.push(name)
+                }
+            }
+            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out) }
+            .Module(_, body) -> {
+                if !is_external { out = collect_fn_targets(store, body, out) }
+            }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// Per-fn CGU (ps3t.8.6.1): emit the WRAPPER unit — the module that owns
+/// the synthesized top-level entry (main / __bs_top_level with the
+/// module-level statements + __init_<mod> chain) and the single definition
+/// of every __release_* fn. Every USER fn is declare-only here (their
+/// bodies are per-fn units). It is codegen_program WITHOUT emit_function_bodies.
+/// (3a scope: the no-user-main case. When the user defines `main`, the
+/// __bs_top_level call-injection belongs in main's per-fn unit — a 3b follow-up.)
+export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, false, false, "", type_reg, false, store, true, true)
+    mut ctx = dc.ctx
+    let entry = dc.entry
+    let user_main = dc.user_main
+    // NO emit_function_bodies — user fns are per-fn units (declare-only here).
+    ctx.position(entry)
+    ctx.rc_releasable = analyze_releasable(store, stmts)
+    let initial: List<VarBinding> = []
+    match emit_top_level(ctx, initial, stmts) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.dispose()
+            return Result.Err(e)
+        }
+    }
+    if !ctx.has_terminator() {
+        if user_main == null {
+            ctx.call("avra_test_summary", [])
+        }
+        ctx.call("avra_rc_collect", [])
+        ctx.ret(ctx.i64(0), .Int)
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_wrapper_module: LLVM module verification failed")
+    }
+    Result.Ok(ctx)
+}
+
+/// Emit a single per-fn module's object to disk. emit_one_fn_module +
+/// avra_llvm_emit_object + dispose.
+export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    match emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store) {
+        .Ok(ctx) -> {
+            let r = avra_llvm_emit_object(ctx.module, obj_path)
+            ctx.dispose()
+            if r != 0 { return Result.Err("emit_fn_object: failed to emit object for '${target}'") }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// Emit the wrapper unit's object to disk.
+export fn emit_wrapper_object(stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    match emit_wrapper_module(stmts, type_reg, store) {
+        .Ok(ctx) -> {
+            let r = avra_llvm_emit_object(ctx.module, obj_path)
+            ctx.dispose()
+            if r != 0 { return Result.Err("emit_wrapper_object: failed to emit wrapper object") }
             Result.Ok(0)
         }
         .Err(e) -> Result.Err(e)

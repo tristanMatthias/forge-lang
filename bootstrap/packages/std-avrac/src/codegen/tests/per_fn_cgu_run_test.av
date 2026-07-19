@@ -1,0 +1,67 @@
+// Per-fn CGU run-equivalence spec (ps3t.8.6.1 increment 3a). The CGU build
+// (build_binary_cgu: one object per fn + a wrapper object, linked) must
+// produce a binary that RUNS byte-identically to the whole-program build
+// (build_binary). This is the oracle for the intended-ir-change: the .ll
+// structure differs (N modules vs one), but observable behaviour is equal.
+//
+// project_dir is the repo root so the link finds build/runtime.o +
+// build/llvm_wrapper.o; the binary + per-fn objects go under a /tmp dir.
+//
+// @@fixture-stateful@@ — links + runs real binaries against the shared
+// build/ objects; a transient hiccup must re-probe, not freeze as FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_getpid,
+}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_binary, build_binary_cgu, CompileTarget}
+
+// No user `main` — the top-level `println` runs in the synthesized main
+// wrapper (3a scope). add/twice become their own per-fn CGUs.
+const PROG_SRC: string = "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nprintln(string(twice(20) + 2))\n"
+
+fn repo_root() -> string { avra_shell_exec("pwd").trim() }
+
+fn mk_target(dir: string, bin: string) -> CompileTarget? {
+    let r = parse_program_source(PROG_SRC)
+    if r.had_error != 0 || r.ids == null { return null }
+    CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/${bin}",
+        project_dir: repo_root(),
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+}
+
+spec "per-fn CGU: build_binary_cgu runs byte-identically to build_binary" {
+    then "a no-main program produces the same output via CGU and whole-program builds" {
+        let dir = "/tmp/avra_cgurun_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+
+        // Whole-program build → run.
+        let wp = mk_target(dir, "wp.bin")
+        let wp_built = if wp == null { "parsefail" } else {
+            match build_binary(wp!) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
+        }
+        let wp_out = avra_shell_exec("'${dir}/wp.bin' 2>&1").trim()
+
+        // CGU build (fresh parse — the frontend mutates the store) → run.
+        let cgu = mk_target(dir, "cgu.bin")
+        let cgu_built = if cgu == null { "parsefail" } else {
+            match build_binary_cgu(cgu!) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
+        }
+        let cgu_out = avra_shell_exec("'${dir}/cgu.bin' 2>&1").trim()
+
+        let ok = wp_built == "ok" && cgu_built == "ok"
+            && wp_out == "42" && cgu_out == "42"
+        if !ok {
+            println("cgu-run: wp_built=${wp_built} cgu_built=${cgu_built} wp_out=[${wp_out}] cgu_out=[${cgu_out}]")
+            println("obj count: ${avra_shell_exec("ls '${dir}'/*.o 2>/dev/null | wc -l").trim()}")
+        }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+}

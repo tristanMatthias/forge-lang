@@ -18,7 +18,7 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 
@@ -122,6 +122,47 @@ fn frontend_to_mono(target: CompileTarget) -> Result<FrontendMono, string> {
 export fn build_fn_module(target: CompileTarget, fn_name: string, out_ll: string) -> Result<int, string> {
     let fm = frontend_to_mono(target)?
     compile_one_fn_module(fn_name, fm.stmts, out_ll, false, false, target.diag_filename, fm.type_reg, false, target.store)
+}
+
+/// Per-fn CGU build (ps3t.8.6.1 increment 3a): emit ONE object per user fn
+/// (its self-contained per-fn module) + one wrapper object (the top-level
+/// entry + __release_* definitions), then link them all into the binary —
+/// the whole-program module split into CGUs. This is the emit model the
+/// read side caches: increment 4 will skip re-emitting an unchanged fn's
+/// object. Run-equivalent to build_binary, NOT byte-identical (N modules vs
+/// one → different .ll structure; that's the intended-ir-change).
+///
+/// 3a scope: no coverage, and the no-user-main case (the wrapper's synthesized
+/// `main` is the entry). A user-defined `main` needs the __bs_top_level
+/// call-injection inside main's per-fn unit — a 3b follow-up.
+export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
+    let fm = frontend_to_mono(target)?
+    let build_dir = "${target.project_dir}/build"
+    let stem = strip_bin_suffix(target.bin_path)
+
+    // One object per fn target + the wrapper object. Deterministic order
+    // (collection order) keeps the link input list stable.
+    let empty: List<string> = []
+    let targets = collect_fn_targets(target.store, fm.stmts, empty)
+    mut objs: List<string> = []
+    mut ti = 0
+    while ti < targets.length {
+        let obj = "${stem}.fn${string(ti)}.o"
+        let _ = emit_fn_object(targets[ti], fm.stmts, obj, fm.type_reg, target.store)?
+        objs.push(obj)
+        ti = ti + 1
+    }
+    let wrapper_obj = "${stem}.wrapper.o"
+    let _ = emit_wrapper_object(fm.stmts, wrapper_obj, fm.type_reg, target.store)?
+    objs.push(wrapper_obj)
+
+    let link_objs = prepend_extra_objs(objs, target.extra_objs)
+    let opts = default_link_options()
+    if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
+                    target.bin_path, opts) != 0 {
+        return Result.Err("link failed (cgu)")
+    }
+    Result.Ok(target.bin_path)
 }
 
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
