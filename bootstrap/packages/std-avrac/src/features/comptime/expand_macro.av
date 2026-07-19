@@ -51,7 +51,7 @@ use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_repo
 use list_ops.{list_concat, list_contains_str}
 use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
 use features.marshal.{derive_marshal_stmts_for}
-use features.query_surface.{query_surface_stmts_for}
+use features.query_surface.{query_surface_stmts_for, build_query_dispatcher}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -300,11 +300,32 @@ export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) 
 /// Re-populates the resolver-data layer between iterations so a
 /// later-iteration macro can see names introduced by an earlier
 /// iteration via `ctx_qualify_ident` / `ctx_lookup_type`.
+/// ps3t.8.12: append the generated `avra_query_dispatch` to the converged
+/// program when ≥1 @query site was seen, marked `from_macro` so BOTH compile
+/// pipelines' post-expand registration (build_binary's register_macro_decls;
+/// the CLI's resolve_names) pick it up and the driver's `db_new(avra_query_
+/// dispatch)` resolves. No-op without sites — splice-free programs stay
+/// byte-identical. Spliced at the fixpoint exit (both pipelines route through
+/// expand_macros_fixpoint), so the dispatcher lands once, in one place.
+fn with_query_dispatch(store: NodeStore, current: List<StmtId>, sites: List<string>) -> List<StmtId> {
+    if sites.length == 0 { return current }
+    let disp = build_query_dispatcher(store, sites)
+    if disp == null { return current }
+    store.mark_from_macro(disp!)
+    mut out = current
+    out.push(disp!)
+    out
+}
+
 fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMacroEntry>, state: ResolverState) -> ExpandResult {
     mut current = stmts
     mut current_state = state
     mut bag = bag_new()
     mut origins: List<MacroFnOrigin> = []
+    // ps3t.8.12: @query site names aggregated across fixpoint iterations
+    // (@query expands in iter 0; the annotation is stripped, so later
+    // iterations see none — persist here rather than reading the last walk).
+    mut all_query_sites: List<string> = []
     // The cycle-detecting memo (design §3.2): every (decl,
     // mechanism) pair that expands is keyed here; a RE-encounter across
     // iterations means a macro (transitively) emitted its own annotated
@@ -317,7 +338,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
         if !any_annotation_named(state.nodes, current, expansion_annotation_names()) && comp_macros.length == 0 {
-            return ExpandResult { stmts: current, bag, origins }
+            return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins }
         }
         if iters > 0 {
             current_state = register_macro_decls(current_state, current)
@@ -330,10 +351,11 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
         bag = bag_merge(bag, walked.bag)
         origins = list_concat(origins, walked.origins)
         seen = walked.seen
+        all_query_sites = list_concat(all_query_sites, walked.query_sites)
         // A detected cycle is terminal: the offending annotation was
         // stripped and the error reported — stop iterating rather than
         // re-walking a poisoned program.
-        if walked.found_cycle { return ExpandResult { stmts: current, bag, origins } }
+        if walked.found_cycle { return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins } }
         iters = iters + 1
     }
     bag = bag_report(bag, diag_error(
@@ -341,7 +363,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
         "@expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself",
         span_at(0, 0, 0, 0, "")
     ))
-    ExpandResult { stmts: current, bag, origins }
+    ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins }
 }
 
 
@@ -489,6 +511,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
     mut origins: List<MacroFnOrigin> = []
     mut seen = in_seen
     mut found_cycle = false
+    mut query_sites: List<string> = []
     for id in ids {
         let node = store.stmts.get(id)
         let inner = stmt_unwrap(store, node)
@@ -541,6 +564,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                 bag = bag_merge(bag, sub.bag)
                 origins = list_concat(origins, sub.origins)
                 seen = sub.seen
+                query_sites = list_concat(query_sites, sub.query_sites)
                 if sub.found_cycle { found_cycle = true }
                 // The match subject was stmt_unwrap(node) — rebuild the module
                 // INSIDE the original Annotated layers, or a wrapped module (e.g.
@@ -582,6 +606,9 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         out.push(store.restmt(strip_query_annotation(store, node), id))
                     } else {
                         seen = seen.push(fam_key)
+                        // ps3t.8.12: record the site so the post-walk splice can
+                        // generate `avra_query_dispatch`'s arm for it.
+                        query_sites = query_sites.push(decl_name_of(store, inner))
                         mut repl: List<StmtId> = [store.stmts.add_leaf(strip_query_annotation(store, node))]
                         for g in gen.stmts! { repl.push(g) }
                         splice_expansion(store, out, id, repl)
@@ -646,7 +673,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
             }
         }
     }
-    WalkerOut { out, state: current_state, bag, origins, seen, found_cycle }
+    WalkerOut { out, state: current_state, bag, origins, seen, found_cycle, query_sites }
 }
 
 /// Walker's per-iter return: the spliced stmts + the state after any
@@ -666,6 +693,10 @@ type WalkerOut = {
     origins: List<MacroFnOrigin>,
     seen: List<string>,
     found_cycle: bool,
+    // ps3t.8.12: every @query fn name this walk saw, source order, aggregated
+    // up through Module recursion — the program-wide site list the generated
+    // `avra_query_dispatch` routes over.
+    query_sites: List<string>,
 }
 
 /// Internal carrier for a single macro-expansion attempt. `replacement`
