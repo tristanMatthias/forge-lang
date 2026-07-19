@@ -3237,27 +3237,27 @@ fn parse_jobs_env(default_jobs: int) -> int {
 /// unchanged — behaviour is byte-identical to before this change.
 ///
 /// `AVRA_JOBS` still sets the ceiling (a host that knows its
-/// headroom); memory clamps it down unless `AVRA_JOBS_FORCE=1`
-/// bypasses the memory clamp entirely (CI on a known-large box). The
-/// per-shard estimates are deliberately conservative — they reflect
-/// the HEAVIEST realistic shard so a pathological member can't tip a
-/// concurrent batch over the edge.
+/// headroom); memory then clamps it down. The per-shard estimates are
+/// deliberately conservative — they reflect the HEAVIEST realistic
+/// shard so a pathological member can't tip a concurrent batch over
+/// the edge.
 fn compute_shard_jobs(want_meta: bool) -> int {
     let ceiling = if want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
     let ceil = if ceiling < 1 { 1 } else { ceiling }
-    if avra_process_env_get("AVRA_JOBS_FORCE") == "1" { return ceil }
     let avail_mb = available_memory_mb()
     if avail_mb <= 0 { return ceil }   // unknown → preserve the static default
     // Headroom that must survive ALONGSIDE the shard fan-out: the
     // orchestrator + page cache, the prebuild's residual pages, and —
     // the load-bearing part — the fixture COMPILES that shards shell
-    // out. Those run `env -u AVRA_USE_METADATA bs2 compile`, i.e. a
-    // ~5GB WHOLE-PROGRAM compile each, and the raw-shellout ones are
-    // currently uncapped (see the fixture-governance follow-up). At a
-    // 3GB reserve the full suite peaked 14.7GB (min avail 1.3GB — a
-    // near-OOM) because ~2 of those stacked on 6 metadata shards. 6GB
-    // leaves room for a fixture spike so the shard count backs off to
-    // keep the combined peak clear of the cliff.
+    // out. The no-metadata ones run `env -u AVRA_USE_METADATA bs2
+    // compile`, i.e. a ~5GB WHOLE-PROGRAM compile each; those are now
+    // slot-capped (#863) and the diagnostic majority fast-pathed to
+    // ~1.5GB (#866), but a ~5GB @comptime-fixture compile can still
+    // coincide with the shards. At a 3GB reserve the full suite once
+    // peaked 14.7GB (min avail 1.3GB — a near-OOM) because ~2 of those
+    // stacked on 6 metadata shards. 6GB leaves room for a fixture
+    // spike so the shard count backs off to keep the combined peak
+    // clear of the cliff.
     let reserve_mb = 6144
     // Heaviest-realistic per-shard peak: a metadata shard ~1.5GB, a
     // whole-program shard ~5GB but up to ~11GB for the heaviest, so
