@@ -2904,7 +2904,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     let shards = plan_shards(cx, accepted_paths)
 
     dispatch_shards(shards, cx.jobs)
-    retry_jetsam_killed(shards)
+    retry_jetsam_killed(shards, cx.jobs)
 
     aggregate_shard_logs(shards, t_start)
 }
@@ -3188,15 +3188,18 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
 
     let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
     // Concurrency is memory-bound, not CPU-bound, and the two shard modes have
-    // wildly different footprints. A metadata fast-path shard STUBS @std/* (a
-    // few hundred lines) and links pre-built producer .o's — cheap, so the full
-    // 8-wide fan-out fits. A whole-program FALLBACK shard (the path taken
-    // whenever the pre-build can't supply producer objs) instead inlines ALL of
-    // @std/* and llc-optimises it — ~2-3GB RSS EACH. Eight of those at once
-    // OOM-kills shards mid-compile on a 15-16GB box (the symptom this guards).
-    // So cap the fallback width to keep N×~3GB under a tight box's RAM; AVRA_JOBS
-    // still overrides either default for hosts that know their headroom.
-    let jobs = if lib.want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
+    // wildly different footprints. Measured peak on a 16GB box: a metadata
+    // fast-path shard ~1.5GB (STUBS @std/*, links pre-built producer .o's, then
+    // runs the linked binary); a whole-program FALLBACK shard ~5GB (inlines ALL
+    // of @std/* + llc-optimises), up to ~11GB for the heaviest. At the historic
+    // static caps the full suite peaked 12.7GB (8-wide metadata) / ~9GB (2-wide
+    // fallback) — over the OOM cliff the moment a prior run left pages resident,
+    // which is the snw0 "make test takes the container down" crash. So the cap
+    // is now MEMORY-AWARE: the static default is a ceiling that available RAM
+    // can only lower (compute_shard_jobs). Read AFTER the serial prebuild has
+    // freed its ~5GB so the reading reflects the memory the shards will share.
+    let jobs = compute_shard_jobs(lib.want_meta)
+    eprintln("[per-file] shard concurrency: jobs=${string(jobs)} (${if lib.want_meta { "metadata fast-path" } else { "whole-program fallback" }}, MemAvailable ~${string(available_memory_mb())}MB)")
     let listing_file = compute_std_listing_file(project_dir, log_dir)
     let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
                                                "${project_dir}/build/runtime.o",
@@ -3216,6 +3219,67 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
 fn parse_jobs_env(default_jobs: int) -> int {
     let env_jobs = avra_process_env_get("AVRA_JOBS")
     if env_jobs == "" { default_jobs } else { avra_parse_int(env_jobs) }
+}
+
+/// x2hu / snw0 lever (c): memory-aware shard concurrency.
+///
+/// Both shard modes are MEMORY-bound (see the RunCtx.jobs comment for
+/// the measured footprints). The historic static caps (8 metadata /
+/// 2 whole-program) ignored both the box's RAM and its core count, so
+/// on a tight box the full suite peaked over the OOM cliff. Here the
+/// static default becomes a CEILING that available RAM can only LOWER:
+///
+///     jobs = min(ceiling, (avail_mb - reserve) / per_shard_mb)
+///
+/// `avail_mb` is MemAvailable from /proc/meminfo, read once by the
+/// caller after the serial prebuild freed its ~5GB. When it can't be
+/// read (non-Linux, or the read failed) we return the ceiling
+/// unchanged — behaviour is byte-identical to before this change.
+///
+/// `AVRA_JOBS` still sets the ceiling (a host that knows its
+/// headroom); memory clamps it down unless `AVRA_JOBS_FORCE=1`
+/// bypasses the memory clamp entirely (CI on a known-large box). The
+/// per-shard estimates are deliberately conservative — they reflect
+/// the HEAVIEST realistic shard so a pathological member can't tip a
+/// concurrent batch over the edge.
+fn compute_shard_jobs(want_meta: bool) -> int {
+    let ceiling = if want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
+    let ceil = if ceiling < 1 { 1 } else { ceiling }
+    if avra_process_env_get("AVRA_JOBS_FORCE") == "1" { return ceil }
+    let avail_mb = available_memory_mb()
+    if avail_mb <= 0 { return ceil }   // unknown → preserve the static default
+    // Headroom that must survive ALONGSIDE the shard fan-out: the
+    // orchestrator + page cache, the prebuild's residual pages, and —
+    // the load-bearing part — the fixture COMPILES that shards shell
+    // out. Those run `env -u AVRA_USE_METADATA bs2 compile`, i.e. a
+    // ~5GB WHOLE-PROGRAM compile each, and the raw-shellout ones are
+    // currently uncapped (see the fixture-governance follow-up). At a
+    // 3GB reserve the full suite peaked 14.7GB (min avail 1.3GB — a
+    // near-OOM) because ~2 of those stacked on 6 metadata shards. 6GB
+    // leaves room for a fixture spike so the shard count backs off to
+    // keep the combined peak clear of the cliff.
+    let reserve_mb = 6144
+    // Heaviest-realistic per-shard peak: a metadata shard ~1.5GB, a
+    // whole-program shard ~5GB but up to ~11GB for the heaviest, so
+    // the fallback estimate is set high enough to pick jobs=1 on a
+    // ≤16GB box (safe: one ~11GB shard fits, two never would).
+    let per_shard_mb = if want_meta { 1800 } else { 6000 }
+    let budget = avail_mb - reserve_mb
+    mut by_mem = budget / per_shard_mb
+    if by_mem < 1 { by_mem = 1 }
+    if by_mem < ceil { by_mem } else { ceil }
+}
+
+/// MemAvailable from /proc/meminfo, in MB. Returns -1 when it can't be
+/// determined (non-Linux, or the read failed) so callers fall back to
+/// their static default. Linux-only by design — macOS keeps the
+/// pre-existing static behaviour rather than guessing from vm_stat.
+fn available_memory_mb() -> int {
+    let out = avra_shell_exec("awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null").trim()
+    if out == "" { return -1 }
+    let kb = avra_parse_int(out)
+    if kb <= 0 { return -1 }
+    kb / 1024
 }
 
 /// Outcome of the optional @std/* pre-build pass. `want_meta` stays
@@ -3337,14 +3401,17 @@ fn dispatch_shards(shards: List<Shard>, jobs: int) {
 
 // Cold-rebuild jetsam recovery: any shard whose log is empty got
 // SIGKILL'd before producing output. The surviving shards have
-// already warmed the @std cache, so we redispatch the victims at
-// jobs=2 — peak RSS ~1.6GB fits comfortably while still being
-// ~4x faster than serial.
-fn retry_jetsam_killed(shards: List<Shard>) {
+// already warmed the @std cache, so we redispatch the victims at a
+// low width — peak RSS ~1.6GB/shard fits comfortably while still
+// being faster than serial. Capped at the run's memory-aware `jobs`
+// so a tight box that already dropped to jobs=1 (whole-program
+// fallback) doesn't recover at a width that re-triggers the OOM.
+fn retry_jetsam_killed(shards: List<Shard>, jobs: int) {
     let victims = list_filter(shards, (s: Shard) -> !s.log_alive())
     if victims.length == 0 { return }
-    eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=2)")
-    dispatch_shards(victims, 2)
+    let retry_jobs = if jobs < 2 { jobs } else { 2 }
+    eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=${string(retry_jobs)})")
+    dispatch_shards(victims, retry_jobs)
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard
