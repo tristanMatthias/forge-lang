@@ -14,80 +14,20 @@
 // the ~ splice-vs-bitnot overload) exactly as in their own slices — the
 // composition doesn't re-express them, it reuses the escape hatch. The `use`
 // path also accepts the real dotted import form (`@std.core.{…}`).
-use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
-// The unified Avra grammar (the subset the families cover). One canonical
-// version of each shared rule (type_expr / statement / the expression
-// precedence chain / param), all declaration forms, `program` on top.
-fn avra_grammar_src() -> string {
-    "grammar Avra {\n" +
-    "  program     = ( d:declaration )* -> Block(d)\n" +
-    // Declarations — fn/type/enum/trait/impl/use/mod. Gnarly forms via @hand.
-    "  declaration = fn_decl | type_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl\n" +
-    "  fn_decl     = \"fn\" name:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(name, params, ret, body)\n" +
-    "  type_decl   = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
-    "  enum_decl   = \"enum\" ename:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(ename, vars)\n" +
-    "  trait_decl  = \"trait\" trname:IDENT \"{\" ( tmembers:trait_member )* \"}\" -> MkTraitDecl(trname, tmembers)\n" +
-    "  impl_decl   = \"impl\" itn:IDENT ( \"for\" ifortn:IDENT )? \"{\" ( imethods:impl_method )* \"}\" -> MkImpl(itn, ifortn, imethods)\n" +
-    // The path allows a trailing `.` before `{` (the real import form
-    // `@std.core.{…}`); the segment IDENT after each `.` is optional so the
-    // greedy `*` absorbs that trailing dot without erroring on `{`. The hand
-    // parser renders `@std.core.{…}` and `@std.core {…}` identically.
-    "  use_decl    = \"use\" ( uat:\"@\" )? useg:IDENT ( \".\" ( useg:IDENT )? )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUse(uat, useg, unames)\n" +
-    "  mod_decl    = \"mod\" mdname:IDENT -> MkModule(mdname)\n" +
-    // Declaration sub-structure.
-    "  field       = fname:IDENT \":\" ftype:type_expr -> MkField(fname, ftype)\n" +
-    "  variant     = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
-    "  param       = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
-    "  trait_member  = assoc_member | method_member\n" +
-    "  assoc_member  = \"type\" atname:IDENT -> MkAssocType(atname)\n" +
-    "  method_member = \"fn\" tmname:IDENT \"(\" ( tmparams:param ( \",\" tmparams:param )* )? \")\" ( \"->\" tmret:type_expr )? ( tmlb:\"{\" ( tmbody:statement )* \"}\" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)\n" +
-    "  impl_method   = \"fn\" imname:IDENT \"(\" ( imparams:param ( \",\" imparams:param )* )? \")\" ( \"->\" imret:type_expr )? \"{\" ( imbody:statement )* \"}\" -> MkMethod(imname, imparams, imret, imbody)\n" +
-    // Statements — control flow (6.5.3) + the simple forms (6.5.2) + return via
-    // @hand (newline-sensitive, 6.5.10) + let via @hand (let-else desugar).
-    "  statement   = @hand(return_stmt) | @hand(let_stmt) | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt\n" +
-    // Control-flow bodies reference `block_stmt` (a single Block SNode) — the
-    // If/While/ForLoop builds take a scalar statement body, not a raw list.
-    "  block_stmt  = \"{\" ( bs:statement )* \"}\" -> Block(bs)\n" +
-    "  while_stmt  = \"while\" wc:expression wb:block_stmt -> While(wc, wb)\n" +
-    "  if_stmt     = \"if\" ic:expression it:block_stmt ( \"else\" ie:else_target )? -> If(ic, it, ie)\n" +
-    "  else_target = if_stmt | block_stmt\n" +
-    "  for_stmt    = \"for\" fv:IDENT \"in\" flo:expression ( \"..\" fhi:expression )? fb:block_stmt -> ForLoop(fv, flo, fhi, fb)\n" +
-    "  break_stmt  = \"break\" -> Break()\n" +
-    "  continue_stmt = \"continue\" -> Continue()\n" +
-    "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
-    // Types (6.5.6) — with the @pkg::T qualified atom (6.5.10) as the first atom.
-    "  type_expr   = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
-    "  type_atom   = @hand(qualified_type) | fn_type | dyn_type | list_type | paren_type | named_type\n" +
-    "  fn_type     = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
-    "  dyn_type    = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
-    "  list_type   = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
-    "  paren_type  = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
-    "  named_type  = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
-    // Expressions — the full precedence chain (6.5.1/2), ident via @hand.
-    "  expression  = equality\n" +
-    "  equality    = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
-    "  comparison  = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
-    "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
-    "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
-    // `~` outside a quote is bitwise-NOT (pure grammar); inside a quote body it
-    // is Splice — handled by @hand(quote_expr) below (the 6.5.10 ~ slice).
-    "  un          = op:(\"!\" | \"-\" | \"~\") operand:un -> Unary(op, operand) | postfix\n" +
-    "  postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
-    "  suffix      = \".\" sn:IDENT -> field_suffix(sn)\n" +
-    "              | \"(\" ( ca:expression ( \",\" ca:expression )* )? \")\" -> call_suffix(ca)\n" +
-    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(quote_expr) | @hand(ident)\n" +
-    "}"
-}
-
+// The unified whole-program Avra grammar is the SOURCE-OF-TRUTH `grammar { }`
+// block dogfooded into compiler src/ (avra_grammar.av avra_program_grammar(),
+// ps3t.6.5.11) — declarations + their sub-structure, the statement forms, the
+// type atoms, and the expression precedence chain, with the gnarly-5% via
+// @hand. This test runs it through the executor as the whole-program
+// differential oracle vs parse_program_source.
 // The DSL start rule folds top-level declarations into a Stmt.Block; render its
 // children as the top-level statement list.
 fn dsl_program(src: string) -> string {
-    let gp = parse_grammar(avra_grammar_src())
-    if gp.error != "" { return "<grammar error: ${gp.error}>" }
-    let r = run_grammar_stmt(gp.grammar, src)
+    let r = run_grammar_stmt(avra_program_grammar(), src)
     if r.had_error { return "<dsl parse error>" }
     match r.store.stmts.get(r.root) {
         .Block(ids) -> render_stmt_ids(r.store, ids)

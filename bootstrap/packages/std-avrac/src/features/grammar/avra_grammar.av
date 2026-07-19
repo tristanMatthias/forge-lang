@@ -75,3 +75,101 @@ export fn avra_stmt_grammar() -> Grammar {
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
 }
+
+/// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
+/// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
+/// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
+/// right-associative or-patterns `a or b or c`. SELF-CONTAINED — patterns do
+/// not embed expressions, so no composition with the expression grammar. The
+/// entry `pattern_or` mirrors the hand parser's parse_pattern_or.
+export fn avra_pat_grammar() -> Grammar {
+    let gp = grammar {
+  pattern_or  = l:pattern ( "or" r:pattern_or )? -> OrMaybe(l, r)
+  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat
+  variant_pat = "." name:IDENT ( "(" ( binds:IDENT ( "," binds:IDENT )* | subs:variant_pat ( "," subs:pattern )* ) ")" )? -> MkVariant(name, binds, subs)
+  ident_pat   = name:IDENT ( "(" b:IDENT ")" )? -> IdentPat(name, b)
+  bool_pat    = b:("true" | "false") -> PatBool(b)
+  str_pat     = s:STRING -> PatStr(s)
+  neg_pat     = "-" n:NUMBER -> PatNegNum(n)
+  num_pat     = n:NUMBER -> PatNum(n)
+    }
+    gp.grammar
+}
+
+/// The §2 type-expression family (ps3t.6.5.6): union types `A | B`, `fn`
+/// types, `dyn T`, list `[T]`, tuple/paren `(A, B)`, and named types with
+/// generic args + nullable `T<A>?`. SELF-CONTAINED — types don't embed value
+/// expressions. The entry `type_expr` mirrors parse_type_expr (left-assoc
+/// union over type atoms).
+export fn avra_type_grammar() -> Grammar {
+    let gp = grammar {
+  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type
+  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
+  dyn_type   = "dyn" t:IDENT -> TyDyn(t)
+  list_type  = "[" e:type_expr "]" -> TyList(e)
+  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
+  named_type = name:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+    }
+    gp.grammar
+}
+
+/// The UNIFIED whole-program Avra grammar (ps3t.6.5.7 / the 6.5.11 composed
+/// slice): declarations on top, folding into a `program`, with one canonical
+/// version of each shared rule (declarations + their sub-structure, the
+/// statement forms incl. control-flow, the type atoms, and the expression
+/// precedence chain). The gnarly-5% forms delegate via @hand — `return`
+/// (newline-sensitive), `let` (let-else desugar), `@pkg::T` (qualified type),
+/// `~`/quote (splice-vs-bitnot), and `ident`. This is the whole-program grammar
+/// dogfooded into src/ (distinct from the per-family avra_*_grammar() blocks,
+/// which are the family-ISOLATED views the equivalence tests use); the 6.5.12
+/// swap-in consolidates onto one. NOTE the rule bodies carry literal `"{"` /
+/// `"}"` block delimiters — balanced, so the `grammar { }` surface capture
+/// finds the block's real closing brace correctly.
+export fn avra_program_grammar() -> Grammar {
+    let gp = grammar {
+  program     = ( d:declaration )* -> Block(d)
+  declaration = fn_decl | type_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
+  fn_decl     = "fn" name:IDENT "(" ( params:param ( "," params:param )* )? ")" ( "->" ret:type_expr )? "{" ( body:statement )* "}" -> MkFnDecl(name, params, ret, body)
+  type_decl   = "type" tname:IDENT "=" "{" ( fields:field ","? )* "}" -> MkTypeDecl(tname, fields)
+  enum_decl   = "enum" ename:IDENT "{" ( vars:variant ","? )* "}" -> MkEnumDecl(ename, vars)
+  trait_decl  = "trait" trname:IDENT "{" ( tmembers:trait_member )* "}" -> MkTraitDecl(trname, tmembers)
+  impl_decl   = "impl" itn:IDENT ( "for" ifortn:IDENT )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
+  use_decl    = "use" ( uat:"@" )? useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUse(uat, useg, unames)
+  mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
+  field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
+  variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
+  param       = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
+  trait_member  = assoc_member | method_member
+  assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
+  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
+  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
+  statement   = @hand(return_stmt) | @hand(let_stmt) | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
+  while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
+  if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)
+  else_target = if_stmt | block_stmt
+  for_stmt    = "for" fv:IDENT "in" flo:expression ( ".." fhi:expression )? fb:block_stmt -> ForLoop(fv, flo, fhi, fb)
+  break_stmt  = "break" -> Break()
+  continue_stmt = "continue" -> Continue()
+  expr_stmt   = es:expression -> ExprStmt(es)
+  type_expr   = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+  type_atom   = @hand(qualified_type) | fn_type | dyn_type | list_type | paren_type | named_type
+  fn_type     = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" tr:type_expr )? -> MkFn(lp, p, tr)
+  dyn_type    = "dyn" dt:IDENT -> TyDyn(dt)
+  list_type   = "[" el:type_expr "]" -> TyList(el)
+  paren_type  = "(" ( pt2:type_expr ( "," pt2:type_expr )* )? ")" -> TyParen(pt2)
+  named_type  = tn:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
+  expression  = equality
+  equality    = l:comparison ( op:("!=" | "==") r:comparison )* -> fold_binary(l, op, r)
+  comparison  = l:term ( op:("<" | "<=" | ">" | ">=") r:term )* -> fold_binary(l, op, r)
+  term        = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
+  factor      = l:un ( op:("*" | "/") r:un )* -> fold_binary(l, op, r)
+  un          = op:("!" | "-" | "~") operand:un -> Unary(op, operand) | postfix
+  postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)
+  suffix      = "." sn:IDENT -> field_suffix(sn)
+              | "(" ( ca:expression ( "," ca:expression )* )? ")" -> call_suffix(ca)
+  primary     = NUMBER | STRING | "true" | "false" | @hand(quote_expr) | @hand(ident)
+    }
+    gp.grammar
+}
