@@ -5389,15 +5389,23 @@ int64_t avra_task_cancel(int64_t handle) {
 // corrupted header trigger gigabyte allocations.
 #define AVRA_ISOLATED_PAYLOAD_CAP ((int64_t)1 << 30)
 
-// Build a [status][len=0][] frame for an early failure path.
-static const char* avra_isolated_frame_err(int64_t status) {
+// Build a [status][detail][] frame for a failure path. The len slot is
+// unused on a failure frame, so it doubles as a detail channel: on a CRASH
+// frame `detail` carries the child's death signal (WTERMSIG) — letting a
+// caller tell an OS kill (SIGKILL, e.g. the OOM killer under memory
+// pressure) from a genuine in-child fault (SIGSEGV/SIGABRT). 0 when the
+// child exited with a non-zero code rather than dying to a signal.
+static const char* avra_isolated_frame_err_detail(int64_t status, int64_t detail) {
     char* r = avra_bytes_alloc(16);
     char* d = avra_bytes_data(r);
-    int64_t s = status;
-    int64_t z = 0;
-    memcpy(d, &s, 8);
-    memcpy(d + 8, &z, 8);
+    memcpy(d, &status, 8);
+    memcpy(d + 8, &detail, 8);
     return r;
+}
+
+// Build a [status][len=0][] frame for an early failure path.
+static const char* avra_isolated_frame_err(int64_t status) {
+    return avra_isolated_frame_err_detail(status, 0);
 }
 
 // ── Bytes ↔ int marshaling primitives ──
@@ -5540,7 +5548,10 @@ const char* avra_isolated_run(int64_t closure) {
     // is `Crashed`.
     if (crashed) {
         if (scratch) free(scratch);
-        return avra_isolated_frame_err(AVRA_ISOLATED_STATUS_CRASH);
+        // Surface the death signal so callers can distinguish an OS kill
+        // (SIGKILL — the OOM killer) from an in-child fault (SIGSEGV/SIGABRT).
+        int sig = (wstat == 0 && WIFSIGNALED(status)) ? WTERMSIG(status) : 0;
+        return avra_isolated_frame_err_detail(AVRA_ISOLATED_STATUS_CRASH, sig);
     }
     if (!header_ok || short_read) {
         if (scratch) free(scratch);

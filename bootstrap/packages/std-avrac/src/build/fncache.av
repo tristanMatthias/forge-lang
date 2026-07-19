@@ -1,0 +1,188 @@
+// WHY: the abstract per-function codegen cache unit (L6 codegen-cache design).
+//
+// codegen(fn) becomes cacheable: a function's emitted artifact (LLVM bitcode
+// today; a MIR unit later — the interface is artifact-format-agnostic) is
+// stored content-addressed and looked up by a composed key instead of being
+// re-derived. Two-level layout gives identical-IR collapse for free:
+//
+//   <root>cache/fnunits/key/<keyhash>   -> pointer file naming an artifact hash
+//   <root>cache/fnunits/art/<arthash>.unit -> the deduped artifact bytes
+//
+// Distinct keys whose emission produced byte-identical artifacts share ONE
+// art entry (the §8 explosion control for mono instances). Artifacts are
+// handled strictly by PATH — bytes never round-trip through Avra strings, so
+// binary bitcode is safe end-to-end.
+//
+// Key discipline (v1, coarse-but-correct): body_fp alone under-keys — emitted
+// IR is also a function of the shared type registries (struct layouts reached
+// through GEP) and the @mono_erased layout regime. The v1 key therefore folds
+// the WHOLE type-table snapshot hash: any type edit invalidates every unit
+// (correct, conservative), while body-only edits — the common case — still
+// hit. Narrowing to per-body referenced-type sets is a later increment.
+//
+// Publishing follows the cache.av atomicity rule (materialise atomically, or
+// validate completeness on reuse): artifacts land via atomic_install, key
+// pointers via write-tmp-then-rename, and every read validates the pointed-at
+// artifact before reporting a hit — a damaged slot demotes to an honest miss.
+
+use core.{
+    avra_selfhost_file_exists,
+    avra_selfhost_read_file,
+    avra_selfhost_write_file,
+    avra_mkdir_p,
+    avra_rename,
+    avra_remove_file,
+    avra_file_size,
+    avra_getpid,
+}
+use build.cache.{Cache, atomic_install}
+use @std.crypto.{sha256_file, sha256_hex}
+
+/// A composed per-function cache key. `hash` is 64-hex over the canonical
+/// key string — the only identity; callers never parse it back.
+export type FnUnitKey = {
+    hash: string,
+}
+
+/// Filesystem view of the per-fn unit store. Derived from the build Cache
+/// so the unit store lives inside the same `<root>cache/` tree (one
+/// cache-gc / clean-cache surface), namespaced under `fnunits/`.
+export type FnUnitStore = {
+    key_dir: string,        // <root>cache/fnunits/key/
+    art_dir: string,        // <root>cache/fnunits/art/
+    tmp_dir: string,        // <root>cache/fnunits/_tmp/
+}
+
+/// Key for a plain (non-generic) function unit.
+///
+/// Components:
+///   * `name`         — the fn's resolved (mangled) symbol name. body_fp
+///                      deliberately excludes it (it's the typeck cutoff
+///                      key), but the emitted IR EMBEDS it (`define @name`),
+///                      so two identically-bodied fns need distinct keys or
+///                      replay would materialize the wrong symbol. Identical
+///                      IR still collapses — at the ARTIFACT level, where
+///                      content-addressing dedupes bytes, not keys.
+///   * `sig_fp`       — item_sig_fp(store, item): param/return types + bounds
+///                      + annotations. The emitted `define` signature depends
+///                      on it, and body_fp deliberately excludes it, so it is
+///                      keyed explicitly (belt-and-suspenders with the name).
+///   * `body_fp`      — item_body_fp(store, item): alpha-canonicalized,
+///                      span-invariant body content (core/fingerprint.av).
+///   * `type_table_fp` — the type_structure_fingerprints snapshot hash: the
+///                      coarse stand-in for "every layout this body could
+///                      reach" (see WHY).
+///   * `erased`       — @mono_erased bodies lay out unbound T as wide i64;
+///                      the same body text emits different IR per regime.
+///   * `modes`        — a canonical fingerprint of the IR-affecting codegen
+///                      flags (debug_null_checks, coverage): the same source
+///                      emits DIFFERENT IR per mode, so a debug and a coverage
+///                      build must not share a slot.
+///   * `toolchain`    — toolchain_fingerprint(): a compiler change owes a
+///                      re-emit even for identical source.
+export fn fn_unit_key(name: string, sig_fp: int, body_fp: int, type_table_fp: int, erased: bool, modes: string, toolchain: string) -> FnUnitKey {
+    let erased_tag = if erased { "1" } else { "0" }
+    let canonical = "fnunit:v3:" + string(name.length) + ":" + name + ":"
+        + string(sig_fp) + ":" + string(body_fp) + ":" + string(type_table_fp)
+        + ":" + erased_tag + ":" + modes + ":" + toolchain
+    FnUnitKey { hash: sha256_hex(canonical) }
+}
+
+/// Key for a monomorphized instance: the instance's mangled symbol name,
+/// its signature fp, the generic base's body_fp, and each type argument's
+/// structure fingerprint, order-significant. Stamped at mono time (the
+/// base/args link is erased from the AST by emission time).
+export fn fn_unit_key_mono(name: string, sig_fp: int, base_body_fp: int, type_arg_fps: List<int>, type_table_fp: int, modes: string, toolchain: string) -> FnUnitKey {
+    mut args = ""
+    for fp in type_arg_fps {
+        args = args + string(fp) + ","
+    }
+    let canonical = "fnunit-mono:v3:" + string(name.length) + ":" + name + ":"
+        + string(sig_fp) + ":" + string(base_body_fp) + ":[" + args + "]:"
+        + string(type_table_fp) + ":" + modes + ":" + toolchain
+    FnUnitKey { hash: sha256_hex(canonical) }
+}
+
+/// Build the store view over an existing build Cache. Pure path derivation;
+/// `fn_unit_store_init` materialises the directories.
+export fn fn_unit_store_for(c: Cache) -> FnUnitStore {
+    let base = c.cache_dir + "fnunits/"
+    FnUnitStore {
+        key_dir: base + "key/",
+        art_dir: base + "art/",
+        tmp_dir: base + "_tmp/",
+    }
+}
+
+export fn fn_unit_store_init(s: FnUnitStore) -> bool {
+    avra_mkdir_p(s.key_dir) != 0 && avra_mkdir_p(s.art_dir) != 0 && avra_mkdir_p(s.tmp_dir) != 0
+}
+
+fn key_path(s: FnUnitStore, k: FnUnitKey) -> string {
+    s.key_dir + k.hash
+}
+
+fn art_path(s: FnUnitStore, art_hash: string) -> string {
+    s.art_dir + art_hash + ".unit"
+}
+
+/// Resolve a key to its artifact path, validating completeness: the pointer
+/// must name an artifact that exists with non-zero size. Any damaged link in
+/// the chain is an honest miss — never a half-served hit.
+export fn fn_unit_lookup(s: FnUnitStore, k: FnUnitKey) -> string? {
+    let kp = key_path(s, k)
+    if !avra_selfhost_file_exists(kp) {
+        return null
+    }
+    let art_hash = avra_selfhost_read_file(kp)
+    // A well-formed pointer names a 64-char artifact hash (our own
+    // sha256_hex output); a truncated/corrupt pointer is an honest miss.
+    if art_hash.length != 64 {
+        return null
+    }
+    let ap = art_path(s, art_hash)
+    if !avra_selfhost_file_exists(ap) || avra_file_size(ap) <= 0 {
+        return null
+    }
+    ap
+}
+
+/// Publish `artifact_src` (a file on disk — bitcode, IR, any format) under
+/// `k`. Content-addresses the artifact, installs it into the art store
+/// (no-op when an identical artifact is already present — the collapse),
+/// then atomically writes the key pointer. Returns the stored artifact
+/// path, or null when any step fails (a failed publish leaves no pointer,
+/// so readers keep missing honestly).
+export fn fn_unit_publish(s: FnUnitStore, k: FnUnitKey, artifact_src: string) -> string? {
+    if !avra_selfhost_file_exists(artifact_src) || avra_file_size(artifact_src) <= 0 {
+        return null
+    }
+    if !fn_unit_store_init(s) {
+        return null
+    }
+    let art_hash = sha256_file(artifact_src)
+    if art_hash.length == 0 {
+        return null
+    }
+    let ap = art_path(s, art_hash)
+    // Reinstall when the slot is absent OR a damaged zero-byte remnant —
+    // a content-addressed slot should never stay corrupt-and-unpublishable.
+    if !avra_selfhost_file_exists(ap) || avra_file_size(ap) <= 0 {
+        if !atomic_install(artifact_src, ap) {
+            return null
+        }
+    }
+    let tmp = s.tmp_dir + k.hash + "." + string(avra_getpid())
+    if avra_selfhost_write_file(tmp, art_hash) == 0 {
+        let _ = avra_remove_file(tmp)
+        return null
+    }
+    if avra_rename(tmp, key_path(s, k)) == 0 {
+        // A concurrent publisher may have won the rename race with an
+        // equivalent pointer (same key => same content). Trust the
+        // survivor if it resolves; otherwise report failure.
+        let _ = avra_remove_file(tmp)
+        return fn_unit_lookup(s, k)
+    }
+    ap
+}

@@ -1,0 +1,55 @@
+// Write-side spec: AVRA_FN_CACHE=<root> makes a compile
+// extract + publish every emitted fn's IR into <root>/build/cache/fnunits/.
+// Off by default (no env → no store side-effects); republishing an
+// unchanged program dedupes to the same artifact set (content addressing
+// across runs).
+//
+// @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient
+// environment hiccup must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
+    avra_selfhost_file_exists,
+}
+
+fn bs2() -> string {
+    avra_shell_exec("pwd").trim() + "/build/bs2"
+}
+
+spec "per-fn cache write side: units publish behind AVRA_FN_CACHE" {
+    then "opt-in compile publishes units; rerun dedupes; default compile publishes nothing" {
+        let root = "/tmp/avra_fnunits_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p(root)
+        let _ = avra_selfhost_write_file("${root}/prog.av",
+            "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nfn main() { println(string(twice(20) + 2)) }\n")
+        let units = "${root}/build/cache/fnunits"
+        // Each compile appends its exit status so the test proves successful
+        // end-to-end compilation, not merely that some keys got left behind.
+        let cmd = "cd '${root}' && AVRA_FN_CACHE='${root}' '${bs2()}' compile prog.av 2>&1; echo RC:$?"
+        let first = avra_shell_exec(cmd)
+        let keys1 = avra_shell_exec("ls '${units}/key' 2>/dev/null | wc -l").trim()
+        let arts1 = avra_shell_exec("ls '${units}/art' 2>/dev/null | wc -l").trim()
+        let second = avra_shell_exec(cmd)
+        let keys2 = avra_shell_exec("ls '${units}/key' 2>/dev/null | wc -l").trim()
+        let arts2 = avra_shell_exec("ls '${units}/art' 2>/dev/null | wc -l").trim()
+        // A fresh root compiled WITHOUT the env must create no unit store.
+        let bare_root = "${root}/bare"
+        let _ = avra_mkdir_p(bare_root)
+        let _ = avra_selfhost_write_file("${bare_root}/prog.av", "fn main() { println(\"x\") }\n")
+        let bare_out = avra_shell_exec("cd '${bare_root}' && '${bs2()}' compile prog.av 2>&1; echo RC:$?")
+        let bare_absent = !avra_selfhost_file_exists("${bare_root}/build/cache/fnunits/key")
+        let all_compiled = first.contains("RC:0") && second.contains("RC:0") && bare_out.contains("RC:0")
+        let ok = all_compiled
+            && keys1 != "0" && arts1 != "0"
+            && keys2 == keys1 && arts2 == arts1
+            && bare_absent
+        if !ok {
+            println("fnunits publish: compiled=${string(all_compiled)} keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2} bare_absent=${string(bare_absent)}")
+            println("first compile tail: ${first.substring(first.length - 200, first.length)}")
+            println("second compile tail: ${second.substring(second.length - 200, second.length)}")
+        }
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}

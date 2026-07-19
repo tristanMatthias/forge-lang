@@ -717,6 +717,42 @@ int avra_llvm_print_module_to_file(LLVMModuleRef m, const char* path) {
     return 0;
 }
 
+// Per-function IR extraction. Print ONE function's textual IR
+// to `path`, atomically (pid-scoped temp + rename — same discipline as
+// avra_llvm_print_module_to_file above, same reason: a concurrent reader
+// must see whole-old or whole-new, never mid-stream). Text IR is the v1
+// per-fn cache artifact; bitcode slots in behind the same seam later.
+// Returns 1 on success, 0 on failure (runtime wrapper convention).
+int64_t avra_llvm_fn_print_to_file(LLVMValueRef fn, const char* path) {
+    if (!fn || !path) return 0;
+    char* ir = LLVMPrintValueToString(fn);
+    if (!ir) return 0;
+    char tmp[4096];
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp.%d", path, (int)getpid())
+            >= (int)sizeof(tmp)) {
+        LLVMDisposeMessage(ir);
+        return 0;
+    }
+    FILE* f = fopen(tmp, "w");
+    if (!f) {
+        LLVMDisposeMessage(ir);
+        return 0;
+    }
+    size_t len = strlen(ir);
+    size_t wrote = fwrite(ir, 1, len, f);
+    int close_err = fclose(f);
+    LLVMDisposeMessage(ir);
+    if (wrote != len || close_err != 0) {
+        remove(tmp);
+        return 0;
+    }
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return 0;
+    }
+    return 1;
+}
+
 int avra_llvm_verify_module_print(LLVMModuleRef m) {
     char* error = NULL;
     int result = LLVMVerifyModule(m, LLVMPrintMessageAction, &error);

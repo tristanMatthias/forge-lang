@@ -1,0 +1,136 @@
+// Spec for the abstract per-fn cache unit (build/fncache.av).
+// Key composition is total and component-sensitive; publish/lookup is an
+// atomic, completeness-validated round-trip; identical artifacts collapse
+// to one stored unit (the §8 explosion control).
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_mkdir_p, avra_getpid, avra_remove_file,
+}
+use @std.avrac.build.{
+    cache_for,
+    fn_unit_key, fn_unit_key_mono,
+    fn_unit_store_for, fn_unit_store_init, fn_unit_lookup, fn_unit_publish,
+}
+use @std.crypto.{sha256_file}
+
+fn fresh_store_root() -> string {
+    let root = "/tmp/avra_fncache_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p(root)
+    root
+}
+
+spec "fn_unit_key: composed, deterministic, component-sensitive" {
+    then "identical inputs compose to the identical key" {
+        let a = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc1")
+        let b = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc1")
+        a.hash == b.hash && a.hash.length == 64
+    }
+    then "every component perturbs the key" {
+        let base = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc1")
+        let named = fn_unit_key("g", 33, 11, 22, false, "d0c0", "tc1")
+        let sig = fn_unit_key("f", 34, 11, 22, false, "d0c0", "tc1")
+        let body = fn_unit_key("f", 33, 12, 22, false, "d0c0", "tc1")
+        let table = fn_unit_key("f", 33, 11, 23, false, "d0c0", "tc1")
+        let erased = fn_unit_key("f", 33, 11, 22, true, "d0c0", "tc1")
+        let modes = fn_unit_key("f", 33, 11, 22, false, "d1c0", "tc1")
+        let tool = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc2")
+        base.hash != named.hash && base.hash != sig.hash
+            && base.hash != body.hash && base.hash != table.hash
+            && base.hash != erased.hash && base.hash != modes.hash
+            && base.hash != tool.hash
+    }
+    then "signature and codegen mode each key apart (same body, different emitted IR)" {
+        // A body_fp collision under a different signature or a different
+        // codegen mode (debug null-checks / coverage) would otherwise
+        // overwrite one artifact with another's IR.
+        let base = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc1")
+        let diff_sig = fn_unit_key("f", 99, 11, 22, false, "d0c0", "tc1")
+        let diff_cov = fn_unit_key("f", 33, 11, 22, false, "d0c1", "tc1")
+        base.hash != diff_sig.hash && base.hash != diff_cov.hash
+            && diff_sig.hash != diff_cov.hash
+    }
+    then "identically-bodied fns under different names key apart (replay must never cross symbols)" {
+        let a = fn_unit_key("mod::a", 33, 11, 22, false, "d0c0", "tc1")
+        let b = fn_unit_key("mod::b", 33, 11, 22, false, "d0c0", "tc1")
+        a.hash != b.hash
+    }
+    then "mono keys are order-significant over type args and distinct from plain keys" {
+        let ab = fn_unit_key_mono("m", 33, 11, [1, 2], 22, "d0c0", "tc1")
+        let ba = fn_unit_key_mono("m", 33, 11, [2, 1], 22, "d0c0", "tc1")
+        let plain = fn_unit_key("m", 33, 11, 22, false, "d0c0", "tc1")
+        ab.hash != ba.hash && ab.hash != plain.hash
+    }
+    then "a negative fingerprint (content ids are sparse i64) still keys" {
+        let k = fn_unit_key("f", 33, 0 - 559038737, 22, false, "d0c0", "tc1")
+        k.hash.length == 64
+    }
+}
+
+spec "fn unit store: publish/lookup round-trip" {
+    then "published artifact resolves byte-identical; unknown key misses" {
+        let root = fresh_store_root()
+        let s = fn_unit_store_for(cache_for(root))
+        let src = "${root}/artifact.bc"
+        let _ = avra_selfhost_write_file(src, "unit-bytes-v1\n")
+        let k = fn_unit_key("f", 1, 1, 2, false, "d0c0", "tc")
+        let published = fn_unit_publish(s, k, src)
+        let hit = fn_unit_lookup(s, k)
+        let miss = fn_unit_lookup(s, fn_unit_key("ghost", 1, 999, 2, false, "d0c0", "tc"))
+        let ok = published != null && hit != null
+            && sha256_file(hit ?? "") == sha256_file(src) && miss == null
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "identical artifacts under distinct keys collapse to one stored unit" {
+        let root = fresh_store_root()
+        let s = fn_unit_store_for(cache_for(root))
+        let src = "${root}/artifact.bc"
+        let _ = avra_selfhost_write_file(src, "same-ir-bytes\n")
+        let k1 = fn_unit_key("f", 1, 1, 2, false, "d0c0", "tc")
+        let k2 = fn_unit_key_mono("m", 1, 7, [3], 2, "d0c0", "tc")
+        let p1 = fn_unit_publish(s, k1, src) ?? ""
+        let p2 = fn_unit_publish(s, k2, src) ?? ""
+        let count = avra_shell_exec("ls '${s.art_dir}' | wc -l").trim()
+        let ok = p1 == p2 && p1.length > 0 && count == "1"
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "a damaged slot (pointer to a removed artifact) demotes to a miss" {
+        let root = fresh_store_root()
+        let s = fn_unit_store_for(cache_for(root))
+        let src = "${root}/artifact.bc"
+        let _ = avra_selfhost_write_file(src, "doomed-bytes\n")
+        let k = fn_unit_key("f", 1, 1, 2, false, "d0c0", "tc")
+        let published = fn_unit_publish(s, k, src) ?? ""
+        let _ = avra_remove_file(published)
+        let after = fn_unit_lookup(s, k)
+        avra_shell_exec("rm -rf '${root}'")
+        published.length > 0 && after == null
+    }
+    then "a corrupt (non-64-hex) pointer demotes to a miss" {
+        let root = fresh_store_root()
+        let s = fn_unit_store_for(cache_for(root))
+        let _ = fn_unit_store_init(s)
+        let k = fn_unit_key("f", 1, 1, 2, false, "d0c0", "tc")
+        // A truncated pointer written straight into the key slot must not
+        // resolve to some art/<junk>.unit — it is an honest miss.
+        let _ = avra_selfhost_write_file("${s.key_dir}${k.hash}", "deadbeef")
+        let after = fn_unit_lookup(s, k)
+        avra_shell_exec("rm -rf '${root}'")
+        after == null
+    }
+    then "publishing a missing or empty source fails without leaving a pointer" {
+        let root = fresh_store_root()
+        let s = fn_unit_store_for(cache_for(root))
+        let k = fn_unit_key("f", 1, 1, 2, false, "d0c0", "tc")
+        let ghost = fn_unit_publish(s, k, "${root}/nonexistent.bc")
+        let empty_src = "${root}/empty.bc"
+        let _ = avra_selfhost_write_file(empty_src, "")
+        let empty = fn_unit_publish(s, k, empty_src)
+        let after = fn_unit_lookup(s, k)
+        avra_shell_exec("rm -rf '${root}'")
+        ghost == null && empty == null && after == null
+    }
+}

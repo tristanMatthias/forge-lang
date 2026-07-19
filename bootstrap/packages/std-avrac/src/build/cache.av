@@ -373,7 +373,7 @@ fn obj_store_key(llc_flags: string, ll_content_hash: string) -> string {
 /// Returns true when `dest` ends up present and non-empty. Binary-safe
 /// (`cp`, never the NUL-truncating string round-trip). Failure removes
 /// the temp and leaves `dest` untouched.
-fn atomic_install(src: string, dest: string) -> bool {
+export fn atomic_install(src: string, dest: string) -> bool {
     let tmp = dest + ".tmp." + string(avra_getpid())
     let rc = avra_shell_exec_status("cp '" + src + "' '" + tmp + "'")
     if rc != 0 || avra_file_size(tmp) <= 0 {

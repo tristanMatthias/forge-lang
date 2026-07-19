@@ -1696,31 +1696,8 @@ mode_emit_gen_check() {
 // the canonical expression grammar and writes a runnable module: the emitted
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
-use @std.avrac.features.grammar.{parse_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_expr_grammar, emit_parser_source}
 use @std.avrac.core.{avra_selfhost_write_file}
-
-fn expr_grammar_src() -> string {
-    "grammar Expr {\n" +
-    "  expression = logic_or\n" +
-    "  logic_or   = l:logic_and ( op:(\"||\") r:logic_and )* -> fold_logical(l, op, r)\n" +
-    "  logic_and  = l:equality ( op:(\"&&\") r:equality )* -> fold_logical(l, op, r)\n" +
-    "  equality   = l:bitor ( op:(\"!=\" | \"==\") r:bitor )* -> fold_binary(l, op, r)\n" +
-    "  bitor      = l:bitxor ( op:(\"|\") r:bitxor )* -> fold_binary(l, op, r)\n" +
-    "  bitxor     = l:bitand ( op:(\"^\") r:bitand )* -> fold_binary(l, op, r)\n" +
-    "  bitand     = l:comparison ( op:(\"&\") r:comparison )* -> fold_binary(l, op, r)\n" +
-    "  comparison = l:shift ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:shift )* -> fold_binary(l, op, r)\n" +
-    "  shift      = l:term ( op:(\"<<\" | \">>\") r:term )* -> fold_binary(l, op, r)\n" +
-    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
-    "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
-    "  unary      = op:(\"!\" | \"-\" | \"~\") operand:unary -> Unary(op, operand) | postfix\n" +
-    "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
-    "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
-    "             | \"[\" idx:expression \"]\" -> index_suffix(idx)\n" +
-    "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
-    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
-    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
-    "}"
-}
 
 fn imports_block() -> string {
     "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, capval_tok_text, dump_expr}\n" +
@@ -1759,8 +1736,7 @@ fn harness_block() -> string {
 }
 
 fn main() {
-    let gp = parse_grammar(expr_grammar_src())
-    let src = imports_block() + emit_parser_source(gp.grammar) + "\n" + harness_block()
+    let src = imports_block() + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", src)
     println("wrote build/emit_gen/generated_parser.av")
 }
