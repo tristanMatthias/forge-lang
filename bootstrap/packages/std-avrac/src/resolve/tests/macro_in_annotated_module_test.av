@@ -1,0 +1,81 @@
+// WHY: regression guard for t-oj2h — a macro-spliced decl nested inside
+// an ANNOTATED module must still be registered (collect_macro_items) and
+// requalified (rewrite_macro_stmts) by the resolver.
+//
+// Both functions (resolve/names.av) recurse into `.Module(name, body)` to
+// pick up macro-spliced decls inside a module wrapper. But a module
+// carrying an annotation — `@export mod feat { .. }`, or a module the
+// metadata synthesizer re-wraps as `Annotated(annots, Module(..))`
+// (build/metadata_synthesize.av) — is `Annotated([export], Module(..))`,
+// which the old bare `.Module` arm did NOT match: the whole
+// annotated-module body was skipped, so a `from_macro` decl inside it was
+// never interned nor rewritten. The fix dispatches on `stmt_unwrap(..)`
+// and rebuilds through `rewrap_annotations`, so an annotated module is
+// recursed into while keeping its annotation layers.
+//
+// This drives the two resolver entry points directly on a hand-built AST.
+// A surface fixture can't reach the shape: `@expand` splices at the CALL
+// SITE (top level, never inside a module), the parser leaves `mod name`
+// with an EMPTY body (modules are files — bodies fill from disk), and an
+// inline `mod feat { }` in a standalone program resolves as a FILE module.
+// So the test constructs `Annotated([export], Module("feat", [fn
+// gen_helper]))` node-by-node, marks the nested fn `from_macro`, and
+// checks it is interned and its body walked.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.resolve.{register_decls, register_macro_decls, rewrite_uses_macro_only, SymbolKind, symbol_id}
+use @std.avrac.core.{Stmt, Expr, NodeStore, StmtId, ValueType, Annotation, TypeParamEntry, ParamEntry, stmt_unwrap}
+
+/// Build `@export mod feat { fn gen_helper() -> int { 42 } }` in `store`
+/// and mark the nested fn macro-introduced. Returns the top-level ids
+/// (the single annotated module) — the nested fn's id is recovered via
+/// `inner_decl_id` so the same helper reads it back after a rewrite pass.
+fn build_annotated_module(store: NodeStore) -> List<StmtId> {
+    let empty_tp: List<TypeParamEntry> = []
+    let empty_params: List<ParamEntry> = []
+    let num = store.exprs.add_leaf(Expr.Number("42"))
+    let ret = store.stmts.add_leaf(Stmt.Return(num))
+    let body: List<StmtId> = [ret]
+    let fn_id = store.stmts.add_leaf(Stmt.Function("gen_helper", empty_tp, empty_params, ValueType.Int, body))
+    store.mark_from_macro(fn_id)
+    let mod_id = store.stmts.add_leaf(Stmt.Module("feat", [fn_id]))
+    let exp = Annotation { name: "export", arg_ids: none }
+    let ann_id = store.stmts.add_leaf(Stmt.Annotated([exp], mod_id))
+    [ann_id]
+}
+
+/// The nested `fn gen_helper` id: unwrap the `@export` Annotated layer to
+/// reach the Module, then take its first body statement.
+fn inner_decl_id(store: NodeStore, ids: List<StmtId>) -> StmtId {
+    match stmt_unwrap(store, store.stmts.get(ids[0])) {
+        .Module(_, body) -> body[0]
+        _ -> ids[0]
+    }
+}
+
+spec "macro-spliced decl inside an @export module is registered + rewritten (t-oj2h)" {
+    then "register_macro_decls interns a from_macro decl nested in an @export module" {
+        let store = parse_program_source("fn dummy() {}\n").store
+        let ids = build_annotated_module(store)
+        // Register ONLY the macro decls over an empty base, so the sole
+        // path that can reach `gen_helper` is the annotated-module
+        // recursion under test.
+        let after = register_macro_decls(register_decls([], store), ids)
+        // Before the fix the annotated module was skipped and this lookup
+        // is null; after it, the nested decl is interned at feat::gen_helper.
+        after.symbols.lookup(symbol_id("feat::gen_helper", SymbolKind.FnSym)) != null
+    }
+
+    then "rewrite_uses_macro_only recurses into the annotated module and rebuilds its from_macro body" {
+        let store = parse_program_source("fn dummy() {}\n").store
+        let ids = build_annotated_module(store)
+        let orig_inner = inner_decl_id(store, ids)
+        let after = register_macro_decls(register_decls([], store), ids)
+        let out_ids = rewrite_uses_macro_only(ids, after)
+        // The macro-rewrite reallocates every from_macro row it walks
+        // (restmt → a fresh id). Before the fix the annotated module fell
+        // through untouched, so the nested id was unchanged; after it, the
+        // body is walked and the fn row is rebuilt → a different id.
+        inner_decl_id(store, out_ids) != orig_inner
+    }
+}
