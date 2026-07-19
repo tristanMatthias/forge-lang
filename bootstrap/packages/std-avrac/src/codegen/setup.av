@@ -659,16 +659,23 @@ export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: 
     }
 }
 
-/// Per-fn CGU (ps3t.8.6.1): collect the qualified names of every non-external
-/// fn — the targets, each of which becomes its own per-fn module. Mirrors
-/// emit_function_bodies' walk (recurses Impl + non-external Module; skips
-/// @external_unit), so the target set is precisely the bodies the
-/// whole-program module would have defined. The synthesized wrapper
-/// (main/__bs_top_level) is NOT here — it's the wrapper unit, emitted
-/// separately. (Whole-program scope: lib-ownership filtering, for the
-/// library CGU path, is a later concern — emit_one_fn_body already re-checks
-/// ownership per target.)
-export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<string>) -> List<string> {
+/// One per-fn CGU target: the fn's resolved name (for emit_fn_object) plus
+/// its AST item id (for the content-fingerprint cache key — item_sig_fp /
+/// item_body_fp / mono_erased regime).
+export type FnTarget = {
+    name: string,
+    id: StmtId,
+}
+
+/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn — the targets,
+/// each of which becomes its own per-fn module. Mirrors emit_function_bodies'
+/// walk (recurses Impl + non-external Module; skips @external_unit), so the
+/// target set is precisely the bodies the whole-program module would have
+/// defined. The synthesized wrapper (main/__bs_top_level) is NOT here — it's
+/// the wrapper unit, emitted separately. (Whole-program scope: lib-ownership
+/// filtering, for the library CGU path, is a later concern — emit_one_fn_body
+/// already re-checks ownership per target.)
+export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>) -> List<FnTarget> {
     mut out = acc
     for id in stmts {
         let node = store.stmts.get(id)
@@ -676,7 +683,7 @@ export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<st
         match stmt_unwrap(store, node) {
             .Function(name, _, _, _, _) -> {
                 if !is_external {
-                    out = out.push(name)
+                    out = out.push(FnTarget { name: name, id: id })
                 }
             }
             .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out) }
@@ -687,6 +694,13 @@ export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<st
         }
     }
     out
+}
+
+/// Whether a per-fn target's body is an @mono_erased specialization — its
+/// unbound T lays out as wide i64, so the same body text emits different IR
+/// per regime; the cache key must distinguish it (fncache.av `erased`).
+export fn fn_target_is_erased(store: NodeStore, id: StmtId) -> bool {
+    find_annotation(store, store.stmts.get(id), "mono_erased") != null
 }
 
 /// Per-fn CGU (ps3t.8.6.1): emit the WRAPPER unit — the module that owns

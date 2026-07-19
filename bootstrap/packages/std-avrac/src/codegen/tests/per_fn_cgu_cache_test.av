@@ -1,0 +1,88 @@
+// Per-fn CGU object-cache oracle (ps3t.8.6.1 increment 4). The incremental
+// win: build_binary_cgu caches each fn's .o keyed on its content fingerprint,
+// so a rebuild reuses unchanged fns' objects and a one-fn edit re-emits ONLY
+// that fn. Two invariants:
+//   * cold → warm: rebuilding the unchanged program publishes NO new artifact
+//     (every fn is a cache hit) and runs identically;
+//   * one-fn blast radius: editing exactly one fn's BODY (no type change)
+//     publishes exactly ONE new artifact — that fn — while every other fn
+//     hits; the linked binary reflects the edit.
+//
+// Isolated project_dir under /tmp (runtime.o + llvm_wrapper.o copied in) so
+// the fncgu art store is CLEAN — art counts are the observable for hit/miss.
+//
+// @@fixture-stateful@@ — links + runs real binaries; a transient hiccup must
+// re-probe, not freeze as FAIL.
+
+use @std.avrac.core.{ avra_shell_exec, avra_getpid }
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_binary_cgu, CompileTarget}
+
+fn repo_root() -> string { avra_shell_exec("pwd").trim() }
+
+fn mk_target(src: string, dir: string, bin: string) -> CompileTarget? {
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.ids == null { return null }
+    CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/${bin}",
+        project_dir: dir,
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+}
+
+/// Build `src` via the CGU path into `dir/bin` and run it; "" on build error.
+fn build_run(src: string, dir: string, bin: string) -> string {
+    let t = mk_target(src, dir, bin)
+    if t == null { return "parsefail" }
+    match build_binary_cgu(t!) {
+        .Ok(_) -> {}
+        .Err(e) -> { return "builderr:${e}" }
+    }
+    avra_shell_exec("'${dir}/${bin}' 2>&1").trim()
+}
+
+/// How many distinct per-fn objects the cache holds (art store entries).
+fn art_count(dir: string) -> string {
+    avra_shell_exec("ls '${dir}/build/cache/fncgu/art' 2>/dev/null | wc -l").trim()
+}
+
+spec "per-fn CGU cache: warm rebuild is a no-op; a one-fn edit re-emits only that fn" {
+    then "cold→warm publishes nothing new; editing add re-emits ONLY add" {
+        let dir = "/tmp/avra_cgucache_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/build'")
+        // Isolated build dir needs the runtime objects to link against.
+        avra_shell_exec("cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+
+        // v1: twice(20) = add(20,20) = 40; +2 = 42.
+        let v1 = "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nprintln(string(twice(20) + 2))\n"
+        let out1 = build_run(v1, dir, "b1.bin")
+        let cold = art_count(dir)
+
+        // Warm: same source, fresh parse → every fn is a cache hit, NO new art.
+        let out2 = build_run(v1, dir, "b2.bin")
+        let warm = art_count(dir)
+
+        // v2: edit ONLY add's body (a+b → a+b+100, no type change). twice's IR
+        // is unchanged (it just calls @add) → cache hit; only add re-emits.
+        // twice(20) = 20+20+100 = 140; +2 = 142.
+        let v2 = "fn add(a: int, b: int) -> int { a + b + 100 }\nfn twice(x: int) -> int { add(x, x) }\nprintln(string(twice(20) + 2))\n"
+        let out3 = build_run(v2, dir, "b3.bin")
+        let edited = art_count(dir)
+
+        // edited - cold must be exactly 1 (only add re-emitted).
+        let delta = avra_shell_exec("echo $(( ${edited} - ${cold} ))").trim()
+
+        let ok = out1 == "42" && out2 == "42" && out3 == "142"
+            && cold != "0" && warm == cold   // warm rebuild published nothing new
+            && delta == "1"                    // one-fn edit → exactly one new object
+        if !ok {
+            println("cgu-cache: out1=${out1} out2=${out2} out3=${out3} cold=${cold} warm=${warm} edited=${edited} delta=${delta}")
+        }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+}

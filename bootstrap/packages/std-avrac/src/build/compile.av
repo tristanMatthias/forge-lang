@@ -10,7 +10,7 @@
 // Filed under: 03hx (extraction tracking ticket).
 
 use core.{avra_process_forward, avra_shell_exec}
-use core.{NodeStore}
+use core.{NodeStore, item_sig_fp, item_body_fp, type_table_fp}
 use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
@@ -18,9 +18,10 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object, FnTarget, fn_target_is_erased}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
+use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key, fn_unit_lookup, fn_unit_publish}
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
@@ -140,18 +141,46 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
     let build_dir = "${target.project_dir}/build"
     let stem = strip_bin_suffix(target.bin_path)
 
-    // One object per fn target + the wrapper object. Deterministic order
-    // (collection order) keeps the link input list stable.
-    let empty: List<string> = []
+    // Per-fn OBJECT cache (increment 4 — the incrementality): each fn's .o is
+    // keyed on its content fingerprint (item_sig_fp ⊕ item_body_fp ⊕ type
+    // table ⊕ erased regime ⊕ codegen modes ⊕ toolchain), in a namespace
+    // distinct from the IR-dump write side. A cache HIT reuses the stored .o
+    // and SKIPS re-emission; a MISS emits the per-fn module → .o and publishes
+    // it. On a one-fn edit only that fn's body_fp changes, so only its object
+    // re-emits — every other fn is a hit. A compiler or codegen-flag change
+    // re-emits everything (toolchain/modes are in the key).
+    let cache = cache_for(target.project_dir)
+    let cgu_store = fn_unit_store_for_ns(cache, "fncgu")
+    let _ = fn_unit_store_init(cgu_store)
+    let table_fp = type_table_fp(fm.type_reg)
+    let toolchain = toolchain_fingerprint()
+    let modes = "d0c0"  // debug_null_checks=false, coverage=false (CGU scope)
+
+    let empty: List<FnTarget> = []
     let targets = collect_fn_targets(target.store, fm.stmts, empty)
     mut objs: List<string> = []
     mut ti = 0
     while ti < targets.length {
-        let obj = "${stem}.fn${string(ti)}.o"
-        let _ = emit_fn_object(targets[ti], fm.stmts, obj, fm.type_reg, target.store)?
-        objs.push(obj)
+        let t = targets[ti]
+        let key = fn_unit_key(t.name, item_sig_fp(target.store, t.id), item_body_fp(target.store, t.id),
+                              table_fp, fn_target_is_erased(target.store, t.id), modes, toolchain)
+        let cached = fn_unit_lookup(cgu_store, key)
+        if cached != null {
+            objs.push(cached!)
+        } else {
+            let obj = "${stem}.fn${string(ti)}.o"
+            let _ = emit_fn_object(t.name, fm.stmts, obj, fm.type_reg, target.store)?
+            let pub = fn_unit_publish(cgu_store, key, obj)
+            if pub != null {
+                objs.push(pub!)
+            } else {
+                objs.push(obj)
+            }
+        }
         ti = ti + 1
     }
+    // The wrapper object (top-level entry + __release_* defs) changes whenever
+    // the top-level code or the type set does — always re-emitted, not cached.
     let wrapper_obj = "${stem}.wrapper.o"
     let _ = emit_wrapper_object(fm.stmts, wrapper_obj, fm.type_reg, target.store)?
     objs.push(wrapper_obj)
