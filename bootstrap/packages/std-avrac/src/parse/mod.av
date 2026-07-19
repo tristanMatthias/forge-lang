@@ -17,7 +17,17 @@ use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
+// ps3t.6.5.12 (parser swap-in): the hand parser delegates a whole type
+// expression to the grammar-DSL when AVRA_PARSER_TYPE_FLIP=1 — the inverse of
+// the @hand bridge (grammar -> parse). The parse<->features.grammar module
+// cycle is fine: the package resolves as a whole (parse<->features.closures
+// already cycles the same way).
+use features.grammar.{run_dsl_type_at, DslTypeResult}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
+
+// The parser-swap-in env toggle. Declared extern here (resolves to the single C
+// symbol; sibling modules declare it identically — extern decls are per-file).
+extern fn avra_process_env_get(name: string) -> string
 
 /// Output of `parse_expression_source`. `expr` is null on parse
 /// failure; consult `had_error` / `error_message` for the cause.
@@ -204,6 +214,12 @@ export type Parser = {
     // into the entry tree as children, never as program roots). Set at
     // construction, never mutated mid-parse (not backtrack-relevant).
     mut records_roots: int,
+    // ps3t.6.5.12 parser swap-in: when true, parse_type_expr delegates the
+    // whole type expression to the grammar-DSL (run_dsl_type_at) as
+    // authoritative, falling back to the hand parser on a DSL error. Read ONCE
+    // from AVRA_PARSER_TYPE_FLIP at construction (never a getenv per annotation)
+    // and settable directly by tests. Default false → byte-identical hand path.
+    mut type_flip: bool,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -560,6 +576,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         features: build_registry(),
         store: new_node_store(build_line_index(source)),
         records_roots: 1,
+        type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") == "1",
     }
     parser.advance_token()
     parser
@@ -2384,7 +2401,32 @@ impl Parser {
     // generic arguments `<A, B>` and/or nullable `?`.
     // Both generics and nullable are erased — we return the base name.
     // Parse a structured type expression. Returns TypeExpr AST node.
+    // Type-family parse entry. ps3t.6.5.12 routes this through the grammar-DSL
+    // when AVRA_PARSER_TYPE_FLIP=1 — run_dsl_type_at (the inverse of the @hand
+    // bridge) becomes authoritative; a DSL parse error falls back to the hand
+    // parser so the flip can never regress. Default (env unset) is the hand
+    // parser verbatim: byte-identical, zero risk. The flip is proven by
+    // diff-test byte-identity + the full suite WITH the flag on, before its
+    // default is promoted. run_dsl_type_at resyncs the token cursor by byte
+    // position — both surfaces share the hand lexer, so Token.pos ==
+    // current_start at every boundary (the mirror of run_hand_type).
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
+        if self.type_flip {
+            let dsl = run_dsl_type_at(self.source, self.current_start)
+            if !dsl.had_error {
+                while self.current_start < dsl.stop_byte && !self.is_at_end() {
+                    self.advance_token()
+                }
+                return .Ok(dsl.te)
+            }
+            // DSL parse error → fall through to the authoritative hand parser.
+        }
+        self.parse_type_expr_hand(message)
+    }
+
+    // The hand-written type-expression parser: the swap-in oracle, and the
+    // fallback when the DSL flip is off or errors.
+    fn parse_type_expr_hand(self, message: string) -> Result<TypeExpr, string> {
         let base = self.parse_type_atom(message)?
         // Union: A | B | C — lowest precedence in type position
         if self.check(Tk.Pipe) {

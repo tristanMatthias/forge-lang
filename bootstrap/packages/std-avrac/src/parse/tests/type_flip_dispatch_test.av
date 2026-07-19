@@ -1,0 +1,78 @@
+// ps3t.6.5.12 — the type-family FLIP dispatch (parse_type_expr → grammar-DSL).
+//
+// parse_type_expr routes through run_dsl_type_at (the inverse-@hand runner) when
+// the parser's `type_flip` field is set, falling back to the hand parser on a
+// DSL error. The field is read once from AVRA_PARSER_TYPE_FLIP at construction,
+// but is a plain `mut bool` so a test can set it directly — exercising the flip
+// path with NO process-env dependency, in a single low-memory process (the full
+// selfhost flip proof is memory-heavy and lives in the diff-test / promotion
+// step; this pins the dispatch + field wiring).
+//
+// Equivalence = same tree: for every type form, the flip path (DSL) and the
+// hand path must build the same TypeExpr, lowered + rendered identically. This
+// complements the run_dsl_type_at differential test (which proves the runner)
+// by proving the parse_type_expr DISPATCH + fallback wiring around it.
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+
+// parse_type_expr via the FLIP path (type_flip set → DSL authoritative).
+fn flip_type(src: string) -> string {
+    mut p = parser_new(src)
+    p.type_flip = true
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<flip parse error>"
+    }
+}
+
+// parse_type_expr via the HAND path (type_flip default false — env unset here).
+fn hand_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_type(src) == hand_type(src)
+}
+
+spec "ps3t.6.5.12: parse_type_expr flip dispatch == hand path (type_flip field)" {
+    given "the field toggles the path (sanity: flip really took the DSL branch)" {
+        then "flip and hand render the same non-error type for a representative form" {
+            flip_type("Map<string, List<int>>") == "Map<string, List<int>>" &&
+            hand_type("Map<string, List<int>>") == "Map<string, List<int>>"
+        }
+    }
+    given "the full parse_type_expr surface" {
+        then "primitives, names, nullables, generics, list/tuple, unions, fn, dyn agree" {
+            agree("int") && agree("string") && agree("bool") && agree("float") &&
+            agree("Foo") && agree("MyType") &&
+            agree("int?") && agree("Foo?") && agree("Result<int, string>?") &&
+            agree("List<int>") && agree("Map<string, int>") && agree("Result<int, string>") &&
+            agree("Foo<A>") && agree("Pair<A, B>") &&
+            agree("[int]") && agree("[Foo]") &&
+            agree("(int, string)") && agree("(int, bool, Foo)") && agree("(int)") &&
+            agree("int | string") && agree("int | string | bool") && agree("List<int> | string") &&
+            agree("fn(int) -> bool") && agree("fn(int, string) -> Foo") &&
+            agree("fn() -> int") && agree("fn -> int") && agree("fn") &&
+            agree("dyn Display") && agree("dyn Iterator")
+        }
+    }
+    given "nested generics and qualified atoms (program-grammar-only forms)" {
+        then "flip path agrees with hand on the selfhost-critical forms" {
+            agree("List<List<int>>") &&
+            agree("Map<string, Map<int, bool>>") &&
+            agree("@std::avrac::core::ExprId") &&
+            agree("List<@std::avrac::core::ExprId>") &&
+            agree("@std::avrac::core::Result<int, string>")
+        }
+    }
+}
