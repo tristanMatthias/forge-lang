@@ -458,6 +458,27 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "TyParen" -> "mk_paren_type(${args[0]}_list)"
         "TyDyn" -> "CapVal.TExpr(TypeExpr.Named(capval_tok_text(${args[0]})))"
         "MkFn" -> "mk_fn_type(st, capval_present(${args[0]}), ${args[1]}_list, capval_present(${args[2]}), ${args[2]})"
+        // ── Control-flow + declaration builds (target: Stmt / component CapVals)
+        //    — delegate to the SHARED constructor cores (executor.apply_build's
+        //    exact twins). ${args[N]}_list names a rep/list capture; a bare arg
+        //    is a scalar or opt-scalar CapVal. ──
+        "Block" -> "mk_block(st, ${args[0]}_list)"
+        "While" -> "mk_while(st, ${args[0]}, ${args[1]})"
+        "If" -> "mk_if(st, ${args[0]}, ${args[1]}, ${args[2]})"
+        "ForLoop" -> "mk_for_loop(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
+        "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
+        "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkTraitDecl" -> "mk_trait_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkImpl" -> "mk_impl(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]}_list)"
+        "MkUse" -> "mk_use(st, capval_present(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
+        "MkModule" -> "mk_module(st, capval_tok_text(${args[0]}))"
+        "MkField" -> "mk_field(st, capval_tok_text(${args[0]}), ${args[1]})"
+        "MkEVariant" -> "mk_evariant(capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkParam" -> "mk_param(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
+        "MkAssocType" -> "mk_assoc_type(st, capval_tok_text(${args[0]}))"
+        "MkTraitMethod" -> "mk_trait_method(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), capval_present(${args[3]}), ${args[4]}_list)"
+        "MkMethod" -> "mk_method(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
     }
 }
@@ -718,6 +739,13 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_postfix" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
+    // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
+    // except the component CapVals (MkParam → PEntry, MkField → Field,
+    // MkEVariant → Var).
+    if bn == "MkFnDecl" || bn == "MkTypeDecl" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
+    if bn == "MkParam" { return "pentry" }
+    if bn == "MkField" { return "field" }
+    if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" { return "pat" }
     if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" { return "type" }
     "expr"
@@ -776,6 +804,9 @@ fn kind_coerce(kind: string) -> string {
     if kind == "pat" { return "capval_to_pat" }
     if kind == "stmt" { return "capval_to_stmt" }
     if kind == "type" { return "capval_to_texpr" }
+    if kind == "pentry" { return "capval_to_pentry" }
+    if kind == "field" { return "capval_to_field" }
+    if kind == "variant" { return "capval_to_variant" }
     "capval_to_expr"
 }
 
@@ -784,6 +815,9 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "pat" { return "PatId" }
     if kind == "stmt" { return "StmtId" }
     if kind == "type" { return "TypeExpr" }
+    if kind == "pentry" { return "ParamEntry" }
+    if kind == "field" { return "FieldEntry" }
+    if kind == "variant" { return "Variant" }
     "ExprId"
 }
 

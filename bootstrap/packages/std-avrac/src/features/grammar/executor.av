@@ -758,7 +758,7 @@ fn is_stmt_hand(name: string) -> bool {
 /// DSL cursor is resynced past the tokens it consumed. This is the executor's
 /// mini swap-in: proving the generated parser can hand off to `@hand` code
 /// over a shared store (the foundation 6.5.12 generalises).
-fn run_hand_stmt(name: string, st: PState) -> StmtId {
+export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     if !is_stmt_hand(name) {
         st.report("no hand statement rule `${name}`")
         return st.store.stmts.add_leaf(Stmt.Error)
@@ -823,7 +823,7 @@ fn is_type_hand(name: string) -> bool {
 /// arena-backed, so no store-sharing needed) and resyncing the DSL cursor past
 /// what it consumed. The type family lowers the returned `TypeExpr` via the
 /// shared `type_expr_to_vtype`, exactly as it does the pure-grammar type atoms.
-fn run_hand_type(name: string, st: PState) -> TypeExpr {
+export fn run_hand_type(name: string, st: PState) -> TypeExpr {
     if !is_type_hand(name) || st.src == "" {
         st.report("`@hand(${name})` needs the source, unavailable here")
         return TypeExpr.Named("")
@@ -861,7 +861,7 @@ fn is_expr_hand(name: string) -> bool {
 /// (→ StmtId) and `run_hand_type` (→ TypeExpr): the `@hand` delegation now spans
 /// all three live node kinds. `parse_quote` tracks `quote_depth` internally, so
 /// a `~` splice in the quote body is decided identically to the oracle parse.
-fn run_hand_expr(name: string, st: PState) -> ExprId {
+export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // Split preconditions so each reports its OWN cause (a bad rule name vs a
     // missing source), and rely solely on error_node — which reports the
     // message itself — so each diagnostic is recorded exactly once.
@@ -1046,44 +1046,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             }
         }
         "ExprStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
-        // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) ──
-        "Block" if args.length == 1 -> {
-            // The statement-list capture → a brace block. An empty body (the
-            // `*` matched nothing) is a `Stmt.Block([])`, exactly the hand
-            // parser's `{ }`.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(capval_to_stmt_list(env.get(args[0])))))
-        }
-        "While" if args.length == 2 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
-        "If" if args.length == 3 -> {
-            // else may be absent — the optional `( "else" e:… )?` leaves `e`
-            // as Nil, which becomes a null else_branch (the hand parser's
-            // else-less If); a present else (a block or a nested if_stmt for
-            // `else if` chains) is an SNode.
-            let cond = capval_to_expr(st, env.get(args[0]))
-            let then_s = capval_to_stmt(st, env.get(args[1]))
-            mut else_opt: StmtId? = none
-            match env.get(args[2]) {
-                .SNode(eid) -> else_opt = eid
-                _ -> {}
-            }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(cond, then_s, else_opt)))
-        }
-        "ForLoop" if args.length == 4 -> {
-            // `for v in lo [.. hi] body`. The optional `.. hi` picks the AST:
-            // present ⇒ integer-range `Stmt.For(v, lo, hi, body)`, absent ⇒
-            // collection `Stmt.ForIn(v, lo, body)` — mirroring the hand
-            // parser's post-expression `..`-lookahead branch (for_stmt/parser.av).
-            let var = capval_tok_text(env.get(args[0]))
-            let lo = capval_to_expr(st, env.get(args[1]))
-            let body = capval_to_stmt(st, env.get(args[3]))
-            match env.get(args[2]) {
-                .Nil -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
-                _ -> {
-                    let hi = capval_to_expr(st, env.get(args[2]))
-                    CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
-                }
-            }
-        }
+        // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) — each arm
+        //    delegates to the SHARED constructor core (mk_block / mk_while /
+        //    mk_if / mk_for_loop), so apply_build and the generated static
+        //    whole-program parser build byte-identical trees. ──
+        "Block" if args.length == 1 -> mk_block(st, capval_to_stmt_list(env.get(args[0])))
+        "While" if args.length == 2 -> mk_while(st, env.get(args[0]), env.get(args[1]))
+        "If" if args.length == 3 -> mk_if(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        "ForLoop" if args.length == 4 -> mk_for_loop(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
         "OrMaybe" if args.length == 2 -> {
             // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
@@ -1159,14 +1129,13 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             // `match subject { arm* }` — statement-position match.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
         }
-        // ── Declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkParam" if args.length == 2 -> {
-            // `pname ( ":" type )?` — a fn parameter. An UN-annotated param
-            // defaults to Int, matching parse_param_list's `resolved = Int`
-            // (NOT Unknown — fn params differ from bindings here).
-            let pvt = if capval_present(env.get(args[1])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) } else { ValueType.Int }
-            CapVal.PEntry(ParamEntry { name: capval_tok_text(env.get(args[0])), vtype: pvt })
-        }
+        // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the non-generic
+        //    arms delegate to SHARED constructor cores (mk_param / mk_fn_decl /
+        //    mk_field / mk_type_decl / … / mk_impl), so apply_build and the
+        //    generated static whole-program parser build byte-identical trees.
+        //    The GENERIC arms (extra type-param list) stay inline — the 6.5.11
+        //    whole-program grammar has no generic-decl slice. ──
+        "MkParam" if args.length == 2 -> mk_param(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
         "MkTypeParam" if args.length == 2 -> {
             // `name ( ":" bound )?` — one generic type parameter. A single trait
             // bound only (parse_type_param_entries; multi-bound `T: A + B` is a
@@ -1174,14 +1143,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let bound = if capval_present(env.get(args[1])) { capval_tok_text(env.get(args[1])) } else { "" }
             CapVal.TParam(TypeParamEntry { name: capval_tok_text(env.get(args[0])), bounds: bound })
         }
-        "MkFnDecl" if args.length == 4 -> {
-            // `fn name ( params? ) ( "->" ret )? { body }`. No generics in this
-            // slice (type_params = []); an absent return type defaults to Void
-            // (parse_function_declaration's `ret_vtype = Void`).
-            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
-            let no_tp: List<TypeParamEntry> = []
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), no_tp, capval_to_pentry_list(env.get(args[1])), ret_vt, capval_to_stmt_list(env.get(args[3])))))
-        }
+        "MkFnDecl" if args.length == 4 -> mk_fn_decl(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
         "MkFnDecl" if args.length == 5 -> {
             // Generic form: `fn name < tparams > ( params? ) ( "->" ret )? { body }`.
             // Args shift by one for the type-param list (args[1]); the rest match
@@ -1190,130 +1152,29 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             let ret_vt = if capval_present(env.get(args[3])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[3]))) } else { ValueType.Void }
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), ret_vt, capval_to_stmt_list(env.get(args[4])))))
         }
-        "MkField" if args.length == 2 -> {
-            // `name : type` — a struct/variant field. The type lowers through the
-            // shared type family; a field ALWAYS carries a type (parse_field_list
-            // requires the `:`), so no default is involved.
-            CapVal.Field(FieldEntry { name: capval_tok_text(env.get(args[0])), resolved: type_expr_to_vtype(capval_to_texpr(st, env.get(args[1]))) })
-        }
-        "MkTypeDecl" if args.length == 2 -> {
-            // `type Name = { field* }` — struct declaration (no generics this
-            // slice; type_params = []). Union-alias / newtype / type-operator RHS
-            // forms are follow-ups.
-            let no_tp: List<TypeParamEntry> = []
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_field_list(env.get(args[1])))))
-        }
+        "MkField" if args.length == 2 -> mk_field(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
+        "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         "MkTypeDecl" if args.length == 3 -> {
             // Generic struct: `type Name < tparams > = { field* }` — the
             // type-param list (args[1]) is stored + rendered `<…>`.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))))
         }
-        "MkEVariant" if args.length == 2 -> {
-            // `Name` (no payload ⇒ empty fields) or `Name( field, … )` — an enum
-            // variant. Field payload reuses MkField (the same `name : type`).
-            CapVal.Var(Variant { name: capval_tok_text(env.get(args[0])), fields: capval_to_field_list(env.get(args[1])) })
-        }
-        "MkEnumDecl" if args.length == 2 -> {
-            // `enum Name { variant* }` (no generics this slice).
-            let no_tp: List<TypeParamEntry> = []
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), no_tp, capval_to_var_list(env.get(args[1])))))
-        }
+        "MkEVariant" if args.length == 2 -> mk_evariant(capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
+        "MkEnumDecl" if args.length == 2 -> mk_enum_decl(st, capval_tok_text(env.get(args[0])), capval_to_var_list(env.get(args[1])))
         "MkEnumDecl" if args.length == 3 -> {
             // Generic enum: `enum Name < tparams > { variant* }` — the type-param
             // list (args[1]) is stored + rendered `<…>`.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))))
         }
-        "MkUse" if args.length == 3 -> {
-            // `use ( "@" )? seg ( "." seg )* { names }` — an import. The path is
-            // the dot-joined segments (leading "@" for a package-qualified path);
-            // the names reuse the bare-name ParamEntry list (parse_use_name_list).
-            mut path = ""
-            match env.get(args[1]) {
-                .Toks(ts) -> {
-                    for t in ts { path = if path == "" { t.text } else { path + "." + t.text } }
-                }
-                .Tok(t) -> path = t.text
-                _ -> {}
-            }
-            if capval_present(env.get(args[0])) { path = "@" + path }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(env.get(args[2]), ValueType.Unknown))))
-        }
-        "MkModule" if args.length == 1 -> {
-            // `mod name` — a module STUB. The surface form carries no inline body
-            // (parse_module_declaration produces `Stmt.Module(name, [])`); the
-            // resolver fills the body from the corresponding `.av` file later.
-            let empty_body: List<StmtId> = []
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(env.get(args[0])), empty_body)))
-        }
+        "MkUse" if args.length == 3 -> mk_use(st, capval_present(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
+        "MkModule" if args.length == 1 -> mk_module(st, capval_tok_text(env.get(args[0])))
         // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkAssocType" if args.length == 1 -> {
-            // `type Name` — a trait associated-type member. parse_trait_methods
-            // stores it as `Stmt.AssocType(name, Unknown)` (no `= Concrete` in a
-            // trait; that form belongs to `impl`). Renders `(assoc-type Name)`.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(capval_tok_text(env.get(args[0])), ValueType.Unknown)))
-        }
-        "MkTraitMethod" if args.length == 5 -> {
-            // `fn name ( params? ) ( "->" ret )? ( lb:"{" body "}" )?` — a trait
-            // method member. The brace MARKER `lb` (arg 3, not the body content)
-            // signals a DEFAULT method: present ⇒ `Stmt.Function` (plain name —
-            // trait defaults are NOT mangled; an EMPTY body still counts, since
-            // the braces are there), absent ⇒ signature-only `Stmt.ExternFn` —
-            // matching parse_trait_method_sig. `self` is a plain param here
-            // (parse_param_list, no receiver synthesis), so it renders as `self`.
-            let mname = capval_tok_text(env.get(args[0]))
-            let params = capval_to_pentry_list(env.get(args[1]))
-            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
-            if capval_present(env.get(args[3])) {
-                let no_tp: List<TypeParamEntry> = []
-                CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(mname, no_tp, params, ret_vt, capval_to_stmt_list(env.get(args[4])))))
-            } else {
-                CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(mname, params, ret_vt)))
-            }
-        }
-        "MkTraitDecl" if args.length == 2 -> {
-            // `trait Name { member* }` — the members are a Stmt id list (each an
-            // ExternFn / Function / AssocType), exactly parse_trait_declaration's
-            // `Stmt.TraitDecl(name, methods.ids)`.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))))
-        }
+        "MkAssocType" if args.length == 1 -> mk_assoc_type(st, capval_tok_text(env.get(args[0])))
+        "MkTraitMethod" if args.length == 5 -> mk_trait_method(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])))
+        "MkTraitDecl" if args.length == 2 -> mk_trait_decl(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         // ── Impl declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkMethod" if args.length == 4 -> {
-            // One impl method, built with its PLAIN name here — the enclosing
-            // impl type isn't in scope in this (context-free) rule, so MkImpl
-            // re-keys the name to the mangled `Type__method` afterwards. `self`
-            // is parsed as a plain first param (render is names-only, so the
-            // hand parser's receiver-type synthesis is a non-issue here).
-            let mname = capval_tok_text(env.get(args[0]))
-            let params = capval_to_pentry_list(env.get(args[1]))
-            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
-            let no_tp: List<TypeParamEntry> = []
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(mname, no_tp, params, ret_vt, capval_to_stmt_list(env.get(args[3])))))
-        }
-        "MkImpl" if args.length == 3 -> {
-            // `impl Type { … }` or `impl Trait for Type { … }`. The mangling
-            // TARGET is the concrete type (the `for` type when present, else the
-            // header type), matching parse_impl_declaration's `target_name`; the
-            // impl name encodes `Trait:Type` for a trait impl, else just `Type`.
-            // Each method (built plain-named by MkMethod) is re-keyed to
-            // `target__method` — the one context-dependent step, done here where
-            // the impl type IS in scope.
-            let header = capval_tok_text(env.get(args[0]))
-            let has_for = capval_present(env.get(args[1]))
-            let target = if has_for { capval_tok_text(env.get(args[1])) } else { header }
-            let impl_name = if has_for { "${header}:${target}" } else { header }
-            mut mangled_ids: List<StmtId> = []
-            for id in capval_to_stmt_list(env.get(args[2])) {
-                match st.store.stmts.get(id) {
-                    // Re-key the plain method name to `target__method` AND
-                    // synthesize the `self` receiver's type from the impl target
-                    // (parse_method_param_list does both) — the two
-                    // context-dependent steps, done here where `target` is known.
-                    .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(ps, target), rv, bd)))
-                    _ -> mangled_ids.push(id)
-                }
-            }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
-        }
+        "MkMethod" if args.length == 4 -> mk_method(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
+        "MkImpl" if args.length == 3 -> mk_impl(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), capval_to_stmt_list(env.get(args[2])))
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkExtern" if args.length == 3 -> {
             // `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI
@@ -1582,6 +1443,188 @@ export fn mk_fn_type(st: PState, has_params: bool, params: List<TypeExpr>, has_r
     CapVal.TExpr(TypeExpr.FnType(params, ret))
 }
 
+// ── Declaration coercions + shared constructor cores (ps3t.6.5.7, ps3t.6.5.11)
+//    The generated static whole-program parser accumulates rep captures per
+//    element (capval_to_pentry / _field / _variant), then hands the built lists
+//    to the SAME constructor helpers apply_build calls — so the generated
+//    parser and the executor build byte-identical declaration trees. ──
+
+/// A capture as one fn parameter — the per-element twin of capval_to_pentry_list.
+export fn capval_to_pentry(st: PState, v: CapVal) -> ParamEntry {
+    match v {
+        .PEntry(p) -> p
+        _ -> {
+            st.report("expected a parameter")
+            ParamEntry { name: "", vtype: ValueType.Unknown }
+        }
+    }
+}
+
+/// A capture as one struct/variant field — the per-element twin of
+/// capval_to_field_list.
+export fn capval_to_field(st: PState, v: CapVal) -> FieldEntry {
+    match v {
+        .Field(f) -> f
+        _ -> {
+            st.report("expected a field")
+            FieldEntry { name: "", resolved: ValueType.Unknown }
+        }
+    }
+}
+
+/// A capture as one enum variant — the per-element twin of capval_to_var_list.
+export fn capval_to_variant(st: PState, v: CapVal) -> Variant {
+    match v {
+        .Var(vv) -> vv
+        _ -> {
+            st.report("expected a variant")
+            Variant { name: "", fields: [] }
+        }
+    }
+}
+
+/// `{ stmt* }` → a brace block (the `Block` build's core).
+export fn mk_block(st: PState, body: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(body)))
+}
+
+/// `while cond body` (the `While` build's core).
+export fn mk_while(st: PState, cond: CapVal, body: CapVal) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, cond), capval_to_stmt(st, body))))
+}
+
+/// `if cond then ( "else" else )?` (the `If` build's core). An absent else is a
+/// null else_branch; a present else (a block or a nested if for `else if`) is an
+/// SNode.
+export fn mk_if(st: PState, cond: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
+    let c = capval_to_expr(st, cond)
+    let then_s = capval_to_stmt(st, then_cv)
+    mut else_opt: StmtId? = none
+    match else_cv {
+        .SNode(eid) -> else_opt = eid
+        _ -> {}
+    }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(c, then_s, else_opt)))
+}
+
+/// `for v in lo ( ".." hi )? body` (the `ForLoop` build's core). A present `..`
+/// picks the integer-range `For`, absent the collection `ForIn`.
+export fn mk_for_loop(st: PState, var_cv: CapVal, lo_cv: CapVal, hi_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let var = capval_tok_text(var_cv)
+    let lo = capval_to_expr(st, lo_cv)
+    let body = capval_to_stmt(st, body_cv)
+    match hi_cv {
+        .Nil -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
+        _ -> {
+            let hi = capval_to_expr(st, hi_cv)
+            CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
+        }
+    }
+}
+
+/// `fn name ( params? ) ( "->" ret )? { body }` (the `MkFnDecl` build's core,
+/// non-generic slice). Absent return type defaults to Void.
+export fn mk_fn_decl(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    let no_tp: List<TypeParamEntry> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
+}
+
+/// `type Name = { field* }` (the `MkTypeDecl` build's core, non-generic slice).
+export fn mk_type_decl(st: PState, name: string, fields: List<FieldEntry>) -> CapVal {
+    let no_tp: List<TypeParamEntry> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, no_tp, fields)))
+}
+
+/// `enum Name { variant* }` (the `MkEnumDecl` build's core, non-generic slice).
+export fn mk_enum_decl(st: PState, name: string, vars: List<Variant>) -> CapVal {
+    let no_tp: List<TypeParamEntry> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(name, no_tp, vars)))
+}
+
+/// `trait Name { member* }` (the `MkTraitDecl` build's core).
+export fn mk_trait_decl(st: PState, name: string, members: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(name, members)))
+}
+
+/// `mod name` — a module STUB (the `MkModule` build's core); the resolver fills
+/// the body from the `.av` file later.
+export fn mk_module(st: PState, name: string) -> CapVal {
+    let empty_body: List<StmtId> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(name, empty_body)))
+}
+
+/// `name : type` — a struct/variant field (the `MkField` build's core).
+export fn mk_field(st: PState, name: string, ftype: CapVal) -> CapVal {
+    CapVal.Field(FieldEntry { name: name, resolved: type_expr_to_vtype(capval_to_texpr(st, ftype)) })
+}
+
+/// `Name ( "(" field* ")" )?` — an enum variant (the `MkEVariant` build's core).
+export fn mk_evariant(name: string, fields: List<FieldEntry>) -> CapVal {
+    CapVal.Var(Variant { name: name, fields: fields })
+}
+
+/// `name ( ":" type )?` — a fn parameter (the `MkParam` build's core). An
+/// UN-annotated param defaults to Int (parse_param_list's default, NOT Unknown).
+export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> CapVal {
+    let pvt = if has_pt { type_expr_to_vtype(capval_to_texpr(st, pt_cv)) } else { ValueType.Int }
+    CapVal.PEntry(ParamEntry { name: name, vtype: pvt })
+}
+
+/// `type Name` — a trait associated-type member (the `MkAssocType` build's core).
+export fn mk_assoc_type(st: PState, name: string) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ValueType.Unknown)))
+}
+
+/// `fn name ( params? ) ( "->" ret )? ( "{" body "}" )?` — a trait method member
+/// (the `MkTraitMethod` build's core). A present brace body ⇒ default method
+/// (Function, plain name); absent ⇒ signature-only ExternFn.
+export fn mk_trait_method(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, has_body: bool, body: List<StmtId>) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    if has_body {
+        let no_tp: List<TypeParamEntry> = []
+        CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
+    } else {
+        CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(name, params, ret_vt)))
+    }
+}
+
+/// `fn name ( params? ) ( "->" ret )? { body }` — one impl method, built with
+/// its PLAIN name (the `MkMethod` build's core); MkImpl re-keys it to the
+/// mangled `Type__method` where the impl target is in scope.
+export fn mk_method(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    let no_tp: List<TypeParamEntry> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
+}
+
+/// `impl Type { … }` / `impl Trait for Type { … }` — the `MkImpl` build's core.
+/// The mangling TARGET is the `for` type when present, else the header type;
+/// each plain-named method is re-keyed to `target__method` and its `self`
+/// receiver retyped to the target — the two context-dependent steps.
+export fn mk_impl(st: PState, header: string, for_cv: CapVal, has_for: bool, methods: List<StmtId>) -> CapVal {
+    let target = if has_for { capval_tok_text(for_cv) } else { header }
+    let impl_name = if has_for { "${header}:${target}" } else { header }
+    mut mangled_ids: List<StmtId> = []
+    for id in methods {
+        match st.store.stmts.get(id) {
+            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(ps, target), rv, bd)))
+            _ -> mangled_ids.push(id)
+        }
+    }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
+}
+
+/// `use ( "@" )? seg ( "." seg )* { names }` — an import (the `MkUse` build's
+/// core). The path is dot-joined (leading `@` for a package path); the names
+/// reuse the bare-name ParamEntry list.
+export fn mk_use(st: PState, at_present: bool, segs: List<Token>, names: List<Token>) -> CapVal {
+    mut path = ""
+    for t in segs { path = if path == "" { t.text } else { path + "." + t.text } }
+    if at_present { path = "@" + path }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown))))
+}
+
 /// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`
 /// yields `Arms` for ≥2, a scalar `Arm` for exactly 1, `Nil` for none.
 fn capval_to_arm_list(v: CapVal) -> List<MatchArm> {
@@ -1742,6 +1785,19 @@ export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
 export fn capval_toks(v: CapVal) -> List<Token> {
     match v {
         .Toks(ts) -> ts
+        _ -> []
+    }
+}
+
+/// A capture as a token list, single OR many: `.Toks` for ≥2, a scalar `.Tok`
+/// for exactly 1 (mk_use's dot-path segments and import names, where a
+/// one-segment `use @std {…}` captures a single `.Tok`), `Nil`/other → empty.
+/// Distinct from capval_toks (which only unwraps the ≥2 `.Toks`, for the
+/// always-repeated expr-fold operator accumulator).
+export fn capval_tok_list(v: CapVal) -> List<Token> {
+    match v {
+        .Toks(ts) -> ts
+        .Tok(t) -> [t]
         _ -> []
     }
 }

@@ -1696,7 +1696,7 @@ mode_emit_gen_check() {
 // the canonical expression grammar and writes a runnable module: the emitted
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_pat_grammar, avra_type_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_pat_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 fn imports_block() -> string {
@@ -1837,6 +1837,66 @@ fn type_harness_block() -> string {
     "}\n"
 }
 
+fn program_imports_block() -> string {
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_to_pentry, capval_to_field, capval_to_variant, capval_tok_text, capval_present, run_hand, run_hand_stmt, run_hand_type, run_hand_expr, literal_node, fold_binary_expr, fold_postfix_expr, unary_expr, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_block, mk_while, mk_if, mk_for_loop, mk_fn_decl, mk_type_decl, mk_enum_decl, mk_trait_decl, mk_impl, mk_use, mk_module, mk_field, mk_evariant, mk_param, mk_assoc_type, mk_trait_method, mk_method}\n" +
+    "use @std.avrac.parse.{parse_program_source}\n" +
+    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, TypeExpr, ParamEntry, FieldEntry, Variant, ValueType, NodeStore, render_stmt_ids}\n\n"
+}
+
+fn program_harness_block() -> string {
+    "fn gen_prog(src: string) -> string {\n" +
+    "    let st = new_pstate(src)\n" +
+    "    let root = capval_to_stmt(st, parse_program(st))\n" +
+    "    if st.had_error { return \"<gen parse error>\" }\n" +
+    "    match st.store.stmts.get(root) {\n" +
+    "        .Block(ids) -> render_stmt_ids(st.store, ids)\n" +
+    "        _ -> \"<not a program block>\"\n" +
+    "    }\n" +
+    "}\n\n" +
+    "fn hand_prog(src: string) -> string {\n" +
+    "    let p = parse_program_source(src)\n" +
+    "    if p.had_error != 0 { return \"<hand parse error>\" }\n" +
+    "    if p.ids == null { return \"<hand no ids>\" }\n" +
+    "    render_stmt_ids(p.store, p.ids!)\n" +
+    "}\n\n" +
+    "fn agree(src: string) -> bool { gen_prog(src) == hand_prog(src) }\n\n" +
+    "fn main() {\n" +
+    "    let ok = agree(\"fn f() {\\n}\\n\") &&\n" +
+    "        agree(\"type Point = { x: int, y: int }\\n\") &&\n" +
+    "        agree(\"enum Color { Red, Green, Blue }\\n\") &&\n" +
+    "        agree(\"mod inner\\n\") &&\n" +
+    "        agree(\"fn a() {\\n}\\nfn b() {\\n}\\n\") &&\n" +
+    "        agree(\"type T = { v: int }\\nenum E { A, B }\\nfn go() {\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    return 1 + 2\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    if a {\\n        return\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    while a {\\n        b()\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    for i in a {\\n        i\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f(x: int, y: List<int>) -> bool {\\n}\\n\") &&\n" +
+    "        agree(\"fn f(a: @std::core::Foo) -> @pkg::Bar {\\n}\\n\") &&\n" +
+    "        agree(\"trait Show {\\n    fn show() -> string\\n}\\n\") &&\n" +
+    "        agree(\"impl Show for Point {\\n    fn show() -> string {\\n        return x\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"use @std.core { List, Map }\\n\") &&\n" +
+    "        agree(\"use @std.core.{ List, Map }\\n\") &&\n" +
+    "        agree(\"use @std.avrac.features.grammar.{ parse_grammar, run_grammar_stmt }\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    ~x\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    return ~y\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    quote {\\n        x\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    let q = quote {\\n        ~x + 1\\n    }\\n    return ~q\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    a()\\n    b()\\n    return c\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    let x = 1\\n    let y = x + 2\\n    return y\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    while a {\\n        if b {\\n            break\\n        }\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    for i in xs {\\n        while g {\\n            continue\\n        }\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    if a {\\n        return 1\\n    } else {\\n        return 2\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    if a {\\n        x()\\n    } else if b {\\n        y()\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    let a = 1\\n    let mut b = 2\\n    return a\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    let v = x else {\\n        return\\n    }\\n    return v\\n}\\n\") &&\n" +
+    "        agree(\"fn f(a: int, b: string, c: bool) -> int {\\n    return a\\n}\\n\") &&\n" +
+    "        agree(\"fn f(x: A | B) -> dyn Show {\\n}\\n\") &&\n" +
+    "        agree(\"type Pair = { a: int, b: int }\\nenum Opt { Some(v: int), None }\\nfn use_it(p: Pair) -> int {\\n    return p\\n}\\n\")\n" +
+    "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
+    "}\n"
+}
+
 fn main() {
     let expr_src = imports_block() + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", expr_src)
@@ -1846,25 +1906,30 @@ fn main() {
     let _ = avra_selfhost_write_file("build/emit_gen/generated_pat_parser.av", pat_src)
     let type_src = type_imports_block() + emit_parser_source(avra_type_grammar()) + "\n" + type_harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_type_parser.av", type_src)
-    println("wrote generated expr + stmt + pat + type parsers")
+    let prog_src = program_imports_block() + emit_parser_source(avra_program_grammar()) + "\n" + program_harness_block()
+    let _ = avra_selfhost_write_file("build/emit_gen/generated_program_parser.av", prog_src)
+    println("wrote generated expr + stmt + pat + type + program parsers")
 }
 AVEOF
   local gen_stmt="$dir/generated_stmt_parser.av"
   local gen_pat="$dir/generated_pat_parser.av"
   local gen_type="$dir/generated_type_parser.av"
+  local gen_prog="$dir/generated_program_parser.av"
   log "emit-gen-check: rendering the generated parsers via emit.av"
   run_fg "$driver" >/dev/null || die "emit-gen-check: driver (emit.av render) failed"
   [ -f "$gen" ] || die "emit-gen-check: driver did not write $gen"
   [ -f "$gen_stmt" ] || die "emit-gen-check: driver did not write $gen_stmt"
   [ -f "$gen_pat" ] || die "emit-gen-check: driver did not write $gen_pat"
   [ -f "$gen_type" ] || die "emit-gen-check: driver did not write $gen_type"
+  [ -f "$gen_prog" ] || die "emit-gen-check: driver did not write $gen_prog"
   # One family per generated module: compile + run each, assert its differential
   # against the hand parser printed GENPASS.
   emit_gen_check_family "expression" "$gen"
   emit_gen_check_family "statement" "$gen_stmt"
   emit_gen_check_family "pattern" "$gen_pat"
   emit_gen_check_family "type" "$gen_type"
-  ok "emit-gen-check: generated parsers (expression + statement + pattern + type) compile + parse byte-equivalent to the hand parser (GENPASS)"
+  emit_gen_check_family "whole-program" "$gen_prog"
+  ok "emit-gen-check: generated parsers (expression + statement + pattern + type + whole-program) compile + parse byte-equivalent to the hand parser (GENPASS)"
 }
 
 # Compile + run one generated-parser module and assert GENPASS.
