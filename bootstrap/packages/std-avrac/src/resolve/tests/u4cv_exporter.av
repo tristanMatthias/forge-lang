@@ -1,0 +1,11 @@
+// t-u4cv guard support: a module that EXPORTS a `tag` fn over its own
+// enum, seeding the flat global short-name index with `tag` + `Kind`.
+export enum EK {
+    EA
+}
+
+export fn tag(k: EK) -> int {
+    match k {
+        .EA -> 100
+    }
+}
