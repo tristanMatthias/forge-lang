@@ -116,6 +116,18 @@ spec "grammar-DSL pattern family: generated parser == hand-written parser (ps3t.
             agree(".Some(.Ok(x)) or .None")
         }
     }
+    given "the optional-match arm surface (spec Axis 10.4): `let <name>` / `none` / `null`" {
+        then "present-bind `let v` (→ .Some(v)) and absence `none`/`null` (→ .None) agree" {
+            agree("let v") &&
+            agree("let value") &&
+            agree("none") &&
+            agree("null")
+        }
+        then "the optional forms compose in or-patterns" {
+            agree("let x or none") &&
+            agree(".Some(x) or none")
+        }
+    }
     given "the DSL trees are the expected shapes (sanity: really built a Pattern)" {
         then "canonical renders of representative forms" {
             dsl_pat("_") == "_" &&

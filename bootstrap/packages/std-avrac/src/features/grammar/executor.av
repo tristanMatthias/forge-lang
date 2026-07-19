@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real}
 use parse.{parser_new_with_file}
@@ -1090,6 +1090,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "PatBool" if args.length == 1 -> CapVal.PNode(pat_bool_node(st, capval_tok_text(env.get(args[0]))))
         "PatNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
         "PatNegNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
+        // The optional-match arm surface (spec Axis 10.4): `let <name> ->` binds the
+        // present value (lowers to `.Some(name)`), `none`/`null ->` matches absence
+        // (`.None`). Both delegate to the SHARED reducer cores the hand parser uses
+        // (pattern_optional_present / pattern_optional_absent), so the trees coincide.
+        "OptPresent" if args.length == 1 -> CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(env.get(args[0])))))
+        "OptAbsent" if args.length == 0 -> CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))
         // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) — each arm
         //    delegates to the SHARED constructor core (fold_type_union /
         //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the

@@ -49,4 +49,14 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
         src.contains("} else if st.cur().text == \".\" {") &&
         src.contains("if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(")
     }
+
+    then "the optional-match arm surface lowers to the SHARED reducer cores" {
+        let src = emit_all()
+        // `let <name>` → .Some(name); `none`/`null` → .None (spec Axis 10.4).
+        src.contains("if st.cur().text == \"let\" {") &&
+        src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(name))))") &&
+        src.contains("if st.cur().text == \"none\" || st.cur().text == \"null\" {") &&
+        src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))")
+    }
+
 }

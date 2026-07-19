@@ -1777,7 +1777,7 @@ fn stmt_harness_block() -> string {
 fn pat_imports_block() -> string {
     "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_pat, capval_to_pat_list, capval_tok_text, run_hand, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
-    "use @std.avrac.core.{Pattern, PatId, ValueType, NodeStore, render_pat_id}\n\n"
+    "use @std.avrac.core.{Pattern, PatId, ValueType, NodeStore, render_pat_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
 fn pat_harness_block() -> string {
@@ -1800,7 +1800,8 @@ fn pat_harness_block() -> string {
     "        agree(\"\\\"hi\\\"\") && agree(\"true\") && agree(\"false\") && agree(\"int(n)\") &&\n" +
     "        agree(\".None\") && agree(\".Ok(x)\") && agree(\".Ok(x, y)\") && agree(\".Some(.Ok(x))\") &&\n" +
     "        agree(\".Red or .Green\") && agree(\".Red or .Green or .Blue\") && agree(\"1 or 2 or 3\") &&\n" +
-    "        agree(\".Some(.Ok(x)) or .None\")\n" +
+    "        agree(\".Some(.Ok(x)) or .None\") &&\n" +
+    "        agree(\"let v\") && agree(\"none\") && agree(\"null\") && agree(\"let x or none\")\n" +
     "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
     "}\n"
 }
