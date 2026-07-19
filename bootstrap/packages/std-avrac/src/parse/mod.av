@@ -22,7 +22,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // the @hand bridge (grammar -> parse). The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{run_dsl_type_at, DslTypeResult}
+use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
@@ -220,6 +220,19 @@ export type Parser = {
     // from AVRA_PARSER_TYPE_FLIP at construction (never a getenv per annotation)
     // and settable directly by tests. Default false → byte-identical hand path.
     mut type_flip: bool,
+    // ps3t.6.5.12 lex-once cache (Step D): the grammar-DSL token list for THIS
+    // parser's source, lexed at most once (lazily, via `grammar_tokens`) and
+    // reused across every type-flip delegation. Empty = not lexed yet (lex_real
+    // always yields >=1 token — the trailing EOF — so empty is an unambiguous
+    // sentinel). Without this the flip re-lexes the whole file per annotation
+    // (O(n^2) + unbounded allocation that OOM'd the full-selfhost flip compile).
+    mut grammar_toks: List<Token>,
+    // ps3t.6.5.12 lex-once cache (Step D): the DSL program grammar, built at most
+    // once per parser (null = not built). Rebuilding its 41 rules per annotation
+    // was ~half the flip's memory blow-up; the type-flip delegation reuses this
+    // one grammar AND this parser's own `store` (the type success path never
+    // allocates into it, so the hand parse's node-id space is untouched).
+    mut dsl_grammar: Grammar?,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -577,6 +590,8 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         store: new_node_store(build_line_index(source)),
         records_roots: 1,
         type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") == "1",
+        grammar_toks: [],
+        dsl_grammar: null,
     }
     parser.advance_token()
     parser
@@ -2410,9 +2425,29 @@ impl Parser {
     // default is promoted. run_dsl_type_at resyncs the token cursor by byte
     // position — both surfaces share the hand lexer, so Token.pos ==
     // current_start at every boundary (the mirror of run_hand_type).
+    // The grammar-DSL token list for this parser's source, lexed at most once
+    // (lex-once cache, ps3t.6.5.12 Step D). Reused by every type-flip
+    // delegation so a file with N type annotations is lexed once, not N times.
+    fn grammar_tokens(self) -> List<Token> {
+        if self.grammar_toks.length == 0 {
+            self.grammar_toks = lex_real(self.source)
+        }
+        self.grammar_toks
+    }
+
+    // The DSL program grammar for this parser, built at most once (lex-once
+    // cache, ps3t.6.5.12 Step D). The `??` fallback is unreachable — the field
+    // is non-null after the guard — it only unwraps `Grammar?` to `Grammar`.
+    fn dsl_type_grammar(self) -> Grammar {
+        if self.dsl_grammar == null {
+            self.dsl_grammar = avra_program_grammar()
+        }
+        self.dsl_grammar ?? avra_program_grammar()
+    }
+
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
         if self.type_flip {
-            let dsl = run_dsl_type_at(self.source, self.current_start)
+            let dsl = run_dsl_type_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.is_at_end() {
                     self.advance_token()

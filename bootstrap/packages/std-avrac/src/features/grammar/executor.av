@@ -869,13 +869,40 @@ export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, dia
 /// `@pkg::mod::T` form that re-emitted `@comptime` bodies carry — the one
 /// selfhost-critical type atom the isolated grammar can't build.
 export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
-    let toks = lex_real(src)
+    run_dsl_type_at_toks(lex_real(src), start_byte, src)
+}
+
+/// Token-sharing form of `run_dsl_type_at` (the "lex-once" layer, ps3t.6.5.12
+/// Step D). Takes a PRE-LEXED `toks` list so a caller that parses many type
+/// annotations from ONE source (the flip inside `parse_type_expr`) lexes it
+/// exactly once and reuses the list — instead of `run_dsl_type_at` re-lexing the
+/// whole file per annotation (the O(n²) + per-call allocation that OOM'd the
+/// full-selfhost flip compile). `src` is still threaded for the `@hand`
+/// delegation (`@pkg::T` → the hand parser over the original source) and the
+/// line index. Behaviour is otherwise identical to `run_dsl_type_at`.
+export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) -> DslTypeResult {
+    run_dsl_type_at_shared(toks, start_byte, src, new_node_store(build_line_index(src)), avra_program_grammar())
+}
+
+/// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
+/// `grammar` in addition to pre-lexed `toks`, so a caller parsing many type
+/// annotations from one source builds NONE of the three per annotation. The
+/// `run_dsl_type_at_toks` layer still re-lexed once but rebuilt a fresh node
+/// store (a fresh ARENA) + the 41-rule grammar + a line index PER call — fresh
+/// arenas never free, so across a selfhost compile's thousands of annotations
+/// they accumulated to ~7.5GB over the hand baseline. Reusing one store + one
+/// grammar per parser bounds it. The store is the DSL's OWN scratch arena
+/// (isolated from the hand parser's, so the real parse's node-id space is
+/// unaffected — byte-identity preserved); accumulation across a file's
+/// annotations is bounded and harmless (each call returns a fresh TypeExpr
+/// value, never a store id).
+export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     mut idx = 0
     while idx < toks.length && toks[idx].pos < start_byte {
         idx = idx + 1
     }
-    mut st = PState { toks, pos: idx, store: new_node_store(build_line_index(src)), src, diags: [], had_error: false }
-    let te = capval_to_texpr(st, exec_rule(avra_program_grammar(), "type_expr", st))
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false }
+    let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
