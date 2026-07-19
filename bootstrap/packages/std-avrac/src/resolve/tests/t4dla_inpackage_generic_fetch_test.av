@@ -1,0 +1,61 @@
+// WHY: regression guard for t-4dla — an IN-PACKAGE (@std::avrac) compute
+// dispatcher that binds a generic engine `ctx.fetch(..)?` WITHOUT a type
+// annotation and then `match`es the result with a pattern binding.
+//
+// t-4dla: the `?`-unwrapped generic impl-method return (`fetch` returns
+// `Result<V, QueryCycle>`, V bound from the `QueryCtx<V>` receiver) used
+// to lose its substitution when compiled in-package — the `match`
+// subject typed `Unknown`, so codegen DROPPED the arm's pattern binding
+// ("undefined variable"). The identical code compiled fine from an
+// external program, and queries.av carried explicit `: RqValue`
+// annotations as the workaround. The in-package V-substitution is now
+// fixed (the 8.3 mono/typeck work), so those annotations were removed;
+// this spec pins the bare shape directly.
+//
+// `t4dla_compute` below is the minimal reproduction: `let hit =
+// ctx.fetch(..)?` (no annotation) then `match hit { .Base(found) -> .. }`.
+// If V is lost the binding `found` is dropped and this fails to compile;
+// a green run is proof the payload flows through.
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed}
+use @std.avrac.core.{content_id_for}
+
+enum T4Val {
+    Base(n: int)
+    Wrap(s: string)
+}
+
+fn t4_render(v: T4Val) -> string {
+    match v {
+        .Base(n) -> "b:${string(n)}"
+        .Wrap(s) -> "w:${s}"
+    }
+}
+
+fn t4dla_compute(ctx: QueryCtx<T4Val>, q: QueryKey) -> Result<Computed<T4Val>, QueryCycle> {
+    if q.family == 1 {
+        // The load-bearing line: UNANNOTATED generic fetch + match with a
+        // pattern binding. `found` must survive to codegen.
+        let hit = ctx.fetch(qk(0, q.arg))?
+        mut n = -1
+        match hit {
+            .Base(found) -> { n = found }
+            .Wrap(_) -> {}
+        }
+        let v = T4Val.Wrap("saw ${string(n)}")
+        return Result.Ok(computed(v, content_id_for(t4_render(v))))
+    }
+    Result.Ok(computed(T4Val.Base(0), 0))
+}
+
+spec "t-4dla: in-package unannotated generic ctx.fetch + match binding survives codegen" {
+    then "the pattern binding from an unannotated ctx.fetch flows through" {
+        let mut db: Db<T4Val> = db_new<T4Val>(t4dla_compute)
+        let seed = T4Val.Base(42)
+        db.set_input(qk(0, 7), seed, content_id_for(t4_render(seed)))
+        match db.fetch(qk(1, 7)) {
+            .Ok(f) -> t4_render(f.value) == "w:saw 42"
+            .Err(_) -> false
+        }
+    }
+}
