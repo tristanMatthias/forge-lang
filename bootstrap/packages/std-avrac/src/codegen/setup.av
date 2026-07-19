@@ -17,7 +17,7 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies, emit_one_fn_body, fn_belongs_to_lib_pkg}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -743,31 +743,29 @@ export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store
     Result.Ok(ctx)
 }
 
-/// Emit a single per-fn module's object to disk. emit_one_fn_module +
-/// avra_llvm_emit_object + dispose.
-export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store) {
+/// Emit a freshly-built module's object to disk and dispose the Ctx —
+/// the shared tail of emit_fn_object / emit_wrapper_object. `what` names
+/// the unit for the error message. A build error propagates untouched.
+fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -> Result<int, string> {
+    match built {
         .Ok(ctx) -> {
             let r = avra_llvm_emit_object(ctx.module, obj_path)
             ctx.dispose()
-            if r != 0 { return Result.Err("emit_fn_object: failed to emit object for '${target}'") }
+            if r != 0 { return Result.Err("failed to emit object for ${what}") }
             Result.Ok(0)
         }
         .Err(e) -> Result.Err(e)
     }
 }
 
-/// Emit the wrapper unit's object to disk.
+/// Emit a single per-fn module's object to disk (per-fn CGU unit).
+export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    emit_ctx_object(emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store), obj_path, "fn '${target}'")
+}
+
+/// Emit the wrapper unit's object to disk (top-level entry + __release_* defs).
 export fn emit_wrapper_object(stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match emit_wrapper_module(stmts, type_reg, store) {
-        .Ok(ctx) -> {
-            let r = avra_llvm_emit_object(ctx.module, obj_path)
-            ctx.dispose()
-            if r != 0 { return Result.Err("emit_wrapper_object: failed to emit wrapper object") }
-            Result.Ok(0)
-        }
-        .Err(e) -> Result.Err(e)
-    }
+    emit_ctx_object(emit_wrapper_module(stmts, type_reg, store), obj_path, "wrapper unit")
 }
 
 /// Compile a program to LLVM IR and write the result to disk.
