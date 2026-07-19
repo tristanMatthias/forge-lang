@@ -140,28 +140,37 @@ export fn emit_one_fn_body(ctx: Ctx, stmts: List<StmtId>, target: string) -> Res
     Result.Ok(false)
 }
 
-/// P2 library-mode ownership check.
-///
-/// Returns true when `fn_name` should have its body emitted in THIS
-/// compile (i.e. it belongs to the package we're building a library
-/// for) — OR when we're in whole-program mode (lib_pkg_root empty).
+/// P2 library-mode ownership check — the pure predicate over an
+/// explicit root list (no Ctx). Shared by `fn_belongs_to_lib_pkg`
+/// (the Ctx-bound form emission uses) and CGU target collection
+/// (`collect_fn_targets`), so target collection and body emission
+/// apply the IDENTICAL ownership rule.
 ///
 /// Ownership rule:
-///   * Whole-program mode (lib_pkg_root == ""): every fn belongs.
-///     Today's behaviour; emit every body.
+///   * Whole-program mode (roots empty): every fn belongs.
 ///   * Library mode (roots set, e.g. "@std::cli" — colon-separated
 ///     for batched test shards owning several modules): a fn belongs
 ///     iff its qualified name starts with `${root}::` for ANY root,
 ///     OR has no `::` at all. Unqualified names are synthesized
 ///     wrappers (main, __init_<mod>, __avra_lib_top_level) that
 ///     always live in this unit.
-export fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
-    if ctx.lib_pkg_roots.length == 0 { return true }
+export fn fn_name_belongs_to_roots(fn_name: string, roots: List<string>) -> bool {
+    if roots.length == 0 { return true }
     if fn_name.index_of("::") < 0 { return true }
-    for root in ctx.lib_pkg_roots {
+    for root in roots {
         if fn_name.starts_with("${root}::") { return true }
     }
     false
+}
+
+/// P2 library-mode ownership check.
+///
+/// Returns true when `fn_name` should have its body emitted in THIS
+/// compile (i.e. it belongs to the package we're building a library
+/// for) — OR when we're in whole-program mode (lib_pkg_root empty).
+/// Thin Ctx-bound wrapper over `fn_name_belongs_to_roots`.
+export fn fn_belongs_to_lib_pkg(ctx: Ctx, fn_name: string) -> bool {
+    fn_name_belongs_to_roots(fn_name, ctx.lib_pkg_roots)
 }
 
 /// Emit a function body's statement block, returning the tail value.

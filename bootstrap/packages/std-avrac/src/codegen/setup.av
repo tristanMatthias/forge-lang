@@ -17,7 +17,7 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body, fn_name_belongs_to_roots}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -667,28 +667,36 @@ export type FnTarget = {
     id: StmtId,
 }
 
-/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn — the targets,
-/// each of which becomes its own per-fn module. Mirrors emit_function_bodies'
-/// walk (recurses Impl + non-external Module; skips @external_unit), so the
-/// target set is precisely the bodies the whole-program module would have
-/// defined. The synthesized wrapper (main/__bs_top_level) is NOT here — it's
-/// the wrapper unit, emitted separately. (Whole-program scope: lib-ownership
-/// filtering, for the library CGU path, is a later concern — emit_one_fn_body
-/// already re-checks ownership per target.)
-export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>) -> List<FnTarget> {
+/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn OWNED by this
+/// unit — the targets, each of which becomes its own per-fn module (or, under
+/// bounded-K, a member of one). Mirrors emit_function_bodies' walk EXACTLY:
+/// recurses Impl + non-external Module, skips @external_unit, AND applies the
+/// same lib-package ownership filter (`fn_name_belongs_to_roots`) so the
+/// collected set is precisely the bodies emit_function_bodies would define.
+///
+/// `roots` is the lib-package ownership list (ctx.lib_pkg_roots, from
+/// AVRA_LIB_PKG_ROOT via parse_pkg_roots) — EMPTY in whole-program mode, where
+/// the filter is a no-op and every non-external fn is collected. In library
+/// mode (roots set), a collected-but-not-owned fn would make emit_one_fn_body
+/// return Ok(false) → emit_one_fn_module Err("not found (or not owned)") →
+/// build_binary_cgu hard-fail; filtering here keeps collect and emit in
+/// lockstep so the library CGU path builds correctly (ps3t.8.6.2, closing the
+/// CodeRabbit gap on PR #862). The synthesized wrapper (main/__bs_top_level)
+/// is NOT here — it's the wrapper unit, emitted separately.
+export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>, roots: List<string>) -> List<FnTarget> {
     mut out = acc
     for id in stmts {
         let node = store.stmts.get(id)
         let is_external = find_annotation(store, node, "external_unit") != null
         match stmt_unwrap(store, node) {
             .Function(name, _, _, _, _) -> {
-                if !is_external {
+                if !is_external && fn_name_belongs_to_roots(name, roots) {
                     out = out.push(FnTarget { name: name, id: id })
                 }
             }
-            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out) }
+            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out, roots) }
             .Module(_, body) -> {
-                if !is_external { out = collect_fn_targets(store, body, out) }
+                if !is_external { out = collect_fn_targets(store, body, out, roots) }
             }
             _ -> {}
         }
@@ -1525,7 +1533,7 @@ fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
 /// (duplicate symbols at link). AVRA_LIB_OBJS keeps colons because
 /// its values are paths, a domain where colon is conventional and
 /// safe.
-fn parse_pkg_roots(raw: string) -> List<string> {
+export fn parse_pkg_roots(raw: string) -> List<string> {
     mut out: List<string> = []
     if raw == "" { return out }
     for part in raw.split(",") {

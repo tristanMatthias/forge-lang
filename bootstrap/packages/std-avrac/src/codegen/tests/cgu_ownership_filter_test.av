@@ -1,0 +1,83 @@
+// CGU library-ownership filter (ps3t.8.6.2 — closes the CodeRabbit gap on
+// PR #862). collect_fn_targets must apply the SAME lib-package ownership rule
+// that emit_function_bodies applies, so a not-owned fn is never collected as a
+// CGU target (which would hand emit_one_fn_module a fn it refuses to emit →
+// "not found (or not owned by this unit)" → build_binary_cgu hard-fail).
+//
+// Two layers:
+//   (1) fn_name_belongs_to_roots — the pure predicate, exhaustively;
+//   (2) collect_fn_targets — the integration: with roots set, only owned +
+//       unqualified (synthesized-wrapper) fns are collected; empty roots
+//       (whole-program) collects every non-external fn, unchanged.
+
+use @std.avrac.core.{NodeStore, StmtId, Stmt, ValueType}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.codegen.{collect_fn_targets, FnTarget}
+use @std.avrac.features.fn_decl.{fn_name_belongs_to_roots}
+
+/// A store to allocate synthetic Function stmts into (parse of "" yields an
+/// empty program but a usable NodeStore arena).
+fn fresh_store() -> NodeStore {
+    parse_program_source("").store
+}
+
+/// Add a bare Function `name` (no params, void ret, empty body) and return its id.
+fn add_fn(store: NodeStore, name: string) -> StmtId {
+    store.stmts.add_leaf(Stmt.Function(name, [], [], ValueType.Void, []))
+}
+
+/// The collected target names for `stmts` under `roots`, joined by "|".
+fn collected_names(store: NodeStore, stmts: List<StmtId>, roots: List<string>) -> string {
+    let empty: List<FnTarget> = []
+    let targets = collect_fn_targets(store, stmts, empty, roots)
+    mut out = ""
+    for t in targets {
+        out = if out == "" { t.name } else { out + "|" + t.name }
+    }
+    out
+}
+
+spec "CGU ownership filter: collect_fn_targets matches emit's skip set" {
+    then "fn_name_belongs_to_roots: whole-program (empty roots) owns everything" {
+        fn_name_belongs_to_roots("@std::cli::foo", [])
+            && fn_name_belongs_to_roots("plain", [])
+            && fn_name_belongs_to_roots("main", [])
+    }
+    then "fn_name_belongs_to_roots: library mode owns matching + unqualified only" {
+        let roots = ["@std::cli"]
+        // ours: prefix match
+        let ours = fn_name_belongs_to_roots("@std::cli::run", roots)
+        // ours: unqualified synthesized wrapper (no "::")
+        let wrapper = fn_name_belongs_to_roots("main", roots)
+        let init = fn_name_belongs_to_roots("__init_foo", roots)
+        // NOT ours: a different package's qualified fn
+        let foreign = fn_name_belongs_to_roots("@std::avrac::emit", roots)
+        // NOT ours: a prefix that is not a "::" boundary (guards against a
+        // bare starts_with without the "::" separator)
+        let near = fn_name_belongs_to_roots("@std::cliX::y", roots)
+        ours && wrapper && init && !foreign && !near
+    }
+    then "fn_name_belongs_to_roots: multiple roots (batched shard) — any match owns" {
+        let roots = ["@std::cli", "@std::test"]
+        fn_name_belongs_to_roots("@std::cli::a", roots)
+            && fn_name_belongs_to_roots("@std::test::b", roots)
+            && !fn_name_belongs_to_roots("@std::json::c", roots)
+    }
+    then "collect_fn_targets: empty roots collects every fn (whole-program, unchanged)" {
+        let store = fresh_store()
+        let a = add_fn(store, "@std::cli::a")
+        let b = add_fn(store, "@std::avrac::b")
+        let m = add_fn(store, "main")
+        let names = collected_names(store, [a, b, m], [])
+        names == "@std::cli::a|@std::avrac::b|main"
+    }
+    then "collect_fn_targets: library roots collect ONLY owned + unqualified fns" {
+        let store = fresh_store()
+        let a = add_fn(store, "@std::cli::a")       // owned
+        let b = add_fn(store, "@std::avrac::b")     // foreign — must be skipped
+        let m = add_fn(store, "main")               // unqualified wrapper — owned
+        let names = collected_names(store, [a, b, m], ["@std::cli"])
+        // @std::avrac::b dropped; order of the survivors preserved.
+        names == "@std::cli::a|main"
+    }
+}

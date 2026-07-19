@@ -9,7 +9,7 @@
 //
 // Filed under: 03hx (extraction tracking ticket).
 
-use core.{avra_process_forward, avra_shell_exec, avra_getpid}
+use core.{avra_process_forward, avra_shell_exec, avra_getpid, avra_process_env_get}
 use core.{NodeStore, item_sig_fp, item_body_fp, type_table_fp}
 use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
@@ -18,7 +18,7 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object, FnTarget, fn_target_is_erased}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key, fn_unit_lookup, fn_unit_publish}
@@ -161,8 +161,14 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
     let toolchain = toolchain_fingerprint()
     let modes = "d0c0"  // debug_null_checks=false, coverage=false (CGU scope)
 
+    // Ownership filter (ps3t.8.6.2): in library mode (AVRA_LIB_PKG_ROOT set)
+    // only fns OWNED by this unit are targets — matching emit_function_bodies'
+    // skip set exactly, so a not-owned fn is never collected (and thus never
+    // handed to emit_one_fn_module, which would Err "not found (or not owned)").
+    // Empty in whole-program mode → every non-external fn collected, as before.
+    let roots = parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT"))
     let empty: List<FnTarget> = []
-    let targets = collect_fn_targets(target.store, fm.stmts, empty)
+    let targets = collect_fn_targets(target.store, fm.stmts, empty, roots)
     mut objs: List<string> = []
     mut ti = 0
     while ti < targets.length {
