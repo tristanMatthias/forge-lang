@@ -22,31 +22,21 @@
 // lexeme still carries the `.`), so the num build keeps selecting LitInt vs
 // LitFloat by a `.` in the token text — reproducing the hand parser's
 // Number/Float split without a separate DSL terminal.
-use @std.avrac.features.grammar.{parse_grammar, run_grammar_pat}
+use @std.avrac.features.grammar.{avra_pat_grammar, run_grammar_pat}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_pat_id}
 
-// A match-pattern grammar. The entry `pattern_or` is the right-recursive
-// or-pattern (matching parse_pattern_or); a variant's `(...)` payload
-// dispatches to a binding list (identifiers) or a sub-pattern list (first
-// token `.`) exactly as the hand parser's is_pattern_start.
-fn pat_grammar_src() -> string {
-    "grammar Pat {\n" +
-    "  pattern_or  = l:pattern ( \"or\" r:pattern_or )? -> OrMaybe(l, r)\n" +
-    "  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat\n" +
-    "  variant_pat = \".\" name:IDENT ( \"(\" ( binds:IDENT ( \",\" binds:IDENT )* | subs:variant_pat ( \",\" subs:pattern )* ) \")\" )? -> MkVariant(name, binds, subs)\n" +
-    "  ident_pat   = name:IDENT ( \"(\" b:IDENT \")\" )? -> IdentPat(name, b)\n" +
-    "  bool_pat    = b:(\"true\" | \"false\") -> PatBool(b)\n" +
-    "  str_pat     = s:STRING -> PatStr(s)\n" +
-    "  neg_pat     = \"-\" n:NUMBER -> PatNegNum(n)\n" +
-    "  num_pat     = n:NUMBER -> PatNum(n)\n" +
-    "}"
-}
+// The pattern grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded
+// into compiler src/ (avra_grammar.av avra_pat_grammar(), ps3t.6.5.11) — the
+// entry `pattern_or` is the right-recursive or-pattern (matching
+// parse_pattern_or); a variant's `(...)` payload dispatches to a binding list
+// (identifiers) or a sub-pattern list (first token `.`) exactly as the hand
+// parser's is_pattern_start. This test runs it through the executor as the
+// differential oracle.
 
 // The DSL-generated pattern parser's tree for `src`, rendered canonically.
 fn dsl_pat(src: string) -> string {
-    let gp = parse_grammar(pat_grammar_src())
-    let r = run_grammar_pat(gp.grammar, src)
+    let r = run_grammar_pat(avra_pat_grammar(), src)
     // A diagnostic-bearing (error-tolerant partial) parse is a distinct
     // outcome — surface it so a recovered tree can't spuriously match the
     // hand-written parser's clean tree in the differential comparison.

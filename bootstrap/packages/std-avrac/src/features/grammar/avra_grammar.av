@@ -75,3 +75,23 @@ export fn avra_stmt_grammar() -> Grammar {
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
 }
+
+/// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
+/// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
+/// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
+/// right-associative or-patterns `a or b or c`. SELF-CONTAINED — patterns do
+/// not embed expressions, so no composition with the expression grammar. The
+/// entry `pattern_or` mirrors the hand parser's parse_pattern_or.
+export fn avra_pat_grammar() -> Grammar {
+    let gp = grammar {
+  pattern_or  = l:pattern ( "or" r:pattern_or )? -> OrMaybe(l, r)
+  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat
+  variant_pat = "." name:IDENT ( "(" ( binds:IDENT ( "," binds:IDENT )* | subs:variant_pat ( "," subs:pattern )* ) ")" )? -> MkVariant(name, binds, subs)
+  ident_pat   = name:IDENT ( "(" b:IDENT ")" )? -> IdentPat(name, b)
+  bool_pat    = b:("true" | "false") -> PatBool(b)
+  str_pat     = s:STRING -> PatStr(s)
+  neg_pat     = "-" n:NUMBER -> PatNegNum(n)
+  num_pat     = n:NUMBER -> PatNum(n)
+    }
+    gp.grammar
+}
