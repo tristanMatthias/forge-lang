@@ -107,4 +107,32 @@ spec "bounded-K CGU: every strong symbol is defined in exactly one object" {
         avra_shell_exec("rm -rf '${dir}'")
         ok
     }
+    then "a float-trait vtable wrapper boxed in multiple units links (linkonce, not duplicated)" {
+        // build_float_vtable_wrapper emits `<type>__vtable_wrap` at BOX time
+        // inside a fn body, memoised only per-MODULE. Under CGU, several fns
+        // boxing the same float-returning-trait type land in different units,
+        // each defining the wrapper → duplicate strong symbol at link. The
+        // CGU-mode linkonce_odr makes it weak so the linker dedups. Six boxing
+        // fns span buckets (K=16); the no-strong-dup invariant catches a
+        // regression (external linkage → 'T' in >1 object).
+        let dir = "/tmp/avra_cguxunit3_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/build'")
+        avra_shell_exec("cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+        let src = "trait Scorer { fn score(self) -> float }\n"
+            + "type A = { v: float }\n"
+            + "impl Scorer for A { fn score(self) -> float { self.v } }\n"
+            + "fn s1() -> float { let d: dyn Scorer = A { v: 1.0 }\n d.score() }\n"
+            + "fn s2() -> float { let d: dyn Scorer = A { v: 2.0 }\n d.score() }\n"
+            + "fn s3() -> float { let d: dyn Scorer = A { v: 3.0 }\n d.score() }\n"
+            + "fn s4() -> float { let d: dyn Scorer = A { v: 4.0 }\n d.score() }\n"
+            + "fn s5() -> float { let d: dyn Scorer = A { v: 5.0 }\n d.score() }\n"
+            + "fn s6() -> float { let d: dyn Scorer = A { v: 6.0 }\n d.score() }\n"
+            + "fn main() {\n  let total = s1() + s2() + s3() + s4() + s5() + s6()\n  if total > 20.5 { println(\"ok\") } else { println(\"bad\") }\n}\n"
+        let res = build_run_keep(src, dir, "prog.bin")
+        let dups = dup_strong_symbols(dir, "prog")
+        let ok = res == "ok|ok" && dups == ""
+        if !ok { println("cgu-xunit-vtwrap: res=${res} dups=[${dups}]") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
 }
