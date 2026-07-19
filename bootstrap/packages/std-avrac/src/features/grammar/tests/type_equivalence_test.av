@@ -19,27 +19,18 @@
 // a lexer concern, and stays with the gnarly-5% catalogue (ps3t.6.5.10).
 // Qualified `@pkg::T` and `~splice` type atoms are likewise out of scope.
 // Single-level generics fully exercise the generic mechanism.
-use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
+use @std.avrac.features.grammar.{avra_type_grammar, run_grammar_type}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_type_id, type_expr_to_vtype}
 
-// A type-expression grammar mirroring parse_type_expr / parse_type_atom.
-fn type_grammar_src() -> string {
-    "grammar Type {\n" +
-    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
-    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
-    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" r:type_expr )? -> MkFn(lp, p, r)\n" +
-    "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
-    "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
-    "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
-    "  named_type = name:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
-    "}"
-}
+// The type grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded into
+// compiler src/ (avra_grammar.av avra_type_grammar(), ps3t.6.5.11) — mirroring
+// parse_type_expr / parse_type_atom. This test runs it through the executor as
+// the differential oracle.
 
 // The DSL-generated type parser's ValueType for `src`, rendered canonically.
 fn dsl_type(src: string) -> string {
-    let gp = parse_grammar(type_grammar_src())
-    let r = run_grammar_type(gp.grammar, src)
+    let r = run_grammar_type(avra_type_grammar(), src)
     if r.had_error { return "<dsl parse error>" }
     render_type_id(r.store, r.root)
 }

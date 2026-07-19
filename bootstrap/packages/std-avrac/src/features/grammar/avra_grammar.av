@@ -95,3 +95,21 @@ export fn avra_pat_grammar() -> Grammar {
     }
     gp.grammar
 }
+
+/// The §2 type-expression family (ps3t.6.5.6): union types `A | B`, `fn`
+/// types, `dyn T`, list `[T]`, tuple/paren `(A, B)`, and named types with
+/// generic args + nullable `T<A>?`. SELF-CONTAINED — types don't embed value
+/// expressions. The entry `type_expr` mirrors parse_type_expr (left-assoc
+/// union over type atoms).
+export fn avra_type_grammar() -> Grammar {
+    let gp = grammar {
+  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type
+  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
+  dyn_type   = "dyn" t:IDENT -> TyDyn(t)
+  list_type  = "[" e:type_expr "]" -> TyList(e)
+  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
+  named_type = name:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+    }
+    gp.grammar
+}
