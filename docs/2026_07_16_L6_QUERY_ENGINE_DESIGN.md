@@ -429,11 +429,34 @@ Landing `ps3t.8.5` (fingerprints) and `ps3t.8.8` (on-disk cache) supplies the
 Both are already `blocks`-blocked by `ps3t.8`; their precise consumer is now
 identified (`ps3t.8.5`/`.8.8`).
 
+### 12.4 As-built: the query dispatcher is GENERATED (`ps3t.8.12`)
+
+The original §10.B contract kept the compute **dispatcher** the driver author's
+(the ergonomic surface `ps3t.6.6` generated only the per-query `_family`/`_fetch`/
+`_compute` siblings; the `db_new(dispatch)` router stayed hand-written). That
+carve-out is **retired** as of `ps3t.8.12`: `derive_program` is a whole-program
+pass and the `@query` expansion walk already sees every `(family, compute)` pair,
+so it now synthesises the router too. When ≥1 `@query` site exists, the walk emits
+one program-level
+
+    fn avra_query_dispatch(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle>
+
+routing `q.family` to each site's generated `_compute`, with a **loud `panic` on
+an unregistered family** (families are compiler-generated and inputs are
+`set_input`-only, so a fetch reaching compute for an unknown family is a bug,
+never a silent default). Drivers write `db_new(avra_query_dispatch)` and delete
+their hand router. Spliced at the shared `expand_macros_fixpoint` exit (marked
+`from_macro`), so it lands **once** and both compile pipelines register it.
+v1 is single-module + `V=string`; the cross-module case (dispatcher → a sibling
+module's `_compute`) waits on `t-tiz0` (macro-generated cross-module reference),
+and non-`string` `V` on `ps3t.8.11` (per-type hashing).
+
 ## 13. What this design explicitly does NOT do
 
 - It does not delete the interpreter or change comptime (that is L2 / `ps3t.5`).
 - It does not build the derive framework; `@query` ergonomics ride on L4
-  (`ps3t.6`) and are hand-wrapped until then (§10.B decided) — L6 never blocks on L4.
+  (`ps3t.6`). The dispatcher was hand-wrapped under the original §10.B contract;
+  `ps3t.8.12` now generates it too (§12.4) — L6 never blocks on L4.
 - It does not introduce MIR (`1n1v`, deferred b).
 - It does not change the language surface or the seed — L6 is an internal
   compiler refactor (§10.A: not seed-gated).
