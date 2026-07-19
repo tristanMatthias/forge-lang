@@ -17,7 +17,7 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -76,7 +76,7 @@ type DeclaredCtx = {
 /// wrapper (`main` / `__bs_top_level` / `__avra_lib_top_level`). No user
 /// function BODY is emitted here — that is the caller's next phase. The
 /// returned Ctx has its builder positioned at the wrapper's entry block.
-fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> DeclaredCtx {
+fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool) -> DeclaredCtx {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -385,12 +385,24 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     // compile (consumer + producer alike). linkonce_odr lets the
     // linker keep one copy. Real `main` (whole-program path)
     // doesn't need this — there's exactly one main per binary.
-    if library {
+    // linkonce_odr requires a DEFINITION, so only stamp it when this
+    // compile actually gives main a body (whole-program path). A per-fn
+    // CGU module leaves main a bare declaration.
+    if library && with_main_entry {
         avra_llvm_set_linkonce_odr(main_fn)
     }
 
-    let entry = avra_llvm_append_basic_block(lc, main_fn, "entry")
-    avra_llvm_position_at_end(builder, entry)
+    // Per-fn CGU (with_main_entry=false): the top-level wrapper is its
+    // OWN unit, so here main stays a bare declaration — no entry block,
+    // no body. The whole-program path appends main's entry and fills it
+    // with the top-level statements after the declare pass.
+    let entry = if with_main_entry {
+        let e = avra_llvm_append_basic_block(lc, main_fn, "entry")
+        avra_llvm_position_at_end(builder, e)
+        e
+    } else {
+        null
+    }
 
     let copy_types = analyze_copy_types(structs, enums)
     let empty_releasable: List<string> = []
@@ -452,8 +464,11 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     // function bodies (they may call release functions via emit_rc_release_typed).
     emit_release_functions(ctx, cycles)
 
-    // Reposition builder at main's entry after release fn emission.
-    ctx.position(entry)
+    // Reposition builder at main's entry after release fn emission
+    // (whole-program path only — the per-fn path never gave main a body).
+    if with_main_entry {
+        ctx.position(entry)
+    }
 
     DeclaredCtx { ctx: ctx, entry: entry, user_main: user_main }
 }
@@ -464,7 +479,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
 /// Ctx (caller writes IR / disposes).
 fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
-    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store)
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, true)
     mut ctx = dc.ctx
     let entry = dc.entry
     let user_main = dc.user_main
@@ -556,6 +571,62 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
 
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
+}
+
+/// Per-fn CGU (ps3t.8.6.1): build a SELF-CONTAINED LLVM module that declares
+/// the whole program (externs, named types, globals-as-external, and every
+/// fn — the top-level wrapper included — as a declaration) and DEFINES
+/// exactly `target`'s body. The result is an @external_unit-at-granularity-1
+/// module whose textual .ll llc compiles to a linkable object — the unit the
+/// read side (increment 4) caches and reuses. Returns the compiled Ctx
+/// (caller writes IR / disposes), or Err when `target` is absent or the
+/// module fails verification.
+///
+/// Unlike codegen_program this emits NO top-level wrapper body and NO sibling
+/// fn body — the wrapper and every other fn are their own units. (The
+/// __release_* fns are still defined here; making them linkonce_odr for clean
+/// multi-unit linking is a later increment.)
+export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false)
+    mut ctx = dc.ctx
+    match emit_one_fn_body(ctx, stmts, target) {
+        .Ok(found) -> {
+            if !found {
+                ctx.dispose()
+                return Result.Err("emit_one_fn_module: function '${target}' not found (or not owned by this unit)")
+            }
+        }
+        .Err(e) -> {
+            ctx.dispose()
+            return Result.Err(e)
+        }
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_one_fn_module: LLVM module verification failed for '${target}'")
+    }
+    Result.Ok(ctx)
+}
+
+/// Per-fn CGU driver (ps3t.8.6.1): emit ONLY `target`'s per-fn module and
+/// write its IR to disk — the file/dispose wrapper around emit_one_fn_module,
+/// mirroring compile_program. Drives the `bs2 compile --emit_fn_module=<name>`
+/// seam (and the read side's per-unit emit in a later increment).
+export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
+    match emit_one_fn_module(target, ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
+        .Ok(ctx) -> {
+            let write_result = ctx.write_ir(output_path)
+            ctx.dispose()
+            if write_result != 0 {
+                return Result.Err("codegen error: failed to write per-fn module IR to ${output_path}")
+            }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
 }
 
 /// Compile a program to LLVM IR and write the result to disk.

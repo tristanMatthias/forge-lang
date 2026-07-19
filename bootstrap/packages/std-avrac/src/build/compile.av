@@ -18,7 +18,7 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 
@@ -67,7 +67,24 @@ fn guard_bag(bag: DiagnosticBag, diag_filename: string, error_msg: string) -> Re
     Result.Ok(0)
 }
 
-export fn build_binary(target: CompileTarget) -> Result<string, string> {
+/// Codegen's inputs after the front half of the pipeline: the
+/// monomorphized statements and the resolved type registry.
+type FrontendMono = {
+    stmts: List<StmtId>,
+    type_reg: TypeRegistry,
+}
+
+/// Run the front half of the pipeline — quote-lowering through
+/// monomorphization — shared by whole-program builds (build_binary) and
+/// per-fn CGU emission (build_fn_module). Each stage that carries a
+/// diagnostic bag is guarded: on error the bag is rendered against
+/// `diag_filename` and an Err is returned. Quote-lowering runs first so
+/// identifiers inside `quote { … }` bodies aren't seen by resolve as
+/// runtime references; the post-desugar program carries every loaded
+/// module's contents (callers must have resolved file-based modules
+/// upstream) so inject_intrinsics's program_declares_enum recursion sees
+/// stdlib's Result and skips the synthetic when it's present.
+fn frontend_to_mono(target: CompileTarget) -> Result<FrontendMono, string> {
     // i0yg: reject a `quote { ... }` used outside `@comptime`/`@expand` BEFORE
     // lowering explodes it into `synth_*` shims that abort at run time. Run on
     // the pre-lowering program so each quote is one node with its own span.
@@ -94,11 +111,26 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, target.store)
     let _ = guard_bag(mono.bag, target.diag_filename, "monomorphization failed")?
+    Result.Ok(FrontendMono { stmts: mono.stmts, type_reg: named.type_reg })
+}
+
+/// Per-fn CGU (ps3t.8.6.1): run the frontend, then emit ONLY `fn_name`'s
+/// self-contained per-fn module .ll to `out_ll` — the per-fn analogue of
+/// build_binary, sharing the identical frontend then compile_one_fn_module
+/// instead of whole-program codegen+link. Whole-program mode (no lib
+/// roots), no coverage, no null-check instrumentation.
+export fn build_fn_module(target: CompileTarget, fn_name: string, out_ll: string) -> Result<int, string> {
+    let fm = frontend_to_mono(target)?
+    compile_one_fn_module(fn_name, fm.stmts, out_ll, false, false, target.diag_filename, fm.type_reg, false, target.store)
+}
+
+export fn build_binary(target: CompileTarget) -> Result<string, string> {
+    let fm = frontend_to_mono(target)?
 
     let build_dir = "${target.project_dir}/build"
     if !target.coverage {
         let obj_path = strip_bin_suffix(target.bin_path) + ".o"
-        let _ = codegen_and_emit_object(mono.stmts, obj_path, named.type_reg, target.store, target.project_dir)?
+        let _ = codegen_and_emit_object(fm.stmts, obj_path, fm.type_reg, target.store, target.project_dir)?
         let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
         let opts = default_link_options()
         // uzs9.3: content-keyed link rescue. The unit's fp-keyed cache
@@ -135,7 +167,7 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     let obj_path = "${stem}.o"
     let cov_dir = "${build_dir}/coverage"
     avra_shell_exec("mkdir -p ${cov_dir}")
-    let _ = codegen_and_emit_ir_cov(mono.stmts, ir_path, named.type_reg, "${stem}.av", target.store, target.project_dir)?
+    let _ = codegen_and_emit_ir_cov(fm.stmts, ir_path, fm.type_reg, "${stem}.av", target.store, target.project_dir)?
     let llvm_prefix = llvm_prefix_dir()
     let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
     if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
