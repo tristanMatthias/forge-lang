@@ -156,9 +156,11 @@ export type Ctx = {
     // --lib-pkg-root=<qualifier>.
     lib_pkg_root: string,
     // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
-    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
-    // shard owns several test modules at once — a fn belongs to the
-    // unit when ANY root prefixes it. Empty list = whole-program.
+    // COMMA-separated (NOT colon like AVRA_LIB_OBJS — the roots are
+    // qualified module names whose `::` separators a colon split would
+    // shred; see parse_pkg_roots) because a BATCHED test shard owns
+    // several test modules at once — a fn belongs to the unit when ANY
+    // root prefixes it. Empty list = whole-program.
     lib_pkg_roots: List<string>,
     // Layout-boundary erasure gate (ps3t.4.5(d), spec §6). True only
     // while emitting the body of an ERASED generic base (a `@mono_erased`

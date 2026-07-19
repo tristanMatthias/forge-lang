@@ -174,7 +174,7 @@ export fn emit_one_fn_body(ctx: Ctx, stmts: List<StmtId>, target: string) -> Res
 ///
 /// Ownership rule:
 ///   * Whole-program mode (roots empty): every fn belongs.
-///   * Library mode (roots set, e.g. "@std::cli" — colon-separated
+///   * Library mode (roots set, e.g. "@std::cli" — comma-separated
 ///     for batched test shards owning several modules): a fn belongs
 ///     iff its qualified name starts with `${root}::` for ANY root,
 ///     OR has no `::` at all. Unqualified names are synthesized
