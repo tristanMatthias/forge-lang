@@ -14,19 +14,13 @@ fn query_check_out(path: string, source: string) -> string {
     avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
-// The shared driver tail every runtime fixture appends: a dispatcher
-// routing the generated family to the generated compute, and a main
-// that fetches twice and prints the observable memo profile.
+// The shared driver tail every runtime fixture appends: a main that
+// fetches twice and prints the observable memo profile. NO hand-written
+// dispatcher (ps3t.8.12) — `db_new(avra_query_dispatch)` uses the
+// compiler-generated program-wide dispatcher routing every @query family.
 fn query_driver_tail() -> string {
-    "fn dispatch(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {\n" +
-    "    if q.family == text_len_family() {\n" +
-    "        return text_len_compute(ctx, q)\n" +
-    "    }\n" +
-    "    text_len_compute(ctx, q)\n" +
-    "}\n" +
-    "\n" +
     "fn main() {\n" +
-    "    let mut db: Db<string> = db_new(dispatch)\n" +
+    "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
     "    db.set_input(qk(0, 7), \"hello\", 42)\n" +
     "    let r1 = db.fetch(qk(text_len_family(), 7))\n" +
     "    match r1 {\n" +
@@ -109,15 +103,8 @@ spec "the generated fetch helper is itself dependency-recording" {
             "    Result.Ok(n + n)\n" +
             "}\n" +
             "\n" +
-            "fn dispatch(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {\n" +
-            "    if q.family == text_len_family() {\n" +
-            "        return text_len_compute(ctx, q)\n" +
-            "    }\n" +
-            "    doubled_compute(ctx, q)\n" +
-            "}\n" +
-            "\n" +
             "fn main() {\n" +
-            "    let mut db: Db<string> = db_new(dispatch)\n" +
+            "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
             "    db.set_input(qk(0, 7), \"hello\", 42)\n" +
             "    let r1 = db.fetch(qk(doubled_family(), 7))\n" +
             "    match r1 {\n" +
@@ -153,15 +140,11 @@ spec "@query coexists with @derive in one program" {
             "type Pt = { x: int, y: int }\n" +
             "\n" +
             query_fn_decl() +
-            "fn dispatch(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {\n" +
-            "    text_len_compute(ctx, q)\n" +
-            "}\n" +
-            "\n" +
             "fn main() {\n" +
             "    let a = Pt { x: 1, y: 2 }\n" +
             "    let b = Pt { x: 1, y: 2 }\n" +
             "    println(\"eq=\" + string(a.eq(b)))\n" +
-            "    let mut db: Db<string> = db_new(dispatch)\n" +
+            "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
             "    db.set_input(qk(0, 3), \"abc\", 9)\n" +
             "    match db.fetch(qk(text_len_family(), 3)) {\n" +
             "        .Ok(f) -> println(\"len=\" + f.value)\n" +
@@ -169,6 +152,25 @@ spec "@query coexists with @derive in one program" {
             "    }\n" +
             "}\n")
         out.contains("eq=true") && out.contains("len=3")
+    }
+}
+
+spec "the generated dispatcher errors loudly on an unregistered family (ps3t.8.12)" {
+    then "fetching a family with no @query site hits avra_query_dispatch's panic fallthrough" {
+        // Families are compiler-generated; a fetch reaching compute for an
+        // unregistered family is a bug, so avra_query_dispatch panics rather
+        // than silently defaulting. 4242 is claimed by no @query site.
+        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_unknown_family_test.av",
+            "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
+            "\n" +
+            query_fn_decl() +
+            "fn main() {\n" +
+            "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
+            "    db.set_input(qk(0, 0), \"x\", 1)\n" +
+            "    let _ = db.fetch(qk(4242, 0))\n" +
+            "    println(\"UNREACHABLE\")\n" +
+            "}\n")
+        out.contains("no @query family 4242 is registered") && !out.contains("UNREACHABLE")
     }
 }
 
