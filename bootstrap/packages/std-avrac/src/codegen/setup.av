@@ -8,6 +8,7 @@ extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.{analyze_releasable, analyze_copy_types}
+use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
@@ -505,6 +506,15 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
             return Result.Err("verify-rc: ${string(rc_bad)} ptr alloca(s) lack the entry null store — zero-init guard regressed (rcsf.2)")
         }
     }
+
+    // Per-fn cache write side: extract + publish each emitted fn's IR into
+    // the per-fn unit store. Placed AFTER all function mutations (the
+    // __bs_top_level/main wrapper) and the module verification gate, so a
+    // cached artifact is the fn's FINAL, verified form — never a stale
+    // pre-wrapper `main` or an artifact from a module that failed to verify.
+    // Opt-in (AVRA_FN_CACHE env) and read-free: it never touches the module,
+    // so emission stays byte-identical.
+    let _ = publish_fn_units(ctx, stmts)
 
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
