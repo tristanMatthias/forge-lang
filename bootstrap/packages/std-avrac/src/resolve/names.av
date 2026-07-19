@@ -1106,6 +1106,13 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
     }
 }
 
+/// Collect macro-spliced declarations into `acc` (as `GraphItem`s) and
+/// intern their symbols. REUSES the batch collector `collect_item_from_stmt`
+/// so a macro-emitted decl registers IDENTICALLY to a hand-written one —
+/// `@export` threaded through the `Annotated` wrapper, `Const`/`Impl` handled,
+/// `export use` re-exports expanded. One shared collection path means the two
+/// registration surfaces cannot drift (fixes t-dg7r; the prior bespoke
+/// `collect_macro_item_from_stmt` dropped `@export` and skipped Const/Impl).
 fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
     mut out = acc
     for id in ids {
@@ -1116,62 +1123,19 @@ fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, ac
             }
             _ -> {
                 if store.is_from_macro(id) {
-                    collect_macro_item_from_stmt(store, store.stmts.get(id), mod_path, out, symbols)
+                    // Batch collector → ModuleItemEntry list (the one shape that
+                    // carries `exported` + `kind`), then intern (skips Alias
+                    // re-exports and Method — methods intern at rewrite time,
+                    // exactly as the top-level walk) and project to GraphItems.
+                    mut entries: List<ModuleItemEntry> = []
+                    collect_item_from_stmt(store, store.stmts.get(id), mod_path, false, entries)
+                    intern_item_symbols(symbols, entries)
+                    for e in entries {
+                        out.push(GraphItem { short_name: e.short_name, canonical: e.canonical, exported: e.exported })
+                    }
                 }
             }
         }
-    }
-}
-
-/// Sister of `collect_item_from_stmt` but emits `GraphItem` directly
-/// — the additive register augments `graph.all_items` which is a
-/// `List<GraphItem>`, not the per-module `ModuleItemEntry` list.
-/// Interns each spliced decl's (path, kind) identity as it collects,
-/// keeping the symbol model complete across macro expansion.
-fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
-    mut out = acc
-    match stmt {
-        .Function(name, _, _, _, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.FnSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .ExternFn(name, _, _) -> {
-            let _ = symbols.intern(name, SymbolKind.FnSym, true)
-            out.push(GraphItem { short_name: name, canonical: name, exported: true })
-        }
-        .TypeDecl(name, _, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.TypeSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .EnumDecl(name, _, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.EnumSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .NewtypeDecl(name, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.NewtypeSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .UnionAliasDecl(name, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.UnionAliasSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .ShapeDecl(name, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.ShapeSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .TraitDecl(name, _) -> {
-            let canonical = type_qualified_name(mod_path, name)
-            let _ = symbols.intern(canonical, SymbolKind.TraitSym, false)
-            out.push(GraphItem { short_name: name, canonical, exported: false })
-        }
-        .Annotated(_, inner) -> collect_macro_item_from_stmt(store, store.stmts.get(inner), mod_path, out, symbols)
-        _ -> {}
     }
 }
 
