@@ -28,10 +28,11 @@ fn flip_type(src: string) -> string {
     }
 }
 
-// parse_type_expr via the HAND path (type_flip default false — env unset here).
+// The HAND path explicitly (parse_type_expr_hand) — robust to the promoted
+// default (type_flip now defaults TRUE), so this stays a real hand baseline.
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_type_expr("expected type") {
+    match p.parse_type_expr_hand("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)

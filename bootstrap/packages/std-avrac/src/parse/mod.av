@@ -217,8 +217,11 @@ export type Parser = {
     // ps3t.6.5.12 parser swap-in: when true, parse_type_expr delegates the
     // whole type expression to the grammar-DSL (run_dsl_type_at) as
     // authoritative, falling back to the hand parser on a DSL error. Read ONCE
-    // from AVRA_PARSER_TYPE_FLIP at construction (never a getenv per annotation)
-    // and settable directly by tests. Default false → byte-identical hand path.
+    // at construction (never a getenv per annotation) and settable directly by
+    // tests. PROMOTED (ps3t.6.5.12): the DSL is now the DEFAULT type parser —
+    // proven byte-identical to the hand parser across the whole selfhost
+    // (781232 lines) + the difftest corpus. `AVRA_PARSER_TYPE_FLIP=0` restores
+    // the hand path as a debug escape hatch.
     mut type_flip: bool,
     // ps3t.6.5.12 lex-once cache (Step D): the grammar-DSL token list for THIS
     // parser's source, lexed at most once (lazily, via `grammar_tokens`) and
@@ -589,7 +592,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         features: build_registry(),
         store: new_node_store(build_line_index(source)),
         records_roots: 1,
-        type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") == "1",
+        type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") != "0",
         grammar_toks: [],
         dsl_grammar: null,
     }
