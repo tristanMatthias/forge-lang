@@ -1,0 +1,62 @@
+// ps3t.6.5.9 — DIAGNOSTIC (accept/reject) EQUIVALENCE, the swap-in's "same errors"
+// requirement. The AST-equivalence oracles (parser_equivalence / composed_program)
+// prove the two parsers agree on VALID input; this proves they agree on REJECTING
+// malformed input — the other half of a faithful replacement.
+//
+// SCOPE (per the 6.5.9 finding): the DSL executor's error model (error-tolerant
+// partial trees + string diags) and the hand parser's fail-fast F-codes reconcile
+// cleanly only on MISSING-REQUIRED-TERMINAL malformations, where both fail-fast.
+// This test asserts accept/reject PARITY over that curated corpus. The hand
+// parser also has LENIENT EDGES — it tolerates some partial/empty forms a clean
+// grammar rejects — which are NOT parity and are PINNED here as documented,
+// tested boundary facts (not hidden surprises), deferred to validation on the
+// EMITTED parser during the 6.5.12 swap-in where both share the fail-fast model.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parse_program_source}
+
+// True when the DSL (executor over the whole-program grammar) reports an error.
+fn dsl_rejects(src: string) -> bool {
+    run_grammar_stmt(avra_program_grammar(), src).had_error
+}
+
+// True when the hand parser reports an error.
+fn hand_rejects(src: string) -> bool {
+    parse_program_source(src).had_error != 0
+}
+
+// Both parsers reach the SAME accept/reject verdict for `src`.
+fn agree(src: string) -> bool { dsl_rejects(src) == hand_rejects(src) }
+
+// Both parsers CLEARLY reject `src` (used for missing-required-terminal cases).
+fn both_reject(src: string) -> bool { dsl_rejects(src) && hand_rejects(src) }
+
+spec "ps3t.6.5.9: DSL and hand parser agree on accept/reject (diagnostic equivalence)" {
+    given "well-formed declarations are ACCEPTED by both (no false rejects)" {
+        then "fn / type / enum / trait / impl / use / mod all accepted by both" {
+            agree("fn f() {\n}\n") &&
+            agree("type Point = { x: int, y: int }\n") &&
+            agree("enum Color { Red, Green, Blue }\n") &&
+            agree("trait Show {\n    fn show() -> string\n}\n") &&
+            agree("impl Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
+            agree("use @std.core.{ List, Map }\n") &&
+            agree("mod inner\n")
+        }
+    }
+    given "missing-required-terminal malformations are REJECTED by both (fail-fast parity)" {
+        then "an unclosed param list `fn f(` is rejected by both" { both_reject("fn f(") }
+        then "a missing fn name `fn (` is rejected by both" { both_reject("fn (") }
+        then "a bare `enum` keyword is rejected by both" { both_reject("enum") }
+        then "an unclosed fn body `fn f() {` is rejected by both" { both_reject("fn f() {") }
+        then "a missing type name `type = { }` is rejected by both" { both_reject("type = { }") }
+        then "a field with no type `type T = { x: }` is rejected by both" { both_reject("type T = { x: }") }
+    }
+    given "the hand parser's LENIENT EDGES (pinned, NOT parity — deferred to 6.5.12)" {
+        then "`type X =` (empty RHS): the hand parser TOLERATES it, the DSL rejects it" {
+            // The canonical lenient-edge case from the 6.5.9 finding: parse_type_expr
+            // accepts the empty/partial RHS (returns .Ok) while a clean grammar rejects
+            // it. Pinned so the boundary is a known, tested fact, not a surprise.
+            dsl_rejects("type X =") && !hand_rejects("type X =")
+        }
+    }
+}

@@ -449,6 +449,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "PatStr" -> "CapVal.PNode(pat_str_node(st, capval_tok_text(${args[0]})))"
         "PatNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), false))"
         "PatNegNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), true))"
+        // The optional-match arm surface — SHARED reducer cores (apply_build's twins).
+        "OptPresent" -> "CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(${args[0]}))))"
+        "OptAbsent" -> "CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))"
         // ── Type-expression builds (target: TypeExpr) — delegate to the SHARED
         //    constructor cores (executor.apply_build's exact twins). args[N]_list
         //    names a rep/list capture; a bare arg is a scalar/opt-scalar CapVal. ──
@@ -746,7 +749,7 @@ fn build_kind(bn: string) -> string {
     if bn == "MkParam" { return "pentry" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
-    if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" { return "pat" }
+    if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
     if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" { return "type" }
     "expr"
 }
