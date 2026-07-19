@@ -75,3 +75,41 @@ export fn avra_stmt_grammar() -> Grammar {
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
 }
+
+/// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
+/// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
+/// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
+/// right-associative or-patterns `a or b or c`. SELF-CONTAINED — patterns do
+/// not embed expressions, so no composition with the expression grammar. The
+/// entry `pattern_or` mirrors the hand parser's parse_pattern_or.
+export fn avra_pat_grammar() -> Grammar {
+    let gp = grammar {
+  pattern_or  = l:pattern ( "or" r:pattern_or )? -> OrMaybe(l, r)
+  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat
+  variant_pat = "." name:IDENT ( "(" ( binds:IDENT ( "," binds:IDENT )* | subs:variant_pat ( "," subs:pattern )* ) ")" )? -> MkVariant(name, binds, subs)
+  ident_pat   = name:IDENT ( "(" b:IDENT ")" )? -> IdentPat(name, b)
+  bool_pat    = b:("true" | "false") -> PatBool(b)
+  str_pat     = s:STRING -> PatStr(s)
+  neg_pat     = "-" n:NUMBER -> PatNegNum(n)
+  num_pat     = n:NUMBER -> PatNum(n)
+    }
+    gp.grammar
+}
+
+/// The §2 type-expression family (ps3t.6.5.6): union types `A | B`, `fn`
+/// types, `dyn T`, list `[T]`, tuple/paren `(A, B)`, and named types with
+/// generic args + nullable `T<A>?`. SELF-CONTAINED — types don't embed value
+/// expressions. The entry `type_expr` mirrors parse_type_expr (left-assoc
+/// union over type atoms).
+export fn avra_type_grammar() -> Grammar {
+    let gp = grammar {
+  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type
+  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
+  dyn_type   = "dyn" t:IDENT -> TyDyn(t)
+  list_type  = "[" e:type_expr "]" -> TyList(e)
+  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
+  named_type = name:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+    }
+    gp.grammar
+}
