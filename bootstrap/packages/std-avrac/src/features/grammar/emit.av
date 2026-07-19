@@ -93,13 +93,29 @@ fn is_passthrough(seq: GSeq) -> bool {
 }
 
 /// True for the operator-fold shape `l:X ( <accumulators> )* -> Build(…)`:
-/// a leading labelled One item (the seed) followed by a starred group, with
-/// a Call build. Covers the whole binary/logical/postfix stratification.
+/// a leading labelled One item (the seed) followed by a starred group, with a
+/// LEGACY expr-fold Call build. The build restriction matters: emit_fold's
+/// accumulator args are CapVal-wrapped (`CapVal.Toks`/`CapVal.Nodes`) because
+/// the fold_binary_expr/fold_logical_expr/fold_postfix_expr helpers take CapVals
+/// and always yield an Expr. A fold-SHAPED rule with any other build (e.g. the
+/// type grammar's `TyUnion`, whose helper takes a raw `List<TypeExpr>`) instead
+/// flows through the GENERAL path — which types the `_list` accumulator per the
+/// referenced rule's kind and routes the build through emit_call_build.
 fn is_fold(seq: GSeq) -> bool {
     seq.items.length == 2 &&
         rep_is_one(seq.items[0].rep) && seq.items[0].label != "" &&
         rep_is_star(seq.items[1].rep) && prim_is_group(seq.items[1].prim) &&
-        build_is_call(seq.build)
+        build_is_expr_fold(seq.build)
+}
+
+/// The legacy expr-fold builds whose helpers take CapVal-wrapped accumulators
+/// (fold_binary_expr / fold_logical_expr / fold_postfix_expr) — the only builds
+/// that take the specialised emit_fold path.
+fn build_is_expr_fold(build: GBuild) -> bool {
+    match build {
+        .Call(name, _) -> name == "fold_binary" || name == "fold_logical" || name == "fold_postfix"
+        _ -> false
+    }
 }
 
 // ── Fold rules ──
@@ -215,11 +231,17 @@ fn is_bare_ref(seq: GSeq) -> bool {
 fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
     if is_lone_primary_result(seq) { return "" }
     let labels = list_labels_of(seq)
+    let opts = opt_scalar_labels_of(seq, labels)
     mut out = ""
     for l in labels {
-        out = out + "${ind}mut ${l}_list: List<ExprId> = []\n"
+        out = out + "${ind}mut ${l}_list: List<${list_decl_type(g, seq, l)}> = []\n"
     }
-    out = out + emit_seq_items(g, seq, ind, labels)
+    // Optional-scalar captures (a One label inside `( … )?`) start Nil and are
+    // ASSIGNED when the option fires — the conditional build reads the Nil.
+    for s in opts {
+        out = out + "${ind}mut ${s}: CapVal = CapVal.Nil\n"
+    }
+    out = out + emit_seq_items(g, seq, ind, labels, opts)
     out
 }
 
@@ -236,11 +258,11 @@ fn is_lone_primary_result(seq: GSeq) -> bool {
 
 /// The per-item lines (no list declarations — those are hoisted by the
 /// enclosing emit_seq_stmts so a nested group shares the branch's lists).
-fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>) -> string {
+fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     mut out = ""
     mut idx = 0
     for item in seq.items {
-        out = out + emit_item(g, item, idx, seq.annots, ind, list_labels)
+        out = out + emit_item(g, item, idx, seq.annots, ind, list_labels, opts)
         idx = idx + 1
     }
     out
@@ -249,36 +271,58 @@ fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>)
 /// One item. `idx == 0` is the branch's guard token (already matched by the
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
-fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>) -> string {
+fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.rep {
-        .One -> emit_one(g, item, idx, annots, ind, list_labels)
-        .Opt -> emit_opt(g, item, ind, list_labels)
-        .Star -> emit_repeat_group(g, item, ind, list_labels)
-        .Plus -> emit_repeat_group(g, item, ind, list_labels)
+        .One -> emit_one(g, item, idx, annots, ind, list_labels, opts)
+        .Opt -> emit_opt(g, item, ind, list_labels, opts)
+        .Star -> emit_repeat_group(g, item, ind, list_labels, opts)
+        .Plus -> emit_repeat_group(g, item, ind, list_labels, opts)
     }
 }
 
-fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>) -> string {
+fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.prim {
         .Ref(name) -> {
             if str_in(list_labels, item.label) {
-                return "${ind}${item.label}_list.push(capval_to_expr(st, parse_${name}(st)))\n"
+                return "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
+            }
+            if str_in(opts, item.label) {
+                return "${ind}${item.label} = parse_${name}(st)\n"
             }
             if item.label == "" { return "${ind}let _ = parse_${name}(st)\n" }
             "${ind}let ${item.label} = parse_${name}(st)\n"
         }
         .Hand(hf) -> {
+            if str_in(opts, item.label) { return "${ind}${item.label} = ${emit_hand_result(hf)}\n" }
             if item.label == "" { return "${ind}let _ = ${emit_hand_result(hf)}\n" }
             "${ind}let ${item.label} = ${emit_hand_result(hf)}\n"
         }
-        _ -> emit_one_terminal(item, idx, annots, ind)
+        // A One group: a terminal alternation (`op:("!"|"-")`) yields a token
+        // (bind it); a STRUCTURAL group (a nested alternation / sub-sequence,
+        // e.g. variant_pat's `binds:IDENT … | subs:variant_pat …`) is inlined
+        // via emit_node_items (an if/else-if dispatch for a multi-branch one).
+        .Group(inner) -> {
+            if prim_yields_token(item.prim) {
+                return emit_one_terminal(item, idx, annots, ind, list_labels, opts)
+            }
+            emit_node_items(g, inner, ind, list_labels, opts)
+        }
+        _ -> emit_one_terminal(item, idx, annots, ind, list_labels, opts)
     }
 }
 
-/// A One terminal (Lit / Named / a terminal group). The guard token (idx 0)
-/// is consumed unconditionally; a later terminal is checked — @expect swaps
-/// the message and @recover synchronises, else it's a lenient consume.
-fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string) -> string {
+/// A One terminal (Lit / Named / a terminal group). A repetition-captured
+/// label pushes the token; an optional-scalar assigns; a mandatory scalar
+/// `let`s; the guard token (idx 0) is consumed unconditionally; a later
+/// unlabelled terminal is checked — @expect swaps the message and @recover
+/// synchronises, else a lenient consume.
+fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    if str_in(list_labels, item.label) {
+        return "${ind}${item.label}_list.push(st.advance())\n"
+    }
+    if str_in(opts, item.label) {
+        return "${ind}${item.label} = CapVal.Tok(st.advance())\n"
+    }
     if idx == 0 {
         if item.label == "" { return "${ind}let _ = st.advance()\n" }
         return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
@@ -302,11 +346,11 @@ fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string) -
 
 /// An optional group `( … )?` → an if guarded by the group's FIRST. The
 /// group's captures accumulate into the branch's already-declared lists.
-fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>) -> string {
+fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.prim {
         .Group(inner) -> {
             "${ind}if ${node_first_guard(g, inner, [])} {\n" +
-                emit_node_items(g, inner, ind + "    ", list_labels) +
+                emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                 "${ind}}\n"
         }
         _ -> {
@@ -316,11 +360,11 @@ fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>) -> 
 }
 
 /// A starred/plus group `( … )*` → a while guarded by the group's FIRST.
-fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<string>) -> string {
+fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.prim {
         .Group(inner) -> {
             "${ind}while ${node_first_guard(g, inner, [])} {\n" +
-                emit_node_items(g, inner, ind + "    ", list_labels) +
+                emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                 "${ind}}\n"
         }
         _ -> {
@@ -329,13 +373,27 @@ fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<str
     }
 }
 
-/// Emit the items of a group's single sequence (a group is an Alt whose one
-/// branch carries the sub-structure — the executor's group-inline shape).
-fn emit_node_items(g: Grammar, node: GNode, ind: string, list_labels: List<string>) -> string {
+/// Emit a group's items. A single-branch group inlines its sequence; a
+/// MULTI-branch group (an inline alternation, e.g. variant_pat's
+/// `binds:IDENT … | subs:variant_pat …`) becomes an if/else-if dispatch on
+/// each branch's FIRST — the executor's exec_node branch selection, inlined.
+fn emit_node_items(g: Grammar, node: GNode, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match node {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
-            emit_seq_items(g, branches[0], ind, list_labels)
+            if branches.length == 1 {
+                return emit_seq_items(g, branches[0], ind, list_labels, opts)
+            }
+            mut out = ""
+            mut i = 0
+            for b in branches {
+                let kw = if i == 0 { "if" } else { "} else if" }
+                out = out + "${ind}${kw} ${seq_first_guard(g, b, [])} {\n"
+                out = out + emit_seq_items(g, b, ind + "    ", list_labels, opts)
+                i = i + 1
+            }
+            out = out + "${ind}}\n"
+            out
         }
     }
 }
@@ -382,6 +440,24 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "ReturnEmpty" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))"
         "Return" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, ${args[0]}))))"
         "ExprStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ${args[0]}))))"
+        // ── Pattern builds (target: Pattern) — conditional on optional/list
+        //    captures, mirroring executor.apply_build one-to-one. ──
+        "OrMaybe" -> "match ${args[1]} { .Nil -> ${args[0]}  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, ${args[0]}), capval_to_pat(st, ${args[1]})))) }"
+        "IdentPat" -> "match ${args[1]} { .Nil -> CapVal.PNode(ident_pat_bare(st, capval_tok_text(${args[0]})))  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(capval_tok_text(${args[0]}), capval_tok_text(${args[1]})))) }"
+        "MkVariant" -> "if ${args[2]}_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(capval_tok_text(${args[0]}), ${args[2]}_list))) } else { CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(capval_tok_text(${args[0]}), param_entries_from_toks(CapVal.Toks(${args[1]}_list), ValueType.Int)))) }"
+        "PatBool" -> "CapVal.PNode(pat_bool_node(st, capval_tok_text(${args[0]})))"
+        "PatStr" -> "CapVal.PNode(pat_str_node(st, capval_tok_text(${args[0]})))"
+        "PatNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), false))"
+        "PatNegNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), true))"
+        // ── Type-expression builds (target: TypeExpr) — delegate to the SHARED
+        //    constructor cores (executor.apply_build's exact twins). args[N]_list
+        //    names a rep/list capture; a bare arg is a scalar/opt-scalar CapVal. ──
+        "TyUnion" -> "fold_type_union(st, ${args[0]}, ${args[1]}_list)"
+        "MkNamed" -> "mk_named_type(capval_tok_text(${args[0]}), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
+        "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
+        "TyParen" -> "mk_paren_type(${args[0]}_list)"
+        "TyDyn" -> "CapVal.TExpr(TypeExpr.Named(capval_tok_text(${args[0]})))"
+        "MkFn" -> "mk_fn_type(st, capval_present(${args[0]}), ${args[1]}_list, capval_present(${args[2]}), ${args[2]})"
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
     }
 }
@@ -629,9 +705,178 @@ fn hand_name(prim: GPrim) -> string {
 fn rep_is_one(rep: GRep) -> bool { match rep { .One -> true  _ -> false } }
 fn rep_is_star(rep: GRep) -> bool { match rep { .Star -> true  _ -> false } }
 fn rep_is_plus(rep: GRep) -> bool { match rep { .Plus -> true  _ -> false } }
+fn rep_is_opt(rep: GRep) -> bool { match rep { .Opt -> true  _ -> false } }
 
 fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> false } }
 fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -> false } }
+
+// ── Node-kind of a rule's result (its Nystrom target) — drives the coercion,
+// the CapVal wrapper, and the list element type PER referenced rule, so the
+// emitter works across Expr / Stmt / Pattern / Type node kinds. Determined
+// from the rule's build (apply_build's target), crossing pass-throughs. ──
+
+fn build_kind(bn: string) -> string {
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_postfix" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
+    if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" { return "pat" }
+    if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" { return "type" }
+    "expr"
+}
+
+fn hand_kind(hf: string) -> string {
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" { return "stmt" }
+    if hf == "qualified_type" { return "type" }
+    "expr"
+}
+
+fn rule_result_kind(g: Grammar, name: string) -> string {
+    rule_kind_v(g, name, [])
+}
+
+fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
+    if str_in(visited, name) { return "expr" }
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return "expr" }
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    node_kind(g, r.body, v2)
+}
+
+fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                let k = seq_kind(g, b, visited)
+                if k != "" { return k }
+            }
+            "expr"
+        }
+    }
+}
+
+fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
+    match seq.build {
+        .Call(bn, _) -> build_kind(bn)
+        .Var(_) -> ""
+        .None -> {
+            if seq.items.length == 1 && rep_is_one(seq.items[0].rep) {
+                match seq.items[0].prim {
+                    .Ref(rn) -> rule_kind_v(g, rn, visited)
+                    .Hand(hf) -> hand_kind(hf)
+                    _ -> "expr"
+                }
+            } else { "" }
+        }
+    }
+}
+
+/// The capture-coercion fn for a node kind (`capval_to_expr` / `_pat` / …).
+fn kind_coerce(kind: string) -> string {
+    if kind == "pat" { return "capval_to_pat" }
+    if kind == "stmt" { return "capval_to_stmt" }
+    if kind == "type" { return "capval_to_texpr" }
+    "capval_to_expr"
+}
+
+/// The id/value type of a node kind's list element.
+fn kind_elem_type(kind: string) -> string {
+    if kind == "pat" { return "PatId" }
+    if kind == "stmt" { return "StmtId" }
+    if kind == "type" { return "TypeExpr" }
+    "ExprId"
+}
+
+/// The declared element type of a label's accumulator list: a terminal label
+/// collects Tokens, a ref/hand label collects the referenced rule's node ids.
+fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
+    let p = find_label_prim_seq(seq, label)
+    match p {
+        .Lit(_) -> "Token"
+        .Named(_) -> "Token"
+        .Group(_) -> "Token"
+        .Ref(name) -> kind_elem_type(rule_result_kind(g, name))
+        .Hand(hf) -> kind_elem_type(hand_kind(hf))
+    }
+}
+
+/// Find the primary of the first item bound to `label` anywhere in the seq
+/// (recursing into groups). Returns a Lit("") sentinel when absent.
+fn find_label_prim_seq(seq: GSeq, label: string) -> GPrim {
+    for item in seq.items {
+        if item.label == label { return item.prim }
+        match item.prim {
+            .Group(inner) -> {
+                let p = find_label_prim_node(inner, label)
+                if !prim_is_empty_lit(p) { return p }
+            }
+            _ -> {}
+        }
+    }
+    GPrim.Lit("")
+}
+
+fn find_label_prim_node(node: GNode, label: string) -> GPrim {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                let p = find_label_prim_seq(b, label)
+                if !prim_is_empty_lit(p) { return p }
+            }
+            GPrim.Lit("")
+        }
+    }
+}
+
+fn prim_is_empty_lit(prim: GPrim) -> bool {
+    match prim { .Lit(t) -> t == ""  _ -> false }
+}
+
+/// Optional-scalar labels: One-captured labels reachable inside a `( … )?`
+/// group (assigned when the option fires), excluding repetition labels (which
+/// are lists). These are declared `mut … = CapVal.Nil` at the branch top.
+fn opt_scalar_labels_of(seq: GSeq, list_labels: List<string>) -> List<string> {
+    mut out: List<string> = []
+    for item in seq.items {
+        for l in item_opt_scalars(item, false, list_labels) {
+            if !str_in(out, l) { out.push(l) }
+        }
+    }
+    out
+}
+
+fn item_opt_scalars(item: GItem, in_opt: bool, list_labels: List<string>) -> List<string> {
+    mut out: List<string> = []
+    if in_opt && rep_is_one(item.rep) && item.label != "" && !str_in(list_labels, item.label) {
+        out.push(item.label)
+    }
+    match item.prim {
+        .Group(inner) -> {
+            let child_in_opt = in_opt || rep_is_opt(item.rep)
+            for l in node_opt_scalars(inner, child_in_opt, list_labels) {
+                if !str_in(out, l) { out.push(l) }
+            }
+        }
+        _ -> {}
+    }
+    out
+}
+
+fn node_opt_scalars(node: GNode, in_opt: bool, list_labels: List<string>) -> List<string> {
+    match node {
+        .Alt(branches) -> {
+            mut out: List<string> = []
+            for b in branches {
+                for item in b.items {
+                    for l in item_opt_scalars(item, in_opt, list_labels) {
+                        if !str_in(out, l) { out.push(l) }
+                    }
+                }
+            }
+            out
+        }
+    }
+}
 
 fn str_in(xs: List<string>, s: string) -> bool {
     if s == "" { return false }

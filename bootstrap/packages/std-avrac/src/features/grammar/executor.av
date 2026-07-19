@@ -1097,20 +1097,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "IdentPat" if args.length == 2 -> {
             // A bare identifier pattern: `_` ⇒ Wildcard, `rest` ⇒ Rest (both
             // contextual — only when NOT followed by `(`), and `name(binding)`
-            // ⇒ TypePattern. Any other bare identifier is not a pattern (the
-            // hand parser errors); we report + fall back to Wildcard.
+            // ⇒ TypePattern. The Nil-arm core is `ident_pat_bare` (shared with
+            // the generated static pattern parser).
             let nm = capval_tok_text(env.get(args[0]))
             match env.get(args[1]) {
-                .Nil -> {
-                    if nm == "_" {
-                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
-                    } else if nm == "rest" {
-                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Rest))
-                    } else {
-                        st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
-                        CapVal.PNode(st.store.pats.add_leaf(Pattern.Wildcard))
-                    }
-                }
+                .Nil -> CapVal.PNode(ident_pat_bare(st, nm))
                 _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(nm, capval_tok_text(env.get(args[1])))))
             }
         }
@@ -1125,75 +1116,20 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
                 _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
             }
         }
-        "PatStr" if args.length == 1 -> {
-            // The DSL lexer keeps the bookend quotes in a STRING token; the
-            // Pattern.LitString stores the unquoted content (render re-quotes).
-            let raw = capval_tok_text(env.get(args[0]))
-            let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
-            CapVal.PNode(st.store.pats.add_leaf(Pattern.LitString(content)))
-        }
-        "PatBool" if args.length == 1 -> {
-            let v = if capval_tok_text(env.get(args[0])) == "true" { 1 } else { 0 }
-            CapVal.PNode(st.store.pats.add_leaf(Pattern.LitBool(v)))
-        }
+        "PatStr" if args.length == 1 -> CapVal.PNode(pat_str_node(st, capval_tok_text(env.get(args[0]))))
+        "PatBool" if args.length == 1 -> CapVal.PNode(pat_bool_node(st, capval_tok_text(env.get(args[0]))))
         "PatNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
         "PatNegNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
-        // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) ──
-        "TyUnion" if args.length == 2 -> {
-            // `l ( "|" r )*` — left-associative union, mirroring parse_type_expr's
-            // while-loop. No `|` ⇒ just the left atom.
-            match env.get(args[1]) {
-                .Nil -> env.get(args[0])
-                _ -> {
-                    mut acc = capval_to_texpr(st, env.get(args[0]))
-                    for rt in capval_to_texpr_list(env.get(args[1])) {
-                        acc = TypeExpr.Union(acc, rt)
-                    }
-                    CapVal.TExpr(acc)
-                }
-            }
-        }
-        "MkNamed" if args.length == 3 -> {
-            // `name ( "<" args ">" )? ( "?" )?` — a named type, optionally generic,
-            // optionally nullable, matching parse_type_atom's identifier branch.
-            let nm = capval_tok_text(env.get(args[0]))
-            mut base = if capval_present(env.get(args[1])) {
-                TypeExpr.Generic(nm, capval_to_texpr_list(env.get(args[1])))
-            } else {
-                TypeExpr.Named(nm)
-            }
-            if capval_present(env.get(args[2])) { base = TypeExpr.Optional(base) }
-            CapVal.TExpr(base)
-        }
+        // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) — each arm
+        //    delegates to the SHARED constructor core (fold_type_union /
+        //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the
+        //    generated static type parser build byte-identical trees. ──
+        "TyUnion" if args.length == 2 -> fold_type_union(st, env.get(args[0]), capval_to_texpr_list(env.get(args[1])))
+        "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
-        "TyParen" if args.length == 1 -> {
-            // `( t ( "," t )* )` — a single element is grouping (the type itself);
-            // multiple are a tuple `Generic("__tuple", …)`, matching parse_type_atom.
-            match env.get(args[0]) {
-                .TExpr(te) -> CapVal.TExpr(te)
-                .TExprs(tes) -> CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
-                _ -> CapVal.TExpr(TypeExpr.Generic("__tuple", []))
-            }
-        }
-        "TyDyn" if args.length == 1 -> {
-            // `dyn Trait` lowers to a bare Named(trait) — dynamic dispatch is a
-            // resolve/codegen concern, not a distinct TypeExpr shape.
-            CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
-        }
-        "MkFn" if args.length == 3 -> {
-            // `fn ( "(" params? ")" )? ( "->" ret )?`. A bare `fn` (neither a
-            // param list nor an arrow) is the under-determined Named("fn"); any
-            // `(`/`->` makes it a FnType (params default [], ret defaults Infer) —
-            // mirroring parse_type_atom's `fn` branch.
-            let has_params = capval_present(env.get(args[0]))
-            let has_ret = capval_present(env.get(args[2]))
-            if !has_params && !has_ret {
-                CapVal.TExpr(TypeExpr.Named("fn"))
-            } else {
-                let ret = if has_ret { capval_to_texpr(st, env.get(args[2])) } else { TypeExpr.Infer }
-                CapVal.TExpr(TypeExpr.FnType(capval_to_texpr_list(env.get(args[1])), ret))
-            }
-        }
+        "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
+        "TyDyn" if args.length == 1 -> CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
+        "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
         // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
         // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
         // lowers through the SHARED type family (a captured TExpr → ValueType via
@@ -1486,7 +1422,7 @@ fn ann_to_vtype(v: CapVal) -> ValueType {
 /// True when a capture is present (bound to anything but `Nil`) — the
 /// optionality probe for `( … )?` groups whose marker/inner capture drives a
 /// build decision (ps3t.6.5.6: generic-args / `?` / fn param-list presence).
-fn capval_present(v: CapVal) -> bool {
+export fn capval_present(v: CapVal) -> bool {
     match v {
         .Nil -> false
         _ -> true
@@ -1498,7 +1434,7 @@ fn capval_present(v: CapVal) -> bool {
 /// token — that awaits the real-lexer wiring, ps3t.6.5.8), so a `.` in the
 /// text selects `LitFloat` (stored as the string, sign included) vs
 /// `LitInt`, reproducing the hand parser's Number-vs-Float split exactly.
-fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
+export fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
     if text.contains(".") {
         let v = if negative { "-" + text } else { text }
         return st.store.pats.add_leaf(Pattern.LitFloat(v))
@@ -1506,6 +1442,31 @@ fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
     let n = int(text)
     let iv = if negative { 0 - n } else { n }
     st.store.pats.add_leaf(Pattern.LitInt(iv))
+}
+
+/// A boolean literal pattern from its token text — the `PatBool` build's core
+/// (shared by apply_build + the generated static pattern parser, ps3t.6.5.11).
+export fn pat_bool_node(st: PState, text: string) -> PatId {
+    let v = if text == "true" { 1 } else { 0 }
+    st.store.pats.add_leaf(Pattern.LitBool(v))
+}
+
+/// A string literal pattern from the raw (bookend-quoted) token text — the
+/// `PatStr` build's core; stores the unquoted content (render re-quotes).
+export fn pat_str_node(st: PState, raw: string) -> PatId {
+    let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
+    st.store.pats.add_leaf(Pattern.LitString(content))
+}
+
+/// A bare identifier pattern (no `(binding)`): `_` ⇒ Wildcard, `rest` ⇒ Rest
+/// (both contextual), any other bare identifier is not a valid top-level
+/// pattern (reported, falls back to Wildcard). The `IdentPat` build's Nil-arm
+/// core.
+export fn ident_pat_bare(st: PState, nm: string) -> PatId {
+    if nm == "_" { return st.store.pats.add_leaf(Pattern.Wildcard) }
+    if nm == "rest" { return st.store.pats.add_leaf(Pattern.Rest) }
+    st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
+    st.store.pats.add_leaf(Pattern.Wildcard)
 }
 
 /// Coerce a capture value to a Stmt node — the statement twin of
@@ -1537,7 +1498,7 @@ fn capval_to_stmt_list(v: CapVal) -> List<StmtId> {
 /// valid pattern; anything else is a reported error yielding a neutral
 /// `Wildcard` (the Pattern enum has no Error variant, and Wildcard is the
 /// natural error-tolerant placeholder — it matches anything, binds nothing).
-fn capval_to_pat(st: PState, v: CapVal) -> PatId {
+export fn capval_to_pat(st: PState, v: CapVal) -> PatId {
     match v {
         .PNode(id) -> id
         _ -> {
@@ -1550,7 +1511,7 @@ fn capval_to_pat(st: PState, v: CapVal) -> PatId {
 /// A capture as a pattern list (ps3t.6.5.5): a nested variant's sub-pattern
 /// `*` yields `PNodes` for ≥2, a scalar `PNode` for exactly 1, `Nil` for
 /// none — the pattern twin of capval_to_stmt_list.
-fn capval_to_pat_list(v: CapVal) -> List<PatId> {
+export fn capval_to_pat_list(v: CapVal) -> List<PatId> {
     match v {
         .PNodes(ns) -> ns
         .PNode(id) -> [id]
@@ -1562,7 +1523,7 @@ fn capval_to_pat_list(v: CapVal) -> List<PatId> {
 /// `capval_to_pat` (ps3t.6.5.6). Anything that isn't a built type expression
 /// is a reported error yielding `TypeExpr.Infer` (the neutral under-determined
 /// type, exactly what a missing annotation lowers to).
-fn capval_to_texpr(st: PState, v: CapVal) -> TypeExpr {
+export fn capval_to_texpr(st: PState, v: CapVal) -> TypeExpr {
     match v {
         .TExpr(te) -> te
         _ -> {
@@ -1574,12 +1535,51 @@ fn capval_to_texpr(st: PState, v: CapVal) -> TypeExpr {
 
 /// A capture as a type-expression list (ps3t.6.5.6): a comma-list `*` yields
 /// `TExprs` for ≥2, a scalar `TExpr` for exactly 1, `Nil` for none.
-fn capval_to_texpr_list(v: CapVal) -> List<TypeExpr> {
+export fn capval_to_texpr_list(v: CapVal) -> List<TypeExpr> {
     match v {
         .TExprs(tes) -> tes
         .TExpr(te) -> [te]
         _ -> []
     }
+}
+
+/// Fold a `l ( "|" r )*` union — the `TyUnion` build's core, shared by
+/// apply_build + the generated static type parser (ps3t.6.5.11). No right
+/// atoms ⇒ the left CapVal unchanged; otherwise a left-associative chain of
+/// `TypeExpr.Union`, mirroring parse_type_expr's while-loop.
+export fn fold_type_union(st: PState, l: CapVal, rs: List<TypeExpr>) -> CapVal {
+    if rs.length == 0 { return l }
+    mut acc = capval_to_texpr(st, l)
+    for rt in rs { acc = TypeExpr.Union(acc, rt) }
+    CapVal.TExpr(acc)
+}
+
+/// A named type (optionally generic, optionally nullable) — the `MkNamed`
+/// build's core. `has_gen` ⇒ `Generic(nm, gen_args)`, else `Named(nm)`; an
+/// `is_opt` wrap makes it `Optional`. Mirrors parse_type_atom's identifier
+/// branch.
+export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
+    mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
+    if is_opt { base = TypeExpr.Optional(base) }
+    CapVal.TExpr(base)
+}
+
+/// A parenthesised type — the `TyParen` build's core. Exactly one element is a
+/// grouping (the type itself); zero or ≥2 are a tuple `Generic("__tuple", …)`,
+/// matching parse_type_atom's paren branch.
+export fn mk_paren_type(tes: List<TypeExpr>) -> CapVal {
+    if tes.length == 1 { return CapVal.TExpr(tes[0]) }
+    CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
+}
+
+/// A `fn` type — the `MkFn` build's core. A bare `fn` (neither param parens
+/// nor an arrow) is the under-determined `Named("fn")`; any `(`/`->` makes it a
+/// `FnType` (params default [], ret defaults `Infer`). Mirrors parse_type_atom's
+/// `fn` branch.
+export fn mk_fn_type(st: PState, has_params: bool, params: List<TypeExpr>, has_ret: bool, ret_cv: CapVal) -> CapVal {
+    if !has_params && !has_ret { return CapVal.TExpr(TypeExpr.Named("fn")) }
+    let ret = if has_ret { capval_to_texpr(st, ret_cv) } else { TypeExpr.Infer }
+    CapVal.TExpr(TypeExpr.FnType(params, ret))
 }
 
 /// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`
@@ -1649,7 +1649,7 @@ fn capval_to_var_list(v: CapVal) -> List<Variant> {
 /// (parse_destructure_names' "no type was written" rows). The differential
 /// oracle compares full ASTs through the faithful render, so the DSL must
 /// reproduce each site's exact default, not a single one.
-fn param_entries_from_toks(v: CapVal, vt: ValueType) -> List<ParamEntry> {
+export fn param_entries_from_toks(v: CapVal, vt: ValueType) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     match v {
         .Toks(ts) -> {
