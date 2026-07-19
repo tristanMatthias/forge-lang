@@ -97,4 +97,30 @@ spec "per-fn CGU: build_binary_cgu runs byte-identically to build_binary" {
         avra_shell_exec("rm -rf '${dir}'")
         ok
     }
+    then "generic fn: each mono specialization is its own linkonce per-fn unit" {
+        let dir = "/tmp/avra_cgurun_d_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // id<T> monomorphizes to id<int> and id<string> — two @mono_spec
+        // Function items, each its OWN per-fn unit with linkonce_odr linkage
+        // (emit_one_fn_body stamps it). The CGU build must collect + emit both.
+        let v = run_equiv(dir, "generic",
+            "fn id<T>(x: T) -> T { x }\nfn main() {\n    println(string(id(42)))\n    println(id(\"gen\"))\n}\n")
+        let ok = equiv_ok(v, "42\ngen")
+        if !ok { println("cgu-run generic: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "enum + match: cross-unit enum type + a match-heavy body" {
+        let dir = "/tmp/avra_cgurun_e_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // Color enum is a cross-unit type (declared in every module); describe's
+        // per-fn unit matches on it, resolving the enum layout from the shared
+        // declare pass.
+        let v = run_equiv(dir, "enummatch",
+            "enum Color { Red, Green, Blue }\nfn describe(c: Color) -> string {\n    match c {\n        .Red -> \"r\"\n        .Green -> \"g\"\n        .Blue -> \"b\"\n    }\n}\nfn main() { println(describe(Color.Green)) }\n")
+        let ok = equiv_ok(v, "g")
+        if !ok { println("cgu-run enummatch: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
 }
