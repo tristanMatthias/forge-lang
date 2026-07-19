@@ -271,8 +271,9 @@ the opt-in incremental path, not the default:
    `.o` and skips emission; a one-fn body edit re-lowers **exactly one**
    function.
 
-**Oracle:** run-equivalence (CGU binary == whole-program binary output, 3
-shapes) + a one-fn blast-radius spec (cold→warm publishes zero new objects;
+**Oracle:** run-equivalence (CGU binary == whole-program binary output, 7
+shapes: no-main, user-main, RC-typed, generics, enum+match, closures,
+zero-user-fns) + a one-fn blast-radius spec (cold→warm publishes zero new objects;
 editing one fn publishes exactly one). The default path is diff-test
 byte-identical and the selfhost fixed point holds throughout.
 

@@ -10,11 +10,12 @@
 // RC-typed program — exercises the __release_* declare(per-fn)/define(wrapper)
 // split that keeps N modules from duplicate-symbol'ing at link.
 //
-// project_dir is the repo root so the link finds build/runtime.o +
-// build/llvm_wrapper.o; binaries + per-fn objects go under a /tmp dir.
+// project_dir is an isolated /tmp dir (runtime.o + llvm_wrapper.o copied into
+// its build/), so the CGU path's fncgu cache artifacts + per-fn objects stay
+// out of the repo's persistent build cache.
 //
-// @@fixture-stateful@@ — links + runs real binaries against the shared
-// build/ objects; a transient hiccup must re-probe, not freeze as FAIL.
+// @@fixture-stateful@@ — links + runs real binaries; a transient hiccup must
+// re-probe, not freeze as FAIL.
 
 use @std.avrac.core.{
     avra_shell_exec, avra_selfhost_write_file, avra_getpid,
@@ -30,7 +31,7 @@ fn mk_target(src: string, dir: string, bin: string) -> CompileTarget? {
     CompileTarget {
         program: r.ids!,
         bin_path: "${dir}/${bin}",
-        project_dir: repo_root(),
+        project_dir: dir,
         diag_filename: "prog.av",
         coverage: false,
         extra_objs: [],
@@ -42,6 +43,9 @@ fn mk_target(src: string, dir: string, bin: string) -> CompileTarget? {
 /// "<wp_built>|<wp_out>|<cgu_built>|<cgu_out>". Fresh parse per build (the
 /// frontend mutates the store).
 fn run_equiv(dir: string, slug: string, src: string) -> string {
+    // Isolated project_dir needs the runtime objects to link against — both
+    // builds link against ${dir}/build/{runtime,llvm_wrapper}.o.
+    avra_shell_exec("mkdir -p '${dir}/build' && cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
     let wp = mk_target(src, dir, "${slug}_wp.bin")
     let wp_built = if wp == null { "parsefail" } else {
         match build_binary(wp!) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
