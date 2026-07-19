@@ -10,36 +10,13 @@
 // "generated fns compile + pass the differential test" gate is the diagnose
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
-use @std.avrac.features.grammar.{parse_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
+use @std.avrac.features.grammar.{avra_expr_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
 
-// The canonical §2 expression grammar (the parser_equivalence corpus). The
-// emitter lowers each rule to its static parse fn.
-fn expr_grammar_src() -> string {
-    "grammar Expr {\n" +
-    "  expression = logic_or\n" +
-    "  logic_or   = l:logic_and ( op:(\"||\") r:logic_and )* -> fold_logical(l, op, r)\n" +
-    "  logic_and  = l:equality ( op:(\"&&\") r:equality )* -> fold_logical(l, op, r)\n" +
-    "  equality   = l:bitor ( op:(\"!=\" | \"==\") r:bitor )* -> fold_binary(l, op, r)\n" +
-    "  bitor      = l:bitxor ( op:(\"|\") r:bitxor )* -> fold_binary(l, op, r)\n" +
-    "  bitxor     = l:bitand ( op:(\"^\") r:bitand )* -> fold_binary(l, op, r)\n" +
-    "  bitand     = l:comparison ( op:(\"&\") r:comparison )* -> fold_binary(l, op, r)\n" +
-    "  comparison = l:shift ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:shift )* -> fold_binary(l, op, r)\n" +
-    "  shift      = l:term ( op:(\"<<\" | \">>\") r:term )* -> fold_binary(l, op, r)\n" +
-    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
-    "  factor     = l:unary ( op:(\"*\" | \"/\" | \"%\") r:unary )* -> fold_binary(l, op, r)\n" +
-    "  unary      = op:(\"!\" | \"-\" | \"~\") operand:unary -> Unary(op, operand) | postfix\n" +
-    "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
-    "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
-    "             | \"[\" idx:expression \"]\" -> index_suffix(idx)\n" +
-    "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
-    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
-    "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
-    "}"
-}
-
+// The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
+// block dogfooded into compiler src/ (avra_grammar.av, ps3t.6.5.11); the
+// emitter lowers each of its rules to a static parse fn.
 fn emit_all() -> string {
-    let gp = parse_grammar(expr_grammar_src())
-    emit_parser_source(gp.grammar)
+    emit_parser_source(avra_expr_grammar())
 }
 
 fn rule_named(g: Grammar, name: string) -> Rule {
@@ -152,8 +129,8 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
         // emit_rule_fn(g, postfix) needs the grammar to resolve suffix's FIRST
         // set for its `while` guard.
-        let gp = parse_grammar(expr_grammar_src())
-        let postfix = emit_rule_fn(gp.grammar, rule_named(gp.grammar, "postfix"))
+        let g = avra_expr_grammar()
+        let postfix = emit_rule_fn(g, rule_named(g, "postfix"))
         postfix.contains("while st.cur().text == \".\" || st.cur().text == \"[\" || st.cur().text == \"(\" {")
     }
 }

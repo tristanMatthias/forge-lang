@@ -1,0 +1,48 @@
+// WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
+// actual `grammar { … }` surface-syntax block (design §2.5), out of the test
+// strings it used to live in. This is the single source of truth the whole
+// migration consumes: the executor runs it as the differential oracle
+// (parser_equivalence_test), and emit.av RENDERS it as the generated static
+// parser (emit_generated_test, diagnose.sh --emit-gen-check). Centralising it
+// here (rule 8) retires the duplicated grammar strings those consumers carried.
+//
+// SEED-GATED, and the gate is already OPEN: the `grammar { }` surface parser
+// (ps3t.6.5.1) has been in the pinned seed since well before v245, so this
+// block compiles from the seed with no cycle — verified before landing. The
+// block desugars to a runtime `parse_grammar(<body>)` call (features/grammar/
+// parser.av), so it needs no new AST node and emits identical IR.
+//
+// This is the §2 EXPRESSION family — the proof slice. Statements, patterns,
+// types, and declarations join it here as their families migrate (§2.5's
+// family-by-family strategy), building toward the 6.5.12 swap-in.
+
+use features.grammar.{parse_grammar, Grammar}
+
+/// The canonical §2 Avra expression grammar as a `grammar { }` block. The
+/// operator stratification (logical → bitwise → shift → comparison → additive →
+/// multiplicative → unary → postfix → primary) folds left-associatively via the
+/// build helpers; `@hand(ident)` is the escape hatch for identifiers; grouping
+/// carries the @expect/@recover error annotations.
+export fn avra_expr_grammar() -> Grammar {
+    let gp = grammar {
+  expression = logic_or
+  logic_or   = l:logic_and ( op:("||") r:logic_and )* -> fold_logical(l, op, r)
+  logic_and  = l:equality ( op:("&&") r:equality )* -> fold_logical(l, op, r)
+  equality   = l:bitor ( op:("!=" | "==") r:bitor )* -> fold_binary(l, op, r)
+  bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
+  bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
+  bitand     = l:comparison ( op:("&") r:comparison )* -> fold_binary(l, op, r)
+  comparison = l:shift ( op:("<" | "<=" | ">" | ">=") r:shift )* -> fold_binary(l, op, r)
+  shift      = l:term ( op:("<<" | ">>") r:term )* -> fold_binary(l, op, r)
+  term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
+  factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
+  unary      = op:("!" | "-" | "~") operand:unary -> Unary(op, operand) | postfix
+  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)
+  suffix     = "." name:IDENT -> field_suffix(name)
+             | "[" idx:expression "]" -> index_suffix(idx)
+             | "(" ( a:expression ( "," a:expression )* )? ")" -> call_suffix(a)
+  primary    = NUMBER | STRING | "true" | "false" | @hand(ident)
+             | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
+    }
+    gp.grammar
+}
