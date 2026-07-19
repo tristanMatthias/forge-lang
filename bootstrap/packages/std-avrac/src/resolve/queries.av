@@ -323,17 +323,8 @@ export fn rq_compute(ctx: QueryCtx<RqValue>, q: QueryKey) -> Result<Computed<RqV
 
 /// The decls of `mod_arg`, or the empty module when the driver set
 /// nothing — shared head of the two per-module derived queries.
-///
-/// NOTE (in-package V binding, ticket t-4dla): every `ctx.fetch` result in
-/// this file is bound with an explicit `: RqValue` annotation. Inside the
-/// @std::avrac package an UNANNOTATED `let x = ctx.fetch(..)?` leaves the
-/// generic return un-substituted (typeck loses V), and a direct `match x`
-/// then drops its pattern bindings at codegen ("undefined variable") —
-/// the same code compiles fine from an external program. The annotation
-/// is the engine's documented idiom (V binds via annotations), not a
-/// workaround for the semantics.
 fn rq_fetch_decls(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<RqValue, QueryCycle> {
-    let dv: RqValue = ctx.fetch(qk(RQ_FAM_DECLS, mod_arg))?
+    let dv = ctx.fetch(qk(RQ_FAM_DECLS, mod_arg))?
     Result.Ok(dv)
 }
 
@@ -341,7 +332,7 @@ fn rq_fetch_decls(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<RqValue, Query
 /// is the symbols.av content-addressed identity over the item's
 /// QUALIFIED path — the module path joined with the item name.
 fn rq_compute_index(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
-    let dv: RqValue = rq_fetch_decls(ctx, mod_arg)?
+    let dv = rq_fetch_decls(ctx, mod_arg)?
     mut entries: List<RqIndexEntry> = []
     match dv {
         .Decls(path, items) -> {
@@ -365,7 +356,7 @@ fn rq_compute_index(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqV
 /// "module exported surface". Private items never enter, so their edits
 /// can't move this answer.
 fn rq_compute_surface(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
-    let dv: RqValue = rq_fetch_decls(ctx, mod_arg)?
+    let dv = rq_fetch_decls(ctx, mod_arg)?
     mut entries: List<RqSurfaceEntry> = []
     match dv {
         .Decls(path, items) -> {
@@ -393,7 +384,7 @@ fn rq_compute_surface(ctx: QueryCtx<RqValue>, mod_arg: int) -> Result<Computed<R
 /// sibling, `rewrite_ident`). Returns the winning sym_id, or 0 with the
 /// diagnostic riding on the answer.
 fn rq_compute_resolve(ctx: QueryCtx<RqValue>, ref_arg: int) -> Result<Computed<RqValue>, QueryCycle> {
-    let rv: RqValue = ctx.fetch(qk(RQ_FAM_REF, ref_arg))?
+    let rv = ctx.fetch(qk(RQ_FAM_REF, ref_arg))?
     let no_chain: List<string> = []
     let no_imports: List<RqImport> = []
     mut site = RqRef { name: "", scope_chain: no_chain, imports: no_imports }
@@ -411,10 +402,10 @@ fn rq_compute_resolve(ctx: QueryCtx<RqValue>, ref_arg: int) -> Result<Computed<R
     while i < site.imports.length {
         let imp = site.imports[i]
         if imp.short_name == site.name {
-            let sv: RqValue = ctx.fetch(qk(RQ_FAM_SURFACE, rq_module_key(imp.from_module)))?
+            let sv = ctx.fetch(qk(RQ_FAM_SURFACE, rq_module_key(imp.from_module)))?
             let sym = rq_surface_lookup(sv, site.name)
             if sym != 0 { return Result.Ok(rq_resolved(sym)) }
-            let iv: RqValue = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(imp.from_module)))?
+            let iv = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(imp.from_module)))?
             if rq_index_lookup(iv, site.name) != 0 {
                 return Result.Ok(rq_unresolved(DiagCode.ImportPrivate, "`${site.name}` is private in module `${imp.from_module}`"))
             }
@@ -427,7 +418,7 @@ fn rq_compute_resolve(ctx: QueryCtx<RqValue>, ref_arg: int) -> Result<Computed<R
     mut j = 0
     while j < site.scope_chain.length {
         let m = site.scope_chain[j]
-        let iv: RqValue = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(m)))?
+        let iv = ctx.fetch(qk(RQ_FAM_INDEX, rq_module_key(m)))?
         let sym = rq_index_lookup(iv, site.name)
         if sym != 0 { return Result.Ok(rq_resolved(sym)) }
         j = j + 1
