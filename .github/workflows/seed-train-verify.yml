@@ -41,12 +41,15 @@ concurrency:
 jobs:
   seed-train-verify:
     runs-on: ubuntu-24.04
-    # Build-from-pin + fixed point + suite is ~the train's runtime. 45m
-    # matches the diff-test gate: the suite is the same full run rc-strict
-    # does (60m budget), so 30m under-budgeted it — it timed out mid-suite
-    # (surfaces as "cancelled") on heavier PRs. With the fast-path shards
-    # below the suite finishes well inside this; the margin absorbs a slow
-    # runner.
+    # Build-from-pin + fixed point + suite is ~the train's runtime. The
+    # suite alone is ~28 min on this 4-vCPU/16GB hosted runner (job log:
+    # 5009 tests / 1693s) + ~1 min build, so the previous 30m budget timed
+    # out mid-suite — GitHub surfaces a timed-out job as "cancelled", which
+    # misread as a failure. 45m matches the diff-test gate (the suite is the
+    # same full run rc-strict budgets 60m for) and leaves margin for a slow
+    # runner. This is the REAL fix for the timeout; the shard fan-out below
+    # does not shrink the wall (see AVRA_JOBS). The durable speed lever is a
+    # bigger runner — tracked in hama (blocked on billing).
     timeout-minutes: 45
     # Expose the verified fingerprint to the isolated publish job below.
     outputs:
@@ -98,18 +101,20 @@ jobs:
           # silently SIGKILLs the biggest child ("1 shard failed to
           # compile/run", zero test failures).
           AVRA_TEST_JOBS: "1"
-          # Shard-compile fan-out. The old cap of 2 was tuned for the
-          # pre-fast-path era: each cold shard whole-program-inlined @std at
-          # ~5GB, so 8 concurrent bs2+llc compiles OOM'd the 16GB runner. Since
-          # #866 the diagnostic-fixture majority takes the @std metadata
-          # fast-path (~1.5GB/shard, @std stubbed not inlined) — confirmed in
-          # the job log ("metadata fast-path, MemAvailable ~13GB") — so 2 left
-          # ~4x the runner idle and the suite ran near-serial (~28 min). 6 x
-          # ~1.5GB ≈ 9GB keeps a ~4GB margin under the 13GB the runner reports,
-          # and the memory-aware dispatch (#860) clamps down further if a shard
-          # is heavier. The 5 genuine @comptime fixtures still whole-program
-          # compile but are slot-bounded (#863), so they can't stack.
-          AVRA_JOBS: "6"
+          # Shard-compile fan-out, held at 2 in lockstep with seed-train.yml
+          # (a cold 8-wide suite OOMs the 16GB runner). #867 briefly raised
+          # this to 6 on the theory that the #866 @std metadata fast-path
+          # (~1.5GB/shard) left the runner idle — but the measured suite wall
+          # was ~28 min at BOTH 2 and 6, so the knob is INERT here: effective
+          # concurrency is already pinned by the 4-vCPU CPU bound and #860's
+          # memory-aware dispatch governor, not by this nominal cap. Raising it
+          # bought no speed and only widened the OOM margin the train caps
+          # against, so it's reverted to 2. The real ~28min bottleneck (cold
+          # shard compiles, CPU-bound on 4 vCPU) and its only durable lever
+          # (bigger runner) are analysed in hama; making the governor self-tune
+          # is x2hu. AVRA_TEST_JOBS is the flake-parity knob — do NOT conflate
+          # the two (see hama for why raising it is wrong here).
+          AVRA_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
