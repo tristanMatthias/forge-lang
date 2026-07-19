@@ -12,34 +12,19 @@
 // Scope (simplest-first): break, continue, `return <expr>`, and bare
 // expression-statements. Bare `return` (ReturnEmpty, newline-sensitive), block,
 // let/mut/const, if, for follow in later slices.
-use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_stmt_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
-// A statement grammar: the simplest statement forms layered on the proven
-// expression grammar (the embedded expressions the statements reference).
-fn stmt_grammar_src() -> string {
-    "grammar Stmt {\n" +
-    "  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
-    "  break_stmt    = \"break\" -> Break()\n" +
-    "  continue_stmt = \"continue\" -> Continue()\n" +
-    "  return_stmt   = \"return\" e:expression -> Return(e)\n" +
-    "  expr_stmt     = e:expression -> ExprStmt(e)\n" +
-    "  expression    = equality\n" +
-    "  equality      = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
-    "  comparison    = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
-    "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
-    "  factor        = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
-    "  unary         = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
-    "  primary       = NUMBER | STRING | \"true\" | \"false\"\n" +
-    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
-    "}"
-}
+// The statement grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded
+// into compiler src/ (avra_grammar.av avra_stmt_grammar(), ps3t.6.5.11) — the
+// simplest statement forms COMPOSED with the shared expression grammar (the
+// statements embed full Avra expressions, reused not re-defined). This test
+// runs it through the executor as the differential oracle.
 
 // The DSL-generated statement parser's tree for `src`, rendered canonically.
 fn dsl_stmt(src: string) -> string {
-    let gp = parse_grammar(stmt_grammar_src())
-    let r = run_grammar_stmt(gp.grammar, src)
+    let r = run_grammar_stmt(avra_stmt_grammar(), src)
     // A diagnostic-bearing (error-tolerant partial) parse is a distinct
     // outcome — surface it so a recovered tree can't spuriously match the
     // hand-written parser's clean tree in the differential comparison.

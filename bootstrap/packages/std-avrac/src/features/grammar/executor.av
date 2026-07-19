@@ -1511,7 +1511,7 @@ fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
 /// Coerce a capture value to a Stmt node — the statement twin of
 /// `capval_to_expr`. Only a built statement node (`SNode`) is a valid
 /// statement; anything else is a reported error yielding `Stmt.Error`.
-fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
+export fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
     match v {
         .SNode(id) -> id
         _ -> {
