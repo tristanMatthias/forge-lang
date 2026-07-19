@@ -17,7 +17,7 @@ spec "while-condition mismatch shows full type" {
             "    while xs { return 1 }\n" +
             "    0\n" +
             "}\n")
-        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("./build/bs2 check '${fixture}' 2>&1 || true")
         out.contains("got `List<int>`") && !out.contains("got `List`,")
     }
 }
