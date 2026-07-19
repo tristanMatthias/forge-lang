@@ -3120,7 +3120,7 @@ fn parse_jobs_env(default_jobs: int) -> int {
 fn compute_shard_jobs(want_meta: bool) -> int {
     let ceiling = if want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
     let ceil = if ceiling < 1 { 1 } else { ceiling }
-    if avra_process_env_get("AVRA_JOBS_FORCE") != "" { return ceil }
+    if avra_process_env_get("AVRA_JOBS_FORCE") == "1" { return ceil }
     let avail_mb = available_memory_mb()
     if avail_mb <= 0 { return ceil }   // unknown → preserve the static default
     // Headroom that must survive ALONGSIDE the shard fan-out: the
