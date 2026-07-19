@@ -236,6 +236,16 @@ export type Parser = {
     // one grammar AND this parser's own `store` (the type success path never
     // allocates into it, so the hand parse's node-id space is untouched).
     mut dsl_grammar: Grammar?,
+    // ps3t.6.5.12 pattern-family swap-in: when true, parse_pattern_or delegates
+    // the whole or-pattern to the grammar-DSL (avra_pat_grammar), with a hand
+    // fallback on any DSL error. Read once at construction. PROMOTED: the DSL is
+    // now the DEFAULT pattern parser — proven byte-identical to the hand parser
+    // across the whole selfhost (781802 lines). `AVRA_PARSER_PAT_FLIP=0` restores
+    // the hand path as a debug escape. `dsl_pat_grammar` caches avra_pat_grammar()
+    // (the isolated pattern grammar — the program grammar carries no pattern
+    // rules yet) lazily, once, exactly like `dsl_grammar`.
+    mut pat_flip: bool,
+    mut dsl_pat_grammar: Grammar?,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -595,6 +605,8 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") != "0",
         grammar_toks: [],
         dsl_grammar: null,
+        pat_flip: avra_process_env_get("AVRA_PARSER_PAT_FLIP") != "0",
+        dsl_pat_grammar: null,
     }
     parser.advance_token()
     parser

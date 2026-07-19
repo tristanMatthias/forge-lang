@@ -910,6 +910,34 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
+/// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
+/// in the caller's shared `store` — patterns are arena-backed, unlike types),
+/// the stop byte for cursor resync, and the error channel.
+export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand PATTERN runner (ps3t.6.5.12) — the pattern-family sibling of
+/// `run_dsl_type_at_shared`. Runs `grammar`'s `rule` (`pattern_or` for the
+/// or-pattern top entry, `pattern` for a bare atom entry) over the pre-lexed
+/// `toks` at byte `start_byte`, returning the built PatId + the resync stop
+/// byte. UNLIKE the type runner, patterns are arena-backed, so it allocates into
+/// the caller-owned `store` and returns an id VALID in it (the hand parser reads
+/// the id straight back) — the `run_hand_stmt`/`run_grammar_pat_toks` store-
+/// sharing shape. Reuses the caller's token + grammar caches (lex-once), so a
+/// file's many patterns cost one lex + one grammar build.
+export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
+    mut idx = 0
+    while idx < toks.length && toks[idx].pos < start_byte {
+        idx = idx + 1
+    }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false }
+    let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
 /// (`run_hand_expr` → ExprId over the shared store) — distinct from the
 /// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
