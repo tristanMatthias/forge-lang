@@ -18,7 +18,7 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
+use codegen.{codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key_cgu, CguMember, fn_unit_lookup, fn_unit_publish}
@@ -211,7 +211,11 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
             // concurrent builds targeting the same bin_path must not clobber
             // each other's scratch object before it's published.
             let obj = "${stem}.cgu${string(bi)}.${string(avra_getpid())}.o"
-            let _ = emit_cgu_object(bucket, fm.stmts, obj, fm.type_reg, target.store)?
+            // Unit tag "b<i>": qualifies this unit's lambda symbol names so a
+            // cached unit's lambdas can never collide with another unit's or
+            // the wrapper's (the process-global lambda-id counter is cache-
+            // sensitive — see emit_lambda_typed).
+            let _ = emit_cgu_object(bucket, fm.stmts, obj, fm.type_reg, target.store, "b${string(bi)}")?
             let pub = fn_unit_publish(cgu_store, key, obj)
             if pub != null {
                 objs.push(pub!)
@@ -229,45 +233,48 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
 
     let link_objs = prepend_extra_objs(objs, target.extra_objs)
     let opts = default_link_options()
+    // Content-keyed link cache (uzs9.3, same as the whole-program path): when
+    // every unit hit AND the wrapper object's content is unchanged (both
+    // depend only on the program, not the pid in the scratch filename), the
+    // link inputs are byte-identical and the previously-linked binary is
+    // exact — skip the ~0.5s cc against libLLVM. This keeps the CGU default
+    // warm-competitive with the whole-program path it replaced.
+    let opts_canonical = "stack=${opts.stack_size_hex}|llvm=${llvm_prefix_dir()}|cov=0"
+    let link_key = linked_bin_key(link_objs, "${build_dir}/runtime.o",
+                                  "${build_dir}/llvm_wrapper.o", opts_canonical)
+    if linked_bin_lookup(cache, link_key, target.bin_path) {
+        return Result.Ok(target.bin_path)
+    }
     if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
                     target.bin_path, opts) != 0 {
         return Result.Err("link failed (cgu)")
     }
+    linked_bin_publish(cache, link_key, target.bin_path)
     Result.Ok(target.bin_path)
 }
 
+/// Build a linked binary from an assembled program (ps3t.8.6.2: bounded-K CGU
+/// is the DEFAULT). A non-coverage build routes through build_binary_cgu — the
+/// program's fns partitioned into <= CGU_COUNT codegen units, each object
+/// content-cached, so a one-fn edit re-links from mostly-cached objects. This
+/// is an intended-ir-change vs the old whole-program single-module build (N
+/// modules vs one → different .ll structure), verified run-equivalent, not
+/// byte-identical. Coverage is NOT supported on the CGU path (per-unit objects
+/// are emitted uninstrumented), so a coverage target uses the whole-program
+/// instrumented path below.
+///
+/// NOTE the seed/selfhost binary is NOT built through here — it is
+/// `bs2 compile main.av` → a single self-contained main.av.ll (compile_program)
+/// → llc+link, which MUST stay whole-program (the seed is one self-contained
+/// .ll). This flip covers the binary-linking path (test binaries); the
+/// selfhost fixed point (bs2==bs3, a compile_program .ll diff) is unaffected.
 export fn build_binary(target: CompileTarget) -> Result<string, string> {
-    let fm = frontend_to_mono(target)?
-
-    let build_dir = "${target.project_dir}/build"
     if !target.coverage {
-        let obj_path = strip_bin_suffix(target.bin_path) + ".o"
-        let _ = codegen_and_emit_object(fm.stmts, obj_path, fm.type_reg, target.store, target.project_dir)?
-        let link_objs = prepend_extra_objs([obj_path], target.extra_objs)
-        let opts = default_link_options()
-        // uzs9.3: content-keyed link rescue. The unit's fp-keyed cache
-        // (which embeds the bs2 hash) missed — that's why we're here —
-        // but when the recompile emitted byte-identical objects (the
-        // common case after a codegen-irrelevant compiler edit), the
-        // link's inputs are unchanged and the previously-linked binary
-        // is exact. Key = content of every object + flag-relevant opts;
-        // hashing ~15MB of .o is ~40ms vs an ~0.5s cc against libLLVM.
-        // Coverage builds skip the store (untracked clang_rt axes +
-        // profraw keyed on the binary identity — mirrors diagnose.sh).
-        let cache = cache_for(target.project_dir)
-        let opts_canonical = "stack=${opts.stack_size_hex}|llvm=${llvm_prefix_dir()}|cov=0"
-        let link_key = linked_bin_key(link_objs, "${build_dir}/runtime.o",
-                                      "${build_dir}/llvm_wrapper.o", opts_canonical)
-        if linked_bin_lookup(cache, link_key, target.bin_path) {
-            return Result.Ok(target.bin_path)
-        }
-        if link_objects(link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
-                        target.bin_path, opts) != 0 {
-            return Result.Err("link failed")
-        }
-        linked_bin_publish(cache, link_key, target.bin_path)
-        return Result.Ok(target.bin_path)
+        return build_binary_cgu(target)
     }
+
+    let fm = frontend_to_mono(target)?
+    let build_dir = "${target.project_dir}/build"
 
     // Coverage path: lower instrprof intrinsics via opt, then llc to
     // .o, then link with clang_rt.profile_osx. The 16K-page-aligned

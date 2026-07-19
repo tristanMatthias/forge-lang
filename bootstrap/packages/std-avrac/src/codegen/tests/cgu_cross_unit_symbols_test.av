@@ -1,0 +1,97 @@
+// Bounded-K CGU cross-unit symbol hygiene (ps3t.8.6.2). When the whole-program
+// module is split into N objects, EVERY strong (non-weak) symbol must be
+// DEFINED in exactly ONE object — else the linker errors on a duplicate. Two
+// hazard classes the default-flip surfaced, both guarded here:
+//   * module-level `mut`/`let` globals — must be DEFINED once (the wrapper)
+//     and declared external in every unit, not defined in each;
+//   * lambdas — the process-global lambda-id counter is emission-order/cache-
+//     sensitive, so a per-unit tag qualifies the name (`__lambda_b<i>_N` /
+//     `__lambda_w_N`) to keep them disjoint across units.
+//
+// The invariant checked is GENERAL: no strong (T/D/B in nm) symbol is defined
+// in more than one of the CGU objects. That catches globals, lambdas, and any
+// future lazily-created module symbol. linkonce_odr symbols (consts, mono
+// specializations) are weak (W/V) and legitimately duplicated — excluded.
+//
+// @@fixture-stateful@@ — links + runs real binaries; a transient hiccup must
+// re-probe, not freeze as FAIL.
+
+use @std.avrac.core.{ avra_shell_exec, avra_getpid }
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_binary_cgu, CompileTarget}
+
+fn repo_root() -> string { avra_shell_exec("pwd").trim() }
+
+/// Build `src` via CGU into `dir/bin` KEEPING the intermediate objects.
+/// Returns "<build_result>|<runtime_stdout>".
+fn build_run_keep(src: string, dir: string, bin: string) -> string {
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.ids == null { return "parsefail|" }
+    let t = CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/${bin}",
+        project_dir: dir,
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+    let br = match build_binary_cgu(t) {
+        .Ok(_) -> "ok",
+        .Err(e) -> "err:${e}",
+    }
+    let out = if br == "ok" { avra_shell_exec("'${dir}/${bin}' 2>&1").trim() } else { "" }
+    "${br}|${out}"
+}
+
+/// Count strong symbols (nm T/D/B — excludes weak W/V linkonce) that are
+/// DEFINED in more than one .cgu*/.wrapper object under `dir/stem`.
+fn dup_strong_symbols(dir: string, stem: string) -> string {
+    avra_shell_exec("for o in '${dir}/${stem}'.cgu*.o '${dir}/${stem}'.wrapper.*.o; do nm --defined-only \"$o\" 2>/dev/null | grep -E ' [TDB] ' | awk '{print $3}'; done | sort | uniq -d | tr '\\n' ' '").trim()
+}
+
+spec "bounded-K CGU: every strong symbol is defined in exactly one object" {
+    then "globals + fn-body lambdas + a top-level lambda all link cleanly" {
+        let dir = "/tmp/avra_cguxunit_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/build'")
+        avra_shell_exec("cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+        // module global (must be defined once) + two fn-body lambdas (distinct
+        // units) + a top-level lambda (the wrapper). total = 10 + 6 + 30 = 46.
+        let src = "mut total: int = 0\n"
+            + "fn apply(f: fn(int) -> int, x: int) -> int { f(x) }\n"
+            + "fn twice_it(x: int) -> int { apply((a) -> a + a, x) }\n"
+            + "fn inc_it(x: int) -> int { apply((b) -> b + 1, x) }\n"
+            + "let top = apply((c) -> c * 10, 3)\n"
+            + "fn main() {\n  total = twice_it(5) + inc_it(5) + top\n  println(string(total))\n}\n"
+        let res = build_run_keep(src, dir, "prog.bin")
+        let dups = dup_strong_symbols(dir, "prog")
+        let ok = res == "ok|46" && dups == ""
+        if !ok { println("cgu-xunit: res=${res} dups=[${dups}]") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "warm rebuild after adding a wrapper lambda: cached unit's lambda stays disjoint" {
+        // The precise old failure: v1 caches a fn-body lambda unit; v2 keeps
+        // that fn (cache HIT) but adds a wrapper lambda whose fresh counter
+        // would reproduce the cached unit's bare `__lambda_0`. The per-unit tag
+        // makes them disjoint, so v2 links.
+        let dir = "/tmp/avra_cguxunit2_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/build'")
+        avra_shell_exec("cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+        let base = "fn apply(f: fn(int) -> int, x: int) -> int { f(x) }\n"
+            + "fn helper(x: int) -> int { apply((a) -> a + a, x) }\n"
+        // v1: helper unit (with a lambda) gets cached.
+        let v1 = base + "fn main() { println(string(helper(7))) }\n"
+        let r1 = build_run_keep(v1, dir, "v1.bin")
+        // v2: helper UNCHANGED (cache hit) + a wrapper (top-level) lambda.
+        let v2 = base + "let extra = apply((c) -> c + 100, 1)\n"
+            + "fn main() { println(string(helper(7) + extra)) }\n"
+        let r2 = build_run_keep(v2, dir, "v2.bin")
+        let dups2 = dup_strong_symbols(dir, "v2")
+        // helper(7) = 14; v2 adds extra = 101 → 115.
+        let ok = r1 == "ok|14" && r2 == "ok|115" && dups2 == ""
+        if !ok { println("cgu-xunit-warm: r1=${r1} r2=${r2} dups2=[${dups2}]") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+}
