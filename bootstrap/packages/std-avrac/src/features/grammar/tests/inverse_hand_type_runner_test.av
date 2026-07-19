@@ -1,0 +1,119 @@
+// ps3t.6.5.12 slice 1 — the INVERSE-@hand TYPE runner (`run_dsl_type_at`).
+//
+// This is the swap-in primitive: where the existing `@hand(...)` bridge lets a
+// DSL rule delegate a span to the hand parser (`run_hand_type`), `run_dsl_type_at`
+// lets the HAND parser delegate a whole type expression to the DSL. It runs the
+// UNIFIED program grammar's `type_expr` rule over the source at a byte offset and
+// reports where it stopped, so a caller can resync its cursor (the flip) or just
+// compare the built type and leave its cursor alone (the shadow canary).
+//
+// Differential proof = "same tree." For every type form the compiler's own
+// source uses, the runner's `TypeExpr` (lowered + rendered) must equal the hand
+// parser's. Because it uses the PROGRAM grammar (not the isolated
+// `avra_type_grammar`), this EXTENDS the `type_equivalence_test` coverage to the
+// two atoms that test explicitly excluded: qualified `@pkg::mod::T` (served by
+// the grammar's `@hand(qualified_type)` alternative) and nested generics that
+// close with `>>` (`List<List<T>>`, split by the executor's `maybe_split_shr`).
+//
+// It also pins the RESYNC contract: `stop_byte` is the byte where the DSL
+// stopped, valid even at EOF (the trailing EOF token's `pos`), and correct when
+// the runner starts mid-source or leaves trailing content unconsumed.
+use @std.avrac.features.grammar.{run_dsl_type_at}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+
+// The inverse-@hand runner's ValueType for `src`, rendered canonically. Lowers
+// the returned surface `TypeExpr` via the shared `type_expr_to_vtype` and renders
+// through a throwaway store — exactly the hand path, so equivalence reduces to
+// building the same tree.
+fn dsl_at_type(src: string) -> string {
+    let r = run_dsl_type_at(src, 0)
+    if r.had_error { return "<dsl parse error>" }
+    mut p = parser_new(src)
+    let tid = p.store.types.add_leaf(type_expr_to_vtype(r.te))
+    render_type_id(p.store, tid)
+}
+
+// The hand-written parser's ValueType for `src`, rendered the SAME way.
+fn hand_type(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("expected type") {
+        .Ok(te) -> {
+            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
+            render_type_id(p.store, tid)
+        }
+        .Err(_) -> "<parse error>"
+    }
+}
+
+// True when the inverse runner and the hand parser agree on the type tree.
+fn agree(src: string) -> bool {
+    dsl_at_type(src) == hand_type(src)
+}
+
+spec "ps3t.6.5.12 slice 1: run_dsl_type_at == hand parser (inverse-@hand type runner)" {
+    given "the full parse_type_expr surface the isolated grammar already covers" {
+        then "primitives, names, nullables, generics, list/tuple, unions, fn, dyn all agree" {
+            agree("int") && agree("string") && agree("bool") && agree("float") &&
+            agree("Foo") && agree("MyType") &&
+            agree("int?") && agree("Foo?") && agree("Result<int, string>?") &&
+            agree("List<int>") && agree("Map<string, int>") && agree("Result<int, string>") &&
+            agree("Foo<A>") && agree("Pair<A, B>") &&
+            agree("[int]") && agree("[Foo]") &&
+            agree("(int, string)") && agree("(int, bool, Foo)") && agree("(int)") &&
+            agree("int | string") && agree("int | string | bool") && agree("List<int> | string") &&
+            agree("fn(int) -> bool") && agree("fn(int, string) -> Foo") &&
+            agree("fn() -> int") && agree("fn -> int") && agree("fn") &&
+            agree("dyn Display") && agree("dyn Iterator")
+        }
+    }
+    given "NESTED generics that close with `>>` — excluded from the isolated grammar test" {
+        then "the executor's maybe_split_shr makes them agree with the hand parser" {
+            agree("List<List<int>>") &&
+            agree("Map<string, List<int>>") &&
+            agree("Result<List<int>, string>") &&
+            agree("Map<string, Map<int, bool>>")
+        }
+    }
+    given "QUALIFIED `@pkg::mod::T` atoms — the selfhost-critical re-emitted form" {
+        then "bare, generic, and optional qualified names agree (served by @hand(qualified_type))" {
+            agree("@std::avrac::core::ExprId") &&
+            agree("List<@std::avrac::core::ExprId>") &&
+            agree("@std::avrac::core::Result<int, string>") &&
+            agree("@std::avrac::core::ExprId?")
+        }
+    }
+    given "the runner really built a ValueType (sanity, not just mutual error)" {
+        then "canonical renders of representative forms" {
+            dsl_at_type("int?") == "int?" &&
+            dsl_at_type("[int]") == "List<int>" &&
+            dsl_at_type("Map<string, int>") == "Map<string, int>" &&
+            dsl_at_type("List<List<int>>") == "List<List<int>>" &&
+            dsl_at_type("int | string") == "int|string"
+        }
+    }
+    given "the RESYNC contract: stop_byte marks where the DSL stopped" {
+        then "a whole-source type stops at EOF (end byte)" {
+            run_dsl_type_at("int", 0).stop_byte == 3 &&
+            run_dsl_type_at("List<int>", 0).stop_byte == 9
+        }
+        then "trailing content past the type is left unconsumed" {
+            // "Foo bar": the type is `Foo`; the DSL stops at `bar` (byte 4).
+            run_dsl_type_at("Foo bar", 0).stop_byte == 4
+        }
+        then "starting mid-source parses the type at that offset" {
+            // "x: int": byte 3 is the `int`; renders as int, stops at EOF (byte 6).
+            dsl_at_type_from("x: int", 3) == "int" &&
+            run_dsl_type_at("x: int", 3).stop_byte == 6
+        }
+    }
+}
+
+// Mid-source variant of `dsl_at_type` for the resync/offset checks.
+fn dsl_at_type_from(src: string, start: int) -> string {
+    let r = run_dsl_type_at(src, start)
+    if r.had_error { return "<dsl parse error>" }
+    mut p = parser_new(src)
+    let tid = p.store.types.add_leaf(type_expr_to_vtype(r.te))
+    render_type_id(p.store, tid)
+}

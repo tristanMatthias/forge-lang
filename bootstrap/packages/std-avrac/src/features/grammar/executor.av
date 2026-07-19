@@ -842,6 +842,47 @@ export fn run_hand_type(name: string, st: PState) -> TypeExpr {
     }
 }
 
+/// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
+/// stopped at (so a hand-parser caller can resync its token cursor), and the
+/// error channel.
+export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand TYPE runner (ps3t.6.5.12 slice 1) — the exact mirror of
+/// `run_hand_type`. Where `run_hand_type` lets a DSL type rule delegate a span
+/// to the hand parser, THIS lets the hand parser delegate a whole type
+/// expression to the DSL: it runs the UNIFIED program grammar's `type_expr`
+/// rule over `src` starting at byte `start_byte`, and reports the byte where the
+/// DSL stopped (`stop_byte`) so a caller can resync its own cursor.
+///
+/// It is PURE w.r.t. any live `Parser` (it takes `src` + a byte offset, not a
+/// mutable parser), so ONE function serves both consumers of the swap-in:
+///   * the FLIP — the caller advances its token cursor to `stop_byte`;
+///   * the SHADOW canary — the caller compares `te` to its own parse and
+///     discards `stop_byte`, leaving the authoritative parser untouched.
+/// Byte positions align exactly because `lex_real` drives the SAME shipping
+/// lexer the hand parser streams (so `Token.pos` == `Parser.current_start` at
+/// every boundary), and `PState.cur()` returns the trailing EOF token — whose
+/// `pos` is the end-of-source byte — so `stop_byte` is valid even at EOF.
+///
+/// The PROGRAM grammar (not the isolated `avra_type_grammar`) is used so its
+/// `type_atom = @hand(qualified_type) | ...` alternative serves the qualified
+/// `@pkg::mod::T` form that re-emitted `@comptime` bodies carry — the one
+/// selfhost-critical type atom the isolated grammar can't build.
+export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
+    let toks = lex_real(src)
+    mut idx = 0
+    while idx < toks.length && toks[idx].pos < start_byte {
+        idx = idx + 1
+    }
+    mut st = PState { toks, pos: idx, store: new_node_store(build_line_index(src)), src, diags: [], had_error: false }
+    let te = capval_to_texpr(st, exec_rule(avra_program_grammar(), "type_expr", st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
 /// (`run_hand_expr` → ExprId over the shared store) — distinct from the
 /// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
