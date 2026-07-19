@@ -99,7 +99,7 @@ spec "pdme.1 acceptance: compile cache tracks dep-package edits" {
         let q = mk_pkg(root, "q", "@fix/q", "", "fn q() -> int { 1 }  // salt ${salt}\n")
         let p = mk_pkg(root, "p", "@fix/p", "\"@fix/q\" = { path = \"../q\" }\n",
                        "fn main() { println(\"p ${salt}\") }\n")
-        let cmd = "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT ./build/bs2 compile '${p}/src/main.av' 2>&1"
+        let cmd = "bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT ./build/bs2 compile '${p}/src/main.av' 2>&1"
         let run1 = avra_shell_exec(cmd)
         let run2 = avra_shell_exec(cmd)
         let _ = avra_selfhost_write_file("${q}/src/main.av", "fn q() -> int { 2 }  // salt ${salt}\n")

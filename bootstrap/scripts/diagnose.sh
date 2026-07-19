@@ -1594,10 +1594,29 @@ mode_check_fixedpoint() {
 # slot forever.
 COMPILE_SLOT_DIR=""
 
+# Memory-aware default for acquire_compile_slot's slot count. A
+# no-metadata fixture compile is a ~5GB WHOLE-PROGRAM compile, and
+# these run CONCURRENTLY with the memory-aware test shards, so a fixed
+# `2` could still tip a tight box over the OOM cliff (the fixture half
+# of the snw0 full-suite peak). Derive it from MemAvailable — ~1 slot
+# per 6GB past a 4GB base, floored at 1 — so a 16GB box runs one
+# fixture compile at a time while a big box still parallelises them.
+# Linux /proc/meminfo only; non-Linux / read failure keeps the historic
+# default of 2. AVRA_FIXTURE_JOBS overrides this explicitly.
+_default_compile_slots() {
+  local avail
+  avail=$(awk '/^MemAvailable:/ {print int($2/1024); exit}' /proc/meminfo 2>/dev/null)
+  case "$avail" in ''|*[!0-9]*) echo 2; return;; esac
+  [ "$avail" -le 0 ] && { echo 2; return; }
+  local n=$(( (avail - 4096) / 6000 ))
+  [ "$n" -lt 1 ] && n=1
+  echo "$n"
+}
+
 acquire_compile_slot() {
   # AVRA_SLOT_DIR overrides the namespace — spec tests use a private
   # one so they never contend with (or corrupt) a real suite's slots.
-  local n="${AVRA_FIXTURE_JOBS:-2}" base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}" dir owner i
+  local n="${AVRA_FIXTURE_JOBS:-$(_default_compile_slots)}" base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}" dir owner i
   mkdir -p "$base"
   while :; do
     i=0

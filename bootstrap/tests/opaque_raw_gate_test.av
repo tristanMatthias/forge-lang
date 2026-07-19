@@ -47,7 +47,7 @@ spec "@opaque .raw() is gated to the declaring module + friends" {
         let fixture = "build/_opaque_annotate_inline_fixture.av"
         let _ = avra_selfhost_write_file(fixture,
             "use @std.avrac.features.walker.{derive_walker}\nfn main() -> int { 0 }\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA ./build/bs2 check ${fixture} 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA ./build/bs2 check ${fixture} 2>&1 || true")
         !out.contains("F3106")
     }
 }

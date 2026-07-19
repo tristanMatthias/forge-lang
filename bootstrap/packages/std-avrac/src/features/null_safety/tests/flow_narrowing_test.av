@@ -19,7 +19,7 @@ use @std.avrac.core.{avra_shell_exec}
 /// Run `bs2 check` on a fixture and return its combined output.
 fn fn_check_out(fixture: string, src: string) -> string {
     write_fixture(fixture, src)
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+    avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
 }
 
 spec "flow narrowing retypes `T?` to `T` in the proven-present scope" {

@@ -18,7 +18,7 @@ spec "match-arm type mismatch shows full element types" {
             "    }\n" +
             "    0\n" +
             "}\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         // Pre-fix this read `(tuple)` vs `(tuple)`; post-fix it must
         // contain the actual element types of both sides.
         out.contains("(int, int)") && out.contains("(string, string)")
