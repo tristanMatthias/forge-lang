@@ -1,0 +1,143 @@
+// WHY: guards the O(M²)→O(M) fix in trie_insert_decl (forge-crafting-
+// intepreters-uzs9.5.1 / F1). The direct-insert used to
+// `append_stmts`-copy the whole accumulator per decl — inserting M
+// decls into ONE module node cost 1+2+…+M = O(M²) pushes. The fix
+// mutates `node.direct` in place (amortised O(1) push), the same
+// in-place discipline `ensure_child` already uses for `children`.
+//
+// A behavioural regression from that change would show up as dropped,
+// duplicated, or reordered decls in the synthesized module body. These
+// specs stress exactly the hot path — MANY decls sharing one module
+// path (`@t::pkg::core::fn_N`) so they all land in a single node's
+// `direct` list — and pin the invariant the mutation must preserve:
+// every decl present, exactly once, in insertion order.
+
+use @std.avrac.build.{
+    UnitMetadata, FnDeclEntry, sym_id_for, bytes_from_hex,
+    synthesize_unit_body,
+}
+use @std.avrac.core.{
+    NodeStore, StmtId, new_node_store, build_line_index, Stmt, stmt_unwrap,
+    ParamEntry, TypeParamEntry, ValueType,
+}
+
+fn fp32() -> bytes {
+    bytes_from_hex("00000000000000000000000000000000000000000000000000000000000000ff")
+}
+
+fn ts() -> NodeStore {
+    new_node_store(build_line_index(""))
+}
+
+// A plain exported fn under the `core` module of unit `@t::pkg`, so its
+// relative path is `core::fn_N` — every one lands in the SAME `core`
+// SubMod's `direct` list, which is precisely the many-into-one-node
+// shape the O(M²) copy penalised.
+fn plain_core_fn(i: int) -> FnDeclEntry {
+    let qn = "@t::pkg::core::fn_${i}"
+    let no_params: List<ParamEntry> = []
+    let no_tp: List<TypeParamEntry> = []
+    FnDeclEntry {
+        sym_id: sym_id_for(qn),
+        name: qn,
+        exported: true,
+        is_extern: false,
+        is_comptime: false,
+        type_params: no_tp,
+        params: no_params,
+        ret: ValueType.Int,
+    }
+}
+
+fn many_core_fns(n: int) -> List<FnDeclEntry> {
+    mut out: List<FnDeclEntry> = []
+    mut i = 0
+    while i < n {
+        out.push(plain_core_fn(i))
+        i = i + 1
+    }
+    out
+}
+
+fn meta_with_fns(unit: string, fns: List<FnDeclEntry>) -> UnitMetadata {
+    UnitMetadata {
+        unit_name: unit,
+        fingerprint: fp32(),
+        types: [],
+        fns: fns,
+        consts: [],
+        impls: [],
+        generic_bodies: [],
+        inherent_impls: [],
+    }
+}
+
+// Collect every synthesized Function's local name in walk order,
+// descending into Module wrappers (the fns land nested under the
+// reconstructed `core` module). Annotations are peeled by stmt_unwrap.
+fn collect_fn_names(store: NodeStore, stmts: List<StmtId>, acc: List<string>) -> List<string> {
+    mut out = acc
+    mut i = 0
+    while i < stmts.length {
+        match stmt_unwrap(store, store.stmts.get(stmts[i])) {
+            .Function(n, _, _, _, _) -> { out.push(n) }
+            .Module(_, body) -> { out = collect_fn_names(store, body, out) }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    out
+}
+
+fn count_matching(names: List<string>, want: string) -> int {
+    mut c = 0
+    mut i = 0
+    while i < names.length {
+        if names[i] == want { c = c + 1 }
+        i = i + 1
+    }
+    c
+}
+
+spec "metadata synthesis: many decls in one module node survive the in-place insert" {
+    then "all N same-module fns are present after synthesis (nothing dropped)" {
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", many_core_fns(40)), store)
+        let empty: List<string> = []
+        let names = collect_fn_names(store, synth, empty)
+        names.length == 40
+    }
+    then "each fn appears EXACTLY once (no in-place duplication)" {
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", many_core_fns(40)), store)
+        let empty: List<string> = []
+        let names = collect_fn_names(store, synth, empty)
+        // Probe a few across the range — a mutation that aliased the
+        // list would repeat or clobber entries.
+        count_matching(names, "fn_0") == 1
+            && count_matching(names, "fn_19") == 1
+            && count_matching(names, "fn_39") == 1
+    }
+    then "insertion order is preserved (direct.push appends, not prepends)" {
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", many_core_fns(40)), store)
+        let empty: List<string> = []
+        let names = collect_fn_names(store, synth, empty)
+        // The N fns were inserted fn_0..fn_39; the synthesized body must
+        // emit them in that same order.
+        mut ok = names.length == 40
+        mut i = 0
+        while i < 40 {
+            if names[i] != "fn_${i}" { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "a single decl still synthesizes correctly (M=1 boundary)" {
+        let store = ts()
+        let synth = synthesize_unit_body(meta_with_fns("@t::pkg", many_core_fns(1)), store)
+        let empty: List<string> = []
+        let names = collect_fn_names(store, synth, empty)
+        names.length == 1 && names[0] == "fn_0"
+    }
+}
