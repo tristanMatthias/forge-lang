@@ -1,0 +1,17 @@
+// t-u4cv guard support: a NON-ROOT module with its OWN private `tag`
+// sibling over a DIFFERENT enum — the `docs::sym_kind_tag` analog. Its
+// call to `tag` must dispatch to THIS module's sibling, not the
+// same-named export in u4cv_exporter that also sits in the global index.
+enum CK {
+    CA
+}
+
+fn tag(k: CK) -> int {
+    match k {
+        .CA -> 2
+    }
+}
+
+export fn run() -> int {
+    return tag(CK.CA)
+}

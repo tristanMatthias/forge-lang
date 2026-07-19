@@ -1,0 +1,53 @@
+// WHY: regression guard for t-u4cv — a same-named export across modules
+// must NOT hijack a same-named call through the flat short-name global
+// index. This replicates the shape of the original crash
+// (`@std::avrac::docs::sym_kind_tag`, a private sibling, mis-dispatched
+// to `@std::avrac::resolve::sym_kind_tag`, an unrelated export, so a
+// value of one enum reached a `match` written for another and tripped
+// `avra_match_unreachable`).
+//
+// `u4cv_exporter` exports `tag(EK) -> 100` over its own enum, seeding
+// `tag` into the shared global index. Two callers must each reach their
+// OWN `tag`, never the exporter's:
+//   - `u4cv_consumer` is a NON-ROOT module with a private `tag(CK)`
+//     (the sibling-lookup path).
+//   - `rtag`/`tag` below live at ROOT (current_module == ""), where
+//     `rewrite_ident` skips sibling lookup — the fragility zone.
+// A CK/RK value against EK's variants would crash, so a green run is
+// proof of correct dispatch.
+//
+// NOTE: the specific `sym_kind_tag` crash filed in t-u4cv no longer
+// reproduces on this base — ps3t.8.4's global-index change shifted the
+// first/last-wins winner — but the flat index remains the mechanism, so
+// this guard locks correct dispatch in place. The structural
+// elimination (sym_id-keyed resolve(ref)) is the ps3t.8.5/8.3 wiring.
+
+mod u4cv_exporter
+mod u4cv_consumer
+
+use u4cv_consumer.{run}
+
+enum RK {
+    RA
+}
+
+// A ROOT-level `tag` sharing the exporter's short name. The root walk
+// does not run sibling lookup, so this is the harder dispatch case.
+fn tag(k: RK) -> int {
+    match k {
+        .RA -> 7
+    }
+}
+
+fn call_root_tag() -> int {
+    return tag(RK.RA)
+}
+
+spec "same-named cross-module export does not hijack a same-named call (t-u4cv)" {
+    then "a NON-ROOT module's private `tag` wins over the exporter's export" {
+        run() == 2
+    }
+    then "a ROOT-level `tag` wins over the exporter's export (sibling-lookup-skipped path)" {
+        call_root_tag() == 7
+    }
+}
