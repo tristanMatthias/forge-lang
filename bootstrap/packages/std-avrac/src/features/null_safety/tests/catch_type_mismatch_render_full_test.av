@@ -16,7 +16,7 @@ spec "catch-body type mismatch shows full element types" {
             "    let pair = fail() catch { (\"a\", \"b\") }\n" +
             "    0\n" +
             "}\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         // Pre-fix would render both sides as `(tuple)`. Post-fix must
         // expose at least one full element-typed form.
         (out.contains("(int, int)") || out.contains("(string, string)"))

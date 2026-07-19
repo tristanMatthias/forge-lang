@@ -25,7 +25,7 @@ spec "typeck diagnostics use vtype_render_full for type-mismatch messages" {
             "}\n" +
             "\n" +
             "fn main() -> int { 0 }\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         // Pre-fix message contained `(tuple)` for both sides.
         // Post-fix should show the actual element types.
         out.contains("(int, string)") && out.contains("(string, int)")
@@ -46,7 +46,7 @@ spec "typeck diagnostics use vtype_render_full for type-mismatch messages" {
             "    (name: string) -> { p + name }\n" +
             "}\n" +
             "fn main() { let _ = make(\"x\") }\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         // Post-fix: the declared side is visible. Pre-fix it was the
         // trailing-space `fn() -> ` immediately before the comma.
         out.contains("fn() -> <unknown>")

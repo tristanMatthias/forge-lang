@@ -481,8 +481,14 @@ export fn write_fixture_and_run(path: string, source: string) -> string {
 /// return the previously-captured stdout in ~10ms instead of
 /// paying a full bs2 startup + compile each time.
 export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
+    // Slot-capped (diagnose.sh --slot-exec): a no-metadata check is a
+    // ~5GB WHOLE-PROGRAM compile (it strips the @std fast-path so it
+    // sees @comptime bodies), and these fire from many test units at
+    // once under the shard fan-out — uncapped they stack into the
+    // snw0 full-suite OOM. The slot bounds how many run concurrently;
+    // on a cache HIT the command never runs, so warm runs pay nothing.
     cached_fixture_capture(fixture_path,
-        "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture_path}' 2>&1 || true",
+        "bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture_path}' 2>&1 || true",
         "check-no-metadata")
 }
 

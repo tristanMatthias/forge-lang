@@ -21,7 +21,7 @@ spec "`?`-split: `?` is Result-only (F1202 on optional)" {
             "    .Ok(v)\n" +
             "}\n" +
             "fn main() -> int { 0 }\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         !out.contains("F1202")
     }
     then "`?` on an optional `T?` is rejected with F1202" {
@@ -36,7 +36,7 @@ spec "`?`-split: `?` is Result-only (F1202 on optional)" {
             "    v\n" +
             "}\n" +
             "fn main() -> int { 0 }\n")
-        let out = avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
         out.contains("F1202")
     }
 }

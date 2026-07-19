@@ -29,7 +29,7 @@ fn qc_check_output() -> string {
         "}\n" +
         "fn main() { println(\"ok\") }\n"
     let _ = avra_selfhost_write_file(fixture, src)
-    avra_shell_exec("env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check ${fixture} 2>&1 || true")
+    avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check ${fixture} 2>&1 || true")
 }
 
 spec "a qualified enum-ctor arm body doesn't swallow the next arm (t-jgc0 parser layer)" {
