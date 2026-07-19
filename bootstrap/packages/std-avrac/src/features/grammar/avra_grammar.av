@@ -16,7 +16,7 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, Grammar, Rule}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The
 /// operator stratification (logical → bitwise → shift → comparison → additive →
@@ -45,4 +45,33 @@ export fn avra_expr_grammar() -> Grammar {
              | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
     }
     gp.grammar
+}
+
+/// Compose two grammars at the rule-value level: `head`'s rules first (so its
+/// start rule stays the start symbol), then `tail`'s. This is the seam that
+/// lets a family grammar (statements, patterns, …) REUSE the shared expression
+/// rules instead of re-embedding them (rule 8) — a nonterminal reference like
+/// `expression` in `head` resolves to `tail`'s `expression` rule after merging.
+fn compose_grammars(head: Grammar, tail: Grammar) -> Grammar {
+    mut rules: List<Rule> = []
+    for r in head.rules { rules.push(r) }
+    for r in tail.rules { rules.push(r) }
+    Grammar { name: head.name, rules }
+}
+
+/// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return
+/// <expr>` / bare expression-statements) composed with the shared expression
+/// grammar. Statements embed FULL Avra expressions, reused not re-defined:
+/// `return e:expression` / `e:expression` resolve to avra_expr_grammar()'s
+/// `expression` rule. Later statement forms (block, if/for/while, let/mut/
+/// const, match) join this block as their slices land (§2.5).
+export fn avra_stmt_grammar() -> Grammar {
+    let gp = grammar {
+  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt
+  break_stmt    = "break" -> Break()
+  continue_stmt = "continue" -> Continue()
+  return_stmt   = "return" e:expression -> Return(e)
+  expr_stmt     = e:expression -> ExprStmt(e)
+    }
+    compose_grammars(gp.grammar, avra_expr_grammar())
 }

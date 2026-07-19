@@ -166,23 +166,31 @@ fn emit_fold_arg(arg: string, seed_label: string, inner: GSeq) -> string {
 
 // ── Multi-branch dispatch ──
 
-/// An alternation → an if/else chain guarded by each branch's FIRST. A branch
-/// whose FIRST is a bare nonterminal (statically unguardable, e.g. unary's
-/// `| postfix`) becomes the UNGUARDED fallthrough tail; otherwise the tail is
-/// a whole-construct error node (executor.exec_node's no-match arm).
+/// An alternation → an if/else chain guarded by each branch's FIRST. The LAST
+/// branch, if it is a bare nonterminal, becomes the UNGUARDED fallthrough tail
+/// (unary's `| postfix`, statement's `| expr_stmt` — the catch-all delegate);
+/// an EARLIER bare-nonterminal branch (statement's `break_stmt | continue_stmt
+/// | …`) is a FIRST-guarded dispatch to that rule. Otherwise the tail is a
+/// whole-construct error node (executor.exec_node's no-match arm).
 fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     mut out = ""
     mut tail = ""
+    let last = branches.length - 1
+    mut i = 0
     for b in branches {
-        if is_bare_ref(b) {
+        if is_bare_ref(b) && i == last {
             tail = "    ${emit_ref_call(b.items[0].prim)}\n"
+        } else if is_bare_ref(b) {
+            out = out + "    if ${seq_first_guard(g, b, [])} {\n"
+            out = out + "        return ${emit_ref_call(b.items[0].prim)}\n"
+            out = out + "    }\n"
         } else {
-            let guard = seq_first_guard(g, b, [])
-            out = out + "    if ${guard} {\n"
+            out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + emit_seq_stmts(g, b, "        ")
             out = out + "        return ${emit_seq_result(g, b)}\n"
             out = out + "    }\n"
         }
+        i = i + 1
     }
     if tail != "" {
         out = out + tail
@@ -359,6 +367,7 @@ fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
 /// accumulated arg (only call_suffix's, which takes the whole arg list).
 fn emit_call_build(name: string, args: List<string>) -> string {
     match name {
+        // ── Expression builds (target: Expr) ──
         "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"
         "fold_logical" -> "CapVal.Node(fold_logical_expr(st, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
@@ -367,6 +376,12 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
         "index_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, ${args[0]}))))"
         "call_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), ${args[0]}_list)))"
+        // ── Statement builds (target: Stmt) ──
+        "Break" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))"
+        "Continue" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))"
+        "ReturnEmpty" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))"
+        "Return" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, ${args[0]}))))"
+        "ExprStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ${args[0]}))))"
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
     }
 }

@@ -1,0 +1,52 @@
+// ps3t.6.5.11 (statement family) — emit.av RENDERS the generated static parser
+// for the statement family too: `parse_statement` dispatches the keyword forms
+// and the Stmt builds (Break / Continue / Return / ExprStmt) lower to
+// `CapVal.SNode(st.store.stmts.add_leaf(Stmt.…))`. Fast in-suite structural
+// guard on the emitter over avra_stmt_grammar() (the composed source-of-truth);
+// the executor differential is stmt_equivalence_test and the airtight behavioural
+// gate is diagnose.sh --emit-gen-check (which now covers statements too).
+
+use @std.avrac.features.grammar.{avra_stmt_grammar, emit_parser_source}
+
+fn emit_all() -> string {
+    emit_parser_source(avra_stmt_grammar())
+}
+
+spec "grammar emitter: renders the statement family's generated static parser" {
+    then "the composed grammar still emits the full expression parser" {
+        // avra_stmt_grammar() COMPOSES the statement rules with the shared
+        // expression rules — so the emitted module carries both.
+        let src = emit_all()
+        src.contains("fn parse_statement(st: PState) -> CapVal") &&
+        src.contains("fn parse_expression(st: PState) -> CapVal") &&
+        src.contains("fn parse_primary(st: PState) -> CapVal") &&
+        src.contains("fn parse_logic_or(st: PState) -> CapVal")
+    }
+
+    then "the statement dispatch guards keyword forms and delegates" {
+        let src = emit_all()
+        src.contains("if st.cur().text == \"break\" {") &&
+        src.contains("return parse_break_stmt(st)") &&
+        src.contains("if st.cur().text == \"continue\" {") &&
+        src.contains("return parse_continue_stmt(st)") &&
+        src.contains("if st.cur().text == \"return\" {") &&
+        src.contains("return parse_return_stmt(st)") &&
+        // expr_stmt is the catch-all fallthrough tail (unguarded).
+        src.contains("    parse_expr_stmt(st)\n")
+    }
+
+    then "the Stmt builds lower to CapVal.SNode + Stmt.add_leaf" {
+        let src = emit_all()
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))") &&
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))") &&
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, e))))") &&
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e))))")
+    }
+
+    then "`return <expr>` consumes the keyword then the operand expression" {
+        let src = emit_all()
+        src.contains("fn parse_return_stmt(st: PState) -> CapVal {\n" +
+                     "    let _ = st.advance()\n" +
+                     "    let e = parse_expression(st)\n")
+    }
+}
