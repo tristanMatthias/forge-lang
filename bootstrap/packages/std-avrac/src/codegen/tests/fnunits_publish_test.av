@@ -1,53 +1,90 @@
-// Write-side spec: AVRA_FN_CACHE=<root> makes a compile
-// extract + publish every emitted fn's IR into <root>/build/cache/fnunits/.
-// Off by default (no env → no store side-effects); republishing an
-// unchanged program dedupes to the same artifact set (content addressing
-// across runs).
+// Write-side spec: a metadata package build publishes every emitted fn's
+// IR into the package's build/cache/fnunits/ store — NO env flag. The
+// cache root is threaded from the build driver (the package root), and the
+// lib-root gate (fnunits.av) scopes publishing to a genuine package build
+// (AVRA_LIB_PKG_ROOT set → non-empty ctx.lib_pkg_roots — exactly the path
+// the compiler rebuilds itself through and the read side will accelerate):
+//   * a metadata compile publishes units; a rerun of the unchanged package
+//     dedupes to the SAME artifact set (content addressing), and
+//   * a standalone whole-program `bs2 compile` leaves NO fnunits store —
+//     it has empty lib roots and no per-package incremental story, so
+//     publishing is a strict no-op (guards the "publish the inlined @std
+//     into a stray /tmp store" waste+leak regression).
 //
 // @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient
 // environment hiccup must re-probe, not freeze as a permanent FAIL.
 
 use @std.avrac.core.{
-    avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid,
-    avra_selfhost_file_exists,
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_getpid,
 }
 
 fn bs2() -> string {
     avra_shell_exec("pwd").trim() + "/build/bs2"
 }
 
-spec "per-fn cache write side: units publish behind AVRA_FN_CACHE" {
-    then "opt-in compile publishes units; rerun dedupes; default compile publishes nothing" {
-        let root = "/tmp/avra_fnunits_${string(avra_getpid())}"
-        avra_shell_exec("rm -rf '${root}'")
-        let _ = avra_mkdir_p(root)
-        let _ = avra_selfhost_write_file("${root}/prog.av",
-            "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nfn main() { println(string(twice(20) + 2)) }\n")
-        let units = "${root}/build/cache/fnunits"
-        // Each compile appends its exit status so the test proves successful
-        // end-to-end compilation, not merely that some keys got left behind.
-        let cmd = "cd '${root}' && AVRA_FN_CACHE='${root}' '${bs2()}' compile prog.av 2>&1; echo RC:$?"
-        let first = avra_shell_exec(cmd)
-        let keys1 = avra_shell_exec("ls '${units}/key' 2>/dev/null | wc -l").trim()
-        let arts1 = avra_shell_exec("ls '${units}/art' 2>/dev/null | wc -l").trim()
-        let second = avra_shell_exec(cmd)
-        let keys2 = avra_shell_exec("ls '${units}/key' 2>/dev/null | wc -l").trim()
-        let arts2 = avra_shell_exec("ls '${units}/art' 2>/dev/null | wc -l").trim()
-        // A fresh root compiled WITHOUT the env must create no unit store.
-        let bare_root = "${root}/bare"
-        let _ = avra_mkdir_p(bare_root)
-        let _ = avra_selfhost_write_file("${bare_root}/prog.av", "fn main() { println(\"x\") }\n")
-        let bare_out = avra_shell_exec("cd '${bare_root}' && '${bs2()}' compile prog.av 2>&1; echo RC:$?")
-        let bare_absent = !avra_selfhost_file_exists("${bare_root}/build/cache/fnunits/key")
-        let all_compiled = first.contains("RC:0") && second.contains("RC:0") && bare_out.contains("RC:0")
-        let ok = all_compiled
+// The package's fully-qualified module root. The metadata compile stamps
+// this as both the fn-qualification prefix (--module_path) and the lib
+// ownership root (AVRA_LIB_PKG_ROOT), so the package's own fns are emitted
+// (not declare-only) and pass the publish gate.
+fn pkg_qual() -> string { "@test::fnunits" }
+
+/// Materialise a throwaway package dir under /tmp. Fresh per pid so probes
+/// are shard-safe. Returns the package root.
+fn mk_pkg() -> string {
+    let dir = "/tmp/avra_fnunits_${string(avra_getpid())}"
+    avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/src/build'")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av",
+        "export fn add(a: int, b: int) -> int { a + b }\nexport fn twice(x: int) -> int { add(x, x) }\n")
+    dir
+}
+
+/// Run the metadata codegen path inside the package (the same shape as the
+/// compiler's own @std/* package prebuild: AVRA_LIB_PKG_ROOT + --emit_metadata
+/// + --module_path). Returns the shell exit status.
+fn meta_compile(dir: string) -> int {
+    avra_shell_exec_status(
+        "cd '${dir}/src' && env -u AVRA_LIB_OBJS -u AVRA_COMPILER AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${pkg_qual()}' '${bs2()}' compile --emit_metadata --module_path='${pkg_qual()}' lib.av > '${dir}/build.log' 2>&1")
+}
+
+spec "per-fn cache write side: metadata package build publishes always-on; standalone does not" {
+    then "a metadata package build (no flag) publishes units; rerun dedupes to the same set" {
+        let dir = mk_pkg()
+        let rc1 = meta_compile(dir)
+        // The lib-root gate hangs the store off the package cache root;
+        // locate it by find so the test is robust to the exact layout.
+        let keydir = avra_shell_exec("find '${dir}' -type d -path '*/fnunits/key' 2>/dev/null | head -1").trim()
+        let artdir = avra_shell_exec("find '${dir}' -type d -path '*/fnunits/art' 2>/dev/null | head -1").trim()
+        let keys1 = avra_shell_exec("ls '${keydir}' 2>/dev/null | wc -l").trim()
+        let arts1 = avra_shell_exec("ls '${artdir}' 2>/dev/null | wc -l").trim()
+        let rc2 = meta_compile(dir)
+        let keys2 = avra_shell_exec("ls '${keydir}' 2>/dev/null | wc -l").trim()
+        let arts2 = avra_shell_exec("ls '${artdir}' 2>/dev/null | wc -l").trim()
+        let ok = rc1 == 0 && rc2 == 0
+            && keydir.length > 0
             && keys1 != "0" && arts1 != "0"
             && keys2 == keys1 && arts2 == arts1
-            && bare_absent
         if !ok {
-            println("fnunits publish: compiled=${string(all_compiled)} keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2} bare_absent=${string(bare_absent)}")
-            println("first compile tail: ${first.substring(first.length - 200, first.length)}")
-            println("second compile tail: ${second.substring(second.length - 200, second.length)}")
+            println("fnunits meta publish: rc1=${string(rc1)} rc2=${string(rc2)} keydir=${keydir} keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2}")
+            println("build.log tail: ${avra_shell_exec("tail -6 '${dir}/build.log' 2>/dev/null")}")
+        }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "a standalone `bs2 compile` publishes NOTHING — no fnunits store leaked" {
+        // No AVRA_LIB_PKG_ROOT → empty lib roots → the gate no-ops.
+        // A scratch compile must not seed a per-fn store beside the file.
+        let root = "/tmp/avra_fnunits_standalone_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${root}' && mkdir -p '${root}'")
+        let _ = avra_selfhost_write_file("${root}/prog.av",
+            "fn add(a: int, b: int) -> int { a + b }\nfn main() { println(string(add(20, 22))) }\n")
+        let rc = avra_shell_exec_status(
+            "cd '${root}' && env -u AVRA_LIB_PKG_ROOT -u AVRA_USE_METADATA '${bs2()}' compile prog.av > '${root}/compile.log' 2>&1")
+        let stores = avra_shell_exec("find '${root}' -type d -name fnunits 2>/dev/null | wc -l").trim()
+        let ok = rc == 0 && stores == "0"
+        if !ok {
+            println("fnunits standalone: rc=${string(rc)} stores=${stores}")
+            println("compile.log tail: ${avra_shell_exec("tail -5 '${root}/compile.log' 2>/dev/null")}")
         }
         avra_shell_exec("rm -rf '${root}'")
         ok

@@ -54,7 +54,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
+fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
@@ -512,9 +512,10 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // __bs_top_level/main wrapper) and the module verification gate, so a
     // cached artifact is the fn's FINAL, verified form — never a stale
     // pre-wrapper `main` or an artifact from a module that failed to verify.
-    // Opt-in (AVRA_FN_CACHE env) and read-free: it never touches the module,
-    // so emission stays byte-identical.
-    let _ = publish_fn_units(ctx, stmts)
+    // Read-free: it never touches the module, so emission stays
+    // byte-identical. `cache_root` is the project's build root (from the
+    // build driver); "" (ephemeral/JIT compiles) makes it a no-op.
+    let _ = publish_fn_units(ctx, stmts, cache_root)
 
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
@@ -523,8 +524,8 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
 /// Compile a program to LLVM IR and write the result to disk.
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
-export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
+export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, debug_null_checks, coverage, source_file, type_reg, library, store, cache_root) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -541,7 +542,7 @@ export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_che
 /// takes ownership of the LLVM module, so we deliberately don't
 /// dispose `ctx`. Returns the program's exit code.
 export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = avra_llvm_jit_run(ctx.module)
@@ -562,7 +563,7 @@ export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: No
 /// is already gone. Scalar-return only (int/bool/float-bits); a pointer
 /// result would dangle past the dispose.
 export fn compile_and_jit_call(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -574,7 +575,7 @@ export fn compile_and_jit_call(stmts: List<StmtId>, type_reg: TypeRegistry, stor
 /// value rather than the garbage the int register would hold. Args stay i64 —
 /// float PARAMS need FP-register args, so the caller gates params to int.
 export fn compile_and_jit_call_f64(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<float, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call_f64(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -584,7 +585,7 @@ export fn compile_and_jit_call_f64(stmts: List<StmtId>, type_reg: TypeRegistry, 
 /// codegen; the JIT call copies the returned `const char*` out of the engine's
 /// memory before disposing it, so the string survives. Args stay i64.
 export fn compile_and_jit_call_str(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<string, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call_str(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -593,8 +594,8 @@ export fn compile_and_jit_call_str(stmts: List<StmtId>, type_reg: TypeRegistry, 
 /// Compile and emit a native object file directly. Skips the IR-on-
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
-export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, false, false, "", type_reg, false, store) {
+export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, false, false, "", type_reg, false, store, cache_root) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -614,8 +615,8 @@ export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_r
 ///
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
-export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, false, true, source_file, type_reg, false, store) {
+export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, false, true, source_file, type_reg, false, store, cache_root) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
             ctx.dispose()
