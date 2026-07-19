@@ -2605,12 +2605,19 @@ mode_prune_tmp_scratch() {
 # Usage: --cache-gc [DAYS]   (default 30)
 mode_cache_gc() {
   local days="${1:-30}"
+  # t-5kek: bound each cache root by size so a seed-cycling session's dead
+  # generations (fresh-mtime but never hit again → invisible to the age
+  # prune) can't grow build/cache past the disk allowance. The age prune
+  # runs first; the size cap then evicts oldest-first until under budget.
+  # Override with AVRA_CACHE_MAX_MB=0 to disable, or any N to retune
+  # (default 12288 MB = 12 GB per cache root).
+  local cap_mb="${AVRA_CACHE_MAX_MB:-12288}"
   ensure_bs2
   local root
   for root in "$BOOTSTRAP_DIR" "$BOOTSTRAP_DIR"/packages/*/; do
     [ -d "$root/build/cache" ] || continue
     log "[cache-gc] $root"
-    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" )
+    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb="$cap_mb" )
   done
   # Also reclaim the /tmp test scratch that escapes the per-root prune above.
   # Guard at 10m so an in-flight `bs2 test` (which touches its scratch every few

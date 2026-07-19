@@ -2182,6 +2182,105 @@ fn evict_prune_candidates(stale: List<string>) -> int {
     failures
 }
 
+// t-5kek: size-bounded LRU eviction. The age prune's 30-day mtime floor
+// never reclaims same-session churn: every seed cycle stamps a fresh
+// full-compiler's worth of (seed+source)-fingerprinted slots, and the
+// prior seed's slots are DEAD (their key can't be hit again) yet carry
+// today's mtime. Across one seed-cycling session build/cache can balloon
+// past the disk allowance while `cache prune --max-age-days` reclaims
+// nothing. The size prune bounds the cache by total bytes, evicting
+// OLDEST-mtime slots first — and because a cache HIT touches its slot,
+// the oldest slots are exactly the ones no longer hit (the dead
+// generations), so LRU reclaims them without needing to know which seed
+// stamped each slot.
+
+/// An enumerated cache slot with the metadata the size prune ranks on.
+type PruneEntry = { path: string, mtime_secs: int, size_bytes: int }
+
+/// Result of a size-cap sweep — evicted/failed slot counts + bytes freed.
+type SizePruneResult = { evicted: int, failures: int, freed_bytes: int }
+
+/// mtime (epoch seconds; cache hits touch it) + recursive byte size for
+/// one slot, handling the mixed file/dir slots (obj/*.o and link/*.bin
+/// are files; fp.hex and meta/<fp> are dirs).
+fn prune_entry_for(path: string) -> PruneEntry {
+    let sz = if avra_is_dir(path) == 1 { avra_dir_size(path) } else { avra_file_size(path) }
+    PruneEntry { path: path, mtime_secs: avra_file_mtime(path) / 1000000000, size_bytes: sz }
+}
+
+/// Enumerate every evictable slot with its (mtime, size) — mirrors
+/// collect_prune_candidates' two-level walk (flat fp.hex slots + the
+/// partitioned meta/obj/link/_tmp/fixture_stdout dirs) so the size prune
+/// operates on exactly the units the age prune does.
+fn collect_prune_entries(cache_dir: string) -> List<PruneEntry> {
+    mut out: List<PruneEntry> = []
+    for name in avra_readdir(cache_dir) {
+        let entry = "${cache_dir}/${name}"
+        if avra_is_dir(entry) != 1 { continue }
+        if name == "last" { continue }
+        let per_entry = name == "meta" || name == "obj" || name == "link"
+            || name == "_tmp" || name == "fixture_stdout"
+        if per_entry {
+            for sub in avra_readdir(entry) {
+                out.push(prune_entry_for("${entry}/${sub}"))
+            }
+        } else {
+            out.push(prune_entry_for(entry))
+        }
+    }
+    out
+}
+
+/// Evict oldest-mtime slots until total cache size is at or under
+/// cap_bytes. No-op (all-zero result) when already under budget. Honours
+/// dry_run (prints the slots it would evict, mutates nothing).
+fn prune_to_size_cap(cache_dir: string, cap_bytes: int, dry_run: bool) -> SizePruneResult {
+    mut entries = collect_prune_entries(cache_dir)
+    mut total = 0
+    for e in entries { total = total + e.size_bytes }
+    if total <= cap_bytes {
+        return SizePruneResult { evicted: 0, failures: 0, freed_bytes: 0 }
+    }
+    // Oldest first — the dead (untouched) generations lead.
+    entries.sort((a: PruneEntry, b: PruneEntry) ->
+        if a.mtime_secs < b.mtime_secs { -1 } else if a.mtime_secs > b.mtime_secs { 1 } else { 0 })
+    mut running = total
+    mut evicted = 0
+    mut failures = 0
+    mut freed = 0
+    for e in entries {
+        if running <= cap_bytes { break }
+        if dry_run {
+            println(e.path)
+            evicted = evicted + 1
+            running = running - e.size_bytes
+            freed = freed + e.size_bytes
+            continue
+        }
+        let removed = if avra_is_dir(e.path) == 1 { avra_remove_tree(e.path) } else { avra_remove_file(e.path) }
+        if removed == 1 {
+            evicted = evicted + 1
+            freed = freed + e.size_bytes
+            running = running - e.size_bytes
+        } else {
+            failures = failures + 1
+        }
+    }
+    SizePruneResult { evicted: evicted, failures: failures, freed_bytes: freed }
+}
+
+/// Validate --max-size-mb: a non-negative integer (0 disables the size
+/// prune). Same atoll-safety rationale as valid_max_age_days — a
+/// non-numeric arg must not silently become 0-and-evict-everything.
+fn valid_max_size_mb(s: string) -> bool {
+    if s.length == 0 { return false }
+    for i in 0..s.length {
+        let c = s.substring(i, i + 1)
+        if c < "0" || c > "9" { return false }
+    }
+    true
+}
+
 // pdme.6: write-time auto-GC — at most once per day, gated on a stamp
 // file so the common path costs two stats. Prunes entries older than
 // 30 days (mtime == last use, so only cold entries go). The stamp is
@@ -2204,7 +2303,7 @@ fn maybe_auto_gc(project_dir: string) {
     eprintln("[cache-gc] evicted ${string(stale.length - failures)} entries older than 30 days${suffix}")
 }
 
-fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string) {
+fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string, max_size_mb_str: string) {
     let project_dir = avra_process_env_get("PWD")
     let cache_dir = "${project_dir}/build/cache"
 
@@ -2240,26 +2339,52 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
         if !valid_max_age_days(max_age_days_str) {
             fail("cache prune: --max-age-days must be an integer in 0..36500, got `${max_age_days_str}`")
         }
+        if !valid_max_size_mb(max_size_mb_str) {
+            fail("cache prune: --max-size-mb must be a non-negative integer, got `${max_size_mb_str}`")
+        }
+        let max_size_mb = avra_parse_int(max_size_mb_str)
         // avra_file_mtime is epoch NANOSECONDS; avra_datetime_now is epoch
         // SECONDS. Collect candidates first so --dry-run is side-effect-free.
+        // The age prune no longer returns early — a size cap (t-5kek) may
+        // still have work after it, so both gates run in sequence.
         let cutoff_secs = avra_datetime_now() - avra_parse_int(max_age_days_str) * 86400
         let stale = collect_prune_candidates(cache_dir, cutoff_secs)
         if stale.length == 0 {
             println("cache prune: no entries older than ${max_age_days_str} days")
-            return
-        }
-        if dry_run {
-            println("cache prune --dry-run: would evict ${string(stale.length)} entries:")
+        } else if dry_run {
+            println("cache prune --dry-run: would evict ${string(stale.length)} entries older than ${max_age_days_str} days:")
             for p in stale { println(p) }
-            return
-        }
-        let failures = evict_prune_candidates(stale)
-        if failures > 0 {
-            // Exit non-zero (fail) on a partial prune, so a script driving
-            // `bs2 cache prune` never treats an incomplete deletion as success.
-            fail("cache prune: evicted ${string(stale.length - failures)} entries; ${string(failures)} could not be fully removed")
         } else {
-            println("cache prune: evicted ${string(stale.length)} entries older than ${max_age_days_str} days")
+            let failures = evict_prune_candidates(stale)
+            if failures > 0 {
+                // Exit non-zero (fail) on a partial prune, so a script driving
+                // `bs2 cache prune` never treats an incomplete deletion as success.
+                fail("cache prune: evicted ${string(stale.length - failures)} entries; ${string(failures)} could not be fully removed")
+            } else {
+                println("cache prune: evicted ${string(stale.length)} entries older than ${max_age_days_str} days")
+            }
+        }
+
+        // t-5kek: size-bounded LRU eviction, after the age prune (which
+        // freed whatever it could; the size sweep re-enumerates live disk
+        // state). Disabled at 0. Reclaims the OLDEST slots first — the dead
+        // superseded-seed generations that same-session churn accumulates.
+        if max_size_mb > 0 {
+            let cap_bytes = max_size_mb * 1048576
+            if dry_run {
+                println("cache prune --dry-run: --max-size-mb=${max_size_mb_str} would evict (oldest first) to fit ${format_byte_size(cap_bytes)}:")
+                let r = prune_to_size_cap(cache_dir, cap_bytes, true)
+                println("cache prune --dry-run: would free ${format_byte_size(r.freed_bytes)} across ${string(r.evicted)} slot(s)")
+            } else {
+                let r = prune_to_size_cap(cache_dir, cap_bytes, false)
+                if r.failures > 0 {
+                    fail("cache prune: size cap freed ${format_byte_size(r.freed_bytes)} across ${string(r.evicted)} slot(s); ${string(r.failures)} could not be removed")
+                } else if r.evicted > 0 {
+                    println("cache prune: size cap evicted ${string(r.evicted)} oldest slot(s), freed ${format_byte_size(r.freed_bytes)} (cap ${format_byte_size(cap_bytes)})")
+                } else {
+                    println("cache prune: under the ${format_byte_size(cap_bytes)} size cap — nothing to evict")
+                }
+            }
         }
         return
     }
@@ -4252,10 +4377,11 @@ cli avra {
     command cache {
         description "Manage the build cache: prune | info | clear-failed"
         flag dry_run { description "Print what would change but do not modify the filesystem" }
-        option max_age_days { description "Evict entries with mtime older than N days", default "30" }
+        option max_age_days { description "prune: evict entries with mtime older than N days", default "30" }
+        option max_size_mb { description "prune: after the age sweep, evict oldest slots until the cache fits N megabytes (0 = off)", default "0" }
         arg subcommand { description "prune | info | clear-failed", required true }
         run() {
-            run_cache_command(subcommand, dry_run, max_age_days)
+            run_cache_command(subcommand, dry_run, max_age_days, max_size_mb)
             0
         }
     }
