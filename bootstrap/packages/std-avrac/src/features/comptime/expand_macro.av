@@ -1374,10 +1374,19 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     // additive and skips it, so an import of a now-exported macro decl never
     // bound its alias and its stale pre-expand phantom F3101/F3102 lingered.
     // Re-resolve against the now-complete tree/graph so those aliases bind and
-    // the import bag is rebuilt without the phantoms. Gated on new-globals +
-    // deterministic ⇒ same-module programs re-resolve to the identical alias
-    // set + bag ⇒ IR byte-identical.
-    let post_state = if added_globals {
+    // the import bag is rebuilt without the phantoms.
+    //
+    // Gate it TIGHTLY on `pre.had_error == 1`: we only reach here having NOT
+    // bailed, so an error at this point IS a deferred import-only phantom (the
+    // bail above already returned for every other error class). A program that
+    // resolved CLEAN pre-expand — every existing program, the whole compiler
+    // included — has `pre.had_error == 0`, so this is a strict NO-OP for it:
+    // `post_state` stays `registered`, identical to before this change. Gating on
+    // `added_globals` alone was too broad — it re-walked the entire (huge,
+    // macro-dense) compiler resolution on every self-compile, which must never
+    // change its result. reresolve now fires ONLY for the actual cross-module
+    // import-of-a-macro-decl case the fixtures exercise.
+    let post_state = if added_globals && pre.had_error == 1 {
         reresolve_use_aliases(registered, expanded.stmts)
     } else {
         registered
