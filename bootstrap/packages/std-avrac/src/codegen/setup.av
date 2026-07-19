@@ -54,8 +54,29 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
-    avra_ice_phase("codegen")
+/// The fully-declared module produced by build_declared_ctx: the Ctx —
+/// with every runtime extern, named struct/enum/__union type, global (as
+/// external), fn declaration, __release_* fn, and the top-level wrapper in
+/// place, the builder positioned at the wrapper's entry — plus the two
+/// locals the body/finalize half still needs: the wrapper's `entry` block
+/// and the pre-existing user `main` (`user_main`, null when there is none).
+///
+/// This is the reusable declare-pass prefix shared by the whole-program
+/// emit path (codegen_program: emit ALL bodies) and the per-fn CGU path
+/// (ps3t.8.6.1: emit exactly one body, everything else declare-only).
+type DeclaredCtx = {
+    ctx: Ctx,
+    entry: ptr,
+    user_main: ptr,
+}
+
+/// Build a fresh LLVM module and run the entire DECLARE pass into it:
+/// runtime externs, struct/enum/__union types, globals-as-external, every
+/// fn as a declaration, the __release_* fns, and the synthesized top-level
+/// wrapper (`main` / `__bs_top_level` / `__avra_lib_top_level`). No user
+/// function BODY is emitted here — that is the caller's next phase. The
+/// returned Ctx has its builder positioned at the wrapper's entry block.
+fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> DeclaredCtx {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -433,6 +454,22 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
 
     // Reposition builder at main's entry after release fn emission.
     ctx.position(entry)
+
+    DeclaredCtx { ctx: ctx, entry: entry, user_main: user_main }
+}
+
+/// Whole-program codegen: run the declare pass (build_declared_ctx), then
+/// emit EVERY user function body + the top-level statements into the
+/// wrapper, verify, and publish per-fn cache units. Returns the compiled
+/// Ctx (caller writes IR / disposes).
+fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store)
+    mut ctx = dc.ctx
+    let entry = dc.entry
+    let user_main = dc.user_main
+    let m = ctx.module
+    let builder = ctx.builder
 
     // Pass 2: emit each user-defined function's body, then emit
     // every non-function top-level statement into main.
