@@ -16,7 +16,7 @@ spec "none is a reserved keyword" {
             "    let none = 5\n" +
             "    0\n" +
             "}\n")
-        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("./build/bs2 check '${fixture}' 2>&1 || true")
         out.contains("F0001") && out.contains("expected variable name")
     }
 
@@ -27,7 +27,7 @@ spec "none is a reserved keyword" {
             "    let x: ptr = none\n" +
             "    x ?? 7\n" +
             "}\n")
-        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${fixture}' 2>&1 || true")
+        let out = avra_shell_exec("./build/bs2 check '${fixture}' 2>&1 || true")
         !out.contains("error") && !out.contains("F0001")
     }
 }
