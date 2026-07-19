@@ -1,0 +1,43 @@
+// ps3t.6.5.11 (type family) — emit.av RENDERS the generated static parser for the
+// type family: `parse_type_expr` folds the `|` union and the TypeExpr builds
+// (TyUnion / MkNamed / MkFn / TyList / TyParen / TyDyn) lower to the SHARED
+// constructor cores (fold_type_union / mk_named_type / mk_fn_type / mk_paren_type,
+// the same helpers executor.apply_build calls). The union is a FOLD-SHAPED rule
+// whose build is NOT a legacy expr fold, so it flows through the GENERAL emit
+// path (a `_list` accumulator typed per the referenced rule's kind + emit_call_build).
+// Fast in-suite structural guard on the emitter over avra_type_grammar(); the
+// executor differential is type_equivalence_test and the airtight behavioural gate
+// is diagnose.sh --emit-gen-check.
+
+use @std.avrac.features.grammar.{avra_type_grammar, emit_parser_source}
+
+fn emit_all() -> string {
+    emit_parser_source(avra_type_grammar())
+}
+
+spec "grammar emitter: renders the type family's generated static parser" {
+    then "the type rules emit their parse fns" {
+        let src = emit_all()
+        src.contains("fn parse_type_expr(st: PState) -> CapVal") &&
+        src.contains("fn parse_type_atom(st: PState) -> CapVal") &&
+        src.contains("fn parse_named_type(st: PState) -> CapVal") &&
+        src.contains("fn parse_fn_type(st: PState) -> CapVal")
+    }
+
+    then "the `|` union folds via the SHARED fold_type_union over a typed list" {
+        let src = emit_all()
+        // NOT the legacy expr-fold path (no CapVal.Nodes wrap) — a TypeExpr `_list`.
+        src.contains("mut r_list: List<TypeExpr> = []") &&
+        src.contains("r_list.push(capval_to_texpr(st, parse_type_atom(st)))") &&
+        src.contains("fold_type_union(st, l, r_list)")
+    }
+
+    then "named / fn / list / paren / dyn lower to their SHARED type cores" {
+        let src = emit_all()
+        src.contains("mk_named_type(capval_tok_text(name), a_list.length > 0, a_list, capval_present(opt))") &&
+        src.contains("mk_fn_type(st, capval_present(lp), p_list, capval_present(r), r)") &&
+        src.contains("mk_paren_type(t_list)") &&
+        src.contains("CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, e)))") &&
+        src.contains("CapVal.TExpr(TypeExpr.Named(capval_tok_text(t)))")
+    }
+}

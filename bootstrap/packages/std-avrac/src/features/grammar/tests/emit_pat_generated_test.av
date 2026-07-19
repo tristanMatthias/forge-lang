@@ -1,0 +1,52 @@
+// ps3t.6.5.11 (pattern family) — emit.av RENDERS the generated static parser
+// for the pattern family: `parse_pattern_or` folds the right-recursive or-pattern
+// and the Pattern builds (OrMaybe / IdentPat / MkVariant / PatBool / PatStr /
+// PatNum / PatNegNum) lower to the SHARED constructor cores (ident_pat_bare /
+// pat_bool_node / … , the same helpers executor.apply_build calls). Fast in-suite
+// structural guard on the emitter over avra_pat_grammar(); the executor
+// differential is pattern_equivalence_test and the airtight behavioural gate is
+// diagnose.sh --emit-gen-check (which covers patterns too).
+
+use @std.avrac.features.grammar.{avra_pat_grammar, emit_parser_source}
+
+fn emit_all() -> string {
+    emit_parser_source(avra_pat_grammar())
+}
+
+spec "grammar emitter: renders the pattern family's generated static parser" {
+    then "the pattern rules emit their parse fns" {
+        let src = emit_all()
+        src.contains("fn parse_pattern_or(st: PState) -> CapVal") &&
+        src.contains("fn parse_pattern(st: PState) -> CapVal") &&
+        src.contains("fn parse_variant_pat(st: PState) -> CapVal")
+    }
+
+    then "the pattern dispatch guards the leading forms and delegates" {
+        let src = emit_all()
+        src.contains("if st.cur().text == \".\" {") &&
+        src.contains("return parse_variant_pat(st)") &&
+        src.contains("if st.cur().kind == \"STRING\" {")
+    }
+
+    then "the or-pattern is a conditional build over the optional right side" {
+        let src = emit_all()
+        // OrMaybe: absent `or` ⇒ the left pattern; present ⇒ Pattern.Or.
+        src.contains("match r { .Nil -> l  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, l), capval_to_pat(st, r)))) }")
+    }
+
+    then "the leaf builds lower to the SHARED pattern-node cores" {
+        let src = emit_all()
+        src.contains("CapVal.PNode(pat_bool_node(st, capval_tok_text(b)))") &&
+        src.contains("CapVal.PNode(pat_str_node(st, capval_tok_text(s)))") &&
+        src.contains("CapVal.PNode(pat_num_node(st, capval_tok_text(n), true))") &&
+        src.contains("CapVal.PNode(ident_pat_bare(st, capval_tok_text(name)))")
+    }
+
+    then "variant_pat dispatches its nested-alternation payload (binds | subs)" {
+        let src = emit_all()
+        // A structural (multi-branch) group becomes an if/else-if on each
+        // branch's FIRST, then the MkVariant conditional build on the sub-list.
+        src.contains("} else if st.cur().text == \".\" {") &&
+        src.contains("if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(")
+    }
+}

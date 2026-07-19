@@ -1,0 +1,62 @@
+// ps3t.6.5.11 (whole-program) — emit.av RENDERS the generated static parser for
+// the UNIFIED whole-program grammar (avra_program_grammar's 41 rules): the
+// declarations + their sub-structure, the control-flow statements, the type
+// atoms, and the expression precedence chain, with the gnarly-5% via @hand. Every
+// declaration + control-flow build lowers to the SHARED constructor cores the
+// executor calls (mk_fn_decl / mk_type_decl / mk_use / mk_impl / mk_while / … ),
+// and the component rep captures type per their new element kinds (ParamEntry /
+// FieldEntry / Variant). This is the ≈6.5.12 swap-in. Fast in-suite structural
+// guard on the emitter; the executor differential is composed_program_test and
+// the airtight behavioural gate is diagnose.sh --emit-gen-check (whole-program family).
+
+use @std.avrac.features.grammar.{avra_program_grammar, emit_parser_source}
+
+fn emit_all() -> string {
+    emit_parser_source(avra_program_grammar())
+}
+
+spec "grammar emitter: renders the whole-program generated static parser" {
+    then "the program + declaration rules emit their parse fns" {
+        let src = emit_all()
+        src.contains("fn parse_program(st: PState) -> CapVal") &&
+        src.contains("fn parse_declaration(st: PState) -> CapVal") &&
+        src.contains("fn parse_fn_decl(st: PState) -> CapVal") &&
+        src.contains("fn parse_impl_decl(st: PState) -> CapVal") &&
+        src.contains("fn parse_use_decl(st: PState) -> CapVal")
+    }
+
+    then "the component rep captures type per their new element kinds" {
+        let src = emit_all()
+        src.contains("mut params_list: List<ParamEntry> = []") &&
+        src.contains("mut fields_list: List<FieldEntry> = []") &&
+        src.contains("mut vars_list: List<Variant> = []") &&
+        src.contains("params_list.push(capval_to_pentry(st, parse_param(st)))") &&
+        src.contains("fields_list.push(capval_to_field(st, parse_field(st)))") &&
+        src.contains("vars_list.push(capval_to_variant(st, parse_variant(st)))")
+    }
+
+    then "the declaration builds lower to the SHARED constructor cores" {
+        let src = emit_all()
+        src.contains("mk_block(st, d_list)") &&
+        src.contains("mk_fn_decl(st, capval_tok_text(name), params_list, ret, capval_present(ret), body_list)") &&
+        src.contains("mk_type_decl(st, capval_tok_text(tname), fields_list)") &&
+        src.contains("mk_use(st, capval_present(uat), useg_list, unames_list)") &&
+        src.contains("mk_impl(st, capval_tok_text(itn), ifortn, capval_present(ifortn), imethods_list)") &&
+        src.contains("mk_trait_method(st, capval_tok_text(tmname), tmparams_list, tmret, capval_present(tmret), capval_present(tmlb), tmbody_list)")
+    }
+
+    then "the control-flow builds lower to the SHARED statement cores" {
+        let src = emit_all()
+        src.contains("mk_while(st, wc, wb)") &&
+        src.contains("mk_if(st, ic, it, ie)") &&
+        src.contains("mk_for_loop(st, fv, flo, fhi, fb)")
+    }
+
+    then "the gnarly-5% forms delegate via the @hand dispatch" {
+        let src = emit_all()
+        src.contains("return CapVal.SNode(run_hand_stmt(\"return_stmt\", st))") &&
+        src.contains("return CapVal.SNode(run_hand_stmt(\"let_stmt\", st))") &&
+        src.contains("CapVal.TExpr(run_hand_type(\"qualified_type\", st))") &&
+        src.contains("CapVal.Node(run_hand_expr(\"quote_expr\", st))")
+    }
+}
