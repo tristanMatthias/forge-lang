@@ -82,44 +82,70 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<StmtId>) -> Result<List<Var
     ok_stmt(empty_e)
 }
 
+/// Emit ONE already-located fn statement `node`'s body into the declared
+/// module, applying emit_function_bodies' per-fn handling EXACTLY: skip
+/// (Ok(false)) when @external_unit or not owned by this lib unit; otherwise
+/// define the body under the @mono_erased layout-boundary gate and stamp
+/// linkonce_odr for a @mono_spec. Returns Ok(true) when it emitted, Ok(false)
+/// when it was skipped or `node` is not a Function, Err on emit failure. The
+/// single source of truth shared by the name-walk (emit_one_fn_body) and the
+/// id-direct (emit_fn_body_by_id → bounded-K CGU) emission paths, so every
+/// per-fn `define` is byte-for-byte the body the whole-program module emits.
+fn emit_located_fn(ctx: Ctx, node: Stmt) -> Result<bool, string> {
+    let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
+    let is_mono_spec = find_annotation(ctx.nodes, node, "mono_spec") != null
+    let is_mono_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
+    match stmt_unwrap(ctx.nodes, node) {
+        .Function(name, _, params, _, body) -> {
+            if is_external || !fn_belongs_to_lib_pkg(ctx, name) {
+                return Result.Ok(false)
+            }
+            avra_ice_push_fn(name)
+            let fctx = ctx with { in_erased_body: is_mono_erased }
+            let res = emit_function_body(fctx, name, params, body)
+            if is_mono_spec {
+                let fn_val = ctx.get_fn(name)
+                if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
+            }
+            avra_ice_pop_fn()
+            match res {
+                .Ok(_) -> Result.Ok(true),
+                .Err(e) -> Result.Err(e),
+            }
+        }
+        _ -> Result.Ok(false)
+    }
+}
+
+/// Bounded-K CGU primitive (ps3t.8.6.2): emit ONE fn's body by its AST id —
+/// the direct form used when the caller already has the target's StmtId (from
+/// collect_fn_targets). No walk: `id` names the fn node directly. Delegates to
+/// emit_located_fn for the per-fn handling, so it is byte-identical to the
+/// walk-based path for the same fn.
+export fn emit_fn_body_by_id(ctx: Ctx, id: StmtId) -> Result<bool, string> {
+    emit_located_fn(ctx, ctx.nodes.stmts.get(id))
+}
+
 /// Per-fn CGU primitive (ps3t.8.6.1): emit exactly ONE function's body into
 /// the already-declared module — the granularity-1 form of the
 /// @external_unit skip. Walks the program like emit_function_bodies but
 /// DEFINES only the Function whose qualified name equals `target`; every
 /// other fn stays a declaration. Returns Ok(true) when the target was found
 /// and emitted, Ok(false) when it isn't present in `stmts`, Err on emit
-/// failure. Mirrors emit_function_bodies' per-fn handling exactly (the
-/// mono_erased layout-boundary gate and the mono_spec linkonce_odr stamp)
-/// for the single fn it emits, so a per-fn module's `define` is byte-for-
-/// byte the body the whole-program module would have emitted.
+/// failure. Per-fn emission is shared with emit_located_fn (the mono_erased
+/// layout-boundary gate and the mono_spec linkonce_odr stamp), so a per-fn
+/// module's `define` is byte-for-byte the body the whole-program module emits.
 export fn emit_one_fn_body(ctx: Ctx, stmts: List<StmtId>, target: string) -> Result<bool, string> {
     mut i = 0
     while i < stmts.length {
         let node = ctx.nodes.stmts.get(stmts[i])
         let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
-        let is_mono_spec = find_annotation(ctx.nodes, node, "mono_spec") != null
-        let is_mono_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
         // Each arm yields Result<bool, string> — true iff THIS arm emitted
         // the target — mirroring emit_function_bodies' Result-per-arm shape
         // (no `?` inside an arm; the propagation happens at `inner?`).
         let inner = match stmt_unwrap(ctx.nodes, node) {
-            .Function(name, _, params, _, body) -> {
-                if name == target && !is_external && fn_belongs_to_lib_pkg(ctx, name) {
-                    avra_ice_push_fn(name)
-                    let fctx = ctx with { in_erased_body: is_mono_erased }
-                    let res = emit_function_body(fctx, name, params, body)
-                    if is_mono_spec {
-                        let fn_val = ctx.get_fn(name)
-                        if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
-                    }
-                    avra_ice_pop_fn()
-                    match res {
-                        .Ok(_) -> Result.Ok(true),
-                        .Err(e) -> Result.Err(e),
-                    }
-                } else {
-                    Result.Ok(false)
-                }
+            .Function(name, _, _, _, _) -> {
+                if name == target { emit_located_fn(ctx, node) } else { Result.Ok(false) }
             }
             .Impl(_, methods) -> emit_one_fn_body(ctx, methods, target)
             .Module(_, body) -> {

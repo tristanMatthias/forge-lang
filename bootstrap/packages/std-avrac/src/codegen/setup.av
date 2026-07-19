@@ -17,7 +17,8 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies, emit_one_fn_body, fn_name_belongs_to_roots}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body, emit_fn_body_by_id, fn_name_belongs_to_roots}
+use core.{content_id_for}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -619,18 +620,7 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
     // the call resolves at link against the wrapper's definition. When there
     // is no module-level code (no __bs_top_level), this is a no-op.
     if target == "main" {
-        let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
-        let main_fn = ctx.get_fn("main")
-        if top_fn != null && main_fn != null {
-            let user_entry = avra_llvm_get_entry_basic_block(main_fn)
-            let first_instr = avra_llvm_get_first_instruction(user_entry)
-            if first_instr != null {
-                avra_llvm_position_before(ctx.builder, first_instr)
-            } else {
-                avra_llvm_position_at_end(ctx.builder, user_entry)
-            }
-            avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
-        }
+        inject_bs_top_level_into_main(ctx)
     }
     ctx.cov_finalize_fn()
     let module_ok = ctx.verify_module()
@@ -639,6 +629,28 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
         return Result.Err("emit_one_fn_module: LLVM module verification failed for '${target}'")
     }
     Result.Ok(ctx)
+}
+
+/// The user-defined-main injection (ps3t.8.6.1 3b), shared by the per-fn and
+/// bounded-K CGU unit emitters: when `main`'s body lives in THIS unit, insert
+/// a `__bs_top_level()` call at the top of main so module-level statements
+/// (spec blocks, initializers) run before main's body. `__bs_top_level` is
+/// declare-only here; the call resolves at link against the wrapper unit's
+/// definition. A no-op when there is no `__bs_top_level` (no module-level code)
+/// or no `main` in the module.
+fn inject_bs_top_level_into_main(ctx: Ctx) {
+    let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
+    let main_fn = ctx.get_fn("main")
+    if top_fn != null && main_fn != null {
+        let user_entry = avra_llvm_get_entry_basic_block(main_fn)
+        let first_instr = avra_llvm_get_first_instruction(user_entry)
+        if first_instr != null {
+            avra_llvm_position_before(ctx.builder, first_instr)
+        } else {
+            avra_llvm_position_at_end(ctx.builder, user_entry)
+        }
+        avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
+    }
 }
 
 /// Per-fn CGU driver (ps3t.8.6.1): emit ONLY `target`'s per-fn module and
@@ -659,9 +671,9 @@ export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: 
     }
 }
 
-/// One per-fn CGU target: the fn's resolved name (for emit_fn_object) plus
-/// its AST item id (for the content-fingerprint cache key — item_sig_fp /
-/// item_body_fp / mono_erased regime).
+/// One CGU target: the fn's resolved name (its emitted symbol) plus its AST
+/// item id (for emit_fn_body_by_id + the content-fingerprint cache key —
+/// item_sig_fp / item_body_fp / mono_erased regime).
 export type FnTarget = {
     name: string,
     id: StmtId,
@@ -752,7 +764,7 @@ export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store
 }
 
 /// Emit a freshly-built module's object to disk and dispose the Ctx —
-/// the shared tail of emit_fn_object / emit_wrapper_object. `what` names
+/// the shared tail of emit_cgu_object / emit_wrapper_object. `what` names
 /// the unit for the error message. A build error propagates untouched.
 fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -> Result<int, string> {
     match built {
@@ -766,14 +778,91 @@ fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -
     }
 }
 
-/// Emit a single per-fn module's object to disk (per-fn CGU unit).
-export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    emit_ctx_object(emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store), obj_path, "fn '${target}'")
-}
-
 /// Emit the wrapper unit's object to disk (top-level entry + __release_* defs).
 export fn emit_wrapper_object(stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
     emit_ctx_object(emit_wrapper_module(stmts, type_reg, store), obj_path, "wrapper unit")
+}
+
+/// Bounded-K CGU partitioning (ps3t.8.6.2, the Rust codegen-unit model):
+/// assign each target to bucket `abs(content_id_for(name) mod k)` — a STABLE,
+/// NAME-ONLY hash, so a fn always lands in the same bucket regardless of what
+/// else is in the program. That is the load-bearing incrementality property:
+/// editing a fn's BODY (name unchanged) changes only its bucket's cache key →
+/// only that ONE unit re-emits; adding/removing a fn perturbs only its own
+/// bucket. Returns exactly `k` buckets in index order (empty ones included, so
+/// bucket identity is index-stable across programs — the caller skips empties).
+/// Members within a bucket preserve `targets` (stmts-appearance) order, giving
+/// deterministic emission and a stable combined cache key. `k` must be >= 1.
+///
+/// One hash per target (into `idx`), then a k-pass distribution — O(n + k·n),
+/// no nested-list mutation. Bounding the bucket COUNT (not the bucket size)
+/// caps the repeated declare-pass cost at k·program regardless of fn count.
+export fn partition_targets(targets: List<FnTarget>, k: int) -> List<List<FnTarget>> {
+    mut idx: List<int> = []
+    for t in targets {
+        let h = content_id_for(t.name)
+        idx.push(((h % k) + k) % k)
+    }
+    mut buckets: List<List<FnTarget>> = []
+    mut bi = 0
+    while bi < k {
+        mut bucket: List<FnTarget> = []
+        mut ti = 0
+        while ti < targets.length {
+            if idx[ti] == bi { bucket.push(targets[ti]) }
+            ti = ti + 1
+        }
+        buckets.push(bucket)
+        bi = bi + 1
+    }
+    buckets
+}
+
+/// Bounded-K CGU (ps3t.8.6.2): build a self-contained module that declares the
+/// whole program (build_declared_ctx, per-fn regime: release fns declare-only,
+/// no main body) and DEFINES the bodies of exactly `members` — one bounded
+/// codegen unit. Generalizes emit_one_fn_module from a single fn to a set:
+/// each member is emitted by its id via emit_fn_body_by_id (byte-identical to
+/// the walk path per fn). When `main` is among the members its __bs_top_level
+/// injection runs here. Returns the compiled Ctx, or Err if a member is
+/// unexpectedly not owned/emittable (collect_fn_targets already applied the
+/// same ownership filter, so this is a defensive collect/emit-disagreement
+/// guard) or the module fails verification.
+export fn emit_cgu_module(members: List<FnTarget>, stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false, false)
+    mut ctx = dc.ctx
+    mut has_main = false
+    for m in members {
+        match emit_fn_body_by_id(ctx, m.id) {
+            .Ok(found) -> {
+                if !found {
+                    ctx.dispose()
+                    return Result.Err("emit_cgu_module: member '${m.name}' not found (or not owned by this unit)")
+                }
+            }
+            .Err(e) -> {
+                ctx.dispose()
+                return Result.Err(e)
+            }
+        }
+        if m.name == "main" { has_main = true }
+    }
+    if has_main {
+        inject_bs_top_level_into_main(ctx)
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_cgu_module: LLVM module verification failed")
+    }
+    Result.Ok(ctx)
+}
+
+/// Emit one bounded-K CGU's object to disk (a set of per-fn bodies + declares).
+export fn emit_cgu_object(members: List<FnTarget>, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    emit_ctx_object(emit_cgu_module(members, stmts, false, false, "", type_reg, false, store), obj_path, "cgu unit")
 }
 
 /// Compile a program to LLVM IR and write the result to disk.

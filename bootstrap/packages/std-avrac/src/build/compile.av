@@ -18,10 +18,18 @@ use features.comptime.{resolve_and_expand_program, run_comptime}
 use typeck.{typecheck_program}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
-use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, emit_fn_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
+use codegen.{codegen_and_emit_object, codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
-use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key, fn_unit_lookup, fn_unit_publish}
+use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key_cgu, CguMember, fn_unit_lookup, fn_unit_publish}
+
+/// Bounded-K CGU width (ps3t.8.6.2, the Rust codegen-unit model): the number
+/// of codegen units a program's fns are partitioned into. Bounding the unit
+/// COUNT (not the unit SIZE) caps the repeated declare-pass cost at K·program
+/// regardless of fn count, so a cold CGU build stays within an acceptable
+/// factor of the whole-program build while the per-unit object cache recovers
+/// warm/incremental latency. 16 matches Rust's non-incremental default.
+const CGU_COUNT: int = 16
 
 /// Inputs for build_binary. The caller owns assembly (parse +
 /// resolve_module_files + any test-specific wrapping) and passes the
@@ -125,35 +133,37 @@ export fn build_fn_module(target: CompileTarget, fn_name: string, out_ll: string
     compile_one_fn_module(fn_name, fm.stmts, out_ll, false, false, target.diag_filename, fm.type_reg, false, target.store)
 }
 
-/// Per-fn CGU build: emit ONE object per user fn (its self-contained per-fn
-/// module) + one wrapper object (the top-level entry + __release_*
-/// definitions), then link them all into the binary — the whole-program
-/// module split into codegen units. Each fn's object is content-cached, so a
-/// one-fn body edit re-emits only that fn (every other is a hit). A
-/// user-defined `main` is handled: emit_one_fn_module injects the
-/// __bs_top_level call into main's own per-fn unit. Run-equivalent to
+/// Bounded-K CGU build: partition the program's fns into <= CGU_COUNT codegen
+/// units (each a self-contained module), emit ONE object per non-empty unit +
+/// one wrapper object (the top-level entry + __release_* definitions), then
+/// link them all into the binary — the whole-program module split into bounded
+/// codegen units. Each unit's object is content-cached on its members'
+/// combined fingerprint, so a one-fn body edit re-emits only that fn's UNIT
+/// (every other is a hit). A user-defined `main` is handled: emit_cgu_module
+/// injects the __bs_top_level call into main's unit. Run-equivalent to
 /// build_binary, NOT byte-identical (N modules vs one → different .ll
 /// structure).
 ///
-/// Coverage is not supported on this path (the per-fn/wrapper objects are
+/// Coverage is not supported on this path (the unit/wrapper objects are
 /// emitted uninstrumented and the cache key hardcodes coverage-off); a
 /// coverage target is rejected up front rather than silently miscompiled.
 export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
     if target.coverage {
-        return Result.Err("build_binary_cgu: coverage instrumentation is not supported on the per-fn CGU path")
+        return Result.Err("build_binary_cgu: coverage instrumentation is not supported on the CGU path")
     }
     let fm = frontend_to_mono(target)?
     let build_dir = "${target.project_dir}/build"
     let stem = strip_bin_suffix(target.bin_path)
 
-    // Per-fn OBJECT cache (increment 4 — the incrementality): each fn's .o is
-    // keyed on its content fingerprint (item_sig_fp ⊕ item_body_fp ⊕ type
-    // table ⊕ erased regime ⊕ codegen modes ⊕ toolchain), in a namespace
-    // distinct from the IR-dump write side. A cache HIT reuses the stored .o
-    // and SKIPS re-emission; a MISS emits the per-fn module → .o and publishes
-    // it. On a one-fn edit only that fn's body_fp changes, so only its object
-    // re-emits — every other fn is a hit. A compiler or codegen-flag change
-    // re-emits everything (toolchain/modes are in the key).
+    // Bounded-K CGU OBJECT cache (the incrementality): each codegen UNIT's .o
+    // is keyed on the combined content fingerprint of its member fns
+    // (item_sig_fp ⊕ item_body_fp ⊕ erased regime per member) ⊕ type table ⊕
+    // codegen modes ⊕ toolchain, in a namespace distinct from the IR-dump
+    // write side. A cache HIT reuses the stored .o and SKIPS re-emission; a
+    // MISS emits the unit's module → .o and publishes it. On a one-fn body
+    // edit only that fn's bucket key changes, so only that ONE unit re-emits —
+    // every other unit is a hit. A compiler or codegen-flag change re-emits
+    // everything (toolchain/modes are in the key).
     let cache = cache_for(target.project_dir)
     let cgu_store = fn_unit_store_for_ns(cache, "fncgu")
     let _ = fn_unit_store_init(cgu_store)
@@ -164,17 +174,35 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
     // Ownership filter (ps3t.8.6.2): in library mode (AVRA_LIB_PKG_ROOT set)
     // only fns OWNED by this unit are targets — matching emit_function_bodies'
     // skip set exactly, so a not-owned fn is never collected (and thus never
-    // handed to emit_one_fn_module, which would Err "not found (or not owned)").
+    // handed to emit_cgu_module, which would Err "not found (or not owned)").
     // Empty in whole-program mode → every non-external fn collected, as before.
     let roots = parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT"))
     let empty: List<FnTarget> = []
     let targets = collect_fn_targets(target.store, fm.stmts, empty, roots)
+    // Bounded-K partitioning: group fns into <= CGU_COUNT units by a stable
+    // name-hash, so each unit is one object and a body edit re-emits only its
+    // unit. Empty buckets (skipped) keep bucket identity index-stable.
+    let buckets = partition_targets(targets, CGU_COUNT)
     mut objs: List<string> = []
-    mut ti = 0
-    while ti < targets.length {
-        let t = targets[ti]
-        let key = fn_unit_key(t.name, item_sig_fp(target.store, t.id), item_body_fp(target.store, t.id),
-                              table_fp, fn_target_is_erased(target.store, t.id), modes, toolchain)
+    mut bi = 0
+    while bi < buckets.length {
+        let bucket = buckets[bi]
+        if bucket.length == 0 {
+            bi = bi + 1
+            continue
+        }
+        // The unit's cache key folds every member's identity in bucket
+        // (stmts-appearance) order — the same order emit_cgu_module emits them.
+        mut members: List<CguMember> = []
+        for t in bucket {
+            members.push(CguMember {
+                name: t.name,
+                sig_fp: item_sig_fp(target.store, t.id),
+                body_fp: item_body_fp(target.store, t.id),
+                erased: fn_target_is_erased(target.store, t.id),
+            })
+        }
+        let key = fn_unit_key_cgu(members, table_fp, modes, toolchain)
         let cached = fn_unit_lookup(cgu_store, key)
         if cached != null {
             objs.push(cached!)
@@ -182,8 +210,8 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
             // Per-pid scratch name: fn_unit_publish hashes this file, so two
             // concurrent builds targeting the same bin_path must not clobber
             // each other's scratch object before it's published.
-            let obj = "${stem}.fn${string(ti)}.${string(avra_getpid())}.o"
-            let _ = emit_fn_object(t.name, fm.stmts, obj, fm.type_reg, target.store)?
+            let obj = "${stem}.cgu${string(bi)}.${string(avra_getpid())}.o"
+            let _ = emit_cgu_object(bucket, fm.stmts, obj, fm.type_reg, target.store)?
             let pub = fn_unit_publish(cgu_store, key, obj)
             if pub != null {
                 objs.push(pub!)
@@ -191,7 +219,7 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
                 objs.push(obj)
             }
         }
-        ti = ti + 1
+        bi = bi + 1
     }
     // The wrapper object (top-level entry + __release_* defs) changes whenever
     // the top-level code or the type set does — always re-emitted, not cached.
