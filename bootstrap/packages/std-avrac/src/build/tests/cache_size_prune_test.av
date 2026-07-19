@@ -1,0 +1,71 @@
+// t-5kek: `bs2 cache prune --max-size-mb N` bounds the compile cache by
+// total size, evicting OLDEST-mtime slots first. This reclaims what the
+// age prune's 30-day mtime floor never can: same-session churn from the
+// seed train, where every cycle stamps a fresh full-compiler's worth of
+// (seed+source)-fingerprinted slots and the prior seed's slots are dead
+// (their key can't be hit again) yet carry today's mtime. Because a cache
+// HIT touches its slot, the oldest slots are exactly the dead ones — so
+// LRU eviction reclaims them without knowing which seed stamped each slot.
+//
+// The sandbox is a repo-local build/ subtree (NOT /tmp — t-2qn0), removed
+// at the end; sizes carry margin so directory-block accounting can't flip
+// which slots fall under the cap.
+//
+// @@fixture-stateful@@ — invokes the SHARED build/bs2; a transient hiccup
+// must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists, avra_getpid}
+
+spec "t-5kek: cache prune --max-size-mb evicts oldest slots until under the cap" {
+    then "an over-budget cache sheds its OLDEST (dead-generation) slots first; fresher slots survive" {
+        let base = avra_shell_exec("pwd").trim()
+        let bs = "${base}/build/bs2"
+        let sb = "${base}/build/spec_t5kek_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${sb}'")
+        // old1=2MB (oldest), old2=1MB, fresh=1MB → total 4MB. mtime order:
+        // old1 (3h) < old2 (2h) < fresh (now). Touch the dirs AFTER writing
+        // so the inner write doesn't bump the dir mtime back to now.
+        avra_shell_exec("mkdir -p '${sb}/build/cache/old1' '${sb}/build/cache/old2' '${sb}/build/cache/fresh'")
+        avra_shell_exec("head -c 2097152 /dev/zero > '${sb}/build/cache/old1/unit.ll'")
+        avra_shell_exec("head -c 1048576 /dev/zero > '${sb}/build/cache/old2/unit.ll'")
+        avra_shell_exec("head -c 1048576 /dev/zero > '${sb}/build/cache/fresh/unit.ll'")
+        avra_shell_exec("touch -d '3 hours ago' '${sb}/build/cache/old1'")
+        avra_shell_exec("touch -d '2 hours ago' '${sb}/build/cache/old2'")
+
+        // Cap 3MB: total ~4MB → evict old1 (2MB) → ~2MB, at/under cap, stop.
+        // old2 and fresh must both survive (loop breaks before reaching them).
+        let out = avra_shell_exec("cd '${sb}' && '${bs}' cache prune --max_size_mb=3 2>&1")
+
+        let ok = out.contains("size cap evicted 1 oldest slot")
+            && avra_selfhost_file_exists("${sb}/build/cache/old1") == 0
+            && avra_selfhost_file_exists("${sb}/build/cache/old2") == 1
+            && avra_selfhost_file_exists("${sb}/build/cache/fresh") == 1
+        avra_shell_exec("rm -rf '${sb}'")
+        ok
+    }
+}
+
+spec "t-5kek: the size prune is off by default and rejects a bad cap" {
+    then "--max-size-mb=0 evicts nothing on size grounds; a non-numeric cap is rejected, not treated as 0" {
+        let base = avra_shell_exec("pwd").trim()
+        let bs = "${base}/build/bs2"
+        let sb = "${base}/build/spec_t5kek0_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${sb}'")
+        avra_shell_exec("mkdir -p '${sb}/build/cache/e1'")
+        avra_shell_exec("head -c 1048576 /dev/zero > '${sb}/build/cache/e1/unit.ll'")
+
+        // Default (0): no size eviction, slot intact.
+        let off = avra_shell_exec("cd '${sb}' && '${bs}' cache prune --max_size_mb=0 2>&1")
+        let intact = avra_selfhost_file_exists("${sb}/build/cache/e1") == 1 && !off.contains("size cap evicted")
+
+        // Bad cap must FAIL loudly (atoll would otherwise map it to 0 — but
+        // the size prune's 0 means "off", so a silent evict-nothing would be
+        // a worse trap; either way validate, not swallow).
+        let bad = avra_shell_exec("cd '${sb}' && '${bs}' cache prune --max_size_mb=nope 2>&1")
+        let rejected = bad.contains("--max-size-mb must be a non-negative integer")
+            && avra_selfhost_file_exists("${sb}/build/cache/e1") == 1
+
+        avra_shell_exec("rm -rf '${sb}'")
+        intact && rejected
+    }
+}

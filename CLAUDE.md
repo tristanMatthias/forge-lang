@@ -116,7 +116,7 @@ make diff-test             # HRN: old (base) vs new (HEAD) compiler emit byte-id
 make coverage              # run all spec tests with coverage instrumentation
 make run FILE=x            # compile and run a Avra program
 make update-seed           # rebuild seed IR (default: verified). Add FAST=1 for inner loop.
-make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d. Also reclaims orphaned /tmp test scratch >10m (t-2qn0).
+make cache-gc              # prune COLD cache entries repo-wide (mtime == last use). DAYS= overrides 30d. Also SIZE-bounds each cache root (AVRA_CACHE_MAX_MB, default 12288 = 12GB; evicts oldest-first — reclaims dead superseded-seed generations the age floor misses, t-5kek) AND reclaims orphaned /tmp test scratch >10m (t-2qn0).
 make clean-cache           # wipe EVERY cache (per-package + top-level). Guarded: never touches src/.
 make clean                 # remove all build artifacts (3-min seed rebuild on next make)
 make help                  # show all targets
