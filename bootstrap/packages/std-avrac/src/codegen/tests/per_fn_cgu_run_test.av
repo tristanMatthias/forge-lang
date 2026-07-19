@@ -123,4 +123,28 @@ spec "per-fn CGU: build_binary_cgu runs byte-identically to build_binary" {
         avra_shell_exec("rm -rf '${dir}'")
         ok
     }
+    then "closure: the closure-marker array path links across per-fn units" {
+        let dir = "/tmp/avra_cgurun_f_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // apply takes a fn value; main passes a closure literal (n) -> n + 1.
+        // The closure body lowers through the closure-marker array path — a
+        // subtle codegen area (CLAUDE.md) — across the apply / main per-fn units.
+        let v = run_equiv(dir, "closure",
+            "fn apply(f: fn(int) -> int, x: int) -> int { f(x) }\nfn main() { println(string(apply((n) -> n + 1, 41))) }\n")
+        let ok = equiv_ok(v, "42")
+        if !ok { println("cgu-run closure: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "zero user fns: only top-level code → the wrapper unit is the whole program" {
+        let dir = "/tmp/avra_cgurun_g_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // collect_fn_targets is empty → build_binary_cgu links the wrapper
+        // object alone (+ runtime). The degenerate CGU boundary.
+        let v = run_equiv(dir, "notargets", "println(string(6 * 7))\n")
+        let ok = equiv_ok(v, "42")
+        if !ok { println("cgu-run notargets: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
 }
