@@ -9,7 +9,7 @@
 //
 // Filed under: 03hx (extraction tracking ticket).
 
-use core.{avra_process_forward, avra_shell_exec}
+use core.{avra_process_forward, avra_shell_exec, avra_getpid}
 use core.{NodeStore, item_sig_fp, item_body_fp, type_table_fp}
 use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
@@ -125,18 +125,23 @@ export fn build_fn_module(target: CompileTarget, fn_name: string, out_ll: string
     compile_one_fn_module(fn_name, fm.stmts, out_ll, false, false, target.diag_filename, fm.type_reg, false, target.store)
 }
 
-/// Per-fn CGU build (ps3t.8.6.1 increment 3a): emit ONE object per user fn
-/// (its self-contained per-fn module) + one wrapper object (the top-level
-/// entry + __release_* definitions), then link them all into the binary —
-/// the whole-program module split into CGUs. This is the emit model the
-/// read side caches: increment 4 will skip re-emitting an unchanged fn's
-/// object. Run-equivalent to build_binary, NOT byte-identical (N modules vs
-/// one → different .ll structure; that's the intended-ir-change).
+/// Per-fn CGU build: emit ONE object per user fn (its self-contained per-fn
+/// module) + one wrapper object (the top-level entry + __release_*
+/// definitions), then link them all into the binary — the whole-program
+/// module split into codegen units. Each fn's object is content-cached, so a
+/// one-fn body edit re-emits only that fn (every other is a hit). A
+/// user-defined `main` is handled: emit_one_fn_module injects the
+/// __bs_top_level call into main's own per-fn unit. Run-equivalent to
+/// build_binary, NOT byte-identical (N modules vs one → different .ll
+/// structure).
 ///
-/// 3a scope: no coverage, and the no-user-main case (the wrapper's synthesized
-/// `main` is the entry). A user-defined `main` needs the __bs_top_level
-/// call-injection inside main's per-fn unit — a 3b follow-up.
+/// Coverage is not supported on this path (the per-fn/wrapper objects are
+/// emitted uninstrumented and the cache key hardcodes coverage-off); a
+/// coverage target is rejected up front rather than silently miscompiled.
 export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
+    if target.coverage {
+        return Result.Err("build_binary_cgu: coverage instrumentation is not supported on the per-fn CGU path")
+    }
     let fm = frontend_to_mono(target)?
     let build_dir = "${target.project_dir}/build"
     let stem = strip_bin_suffix(target.bin_path)
@@ -168,7 +173,10 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
         if cached != null {
             objs.push(cached!)
         } else {
-            let obj = "${stem}.fn${string(ti)}.o"
+            // Per-pid scratch name: fn_unit_publish hashes this file, so two
+            // concurrent builds targeting the same bin_path must not clobber
+            // each other's scratch object before it's published.
+            let obj = "${stem}.fn${string(ti)}.${string(avra_getpid())}.o"
             let _ = emit_fn_object(t.name, fm.stmts, obj, fm.type_reg, target.store)?
             let pub = fn_unit_publish(cgu_store, key, obj)
             if pub != null {
@@ -181,7 +189,7 @@ export fn build_binary_cgu(target: CompileTarget) -> Result<string, string> {
     }
     // The wrapper object (top-level entry + __release_* defs) changes whenever
     // the top-level code or the type set does — always re-emitted, not cached.
-    let wrapper_obj = "${stem}.wrapper.o"
+    let wrapper_obj = "${stem}.wrapper.${string(avra_getpid())}.o"
     let _ = emit_wrapper_object(fm.stmts, wrapper_obj, fm.type_reg, target.store)?
     objs.push(wrapper_obj)
 
