@@ -82,6 +82,64 @@ export fn emit_function_bodies(ctx: Ctx, stmts: List<StmtId>) -> Result<List<Var
     ok_stmt(empty_e)
 }
 
+/// Per-fn CGU primitive (ps3t.8.6.1): emit exactly ONE function's body into
+/// the already-declared module — the granularity-1 form of the
+/// @external_unit skip. Walks the program like emit_function_bodies but
+/// DEFINES only the Function whose qualified name equals `target`; every
+/// other fn stays a declaration. Returns Ok(true) when the target was found
+/// and emitted, Ok(false) when it isn't present in `stmts`, Err on emit
+/// failure. Mirrors emit_function_bodies' per-fn handling exactly (the
+/// mono_erased layout-boundary gate and the mono_spec linkonce_odr stamp)
+/// for the single fn it emits, so a per-fn module's `define` is byte-for-
+/// byte the body the whole-program module would have emitted.
+export fn emit_one_fn_body(ctx: Ctx, stmts: List<StmtId>, target: string) -> Result<bool, string> {
+    mut i = 0
+    while i < stmts.length {
+        let node = ctx.nodes.stmts.get(stmts[i])
+        let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
+        let is_mono_spec = find_annotation(ctx.nodes, node, "mono_spec") != null
+        let is_mono_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
+        // Each arm yields Result<bool, string> — true iff THIS arm emitted
+        // the target — mirroring emit_function_bodies' Result-per-arm shape
+        // (no `?` inside an arm; the propagation happens at `inner?`).
+        let inner = match stmt_unwrap(ctx.nodes, node) {
+            .Function(name, _, params, _, body) -> {
+                if name == target && !is_external && fn_belongs_to_lib_pkg(ctx, name) {
+                    avra_ice_push_fn(name)
+                    let fctx = ctx with { in_erased_body: is_mono_erased }
+                    let res = emit_function_body(fctx, name, params, body)
+                    if is_mono_spec {
+                        let fn_val = ctx.get_fn(name)
+                        if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
+                    }
+                    avra_ice_pop_fn()
+                    match res {
+                        .Ok(_) -> Result.Ok(true),
+                        .Err(e) -> Result.Err(e),
+                    }
+                } else {
+                    Result.Ok(false)
+                }
+            }
+            .Impl(_, methods) -> emit_one_fn_body(ctx, methods, target)
+            .Module(_, body) -> {
+                if is_external {
+                    Result.Ok(false)
+                } else {
+                    emit_one_fn_body(ctx, body, target)
+                }
+            }
+            _ -> Result.Ok(false)
+        }
+        let found = inner?
+        if found {
+            return Result.Ok(true)
+        }
+        i = i + 1
+    }
+    Result.Ok(false)
+}
+
 /// P2 library-mode ownership check.
 ///
 /// Returns true when `fn_name` should have its body emitted in THIS

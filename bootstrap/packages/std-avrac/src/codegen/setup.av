@@ -17,7 +17,7 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -54,8 +54,29 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
 /// pass — extern decls, structs, enums, globals, functions, release
 /// fns — and finally emits user function bodies and top-level
 /// statements.
-fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
-    avra_ice_phase("codegen")
+/// The fully-declared module produced by build_declared_ctx: the Ctx —
+/// with every runtime extern, named struct/enum/__union type, global (as
+/// external), fn declaration, __release_* fn, and the top-level wrapper in
+/// place, the builder positioned at the wrapper's entry — plus the two
+/// locals the body/finalize half still needs: the wrapper's `entry` block
+/// and the pre-existing user `main` (`user_main`, null when there is none).
+///
+/// This is the reusable declare-pass prefix shared by the whole-program
+/// emit path (codegen_program: emit ALL bodies) and the per-fn CGU path
+/// (ps3t.8.6.1: emit exactly one body, everything else declare-only).
+type DeclaredCtx = {
+    ctx: Ctx,
+    entry: ptr,
+    user_main: ptr,
+}
+
+/// Build a fresh LLVM module and run the entire DECLARE pass into it:
+/// runtime externs, struct/enum/__union types, globals-as-external, every
+/// fn as a declaration, the __release_* fns, and the synthesized top-level
+/// wrapper (`main` / `__bs_top_level` / `__avra_lib_top_level`). No user
+/// function BODY is emitted here — that is the caller's next phase. The
+/// returned Ctx has its builder positioned at the wrapper's entry block.
+fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool, define_release: bool) -> DeclaredCtx {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -364,12 +385,24 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // compile (consumer + producer alike). linkonce_odr lets the
     // linker keep one copy. Real `main` (whole-program path)
     // doesn't need this — there's exactly one main per binary.
-    if library {
+    // linkonce_odr requires a DEFINITION, so only stamp it when this
+    // compile actually gives main a body (whole-program path). A per-fn
+    // CGU module leaves main a bare declaration.
+    if library && with_main_entry {
         avra_llvm_set_linkonce_odr(main_fn)
     }
 
-    let entry = avra_llvm_append_basic_block(lc, main_fn, "entry")
-    avra_llvm_position_at_end(builder, entry)
+    // Per-fn CGU (with_main_entry=false): the top-level wrapper is its
+    // OWN unit, so here main stays a bare declaration — no entry block,
+    // no body. The whole-program path appends main's entry and fills it
+    // with the top-level statements after the declare pass.
+    let entry = if with_main_entry {
+        let e = avra_llvm_append_basic_block(lc, main_fn, "entry")
+        avra_llvm_position_at_end(builder, e)
+        e
+    } else {
+        null
+    }
 
     let copy_types = analyze_copy_types(structs, enums)
     let empty_releasable: List<string> = []
@@ -429,10 +462,38 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // Generate __release_TypeName functions for recursive RC field cleanup.
     // Must happen after Ctx is built (needs all type registries) but before
     // function bodies (they may call release functions via emit_rc_release_typed).
-    emit_release_functions(ctx, cycles)
+    // Per-fn CGU (define_release=false): declare the release fns as externs
+    // only — the wrapper unit owns their single definition, and a per-fn
+    // module resolves its __release_* calls against it at link time. Emitting
+    // the bodies in every per-fn module would duplicate-symbol at link.
+    if define_release {
+        emit_release_functions(ctx, cycles)
+    } else {
+        declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
+        declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
+    }
 
-    // Reposition builder at main's entry after release fn emission.
-    ctx.position(entry)
+    // Reposition builder at main's entry after release fn emission
+    // (whole-program path only — the per-fn path never gave main a body).
+    if with_main_entry {
+        ctx.position(entry)
+    }
+
+    DeclaredCtx { ctx: ctx, entry: entry, user_main: user_main }
+}
+
+/// Whole-program codegen: run the declare pass (build_declared_ctx), then
+/// emit EVERY user function body + the top-level statements into the
+/// wrapper, verify, and publish per-fn cache units. Returns the compiled
+/// Ctx (caller writes IR / disposes).
+fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, true, true)
+    mut ctx = dc.ctx
+    let entry = dc.entry
+    let user_main = dc.user_main
+    let m = ctx.module
+    let builder = ctx.builder
 
     // Pass 2: emit each user-defined function's body, then emit
     // every non-function top-level statement into main.
@@ -512,19 +573,206 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // __bs_top_level/main wrapper) and the module verification gate, so a
     // cached artifact is the fn's FINAL, verified form — never a stale
     // pre-wrapper `main` or an artifact from a module that failed to verify.
-    // Opt-in (AVRA_FN_CACHE env) and read-free: it never touches the module,
-    // so emission stays byte-identical.
-    let _ = publish_fn_units(ctx, stmts)
+    // Read-free: it never touches the module, so emission stays
+    // byte-identical. `cache_root` is the project's build root (from the
+    // build driver); "" (ephemeral/JIT compiles) makes it a no-op.
+    let _ = publish_fn_units(ctx, stmts, cache_root)
 
     // Return the Ctx with the compiled module
     Result.Ok(ctx)
 }
 
+/// Per-fn CGU (ps3t.8.6.1): build a SELF-CONTAINED LLVM module that declares
+/// the whole program (externs, named types, globals-as-external, and every
+/// fn — the top-level wrapper included — as a declaration) and DEFINES
+/// exactly `target`'s body. The result is an @external_unit-at-granularity-1
+/// module whose textual .ll llc compiles to a linkable object — the unit the
+/// read side (increment 4) caches and reuses. Returns the compiled Ctx
+/// (caller writes IR / disposes), or Err when `target` is absent or the
+/// module fails verification.
+///
+/// Unlike codegen_program this emits NO top-level wrapper body and NO sibling
+/// fn body — the wrapper and every other fn are their own units. (The
+/// __release_* fns are still defined here; making them linkonce_odr for clean
+/// multi-unit linking is a later increment.)
+export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false, false)
+    mut ctx = dc.ctx
+    match emit_one_fn_body(ctx, stmts, target) {
+        .Ok(found) -> {
+            if !found {
+                ctx.dispose()
+                return Result.Err("emit_one_fn_module: function '${target}' not found (or not owned by this unit)")
+            }
+        }
+        .Err(e) -> {
+            ctx.dispose()
+            return Result.Err(e)
+        }
+    }
+    // User-defined main (3b): the module-level statements run in
+    // __bs_top_level (defined in the wrapper unit) BEFORE main's body. The
+    // whole-program path patches user main to call __bs_top_level first
+    // (codegen_program); in the CGU model main is its OWN unit, so the same
+    // injection lives here. __bs_top_level is declare-only in this module —
+    // the call resolves at link against the wrapper's definition. When there
+    // is no module-level code (no __bs_top_level), this is a no-op.
+    if target == "main" {
+        let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
+        let main_fn = ctx.get_fn("main")
+        if top_fn != null && main_fn != null {
+            let user_entry = avra_llvm_get_entry_basic_block(main_fn)
+            let first_instr = avra_llvm_get_first_instruction(user_entry)
+            if first_instr != null {
+                avra_llvm_position_before(ctx.builder, first_instr)
+            } else {
+                avra_llvm_position_at_end(ctx.builder, user_entry)
+            }
+            avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
+        }
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_one_fn_module: LLVM module verification failed for '${target}'")
+    }
+    Result.Ok(ctx)
+}
+
+/// Per-fn CGU driver (ps3t.8.6.1): emit ONLY `target`'s per-fn module and
+/// write its IR to disk — the file/dispose wrapper around emit_one_fn_module,
+/// mirroring compile_program. Used by build_fn_module (the in-process
+/// per-fn seam) and the read side's per-unit emit in a later increment.
+export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
+    match emit_one_fn_module(target, ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
+        .Ok(ctx) -> {
+            let write_result = ctx.write_ir(output_path)
+            ctx.dispose()
+            if write_result != 0 {
+                return Result.Err("codegen error: failed to write per-fn module IR to ${output_path}")
+            }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// One per-fn CGU target: the fn's resolved name (for emit_fn_object) plus
+/// its AST item id (for the content-fingerprint cache key — item_sig_fp /
+/// item_body_fp / mono_erased regime).
+export type FnTarget = {
+    name: string,
+    id: StmtId,
+}
+
+/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn — the targets,
+/// each of which becomes its own per-fn module. Mirrors emit_function_bodies'
+/// walk (recurses Impl + non-external Module; skips @external_unit), so the
+/// target set is precisely the bodies the whole-program module would have
+/// defined. The synthesized wrapper (main/__bs_top_level) is NOT here — it's
+/// the wrapper unit, emitted separately. (Whole-program scope: lib-ownership
+/// filtering, for the library CGU path, is a later concern — emit_one_fn_body
+/// already re-checks ownership per target.)
+export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>) -> List<FnTarget> {
+    mut out = acc
+    for id in stmts {
+        let node = store.stmts.get(id)
+        let is_external = find_annotation(store, node, "external_unit") != null
+        match stmt_unwrap(store, node) {
+            .Function(name, _, _, _, _) -> {
+                if !is_external {
+                    out = out.push(FnTarget { name: name, id: id })
+                }
+            }
+            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out) }
+            .Module(_, body) -> {
+                if !is_external { out = collect_fn_targets(store, body, out) }
+            }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// Whether a per-fn target's body is an @mono_erased specialization — its
+/// unbound T lays out as wide i64, so the same body text emits different IR
+/// per regime; the cache key must distinguish it (fncache.av `erased`).
+export fn fn_target_is_erased(store: NodeStore, id: StmtId) -> bool {
+    find_annotation(store, store.stmts.get(id), "mono_erased") != null
+}
+
+/// Per-fn CGU (ps3t.8.6.1): emit the WRAPPER unit — the module that owns
+/// the synthesized top-level entry (main / __bs_top_level with the
+/// module-level statements + __init_<mod> chain) and the single definition
+/// of every __release_* fn. Every USER fn is declare-only here (their
+/// bodies are per-fn units). It is codegen_program WITHOUT emit_function_bodies.
+/// (3a scope: the no-user-main case. When the user defines `main`, the
+/// __bs_top_level call-injection belongs in main's per-fn unit — a 3b follow-up.)
+export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, false, false, "", type_reg, false, store, true, true)
+    mut ctx = dc.ctx
+    let entry = dc.entry
+    let user_main = dc.user_main
+    // NO emit_function_bodies — user fns are per-fn units (declare-only here).
+    ctx.position(entry)
+    ctx.rc_releasable = analyze_releasable(store, stmts)
+    let initial: List<VarBinding> = []
+    match emit_top_level(ctx, initial, stmts) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.dispose()
+            return Result.Err(e)
+        }
+    }
+    if !ctx.has_terminator() {
+        if user_main == null {
+            ctx.call("avra_test_summary", [])
+        }
+        ctx.call("avra_rc_collect", [])
+        ctx.ret(ctx.i64(0), .Int)
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_wrapper_module: LLVM module verification failed")
+    }
+    Result.Ok(ctx)
+}
+
+/// Emit a freshly-built module's object to disk and dispose the Ctx —
+/// the shared tail of emit_fn_object / emit_wrapper_object. `what` names
+/// the unit for the error message. A build error propagates untouched.
+fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -> Result<int, string> {
+    match built {
+        .Ok(ctx) -> {
+            let r = avra_llvm_emit_object(ctx.module, obj_path)
+            ctx.dispose()
+            if r != 0 { return Result.Err("failed to emit object for ${what}") }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+/// Emit a single per-fn module's object to disk (per-fn CGU unit).
+export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    emit_ctx_object(emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store), obj_path, "fn '${target}'")
+}
+
+/// Emit the wrapper unit's object to disk (top-level entry + __release_* defs).
+export fn emit_wrapper_object(stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
+    emit_ctx_object(emit_wrapper_module(stmts, type_reg, store), obj_path, "wrapper unit")
+}
+
 /// Compile a program to LLVM IR and write the result to disk.
 /// Disposes the `Ctx` afterwards. Use `compile_and_jit` instead when
 /// you don't want a file on disk.
-export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
+export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, debug_null_checks, coverage, source_file, type_reg, library, store, cache_root) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(output_path)
             ctx.dispose()
@@ -541,7 +789,7 @@ export fn compile_program(ids: List<StmtId>, output_path: string, debug_null_che
 /// takes ownership of the LLVM module, so we deliberately don't
 /// dispose `ctx`. Returns the program's exit code.
 export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = avra_llvm_jit_run(ctx.module)
@@ -562,7 +810,7 @@ export fn compile_and_jit(stmts: List<StmtId>, type_reg: TypeRegistry, store: No
 /// is already gone. Scalar-return only (int/bool/float-bits); a pointer
 /// result would dangle past the dispose.
 export fn compile_and_jit_call(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<int, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -574,7 +822,7 @@ export fn compile_and_jit_call(stmts: List<StmtId>, type_reg: TypeRegistry, stor
 /// value rather than the garbage the int register would hold. Args stay i64 —
 /// float PARAMS need FP-register args, so the caller gates params to int.
 export fn compile_and_jit_call_f64(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<float, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call_f64(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -584,7 +832,7 @@ export fn compile_and_jit_call_f64(stmts: List<StmtId>, type_reg: TypeRegistry, 
 /// codegen; the JIT call copies the returned `const char*` out of the engine's
 /// memory before disposing it, so the string survives. Args stay i64.
 export fn compile_and_jit_call_str(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore, fn_name: string, argc: int, argv: ptr) -> Result<string, string> {
-    match codegen_program(stmts, false, false, "", type_reg, false, store) {
+    match codegen_program(stmts, false, false, "", type_reg, false, store, "") {
         .Ok(ctx) -> Result.Ok(avra_llvm_jit_call_str(ctx.module, fn_name, argc, argv))
         .Err(e) -> Result.Err(e)
     }
@@ -593,8 +841,8 @@ export fn compile_and_jit_call_str(stmts: List<StmtId>, type_reg: TypeRegistry, 
 /// Compile and emit a native object file directly. Skips the IR-on-
 /// disk step, so no `llc` invocation is needed downstream. Disposes
 /// `ctx` after the emit.
-export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, false, false, "", type_reg, false, store) {
+export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, false, false, "", type_reg, false, store, cache_root) {
         .Ok(ctx) -> {
             let result = avra_llvm_emit_object(ctx.module, output_path)
             ctx.dispose()
@@ -614,8 +862,8 @@ export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_r
 ///
 /// `source_file` is recorded in the `.covmap.tsv` that the codegen
 /// pass writes alongside the IR.
-export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore) -> Result<int, string> {
-    match codegen_program(ids, false, true, source_file, type_reg, false, store) {
+export fn codegen_and_emit_ir_cov(ids: List<StmtId>, ir_path: string, type_reg: TypeRegistry, source_file: string, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, false, true, source_file, type_reg, false, store, cache_root) {
         .Ok(ctx) -> {
             let write_result = ctx.write_ir(ir_path)
             ctx.dispose()

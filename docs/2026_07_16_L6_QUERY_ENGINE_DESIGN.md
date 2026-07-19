@@ -235,6 +235,60 @@ item and a body edit can never silently change an item's type.
   - **Deferred (b):** an own mid-level IR (MIR) as a stable, compact,
     content-addressed cache unit — booked as epic `1n1v`, out of L6 scope.
 
+### 8.1 As-built (`ps3t.8.6.1`, delivered 2026-07-19)
+
+**Architecture chosen: Option A — the per-fn CGU (codegen unit).** Each fn
+lowers into its **own** LLVM module (unit-local anonymous `@.str.N` numbering →
+a self-contained, position-independent artifact), compiles to its **own object
+file** (the cache unit), and the objects link into the binary. Option B
+(content-addressed `@.str.N` renaming inside one shared module) was rejected —
+it's a workaround around LLVM's module-wide global numbering rather than the
+CGU-native answer the daemon/parallel-emission path (`re1b`) also wants.
+
+Delivered as five increments, each diff-tested so the **default whole-program
+path (`codegen_program` / `build_binary`) stays byte-identical** — the CGU is
+the opt-in incremental path, not the default:
+
+1. Cache root threaded from the build driver into codegen; the write side is
+   always-on off the project cache root (no `AVRA_FN_CACHE` flag — deleted).
+   Gated on a real metadata package build (`ctx.lib_pkg_roots` non-empty) so a
+   throwaway standalone compile never leaks a per-fn store.
+2. Per-fn module machinery: `build_declared_ctx` (the reusable declare pass —
+   externs, named types, globals-as-external, all-fns-declared, `__release_*`,
+   top-level wrapper) + `emit_one_fn_body` (defines exactly the target fn) +
+   `emit_one_fn_module` (declare-everything, define-one → a standalone `.ll`
+   that `llc` compiles). No CLI surface — `build_fn_module` is an internal
+   library seam sharing `frontend_to_mono` with `build_binary`.
+3. `build_binary_cgu`: N per-fn objects + one **wrapper unit**
+   (`emit_wrapper_module` = codegen minus fn bodies; owns the top-level entry,
+   the `__init_<mod>` chain, and the single `__release_*` definitions — per-fn
+   modules DECLARE the release fns via `define_release=false` and resolve them
+   at link). User-`main` is a per-fn unit; its `__bs_top_level` call-injection
+   moves into that unit. Run-equivalent across no-main / user-main / RC-typed.
+4. **The incrementality.** Each fn's object is cached under the `fncgu`
+   namespace keyed on its content fingerprint (`item_sig_fp ⊕ item_body_fp ⊕
+   type_table_fp ⊕ mono_erased ⊕ modes ⊕ toolchain`). A hit reuses the stored
+   `.o` and skips emission; a one-fn body edit re-lowers **exactly one**
+   function.
+
+**Oracle:** run-equivalence (CGU binary == whole-program binary output, 7
+shapes: no-main, user-main, RC-typed, generics, enum+match, closures,
+zero-user-fns) + a one-fn blast-radius spec (cold→warm publishes zero new objects;
+editing one fn publishes exactly one). The default path is diff-test
+byte-identical and the selfhost fixed point holds throughout.
+
+**Deliberately out of scope here** (would break the "default stays
+byte-identical" acceptance criterion, or is a follow-on optimization):
+- Flipping the *default* build to CGU. One-fn-per-CGU maximizes incremental
+  granularity but pays N `llc` process spawns on a cold build (~4000 for the
+  selfhost) — the production flip wants **bounded-K CGU partitioning** (the
+  Rust model), a separate perf-shaped design. The byte-identical whole-program
+  path stays the default; CGU is the opt-in incremental path.
+- Mono-key decomposition (`fn_unit_key_mono`: generic base ⊕ type-arg fps
+  stamped at `specialize_fn`). The current key uses the *substituted* body's
+  `item_body_fp` — **correct**, just not decomposed into (base, args).
+- ThinLTO to recover the cross-fn inlining a single module gets for free.
+
 ## 9. Persistence: in-process → on-disk → daemon
 
 **Daemon-ready design, in-process first** (§4 decided): the three persistence

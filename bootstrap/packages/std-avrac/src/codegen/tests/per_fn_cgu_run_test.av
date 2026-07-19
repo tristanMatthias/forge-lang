@@ -1,0 +1,154 @@
+// Per-fn CGU run-equivalence spec (ps3t.8.6.1 increment 3a/3b). The CGU
+// build (build_binary_cgu: one object per fn + a wrapper object, linked)
+// must produce a binary that RUNS byte-identically to the whole-program
+// build (build_binary). This is the oracle for the intended-ir-change: the
+// .ll structure differs (N modules vs one), but observable behaviour is equal.
+//
+// Cases: (1) no user main — top-level code in the synthesized main wrapper;
+// (2) user-defined main — module-level code runs via __bs_top_level (defined
+// in the wrapper unit) injected into main's OWN per-fn unit (3b); (3) an
+// RC-typed program — exercises the __release_* declare(per-fn)/define(wrapper)
+// split that keeps N modules from duplicate-symbol'ing at link.
+//
+// project_dir is an isolated /tmp dir (runtime.o + llvm_wrapper.o copied into
+// its build/), so the CGU path's fncgu cache artifacts + per-fn objects stay
+// out of the repo's persistent build cache.
+//
+// @@fixture-stateful@@ — links + runs real binaries; a transient hiccup must
+// re-probe, not freeze as FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_selfhost_write_file, avra_getpid,
+}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_binary, build_binary_cgu, CompileTarget}
+
+fn repo_root() -> string { avra_shell_exec("pwd").trim() }
+
+fn mk_target(src: string, dir: string, bin: string) -> CompileTarget? {
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.ids == null { return null }
+    CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/${bin}",
+        project_dir: dir,
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+}
+
+/// Build `src` both ways, run each binary, and report a verdict:
+/// "<wp_built>|<wp_out>|<cgu_built>|<cgu_out>". Fresh parse per build (the
+/// frontend mutates the store).
+fn run_equiv(dir: string, slug: string, src: string) -> string {
+    // Isolated project_dir needs the runtime objects to link against — both
+    // builds link against ${dir}/build/{runtime,llvm_wrapper}.o.
+    avra_shell_exec("mkdir -p '${dir}/build' && cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+    let wp = mk_target(src, dir, "${slug}_wp.bin")
+    let wp_built = if wp == null { "parsefail" } else {
+        match build_binary(wp!) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
+    }
+    let wp_out = avra_shell_exec("'${dir}/${slug}_wp.bin' 2>&1").trim()
+
+    let cgu = mk_target(src, dir, "${slug}_cgu.bin")
+    let cgu_built = if cgu == null { "parsefail" } else {
+        match build_binary_cgu(cgu!) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
+    }
+    let cgu_out = avra_shell_exec("'${dir}/${slug}_cgu.bin' 2>&1").trim()
+
+    "${wp_built}|${wp_out}|${cgu_built}|${cgu_out}"
+}
+
+/// Both builds succeeded AND both printed `expected`.
+fn equiv_ok(verdict: string, expected: string) -> bool {
+    verdict == "ok|${expected}|ok|${expected}"
+}
+
+spec "per-fn CGU: build_binary_cgu runs byte-identically to build_binary" {
+    then "no-main program: top-level code runs in the synthesized main wrapper" {
+        let dir = "/tmp/avra_cgurun_a_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        let v = run_equiv(dir, "nomain",
+            "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nprintln(string(twice(20) + 2))\n")
+        let ok = equiv_ok(v, "42")
+        if !ok { println("cgu-run nomain: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "user-defined main: module-level code runs (via __bs_top_level) before main's body" {
+        let dir = "/tmp/avra_cgurun_b_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // top-level `println("top")` → __bs_top_level (runs first); then main.
+        let v = run_equiv(dir, "usermain",
+            "fn compute() -> int { 42 }\nfn main() { println(\"main:\" + string(compute())) }\nprintln(\"top\")\n")
+        let ok = equiv_ok(v, "top\nmain:42")
+        if !ok { println("cgu-run usermain: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "RC-typed program: __release_* declare(per-fn)/define(wrapper) links + runs" {
+        let dir = "/tmp/avra_cgurun_c_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // Box carries a string field → __release_Box is generated; main
+        // creates + drops one, so its per-fn unit CALLS __release_Box (declared
+        // here, defined in the wrapper).
+        let v = run_equiv(dir, "rctyped",
+            "type Box = { val: string }\nfn make(s: string) -> Box { Box { val: s } }\nfn main() {\n    let b = make(\"hi\")\n    println(b.val)\n}\n")
+        let ok = equiv_ok(v, "hi")
+        if !ok { println("cgu-run rctyped: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "generic fn: each mono specialization is its own linkonce per-fn unit" {
+        let dir = "/tmp/avra_cgurun_d_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // id<T> monomorphizes to id<int> and id<string> — two @mono_spec
+        // Function items, each its OWN per-fn unit with linkonce_odr linkage
+        // (emit_one_fn_body stamps it). The CGU build must collect + emit both.
+        let v = run_equiv(dir, "generic",
+            "fn id<T>(x: T) -> T { x }\nfn main() {\n    println(string(id(42)))\n    println(id(\"gen\"))\n}\n")
+        let ok = equiv_ok(v, "42\ngen")
+        if !ok { println("cgu-run generic: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "enum + match: cross-unit enum type + a match-heavy body" {
+        let dir = "/tmp/avra_cgurun_e_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // Color enum is a cross-unit type (declared in every module); describe's
+        // per-fn unit matches on it, resolving the enum layout from the shared
+        // declare pass.
+        let v = run_equiv(dir, "enummatch",
+            "enum Color { Red, Green, Blue }\nfn describe(c: Color) -> string {\n    match c {\n        .Red -> \"r\"\n        .Green -> \"g\"\n        .Blue -> \"b\"\n    }\n}\nfn main() { println(describe(Color.Green)) }\n")
+        let ok = equiv_ok(v, "g")
+        if !ok { println("cgu-run enummatch: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "closure: the closure-marker array path links across per-fn units" {
+        let dir = "/tmp/avra_cgurun_f_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // apply takes a fn value; main passes a closure literal (n) -> n + 1.
+        // The closure body lowers through the closure-marker array path — a
+        // subtle codegen area (CLAUDE.md) — across the apply / main per-fn units.
+        let v = run_equiv(dir, "closure",
+            "fn apply(f: fn(int) -> int, x: int) -> int { f(x) }\nfn main() { println(string(apply((n) -> n + 1, 41))) }\n")
+        let ok = equiv_ok(v, "42")
+        if !ok { println("cgu-run closure: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "zero user fns: only top-level code → the wrapper unit is the whole program" {
+        let dir = "/tmp/avra_cgurun_g_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        // collect_fn_targets is empty → build_binary_cgu links the wrapper
+        // object alone (+ runtime). The degenerate CGU boundary.
+        let v = run_equiv(dir, "notargets", "println(string(6 * 7))\n")
+        let ok = equiv_ok(v, "42")
+        if !ok { println("cgu-run notargets: ${v}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+}

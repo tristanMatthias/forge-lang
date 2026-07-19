@@ -5,11 +5,26 @@
 // it into the fn-unit store (build/fncache.av) under the composed key
 // body_fp ⊕ type-table fp ⊕ erased regime ⊕ toolchain.
 //
-// Opt-in: AVRA_FN_CACHE=<project root> names the store root; unset means
-// this pass is a no-op. The READ side (cache replay during emission) is
-// a later change — until the reader lands, publishing is a warm-only phase
-// that never touches the emitted module, so cache-on and cache-off
-// compiles are byte-identical by construction.
+// Always-on, no flag: the store root is the project's build/cache root,
+// threaded from the build driver into codegen (like the unit-compile +
+// linked-bin caches). An empty root — an ephemeral/JIT compile with no
+// persistent build — makes this a no-op. The READ side (cache replay
+// during emission) is a later change; until it lands, publishing is a
+// write-only phase that never touches the emitted module, so emission
+// stays byte-identical.
+//
+// Scope: the per-fn codegen cache is an INCREMENTAL package-build
+// accelerator, so publishing is gated on a real metadata package build —
+// AVRA_LIB_PKG_ROOT set → ctx.lib_pkg_roots non-empty. That is exactly the
+// path the compiler rebuilds itself through (each @std/* package compiled
+// with `--emit_metadata` under its own AVRA_LIB_PKG_ROOT) and the path the
+// read side will accelerate. A standalone whole-program `bs2 compile`
+// (scratch file, `bs2 run`, a test fixture under /tmp) has empty lib roots:
+// its fns aren't reusable per-package units a later rebuild picks up, and
+// its program whole-program-INLINES @std — publishing that inlined @std
+// under the caller's cache root would be thousands of wasted per-fn
+// extracts and a stray store leaked beside a throwaway file. The lib-root
+// gate makes every such compile a strict no-op.
 //
 // Mono note: a @mono_spec item publishes under its SUBSTITUTED body's
 // fp — a valid content key (the substituted text ⊕ table fp determines
@@ -20,7 +35,7 @@
 use core.{
     StmtId, NodeStore, stmt_unwrap, find_annotation,
     item_sig_fp, item_body_fp, type_table_fp,
-    avra_process_env_get, avra_remove_file, avra_getpid, avra_mkdir_p,
+    avra_remove_file, avra_getpid, avra_mkdir_p,
 }
 use codegen.{Ctx}
 use features.fn_decl.{fn_belongs_to_lib_pkg}
@@ -33,16 +48,28 @@ extern fn avra_llvm_fn_print_to_file(fn_val: ptr, path: string) -> int
 
 /// Publish every emitted function's IR into the per-fn unit store.
 /// Called once after emit_function_bodies; returns the number of units
-/// published (0 when the cache is disabled or nothing was extractable).
+/// published (0 for an ephemeral compile, a non-package build, or when
+/// nothing was extractable).
 /// Failures are per-unit and silent by design: a unit that fails to
 /// extract or publish simply stays a future MISS — the cache must never
 /// be able to fail a compile.
-export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>) -> int {
-    let root = avra_process_env_get("AVRA_FN_CACHE")
-    if root.length == 0 {
+export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>, cache_root: string) -> int {
+    // The per-fn cache hangs off the project's build/cache root, threaded
+    // from the build driver (like the unit-compile + linked-bin caches) —
+    // no user flag. An empty root means an ephemeral compile (JIT/run) with
+    // no persistent build to cache into, so publishing is a no-op.
+    if cache_root.length == 0 {
         return 0
     }
-    let store = fn_unit_store_for(cache_for(root))
+    // Lib-root gate (see file header): only a metadata package build
+    // (AVRA_LIB_PKG_ROOT set) produces reusable per-package units with an
+    // incremental story. A standalone whole-program compile (empty roots)
+    // would publish its inlined @std — wasted work + a stray store leaked
+    // beside a throwaway file — so it is a strict no-op here.
+    if ctx.lib_pkg_roots.length == 0 {
+        return 0
+    }
+    let store = fn_unit_store_for(cache_for(cache_root))
     if !fn_unit_store_init(store) {
         return 0
     }

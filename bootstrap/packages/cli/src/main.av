@@ -4242,7 +4242,10 @@ fn cmd_compile(args: CliResult) -> int {
             }
         }
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode, parsed_prog.store) {
+        // The per-fn cache hangs off the entry's package root (no flag) —
+        // the same root already computed above for the compile cache.
+        let cg_cache_root = compile_project_root
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath, named.type_reg, library_mode, parsed_prog.store, cg_cache_root) {
             .Ok(_) -> {}
             .Err(e) -> { fail_with_codegen_ice(e, ctx) }
         }

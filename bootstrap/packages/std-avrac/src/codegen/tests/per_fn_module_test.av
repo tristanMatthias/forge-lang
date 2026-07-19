@@ -1,0 +1,96 @@
+// Per-fn CGU round-trip spec (ps3t.8.6.1 increment 2). Proves the per-fn
+// module machinery IN-PROCESS (no CLI surface): build_fn_module runs the
+// shared frontend, then emits a SELF-CONTAINED module that declares the
+// whole program and DEFINES exactly one fn. Two guards beyond "it emitted":
+//   (1) exactly ONE `define`, for the target — every sibling fn (and the
+//       top-level wrapper) stays declare-only;
+//   (2) llc lowers the .ll to an object — the textual reparse the in-memory
+//       verifier alone can miss (t-83ja) accepts it, i.e. it's a real
+//       linkable unit (the artifact the read side will cache).
+//
+// @@fixture-stateful@@ — shells out to llc; a transient environment hiccup
+// must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status, avra_getpid,
+}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_fn_module, CompileTarget, llvm_prefix_dir}
+
+fn llc_bin() -> string { "${llvm_prefix_dir()}/bin/llc" }
+
+// A three-fn whole-program source: `add` is a leaf, `twice` calls it,
+// `main` calls `twice`. Whole-program (no module wrapper) → unqualified
+// fn names, so a per-fn target is just `add` / `twice`.
+const PROG_SRC: string = "fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nfn main() { println(string(twice(20) + 2)) }\n"
+
+fn mk_target(dir: string) -> CompileTarget? {
+    let r = parse_program_source(PROG_SRC)
+    if r.had_error != 0 || r.ids == null {
+        return null
+    }
+    CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/prog.bin",
+        project_dir: dir,
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+}
+
+/// Emit `target`'s per-fn module then llc it. Verdict:
+/// "<emit_ok>|<define_count>|<target_defined>|<llc_rc>".
+fn probe(dir: string, target: string) -> string {
+    let ll = "${dir}/${target}.ll"
+    let obj = "${dir}/${target}.o"
+    let t = mk_target(dir)
+    if t == null { return "parsefail" }
+    let emit_ok = match build_fn_module(t!, target, ll) {
+        .Ok(_) -> "1",
+        .Err(_) -> "0",
+    }
+    let defines = avra_shell_exec("grep -c '^define' '${ll}' 2>/dev/null").trim()
+    let has_target = avra_shell_exec("grep -c '^define[^@]*@${target}(' '${ll}' 2>/dev/null").trim()
+    let lrc = avra_shell_exec_status("'${llc_bin()}' -filetype=obj '${ll}' -o '${obj}' 2>/dev/null")
+    "${emit_ok}|${defines}|${has_target}|${string(lrc)}"
+}
+
+spec "per-fn CGU: build_fn_module yields a single-define, llc-compilable module" {
+    then "each fn emits its OWN module — exactly one define (the target), llc-clean" {
+        let dir = "/tmp/avra_perfnmod_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+
+        let add = probe(dir, "add")
+        let twice = probe(dir, "twice")
+
+        // Both: emit Ok, exactly one define, that define IS the target, llc
+        // rc 0. Per-fn granularity: two targets → two distinct modules, each
+        // defining only its own fn. (This program has no RC types, so the
+        // only `define` is the target — no __release_* fns inflate the count.)
+        let ok = add == "1|1|1|0" && twice == "1|1|1|0"
+        if !ok { println("per-fn module probe: add=${add} twice=${twice}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+    then "a missing target fn fails cleanly — Err, no partial .ll written" {
+        let dir = "/tmp/avra_perfnmod_miss_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+        let ll = "${dir}/x.ll"
+        let t = mk_target(dir)
+        let emitted = if t == null {
+            "parsefail"
+        } else {
+            match build_fn_module(t!, "nonexistent_fn", ll) {
+                .Ok(_) -> "ok",
+                .Err(_) -> "err",
+            }
+        }
+        let no_ll = avra_shell_exec("test -f '${ll}' && echo yes || echo no").trim()
+        let ok = emitted == "err" && no_ll == "no"
+        if !ok { println("missing-target probe: emitted=${emitted} no_ll=${no_ll}") }
+        avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
+}

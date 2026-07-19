@@ -103,15 +103,25 @@ export fn fn_unit_key_mono(name: string, sig_fp: int, base_body_fp: int, type_ar
     FnUnitKey { hash: sha256_hex(canonical) }
 }
 
-/// Build the store view over an existing build Cache. Pure path derivation;
-/// `fn_unit_store_init` materialises the directories.
-export fn fn_unit_store_for(c: Cache) -> FnUnitStore {
-    let base = c.cache_dir + "fnunits/"
+/// Build the store view over an existing build Cache, under an explicit
+/// namespace subdir. Pure path derivation; `fn_unit_store_init` materialises
+/// the directories. Distinct namespaces keep artifacts of different FORMATS
+/// from colliding on the same content key — the per-fn IR-dump write side
+/// ("fnunits") and the CGU per-fn OBJECT cache ("fncgu") share the keying
+/// scheme but not the artifact bytes.
+export fn fn_unit_store_for_ns(c: Cache, ns: string) -> FnUnitStore {
+    let base = c.cache_dir + ns + "/"
     FnUnitStore {
         key_dir: base + "key/",
         art_dir: base + "art/",
         tmp_dir: base + "_tmp/",
     }
+}
+
+/// Build the store view over an existing build Cache. Pure path derivation;
+/// `fn_unit_store_init` materialises the directories.
+export fn fn_unit_store_for(c: Cache) -> FnUnitStore {
+    fn_unit_store_for_ns(c, "fnunits")
 }
 
 export fn fn_unit_store_init(s: FnUnitStore) -> bool {
