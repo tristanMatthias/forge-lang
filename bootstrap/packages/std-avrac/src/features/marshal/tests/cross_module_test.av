@@ -1,0 +1,37 @@
+// WHY: cross-module @marshal DECODE (t-tiz0). @marshal generates `to_bytes` as
+// an impl METHOD (composes across modules) but `from_bytes_<T>` as a FREE fn
+// called by BARE name. That free fn was synthesised un-exported (module-private)
+// AND cross-module export capture ran BEFORE derive expansion, so a consumer's
+// `use A.{from_bytes_T}` bound against A's pre-expand export set and failed
+// (F3101) — @marshal ENCODE composed cross-module, DECODE did not.
+//
+// The fix (t-tiz0): the derive @export-wraps the synthesised `from_bytes_<T>`
+// (struct + enum); register_macro_decls mirrors the export bit into the module
+// graph; and resolve_and_expand_program defers the pre-expand import-error bail
+// and re-resolves `use` aliases post-expansion against the now-complete module
+// tree. Codegen ignores @export, so every existing @marshal type's IR is
+// unchanged (diff-test byte-identical).
+//
+// Fixture: cross_module/{producer,main}.av — producer exports a recursive
+// struct<->enum cycle (Widget<->Tag, mirroring Diagnostic<->DiagnosticCause);
+// main imports Widget/Tag/from_bytes_Widget and round-trips a nested value.
+// Every field + the recursion must survive the byte round trip.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "@marshal from_bytes composes across module boundaries (t-tiz0)" {
+    then "a cross-module Widget<->Tag cycle round-trips all fields + recursion" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/features/marshal/tests/cross_module/main.av 2>&1 || true")
+        out.contains("root.id: ok")
+            && out.contains("root.name: ok")
+            && out.contains("root.kids.length: ok")
+            && out.contains("root.kids[0].id: ok")
+            && out.contains("root.kids[0].name: ok")
+            && out.contains("root.kids[0].kids[0].id: ok")
+            && out.contains("root.tag.Wrapped.inner.id: ok")
+            && out.contains("root.tag.Wrapped.inner.name: ok")
+            && out.contains("inner.tag.Labeled: ok")
+            && out.contains("leaf.tag.Plain: ok")
+            && !out.contains("FAIL")
+    }
+}

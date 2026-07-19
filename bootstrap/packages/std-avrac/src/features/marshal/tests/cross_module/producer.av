@@ -1,0 +1,33 @@
+// Producer module for the cross-module @marshal fixture (t-tiz0). Exports a
+// recursive struct<->enum cycle mirroring diagnostics' Diagnostic<->
+// DiagnosticCause: `Widget` (struct) carries a `Tag` (bare enum), and `Tag`'s
+// `Wrapped` variant carries a `Widget` — the cycle. Both are `@marshal`, so the
+// derive synthesises `to_bytes` (an impl METHOD — already composes cross-module)
+// plus `from_bytes_Widget` / `from_bytes_Tag` (FREE fns). The consumer module
+// imports `from_bytes_Widget`; that only resolves because the derive now
+// @export-wraps the synthesised free fn and the resolver captures that export
+// post-expansion (t-tiz0).
+//
+// A bare (non-generic) enum-typed field like `tag: Tag` is `ValueType.Struct`
+// at derive time (typeck reclassifies to `.Enum` only later), so it round-trips
+// through the nested-@marshal path — no generic enum here on purpose.
+//
+// Importing from @std/process loads the package so the `Marshal` trait the
+// derive references (`impl @std::process::Marshal for T`) is registered.
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+export enum Tag {
+    Plain,
+    Labeled(label: string, count: int),
+    Wrapped(inner: Widget),
+}
+
+@marshal
+export type Widget = {
+    id: int,
+    name: string,
+    tag: Tag,
+    kids: List<Widget>,
+}

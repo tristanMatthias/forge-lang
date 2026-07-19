@@ -1,0 +1,33 @@
+// Producer for the module-NESTED cross-module @marshal fixture (t-tiz0). Same
+// recursive struct<->enum cycle as ../cross_module/producer.av, plus a helper
+// that builds a sample value. The distinguishing feature of THIS fixture is
+// that the consumer's `use producer.{...}` lives INSIDE a module wrapper
+// (consumer.av loads as `Module(consumer, ..)`), so the import binds via
+// rewrite_uses' per-module re-resolution (resolve/names.av) reading the graph
+// export bit register_macro_decls now sets post-expansion — the exact shape of
+// the original ps3t.8.8 failure (query module doing `use diagnostics.{...}`).
+
+use @std.process.{bytes_builder, bytes_reader}
+
+@marshal
+export enum Tag {
+    Plain,
+    Labeled(label: string, count: int),
+    Wrapped(inner: Widget),
+}
+
+@marshal
+export type Widget = {
+    id: int,
+    name: string,
+    tag: Tag,
+    kids: List<Widget>,
+}
+
+/// A sample nested Widget exercising the full cycle. Built here so the
+/// consumer only has to DECODE across the module boundary (the t-tiz0 fix).
+export fn sample_widget() -> Widget {
+    let leaf = Widget { id: 3, name: "leaf", tag: Tag.Plain, kids: [] }
+    let child = Widget { id: 2, name: "child", tag: Tag.Labeled("lbl", 7), kids: [leaf] }
+    Widget { id: 1, name: "root", tag: Tag.Wrapped(child), kids: [child, leaf] }
+}

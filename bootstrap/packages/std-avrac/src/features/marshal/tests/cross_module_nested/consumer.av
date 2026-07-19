@@ -1,0 +1,36 @@
+// Consumer module for the module-NESTED cross-module @marshal fixture (t-tiz0).
+// consumer.av loads as `Module(consumer, ..)`, so this `use producer.{...}` —
+// importing the derive-generated free decoder `from_bytes_Widget` — is a
+// MODULE-NESTED cross-module import, resolved by rewrite_uses' per-module
+// alias pass against the post-expansion graph. Before t-tiz0 the alias never
+// bound (from_bytes was un-exported / its export invisible pre-expansion) and
+// the bare `from_bytes_Widget` call died as an undefined variable.
+use producer.{Widget, Tag, from_bytes_Widget, sample_widget}
+
+/// Encode with the method (already cross-module), decode with the imported free
+/// fn, and report per-field checks as one line the entry's main prints.
+export fn report() -> string {
+    let decoded = from_bytes_Widget(sample_widget().to_bytes())
+    mut out = ""
+    out = out + line("root.id", decoded.id == 1)
+    out = out + line("root.name", decoded.name == "root")
+    out = out + line("root.kids.length", decoded.kids.length == 2)
+    out = out + line("root.kids[0].kids[0].id", decoded.kids[0].kids[0].id == 3)
+    let tag_ok = match decoded.tag {
+        .Wrapped(inner) -> inner.id == 2 && inner.name == "child" && labeled_ok(inner.tag)
+        _ -> false
+    }
+    out = out + line("root.tag.Wrapped.cycle", tag_ok)
+    out
+}
+
+fn labeled_ok(t: Tag) -> bool {
+    match t {
+        .Labeled(l, c) -> l == "lbl" && c == 7
+        _ -> false
+    }
+}
+
+fn line(label: string, ok: bool) -> string {
+    if ok { "${label}: ok\n" } else { "${label}: FAIL\n" }
+}

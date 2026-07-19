@@ -1,0 +1,27 @@
+// WHY: the module-NESTED half of cross-module @marshal decode (t-tiz0). Where
+// cross_module_test.av drives a TOP-LEVEL `use producer.{from_bytes_Widget}`
+// (bound in the pre-expand pass, so the fix needs the deferred-bail +
+// post-expand alias re-resolution), this drives a consumer whose import lives
+// INSIDE a module — `Module(consumer) { use producer.{from_bytes_Widget} .. }`
+// — bound by rewrite_uses' per-module alias pass. That path reads the graph
+// export bit register_macro_decls now sets for a macro-synthesised @export
+// decl. This is the exact shape of the original ps3t.8.8 failure (`query`
+// importing `from_bytes_Diagnostic` from the sibling `diagnostics` module).
+//
+// Fixture: cross_module_nested/{entry,producer,consumer}.av — entry loads both
+// sibling modules; consumer imports + round-trips a recursive Widget<->Tag
+// value from producer.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "@marshal from_bytes composes across a module-nested import (t-tiz0)" {
+    then "a consumer module importing from_bytes_Widget round-trips the cycle" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/features/marshal/tests/cross_module_nested/entry.av 2>&1 || true")
+        out.contains("root.id: ok")
+            && out.contains("root.name: ok")
+            && out.contains("root.kids.length: ok")
+            && out.contains("root.kids[0].kids[0].id: ok")
+            && out.contains("root.tag.Wrapped.cycle: ok")
+            && !out.contains("FAIL")
+    }
+}

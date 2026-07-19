@@ -54,7 +54,7 @@ use resolve.{resolve_program}
 use resolve.{SymbolKind, SymbolTable, symbol_table_new, symbol_kind_is_type}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
 use core.{TypeParamEntry, type_param_has}
-use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
+use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_set_export, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 use list_ops.{list_any, list_map, list_push_copy}
 
@@ -1137,6 +1137,22 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
                 kind: if added.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym },
             })
         }
+        // t-tiz0: mirror the export bit into the graph's item_exports map.
+        // is_item_visible's PRIMARY visibility source for a `mod::name`-
+        // canonical item is module_graph_is_exported (the AST-items fallback
+        // only fires for extern / re-export / mangled-method canonicals that
+        // don't match `mod::name`). register_decls sets these during
+        // graph_build's walk, but this additive macro path never did — so a
+        // cross-module `use A.{from_bytes_T}` of a macro-EXPORTED free fn read
+        // the graph's default-private bit and was wrongly rejected as
+        // ImportPrivate. Setting it here (in-place on the shared item_exports
+        // map, keyed by the fully-qualified canonical) makes the post-expand
+        // re-resolution in resolve_and_expand_program see the export. Inert for
+        // same-module programs (they never import a sibling's macro decl), so
+        // IR stays byte-identical.
+        if added.exported {
+            let _ = module_graph_set_export(state.graph, added.canonical, true)
+        }
     }
 
     state with {
@@ -1145,6 +1161,26 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
         global_index: new_global_index,
         declared: declared_canonicals_build(new_items_list),
     }
+}
+
+/// Post-expand companion to `register_macro_decls` (t-tiz0). That fn is
+/// additive and DELIBERATELY skips `resolve_use_aliases` — re-running the whole
+/// alias pass over the original stmts would double-bag the pre-expand import
+/// diagnostics. But when a derive/macro synthesised a new EXPORTED decl
+/// (marshal's `from_bytes_<T>`), a consumer module's `use A.{from_bytes_T}` was
+/// bound — or, more often, FAILED — against A's PRE-expand export set, which
+/// could not contain a decl that only exists post-expand. Re-running use-alias
+/// resolution here, against the now-complete tree + graph (the caller passes
+/// the post-expand stmts and a state whose `register_macro_decls` already
+/// spliced the macro items in + set their graph export bits), binds those
+/// aliases and rebuilds the import bag FROM SCRATCH — so a now-visible name's
+/// stale phantom ImportNotFound/ImportPrivate is gone while a genuinely-missing
+/// import is re-reported. Pure + deterministic: a program that imports no
+/// sibling macro decl re-resolves to the identical alias set + bag, keeping IR
+/// byte-identical.
+export fn reresolve_use_aliases(state: ResolverState, ids: List<StmtId>) -> ResolverState {
+    let fresh = resolve_use_aliases(state.nodes, ids, state.tree, state.graph)
+    state with { aliases: fresh.aliases, bag: fresh.bag }
 }
 
 /// The module-path prefix of `canonical` when it qualifies `short`
