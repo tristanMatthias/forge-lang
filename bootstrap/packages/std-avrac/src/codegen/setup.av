@@ -611,6 +611,27 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
             return Result.Err(e)
         }
     }
+    // User-defined main (3b): the module-level statements run in
+    // __bs_top_level (defined in the wrapper unit) BEFORE main's body. The
+    // whole-program path patches user main to call __bs_top_level first
+    // (codegen_program); in the CGU model main is its OWN unit, so the same
+    // injection lives here. __bs_top_level is declare-only in this module —
+    // the call resolves at link against the wrapper's definition. When there
+    // is no module-level code (no __bs_top_level), this is a no-op.
+    if target == "main" {
+        let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
+        let main_fn = ctx.get_fn("main")
+        if top_fn != null && main_fn != null {
+            let user_entry = avra_llvm_get_entry_basic_block(main_fn)
+            let first_instr = avra_llvm_get_first_instruction(user_entry)
+            if first_instr != null {
+                avra_llvm_position_before(ctx.builder, first_instr)
+            } else {
+                avra_llvm_position_at_end(ctx.builder, user_entry)
+            }
+            avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
+        }
+    }
     ctx.cov_finalize_fn()
     let module_ok = ctx.verify_module()
     if !module_ok {
@@ -622,8 +643,8 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
 
 /// Per-fn CGU driver (ps3t.8.6.1): emit ONLY `target`'s per-fn module and
 /// write its IR to disk — the file/dispose wrapper around emit_one_fn_module,
-/// mirroring compile_program. Drives the `bs2 compile --emit_fn_module=<name>`
-/// seam (and the read side's per-unit emit in a later increment).
+/// mirroring compile_program. Used by build_fn_module (the in-process
+/// per-fn seam) and the read side's per-unit emit in a later increment.
 export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore) -> Result<int, string> {
     match emit_one_fn_module(target, ids, debug_null_checks, coverage, source_file, type_reg, library, store) {
         .Ok(ctx) -> {
