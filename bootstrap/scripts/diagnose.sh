@@ -1696,7 +1696,7 @@ mode_emit_gen_check() {
 // the canonical expression grammar and writes a runnable module: the emitted
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
-use @std.avrac.features.grammar.{avra_expr_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, emit_parser_source}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 fn imports_block() -> string {
@@ -1735,24 +1735,64 @@ fn harness_block() -> string {
     "}\n"
 }
 
+fn stmt_imports_block() -> string {
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, literal_node, run_hand, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, capval_tok_text}\n" +
+    "use @std.avrac.parse.{parser_new}\n" +
+    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, NodeStore, render_stmt_id}\n\n"
+}
+
+fn stmt_harness_block() -> string {
+    "fn gen_stmt(src: string) -> string {\n" +
+    "    let st = new_pstate(src)\n" +
+    "    let root = capval_to_stmt(st, parse_statement(st))\n" +
+    "    if st.had_error { return \"<gen parse error>\" }\n" +
+    "    render_stmt_id(st.store, root)\n" +
+    "}\n\n" +
+    "fn hand_stmt(src: string) -> string {\n" +
+    "    mut p = parser_new(src)\n" +
+    "    match p.parse_statement() {\n" +
+    "        .Ok(id) -> render_stmt_id(p.store, id)\n" +
+    "        .Err(_) -> \"<parse error>\"\n" +
+    "    }\n" +
+    "}\n\n" +
+    "fn agree(src: string) -> bool { gen_stmt(src) == hand_stmt(src) }\n\n" +
+    "fn main() {\n" +
+    "    let ok = agree(\"break\") && agree(\"continue\") &&\n" +
+    "        agree(\"return 42\") && agree(\"return 1 + 2\") && agree(\"return 1 + 2 * 3\") &&\n" +
+    "        agree(\"return (1 + 2) * 3\") &&\n" +
+    "        agree(\"1 + 2 * 3\") && agree(\"8 / 4 / 2\") && agree(\"-2 + 3\") &&\n" +
+    "        agree(\"1 < 2 == 3\") && agree(\"(1 + 2) * 3\")\n" +
+    "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
+    "}\n"
+}
+
 fn main() {
-    let src = imports_block() + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
-    let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", src)
-    println("wrote build/emit_gen/generated_parser.av")
+    let expr_src = imports_block() + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
+    let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", expr_src)
+    let stmt_src = stmt_imports_block() + emit_parser_source(avra_stmt_grammar()) + "\n" + stmt_harness_block()
+    let _ = avra_selfhost_write_file("build/emit_gen/generated_stmt_parser.av", stmt_src)
+    println("wrote build/emit_gen/generated_parser.av + generated_stmt_parser.av")
 }
 AVEOF
-  log "emit-gen-check: rendering the generated parser via emit.av"
+  local gen_stmt="$dir/generated_stmt_parser.av"
+  log "emit-gen-check: rendering the generated parsers via emit.av"
   run_fg "$driver" >/dev/null || die "emit-gen-check: driver (emit.av render) failed"
   [ -f "$gen" ] || die "emit-gen-check: driver did not write $gen"
-  log "emit-gen-check: compiling + running the GENERATED parser (differential vs hand parser)"
+  [ -f "$gen_stmt" ] || die "emit-gen-check: driver did not write $gen_stmt"
+  # One family per generated module: compile + run each, assert its differential
+  # against the hand parser printed GENPASS.
+  emit_gen_check_family "expression" "$gen"
+  emit_gen_check_family "statement" "$gen_stmt"
+  ok "emit-gen-check: generated parsers (expression + statement) compile + parse byte-equivalent to the hand parser (GENPASS)"
+}
+
+# Compile + run one generated-parser module and assert GENPASS.
+emit_gen_check_family() {
+  local label="$1" file="$2"
+  log "emit-gen-check: compiling + running the GENERATED $label parser (differential vs hand parser)"
   local out
-  out=$(run_fg "$gen" 2>/dev/null) || die "emit-gen-check: generated parser failed to compile/run"
-  if printf '%s\n' "$out" | grep -q GENPASS; then
-    ok "emit-gen-check: generated parser compiles + parses byte-equivalent to the hand parser (GENPASS)"
-    return 0
-  fi
-  printf '%s\n' "$out" >&2
-  die "emit-gen-check: generated parser did NOT match the hand parser (no GENPASS)"
+  out=$(run_fg "$file" 2>/dev/null) || die "emit-gen-check: generated $label parser failed to compile/run"
+  printf '%s\n' "$out" | grep -q GENPASS || { printf '%s\n' "$out" >&2; die "emit-gen-check: generated $label parser did NOT match the hand parser (no GENPASS)"; }
 }
 
 # Read-only probe of ensure_bs2's staleness decision — prints `fresh`

@@ -1,0 +1,64 @@
+// WHY: pins the macro-declaration registration contract (t-dg7r). A
+// macro-emitted declaration must register through the SAME path as a
+// hand-written one. `collect_macro_items` reuses the batch
+// `collect_item_from_stmt`, so the two registration surfaces are
+// symmetric by construction: `@export` on a spliced decl is honored
+// (the prior bespoke macro collector recursed through the `Annotated`
+// wrapper DISCARDING the annotation, registering every macro decl
+// private), and `Const`/`Impl` spliced decls now flow through the same
+// arms instead of falling through and being dropped.
+//
+// This is a smoke/regression guard on the unified path: a @comptime
+// macro splices an `@export`-annotated `fn gen_helper` onto its target,
+// and a sibling calls it — the program must compile and run. It guards
+// against a collector that throws away annotated macro decls (a naive
+// refactor of the shared path would). The exported bit itself is only
+// read at a cross-module `use` site; a full cross-module before/after
+// discriminator needs multi-file macro-fixture infrastructure (modules
+// are files, not inline blocks), so the safety proof for the visibility
+// change is the diff-test byte-identical result plus the shared-path
+// symmetry — see the ticket.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+/// A @comptime macro that emits `@export fn gen_helper` onto its target,
+/// plus the imports it needs. Shared by the specs below.
+fn macro_prelude() -> string {
+    "use @std.avrac.core.{Stmt, ParamEntry, TypeParamEntry, ValueType, Expr, Annotation}\n" +
+    "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id, synth_stmt_ids}\n" +
+    "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, DeclSymbol, DeclKind, MacroProvenance}\n" +
+    "use @std.avrac.diagnostics.{Span}\n" +
+    "\n" +
+    "@comptime\n" +
+    "fn make_helper(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {\n" +
+    "    let empty_params: List<ParamEntry> = []\n" +
+    "    let empty_tp: List<TypeParamEntry> = []\n" +
+    "    let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.Number(\"42\")))]\n" +
+    "    let fn_decl = Stmt.Function(\"gen_helper\", empty_tp, empty_params, ValueType.Int, synth_stmt_ids(body))\n" +
+    "    let exp: List<Annotation> = [Annotation { name: \"export\", arg_ids: none }]\n" +
+    "    let decls: List<Stmt> = [Stmt.Annotated(exp, synth_stmt_id(fn_decl))]\n" +
+    "    let introduces: List<DeclSymbol> = [\n" +
+    "        DeclSymbol { name: \"gen_helper\", kind: DeclKind.Function, canonical_path: \"gen_helper\" }\n" +
+    "    ]\n" +
+    "    let provenance = MacroProvenance {\n" +
+    "        macro_name: \"make_helper\", target_canonical: \"ph\",\n" +
+    "        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: \"\" }\n" +
+    "    }\n" +
+    "    ResolvedDecls { decls, introduces, provenance }\n" +
+    "}\n"
+}
+
+spec "macro-emitted @export decl flows through the unified registration path (t-dg7r)" {
+    then "an @export-annotated macro decl compiles and runs when a sibling calls it" {
+        let out = write_fixture_and_run("/tmp/avra_macro_export_local_test.av",
+            macro_prelude() +
+            "\n" +
+            "@expand(make_helper)\n" +
+            "fn ph() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    println(\"val=\" + string(gen_helper()))\n" +
+            "}\n")
+        out.contains("val=42")
+    }
+}
