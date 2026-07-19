@@ -51,6 +51,7 @@ use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Patt
 use core.{NodeStore, ExprId, StmtId, PatId}
 use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
+use resolve.{SymbolKind, SymbolTable, symbol_table_new, symbol_kind_is_type}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
 use core.{TypeParamEntry, type_param_has}
 use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_new, ID_NONE}
@@ -64,14 +65,14 @@ use list_ops.{list_any, list_map, list_push_copy}
 // and links to child modules.
 
 /// One declaration registered inside a module: short name, fully
-/// qualified canonical path, export visibility flag.
+/// qualified canonical path, export visibility flag, and the symbol
+/// kind (the categorical half of the item's content-addressed identity
+/// — see symbols.av).
 type ModuleItemEntry = {
     short_name: string,
     canonical: string,
     exported: bool,
-    // True for nominal TYPE declarations — mirrors GraphItem.is_type;
-    // the declared-canonicals probe (type resolution) filters on it.
-    is_type: bool,
+    kind: SymbolKind,
 }
 
 /// Hierarchical module tree built from `Stmt.Module` nodes. Each
@@ -171,7 +172,7 @@ fn declared_canonicals_build(items: List<ModuleItemEntry>) -> ptr {
     mut i = 0
     while i < items.length {
         let it = items[i]
-        if it.is_type {
+        if symbol_kind_is_type(it.kind) {
             avra_map_set_cstr(set, it.canonical, 1)
         }
         i = i + 1
@@ -203,6 +204,7 @@ fn global_item_reg_build(items: List<ModuleItemEntry>) -> GlobalItemReg {
     }
     GlobalItemReg { canonicals, idx }
 }
+
 
 fn global_item_lookup(reg: GlobalItemReg, name: string) -> string {
     if avra_map_has_cstr(reg.idx, name) == 0 { return "" }
@@ -271,12 +273,24 @@ fn item_is_exported(items: List<ModuleItemEntry>, name: string) -> bool {
 /// pass. Iterates the List<GraphItem> in reverse to preserve the
 /// prepend semantics of the previous cons-list form — graph_build
 /// pushes in source order, so the resulting list has first-seen-last.
+///
+/// `kind` is a don't-care: this list feeds only the name-keyed global
+/// index and the declared-canonicals set (neither reads kind). Real
+/// (path, kind) symbol identities are interned separately in
+/// `register_decls` via `intern_item_symbols` / `intern_tree_symbols`,
+/// which walk the AST where the kind is known.
 fn build_global_index_from_graph(items: List<GraphItem>) -> List<ModuleItemEntry> {
     mut out: List<ModuleItemEntry> = []
     mut i = items.length - 1
     while i >= 0 {
         let it = items[i]
-        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported, is_type: it.is_type })
+        // GraphItem (core layer) can't name SymbolKind — it carries the
+        // coarse is_type bit; map it back so the probe (declared_canonicals_build)
+        // sees types as types. Non-types collapse to FnSym: the graph-path index
+        // never distinguishes fn/const/method downstream, and this set is used
+        // only for the type probe.
+        let k = if it.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym }
+        out.push(ModuleItemEntry { short_name: it.short_name, canonical: it.canonical, exported: it.exported, kind: k })
         i = i - 1
     }
     out
@@ -361,42 +375,42 @@ fn collect_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, export
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: false })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.FnSym })
         }
         .ExternFn(name, _, _) -> {
             // Extern fns keep bare names (C ABI) but are registered
             // for visibility tracking
-            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, is_type: false })
+            out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, kind: SymbolKind.FnSym })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.TypeSym })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.NewtypeSym })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.UnionAliasSym })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.ShapeSym })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.EnumSym })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: true })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.TraitSym })
         }
         // Module-level consts are visible to `use mod.{NAME}` callers
         // exactly like fns and types.
         .Const(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
-            out.push(ModuleItemEntry { short_name: name, canonical, exported, is_type: false })
+            out.push(ModuleItemEntry { short_name: name, canonical, exported, kind: SymbolKind.ConstSym })
         }
         .Impl(_, methods) -> collect_impl_items(store, methods, mod_path, out)
         .Annotated(annotations, inner) -> {
@@ -431,10 +445,11 @@ fn collect_reexport_items(names: List<ParamEntry>, source_mod: string, out_ref: 
     while i < names.length {
         let name = names[i].name
         let canonical = type_qualified_name(source_mod, name)
-        // Re-exports don't carry the source item's kind; is_type: false is
-        // safe — their canonical anchors at the SOURCE module, so the
-        // local-decl type probe (current module) can never match them.
-        out.push(ModuleItemEntry { short_name: name, canonical, exported: true, is_type: false })
+        // AliasSym: names another module's definition — never interned
+        // as a symbol of its own (the definition interns in its module).
+        // Not a type kind, so the declared-canonicals probe skips it — safe:
+        // its canonical anchors at the SOURCE module, never the current one.
+        out.push(ModuleItemEntry { short_name: name, canonical, exported: true, kind: SymbolKind.AliasSym })
         i = i + 1
     }
 }
@@ -450,7 +465,7 @@ fn collect_impl_items(store: NodeStore, methods: List<StmtId>, mod_path: string,
             .Function(name, _, _, _, _) -> {
                 // Impl methods are already mangled as Type__method.
                 // Keep bare name — method call codegen uses Type__method directly.
-                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, is_type: false })
+                out.push(ModuleItemEntry { short_name: name, canonical: name, exported: true, kind: SymbolKind.MethodSym })
             }
             _ -> {}
         }
@@ -674,6 +689,11 @@ type NameCtx = {
     // Canonical names of every module-level const declaration; lets the
     // uppercase-ident rewrite qualify const references specifically.
     const_index: ConstIndex,
+    // The resolver's symbol interner (ResolverState.symbols). The rewrite
+    // interns impl METHODS here — the one item kind whose qualified
+    // identity (`mod::Foo__run`) only exists once the impl target has
+    // resolved. Insert-once, so re-resolve passes are no-ops.
+    symbols: SymbolTable,
 }
 
 /// One generic type declaration's type-params, indexed for impl-method
@@ -891,6 +911,10 @@ export type ResolverState = {
     // allocate flipped id payloads through it (comptime runtimes seed
     // their `nodes` from here).
     nodes: NodeStore,
+    // The interned symbol model (ps3t.8.4 / L6 §6): every declared item's
+    // content-addressed (qualified path + kind) identity. Built by
+    // register_decls; register_macro_decls interns spliced decls in place.
+    symbols: SymbolTable,
 }
 
 /// Decl-scan half of `resolve_names`: builds the module tree, graph,
@@ -909,6 +933,12 @@ export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
     let global_index_list = build_global_index_from_graph(graph.all_items)
     let global_index = global_item_reg_build(global_index_list)
     let reg = type_registry_new()
+    // Intern the symbol model (ps3t.8.4): every declared item — root-level
+    // (not in the tree, which only holds Module bodies) and module-nested —
+    // gets its content-addressed (qualified path + kind) identity.
+    let symbols = symbol_table_new()
+    intern_item_symbols(symbols, collect_module_items(store, ids, ""))
+    intern_tree_symbols(symbols, tree)
     ResolverState {
         tree,
         graph,
@@ -918,6 +948,47 @@ export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
         type_reg: reg,
         bag: use_result.bag,
         nodes: store,
+        symbols,
+    }
+}
+
+/// Intern every collected item's (path, kind) identity. Two kinds are
+/// skipped here:
+///  - AliasSym (re-exports): an alias names another module's definition,
+///    which interns when its own module is walked.
+///  - MethodSym (impl methods): at collect time the mangled name still
+///    carries the impl target's BARE type (`Foo__run`), so same-named
+///    types in different modules would collapse into one symbol. The
+///    method interns during the use-site rewrite instead
+///    (`rewrite_impl_method_stmt`), where the target has resolved to its
+///    qualified name and the identity is the true `mod::Foo__run`.
+fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
+    mut i = 0
+    while i < items.length {
+        // `entry`, not `it`: inside a method-call argument a bare `it`
+        // is the closure pronoun, not a local (same gotcha as
+        // global_item_reg_build's bind-to-locals comment).
+        let entry = items[i]
+        match entry.kind {
+            .AliasSym or .MethodSym -> {}
+            .FnSym or .TypeSym or .EnumSym or .TraitSym or .NewtypeSym or .UnionAliasSym or .ShapeSym or .ConstSym -> {
+                let _ = table.intern(entry.canonical, entry.kind, entry.exported)
+            }
+        }
+        i = i + 1
+    }
+}
+
+/// Recursive twin of `intern_item_symbols` over the module tree: intern
+/// each node's items, then descend into children and siblings.
+fn intern_tree_symbols(table: SymbolTable, tree: ModuleNode) {
+    match tree {
+        .End -> {}
+        .Node(_, _, items, children, next) -> {
+            intern_item_symbols(table, items)
+            intern_tree_symbols(table, children)
+            intern_tree_symbols(table, next)
+        }
     }
 }
 
@@ -942,6 +1013,7 @@ export fn rewrite_uses(ids: List<StmtId>, state: ResolverState) -> List<StmtId> 
         type_decl_tps: tps,
         module_top: false,
         const_index: const_index_build(state.nodes, ids),
+        symbols: state.symbols,
     }
     rewrite_stmt_ids(ctx, ids)
 }
@@ -972,6 +1044,7 @@ export fn rewrite_uses_macro_only(ids: List<StmtId>, state: ResolverState) -> Li
         type_decl_tps: tps,
         module_top: false,
         const_index: const_index_build(state.nodes, ids),
+        symbols: state.symbols,
     }
     rewrite_macro_stmts(ctx, ids)
 }
@@ -1011,7 +1084,7 @@ fn rewrite_macro_stmts(ctx: NameCtx, ids: List<StmtId>) -> List<StmtId> {
 /// import diagnostics and double-bag them).
 export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> ResolverState {
     mut new_items: List<GraphItem> = []
-    collect_macro_items(state.nodes, ids, "", new_items)
+    collect_macro_items(state.nodes, ids, "", new_items, state.symbols)
     if new_items.length == 0 { return state }
 
     // Augment graph.all_items by appending the new entries.
@@ -1026,12 +1099,18 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
     // once post-expand from cli/main.av). Re-using the same map ptr
     // would let stale indices from earlier calls leak into the new
     // ResolverState's `canonicals` list and produce OOB lookups.
+    //
+    // `kind` here is a don't-care: this throwaway list feeds only the
+    // name-keyed global index and the declared-canonicals set, neither of
+    // which reads kind. The real (path, kind) symbol identities for the
+    // spliced decls were already interned by `collect_macro_items` above.
     mut new_items_list: List<ModuleItemEntry> = []
     for it in updated_all {
         let sn = it.short_name
         let canon = it.canonical
         let exp = it.exported
-        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp, is_type: it.is_type })
+        let k = if it.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym }
+        new_items_list.push(ModuleItemEntry { short_name: sn, canonical: canon, exported: exp, kind: k })
     }
     let new_global_index = global_item_reg_build(new_items_list)
 
@@ -1050,7 +1129,7 @@ export fn register_macro_decls(state: ResolverState, ids: List<StmtId>) -> Resol
                 short_name: added.short_name,
                 canonical: added.canonical,
                 exported: added.exported,
-                is_type: added.is_type,
+                kind: if added.is_type { SymbolKind.TypeSym } else { SymbolKind.FnSym },
             })
         }
     }
@@ -1091,7 +1170,7 @@ fn module_tree_add_item(tree: ModuleNode, path: string, item: ModuleItemEntry) -
     }
 }
 
-fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>) {
+fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
     mut out = acc
     for id in ids {
         // Peel Annotated wrappers for the DISPATCH (an
@@ -1102,11 +1181,11 @@ fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, ac
         match stmt_unwrap(store, store.stmts.get(id)) {
             .Module(name, body) -> {
                 let inner_path = type_qualified_name(mod_path, name)
-                collect_macro_items(store, body, inner_path, out)
+                collect_macro_items(store, body, inner_path, out, symbols)
             }
             _ -> {
                 if store.is_from_macro(id) {
-                    collect_macro_item_from_stmt(store, stmt_unwrap(store, store.stmts.get(id)), mod_path, out)
+                    collect_macro_item_from_stmt(store, store.stmts.get(id), mod_path, out, symbols)
                 }
             }
         }
@@ -1116,41 +1195,51 @@ fn collect_macro_items(store: NodeStore, ids: List<StmtId>, mod_path: string, ac
 /// Sister of `collect_item_from_stmt` but emits `GraphItem` directly
 /// — the additive register augments `graph.all_items` which is a
 /// `List<GraphItem>`, not the per-module `ModuleItemEntry` list.
-fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, acc: List<GraphItem>) {
+/// Interns each spliced decl's (path, kind) identity as it collects,
+/// keeping the symbol model complete across macro expansion.
+fn collect_macro_item_from_stmt(store: NodeStore, stmt: Stmt, mod_path: string, acc: List<GraphItem>, symbols: SymbolTable) {
     mut out = acc
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.FnSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: false })
         }
         .ExternFn(name, _, _) -> {
+            let _ = symbols.intern(name, SymbolKind.FnSym, true)
             out.push(GraphItem { short_name: name, canonical: name, exported: true, is_type: false })
         }
         .TypeDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.TypeSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .EnumDecl(name, _, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.EnumSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .NewtypeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.NewtypeSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .UnionAliasDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.UnionAliasSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .ShapeDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.ShapeSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
         .TraitDecl(name, _) -> {
             let canonical = type_qualified_name(mod_path, name)
+            let _ = symbols.intern(canonical, SymbolKind.TraitSym, false)
             out.push(GraphItem { short_name: name, canonical, exported: false, is_type: true })
         }
-        .Annotated(_, inner) -> collect_macro_item_from_stmt(store, store.stmts.get(inner), mod_path, out)
+        .Annotated(_, inner) -> collect_macro_item_from_stmt(store, store.stmts.get(inner), mod_path, out, symbols)
         _ -> {}
     }
 }
@@ -1707,6 +1796,11 @@ fn rewrite_impl_method_stmt(ctx: NameCtx, qualified_type: string, stmt: Stmt) ->
         .Function(name, tp, params, rvt, body) -> {
             let mn = method_from_mangled(name)
             let qualified_name = method_mangled_name(qualified_type, mn)
+            // Intern the method's symbol identity HERE — the one place the
+            // impl target has resolved to its qualified name, so
+            // `a::Foo__run` and `b::Foo__run` are distinct symbols
+            // (collect-time skips MethodSym; see intern_item_symbols).
+            let _ = ctx.symbols.intern(qualified_name, SymbolKind.MethodSym, true)
             let ctx_tp = ctx_with_type_params(ctx, tp)
             let rp = rewrite_param_types(ctx_tp, qualify_self_param(ctx_tp, params, qualified_type))
             Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx_tp, rvt), rewrite_stmt_ids(bind_params_ctx(ctx_tp, rp), body))

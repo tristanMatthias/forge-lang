@@ -1,0 +1,157 @@
+// WHY: the L6 symbol model (ps3t.8.4 / design doc
+// docs/2026_07_16_L6_QUERY_ENGINE_DESIGN.md §6) — one stable,
+// content-addressed identity per declared item. A symbol's identity is its
+// DEFINITION SITE, not its name: two `foo`s in different modules are
+// different symbols because their qualified paths differ, and a fn `foo`
+// and a type `foo` at the same path are different symbols because their
+// kinds differ. Concretely:
+//
+//     sym_id = content_id_for(qualified-path + "#" + kind-tag)
+//
+// This REUSES the one content-hash identity already in tree —
+// `core::content_id_for` (FNV-1a-64), the same fn behind TypeId
+// (`type_registry_register`) and the on-disk metadata symbol id
+// (`build::metadata::sym_id_for`) — so a symbol's id is stable across
+// processes, builds, and registries, and needs no counter. No second
+// hashing scheme is invented here.
+//
+// The table below is the resolver's interner: `register_decls` interns
+// every declared item as it collects the module tree, and query-shaped
+// resolution (queries.av) answers `resolve(ref)` with these ids.
+//
+//   read this file when:  working on symbol identity or the resolver's
+//                         interned symbol table
+//   do NOT read this file when:  the issue is scope validation (mod.av)
+//                                or ident rewriting (names.av)
+
+use core.{content_id_for}
+
+/// The C int-keyed map primitive (int -> int), declared per-module the
+/// same way core/side_table.av and query/mod.av declare it (extern decls
+/// don't cross modules). Maps a sym id to its slot in the table.
+extern fn avra_intmap_new() -> ptr
+extern fn avra_intmap_set(map: ptr, key: int, value: int)
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// The categorical half of a symbol's identity. Wider than
+/// `core::TypeKind` (which covers only registered types): a symbol can be
+/// any declared item — fn, type, enum, trait, newtype, union alias,
+/// shape, const, or impl method. `AliasSym` marks re-export entries
+/// (`export use mod.{name}`): an alias names another module's definition,
+/// so it carries the DEFINITION's path and is never interned as a symbol
+/// of its own (the definition interns when its own module is walked).
+/// `MethodSym` interns during the use-site rewrite — the point where the
+/// impl target has resolved, so the identity is the qualified
+/// `mod::Type__method`, never the collect-time bare mangling.
+export enum SymbolKind {
+    FnSym,
+    TypeSym,
+    EnumSym,
+    TraitSym,
+    NewtypeSym,
+    UnionAliasSym,
+    ShapeSym,
+    ConstSym,
+    MethodSym,
+    AliasSym,
+}
+
+/// Stable tag per kind — the kind half of the identity encoding. These
+/// tags are part of the ON-DISK-STABLE alphabet (like the FNV constants
+/// in core/type_registry.av): changing one reassigns every symbol id of
+/// that kind, so they MUST NOT change.
+export fn symbol_kind_tag(kind: SymbolKind) -> string {
+    match kind {
+        .FnSym -> "fn"
+        .TypeSym -> "type"
+        .EnumSym -> "enum"
+        .TraitSym -> "trait"
+        .NewtypeSym -> "newtype"
+        .UnionAliasSym -> "union"
+        .ShapeSym -> "shape"
+        .ConstSym -> "const"
+        .MethodSym -> "method"
+        .AliasSym -> "alias"
+    }
+}
+
+/// True for the nominal TYPE kinds (type/enum/trait/newtype/union/shape)
+/// — everything that names a type in type position, as opposed to a
+/// value (fn/const/method) or an alias. The declared-canonicals probe
+/// (resolve/names.av) filters on this so a same-module fn/const can never
+/// shadow an imported type during type resolution.
+export fn symbol_kind_is_type(kind: SymbolKind) -> bool {
+    match kind {
+        .TypeSym -> true
+        .EnumSym -> true
+        .TraitSym -> true
+        .NewtypeSym -> true
+        .UnionAliasSym -> true
+        .ShapeSym -> true
+        .FnSym -> false
+        .ConstSym -> false
+        .MethodSym -> false
+        .AliasSym -> false
+    }
+}
+
+/// A symbol's content-addressed identity: FNV-1a-64 over
+/// `qualified-path#kind-tag`. `#` cannot appear in a qualified path
+/// (identifier chars + `::` only), so the encoding is injective — no
+/// (path, kind) pair shares another pair's encoded string.
+export fn symbol_id(qualified_path: string, kind: SymbolKind) -> int {
+    content_id_for("${qualified_path}#${symbol_kind_tag(kind)}")
+}
+
+/// One interned symbol: its id, definition path, kind, and export
+/// visibility as recorded at the definition site.
+export type Symbol = {
+    sym: int,
+    path: string,
+    kind: SymbolKind,
+    exported: bool,
+}
+
+/// The resolver's symbol interner: id -> Symbol, insert-once. Built by
+/// `register_decls` from the declaration walk; identity is content-
+/// addressed so re-interning the same (path, kind) is a no-op by
+/// construction.
+export type SymbolTable = {
+    idx: ptr,
+    syms: List<Symbol>,
+}
+
+/// A fresh, empty symbol table.
+export fn symbol_table_new() -> SymbolTable {
+    let syms: List<Symbol> = []
+    SymbolTable { idx: avra_intmap_new(), syms }
+}
+
+impl SymbolTable {
+    /// Intern (path, kind, exported) and return the stable sym id.
+    /// Idempotent — an already-interned identity keeps its first-seen
+    /// record (matching the global index's first-seen-wins convention),
+    /// so duplicate declarations (e.g. the same extern fn declared in
+    /// several modules) collapse to one symbol.
+    fn intern(self, path: string, kind: SymbolKind, exported: bool) -> int {
+        let id = symbol_id(path, kind)
+        if avra_intmap_has(self.idx, id) == 0 {
+            let slot = self.syms.length
+            self.syms.push(Symbol { sym: id, path, kind, exported })
+            avra_intmap_set(self.idx, id, slot)
+        }
+        id
+    }
+
+    /// The interned symbol for `id`, or null when never interned.
+    fn lookup(self, id: int) -> Symbol? {
+        if avra_intmap_has(self.idx, id) == 0 { return null }
+        self.syms[avra_intmap_get(self.idx, id)]
+    }
+
+    /// Number of distinct symbols interned.
+    fn size(self) -> int {
+        self.syms.length
+    }
+}

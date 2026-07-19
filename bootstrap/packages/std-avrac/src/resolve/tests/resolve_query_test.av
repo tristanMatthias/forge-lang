@@ -1,0 +1,130 @@
+// WHY: acceptance spec for name-resolution-as-query (ps3t.8.4 / design doc
+// §6) — the SEMANTICS of resolve(ref) behind the L6 engine: imports
+// resolve through the exporter's SURFACE (exported items only), the scope
+// chain resolves innermost-first through each module's INDEX (private
+// items visible to their own module), diagnostics ride with answers
+// (ImportPrivate / ImportNotFound / UndefinedVariable), and every winning
+// answer is the symbols.av content-addressed sym_id. The invalidation /
+// early-cutoff properties (private edits don't invalidate importers) are
+// proven separately by resolve_query_oracle_test.av.
+
+use @std.avrac.resolve.{SymbolKind, symbol_id}
+use @std.avrac.resolve.{RqDecl, RqImport, RqRef, RqValue, RqInput, rq_db_new, rq_decls_input, rq_ref_input, rq_ref_key, rq_module_key}
+use @std.avrac.resolve.{RQ_FAM_RESOLVE, RQ_FAM_SURFACE, RQ_FAM_INDEX}
+use @std.avrac.query.{Db, Fetched, qk}
+use @std.avrac.diagnostics.{diag_code_str}
+
+fn d(name: string, kind: SymbolKind, sig: string, body: string, exported: bool) -> RqDecl {
+    RqDecl { name, kind, sig, body, exported }
+}
+
+fn imp(short_name: string, from_module: string) -> RqImport {
+    RqImport { short_name, from_module }
+}
+
+fn ref_site(name: string, chain: List<string>, imports: List<RqImport>) -> RqRef {
+    RqRef { name, scope_chain: chain, imports }
+}
+
+fn apply(db: Db<RqValue>, w: RqInput) {
+    db.set_input(w.q, w.value, w.value_hash)
+}
+
+/// A database over the standing two-module scenario: `lib` exports `get`
+/// and `Thing`, keeps `helper` private; `app` declares its own
+/// `local_fn` (private) and `get` is NOT among its items.
+fn scenario_db() -> Db<RqValue> {
+    let mut db: Db<RqValue> = rq_db_new()
+    apply(db, rq_decls_input("lib", [
+        d("get", SymbolKind.FnSym, "fn(int)->int", "body:get:v1", true),
+        d("helper", SymbolKind.FnSym, "fn()->int", "body:helper:v1", false),
+        d("Thing", SymbolKind.TypeSym, "{x:int}", "", true),
+    ]))
+    apply(db, rq_decls_input("app", [
+        d("local_fn", SymbolKind.FnSym, "fn()->int", "body:local:v1", false),
+    ]))
+    db
+}
+
+/// Register `site` as a REF input and fetch its RESOLVE answer.
+fn resolve_of(db: Db<RqValue>, site: RqRef) -> Fetched<RqValue> {
+    apply(db, rq_ref_input(site))
+    match db.fetch(qk(RQ_FAM_RESOLVE, rq_ref_key(site))) {
+        .Ok(f) -> f
+        .Err(_) -> {
+            let no_diags = []
+            Fetched { value: RqValue.Resolved(-1), diags: no_diags }
+        }
+    }
+}
+
+fn sym_of(f: Fetched<RqValue>) -> int {
+    match f.value {
+        .Resolved(sym) -> sym
+        _ -> -1
+    }
+}
+
+fn first_code(f: Fetched<RqValue>) -> string {
+    if f.diags.length == 0 { return "-" }
+    diag_code_str(f.diags[0].code)
+}
+
+spec "resolve(ref) as a query: lookup semantics (ps3t.8.4)" {
+    then "an imported exported fn resolves to its content-addressed sym_id, no diagnostics" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("get", ["app"], [imp("get", "lib")]))
+        sym_of(f) == symbol_id("lib::get", SymbolKind.FnSym) && f.diags.length == 0
+    }
+    then "an imported exported TYPE resolves under its own kind's identity" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("Thing", ["app"], [imp("Thing", "lib")]))
+        sym_of(f) == symbol_id("lib::Thing", SymbolKind.TypeSym) && f.diags.length == 0
+    }
+    then "importing a PRIVATE item fails with ImportPrivate (F3102) and sym 0" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("helper", ["app"], [imp("helper", "lib")]))
+        sym_of(f) == 0 && first_code(f) == "F3102"
+    }
+    then "importing a name the exporter never declared fails with ImportNotFound (F3101)" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("ghost", ["app"], [imp("ghost", "lib")]))
+        sym_of(f) == 0 && first_code(f) == "F3101"
+    }
+    then "a module's own PRIVATE item resolves through the scope chain" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("local_fn", ["app"], []))
+        sym_of(f) == symbol_id("app::local_fn", SymbolKind.FnSym) && f.diags.length == 0
+    }
+    then "the scope chain resolves innermost-first — the inner module's item shadows the outer's" {
+        let mut db: Db<RqValue> = rq_db_new()
+        apply(db, rq_decls_input("outer", [d("pick", SymbolKind.FnSym, "fn()->int", "b1", false)]))
+        apply(db, rq_decls_input("outer::inner", [d("pick", SymbolKind.FnSym, "fn()->int", "b2", false)]))
+        let f = resolve_of(db, ref_site("pick", ["outer::inner", "outer"], []))
+        sym_of(f) == symbol_id("outer::inner::pick", SymbolKind.FnSym)
+    }
+    then "a visible import WINS over a same-named scope-chain sibling (alias-first, rewrite_ident order)" {
+        let mut db: Db<RqValue> = rq_db_new()
+        apply(db, rq_decls_input("lib", [d("clash", SymbolKind.FnSym, "fn()->int", "b1", true)]))
+        apply(db, rq_decls_input("app", [d("clash", SymbolKind.FnSym, "fn()->int", "b2", false)]))
+        let f = resolve_of(db, ref_site("clash", ["app"], [imp("clash", "lib")]))
+        sym_of(f) == symbol_id("lib::clash", SymbolKind.FnSym)
+    }
+    then "a name visible nowhere is UndefinedVariable (F3000) with sym 0" {
+        let db = scenario_db()
+        let f = resolve_of(db, ref_site("nowhere", ["app"], []))
+        sym_of(f) == 0 && first_code(f) == "F3000"
+    }
+    then "root-level (empty module path) items resolve with bare-name identity" {
+        let mut db: Db<RqValue> = rq_db_new()
+        apply(db, rq_decls_input("", [d("main_helper", SymbolKind.FnSym, "fn()->int", "b", false)]))
+        let f = resolve_of(db, ref_site("main_helper", [""], []))
+        sym_of(f) == symbol_id("main_helper", SymbolKind.FnSym)
+    }
+    then "two refs with identical (name, chain, imports) share ONE memo cell — same key" {
+        let a = ref_site("get", ["app"], [imp("get", "lib")])
+        let b = ref_site("get", ["app"], [imp("get", "lib")])
+        let c = ref_site("get", ["app"], [])
+        rq_ref_key(a) == rq_ref_key(b) && rq_ref_key(a) != rq_ref_key(c)
+    }
+}

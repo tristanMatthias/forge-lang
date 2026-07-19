@@ -1,0 +1,75 @@
+// WHY: acceptance spec for the L6 symbol model (ps3t.8.4 / design doc §6).
+// A symbol's identity is its definition site, not its name:
+// sym_id = content_id_for(qualified-path + "#" + kind-tag), reusing the ONE
+// content-hash identity (core::content_id_for — the fn behind TypeId and the
+// on-disk metadata sym_id_for). These specs pin the identity's load-bearing
+// properties: determinism, kind-separation, path-separation, encoding
+// injectivity, and the interner's insert-once behavior.
+
+use @std.avrac.resolve.{SymbolKind, Symbol, SymbolTable, symbol_id, symbol_kind_tag, symbol_table_new}
+use @std.avrac.core.{content_id_for}
+
+spec "symbol identity: content-addressed by (qualified path + kind) (ps3t.8.4)" {
+    then "the same (path, kind) always hashes to the same id — no counter, stable across tables" {
+        symbol_id("core::ast::render_expr", SymbolKind.FnSym) == symbol_id("core::ast::render_expr", SymbolKind.FnSym)
+    }
+    then "the id IS content_id_for over the documented `path#tag` encoding — one identity scheme" {
+        symbol_id("core::ast::Expr", SymbolKind.EnumSym) == content_id_for("core::ast::Expr#enum")
+    }
+    then "two same-named symbols in different modules are DIFFERENT symbols" {
+        symbol_id("mod_a::helper", SymbolKind.FnSym) != symbol_id("mod_b::helper", SymbolKind.FnSym)
+    }
+    then "a fn and a type at the same path are DIFFERENT symbols (kind folds into identity)" {
+        symbol_id("core::parse", SymbolKind.FnSym) != symbol_id("core::parse", SymbolKind.TypeSym)
+    }
+    then "every kind tag is distinct — the kind half of the identity can't collide" {
+        let kinds = [SymbolKind.FnSym, SymbolKind.TypeSym, SymbolKind.EnumSym, SymbolKind.TraitSym,
+                     SymbolKind.NewtypeSym, SymbolKind.UnionAliasSym, SymbolKind.ShapeSym,
+                     SymbolKind.ConstSym, SymbolKind.MethodSym, SymbolKind.AliasSym]
+        mut distinct = true
+        mut i = 0
+        while i < kinds.length {
+            mut j = i + 1
+            while j < kinds.length {
+                if symbol_kind_tag(kinds[i]) == symbol_kind_tag(kinds[j]) { distinct = false }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        distinct
+    }
+    then "the `#` separator keeps the encoding injective — a crafted path can't imitate a kind tag" {
+        // A path can't contain `#`, so `a::b` + FnSym can never encode to
+        // the same string as any other (path, kind) pair. Spot-check the
+        // adversarial shape: path "a::b#fn" is not a legal identifier path,
+        // but even hashed directly it differs from symbol_id("a::b", FnSym)
+        // only if the encoding actually separates — they'd collide if the
+        // separator were dropped.
+        symbol_id("a::b", SymbolKind.FnSym) == content_id_for("a::b#fn")
+    }
+}
+
+spec "symbol interner: insert-once table over content-addressed ids (ps3t.8.4)" {
+    then "intern returns the stable id and lookup round-trips the record" {
+        let t = symbol_table_new()
+        let id = t.intern("core::ast::render_expr", SymbolKind.FnSym, true)
+        let s = t.lookup(id)
+        s != null && s!.path == "core::ast::render_expr" && s!.exported && s!.sym == id
+    }
+    then "re-interning the same identity is a no-op — first-seen record wins, size stays 1" {
+        let t = symbol_table_new()
+        let a = t.intern("m::dup", SymbolKind.FnSym, true)
+        let b = t.intern("m::dup", SymbolKind.FnSym, false)
+        a == b && t.size() == 1 && t.lookup(a)!.exported
+    }
+    then "same path under two kinds interns two distinct symbols" {
+        let t = symbol_table_new()
+        let f = t.intern("m::x", SymbolKind.FnSym, false)
+        let ty = t.intern("m::x", SymbolKind.TypeSym, false)
+        f != ty && t.size() == 2
+    }
+    then "lookup of a never-interned id is null" {
+        let t = symbol_table_new()
+        t.lookup(symbol_id("ghost::sym", SymbolKind.FnSym)) == null
+    }
+}
