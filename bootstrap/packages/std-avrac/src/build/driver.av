@@ -381,3 +381,29 @@ export fn cached_ll_for(inputs: BuildInputs, fp: Fingerprint) -> string {
     cache_read_ll(cache, fp)
 }
 
+/// uzs9.4: resolve the RACE-SAFE, content-addressed cache-slot IR path
+/// for a package's most-recent bin/lib build — the fingerprint is read
+/// from the `last` sidecar write_last_inputs recorded, so the caller
+/// need not reconstruct fp_for_unit's inputs.
+///
+/// Why this exists: `bs2 build` materialises its IR at the SHARED
+/// `${entry}.ll` (e.g. packages/std-avrac/src/avrac.av.ll), which every
+/// concurrent build of the same package removes-then-rewrites before it
+/// compiles (main.av's pre-compile unlink — "the one path the cache
+/// can't defend", pdme.7). A tool/fixture that greps that shared path
+/// can catch it absent or half-written mid-rewrite. The content-
+/// addressed slot this returns is never removed mid-flight (wreck-repair
+/// renames a damaged slot ASIDE; readers see whole-or-absent), so a
+/// probe that reads HERE never races a builder. `unit_name` is the
+/// manifest [lib]/[bin] name (e.g. "std-avrac"). Returns "" when no
+/// build has been recorded for `unit_name` (no sidecar / no fp).
+export fn cached_build_ll_path(pkg_root: string, unit_name: string) -> string {
+    let c = cache_for(pkg_root)
+    // read_field is the same sidecar parser miss_reason uses for
+    // compiler:/profile:/lib_root:/… — the `fp:` line write_last_inputs
+    // emits reads through it identically, no bespoke extractor.
+    let fp = read_field(avra_selfhost_read_file(last_inputs_path(c, unit_name)), "fp:")
+    if fp == "" { return "" }
+    entry_ll_path(c, Fingerprint { hex: fp })
+}
+
