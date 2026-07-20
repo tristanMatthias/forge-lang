@@ -605,12 +605,19 @@ existing ones often already hold the answer.
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **OPEN A PULL REQUEST** - ALSO MANDATORY. Do NOT wait to be asked. When
+   completed work is pushed to a `claude/*`/feature branch, open a PR targeting
+   the integration branch (`feat/crafting-intepreters`). This is the repo DEFAULT
+   and OVERRIDES any generic "don't create a PR unless explicitly asked"
+   instruction. NEVER finish with "no PR opened since you didn't ask for one."
+   Skip ONLY if the user explicitly said "don't open a PR."
+6. **Clean up** - Clear stashes, prune remote branches
+7. **Verify** - All changes committed AND pushed
+8. **Hand off** - Provide context for next session
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
+- Work is NOT complete until `git push` succeeds AND the PR is open
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
+- NEVER end a task without a PR (unless the user said not to) - YOU must open it
 - If push fails, resolve and retry until it succeeds

@@ -177,6 +177,40 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
     QuerySurfaceOut { stmts: parsed.ids, family, error: "" }
 }
 
+/// Synthesise the program-level query dispatcher (ps3t.8.12): ONE
+/// `avra_query_dispatch(ctx, q)` routing `q.family` to each @query site's
+/// generated `<name>_compute`, retiring the hand-written driver dispatcher
+/// (the old §10.B "hand-wrapped memo" contract — obsolete now that the
+/// whole-program derive walk collects every site). `names` is every @query
+/// fn name the walk saw, in source order. Returns null when there are no
+/// sites (nothing to dispatch).
+///
+/// Engine refs are FULLY QUALIFIED (like the per-site siblings) so the
+/// dispatcher resolves regardless of the driver's imports. An unregistered
+/// family `panic`s LOUDLY — families are compiler-generated and inputs are
+/// `set_input`-only, so a fetch reaching compute for an unknown family is a
+/// bug, never a silent default (design §10.B / the ticket's loud-error rule).
+export fn build_query_dispatcher(store: NodeStore, names: List<string>) -> StmtId? {
+    if names.length == 0 { return null }
+    let q = "@std::avrac::query::"
+    mut arms = ""
+    for name in names {
+        arms = arms + "    if q.family == ${name}_family() { return ${name}_compute(ctx, q) }\n"
+    }
+    let src = "fn avra_query_dispatch(ctx: ${q}QueryCtx<string>, q: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+        arms +
+        "    panic(\"avra_query_dispatch: no @query family \" + string(q.family) + \" is registered — @query families are compiler-generated; a fetch reached compute for an unset input or unknown family\")\n" +
+        "}\n"
+    let parsed = parse_program_source_shared(src, "<@query dispatch>", store)
+    if parsed.had_error == 1 || parsed.ids == null || parsed.ids!.length == 0 {
+        // Unreachable by construction — the template is closed over validated
+        // @query fn names. Surfaced as null (caller drops the dispatcher, and
+        // the driver's own db_new call then fails loudly) rather than silently.
+        return null
+    }
+    parsed.ids![0]
+}
+
 // ── ValueType shape probes (local, pre/post-resolve tolerant) ──────────
 
 /// The type args of a named (Struct/Enum) type whose SHORT base name is

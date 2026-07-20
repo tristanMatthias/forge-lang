@@ -1,0 +1,13 @@
+// Entry of the module-NESTED cross-module @marshal fixture (t-tiz0). Loads both
+// sibling modules and prints the consumer's round-trip report. The interesting
+// import (`use producer.{from_bytes_Widget}`) lives inside consumer.av, i.e. a
+// module-nested cross-module import between two package-internal modules —
+// mirroring ps3t.8.8's `query` importing from `diagnostics`.
+mod producer
+mod consumer
+use consumer.{report}
+
+fn main() -> int {
+    println(report())
+    0
+}

@@ -100,11 +100,19 @@ jobs:
           # silently SIGKILLs the biggest child ("1 shard failed to
           # compile/run", zero test failures).
           AVRA_TEST_JOBS: "1"
-          # Cap the shard-compile fan-out (default 8): a COLD suite — any PR
-          # whose source change rotates the compile-cache key — runs 8
-          # concurrent bs2+llc shard compiles, which OOMs the 16GB hosted
-          # runner VM and kills the runner service mid-suite (surfaces as
-          # "runner received a shutdown signal" ~3 min into the suite phase).
+          # Shard-compile fan-out, held at 2 in lockstep with seed-train.yml
+          # (a cold 8-wide suite OOMs the 16GB runner). #867 briefly raised
+          # this to 6 on the theory that the #866 @std metadata fast-path
+          # (~1.5GB/shard) left the runner idle — but the measured suite wall
+          # was ~28 min at BOTH 2 and 6, so the knob is INERT here: effective
+          # concurrency is already pinned by the 4-vCPU CPU bound and #860's
+          # memory-aware dispatch governor, not by this nominal cap. Raising it
+          # bought no speed and only widened the OOM margin the train caps
+          # against, so it's reverted to 2. The real ~28min bottleneck (cold
+          # shard compiles, CPU-bound on 4 vCPU) and its only durable lever
+          # (bigger runner) are analysed in hama; making the governor self-tune
+          # is x2hu. AVRA_TEST_JOBS is the flake-parity knob — do NOT conflate
+          # the two (see hama for why raising it is wrong here).
           AVRA_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
