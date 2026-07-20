@@ -10,10 +10,12 @@
 // list_concat([ret], params) couldn't pin T because pattern bindings
 // were typed Unknown. T5 fixed that for Self-recursive fields.
 //
-// Bypasses metadata mode at fixture invocation (9p1d) so derive_walker
-// is in scope.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 
 // so07.7.14 — assertions derive their expected counts from the test
@@ -21,7 +23,7 @@ use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 spec "derive_walker: applied to core/ast.av's ValueType enum" {
     then "primitive scalars — zero children" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let ok = ValueType.Int.children().length == 0\n" +
@@ -32,7 +34,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("scalars=true")
     }
     then "direct-Self field (List variant elem) — one child" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let lst = ValueType.List(ValueType.Int)\n" +
@@ -41,7 +43,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("one=true")
     }
     then "list-of-Self field (Enum.type_args) — count matches input.length" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let args: List<ValueType> = [ValueType.Int, ValueType.Str, ValueType.Bool]\n" +
@@ -51,7 +53,7 @@ spec "derive_walker: applied to core/ast.av's ValueType enum" {
         out.contains("matches=true")
     }
     then "mixed direct+list (FnTyped) — 1 (ret) + params.length" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_valuetype_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_valuetype_test.av", 
             "use @std.avrac.core.{ValueType}\n" +
             "fn main() {\n" +
             "    let params: List<ValueType> = [ValueType.Int, ValueType.Str]\n" +

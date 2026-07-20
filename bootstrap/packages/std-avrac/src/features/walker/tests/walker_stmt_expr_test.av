@@ -5,13 +5,16 @@
 // hardcoded magic numbers — adding another field to a variant that
 // classifies as scalar (kind=0) doesn't break the test.
 //
-// Bypasses metadata mode at fixture invocation (9p1d).
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: Stmt enum carries .children()" {
     then "scalar variant (Stmt.NoOp) — zero children" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt}\n" +
             "fn main() {\n" +
             "    let n = Stmt.NoOp.children().length\n" +
@@ -20,7 +23,7 @@ spec "derive_walker: Stmt enum carries .children()" {
         out.contains("empty=true")
     }
     then "id-payload fields (Stmt.While cond + body) — scalars to the walker (F3a)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt, Expr, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
             "    let ws = new_node_store(build_line_index(\"\"))\n" +
@@ -31,7 +34,7 @@ spec "derive_walker: Stmt enum carries .children()" {
         out.contains("leaf_view=true")
     }
     then "id-list field (Stmt.Block body: List<StmtId>) — no walker children (F3a)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Stmt, StmtId, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
             "    let ws = new_node_store(build_line_index(\"\"))\n" +
@@ -45,7 +48,7 @@ spec "derive_walker: Stmt enum carries .children()" {
 
 spec "derive_walker: Expr enum carries .children()" {
     then "scalar literal (Expr.Number) — zero children" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av", 
             "use @std.avrac.core.{Expr}\n" +
             "fn main() {\n" +
             "    let n = Expr.Number(\"42\").children().length\n" +
@@ -54,7 +57,7 @@ spec "derive_walker: Expr enum carries .children()" {
         out.contains("empty=true")
     }
     then "Expr.Binary — operand ids are scalar, children() skips them (F3b)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av",
             "use @std.avrac.core.{Expr, BinOp, ExprId}\n" +
             "fn main() {\n" +
             "    let bin = Expr.Binary(ExprId(1), BinOp.Add, ExprId(2))\n" +
@@ -66,7 +69,7 @@ spec "derive_walker: Expr enum carries .children()" {
         // Post-flip Call carries an ExprId callee and a List<ExprId> args —
         // both scalar to the walker, so children() skips them, exactly like
         // the Binary arm's operand ids above.
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_stmt_expr_test.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_stmt_expr_test.av",
             "use @std.avrac.core.{Expr, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
             "    let ws = new_node_store(build_line_index(\"\"))\n" +

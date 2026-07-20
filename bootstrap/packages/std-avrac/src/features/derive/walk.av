@@ -210,11 +210,34 @@ fn fold_children(fields: List<Classified>, parent: string) -> Expr {
     acc
 }
 
+/// A fully-qualified reference to an `@std::avrac::core` runtime helper.
+/// Generated walker code MUST reference these by canonical path, not a
+/// bare `Expr.Ident`: a bare name only resolves when the consuming program
+/// happens to import the helper (or when the whole of @std is in scope on a
+/// non-metadata build). On the metadata fast-path @std is stubbed, so a
+/// bare `list_concat` / `unwrap_node_opt` / `map_node_opt` an enum's
+/// multi-child or optional-child variant emits is F3000 (undefined
+/// variable) — the walker-on-metadata bug. Mirrors quote_expr's
+/// `Expr.QualifiedIdent("@std::avrac::...")` pattern, which is proven
+/// diff-test byte-identical (the qualified name resolves to the same
+/// symbol a bare name did on the whole-program path).
+@comptime
+fn core_helper(name: string) -> Expr {
+    Expr.QualifiedIdent("@std::avrac::core::${name}")
+}
+
+/// A fully-qualified reference to an `@std::avrac::list_ops` runtime helper
+/// (`list_concat` / `list_map`). Same rationale as `core_helper`.
+@comptime
+fn list_ops_helper(name: string) -> Expr {
+    Expr.QualifiedIdent("@std::avrac::list_ops::${name}")
+}
+
 /// `list_concat(acc, item)`.
 @comptime
 fn concat_call(acc: Expr, item: Expr) -> Expr {
     let args: List<ExprId> = [synth_expr_id(acc), synth_expr_id(item)]
-    emit_call(Expr.Ident("list_concat"), args)
+    emit_call(list_ops_helper("list_concat"), args)
 }
 
 /// Build `unwrap_node_list::<Wrapper, Parent>(field_name)` for a
@@ -231,7 +254,7 @@ fn concat_call(acc: Expr, item: Expr) -> Expr {
 fn unwrap_call(field_name: string, wrapper: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_list")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("unwrap_node_list")), type_args, args)
 }
 
 /// `self_opt_to_list::<Parent>(field)` — a `Self?` child as a 0-or-1
@@ -241,7 +264,7 @@ fn unwrap_call(field_name: string, wrapper: string, parent: string) -> Expr {
 fn self_opt_to_list_call(field_name: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<ValueType> = [name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("self_opt_to_list")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("self_opt_to_list")), type_args, args)
 }
 
 /// `unwrap_node_opt::<W, Parent>(field)` — a `Wrapper<Self>?` child as a
@@ -250,7 +273,7 @@ fn self_opt_to_list_call(field_name: string, parent: string) -> Expr {
 fn unwrap_node_opt_call(field_name: string, wrapper: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name))]
     let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("unwrap_node_opt")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("unwrap_node_opt")), type_args, args)
 }
 
 // ── all_children_spanned() (A1 cross-type traversal + A2 spans) ──
@@ -474,7 +497,7 @@ fn map_call_on_field(bind_name: string) -> Expr {
 @comptime
 fn list_map_call(bind_name: string) -> Expr {
     let lm_args: List<ExprId> = [synth_expr_id(Expr.Ident(bind_name)), synth_expr_id(Expr.Ident("f"))]
-    emit_call(Expr.Ident("list_map"), lm_args)
+    emit_call(list_ops_helper("list_map"), lm_args)
 }
 
 /// `map_node::<Wrapper, Parent>(field_name, f)` — span-preserving map of
@@ -485,7 +508,7 @@ fn list_map_call(bind_name: string) -> Expr {
 fn map_node_call(field_name: string, wrapper: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("map_node")), type_args, args)
 }
 
 /// `map_node_list::<Wrapper, Parent>(field_name, f)` — span-preserving
@@ -497,7 +520,7 @@ fn map_node_call(field_name: string, wrapper: string, parent: string) -> Expr {
 fn map_node_list_call(field_name: string, wrapper: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_list")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("map_node_list")), type_args, args)
 }
 
 /// `map_self_opt::<Parent>(field, f)` — none-guarded map over a `Self?`
@@ -506,7 +529,7 @@ fn map_node_list_call(field_name: string, wrapper: string, parent: string) -> Ex
 fn map_self_opt_call(field_name: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<ValueType> = [name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("map_self_opt")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("map_self_opt")), type_args, args)
 }
 
 /// `map_node_opt::<W, Parent>(field, f)` — span-preserving none-guarded
@@ -515,7 +538,7 @@ fn map_self_opt_call(field_name: string, parent: string) -> Expr {
 fn map_node_opt_call(field_name: string, wrapper: string, parent: string) -> Expr {
     let args: List<ExprId> = [synth_expr_id(Expr.Ident(field_name)), synth_expr_id(Expr.Ident("f"))]
     let type_args: List<ValueType> = [name_vtype(wrapper), name_vtype(parent)]
-    Expr.GenericCall(synth_expr_id(Expr.Ident("map_node_opt")), type_args, args)
+    Expr.GenericCall(synth_expr_id(core_helper("map_node_opt")), type_args, args)
 }
 
 // ── visit() — depth-first traversal callback ──

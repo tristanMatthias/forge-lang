@@ -5,13 +5,16 @@
 // as visit() but with `Stmt.Return(true)` early exits + a trailing
 // `Stmt.Return(false)`.
 //
-// Bypasses metadata mode — forge-crafting-intepreters-9p1d.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: any() short-circuits on first matching descendant" {
     then "deeply-nested Leaf(42) returns true; absent target returns false" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_any_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_any_test.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

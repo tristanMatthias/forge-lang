@@ -10,22 +10,22 @@
 // SExpr table, our novel wrapper would never be classified and
 // the children() count would be wrong.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn run_capture(source: string) -> string {
-    // Use no_metadata: novel @comptime-discovered wrapper types
-    // require ctx_lookup_type to find struct decls via the runtime
-    // resolver-data layer. AVRA_USE_METADATA strips @comptime
-    // annotations + bodies from std-avrac, so the discovery path
-    // wouldn't fire there.
-    write_fixture_and_run_no_metadata("/tmp/avra_walker_so0771_wrapper_discovery_fixture.av", source)
+    // Runs on the @std metadata fast-path: ctx_lookup_type discovers the
+    // novel wrapper's struct decl from the runtime resolver-data layer
+    // (populated per @expand invocation) exactly as on the whole-program
+    // path — the classification is identical either way (y9y4.19). The
+    // generated `unwrap_node_list` call resolves because the walker
+    // emitter now fully-qualifies its @std helper refs.
+    write_fixture_and_run("/tmp/avra_walker_so0771_wrapper_discovery_fixture.av", source)
 }
 
 spec "so07.7.1: derive_walker discovers wrappers structurally" {
     then "novel wrapper struct (not SStmt/SExpr) is discovered + unwrapped" {
         let out = run_capture(
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "// A new wrapper type the macro has never heard of.\n" +
             "export type MyWrap = {\n" +

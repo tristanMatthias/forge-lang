@@ -10,11 +10,11 @@
 // MTree.map`); with a wrong-shape emission (e.g. forgetting to
 // list_map over List<Self>) the leaf count would mismatch.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "y9y4.2: derive_walker emits Type__map" {
     then "map(id) is identity on a Leaf-shaped tree" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_y9y42_map_fixture.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +
@@ -37,7 +37,7 @@ spec "y9y4.2: derive_walker emits Type__map" {
         out.contains("v=7")
     }
     then "map(double_leaf) doubles every Leaf value via per-arm reconstruction" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_y9y42_map_fixture.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_y9y42_map_fixture.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

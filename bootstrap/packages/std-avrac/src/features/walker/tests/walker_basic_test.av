@@ -4,21 +4,16 @@
 // asserts the generated `fn children(self) -> List<Self>` is callable
 // at runtime and returns the right direct children for each variant.
 //
-// Why bypass `cached_fixture_run`: the test_shard runner sets
-// AVRA_USE_METADATA=1 to speed up @std/* re-loading, but @comptime
-// annotations + bodies are NOT preserved across the metadata
-// roundtrip yet (forge-crafting-intepreters-9p1d). Until that lands,
-// fixtures invoking a metadata-shipped @comptime macro must opt out
-// of metadata mode at the bs2 invocation — the documented escape
-// hatch from main.av:2515. Run uncached too: the cache stores the
-// first run's stdout, which would be the F4002 macro-not-found
-// failure if the cache was populated under the metadata env.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: children() on a tiny recursive enum" {
     then "Leaf returns [], Node returns [left, right] in source order" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_basic_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_basic_test.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

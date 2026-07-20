@@ -14,11 +14,11 @@
 //
 // No-metadata so derive_walker + the enum are visible to @comptime.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: map/any fidelity across every variant shape" {
     then "map(identity) reconstructs an identical value for all field-kind shapes" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_fidelity_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_map_fidelity_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "@expand(derive_walker)\n" +
             "export enum V {\n" +
@@ -61,7 +61,7 @@ spec "derive_walker: map/any fidelity across every variant shape" {
     }
 
     then "any(pred) reaches deeply-buried nodes and returns false when absent" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_any_reach_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_any_reach_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "@expand(derive_walker)\n" +
             "export enum V {\n" +

@@ -15,16 +15,17 @@
 // AST positions can be migrated to `SExpr` / `SStmt` one variant at a
 // time and still walk/rewrite mechanically.
 //
-// Bypasses metadata mode (9p1d) so derive_walker + the wrapper struct
-// decl are both visible to the @comptime discovery path.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: single wrapper field is a WrapperOfSelf child" {
     then "children() unwraps one `.node` hop; map descends + keeps siblings" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_wrapper_single_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_wrapper_single_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list}\n" +
             "\n" +
             "export type SNode = {\n" +
             "    node: Tree,\n" +
@@ -74,9 +75,8 @@ spec "derive_walker: single wrapper field is a WrapperOfSelf child" {
     }
 
     then "map on a mixed variant maps the WrapperOfSelf head + WrapperListOfSelf kids, keeping the scalar and every wrapper sibling; deep nesting descends without overflow" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_wrapper_single_deep_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_wrapper_single_deep_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list}\n" +
             "\n" +
             "export type SNode = { node: Tree, span: int, tag2: string }\n" +
             "\n" +
@@ -110,9 +110,8 @@ spec "derive_walker: single wrapper field is a WrapperOfSelf child" {
     }
 
     then "classifier doesn't misfire: a sibling-less wrapper still maps; a 2-hop wrapper and a non-self `node` field stay Scalar (no false WrapperOfSelf)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_wrapper_single_adv_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_wrapper_single_adv_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list}\n" +
             "\n" +
             "export type Bare = { node: Tree }\n" +          // wrapper with no siblings
             "export type Mid = { inner: Tree }\n" +
