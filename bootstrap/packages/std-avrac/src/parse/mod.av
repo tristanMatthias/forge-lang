@@ -2619,6 +2619,18 @@ impl Parser {
             let dsl = run_dsl_type_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.is_at_end() {
+                    // Nested-generic close: the DSL splits a `>>` (Tk.Shr) into two
+                    // `>`, consuming ONE to close the inner generic and leaving the
+                    // second for the CALLER's own `>` (the hand channel /
+                    // generic-type-args parser). stop_byte then lands BETWEEN the two
+                    // `>`. Advancing the whole Shr token here would swallow that
+                    // second `>` and the caller's `consume(Greater)` would fail on the
+                    // next token (`channel<GenOpt<int>>()` → "expected `>`"). Split it
+                    // so only the first `>` is consumed — mirrors maybe_split_shr and
+                    // the DSL executor's own split (ps3t.6.5.10).
+                    if self.current_kind == Tk.Shr && self.current_start + 1 == dsl.stop_byte {
+                        self.maybe_split_shr()
+                    }
                     self.advance_token()
                 }
                 return .Ok(dsl.te)
