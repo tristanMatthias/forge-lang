@@ -162,4 +162,24 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("x = y = 1") && agree("x = 1 + 2") && agree("obj.field = f(1)")
         }
     }
+    given "the `is` type-check (`expr is .Variant`)" {
+        then "is-checks on idents, fields, and calls agree" {
+            dsl("a is .Some") != "<err>" &&
+            agree("a is .Some") && agree("x.y is .None") && agree("f() is .Ok") &&
+            agree("a + b is .Big")
+        }
+    }
+    given "the `in` membership (list and range, via missing-node rebind)" {
+        then "list-membership and range-membership desugars agree" {
+            dsl("x in [1, 2, 3]") != "<err>" &&
+            agree("x in [1, 2, 3]") && agree("a in [b, c]") && agree("x in []") &&
+            agree("x in 1..10") && agree("i in a..b") && agree("n + 1 in [0, 1]")
+        }
+    }
+    given "the `==`/`!=` chain still folds after the equality restructure" {
+        then "equality chains and comparison-below-equality agree" {
+            agree("a == b") && agree("a != b") && agree("a == b == c") &&
+            agree("a < b == c") && agree("1 + 2 == 3") && agree("a == b != c")
+        }
+    }
 }

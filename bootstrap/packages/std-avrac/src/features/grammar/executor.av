@@ -1167,6 +1167,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, env.get(args[0]), env.get(args[1])))
+        "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, env.get(args[0]), env.get(args[1])))
+        "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
+        "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
+        "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
+        "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
         "Grouping" if args.length == 1 -> {
             // Preserve the parenthesisation node so the produced AST matches
             // the hand-written parser (which wraps `(e)` in Expr.Grouping),
@@ -1946,6 +1951,80 @@ export fn mk_assign_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
                 _ -> st.error_node("invalid assignment target")
             }
         }
+    }
+}
+
+// ── The `is` / `in` / `==`-chain equality suffix (ps3t.6.7 Step C) ──
+//
+// The DSL alternation can't left-factor "parse bitor THEN branch on is/in/==",
+// so the suffix rule (eq_tail) builds a PARTIAL node whose subject is a
+// `Expr.Missing` sentinel, and rebind_eq_expr retargets that sentinel to the
+// real `base` — the fold_postfix `rebind_receiver` pattern, lifted to the
+// equality stratum. is/in are mutually exclusive with the `==`/`!=` chain
+// (the hand parse_equality returns after is/in), which the eq_tail alternation
+// (distinct FIRSTs: `is` / `in` / `==`|`!=`) captures exactly.
+
+/// `is .Variant` → `Expr.IsCheck(MISSING, name)` (retargeted by rebind_eq_expr).
+fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.IsCheck(st.missing_node(), capval_tok_text(vcap)))
+}
+
+/// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
+fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
+}
+
+/// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a
+/// `Logical(Binary(_, Ge, s), And, Binary(_, Le, e))`. rebind_eq_expr swaps BOTH
+/// sentinels for `base` (one shared id, as the hand parser does).
+fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
+    let s = capval_to_expr(st, scap)
+    let e = capval_to_expr(st, ecap)
+    let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
+    let le = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Le, e))
+    st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
+}
+
+/// `( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a MISSING
+/// left; rebind_eq_expr retargets the spine-bottom sentinel to `base`. Reuses
+/// fold_binary_expr so the chain matches the plain `==`/`!=` fold byte-for-byte.
+fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
+    fold_binary_expr(st, CapVal.Node(st.missing_node()), opcap, rcap)
+}
+
+/// Retarget the eq_tail partial's `Expr.Missing` subject(s) to `base` — the
+/// equality-stratum sibling of fold_postfix_expr. With no suffix (tailcap Nil)
+/// the base passes through unchanged.
+export fn rebind_eq_expr(st: PState, basecap: CapVal, tailcap: CapVal) -> ExprId {
+    let base = capval_to_expr(st, basecap)
+    match tailcap {
+        .Nil -> base
+        _ -> rebind_missing_subject(st, capval_to_expr(st, tailcap), base)
+    }
+}
+
+/// Rebuild `tail` with its `Expr.Missing` subject replaced by `base`. Dispatches
+/// on the partial's shape (is / in-list / in-range / ==-chain); the `==`-chain
+/// recurses down the left spine to the sentinel seed.
+fn rebind_missing_subject(st: PState, tail_id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(tail_id) {
+        .IsCheck(_, v) -> st.store.exprs.add_leaf(Expr.IsCheck(base, v))
+        .InCheck(_, items) -> st.store.exprs.add_leaf(Expr.InCheck(base, items))
+        .Logical(ge, op, le) -> {
+            let ge2 = rebind_bin_subject(st, ge, base)
+            let le2 = rebind_bin_subject(st, le, base)
+            st.store.exprs.add_leaf(Expr.Logical(ge2, op, le2))
+        }
+        .Binary(l, op, r) -> st.store.exprs.add_leaf(Expr.Binary(rebind_missing_subject(st, l, base), op, r))
+        _ -> base
+    }
+}
+
+/// Replace the left of a single range-comparison `Binary(_, op, r)` with `base`.
+fn rebind_bin_subject(st: PState, id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(id) {
+        .Binary(_, op, r) -> st.store.exprs.add_leaf(Expr.Binary(base, op, r))
+        _ -> id
     }
 }
 

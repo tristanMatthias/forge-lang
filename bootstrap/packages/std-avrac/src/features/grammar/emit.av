@@ -431,6 +431,13 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
         "mk_assign" -> "CapVal.Node(mk_assign_expr(st, ${args[0]}, ${args[1]}))"
+        // The is/in/==-chain equality suffix (ps3t.6.7 Step C). mk_inlist's `a`
+        // and mk_eqchain's `op`/`r` are repetition captures (list accumulators).
+        "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, ${args[0]}, ${args[1]}))"
+        "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
+        "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
+        "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
+        "mk_eqchain" -> "CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
         "Grouping" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, ${args[0]}))))"
         "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
@@ -751,7 +758,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_postfix" || bn == "mk_assign" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,

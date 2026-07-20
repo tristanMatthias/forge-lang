@@ -39,6 +39,8 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_logic_or(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_and(st: PState) -> CapVal") &&
         src.contains("fn parse_equality(st: PState) -> CapVal") &&
+        src.contains("fn parse_eq_tail(st: PState) -> CapVal") &&
+        src.contains("fn parse_in_rhs(st: PState) -> CapVal") &&
         src.contains("fn parse_comparison(st: PState) -> CapVal") &&
         src.contains("fn parse_term(st: PState) -> CapVal") &&
         src.contains("fn parse_factor(st: PState) -> CapVal") &&
@@ -55,6 +57,16 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "a pass-through rule is a bare delegating call (`expression = assignment`)" {
         emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_assignment(st)\n}")
+    }
+
+    then "the equality stratum retargets is/in/==-chain via rebind_eq_expr" {
+        // `equality = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)` with
+        // the eq_tail partial (is / in-list / in-range / ==-chain) retargeted.
+        let src = emit_all()
+        src.contains("CapVal.Node(rebind_eq_expr(st, base, tail))") &&
+        src.contains("CapVal.Node(mk_is_expr(st, v))") &&
+        src.contains("mk_eqchain_expr(st, CapVal.Toks(op_list), CapVal.Nodes(r_list))") &&
+        src.contains("mk_inrange_expr(st, s, e)")
     }
 
     then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
