@@ -107,6 +107,20 @@ static size_t rc_set_cap = 0;
 static size_t rc_set_count = 0;
 static pthread_mutex_t rc_set_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Single-threaded fast path: the rc_set mutex is only needed once a SECOND
+// thread exists. The compiler process and the vast majority of Avra programs
+// never spawn a thread, yet every alloc / retain / release paid an
+// unconditional lock+unlock (~6% of compiler instructions, measured). Gate the
+// lock on this flag — set to 1 exactly once, on the main thread, immediately
+// BEFORE the first pthread_create (a full memory barrier, so the new thread and
+// all later rc_set ops observe it as 1). It never resets: once multithreaded,
+// always locked. The only lock-free window is strictly before any thread
+// exists, i.e. genuinely single-threaded, so it is race-free by construction.
+static int g_rc_multithreaded = 0;
+void avra_rc_go_multithreaded(void) { g_rc_multithreaded = 1; }
+static inline void rc_lock(void)   { if (g_rc_multithreaded) pthread_mutex_lock(&rc_set_mutex); }
+static inline void rc_unlock(void) { if (g_rc_multithreaded) pthread_mutex_unlock(&rc_set_mutex); }
+
 static void rc_set_init(void) {
     if (rc_set_buckets) return;
     rc_set_cap = RC_SET_INITIAL_CAP;
@@ -141,7 +155,7 @@ static void rc_set_grow(void) {
 }
 
 static void rc_set_add(void* ptr) {
-    pthread_mutex_lock(&rc_set_mutex);
+    rc_lock();
     rc_set_init();
     if (rc_set_count * 4 >= rc_set_cap * 3) rc_set_grow();  // 75% load factor
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -152,13 +166,13 @@ static void rc_set_add(void* ptr) {
         rc_set_buckets[idx] = ptr;
         rc_set_count++;
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
 }
 
 static int rc_set_contains(void* ptr) {
-    pthread_mutex_lock(&rc_set_mutex);
+    rc_lock();
     if (!rc_set_buckets || rc_set_count == 0) {
-        pthread_mutex_unlock(&rc_set_mutex);
+        rc_unlock();
         return 0;
     }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -167,8 +181,90 @@ static int rc_set_contains(void* ptr) {
         if (rc_set_buckets[idx] == ptr) { found = 1; break; }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
     return found;
+}
+
+static int avra_rc_strict;   // fwd decl (tentative); real definition + default below
+// ─── Fast RC region allocator (default path) ───────────────────────────
+// avra_rc_alloc's per-object malloc (glibc arena lock + _int_malloc) plus the
+// rc_set membership hash (insert on every alloc, probe on every retain/release,
+// periodic full-table rehash) were ~40% of a compile's instructions (measured,
+// callgrind). Replace both for the common case: small RC objects come from ONE
+// reserved virtual region — allocation is a pointer bump or a size-class
+// free-list pop, and "is this pointer RC-managed?" is a range check against the
+// region, so there is NO malloc lock, NO hash insert, NO table resize on the hot
+// path. Large/rare blocks (> RC_REGION_MAXBLK) still use malloc + the rc_set,
+// which therefore stays tiny. Strict mode (AVRA_RC_STRICT) and AVRA_RC_NO_REGION
+// keep the original malloc+set path unchanged (debugging / A-B verification).
+//
+// Block layout in the region: [ total_size(8) | RcHeader(8) | payload ]. The
+// 8-byte total lets free() bucket the block by size class; the user pointer is
+// base+16 (16-byte aligned, ≥ the 8-byte alignment codegen needs). All region
+// state is guarded by the SAME gated rc_lock, so a single-threaded process
+// (the compiler, most programs) bump-allocates lock-free.
+#define RC_REGION_BYTES  (48ULL << 30)                        // 48 GiB virtual (MAP_NORESERVE: RAM committed on touch)
+#define RC_REGION_HDR    16                                   // 8 total-size + 8 RcHeader, before the payload
+#define RC_REGION_GRAIN  16                                   // block size granularity == alignment
+#define RC_REGION_MAXBLK 4096                                 // blocks up to this (incl. header) use the region
+#define RC_REGION_NLIST  (RC_REGION_MAXBLK / RC_REGION_GRAIN + 1)
+static char*  rc_region_base = NULL;
+static char*  rc_region_frontier = NULL;
+static char*  rc_region_end = NULL;
+static void*  rc_region_free[RC_REGION_NLIST];               // free-list heads, indexed by total/GRAIN
+static int    rc_region_enabled = 0;
+
+__attribute__((constructor(102)))                             // after auto_enable_rc_strict (101)
+static void rc_region_init(void) {
+    if (rc_region_base) return;
+    if (avra_rc_strict || getenv("AVRA_RC_NO_REGION")) { rc_region_enabled = 0; return; }
+    void* p = mmap(NULL, RC_REGION_BYTES, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) { rc_region_enabled = 0; return; }   // graceful fallback to malloc+set
+    rc_region_base = (char*)p;
+    rc_region_frontier = (char*)p;
+    rc_region_end = (char*)p + RC_REGION_BYTES;
+    rc_region_enabled = 1;
+}
+
+static inline int rc_region_contains(void* ptr) {
+    return rc_region_enabled && (char*)ptr >= rc_region_base && (char*)ptr < rc_region_frontier;
+}
+
+// Allocate `payload` bytes from the region; returns the user pointer (past the
+// 16-byte header) or NULL when the region is off / the block is too big / the
+// region is exhausted — in which case the caller falls back to malloc + rc_set.
+static void* rc_region_try_alloc(size_t payload) {
+    if (!rc_region_enabled) return NULL;
+    size_t total = (RC_REGION_HDR + payload + (RC_REGION_GRAIN - 1)) & ~(size_t)(RC_REGION_GRAIN - 1);
+    if (total > RC_REGION_MAXBLK) return NULL;
+    size_t li = total / RC_REGION_GRAIN;
+    rc_lock();
+    char* base;
+    if (rc_region_free[li]) {
+        base = (char*)rc_region_free[li];
+        rc_region_free[li] = *(void**)base;                   // pop the free list
+    } else if (rc_region_frontier + total <= rc_region_end) {
+        base = rc_region_frontier;                            // bump the frontier
+        rc_region_frontier += total;
+    } else {
+        rc_unlock();
+        return NULL;                                          // exhausted → malloc fallback
+    }
+    rc_unlock();
+    *(size_t*)base = total;                                   // remember the size class for free()
+    return base + RC_REGION_HDR;
+}
+
+// Return a region block to its size-class free list (LIFO, link stored in the
+// block's own memory). The size was recorded at the base by rc_region_try_alloc.
+static void rc_region_free_block(void* user_ptr) {
+    char* base = (char*)user_ptr - RC_REGION_HDR;
+    size_t li = (*(size_t*)base) / RC_REGION_GRAIN;
+    rc_lock();
+    *(void**)base = rc_region_free[li];
+    rc_region_free[li] = base;
+    rc_unlock();
 }
 
 // Thread-local net-allocation accounting for single-threaded leak
@@ -189,9 +285,10 @@ int64_t avra_rc_live_delta_local(void) {
 
 static void rc_set_remove(void* ptr) {
     t_rc_frees++;
-    pthread_mutex_lock(&rc_set_mutex);
+    if (rc_region_contains(ptr)) return;     // region blocks were never added to the set
+    rc_lock();
     if (!rc_set_buckets) {
-        pthread_mutex_unlock(&rc_set_mutex);
+        rc_unlock();
         return;
     }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -212,12 +309,12 @@ static void rc_set_remove(void* ptr) {
                 idx = next;
                 next = (idx + 1) & (rc_set_cap - 1);
             }
-            pthread_mutex_unlock(&rc_set_mutex);
+            rc_unlock();
             return;
         }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
 }
 
 // ─── Strict allocator mode (AVRA_RC_STRICT) ─────────────────────
@@ -360,6 +457,10 @@ static int rc_quarantine_contains_user(void* user_ptr) {
 // base to the quarantine (deferred free). Otherwise: free immediately, the
 // historical path. Caller has already cleared type_tag + removed from rc_set.
 static void rc_reclaim(void* user_ptr) {
+    if (rc_region_contains(user_ptr)) {          // region block → size-class free list
+        rc_region_free_block(user_ptr);
+        return;
+    }
     if (avra_rc_strict) {
         void* base = rc_malloc_base(user_ptr);
         size_t payload = *(size_t*)base;        // stored by avra_rc_alloc
@@ -380,6 +481,22 @@ static void avra_comptime_charge(int64_t bytes);
 
 void* avra_rc_alloc(int64_t payload_size) {
     size_t payload = (size_t)payload_size;
+    // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
+    // so a runaway fold trips a diagnostic before it can OOM the compiler.
+    if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
+    // Fast path: a small object straight from the region (no malloc, no rc_set).
+    void* ruser = rc_region_try_alloc(payload);
+    if (ruser) {
+        RcHeader* rhdr = (RcHeader*)((char*)ruser - RC_HEADER_SIZE);
+        atomic_store(&rhdr->refcount, 1);
+        rhdr->type_tag = RC_MAGIC;
+        t_rc_allocs++;
+        if (rc_trace) {
+            fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1, region)\n", ruser, (long long)payload_size);
+        }
+        return ruser;
+    }
+    // Fallback: strict mode, oversized block, or region exhausted → malloc + rc_set.
     size_t prefix = avra_rc_strict ? RC_STRICT_PREFIX : 0;
     size_t total = prefix + RC_HEADER_SIZE + payload;
     total = (total + 7) & ~7;  // align to 8
@@ -388,9 +505,6 @@ void* avra_rc_alloc(int64_t payload_size) {
         avra_runtime_errorf("out of memory (rc_alloc %lld bytes)", (long long)payload_size);
         exit(1);
     }
-    // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
-    // so a runaway fold trips a diagnostic before it can OOM the compiler.
-    if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
     if (avra_rc_strict) *(size_t*)raw = payload;   // size prefix for poison-on-free
     void* user_ptr = (char*)raw + prefix + RC_HEADER_SIZE;
     RcHeader* hdr = (RcHeader*)((char*)user_ptr - RC_HEADER_SIZE);
@@ -406,7 +520,8 @@ void* avra_rc_alloc(int64_t payload_size) {
 
 // Check if a pointer is an RC-managed object using the pointer set.
 static inline int is_rc_managed(void* ptr) {
-    return rc_set_contains(ptr);
+    if (rc_region_contains(ptr)) return 1;   // region block — RC by construction, no set lookup
+    return rc_set_contains(ptr);             // large / strict block — the residual set
 }
 
 // Increment reference count.
@@ -5331,6 +5446,7 @@ int64_t avra_spawn(int64_t closure) {
     task->closure = closure;
     task->result = 0;
     task->joined = 0;
+    avra_rc_go_multithreaded();  // a second thread now exists — arm the rc_set lock
     pthread_create(&task->thread, NULL, avra_thread_entry, task);
     return (int64_t)(uintptr_t)task;
 }
@@ -5912,6 +6028,7 @@ void avra_parallel_run(void* closure_array) {
     int64_t n = arr->len;
     pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
     AvraTask** args = (AvraTask**)malloc(n * sizeof(AvraTask*));
+    avra_rc_go_multithreaded();  // threads about to exist — arm the rc_set lock
     for (int64_t i = 0; i < n; i++) {
         args[i] = (AvraTask*)malloc(sizeof(AvraTask));
         args[i]->closure = arr->data[i];
