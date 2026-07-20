@@ -303,6 +303,9 @@ spec "metadata codec: IMPLS section per-entry round-trips" {
     then "first method's fn_sym_id (FNS section ref) round-trips" {
         metadata_run_fixture().contains("PROBE impl_method0_fn_id: ok")
     }
+    then "first method's inline return type round-trips (ps3t.8.8)" {
+        metadata_run_fixture().contains("PROBE impl_method0_ret: ok")
+    }
     then "second method's name (cross-arm decode) round-trips" {
         metadata_run_fixture().contains("PROBE impl_method1_name: ok")
     }
