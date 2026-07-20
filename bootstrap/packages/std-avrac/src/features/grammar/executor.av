@@ -2042,19 +2042,19 @@ export fn mk_assign_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
 // (distinct FIRSTs: `is` / `in` / `==`|`!=`) captures exactly.
 
 /// `is .Variant` → `Expr.IsCheck(MISSING, name)` (retargeted by rebind_eq_expr).
-fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
+export fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
     st.store.exprs.add_leaf(Expr.IsCheck(st.missing_node(), capval_tok_text(vcap)))
 }
 
 /// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
-fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
+export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
     st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
 }
 
 /// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a
 /// `Logical(Binary(_, Ge, s), And, Binary(_, Le, e))`. rebind_eq_expr swaps BOTH
 /// sentinels for `base` (one shared id, as the hand parser does).
-fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
+export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
     let s = capval_to_expr(st, scap)
     let e = capval_to_expr(st, ecap)
     let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
@@ -2065,7 +2065,7 @@ fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
 /// `( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a MISSING
 /// left; rebind_eq_expr retargets the spine-bottom sentinel to `base`. Reuses
 /// fold_binary_expr so the chain matches the plain `==`/`!=` fold byte-for-byte.
-fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
+export fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
     fold_binary_expr(st, CapVal.Node(st.missing_node()), opcap, rcap)
 }
 
