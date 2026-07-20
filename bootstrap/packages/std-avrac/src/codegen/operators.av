@@ -289,14 +289,15 @@ fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inne
 }
 
 /// Present-values equality as a raw `i1`, dispatched by inner KIND so an
-/// optional's `==` matches its non-optional counterpart: strings strcmp,
-/// enums tag-compare, floats fcmp; value scalars compare by value and the
-/// remaining reference types by pointer identity (both an integer icmp).
+/// optional's `==` matches its non-optional counterpart: strings via
+/// `avra_streq`, enums tag-compare, floats fcmp; value scalars compare by
+/// value and the remaining reference types by pointer identity (both an
+/// integer icmp).
 fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
     if vtype_is_str(inner) {
-        let cmp = ctx.call("strcmp", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
-        let ext = ctx.sext(cmp, ctx.i64_type, "opteq_strcmp")
-        return .Ok(ctx.eq(ext, ctx.i64(0), "opteq_streq"))
+        // avra_streq = strcmp==0 with a first-byte fast-reject (returns i64 1/0).
+        let eq_result = ctx.call("avra_streq", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
+        return .Ok(ctx.ne(eq_result, ctx.i64(0), "opteq_streq"))
     }
     if vtype_enum_name(inner) != "" {
         let tag_eq = emit_enum_tag_cmp(ctx, lv, rv, inner, 32)?

@@ -849,10 +849,13 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
         .LitString(val) -> {
             let subj_ptr = ctx.to_ptr(emit_value_ptr(subj), "lit_str_ptr")
             let lit_ptr = ctx.global_str(val, ".lit_str")
-            let cmp_result = ctx.call("strcmp", [subj_ptr, lit_ptr])
-            // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
-            let cmp_ext = ctx.sext(cmp_result, ctx.i64_type, "strcmp_sext")
-            ctx.eq(cmp_ext, ctx.i64(0), "str_eq")
+            // avra_streq is strcmp==0 with a first-byte fast-reject: a match
+            // over string literals lowers to one comparison per arm, and most
+            // arms differ from the subject in byte 0 (e.g. a non-keyword
+            // identifier walking the ~60-arm keyword table), so the runtime
+            // helper skips the AVX2-strcmp call for them. Returns i64 1/0.
+            let eq_result = ctx.call("avra_streq", [subj_ptr, lit_ptr])
+            ctx.ne(eq_result, ctx.i64(0), "str_eq")
         }
         .LitFloat(val) -> {
             let lit_str = ctx.global_str(val, ".flit_str")

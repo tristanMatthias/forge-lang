@@ -98,15 +98,20 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Resul
     ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
-/// Codegen for String `==` / `!=`. Lowers to libc `strcmp == 0`
-/// (eq) or `strcmp != 0` (ne) via the LLVM predicate codes 32/33.
-/// `invert: true` selects `!=`.
+/// Codegen for String `==` / `!=`. Lowers to `avra_streq` (strcmp==0
+/// with a first-byte fast-reject, returns i64 1/0), then icmp-compares
+/// that 1/0 against 0: `==` is `streq != 0`, `!=` is `streq == 0`
+/// (LLVM predicate 33/32). `invert: true` selects `!=`.
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
-    let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
-    let pred = if invert { 33 } else { 32 }
-    let cmp = ctx.icmp(pred, result, ctx.i64(0), "streq_cmp")
+    // avra_streq = strcmp==0 with a first-byte fast-reject. Name resolution's
+    // hot `name == b.name` scans compare against many bindings that differ in
+    // byte 0, so the reject skips the AVX2 strcmp for them. Returns i64 1/0.
+    let eq_result = ctx.call("avra_streq", [lhs_ptr, rhs_ptr])
+    // `==` is true when equal (streq != 0); `!=` is true when unequal (streq == 0).
+    let pred = if invert { 32 } else { 33 }
+    let cmp = ctx.icmp(pred, eq_result, ctx.i64(0), "streq_cmp")
     ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
 }
 

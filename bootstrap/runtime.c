@@ -107,6 +107,47 @@ static size_t rc_set_cap = 0;
 static size_t rc_set_count = 0;
 static pthread_mutex_t rc_set_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Single-threaded fast path: the rc_set mutex is only needed once a SECOND
+// thread exists. The compiler process and the vast majority of Avra programs
+// never spawn a thread, yet every alloc / retain / release paid an
+// unconditional lock+unlock (~6% of compiler instructions, measured). Gate the
+// lock on this flag — set to 1 exactly once, on the main thread, immediately
+// BEFORE the first pthread_create (a full memory barrier, so the new thread and
+// all later rc_set ops observe it as 1). It never resets: once multithreaded,
+// always locked. The only lock-free window is strictly before any thread
+// exists, i.e. genuinely single-threaded, so it is race-free by construction.
+static int g_rc_multithreaded = 0;
+void avra_rc_go_multithreaded(void) { g_rc_multithreaded = 1; }
+static inline void rc_lock(void)   { if (g_rc_multithreaded) pthread_mutex_lock(&rc_set_mutex); }
+static inline void rc_unlock(void) { if (g_rc_multithreaded) pthread_mutex_unlock(&rc_set_mutex); }
+
+// Single-threaded refcount fast path — same rationale as rc_lock above, applied
+// to the refcount RMW itself. A retain/release increment must be ATOMIC only
+// when a second thread can observe the object concurrently. Before
+// g_rc_multithreaded arms (immediately before the first pthread_create), the
+// process is genuinely single-threaded, so a plain load+add+store — no `lock`
+// prefix, ~20+ cycles cheaper per op on x86 — is race-free by construction.
+// Once multithreaded, fall back to the seq_cst atomic RMW (unchanged semantics
+// for the threaded case: channels hand objects across fibers). This is a
+// runtime-only change; the IR bs2 emits is byte-identical (it still calls
+// avra_rc_retain/release by name).
+static inline int32_t rc_refcount_incr(_Atomic int32_t* rc) {
+    if (!g_rc_multithreaded) {
+        int32_t v = atomic_load_explicit(rc, memory_order_relaxed) + 1;
+        atomic_store_explicit(rc, v, memory_order_relaxed);
+        return v;
+    }
+    return atomic_fetch_add(rc, 1) + 1;
+}
+static inline int32_t rc_refcount_decr(_Atomic int32_t* rc) {
+    if (!g_rc_multithreaded) {
+        int32_t v = atomic_load_explicit(rc, memory_order_relaxed) - 1;
+        atomic_store_explicit(rc, v, memory_order_relaxed);
+        return v;
+    }
+    return atomic_fetch_sub(rc, 1) - 1;
+}
+
 static void rc_set_init(void) {
     if (rc_set_buckets) return;
     rc_set_cap = RC_SET_INITIAL_CAP;
@@ -141,7 +182,7 @@ static void rc_set_grow(void) {
 }
 
 static void rc_set_add(void* ptr) {
-    pthread_mutex_lock(&rc_set_mutex);
+    rc_lock();
     rc_set_init();
     if (rc_set_count * 4 >= rc_set_cap * 3) rc_set_grow();  // 75% load factor
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -152,13 +193,13 @@ static void rc_set_add(void* ptr) {
         rc_set_buckets[idx] = ptr;
         rc_set_count++;
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
 }
 
 static int rc_set_contains(void* ptr) {
-    pthread_mutex_lock(&rc_set_mutex);
+    rc_lock();
     if (!rc_set_buckets || rc_set_count == 0) {
-        pthread_mutex_unlock(&rc_set_mutex);
+        rc_unlock();
         return 0;
     }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -167,8 +208,101 @@ static int rc_set_contains(void* ptr) {
         if (rc_set_buckets[idx] == ptr) { found = 1; break; }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
     return found;
+}
+
+static int avra_rc_strict;   // fwd decl (tentative); real definition + default below
+// ─── Fast RC region allocator (default path) ───────────────────────────
+// avra_rc_alloc's per-object malloc (glibc arena lock + _int_malloc) plus the
+// rc_set membership hash (insert on every alloc, probe on every retain/release,
+// periodic full-table rehash) were ~40% of a compile's instructions (measured,
+// callgrind). Replace both for the common case: small RC objects come from ONE
+// reserved virtual region — allocation is a pointer bump or a size-class
+// free-list pop, and "is this pointer RC-managed?" is a range check against the
+// region, so there is NO malloc lock, NO hash insert, NO table resize on the hot
+// path. Large/rare blocks (> RC_REGION_MAXBLK) still use malloc + the rc_set,
+// which therefore stays tiny. Strict mode (AVRA_RC_STRICT) and AVRA_RC_NO_REGION
+// keep the original malloc+set path unchanged (debugging / A-B verification).
+//
+// Block layout in the region: [ total_size(8) | RcHeader(8) | payload ]. The
+// 8-byte total lets free() bucket the block by size class; the user pointer is
+// base+16 (16-byte aligned, ≥ the 8-byte alignment codegen needs). All region
+// state is guarded by the SAME gated rc_lock, so a single-threaded process
+// (the compiler, most programs) bump-allocates lock-free.
+#define RC_REGION_BYTES  (48ULL << 30)                        // 48 GiB virtual (MAP_NORESERVE: RAM committed on touch)
+#define RC_REGION_HDR    16                                   // 8 total-size + 8 RcHeader, before the payload
+#define RC_REGION_GRAIN  16                                   // block size granularity == alignment
+#define RC_REGION_MAXBLK 4096                                 // blocks up to this (incl. header) use the region
+#define RC_REGION_NLIST  (RC_REGION_MAXBLK / RC_REGION_GRAIN + 1)
+static char*  rc_region_base = NULL;
+static char*  rc_region_frontier = NULL;
+static char*  rc_region_end = NULL;
+static void*  rc_region_free[RC_REGION_NLIST];               // free-list heads, indexed by total/GRAIN
+static int    rc_region_enabled = 0;
+
+__attribute__((constructor(102)))                             // after auto_enable_rc_strict (101)
+static void rc_region_init(void) {
+    if (rc_region_base) return;
+    if (avra_rc_strict || getenv("AVRA_RC_NO_REGION")) { rc_region_enabled = 0; return; }
+    void* p = mmap(NULL, RC_REGION_BYTES, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) { rc_region_enabled = 0; return; }   // graceful fallback to malloc+set
+    rc_region_base = (char*)p;
+    rc_region_frontier = (char*)p;
+    rc_region_end = (char*)p + RC_REGION_BYTES;
+    rc_region_enabled = 1;
+}
+
+static inline int rc_region_contains(void* ptr) {
+    // Bound by rc_region_end, NOT the live rc_region_frontier. Membership is
+    // read on every retain/release (is_rc_managed) with no lock — the whole
+    // point of the region is a lock-free hot path — but rc_region_frontier is
+    // mutated under rc_lock by the allocator, so reading it here would be a data
+    // race (and a stale frontier could misjudge a freshly-allocated region
+    // object as non-RC → a leak or premature free). base/end/enabled are set
+    // once in the constructor and never mutated, so this read is race-free.
+    // Safe by construction: a real region object is always < frontier ≤ end;
+    // the only pointers in [frontier, end) are reserved-but-untouched region
+    // space (never handed to retain/release), and were a stray pointer to land
+    // there its zero header (type_tag != RC_MAGIC) makes retain/release a no-op.
+    return rc_region_enabled && (char*)ptr >= rc_region_base && (char*)ptr < rc_region_end;
+}
+
+// Allocate `payload` bytes from the region; returns the user pointer (past the
+// 16-byte header) or NULL when the region is off / the block is too big / the
+// region is exhausted — in which case the caller falls back to malloc + rc_set.
+static void* rc_region_try_alloc(size_t payload) {
+    if (!rc_region_enabled) return NULL;
+    size_t total = (RC_REGION_HDR + payload + (RC_REGION_GRAIN - 1)) & ~(size_t)(RC_REGION_GRAIN - 1);
+    if (total > RC_REGION_MAXBLK) return NULL;
+    size_t li = total / RC_REGION_GRAIN;
+    rc_lock();
+    char* base;
+    if (rc_region_free[li]) {
+        base = (char*)rc_region_free[li];
+        rc_region_free[li] = *(void**)base;                   // pop the free list
+    } else if (rc_region_frontier + total <= rc_region_end) {
+        base = rc_region_frontier;                            // bump the frontier
+        rc_region_frontier += total;
+    } else {
+        rc_unlock();
+        return NULL;                                          // exhausted → malloc fallback
+    }
+    rc_unlock();
+    *(size_t*)base = total;                                   // remember the size class for free()
+    return base + RC_REGION_HDR;
+}
+
+// Return a region block to its size-class free list (LIFO, link stored in the
+// block's own memory). The size was recorded at the base by rc_region_try_alloc.
+static void rc_region_free_block(void* user_ptr) {
+    char* base = (char*)user_ptr - RC_REGION_HDR;
+    size_t li = (*(size_t*)base) / RC_REGION_GRAIN;
+    rc_lock();
+    *(void**)base = rc_region_free[li];
+    rc_region_free[li] = base;
+    rc_unlock();
 }
 
 // Thread-local net-allocation accounting for single-threaded leak
@@ -189,9 +323,10 @@ int64_t avra_rc_live_delta_local(void) {
 
 static void rc_set_remove(void* ptr) {
     t_rc_frees++;
-    pthread_mutex_lock(&rc_set_mutex);
+    if (rc_region_contains(ptr)) return;     // region blocks were never added to the set
+    rc_lock();
     if (!rc_set_buckets) {
-        pthread_mutex_unlock(&rc_set_mutex);
+        rc_unlock();
         return;
     }
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
@@ -212,12 +347,12 @@ static void rc_set_remove(void* ptr) {
                 idx = next;
                 next = (idx + 1) & (rc_set_cap - 1);
             }
-            pthread_mutex_unlock(&rc_set_mutex);
+            rc_unlock();
             return;
         }
         idx = (idx + 1) & (rc_set_cap - 1);
     }
-    pthread_mutex_unlock(&rc_set_mutex);
+    rc_unlock();
 }
 
 // ─── Strict allocator mode (AVRA_RC_STRICT) ─────────────────────
@@ -360,6 +495,10 @@ static int rc_quarantine_contains_user(void* user_ptr) {
 // base to the quarantine (deferred free). Otherwise: free immediately, the
 // historical path. Caller has already cleared type_tag + removed from rc_set.
 static void rc_reclaim(void* user_ptr) {
+    if (rc_region_contains(user_ptr)) {          // region block → size-class free list
+        rc_region_free_block(user_ptr);
+        return;
+    }
     if (avra_rc_strict) {
         void* base = rc_malloc_base(user_ptr);
         size_t payload = *(size_t*)base;        // stored by avra_rc_alloc
@@ -380,6 +519,22 @@ static void avra_comptime_charge(int64_t bytes);
 
 void* avra_rc_alloc(int64_t payload_size) {
     size_t payload = (size_t)payload_size;
+    // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
+    // so a runaway fold trips a diagnostic before it can OOM the compiler.
+    if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
+    // Fast path: a small object straight from the region (no malloc, no rc_set).
+    void* ruser = rc_region_try_alloc(payload);
+    if (ruser) {
+        RcHeader* rhdr = (RcHeader*)((char*)ruser - RC_HEADER_SIZE);
+        atomic_store_explicit(&rhdr->refcount, 1, memory_order_relaxed);
+        rhdr->type_tag = RC_MAGIC;
+        t_rc_allocs++;
+        if (rc_trace) {
+            fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1, region)\n", ruser, (long long)payload_size);
+        }
+        return ruser;
+    }
+    // Fallback: strict mode, oversized block, or region exhausted → malloc + rc_set.
     size_t prefix = avra_rc_strict ? RC_STRICT_PREFIX : 0;
     size_t total = prefix + RC_HEADER_SIZE + payload;
     total = (total + 7) & ~7;  // align to 8
@@ -388,13 +543,10 @@ void* avra_rc_alloc(int64_t payload_size) {
         avra_runtime_errorf("out of memory (rc_alloc %lld bytes)", (long long)payload_size);
         exit(1);
     }
-    // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
-    // so a runaway fold trips a diagnostic before it can OOM the compiler.
-    if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
     if (avra_rc_strict) *(size_t*)raw = payload;   // size prefix for poison-on-free
     void* user_ptr = (char*)raw + prefix + RC_HEADER_SIZE;
     RcHeader* hdr = (RcHeader*)((char*)user_ptr - RC_HEADER_SIZE);
-    atomic_store(&hdr->refcount, 1);
+    atomic_store_explicit(&hdr->refcount, 1, memory_order_relaxed);
     hdr->type_tag = RC_MAGIC;
     t_rc_allocs++;
     rc_set_add(user_ptr);
@@ -406,7 +558,8 @@ void* avra_rc_alloc(int64_t payload_size) {
 
 // Check if a pointer is an RC-managed object using the pointer set.
 static inline int is_rc_managed(void* ptr) {
-    return rc_set_contains(ptr);
+    if (rc_region_contains(ptr)) return 1;   // region block — RC by construction, no set lookup
+    return rc_set_contains(ptr);             // large / strict block — the residual set
 }
 
 // Increment reference count.
@@ -418,7 +571,7 @@ void avra_rc_retain(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    int32_t new_rc = atomic_fetch_add(&hdr->refcount, 1) + 1;
+    int32_t new_rc = rc_refcount_incr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, new_rc);
     }
@@ -433,7 +586,7 @@ void avra_rc_release(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
+    int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, new_rc);
     }
@@ -459,7 +612,7 @@ int64_t avra_rc_should_free(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return 0;
-    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
+    int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, new_rc);
     }
@@ -1304,25 +1457,58 @@ int64_t avra_selfhost_string_to_int(const char* s) { return strtoll(s, NULL, 10)
 // Layout: { int64_t* data; int64_t len; int64_t cap; }
 // All values stored as i64 (pointers are ptrtoint'd by the compiler).
 
+// Small-buffer optimization (SBO): the first AVRA_ARRAY_SBO slots live INLINE
+// in the header, so a small array (the pervasive case — an AST node's few
+// children, a call's args) is ONE malloc instead of two (header + data buffer)
+// and never touches malloc for its backing at all. Only when it grows past the
+// inline capacity does it heap-allocate a separate buffer. `data` points at
+// `inline_buf` until then; the struct is never realloc'd (only `data` grows),
+// so `inline_buf` is stable for the array's lifetime. AvraArray's layout is
+// private to runtime.c — codegen treats a list as an opaque ptr and only calls
+// avra_array_* — so widening the struct is transparent.
+#define AVRA_ARRAY_SBO 8
 typedef struct {
     int64_t* data;
     int64_t  len;
     int64_t  cap;
+    int64_t  inline_buf[AVRA_ARRAY_SBO];
 } AvraArray;
 
+// Arrays service arbitrary user (Avra) programs, so an allocation failure gets a
+// graceful diagnostic + exit (matching avra_rc_alloc) rather than an unguarded
+// null-deref. Centralised so every array alloc/grow site is covered uniformly.
+static void* avra_arr_xmalloc(size_t bytes) {
+    void* p = malloc(bytes);
+    if (!p) { avra_runtime_errorf("out of memory (array alloc %zu bytes)", bytes); exit(1); }
+    return p;
+}
+static void* avra_arr_xrealloc(void* old, size_t bytes) {
+    void* p = realloc(old, bytes);
+    if (!p) { avra_runtime_errorf("out of memory (array grow %zu bytes)", bytes); exit(1); }
+    return p;
+}
+
 void* avra_array_new(void) {
-    AvraArray* a = (AvraArray*)malloc(sizeof(AvraArray));
-    a->cap = 8;
+    AvraArray* a = (AvraArray*)avra_arr_xmalloc(sizeof(AvraArray));   // single allocation
+    a->cap = AVRA_ARRAY_SBO;
     a->len = 0;
-    a->data = (int64_t*)malloc(a->cap * sizeof(int64_t));
+    a->data = a->inline_buf;                                // backing lives inline
     return a;
 }
 
 void avra_array_push(void* arr, int64_t value) {
     AvraArray* a = (AvraArray*)arr;
     if (a->len >= a->cap) {
-        a->cap *= 2;
-        a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
+        int64_t newcap = a->cap * 2;
+        if (a->data == a->inline_buf) {
+            // First growth out of inline storage: malloc a real buffer + copy.
+            int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
+            memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
+            a->data = nd;
+        } else {
+            a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
+        }
+        a->cap = newcap;
     }
     a->data[a->len++] = value;
 }
@@ -1381,11 +1567,16 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
     if (start >= end) return avra_array_new();
 
     int64_t count = end - start;
-    AvraArray* dst = (AvraArray*)malloc(sizeof(AvraArray));
-    dst->cap = count > 8 ? count : 8;
+    AvraArray* dst = (AvraArray*)avra_arr_xmalloc(sizeof(AvraArray));
     dst->len = count;
-    dst->data = (int64_t*)malloc(dst->cap * sizeof(int64_t));
-    memcpy(dst->data, src->data + start, count * sizeof(int64_t));
+    if (count <= AVRA_ARRAY_SBO) {
+        dst->cap = AVRA_ARRAY_SBO;
+        dst->data = dst->inline_buf;                        // small slice: no second malloc
+    } else {
+        dst->cap = count;
+        dst->data = (int64_t*)avra_arr_xmalloc((size_t)dst->cap * sizeof(int64_t));
+    }
+    memcpy(dst->data, src->data + start, (size_t)count * sizeof(int64_t));
     return dst;
 }
 
@@ -2216,6 +2407,22 @@ int64_t avra_intmap_has(void* map, int64_t key) {
 // Returned strings are heap-allocated (caller doesn't free in
 // the bootstrap's GC-free model — acceptable for a compiler).
 
+// String equality with a first-byte fast-reject. Codegen lowers a
+// `match s { "a" -> …, "b" -> … }` to a SEQUENCE of these — one per arm —
+// so a non-matching subject (the common case: an identifier that is not a
+// keyword walks all ~60 keyword arms) pays a full strcmp per arm. The vast
+// majority of those arms differ from the subject in byte 0, so a single
+// char compare rejects them before the (AVX2-setup-heavy) strcmp call.
+// Semantically identical to `strcmp(a,b)==0`: byte 0 equal is necessary for
+// equality, and reading a[0]/b[0] is always valid on NUL-terminated strings
+// (empty string ⇒ a[0]=='\0', handled by the strcmp fall-through). Returns
+// 1 when equal, 0 otherwise.
+int64_t avra_streq(const char* a, const char* b) {
+    if (a == b) return 1;
+    if ((unsigned char)a[0] != (unsigned char)b[0]) return 0;
+    return strcmp(a, b) == 0 ? 1 : 0;
+}
+
 int64_t avra_str_contains(const char* haystack, const char* needle) {
     return strstr(haystack, needle) != NULL;
 }
@@ -2589,9 +2796,17 @@ void* avra_array_insert(void* arr, int64_t idx, int64_t value) {
     if (idx < 0) idx = 0;
     if (idx > a->len) idx = a->len;
     if (a->len >= a->cap) {
-        a->cap *= 2;
-        if (a->cap == 0) a->cap = 8;
-        a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
+        int64_t newcap = a->cap * 2;
+        if (newcap == 0) newcap = AVRA_ARRAY_SBO;
+        if (a->data == a->inline_buf) {
+            // Growing out of inline storage — realloc on inline_buf is UB.
+            int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
+            memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
+            a->data = nd;
+        } else {
+            a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
+        }
+        a->cap = newcap;
     }
     memmove(a->data + idx + 1, a->data + idx, (size_t)(a->len - idx) * sizeof(int64_t));
     a->data[idx] = value;
@@ -5331,6 +5546,7 @@ int64_t avra_spawn(int64_t closure) {
     task->closure = closure;
     task->result = 0;
     task->joined = 0;
+    avra_rc_go_multithreaded();  // a second thread now exists — arm the rc_set lock
     pthread_create(&task->thread, NULL, avra_thread_entry, task);
     return (int64_t)(uintptr_t)task;
 }
@@ -5912,6 +6128,7 @@ void avra_parallel_run(void* closure_array) {
     int64_t n = arr->len;
     pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
     AvraTask** args = (AvraTask**)malloc(n * sizeof(AvraTask*));
+    avra_rc_go_multithreaded();  // threads about to exist — arm the rc_set lock
     for (int64_t i = 0; i < n; i++) {
         args[i] = (AvraTask*)malloc(sizeof(AvraTask));
         args[i]->closure = arr->data[i];
