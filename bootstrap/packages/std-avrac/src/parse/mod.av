@@ -1094,6 +1094,18 @@ impl Parser {
         .Ok(eid)
     }
 
+    /// The RHS of a `|>` step, parsed exactly as parse_pipe parses it: a
+    /// `parse_or`-level expression with `it`-sugar enabled (`xs |> filter(it > 2)`,
+    /// spec 28.7+28.8). Exposed as the grammar-DSL @hand(pipe_rhs) delegate so the
+    /// pipe stratum's operands are byte-identical to the hand parser's.
+    fn parse_pipe_rhs(self) -> Result<ExprId, string> {
+        let saved_it = self.allow_it_sugar
+        self.allow_it_sugar = true
+        let r = self.parse_or()
+        self.allow_it_sugar = saved_it
+        r
+    }
+
 }
 
 /// True iff the pipe RHS arg list contains an `_` placeholder.

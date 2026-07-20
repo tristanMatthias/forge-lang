@@ -35,6 +35,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let src = emit_all()
         src.contains("fn parse_expression(st: PState) -> CapVal") &&
         src.contains("fn parse_assignment(st: PState) -> CapVal") &&
+        src.contains("fn parse_pipe(st: PState) -> CapVal") &&
         src.contains("fn parse_null_coalesce(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_or(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_and(st: PState) -> CapVal") &&
@@ -72,10 +73,19 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
         // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
         let src = emit_all()
-        src.contains("let l = parse_null_coalesce(st)") &&
+        src.contains("let l = parse_pipe(st)") &&
         src.contains("if st.cur().text == \"=\" {") &&
         src.contains("r = parse_assignment(st)") &&
         src.contains("CapVal.Node(mk_assign_expr(st, l, r))")
+    }
+
+    then "the pipe stratum folds `|>` with @hand(pipe_rhs) operands" {
+        // `pipe = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)` with
+        // `pipe_arg = @hand(pipe_rhs)` (parse_or + it-sugar).
+        let src = emit_all()
+        src.contains("while st.cur().text == \"|>\" {") &&
+        src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
+        src.contains("CapVal.Node(fold_pipe_expr(st, l, CapVal.Nodes(r_list)))")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {

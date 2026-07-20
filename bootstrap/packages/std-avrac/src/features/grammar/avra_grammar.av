@@ -32,7 +32,9 @@ use features.grammar.{parse_grammar, Grammar, Rule}
 export fn avra_expr_grammar() -> Grammar {
     let gp = grammar {
   expression    = assignment
-  assignment    = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)
+  assignment    = l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
+  pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
+  pipe_arg      = @hand(pipe_rhs)
   null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
   logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
   logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)

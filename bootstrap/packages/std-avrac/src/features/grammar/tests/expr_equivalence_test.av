@@ -182,4 +182,12 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a < b == c") && agree("1 + 2 == 3") && agree("a == b != c")
         }
     }
+    given "the pipe `|>` (desugar to Call, prepend / placeholder / it-sugar)" {
+        then "bare, arg-prepend, placeholder, chained, and it-sugar pipes agree" {
+            dsl("a |> f") != "<err>" &&
+            agree("a |> f") && agree("a |> f(b)") && agree("a |> f(_, b)") &&
+            agree("a |> f |> g") && agree("xs |> filter(it > 2)") &&
+            agree("x |> g(1) |> h")
+        }
+    }
 }

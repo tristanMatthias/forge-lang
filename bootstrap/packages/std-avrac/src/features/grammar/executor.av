@@ -765,6 +765,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
     // shared exported predicate, mirrored by emit's hand_first_guard.
     if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
+    // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
+    if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
     false
 }
 
@@ -979,7 +981,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "pipe_rhs"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1036,6 +1038,9 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // parse_unary → parse_call → parse_primary). The DSL owns only the
         // declarative binary/infix ladder ABOVE this (ps3t.6.7 Step C).
         "hand_unary"    -> bp.parse_unary()
+        // The RHS of a `|>` step — a parse_or-level expr with `it`-sugar on, so
+        // the DSL pipe stratum's operands match parse_pipe byte-for-byte.
+        "pipe_rhs"      -> bp.parse_pipe_rhs()
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
@@ -1167,6 +1172,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, env.get(args[0]), env.get(args[1])))
+        "fold_pipe" if args.length == 2 -> CapVal.Node(fold_pipe_expr(st, env.get(args[0]), env.get(args[1])))
         "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
@@ -2026,6 +2032,55 @@ fn rebind_bin_subject(st: PState, id: ExprId, base: ExprId) -> ExprId {
         .Binary(_, op, r) -> st.store.exprs.add_leaf(Expr.Binary(base, op, r))
         _ -> id
     }
+}
+
+/// Left-fold `l ( "|>" r )*` into the pipe desugar — the hand parse_pipe: `a |> f`
+/// → `f(a)`; `a |> f(b)` → `f(a, b)` (prepend); `a |> f(_, b)` → `f(a, b)` (the `_`
+/// placeholder takes the piped value). Each `r` is a pipe_arg (@hand(pipe_rhs),
+/// parse_or with `it`-sugar). Left-associative: `a |> f |> g` = `g(f(a))`.
+export fn fold_pipe_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    for rid in capval_nodes(rcap) {
+        acc = match st.store.exprs.get(rid) {
+            .Call(callee, args) -> {
+                if pipe_has_placeholder(st, args) {
+                    st.store.exprs.add_leaf(Expr.Call(callee, pipe_replace_placeholder(st, args, acc)))
+                } else {
+                    mut prepended: List<ExprId> = [acc]
+                    for a in args { prepended.push(a) }
+                    st.store.exprs.add_leaf(Expr.Call(callee, prepended))
+                }
+            }
+            _ -> st.store.exprs.add_leaf(Expr.Call(rid, [acc]))
+        }
+    }
+    acc
+}
+
+/// True iff any arg is the `_` pipe placeholder — mirrors mod.av's
+/// pipe_args_has_placeholder over the shared store.
+fn pipe_has_placeholder(st: PState, args: List<ExprId>) -> bool {
+    for a in args {
+        match st.store.exprs.get(a) {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
+        }
+    }
+    false
+}
+
+/// Replace the first `_` placeholder(s) with the piped value — mirrors mod.av's
+/// pipe_replace_placeholder.
+fn pipe_replace_placeholder(st: PState, args: List<ExprId>, repl: ExprId) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in args {
+        let is_ph = match st.store.exprs.get(a) {
+            .Ident(n) -> n == "_"
+            _ -> false
+        }
+        if is_ph { out.push(repl) } else { out.push(a) }
+    }
+    out
 }
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce` chain
