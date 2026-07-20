@@ -7,6 +7,7 @@
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
 use @std.avrac.features.modules.{package_meta_path_for}
+use @std.avrac.build.{cached_build_ll_path}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -20,7 +21,7 @@ fn probe(name: string, ok: bool) {
 
 fn main() -> int {
     // @@fixture-stateful@@ — fxfz: this fixture builds @std/avrac into the
-    // SHARED packages/std-avrac tree and probes its meta.bin / avrac.av.ll
+    // SHARED packages/std-avrac tree and probes its meta.bin / cached IR
     // artifacts — build state outside the fixture-stdout cache key.
     // fixture_is_stateful reads this directive from the source, making any
     // `: FAIL` capture non-publishable so a capture taken against a corrupt/
@@ -40,17 +41,39 @@ fn main() -> int {
     probe("std_avrac_build_rc_zero", rc == 0)
 
     probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac, bs2)) != 0)
-    probe("avrac_ll_present", avra_selfhost_file_exists("${std_avrac}/src/avrac.av.ll") != 0)
+
+    // uzs9.4: probe the RACE-SAFE, content-addressed cache slot, NOT the
+    // shared entry `${std_avrac}/src/avrac.av.ll`. That shared path is
+    // removed-then-rewritten by every concurrent `bs2 build --lib` on
+    // std-avrac (main.av's pre-compile unlink — "the one path the cache
+    // can't defend", pdme.7). Under the parallel test suite a sibling
+    // shard building @std would empty it mid-read, so the greps below
+    // intermittently observed an absent / half-written file even though
+    // this build's own VALUE assertions (rc, meta.bin) passed — the
+    // ordering flake this ticket roots out. cached_build_ll_path resolves
+    // the slot the build published (via the `last` sidecar's fp); a
+    // content-addressed slot is never removed mid-flight, so a probe here
+    // never races a builder while still grepping the exact IR `build --lib`
+    // emits (the slot is the source of the entry `.ll` on a cache hit).
+    let cached_ll = cached_build_ll_path(std_avrac, "std-avrac")
+    let ll_present = cached_ll != "" && avra_selfhost_file_exists(cached_ll) != 0
+    probe("avrac_ll_present", ll_present)
+
+    // Guard the grep target: a "" path (no `last` sidecar recorded — should
+    // never happen after rc==0, but be defensive) would make `grep` read
+    // STDIN and HANG. Fall back to an empty file so the greps return 0 and
+    // the symbols_qualified probe fails honestly instead of hanging.
+    let grep_ll = if ll_present { cached_ll } else { "/dev/null" }
 
     // Symbols are qualified with @std::avrac::, which the object-file
     // mangler escapes (`@`->$40, `:`->$3A) to `$40std$3A$3Aavrac$3A$3A…`.
     // Grep for one canonical fn that exists in @std/avrac/codegen.
-    let qualified_grep = avra_shell_exec("grep -c '@\"$40std$3A$3Aavrac$3A$3Acodegen' ${std_avrac}/src/avrac.av.ll").trim()
+    let qualified_grep = avra_shell_exec("grep -c '@\"$40std$3A$3Aavrac$3A$3Acodegen' ${grep_ll}").trim()
     probe("symbols_qualified_under_at_std_avrac", int(qualified_grep) > 100)
 
     // Unqualified `codegen::` (mangled `codegen$3A$3A`) should NOT appear at
     // the start of any define line (that would mean the wrap missed those fns).
-    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen$3A$3A' ${std_avrac}/src/avrac.av.ll").trim()
+    let unq = avra_shell_exec("grep -c '^define [a-z0-9]* @\"codegen$3A$3A' ${grep_ll}").trim()
     probe("no_unqualified_codegen_fns", int(unq) == 0)
 
     0
