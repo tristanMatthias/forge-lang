@@ -1446,25 +1446,44 @@ int64_t avra_selfhost_string_to_int(const char* s) { return strtoll(s, NULL, 10)
 // Layout: { int64_t* data; int64_t len; int64_t cap; }
 // All values stored as i64 (pointers are ptrtoint'd by the compiler).
 
+// Small-buffer optimization (SBO): the first AVRA_ARRAY_SBO slots live INLINE
+// in the header, so a small array (the pervasive case — an AST node's few
+// children, a call's args) is ONE malloc instead of two (header + data buffer)
+// and never touches malloc for its backing at all. Only when it grows past the
+// inline capacity does it heap-allocate a separate buffer. `data` points at
+// `inline_buf` until then; the struct is never realloc'd (only `data` grows),
+// so `inline_buf` is stable for the array's lifetime. AvraArray's layout is
+// private to runtime.c — codegen treats a list as an opaque ptr and only calls
+// avra_array_* — so widening the struct is transparent.
+#define AVRA_ARRAY_SBO 8
 typedef struct {
     int64_t* data;
     int64_t  len;
     int64_t  cap;
+    int64_t  inline_buf[AVRA_ARRAY_SBO];
 } AvraArray;
 
 void* avra_array_new(void) {
-    AvraArray* a = (AvraArray*)malloc(sizeof(AvraArray));
-    a->cap = 8;
+    AvraArray* a = (AvraArray*)malloc(sizeof(AvraArray));   // single allocation
+    a->cap = AVRA_ARRAY_SBO;
     a->len = 0;
-    a->data = (int64_t*)malloc(a->cap * sizeof(int64_t));
+    a->data = a->inline_buf;                                // backing lives inline
     return a;
 }
 
 void avra_array_push(void* arr, int64_t value) {
     AvraArray* a = (AvraArray*)arr;
     if (a->len >= a->cap) {
-        a->cap *= 2;
-        a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
+        int64_t newcap = a->cap * 2;
+        if (a->data == a->inline_buf) {
+            // First growth out of inline storage: malloc a real buffer + copy.
+            int64_t* nd = (int64_t*)malloc((size_t)newcap * sizeof(int64_t));
+            memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
+            a->data = nd;
+        } else {
+            a->data = (int64_t*)realloc(a->data, (size_t)newcap * sizeof(int64_t));
+        }
+        a->cap = newcap;
     }
     a->data[a->len++] = value;
 }
@@ -1524,10 +1543,15 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
 
     int64_t count = end - start;
     AvraArray* dst = (AvraArray*)malloc(sizeof(AvraArray));
-    dst->cap = count > 8 ? count : 8;
     dst->len = count;
-    dst->data = (int64_t*)malloc(dst->cap * sizeof(int64_t));
-    memcpy(dst->data, src->data + start, count * sizeof(int64_t));
+    if (count <= AVRA_ARRAY_SBO) {
+        dst->cap = AVRA_ARRAY_SBO;
+        dst->data = dst->inline_buf;                        // small slice: no second malloc
+    } else {
+        dst->cap = count;
+        dst->data = (int64_t*)malloc((size_t)dst->cap * sizeof(int64_t));
+    }
+    memcpy(dst->data, src->data + start, (size_t)count * sizeof(int64_t));
     return dst;
 }
 
@@ -2731,9 +2755,17 @@ void* avra_array_insert(void* arr, int64_t idx, int64_t value) {
     if (idx < 0) idx = 0;
     if (idx > a->len) idx = a->len;
     if (a->len >= a->cap) {
-        a->cap *= 2;
-        if (a->cap == 0) a->cap = 8;
-        a->data = (int64_t*)realloc(a->data, a->cap * sizeof(int64_t));
+        int64_t newcap = a->cap * 2;
+        if (newcap == 0) newcap = AVRA_ARRAY_SBO;
+        if (a->data == a->inline_buf) {
+            // Growing out of inline storage — realloc on inline_buf is UB.
+            int64_t* nd = (int64_t*)malloc((size_t)newcap * sizeof(int64_t));
+            memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
+            a->data = nd;
+        } else {
+            a->data = (int64_t*)realloc(a->data, (size_t)newcap * sizeof(int64_t));
+        }
+        a->cap = newcap;
     }
     memmove(a->data + idx + 1, a->data + idx, (size_t)(a->len - idx) * sizeof(int64_t));
     a->data[idx] = value;
