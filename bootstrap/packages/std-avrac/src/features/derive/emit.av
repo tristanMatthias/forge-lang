@@ -276,6 +276,13 @@ export fn ident_field_access(name: string, field: string) -> Expr {
     Expr.FieldAccess(synth_expr_id(Expr.Ident(name)), field)
 }
 
+/// `x.node` — the 1-hop wrapper projection, shared by every emitter that
+/// unwraps a `Wrapper` field (eq compares `.node`, hash recurses into it).
+@comptime
+export fn node_hop(x: Expr) -> Expr {
+    Expr.FieldAccess(synth_expr_id(x), "node")
+}
+
 /// A nominal ValueType for a generated turbofish type-arg. 5idg:
 /// turbofish type-args are structural `List<ValueType>`, but emitters run
 /// at COMPTIME and cannot call the runtime helper `vtype_from_name` (the

@@ -71,6 +71,37 @@ export fn opt_eq_by<T>(a: T?, b: T?, eq: fn(T, T) -> bool) -> bool {
     eq(a!, b!)
 }
 
+/// One FNV-1a mixing step — fold `h` into the running `acc`. The ONE
+/// combiner behind @derive(Hash)'s field fold AND `list_hash_by`/
+/// `opt_hash_by`, so a struct field, an enum payload, and a list element
+/// all mix identically. The multiplier is FNV64_PRIME (0x100000001b3),
+/// the same constant `content_id_for` folds bytes with — so a derived
+/// content hash is FNV-1a over (variant-name-hash, field-hash…), coherent
+/// with the string content ids the query engine already trusts. i64
+/// wrapping is intended (a content hash, not arithmetic).
+export fn hash_mix(acc: int, h: int) -> int {
+    (acc ^ h) * 1099511628211
+}
+
+/// Fold a list's element hashes into one order- AND length-sensitive int
+/// via `hash_mix`, seeded by the length so `[x]` and `[x, x]` differ. The
+/// elementwise backbone of @derive(Hash) for a `List<Node>` field — the
+/// hashing sibling of `list_eq_by`.
+export fn list_hash_by<T>(xs: List<T>, hash: fn(T) -> int) -> int {
+    mut h = xs.length
+    for x in xs { h = hash_mix(h, hash(x)) }
+    h
+}
+
+/// `none` hashes to a fixed sentinel (0); a present value mixes its element
+/// hash against a present-marker (1) so `none` and a present hash-0 value
+/// never collide. The none-guarded sibling of `opt_eq_by`, routing a
+/// derived nullable node field (`next: Tree?`) through `hash_mix`.
+export fn opt_hash_by<T>(a: T?, hash: fn(T) -> int) -> int {
+    if a == null { return 0 }
+    hash_mix(1, hash(a!))
+}
+
 /// Linear membership check on a `List<string>`. Common enough that
 /// every caller writing `list_any(xs, (s: string) -> s == target)`
 /// (or the equivalent for-loop) is more noise than signal — name

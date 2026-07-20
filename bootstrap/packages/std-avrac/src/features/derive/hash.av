@@ -1,0 +1,199 @@
+// WHY: the hash emitter — a per-type content hash, the third proof (after
+// eq) that the derive engine's emitter interface carries a DISTINCT
+// generator with zero new traversal code (design doc §1.5). It exists to
+// lift ps3t.6.6 @query's string-only value type: the engine is generic over
+// V (Computed<V> carries a caller-supplied value_hash) and only needed a way
+// for generated code to hash an arbitrary V for early cutoff. One
+// per-variant method, both decl forms:
+//
+//   enum:    fn T__hash(self: T) -> int {
+//                match self {
+//                    .V(__hash_a0, __hash_a1) ->
+//                        hash_mix(hash_mix(content_id_for("V"), <h a0>), <h a1>)
+//                    …
+//                }
+//            }
+//   struct:  fn P__hash(self: P) -> int {
+//                let __hash_a0 = self.x
+//                hash_mix(content_id_for("P"), <h __hash_a0>) …
+//            }
+//
+// The arm is UNIFORM across struct and enum — a left FNV-1a fold seeded by
+// the variant/type name's own content id (so distinct variants and distinct
+// types never share a seed), then each field's hash mixed in through the ONE
+// `hash_mix` combinator (list_ops). Per-shape field hashing: a Leaf hashes
+// through `content_id_for(string(x))` (the universal stringifier keys every
+// scalar uniformly), a Node recurses via the derived `.hash()`, a NodeList
+// folds through @std's `list_hash_by`, an OptionalNode none-guards through
+// `opt_hash_by` (both with a generated `(e) -> e.hash()` lambda), a Wrapper
+// hops `.node` then recurses.
+//
+// Every @std helper the generated code calls (`content_id_for`, `hash_mix`,
+// `list_hash_by`, `opt_hash_by`) is emitted FULLY QUALIFIED — so a derived
+// hash resolves with ZERO consumer imports, on the metadata fast-path (where
+// @std is stubbed) exactly as in a whole-program build. This is the y9y4.19
+// discipline: a bare `Expr.Ident("list_concat")` is F3000 on the fast-path;
+// a qualified ref is not. (`string` is a language builtin, never stubbed.)
+//
+// The wrapper-list, optional-wrapper, and struct-list shapes have no recipe
+// yet (they only arise on the core AST's own decls): they emit a LOUD
+// undefined helper name so a derive over such a field fails its generated
+// code's compile with a named error instead of a silently-wrong hash — the
+// same contract as the eq emitter. Extend here when a consumer needs them.
+
+use core.{Stmt, Expr, ExprId, ParamEntry, ValueType}
+use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, synth_expr_id}
+use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, self_vtype, emit_call, name_vtype, node_hop}
+
+// ── Public entry ──
+
+/// 2-arg @comptime macro: `@expand(derive_hash)` on an enum or struct emits
+/// `Type__hash`, callable as `v.hash() -> int` — a stable content hash
+/// (equal values → equal hash), the early-cutoff key @query threads as V's
+/// value_hash.
+@comptime
+export fn derive_hash(target: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
+    derive_engine(target, ctx, hash_plan())
+}
+
+/// The hash emitter: one per-variant method, enums AND structs.
+@comptime
+export fn hash_plan() -> EmitPlan {
+    let methods: List<EmitMethod> = [
+        EmitMethod.PerVariant(PerVariantMethod {
+            method_name: "hash",
+            cross_type: false,
+            signature: hash_sig,
+            bind: hash_bind,
+            arm_body: hash_arm,
+        }),
+    ]
+    EmitPlan { macro_name: "derive_hash", enum_only: false, methods }
+}
+
+// ── Hooks ──
+
+/// `fn Parent__hash(self: Parent) -> int` — no extra params, no prologue.
+@comptime
+fn hash_sig(dc: DeclCtx) -> MethodSig {
+    let no_params: List<ParamEntry> = []
+    let no_prologue: List<Stmt> = []
+    MethodSig { extra_params: no_params, ret: ValueType.Int, prologue: no_prologue }
+}
+
+/// Every field is hashed, so every field binds — to a deterministic
+/// `__hash_a<i>` synthetic (position-indexed, like eq's self-side names).
+@comptime
+fn hash_bind(field_name: string, kind: FieldShape, i: int) -> string {
+    "__hash_a${string(i)}"
+}
+
+/// One arm body, uniform for struct and enum: a left FNV-1a fold seeded by
+/// the variant/type name's own content id, mixing each field's hash in
+/// through `hash_mix`. The driver has already bound each `__hash_a<i>` (to
+/// `self.<field>` for a struct, to the pattern payload for an enum), so the
+/// same fold serves both decl forms with no branching here.
+@comptime
+fn hash_arm(dc: DeclCtx, variant: string, fields: List<Classified>) -> Expr {
+    mut acc = content_id_call(string_literal(variant))
+    for c in fields {
+        acc = mix_call(acc, field_hash(c.kind, Expr.Ident(c.binding)))
+    }
+    acc
+}
+
+// ── Per-field hashing ──
+
+/// The Expr hashing one field, dispatched on its shape. This match is
+/// hash's FieldShape exhaustiveness guard — a new shape forces a compile
+/// error here.
+@comptime
+fn field_hash(kind: FieldShape, x: Expr) -> Expr {
+    match kind {
+        .Leaf -> content_id_call(string_call(x))
+        .Node(_) -> hash_method_call(x)
+        .NodeList(t) -> list_hash_by_call(x, t)
+        .OptionalNode(t) -> opt_hash_by_call(x, t)
+        .Wrapper(_, _) -> hash_method_call(node_hop(x))
+        // No recipe yet — loud, named compile failure over a silently-wrong
+        // hash (see the file WHY).
+        .OptionalWrapper(_, _) -> unsupported_hash_call("optional_wrapper", x)
+        .WrapperList(_, _) -> unsupported_hash_call("wrapper_list", x)
+        .StructList(_) -> unsupported_hash_call("struct_list", x)
+    }
+}
+
+// ── Generated-call builders (all @std refs fully qualified) ──
+
+/// `@std::avrac::core::content_id_for(s)` — FNV-1a-64 over a string. The
+/// leaf/seed hash primitive; qualified so it resolves import-free.
+@comptime
+fn content_id_call(s: Expr) -> Expr {
+    emit_call(Expr.QualifiedIdent("@std::avrac::core::content_id_for"), [synth_expr_id(s)])
+}
+
+/// `@std::avrac::list_ops::hash_mix(acc, h)` — one FNV-1a fold step.
+@comptime
+fn mix_call(acc: Expr, h: Expr) -> Expr {
+    emit_call(Expr.QualifiedIdent("@std::avrac::list_ops::hash_mix"), [synth_expr_id(acc), synth_expr_id(h)])
+}
+
+/// `string(x)` — the language's universal stringifier (a builtin, never
+/// stubbed), keying every scalar leaf uniformly for `content_id_for`.
+@comptime
+fn string_call(x: Expr) -> Expr {
+    emit_call(Expr.Ident("string"), [synth_expr_id(x)])
+}
+
+/// `x.hash()` — recurse into the derived hash via standard method dispatch.
+@comptime
+fn hash_method_call(x: Expr) -> Expr {
+    let no_args: List<ExprId> = []
+    emit_call(Expr.FieldAccess(synth_expr_id(x), "hash"), no_args)
+}
+
+/// `<helper>(x, (e: T) -> e.hash())` — elementwise/none-guarded hashing via
+/// an @std combinator, recursing through a generated lambda. The lambda's
+/// param is ANNOTATED with the element type: a lambda bound to a generic fn
+/// param is never threaded a type at codegen, so an un-annotated param trips
+/// the F1006 gate — and the emitter knows the element type exactly (the
+/// shape's target), the same contract eq's `list_eq_by` lambda carries.
+@comptime
+fn hash_by_helper_call(helper_path: string, x: Expr, target: string) -> Expr {
+    let e = ParamEntry { name: "e", vtype: name_vtype(target) }
+    let lambda_params: List<ParamEntry> = [e]
+    let lambda = Expr.Lambda(lambda_params, synth_expr_id(hash_method_call(Expr.Ident("e"))))
+    let args: List<ExprId> = [synth_expr_id(x), synth_expr_id(lambda)]
+    emit_call(Expr.QualifiedIdent(helper_path), args)
+}
+
+/// `@std::avrac::list_ops::list_hash_by(x, …)` — order/length-sensitive
+/// hash over a `List<Node>` field.
+@comptime
+fn list_hash_by_call(x: Expr, target: string) -> Expr {
+    hash_by_helper_call("@std::avrac::list_ops::list_hash_by", x, target)
+}
+
+/// `@std::avrac::list_ops::opt_hash_by(x, …)` — none-guarded hash over a
+/// nullable node field.
+@comptime
+fn opt_hash_by_call(x: Expr, target: string) -> Expr {
+    hash_by_helper_call("@std::avrac::list_ops::opt_hash_by", x, target)
+}
+
+/// An undefined-fn call naming the unsupported shape — fails the generated
+/// code's compile loudly at the exact field.
+@comptime
+fn unsupported_hash_call(which: string, x: Expr) -> Expr {
+    emit_call(Expr.Ident("derive_hash_has_no_${which}_recipe"), [synth_expr_id(x)])
+}
+
+// ── Literal builders ──
+
+/// A string-literal Expr for `text` — the AST's String value includes its
+/// surrounding quotes (the renderer round-trips verbatim), so the seed
+/// `content_id_for("VariantName")` carries the quoted form.
+@comptime
+fn string_literal(text: string) -> Expr {
+    Expr.String("\"${text}\"")
+}

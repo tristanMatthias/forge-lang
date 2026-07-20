@@ -1,0 +1,55 @@
+// The hash emitter on an enum — the proof that the unified derive engine's
+// emitter interface carries a third generator with zero new traversal code.
+// Covers: leaf hashing (content_id_for(string(x))), node recursion (.hash()),
+// list-of-self folding (list_hash_by + the generated lambda), the
+// cross-variant distinction (each arm seeds its FNV fold with its own
+// variant-name content id, so different variants hash apart), and the empty
+// variant (its variant-name seed alone).
+//
+// The fixture imports NO list_ops combinator — the emitter qualifies every
+// @std ref, so `list_hash_by` resolves import-free (contrast eq's enum
+// fixture, which hand-imports `list_eq_by`).
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "derive_hash: content hash on a recursive enum" {
+    then "same / diff / cross-variant / empty / list cases all hash correctly" {
+        let out = write_fixture_and_run("/tmp/avra_derive_hash_enum_test.av",
+            "use @std.avrac.features.derive.{derive_hash}\n" +
+            "\n" +
+            "@expand(derive_hash)\n" +
+            "enum Tree {\n" +
+            "    Leaf(value: int)\n" +
+            "    Node(left: Tree, right: Tree)\n" +
+            "    Many(kids: List<Tree>)\n" +
+            "    Empty\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let b = Tree.Node(Tree.Leaf(1), Tree.Leaf(2))\n" +
+            "    let c = Tree.Node(Tree.Leaf(1), Tree.Leaf(3))\n" +
+            "    println(\"same=\" + string(a.hash() == b.hash()))\n" +
+            "    println(\"diff=\" + string(a.hash() != c.hash()))\n" +
+            "    let leaf = Tree.Leaf(1)\n" +
+            "    println(\"variant_diff=\" + string(a.hash() != leaf.hash()))\n" +
+            "    let e1 = Tree.Empty\n" +
+            "    let e2 = Tree.Empty\n" +
+            "    println(\"empty=\" + string(e1.hash() == e2.hash()))\n" +
+            "    let l1 = Tree.Many([Tree.Leaf(1), Tree.Leaf(2)])\n" +
+            "    let l2 = Tree.Many([Tree.Leaf(1), Tree.Leaf(2)])\n" +
+            "    let l3 = Tree.Many([Tree.Leaf(1)])\n" +
+            "    let l4 = Tree.Many([Tree.Leaf(1), Tree.Leaf(9)])\n" +
+            "    println(\"list_same=\" + string(l1.hash() == l2.hash()))\n" +
+            "    println(\"list_len_diff=\" + string(l1.hash() != l3.hash()))\n" +
+            "    println(\"list_elem_diff=\" + string(l1.hash() != l4.hash()))\n" +
+            "}\n")
+        out.contains("same=true") &&
+            out.contains("diff=true") &&
+            out.contains("variant_diff=true") &&
+            out.contains("empty=true") &&
+            out.contains("list_same=true") &&
+            out.contains("list_len_diff=true") &&
+            out.contains("list_elem_diff=true")
+    }
+}

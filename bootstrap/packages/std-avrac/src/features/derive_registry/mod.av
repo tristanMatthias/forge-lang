@@ -20,7 +20,7 @@
 /// dispatch (below) and the unknown-capability diagnostic's "known:"
 /// list — in sync by construction.
 export fn derive_capabilities() -> List<string> {
-    ["Walk", "Eq", "Marshal"]
+    ["Walk", "Eq", "Hash", "Marshal"]
 }
 
 /// True for capabilities the expander dispatches NATIVELY (compiled
@@ -44,6 +44,7 @@ export fn derive_capability_native(cap: string) -> bool {
 export fn derive_capability_macro(cap: string) -> string {
     if cap == "Walk" { return "derive_walker" }
     if cap == "Eq" { return "derive_eq" }
+    if cap == "Hash" { return "derive_hash" }
     // Marshal is native (derive_capability_native) — no shim to name.
     ""
 }
@@ -58,6 +59,7 @@ export fn derive_capability_macro(cap: string) -> string {
 export fn derive_capability_module(cap: string) -> string {
     if cap == "Walk" { return "@std.avrac.features.walker" }
     if cap == "Eq" { return "@std.avrac.features.derive" }
+    if cap == "Hash" { return "@std.avrac.features.derive" }
     if cap == "Marshal" { return "@std.process" }
     ""
 }
