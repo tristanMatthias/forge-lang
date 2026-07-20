@@ -1,0 +1,114 @@
+// t-nad3: the EXPRESSION sibling of 2h5s. `construct_expr` used to return any
+// Expr variant it couldn't build UNCHANGED (an explicit `.When(_) -> e` arm +
+// a `_ -> e` catch-all). Evaluating that raw node during `@expand` runs the
+// expression and splices its runtime value instead of constructing the AST the
+// user quoted — the expression-position analogue of the 2h5s silent-NoOp.
+//
+// This split the fix in two:
+//   * `GenericCall` (`f<int>(x)`) is a legitimate, common quoted expr that was
+//     falling through — it is now CONSTRUCTED (build-what-you-need), so a macro
+//     can emit an explicit-type-arg call.
+//   * `when` / `catch` / `channel` / list-comprehension / type-literal (and the
+//     parser's Error/Missing placeholders) are genuinely unconstructable today;
+//     they now route to `synth_unsupported_expr` → F4005 naming the variant,
+//     instead of being silently mishandled.
+//
+// `que_`-prefixed fixtures against cross-shard filename collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+fn que_compile_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_quote_unsupported_expr_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "a quoted GenericCall is constructed, not evaluated (t-nad3 build-what-you-need)" {
+    then "a macro that quotes `ident<int>(42)` expands to a working generic call" {
+        // Before t-nad3 the GenericCall fell through `construct_expr`'s `_ -> e`
+        // and was mishandled; now it is constructed, so the expanded program
+        // actually calls `ident<int>(42)` and prints 42.
+        let out = write_fixture_and_run("/tmp/avra_quote_gencall_pos_test.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "fn ident<T>(x: T) -> T { x }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_call() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        println(string(ident<int>(42)))\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_call)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("42")
+    }
+}
+
+spec "an unsupported quoted expression fails the expansion (t-nad3)" {
+    then "a quoted `when` expression is a comptime error naming the variant" {
+        let out = que_compile_out("when",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_when() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        let x = when {\n" +
+            "            true -> 1\n" +
+            "            else -> 2\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_when)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4005") && out.contains("when")
+    }
+    then "a quoted `catch` expression is a comptime error, not an ICE" {
+        let out = que_compile_out("catch",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "fn risky() -> int { 1 }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_catch() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        let y = risky() catch (e) { 0 }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_catch)\n" +
+            "fn placeholder2() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4005") && out.contains("catch") && !out.contains("F9999")
+    }
+}
+
+spec "a supported quoted expression still expands clean (t-nad3 control)" {
+    then "a quoted plain call expands with no unsupported-variant error" {
+        // The over-fire guard: a plain `Call` is constructed normally, so the
+        // expansion compiles clean — no F4005 from `synth_unsupported_expr`.
+        let out = que_compile_out("ok",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_ok() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        println(\"alpha\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_ok)\n" +
+            "fn placeholder3() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        !out.contains("F4005") && !out.contains("F9999")
+    }
+}

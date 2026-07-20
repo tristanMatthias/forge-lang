@@ -87,6 +87,20 @@ export fn synth_unsupported_stmt(variant: string) -> Stmt {
     Stmt.NoOp
 }
 
+/// Unsupported-variant marker for EXPRESSIONS — the `construct_expr` sibling
+/// of `synth_unsupported_stmt`. The quote lowerer emits a call to this in
+/// place of returning an unhandled `Expr` variant unchanged (which would
+/// EVALUATE the expression at expansion time and splice its runtime value
+/// instead of constructing its AST). Like its stmt sibling it is NOT an
+/// identity shim: reaching it during `@expand` is a hard error naming the
+/// variant (features/eval intercepts it, surfaced as F4005), so a quoted
+/// construct `construct_expr` cannot build fails the expansion loudly —
+/// design §3.4 — instead of being silently mishandled.
+export fn synth_unsupported_expr(variant: string) -> Expr {
+    synth_shim_unreachable("synth_unsupported_expr")
+    Expr.None
+}
+
 // ── Read shims (id → node): introspection inverse of the write shims ──
 // Identity at eval; the received child is already a boxed, matchable
 // node Value, so the shim only re-types it for `match`.

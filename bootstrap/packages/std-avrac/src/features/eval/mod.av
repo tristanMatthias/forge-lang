@@ -1193,6 +1193,13 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<ExprId>) -> StepResult {
     if callee_last_segment(callee) == "synth_unsupported_stmt" {
         return eval_synth_unsupported_stmt(runtime, args)
     }
+    // `synth_unsupported_expr(name)` (t-nad3): the EXPRESSION sibling — the
+    // quote lowerer emits it for an Expr variant `construct_expr` cannot
+    // build. Same contract: a hard error naming the variant (F4005), never
+    // an identity passthrough.
+    if callee_last_segment(callee) == "synth_unsupported_expr" {
+        return eval_synth_unsupported_expr(runtime, args)
+    }
     if call_is_synth_shim(callee) {
         // `synth_expr_id` additionally coerces a spliced SCALAR to a boxed Expr
         // literal (rmzs GAP2): `~(expr)` in an expression slot lowers to
@@ -1569,6 +1576,22 @@ fn eval_synth_unsupported_stmt(runtime: Runtime, args: List<ExprId>) -> StepResu
         if r.value.kind == "string" { name = r.value.text }
     }
     error_result(runtime, "quote: cannot construct a `${name}` statement — this statement kind is not yet supported inside a quote/macro body")
+}
+
+/// `synth_unsupported_expr(name)` eval (t-nad3): the expression sibling of
+/// `eval_synth_unsupported_stmt`. The quote lowerer emits this for an Expr
+/// variant `construct_expr` cannot build; reaching it during `@expand`
+/// evaluation is a hard error naming the variant (wrapped as F4005), so a
+/// quoted expression that would otherwise be silently mishandled fails the
+/// expansion loudly (design §3.4).
+fn eval_synth_unsupported_expr(runtime: Runtime, args: List<ExprId>) -> StepResult {
+    mut name = "expression"
+    if args.length >= 1 {
+        let r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+        if r.had_error { return r }
+        if r.value.kind == "string" { name = r.value.text }
+    }
+    error_result(runtime, "quote: cannot construct a `${name}` expression — this expression kind is not yet supported inside a quote/macro body")
 }
 
 /// `synth_expr_id` eval: identity for an already-Expr value (the Expr-enum a
