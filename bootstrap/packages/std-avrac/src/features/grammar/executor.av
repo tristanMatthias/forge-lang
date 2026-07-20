@@ -754,6 +754,11 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "template_expr" { return tok.kind == "TEMPLATE" }
     // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
     if name == "brace_expr" { return tok.text == "{" }
+    // The ident-primary (bare ident / struct literal / qualified @pkg::T /
+    // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
+    // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
+    // adds field/index/call suffixes.
+    if name == "ident_expr" { return tok.kind == "IDENT" || tok.text == "@" }
     false
 }
 
@@ -968,7 +973,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr"
 }
 
 /// Run an EXPRESSION hand rule by delegating to the real hand parser over the
@@ -997,6 +1002,7 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "quote_expr"    -> bp.parse_quote()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()
+        "ident_expr"    -> bp.parse_primary()
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }

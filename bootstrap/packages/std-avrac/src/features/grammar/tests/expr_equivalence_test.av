@@ -60,4 +60,13 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("{ y }")
         }
     }
+    given "the ident-primary @hand: struct literals (Ident { ... }) + postfix" {
+        then "struct literals, nested fields, and struct-then-postfix agree" {
+            dsl("Foo { x: 1 }") != "<err>" &&
+            agree("Foo { x: 1 }") &&
+            agree("Point { x: 1, y: 2 }") &&
+            agree("Foo { x: a + 1 }") &&
+            agree("Foo { x: 1 }.x")
+        }
+    }
 }

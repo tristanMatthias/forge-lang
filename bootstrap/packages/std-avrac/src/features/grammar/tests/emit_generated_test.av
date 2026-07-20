@@ -102,15 +102,18 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("while st.cur().text == \",\" {")
     }
 
-    then "primary dispatches literals by kind, keywords by text, IDENT via @hand" {
+    then "primary dispatches literals by kind, keywords by text, ident-primary via @hand" {
         let src = emit_all()
         src.contains("if st.cur().kind == \"NUMBER\" {") &&
         src.contains("if st.cur().kind == \"STRING\" {") &&
         src.contains("if st.cur().text == \"true\" {") &&
         src.contains("if st.cur().text == \"false\" {") &&
         src.contains("return CapVal.Node(literal_node(st, st.advance()))") &&
-        src.contains("if st.cur().kind == \"IDENT\" {") &&
-        src.contains("return CapVal.Node(run_hand(\"ident\", st))")
+        // ps3t.6.7 Step C: the ident-primary is now @hand(ident_expr) — an
+        // EXPRESSION hand rule (run_hand_expr) whose FIRST is IDENT or `@`
+        // (struct-lit / qualified / generic forms), not the leaf run_hand("ident").
+        src.contains("if st.cur().kind == \"IDENT\" || st.cur().text == \"@\" {") &&
+        src.contains("return CapVal.Node(run_hand_expr(\"ident_expr\", st))")
     }
 
     then "the grouping branch lowers @expect/@recover to report + synchronize" {
