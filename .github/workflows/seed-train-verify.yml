@@ -94,26 +94,25 @@ jobs:
           AVRA_SEED_REPO: ${{ github.repository }}
           # Match the train's exact suite parallelism (seed-train.yml) so the
           # same sharding that surfaces order-dependent flakes is exercised
-          # here, pre-merge, rather than post-merge on the train. SERIAL
-          # because heavy fixtures each spawn a ~3.5GB @std rebuild and two
-          # overlapping exceed the hosted runner's memory — the kernel
-          # silently SIGKILLs the biggest child ("1 shard failed to
-          # compile/run", zero test failures).
+          # here, pre-merge, rather than post-merge on the train. This is the
+          # FLAKE-PARITY knob (in-shard test interleaving) — pinned to 1 to
+          # match seed-train.yml. NOT a memory/speed lever; raising it surfaces
+          # the still-open parallel-interleaving flakes (uzs9.2 / uzs9.4) and
+          # must move in BOTH gates together (a correctness call, see hama).
           AVRA_TEST_JOBS: "1"
-          # Shard-compile fan-out, held at 2 in lockstep with seed-train.yml
-          # (a cold 8-wide suite OOMs the 16GB runner). #867 briefly raised
-          # this to 6 on the theory that the #866 @std metadata fast-path
-          # (~1.5GB/shard) left the runner idle — but the measured suite wall
-          # was ~28 min at BOTH 2 and 6, so the knob is INERT here: effective
-          # concurrency is already pinned by the 4-vCPU CPU bound and #860's
-          # memory-aware dispatch governor, not by this nominal cap. Raising it
-          # bought no speed and only widened the OOM margin the train caps
-          # against, so it's reverted to 2. The real ~28min bottleneck (cold
-          # shard compiles, CPU-bound on 4 vCPU) and its only durable lever
-          # (bigger runner) are analysed in hama; making the governor self-tune
-          # is x2hu. AVRA_TEST_JOBS is the flake-parity knob — do NOT conflate
-          # the two (see hama for why raising it is wrong here).
-          AVRA_JOBS: "2"
+          # Shard-compile fan-out = the runner's 4 vCPUs. #867 raised this to 6
+          # on the theory that the metadata fast-path (~1.5GB/shard) left cores
+          # idle, but measured it INERT — because the heavy whole-program
+          # fixtures still in the suite then (~5GB/shard) kept the memory-aware
+          # governor (compute_shard_jobs, main.av) clamping effective
+          # concurrency low regardless of the nominal cap. y9y4.19 moved the
+          # LAST of those onto the fast-path, so #867's premise now holds:
+          # per_shard is uniformly ~1.8GB, the governor sizes 4 shards, and the
+          # nominal cap is binding again (measured: `tests` dir cold 208s@2 ->
+          # 112s@4, ~1.86x, min-avail 2.7GB). The governor still clamps by live
+          # MemAvailable, so 4 can only ever be LOWERED, never OOM. Bigger
+          # runner (hama) / self-tuning governor (x2hu) remain the ceiling.
+          AVRA_JOBS: "4"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
