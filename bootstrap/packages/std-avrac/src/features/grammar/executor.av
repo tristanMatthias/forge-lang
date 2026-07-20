@@ -18,7 +18,7 @@
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real}
-use parse.{parser_new_with_file}
+use parse.{parser_new_with_file, parser_new_with_store}
 
 // ── Capture values + environment ──
 
@@ -832,8 +832,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // the built node's body spans. The bridging parser's fresh gensym counter
     // starts at 0 — matching a single-statement oracle parse — so a hygienic
     // desugar (`let … else`) mints the identical temp name.
-    mut bp = parser_new_with_file(st.src, "")
-    bp.store = st.store
+    mut bp = parser_new_with_store(st.src, "", st.store)
     bp.records_roots = 0
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     // Dispatch to the real hand-parser entry (method calls on the local `bp`,
@@ -1068,8 +1067,10 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         return st.error_node("`@hand(${name})` needs the source, unavailable here")
     }
     let start_byte = st.cur().pos
-    mut bp = parser_new_with_file(st.src, "")
-    bp.store = st.store
+    // Share the DSL's arena instead of allocating a fresh store + rebuilding a
+    // whole-file line index per leaf (the per-leaf O(source) waste that OOM'd the
+    // expression flip on the 787k-line selfhost — ps3t.6.7).
+    mut bp = parser_new_with_store(st.src, "", st.store)
     bp.records_roots = 0
     // ps3t.6.7 Step B — reproduce the ORIGINAL parse context. On the type/pattern
     // @hand paths PState carries a fresh parser's defaults (no-op); on the

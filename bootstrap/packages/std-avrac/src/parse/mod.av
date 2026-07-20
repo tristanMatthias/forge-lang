@@ -587,6 +587,19 @@ export fn parser_new(source: string) -> Parser {
 /// every statement and expression row this parser allocates with `file`
 /// so downstream diagnostics can cite the originating file even after bundling.
 export fn parser_new_with_file(source: string, file: string) -> Parser {
+    // The normal path owns a fresh store; its line index is built once here.
+    parser_new_with_store(source, file, new_node_store(build_line_index(source)))
+}
+
+/// Construct a Parser over `source` that SHARES the caller's `store` instead of
+/// allocating a fresh one. The `@hand` expression-leaf delegation (run_hand_expr)
+/// uses this: it runs a hand parser over the ORIGINAL source at a byte offset but
+/// emits into the DSL's shared arena — so rebuilding a whole-file line index per
+/// leaf (parser_new_with_file's `build_line_index(source)`, then immediately
+/// discarded) is pure waste. On a 787k-line whole-compiler compile that per-leaf
+/// O(source) rebuild is what OOM'd the expression flip; sharing the store (whose
+/// line index is already built) removes it (ps3t.6.7).
+export fn parser_new_with_store(source: string, file: string, store: NodeStore) -> Parser {
     mut parser = Parser {
         source,
         source_len: source.length,
@@ -611,7 +624,7 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
         gensym_seq: 0,
         bag: bag_new(),
         features: build_registry(),
-        store: new_node_store(build_line_index(source)),
+        store,
         records_roots: 1,
         type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") != "0",
         grammar_toks: [],
