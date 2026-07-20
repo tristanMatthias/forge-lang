@@ -121,6 +121,33 @@ void avra_rc_go_multithreaded(void) { g_rc_multithreaded = 1; }
 static inline void rc_lock(void)   { if (g_rc_multithreaded) pthread_mutex_lock(&rc_set_mutex); }
 static inline void rc_unlock(void) { if (g_rc_multithreaded) pthread_mutex_unlock(&rc_set_mutex); }
 
+// Single-threaded refcount fast path — same rationale as rc_lock above, applied
+// to the refcount RMW itself. A retain/release increment must be ATOMIC only
+// when a second thread can observe the object concurrently. Before
+// g_rc_multithreaded arms (immediately before the first pthread_create), the
+// process is genuinely single-threaded, so a plain load+add+store — no `lock`
+// prefix, ~20+ cycles cheaper per op on x86 — is race-free by construction.
+// Once multithreaded, fall back to the seq_cst atomic RMW (unchanged semantics
+// for the threaded case: channels hand objects across fibers). This is a
+// runtime-only change; the IR bs2 emits is byte-identical (it still calls
+// avra_rc_retain/release by name).
+static inline int32_t rc_refcount_incr(_Atomic int32_t* rc) {
+    if (!g_rc_multithreaded) {
+        int32_t v = atomic_load_explicit(rc, memory_order_relaxed) + 1;
+        atomic_store_explicit(rc, v, memory_order_relaxed);
+        return v;
+    }
+    return atomic_fetch_add(rc, 1) + 1;
+}
+static inline int32_t rc_refcount_decr(_Atomic int32_t* rc) {
+    if (!g_rc_multithreaded) {
+        int32_t v = atomic_load_explicit(rc, memory_order_relaxed) - 1;
+        atomic_store_explicit(rc, v, memory_order_relaxed);
+        return v;
+    }
+    return atomic_fetch_sub(rc, 1) - 1;
+}
+
 static void rc_set_init(void) {
     if (rc_set_buckets) return;
     rc_set_cap = RC_SET_INITIAL_CAP;
@@ -488,7 +515,7 @@ void* avra_rc_alloc(int64_t payload_size) {
     void* ruser = rc_region_try_alloc(payload);
     if (ruser) {
         RcHeader* rhdr = (RcHeader*)((char*)ruser - RC_HEADER_SIZE);
-        atomic_store(&rhdr->refcount, 1);
+        atomic_store_explicit(&rhdr->refcount, 1, memory_order_relaxed);
         rhdr->type_tag = RC_MAGIC;
         t_rc_allocs++;
         if (rc_trace) {
@@ -508,7 +535,7 @@ void* avra_rc_alloc(int64_t payload_size) {
     if (avra_rc_strict) *(size_t*)raw = payload;   // size prefix for poison-on-free
     void* user_ptr = (char*)raw + prefix + RC_HEADER_SIZE;
     RcHeader* hdr = (RcHeader*)((char*)user_ptr - RC_HEADER_SIZE);
-    atomic_store(&hdr->refcount, 1);
+    atomic_store_explicit(&hdr->refcount, 1, memory_order_relaxed);
     hdr->type_tag = RC_MAGIC;
     t_rc_allocs++;
     rc_set_add(user_ptr);
@@ -533,7 +560,7 @@ void avra_rc_retain(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    int32_t new_rc = atomic_fetch_add(&hdr->refcount, 1) + 1;
+    int32_t new_rc = rc_refcount_incr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, new_rc);
     }
@@ -548,7 +575,7 @@ void avra_rc_release(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
-    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
+    int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, new_rc);
     }
@@ -574,7 +601,7 @@ int64_t avra_rc_should_free(void* ptr) {
     }
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return 0;
-    int32_t new_rc = atomic_fetch_sub(&hdr->refcount, 1) - 1;
+    int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, new_rc);
     }
