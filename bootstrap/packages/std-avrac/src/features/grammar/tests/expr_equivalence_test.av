@@ -1,0 +1,63 @@
+// ps3t.6.7 / Step C — the grammar-DSL EXPRESSION family, grown toward selfhost
+// fidelity. avra_expr_grammar has the full operator-precedence spine (logic_or ->
+// ... -> unary -> postfix -> primary); this test proves it builds the same tree
+// as the hand parser's parse_expression over the covered surface, and grows with
+// the grammar. The mode primitives (interpolation @hand(template_expr), map/block
+// @hand(brace_expr)) are wired into the primary here.
+//
+// Interpolated sources are built by concatenating a lone "$" with "{...}", so no
+// interpolation syntax appears in this file (which would interpolate here).
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_expr_id}
+
+fn dsl(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_expression() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl(src) == hand(src)
+}
+
+spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surface)" {
+    given "literals and identifiers" {
+        then "numbers, bools, idents agree and are not errors" {
+            dsl("1") != "<err>" &&
+            agree("1") && agree("42") && agree("true") && agree("false") && agree("a") && agree("foo")
+        }
+    }
+    given "binary operators across every precedence level" {
+        then "arithmetic, comparison, equality, bitwise, shift, logical agree" {
+            agree("1 + 2") && agree("1 - 2 - 3") && agree("1 * 2") && agree("1 / 2") && agree("1 % 2") &&
+            agree("1 + 2 * 3") && agree("1 * 2 + 3") &&
+            agree("1 < 2") && agree("1 <= 2") && agree("1 == 2") && agree("1 != 2") &&
+            agree("1 | 2") && agree("1 & 2") && agree("1 ^ 2") && agree("1 << 2") && agree("1 >> 2") &&
+            agree("a && b") && agree("a || b") && agree("a && b || c")
+        }
+    }
+    given "grouping and postfix (field / index / call)" {
+        then "parenthesised precedence and field/index/call suffixes agree" {
+            agree("(1 + 2) * 3") && agree("1 * (2 + 3)") &&
+            agree("a.b") && agree("a.b.c") && agree("f(1)") && agree("f(1, 2)") &&
+            agree("a[0]") && agree("a[0][1]") && agree("f(a + 1)")
+        }
+    }
+    given "the wired mode primitives (interpolation, map/block)" {
+        then "interpolated strings and brace literals agree" {
+            let d = "$"
+            agree("\"" + "hi " + d + "{x}" + "\"") &&
+            agree("{ \"k\": 1 }") &&
+            agree("{ y }")
+        }
+    }
+}

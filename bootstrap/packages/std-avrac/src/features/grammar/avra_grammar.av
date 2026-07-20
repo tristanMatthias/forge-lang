@@ -41,7 +41,7 @@ export fn avra_expr_grammar() -> Grammar {
   suffix     = "." name:IDENT -> field_suffix(name)
              | "[" idx:expression "]" -> index_suffix(idx)
              | "(" ( a:expression ( "," a:expression )* )? ")" -> call_suffix(a)
-  primary    = NUMBER | STRING | "true" | "false" | @hand(ident)
+  primary    = NUMBER | STRING | @hand(template_expr) | @hand(brace_expr) | "true" | "false" | @hand(ident)
              | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
     }
     gp.grammar
