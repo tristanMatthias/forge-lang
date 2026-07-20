@@ -1,0 +1,78 @@
+// WHY: lower_bound is a binary search — the classic off-by-one home. It replaced
+// the grammar-DSL runners' O(n^2) linear token locator (ps3t.6.7 perf), so its
+// "smallest index with key(xs[i]) >= target" contract must hold EXACTLY on the
+// tricky boundaries: target below all / above all, exact hits, between-elements,
+// duplicate keys (first-occurrence index), and the empty list.
+
+use @std.avrac.list_ops.{lower_bound}
+
+// Identity key: treat the list of ints as its own keys.
+fn id(x: int) -> int { x }
+
+spec "lower_bound: boundaries on a sorted list" {
+    then "target below all elements -> 0" {
+        lower_bound([10, 20, 30], 5, id) == 0
+    }
+    then "target above all elements -> length" {
+        lower_bound([10, 20, 30], 99, id) == 3
+    }
+    then "exact hit returns that element's index" {
+        lower_bound([10, 20, 30], 20, id) == 1
+    }
+    then "first exact hit returns index 0" {
+        lower_bound([10, 20, 30], 10, id) == 0
+    }
+    then "last exact hit returns last index" {
+        lower_bound([10, 20, 30], 30, id) == 2
+    }
+    then "between-elements target -> insertion point" {
+        lower_bound([10, 20, 30], 25, id) == 2
+    }
+    then "empty list -> 0" {
+        mut xs: List<int> = []
+        lower_bound(xs, 7, id) == 0
+    }
+    then "single element, target below -> 0" {
+        lower_bound([42], 1, id) == 0
+    }
+    then "single element, target above -> 1" {
+        lower_bound([42], 99, id) == 1
+    }
+}
+
+spec "lower_bound: duplicate keys return the FIRST occurrence" {
+    then "run of equal keys -> leftmost index" {
+        // indices: 0:1 1:2 2:2 3:2 4:5 — first key >= 2 is index 1
+        lower_bound([1, 2, 2, 2, 5], 2, id) == 1
+    }
+    then "target between the run and the next -> after the run" {
+        lower_bound([1, 2, 2, 2, 5], 3, id) == 4
+    }
+    then "all elements equal, target equal -> 0" {
+        lower_bound([7, 7, 7, 7], 7, id) == 0
+    }
+    then "all elements equal, target above -> length" {
+        lower_bound([7, 7, 7, 7], 8, id) == 4
+    }
+}
+
+// A key extractor over a struct — the real use shape (Token.pos), where the
+// list is sorted by an extracted integer field rather than the element itself.
+type Kv = { pos: int, tag: string }
+
+spec "lower_bound: key extractor over a struct field" {
+    then "locates the first record with pos >= target" {
+        let recs = [
+            Kv { pos: 0, tag: "a" },
+            Kv { pos: 5, tag: "b" },
+            Kv { pos: 5, tag: "c" },
+            Kv { pos: 12, tag: "d" },
+        ]
+        let i = lower_bound(recs, 5, (r: Kv) -> r.pos)
+        i == 1 && recs[i].tag == "b"
+    }
+    then "target past the last record -> length" {
+        let recs = [Kv { pos: 0, tag: "a" }, Kv { pos: 5, tag: "b" }]
+        lower_bound(recs, 100, (r: Kv) -> r.pos) == 2
+    }
+}

@@ -17,7 +17,7 @@
 
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
-use features.grammar.{Token, lex_real}
+use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
 use list_ops.{lower_bound}
 
@@ -445,9 +445,12 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, tok: Token, visited: List<string>) -> b
 }
 
 fn lookup_rule(g: Grammar, name: string) -> Rule {
-    for r in g.rules {
-        if r.name == name { return r }
-    }
+    // O(1) resolution via the Grammar's precomputed name->index map
+    // (build_rule_index), replacing the former O(rules) linear name scan
+    // that ran on every rule descent. First-match semantics preserved:
+    // build_rule_index keeps the earliest index for a duplicated name.
+    let idx = rule_index_of(g, name)
+    if idx >= 0 { return g.rules[idx] }
     Rule { name: "", body: GNode.Alt([]) }
 }
 

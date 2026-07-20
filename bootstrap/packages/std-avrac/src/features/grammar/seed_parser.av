@@ -25,6 +25,7 @@
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
+use features.grammar.{build_rule_index}
 
 // ── The DSL token stream ──
 
@@ -204,7 +205,7 @@ fn parse_grammar_body(p: GP) -> Grammar {
     if rules.length == 0 {
         p.fail("a grammar must declare at least one rule")
     }
-    Grammar { name, rules }
+    Grammar { name, rules, rule_idx: build_rule_index(rules) }
 }
 
 // rule = NAME "=" alt

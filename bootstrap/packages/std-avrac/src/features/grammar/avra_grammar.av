@@ -16,7 +16,7 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar, Rule}
+use features.grammar.{parse_grammar, Grammar, Rule, build_rule_index}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -65,7 +65,7 @@ fn compose_grammars(head: Grammar, tail: Grammar) -> Grammar {
     mut rules: List<Rule> = []
     for r in head.rules { rules.push(r) }
     for r in tail.rules { rules.push(r) }
-    Grammar { name: head.name, rules }
+    Grammar { name: head.name, rules, rule_idx: build_rule_index(rules) }
 }
 
 /// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return
