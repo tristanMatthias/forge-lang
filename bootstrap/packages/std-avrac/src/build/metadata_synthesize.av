@@ -219,12 +219,19 @@ fn drop_last_seg(xs: List<string>) -> List<string> {
 // Walk `path` segment-by-segment via depth index. Each level either
 // drops the decl into `node.direct` (when depth == path.length) or
 // recurses through `ensure_child` with depth + 1.
+//
+// The direct-insert MUTATES `node.direct` in place (amortised O(1) push)
+// rather than `append_stmts`-copying the whole accumulator per decl —
+// the same in-place discipline `ensure_child` uses for `children`.
+// `node.direct` is a uniquely-owned heap list at every SubMod (each is
+// born with a fresh `[]` in synthesize_unit_body / ensure_child), so the
+// push is never observed through a stale alias. Inserting M decls into
+// one module node is now O(M), not the O(M²) the full-list copy paid.
 fn trie_insert_decl(node: SubMod, path: List<string>, depth: int, decl: StmtId) -> SubMod {
     if depth >= path.length {
-        let one: List<StmtId> = [decl]
-        return node with {
-            direct: append_stmts(node.direct, one),
-        }
+        mut d = node.direct
+        d.push(decl)
+        return node with { direct: d }
     }
     node with {
         children: ensure_child(node.children, path[depth], path, depth + 1, decl),
