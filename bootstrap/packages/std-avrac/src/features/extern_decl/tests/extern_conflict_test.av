@@ -6,7 +6,7 @@
 // re-declarations stay legal — inlined support files and test
 // modules each carry their own copies of the runtime extern decls.
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 spec "extern redeclaration rules" {
     given "two modules declaring one extern with different signatures" {
@@ -24,7 +24,7 @@ spec "extern redeclaration rules" {
                 "    probe_conflict_fn(1)\n" +
                 "    other()\n" +
                 "}\n")
-            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            let out = cached_fixture_check("${dir}/main.av")
             out.contains("F3105") && out.contains("conflicting signature")
         }
         then "an identical re-declaration is accepted" {
@@ -41,7 +41,7 @@ spec "extern redeclaration rules" {
                 "    probe_dup_ok_fn(1)\n" +
                 "    other()\n" +
                 "}\n")
-            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            let out = cached_fixture_check("${dir}/main.av")
             !out.contains("F3105")
         }
     }
@@ -57,7 +57,7 @@ spec "extern redeclaration rules" {
                 "extern fn probe_mix_a(x: int) -> int\n" +
                 "fn probe_mix_a(x: int) -> int { return x }\n" +
                 "fn main() { }\n")
-            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            let out = cached_fixture_check("${dir}/main.av")
             out.contains("F3105")
         }
         then "an extern cannot reuse a prior normal fn's name (F3105)" {
@@ -67,7 +67,7 @@ spec "extern redeclaration rules" {
                 "fn probe_mix_b(x: int) -> int { return x }\n" +
                 "extern fn probe_mix_b(x: int) -> int\n" +
                 "fn main() { }\n")
-            let out = cached_fixture_check_no_metadata("${dir}/main.av")
+            let out = cached_fixture_check("${dir}/main.av")
             out.contains("F3105")
         }
     }

@@ -7,7 +7,7 @@
 // present-test / unwrap the `?` and `??` operators emit. A `_` wildcard
 // covers the absent (or otherwise-unmatched) case.
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 fn mp_pick(x: int?) -> int {
     match x {
@@ -131,7 +131,7 @@ spec "present-bind on a non-optional subject is a clean F1000, not an ICE" {
         write_fixture(f,
             "fn g(n: int) -> int { match n { let m -> m, none -> 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1000") && !out.contains("F9999")
     }
 }
@@ -142,7 +142,7 @@ spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
         write_fixture(f,
             "fn g(x: int?) -> int { match x { let v -> v } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F9001")
     }
     then "a `none`-only match (no present case) is non-exhaustive (F9001)" {
@@ -150,7 +150,7 @@ spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
         write_fixture(f,
             "fn g(x: int?) -> int { match x { none -> 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F9001")
     }
     then "present + none arms are exhaustive (no F9001)" {
@@ -158,7 +158,7 @@ spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
         write_fixture(f,
             "fn g(x: int?) -> int { match x { let v -> v\n none -> 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F9001")
     }
     then "a `_` wildcard alone covers the absent case (no F9001)" {
@@ -166,7 +166,7 @@ spec "match on optional — exhaustiveness is enforced (spec Axis 8)" {
         write_fixture(f,
             "fn g(x: int?) -> int { match x { let v -> v\n _ -> 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F9001")
     }
 }

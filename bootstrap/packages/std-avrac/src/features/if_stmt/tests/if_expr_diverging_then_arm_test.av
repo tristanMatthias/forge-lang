@@ -14,7 +14,7 @@
 // empty-block else types `.Void`), never regress to an `int` from a synthesized
 // `0` (guarded by if_expr_with_return_test.av + the effect-only spec below).
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 type DPoint = { x: int, y: int }
 
@@ -125,7 +125,7 @@ spec "an else-less `if c { return X }` in EXPRESSION position stays effect-only 
             "    }\n" +
             "}\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1000") && !out.contains("F9999")
     }
 }

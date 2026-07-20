@@ -492,10 +492,38 @@ export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
         "check-no-metadata")
 }
 
+/// Content-keyed cache for `./build/bs2 check <path>` on the SHARD's @std
+/// metadata FAST-PATH (metadata inherited, NOT stripped). The right default
+/// for @std-importing fixtures: @std is compiled ONCE (the prebuild) and
+/// stubbed here, and any @comptime/@derive/@query bodies the check needs are
+/// rehydrated lazily from the metadata (9p1d) — so this is byte-identical to
+/// the no-metadata strip but reuses the prebuilt @std instead of recompiling
+/// all of it per fixture (~10x cheaper). Use `_no_metadata` ONLY for tests
+/// that genuinely exercise the whole-program build path itself (build/cache).
+///
+/// Still slot-capped (diagnose.sh --slot-exec): unlike the no-metadata
+/// sibling the check is now a LIGHT fast-path compile, but on a cold cache
+/// (every rc-strict run) it still MISSES and shells out a real bs2 per
+/// fixture across the parallel shard fan-out — so it holds one of the
+/// AVRA_FIXTURE_JOBS OOM-guard slots, exactly as `--run` does for
+/// write_fixture_and_run. On a cache HIT the command never runs.
+export fn cached_fixture_check(fixture_path: string) -> string {
+    cached_fixture_capture(fixture_path,
+        "bash scripts/diagnose.sh --slot-exec ./build/bs2 check '${fixture_path}' 2>&1 || true",
+        "check")
+}
+
 /// Same as cached_fixture_run, but strips AVRA_USE_METADATA + AVRA_LIB_OBJS
-/// from the env so the fixture sees @comptime annotations + bodies
-/// (metadata mode strips them per 9p1d). Required by tests that
-/// exercise derive_walker / quote_expr / other @comptime macros.
+/// so the fixture WHOLE-PROGRAM compiles @std instead of stubbing it.
+///
+/// Reach for this ONLY when the metadata fast-path genuinely can't serve the
+/// fixture — which is now a small set, because 9p1d SHIPS every @comptime fn's
+/// body in the metadata and rehydrates it lazily, so most @comptime/@derive/
+/// @query fixtures run correctly (and ~10x cheaper) on the plain fast-path
+/// helpers. The remaining no-metadata cases: @derive(walker) fixtures (a
+/// residual 9p1d gap) and tests that exercise the whole-program build path
+/// itself (build/cache machinery). Recompiling @std per fixture is the slow
+/// path — prefer cached_fixture_run unless you've confirmed the fast-path fails.
 export fn cached_fixture_run_no_metadata(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, fixture_run_no_metadata_cmd(fixture_path), "run-no-metadata")
 }

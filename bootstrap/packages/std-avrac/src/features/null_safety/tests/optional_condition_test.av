@@ -8,7 +8,7 @@
 // condition sites lower through emit_cond_truthy instead (the statement-if,
 // value-if, if-expr, and while paths all share it).
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 fn pick_b(b: bool?) -> str {
     if b { "then" } else { "else" }
@@ -38,7 +38,7 @@ spec "bare `if` on an optional: none → false, present → inner truthiness" {
         write_fixture(f,
             "fn pick(s: str?) -> int { if s { 1 } else { 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1000")
     }
 }

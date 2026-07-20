@@ -10,11 +10,11 @@
 // null-pointer stays `none`. These specs pin every walk: enum-subject
 // match, primitive-subject match, and subjectless `when`.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "match-expr arms mixing null and int merge as int?" {
     then "a primitive-subject match returns none (not Some(0)) from the null arm" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_prim_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_prim_test.av",
             "fn f(x: int) -> int? {\n" +
             "    match x {\n" +
             "        1 -> 42\n" +
@@ -31,7 +31,7 @@ spec "match-expr arms mixing null and int merge as int?" {
         out.contains("hit=42") && out.contains("miss=null")
     }
     then "Some(0) from a value arm stays distinct from the null arm's none" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_zero_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_zero_test.av",
             "fn f(x: int) -> int? {\n" +
             "    match x {\n" +
             "        1 -> 0\n" +
@@ -48,7 +48,7 @@ spec "match-expr arms mixing null and int merge as int?" {
         out.contains("zero=some(0)") && out.contains("miss=null")
     }
     then "an enum-subject match with a null arm merges as T? too" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_enum_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_enum_test.av",
             "enum Shape {\n" +
             "    Dot\n" +
             "    Box(w: int)\n" +
@@ -73,7 +73,7 @@ spec "match-expr arms mixing null and int merge as int?" {
 
 spec "null-mix arms in the remaining walks merge as int? too" {
     then "a block-bodied null arm (`-> { null }`) is detected like `-> null`" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_block_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_block_test.av",
             "fn f(x: int) -> int? {\n" +
             "    match x {\n" +
             "        1 -> 42\n" +
@@ -90,7 +90,7 @@ spec "null-mix arms in the remaining walks merge as int? too" {
         out.contains("hit=42") && out.contains("miss=null")
     }
     then "a guarded optional-subject present arm returning null stays none" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_optsubj_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_optsubj_test.av",
             "fn pick(o: int?) -> int? {\n" +
             "    match o {\n" +
             "        let v if v > 2 -> v\n" +
@@ -110,7 +110,7 @@ spec "null-mix arms in the remaining walks merge as int? too" {
         out.contains("big=9") && out.contains("small=null") && out.contains("absent=some(0)")
     }
     then "a union-subject match with a null arm merges as T?" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_match_null_arm_union_test.av",
+        let out = write_fixture_and_run("/tmp/avra_match_null_arm_union_test.av",
             "fn width(u: int | string) -> int? {\n" +
             "    match u {\n" +
             "        int(n) -> n\n" +
@@ -130,7 +130,7 @@ spec "null-mix arms in the remaining walks merge as int? too" {
 
 spec "when-expr arms mixing null and int merge as int?" {
     then "the else-null when returns none from the miss path" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_when_null_arm_test.av",
+        let out = write_fixture_and_run("/tmp/avra_when_null_arm_test.av",
             "fn g(x: int) -> int? {\n" +
             "    when {\n" +
             "        x == 1 -> 42\n" +
@@ -147,7 +147,7 @@ spec "when-expr arms mixing null and int merge as int?" {
         out.contains("a=42") && out.contains("b=null")
     }
     then "a null-FIRST when still reports the value type (not the null arm's void)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_when_null_first_test.av",
+        let out = write_fixture_and_run("/tmp/avra_when_null_first_test.av",
             "fn g(x: int) -> int? {\n" +
             "    when {\n" +
             "        x == 0 -> null\n" +

@@ -4,11 +4,11 @@
 // `self` type dropped the params, leaving mono/typeck to trip over an
 // unparameterized nominal later. Locks DeclView.generic gating.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive engine: a generic decl falls back untouched" {
     then "the generic enum compiles and behaves normally, with no derived methods" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_generic_failsafe_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_generic_failsafe_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "\n" +
             "@expand(derive_eq)\n" +

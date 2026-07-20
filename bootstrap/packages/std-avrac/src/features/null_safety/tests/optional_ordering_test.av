@@ -6,7 +6,7 @@
 // unwrapped the null box and trapped at runtime. Equality (`==`/`!=`) stays
 // permissive — it IS well-defined on optionals (see optional_equality_test).
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 spec "ordering an optional is rejected (F1204)" {
     then "`a < b` on two int? operands is F1204" {
@@ -14,7 +14,7 @@ spec "ordering an optional is rejected (F1204)" {
         write_fixture(f,
             "fn g(a: int?, b: int?) -> bool { a < b }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1204")
     }
     then "`a > 5` on an optional vs a bare literal is F1204" {
@@ -22,7 +22,7 @@ spec "ordering an optional is rejected (F1204)" {
         write_fixture(f,
             "fn g(a: int?) -> bool { a > 5 }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1204")
     }
     then "`<=` and `>=` are covered too" {
@@ -31,7 +31,7 @@ spec "ordering an optional is rejected (F1204)" {
             "fn g(a: int?, b: int?) -> bool { a <= b }\n" +
             "fn h(a: float?, b: float?) -> bool { a >= b }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1204")
     }
     then "the remedy compiles: unwrap both sides, then order" {
@@ -39,7 +39,7 @@ spec "ordering an optional is rejected (F1204)" {
         write_fixture(f,
             "fn g(a: int?, b: int?) -> bool { a! < b! }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1204")
     }
     then "ordering two NON-optionals is unaffected" {
@@ -47,7 +47,7 @@ spec "ordering an optional is rejected (F1204)" {
         write_fixture(f,
             "fn g(a: int, b: int) -> bool { a < b }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1204")
     }
     then "equality on optionals stays allowed (only ordering is rejected)" {
@@ -55,7 +55,7 @@ spec "ordering an optional is rejected (F1204)" {
         write_fixture(f,
             "fn g(a: int?, b: int?) -> bool { a == b }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1204")
     }
 }

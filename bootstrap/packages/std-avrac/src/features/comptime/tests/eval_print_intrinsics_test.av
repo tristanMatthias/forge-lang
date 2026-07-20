@@ -7,7 +7,7 @@
 // eval would ICE when bs2 self-compiles a source that uses them.
 // Scope: eval surface tracks codegen surface.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 
 // The fixture runs `eprintln` at RUNTIME (not @comptime) because
@@ -22,7 +22,7 @@ use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 spec "so07.7.8: eprintln is callable from user code at runtime" {
     then "runtime eprintln writes to stderr — appears in combined stream" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_eval_print_intrinsics_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_eval_print_intrinsics_test.av", 
             "fn main() {\n" +
             "    eprintln(\"trace-marker-xyz\")\n" +
             "    println(\"after-trace\")\n" +
