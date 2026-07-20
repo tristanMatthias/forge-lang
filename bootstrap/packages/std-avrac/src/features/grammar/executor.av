@@ -463,7 +463,20 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// then `parse_<start>(st)`, then `capval_to_expr(st, …)` for the root — exactly
 /// the `run_grammar_expr_src` boundary, minus the interpreter.
 export fn new_pstate(src: string) -> PState {
-    PState { toks: lex_real(src), pos: 0, store: new_node_store(build_line_index(src)), src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    let store = new_node_store(build_line_index(src))
+    // Attach ONE reusable @hand delegate (sharing the store) so run_hand_expr
+    // forward-advances a SINGLE parser across the whole parse — O(source) — rather
+    // than building a fresh parser (~53 build_registry registrations) AND re-lexing
+    // from byte 0 to the leaf on EVERY @hand leaf, which is O(source^2). That
+    // quadratic fallback made the emit-gen generated parser ~72x slower than the
+    // hand parser (measured, callgrind); the reused delegate closes that gap. Leaf
+    // positions are visited monotonically (predictive LL, no backtracking), so the
+    // delegate advances each token once. Tree-equivalent to the fresh-parser path
+    // (only line/span accounting differs, which dump-based equivalence ignores).
+    mut d = parser_new_with_store(src, "", store)
+    d.records_roots = 0
+    d.expr_flip = false
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: d }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
