@@ -3,7 +3,7 @@
 // Shared by struct_decl, with_expr, and null_safety features.
 
 use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has}
-use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot, enum_type_has}
 use diagnostics.{DiagCode}
 
 /// Type-check a `obj.field` access. Recognises `.length` on Str
@@ -22,6 +22,22 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     if vtype_eq(o.ty, .Void) {
         return tc_er(tc_report(o.tc, DiagCode.TypeMismatch,
             "cannot access field `${field}` on a value of type `Void` — the receiver produces no value (a function used here may omit its `-> Type` and return void)"), .Unknown)
+    }
+    // `EnumName.Variant.ordinal` — the variant's 0-based declaration-order
+    // index (an Int), resolved and constant-folded at codegen. An ordinal is
+    // a compile-time property of a LITERAL variant reference, so `.ordinal`
+    // on a runtime enum value (whose variant isn't statically known) is
+    // rejected (F1207). Gated on the receiver typing as an enum so a struct
+    // may still carry a field legitimately named `ordinal`.
+    if field == "ordinal" {
+        match o.ty {
+            .Enum(ename, _, _) -> {
+                if static_variant_name(o.tc, obj) != "" { return tc_er(o.tc, .Int) }
+                return tc_er(tc_report(o.tc, DiagCode.OrdinalNeedsStaticVariant,
+                    "`.ordinal` needs a statically-known variant like `${ename}.<Variant>.ordinal` — this receiver is a runtime `${ename}` value, whose variant isn't known until it runs"), .Int)
+            }
+            _ -> {}
+        }
     }
     // String .length
     if vtype_eq(o.ty, .Str) && field == "length" {
@@ -66,6 +82,27 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     }
     // Map .get is handled in method call
     tc_er(o.tc, .Unknown)
+}
+
+/// The variant name of a STATIC enum-variant reference receiver — either a
+/// zero-arg `EnumCtor` or `EnumName.Variant` (a `FieldAccess` whose head
+/// names an enum type) — or "" when the receiver is a runtime enum value
+/// (a variable, a struct field, a call result) rather than a variant
+/// literal. Disambiguates `Color.Red` (static, has an ordinal) from
+/// `some_color.field` (runtime) by checking the head against the enum
+/// registry, mirroring the enum-ctor recognition in `check_expr`.
+fn static_variant_name(tc: TC, obj: Expr) -> string {
+    match obj {
+        .EnumCtor(_, variant, args) -> if args.length == 0 { variant } else { "" }
+        .FieldAccess(head_id, variant) -> {
+            match tc.nodes.exprs.get(head_id) {
+                .Ident(h) -> if enum_type_has(tc.enums, h) { variant } else { "" }
+                .QualifiedIdent(h) -> if enum_type_has(tc.enums, h) { variant } else { "" }
+                _ -> ""
+            }
+        }
+        _ -> ""
+    }
 }
 
 /// Type-check every value in a `List<FieldInit>`. Field names

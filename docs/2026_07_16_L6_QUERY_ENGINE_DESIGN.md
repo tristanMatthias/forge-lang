@@ -451,6 +451,23 @@ v1 is single-module + `V=string`; the cross-module case (dispatcher → a siblin
 module's `_compute`) waits on `t-tiz0` (macro-generated cross-module reference),
 and non-`string` `V` on `ps3t.8.11` (per-type hashing).
 
+### 12.5 Family naming — enum ordinals (`ps3t.8.13` → `ps3t.8.10`)
+
+`@query(N)` originally took a hand-picked dense int, meaningless to read and
+collision-prone against the input families that share the same dense space
+(`Db.family(tag)` is a direct index). The chosen direction (`ps3t.8.10` option
+(b)) is to name families with an **enum**: `@query(Fam.TextLen)`, with inputs
+drawing from the same `Fam` — so every family is one enum's ordinals `0..n-1`
+and input↔compute collisions are impossible by construction.
+
+The enabling primitive landed first as `ps3t.8.13`: the **variant-ordinal
+accessor** `Fam.TextLen.ordinal`, the variant's 0-based declaration-order index,
+resolved via the shared `variant_index` and constant-folded to a literal (so a
+family is still a compile-time dense int — the engine's index contract is
+preserved). It is additive and language-general (does not change the existing
+`djb2` variant tags); the `@query` surface then reads a `Fam.Variant` annotation
+argument through the same `variant_index` at expansion time.
+
 ## 13. What this design explicitly does NOT do
 
 - It does not delete the interpreter or change comptime (that is L2 / `ps3t.5`).

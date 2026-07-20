@@ -2531,6 +2531,23 @@ export fn variant_lookup(variants: List<Variant>, name: string) -> VariantLookup
     VariantLookup { found: false, fields: empty, tag: -1 }
 }
 
+/// Decl-order index (0-based) of a variant by name, or -1 when absent.
+/// This is the variant's ORDINAL — distinct from its stable djb2 tag
+/// (`variant_lookup`): the ordinal tracks DECLARATION ORDER and is
+/// therefore reorder-sensitive by design, which is exactly what a dense
+/// index (e.g. an L6 query family) needs. The one shared resolver behind
+/// the `EnumName.Variant.ordinal` accessor — both codegen constant-folding
+/// and the @query surface obtain a variant list their own way, then call
+/// this. Indexed walk mirrors `variant_lookup`.
+export fn variant_index(variants: List<Variant>, name: string) -> int {
+    mut i = 0
+    while i < variants.length {
+        if variants[i].name == name { return i }
+        i = i + 1
+    }
+    -1
+}
+
 /// Maximum number of i64 slots needed across all variants in an
 /// enum — determines the size of the payload union in the LLVM
 /// struct layout. Each variant's payload is `fields.length` slots;

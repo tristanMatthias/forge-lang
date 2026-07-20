@@ -1,0 +1,37 @@
+// WHY: the enum-variant ordinal accessor `EnumName.Variant.ordinal` — the
+// variant's 0-based DECLARATION-ORDER index, resolved and constant-folded at
+// codegen. Distinct from the stable djb2 tag: the ordinal tracks decl order
+// (reorder-sensitive by design), which is what a dense index needs (e.g. an
+// L6 query family). ps3t.8.13 — prerequisite for enum-named @query families.
+
+enum EoColor { Red, Green, Blue }
+
+enum EoOne { Only }
+
+// Same variant NAMES as EoColor, declared in a DIFFERENT ORDER — proves the
+// ordinal is positional, not derived from the name (which would tie the two).
+enum EoReordered { Blue, Red, Green }
+
+spec "enum variant ordinal — declaration-order index" {
+    then "first variant is 0" {
+        EoColor.Red.ordinal == 0
+    }
+    then "middle variant is 1" {
+        EoColor.Green.ordinal == 1
+    }
+    then "last variant is 2" {
+        EoColor.Blue.ordinal == 2
+    }
+    then "single-variant enum: the only variant is 0" {
+        EoOne.Only.ordinal == 0
+    }
+    then "ordinals track DECL ORDER, not the variant name" {
+        EoReordered.Blue.ordinal == 0 && EoReordered.Red.ordinal == 1 && EoReordered.Green.ordinal == 2
+    }
+    then "an ordinal is a plain Int usable in arithmetic" {
+        EoColor.Blue.ordinal + EoColor.Green.ordinal == 3
+    }
+    then "the same variant folds to the same ordinal" {
+        EoColor.Green.ordinal == EoColor.Green.ordinal
+    }
+}
