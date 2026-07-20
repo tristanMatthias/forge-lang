@@ -11,6 +11,7 @@ use @std.avrac.build.{
     cache_for,
     fn_unit_key, fn_unit_key_mono,
     fn_unit_store_for, fn_unit_store_init, fn_unit_lookup, fn_unit_publish,
+    fn_unit_pack_for, fn_unit_batch_new, fn_unit_pack_flush, fn_unit_pack_lookup,
 }
 use @std.crypto.{sha256_file}
 
@@ -132,5 +133,57 @@ spec "fn unit store: publish/lookup round-trip" {
         let after = fn_unit_lookup(s, k)
         avra_shell_exec("rm -rf '${root}'")
         ghost == null && empty == null && after == null
+    }
+}
+
+// The batched PACK store (fnunits write path): a whole package's units
+// materialise as ONE content-addressed pack + ONE atomic index, and every
+// key round-trips back to its exact IR bytes. Identical IR under distinct
+// keys collapses to one stored blob (the §8 explosion control).
+spec "fn unit pack: batch → flush → lookup round-trip" {
+    then "each key resolves byte-identical; identical IR dedupes; unknown key misses" {
+        let root = fresh_store_root()
+        let p = fn_unit_pack_for(cache_for(root))
+        let ir_a = "define @a() {\n  ret void\n}"
+        let ir_b = "define @b() {\n  ret i64 1\n}"
+        let b = fn_unit_batch_new()
+        b.add("keyA", ir_a)
+        b.add("keyB", ir_b)
+        b.add("keyC", ir_a)   // identical IR to A → must collapse to one blob
+        let n = fn_unit_pack_flush(p, b)
+        let got_a = fn_unit_pack_lookup(p, "keyA")
+        let got_b = fn_unit_pack_lookup(p, "keyB")
+        let got_c = fn_unit_pack_lookup(p, "keyC")
+        let miss = fn_unit_pack_lookup(p, "ghost")
+        // 3 keys committed, but only 2 unique artifacts (A==C deduped).
+        let arts = avra_shell_exec("grep -c '^A ' '${p.index_path}'").trim()
+        let ok = n == 3
+            && got_a != null && (got_a ?? "") == ir_a
+            && got_b != null && (got_b ?? "") == ir_b
+            && got_c != null && (got_c ?? "") == ir_a
+            && miss == null
+            && arts == "2"
+        if !ok {
+            println("pack round-trip: n=${string(n)} a=${got_a ?? "<null>"} b=${got_b ?? "<null>"} c=${got_c ?? "<null>"} arts=${arts}")
+        }
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "a deterministic rerun rewrites a byte-identical index + one pack (no orphans)" {
+        let root = fresh_store_root()
+        let p = fn_unit_pack_for(cache_for(root))
+        let mk = () -> {
+            let b = fn_unit_batch_new()
+            b.add("k1", "define @f() {\n  ret void\n}")
+            b.add("k2", "define @g() {\n  ret i64 7\n}")
+            fn_unit_pack_flush(p, b)
+        }
+        let _ = mk()
+        let sum1 = avra_shell_exec("sha256sum '${p.index_path}' | cut -d' ' -f1").trim()
+        let _ = mk()
+        let sum2 = avra_shell_exec("sha256sum '${p.index_path}' | cut -d' ' -f1").trim()
+        let packs = avra_shell_exec("ls '${p.dir}'pack.* 2>/dev/null | wc -l").trim()
+        avra_shell_exec("rm -rf '${root}'")
+        sum1 == sum2 && packs == "1"
     }
 }

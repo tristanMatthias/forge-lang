@@ -1,9 +1,17 @@
 // WHY: the WRITE side of the per-function codegen cache.
-// After body emission, walk the program's fn items, extract each emitted
-// function's textual IR (avra_llvm_fn_print_to_file — the v1 artifact
-// format behind the abstract unit; bitcode slots in later), and publish
-// it into the fn-unit store (build/fncache.av) under the composed key
+// After body emission, publish each emitted function's textual IR into the
+// batched pack store (build/fncache.av) under the composed key
 // body_fp ⊕ type-table fp ⊕ erased regime ⊕ toolchain.
+//
+// Two O(n) passes, NOT a per-function print (LLVMPrintValueToString rebuilds
+// a module SlotTracker each call — O(module) EACH, so ~3.8k fns × O(module)
+// was ~80s of quadratic waste on @std/avrac):
+//   (1) collect_keys walks the AST once, mapping each publishable fn's LLVM
+//       name -> its composed cache key;
+//   (2) the module is printed ONCE (avra_llvm_module_split_defines) and
+//       split into per-fn `define … }` blocks, each packed under its key.
+// A whole package materialises as ONE content-addressed pack + ONE atomic
+// index — 2 files, not ~2-per-fn — dropping the publish from ~94s to ~3s.
 //
 // Always-on, no flag: the store root is the project's build/cache root,
 // threaded from the build driver into codegen (like the unit-compile +
@@ -33,18 +41,67 @@
 // stamping, a later change.
 
 use core.{
-    StmtId, NodeStore, stmt_unwrap, find_annotation,
+    StmtId, stmt_unwrap, find_annotation,
     item_sig_fp, item_body_fp, type_table_fp,
-    avra_remove_file, avra_getpid, avra_mkdir_p,
 }
 use codegen.{Ctx}
 use features.fn_decl.{fn_belongs_to_lib_pkg}
 use build.{
-    cache_for, toolchain_fingerprint,
-    FnUnitStore, fn_unit_key, fn_unit_store_for, fn_unit_store_init, fn_unit_publish,
+    cache_for, toolchain_fingerprint, fn_unit_key,
+    FnUnitBatch, fn_unit_batch_new, fn_unit_pack_for, fn_unit_pack_flush,
 }
 
-extern fn avra_llvm_fn_print_to_file(fn_val: ptr, path: string) -> int
+// Whole-module per-function IR extraction (llvm_wrapper.c). The module is
+// printed ONCE and split into `define … }` blocks — O(module), not the
+// O(module)-per-fn quadratic of a per-function print (which cost ~80s on
+// @std/avrac). Returns `name\n<ir>\x1e`-joined records; unit_sep is the
+// \x1e record separator; value_name is the raw LLVM name we key blocks by.
+extern fn avra_llvm_module_split_defines(module: ptr) -> string
+extern fn avra_llvm_unit_sep() -> string
+extern fn avra_llvm_value_name(fn_val: ptr) -> string
+
+// Reference-semantics string->int map (a ptr handle) — the builtin Map is a
+// value type, so a bare local wouldn't accumulate across the recursive walk.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+// AST-walk accumulator: LLVM name -> its composed cache key. The C map holds
+// name -> index; the key hashes live in a parallel List (the SymbolTable
+// pattern — struct methods mutate via self-by-pointer, so it accumulates
+// across recursion). Keying by the value's real LLVM name matches the blocks
+// avra_llvm_module_split_defines emits regardless of codegen name mangling.
+type KeyCollector = {
+    idx: ptr,               // C map: llvm name -> hashes index
+    hashes: List<string>,   // key hash by index
+}
+
+fn key_collector_new() -> KeyCollector {
+    KeyCollector { idx: avra_map_new_cstr(), hashes: [] }
+}
+
+impl KeyCollector {
+    fn put(self, name: string, key_hash: string) {
+        avra_map_set_cstr(self.idx, name, self.hashes.length)
+        self.hashes.push(key_hash)
+    }
+
+    fn get(self, name: string) -> string? {
+        if avra_map_has_cstr(self.idx, name) == 0 {
+            return null
+        }
+        let i = avra_map_get_cstr(self.idx, name)
+        if i < 0 || i >= self.hashes.length {
+            return null
+        }
+        self.hashes[i]
+    }
+
+    fn size(self) -> int {
+        self.hashes.length
+    }
+}
 
 /// Publish every emitted function's IR into the per-fn unit store.
 /// Called once after emit_function_bodies; returns the number of units
@@ -69,10 +126,6 @@ export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>, cache_root: string) ->
     if ctx.lib_pkg_roots.length == 0 {
         return 0
     }
-    let store = fn_unit_store_for(cache_for(cache_root))
-    if !fn_unit_store_init(store) {
-        return 0
-    }
     let table_fp = type_table_fp(ctx.type_reg)
     let toolchain = toolchain_fingerprint()
     // Canonical fingerprint of the IR-affecting codegen flags: the same
@@ -80,47 +133,59 @@ export fn publish_fn_units(ctx: Ctx, stmts: List<StmtId>, cache_root: string) ->
     // or coverage counters, so a slot must not be shared across modes.
     let cov_tag = if ctx.coverage { "1" } else { "0" }
     let modes = "d${string(ctx.debug_null_checks)}c${cov_tag}"
-    publish_walk(ctx, stmts, store, table_fp, modes, toolchain)
+    // Two O(n) passes, no per-fn LLVM printing:
+    //   (1) walk the AST -> map each publishable fn's LLVM name -> its key,
+    //   (2) print the module ONCE, split into per-fn IR blocks, pack each.
+    // Keying by the value's real LLVM name (not the AST name) makes the
+    // block<->key match robust to any codegen name mangling.
+    let kc = key_collector_new()
+    collect_keys(ctx, stmts, kc, table_fp, modes, toolchain)
+    if kc.size() == 0 {
+        return 0
+    }
+    let batch = fn_unit_batch_new()
+    let sep = avra_llvm_unit_sep()
+    for rec in avra_llvm_module_split_defines(ctx.module).split(sep) {
+        let nl = rec.index_of("\n")
+        if nl < 0 {
+            continue
+        }
+        let name = rec.substring(0, nl)
+        let kh = kc.get(name)
+        if kh != null {
+            batch.add(kh!, rec.substring(nl + 1, rec.length))
+        }
+    }
+    fn_unit_pack_flush(fn_unit_pack_for(cache_for(cache_root)), batch)
 }
 
-fn publish_walk(ctx: Ctx, stmts: List<StmtId>, store: FnUnitStore, table_fp: int, modes: string, toolchain: string) -> int {
-    mut published = 0
+// Pass 1: map each publishable fn's real LLVM name -> its composed cache
+// key. Mirrors emit_function_bodies' skip conditions EXACTLY (a fn whose
+// body this compile did not emit — @external_unit, or outside the lib
+// ownership roots — is a `declare` in the module, so it never appears as a
+// `define` block and must not be keyed).
+fn collect_keys(ctx: Ctx, stmts: List<StmtId>, kc: KeyCollector, table_fp: int, modes: string, toolchain: string) {
     for id in stmts {
         let node = ctx.nodes.stmts.get(id)
         let is_erased = find_annotation(ctx.nodes, node, "mono_erased") != null
-        // Mirror emit_function_bodies' skip conditions EXACTLY: a fn whose
-        // body this compile did not emit (@external_unit, or outside the
-        // lib ownership roots) exists in the module only as a `declare` —
-        // which prints fine, so an extract-side guard is the only thing
-        // keeping declaration stubs out of the cache.
         let is_external = find_annotation(ctx.nodes, node, "external_unit") != null
         match stmt_unwrap(ctx.nodes, node) {
             .Function(name, _, _, _, _) -> {
                 let fn_val = ctx.get_fn(name)
                 if fn_val != null && !is_external && fn_belongs_to_lib_pkg(ctx, name) {
                     let key = fn_unit_key(name, item_sig_fp(ctx.nodes, id), item_body_fp(ctx.nodes, id), table_fp, is_erased, modes, toolchain)
-                    let tmp = "${store.tmp_dir}extract.${string(avra_getpid())}.${string(published)}.ll"
-                    if avra_llvm_fn_print_to_file(fn_val, tmp) != 0 {
-                        if fn_unit_publish(store, key, tmp) != null {
-                            published = published + 1
-                        }
-                        let _ = avra_remove_file(tmp)
-                    }
+                    kc.put(avra_llvm_value_name(fn_val), key.hash)
                 }
             }
             .Impl(_, methods) -> {
-                published = published + publish_walk(ctx, methods, store, table_fp, modes, toolchain)
+                collect_keys(ctx, methods, kc, table_fp, modes, toolchain)
             }
             .Module(_, body) -> {
-                // An @external_unit module is skipped wholesale by
-                // emit_function_bodies — its children are only `declare`s
-                // here, so recursing would publish declaration stubs.
                 if !is_external {
-                    published = published + publish_walk(ctx, body, store, table_fp, modes, toolchain)
+                    collect_keys(ctx, body, kc, table_fp, modes, toolchain)
                 }
             }
             _ -> {}
         }
     }
-    published
 }

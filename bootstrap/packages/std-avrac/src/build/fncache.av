@@ -38,6 +38,20 @@ use core.{
 use build.cache.{Cache, atomic_install}
 use @std.crypto.{sha256_file, sha256_hex}
 
+// Streaming file primitives for the batched pack store below. Appending to
+// one growing pack tmp (no new inode / rename per unit) is what collapses
+// ~2 files-per-fn into 2 files-per-package; read_file_from tail-reads a
+// unit's byte range back out. parse_int decodes the index's offset/len.
+extern fn avra_selfhost_append_file(path: string, content: string) -> int
+extern fn avra_selfhost_read_file_from(path: string, offset: int) -> string
+extern fn avra_parse_int(s: string) -> int
+// Reference-semantics string->int map (a ptr handle) for the batch dedup
+// set — the builtin Map is a value type, so mutation wouldn't persist
+// through the accumulator struct. Same map the resolver/registries use.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
 /// A composed per-function cache key. `hash` is 64-hex over the canonical
 /// key string — the only identity; callers never parse it back.
 export type FnUnitKey = {
@@ -225,4 +239,213 @@ export fn fn_unit_publish(s: FnUnitStore, k: FnUnitKey, artifact_src: string) ->
         return fn_unit_lookup(s, k)
     }
     ap
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Batched PACK store — the fnunits write path.
+//
+// The two-files-per-fn key/+art/ layout above is right for the fncgu
+// per-fn OBJECT cache (compile.av): binary .o artifacts, handled by PATH,
+// read+written one fn at a time under an incremental compile. But the
+// fnunits IR-unit publish writes the WHOLE package's fns at once (~3.8k
+// for @std/avrac), and at ~2 filesystem creates + renames + a hash-file
+// round-trip PER fn it dominated codegen (~94s). Nothing about a bulk,
+// write-all-at-once publish needs one inode per unit.
+//
+// So the fnunits namespace uses a PACK instead: every unit's IR is streamed
+// into ONE append-only pack, and ONE text `index` maps keys -> content
+// hashes -> byte ranges. A whole package publishes in 2 files, not ~7.7k.
+//
+// Crash-safety (materialise-atomically): the pack is CONTENT-ADDRESSED
+// (`pack.<sha>`) and fully written + fsync-renamed before the index that
+// names it is atomically renamed into place. The index rename is the sole
+// commit point — until it lands, every reader resolves through the OLD
+// index to the OLD pack (both still present), never a torn pair. A crash
+// between the two renames orphans a `pack.<sha>` (reclaimed by cache-gc),
+// never corrupts a live lookup. Deterministic reruns hash to the SAME
+// `pack.<sha>` name, so a rebuild of unchanged sources adds no orphan.
+//
+// v1 handles TEXTUAL IR (ASCII — byte length == char length, so the
+// `.length` offsets are byte offsets). The bitcode format the header
+// promises slots in behind `avra_selfhost_*_file_bytes` + a bytes read
+// with no format change (offset+len byte ranges are already binary-clean).
+
+/// Filesystem view of a package's pack store (fnunits namespace).
+export type FnUnitPack = {
+    dir: string,          // <root>cache/fnunits/
+    index_path: string,   // <dir>index  — the atomic commit pointer
+    tmp_dir: string,      // <dir>_tmp/  — staging for atomic writes
+}
+
+export fn fn_unit_pack_for(c: Cache) -> FnUnitPack {
+    let dir = c.cache_dir + "fnunits/"
+    FnUnitPack { dir: dir, index_path: dir + "index", tmp_dir: dir + "_tmp/" }
+}
+
+/// One accumulated unit: content hash of its IR + the IR text.
+type PackBlob = { hash: string, ir: string }
+/// A cache key pointing at a content hash (many keys may share one blob).
+type PackKey = { key_hash: string, art_hash: string }
+
+/// In-memory accumulator for a package's units. Dedupes blobs by content
+/// hash (the §8 identical-IR collapse — mono instances), preserving first-
+/// seen order so byte offsets are stable and reruns are deterministic.
+export type FnUnitBatch = {
+    blobs: List<PackBlob>,   // unique blobs, first-seen order
+    keys: List<PackKey>,     // key -> art_hash, one per published fn
+    seen: ptr,               // C map art_hash -> blobs index (dedup set)
+}
+
+export fn fn_unit_batch_new() -> FnUnitBatch {
+    FnUnitBatch { blobs: [], keys: [], seen: avra_map_new_cstr() }
+}
+
+impl FnUnitBatch {
+    /// Accumulate one function's unit. Hashes the IR in memory (no temp
+    /// file, no read-back), collapses identical IR to a single stored blob
+    /// (the §8 identical-IR / mono-instance explosion control).
+    fn add(self, key_hash: string, ir: string) {
+        if ir.length == 0 {
+            return
+        }
+        let art_hash = sha256_hex(ir)
+        if avra_map_has_cstr(self.seen, art_hash) == 0 {
+            avra_map_set_cstr(self.seen, art_hash, self.blobs.length)
+            self.blobs.push(PackBlob { hash: art_hash, ir: ir })
+        }
+        self.keys.push(PackKey { key_hash: key_hash, art_hash: art_hash })
+    }
+
+    fn count(self) -> int {
+        self.keys.length
+    }
+}
+
+/// Materialise a batch atomically: one content-addressed pack + one index.
+/// Returns the number of keys committed (0 on an empty batch or any I/O
+/// failure — publishing must never fail a compile).
+export fn fn_unit_pack_flush(p: FnUnitPack, b: FnUnitBatch) -> int {
+    if b.blobs.length == 0 {
+        return 0
+    }
+    if avra_mkdir_p(p.dir) == 0 {
+        return 0
+    }
+    if avra_mkdir_p(p.tmp_dir) == 0 {
+        return 0
+    }
+    let pid = string(avra_getpid())
+    let pack_tmp = p.tmp_dir + "pack." + pid
+    let _ = avra_remove_file(pack_tmp)
+    // Stream every unique blob into the pack tmp, recording each byte offset.
+    mut offsets: List<int> = []
+    mut offset = 0
+    for blob in b.blobs {
+        offsets.push(offset)
+        if avra_selfhost_append_file(pack_tmp, blob.ir) == 0 {
+            let _ = avra_remove_file(pack_tmp)
+            return 0
+        }
+        offset = offset + blob.ir.length
+    }
+    // Content-address the finished pack; commit is the index rename below.
+    let pack_hash = sha256_file(pack_tmp)
+    // sha256_file caches its digest in a <path>.avra-sha256 sidecar; for our
+    // pid-unique temp that cache is never reused, so drop it (no _tmp litter).
+    let _ = avra_remove_file(pack_tmp + ".avra-sha256")
+    if pack_hash.length == 0 {
+        let _ = avra_remove_file(pack_tmp)
+        return 0
+    }
+    let pack_name = "pack." + pack_hash
+    let pack_final = p.dir + pack_name
+    if avra_selfhost_file_exists(pack_final) && avra_file_size(pack_final) > 0 {
+        // Deterministic rerun produced identical bytes — dedupe, no orphan.
+        let _ = avra_remove_file(pack_tmp)
+    } else {
+        if avra_rename(pack_tmp, pack_final) == 0 {
+            let _ = avra_remove_file(pack_tmp)
+            return 0
+        }
+    }
+    // Build the index in a tmp: PACK header, A(rtifact) records, K(ey) records.
+    let idx_tmp = p.tmp_dir + "index." + pid
+    let _ = avra_remove_file(idx_tmp)
+    if avra_selfhost_append_file(idx_tmp, "PACK " + pack_name + "\n") == 0 {
+        let _ = avra_remove_file(idx_tmp)
+        return 0
+    }
+    mut i = 0
+    for blob in b.blobs {
+        let rec = "A " + blob.hash + " " + string(offsets[i]) + " " + string(blob.ir.length) + "\n"
+        if avra_selfhost_append_file(idx_tmp, rec) == 0 {
+            let _ = avra_remove_file(idx_tmp)
+            return 0
+        }
+        i = i + 1
+    }
+    for k in b.keys {
+        if avra_selfhost_append_file(idx_tmp, "K " + k.key_hash + " " + k.art_hash + "\n") == 0 {
+            let _ = avra_remove_file(idx_tmp)
+            return 0
+        }
+    }
+    // Commit: the index rename atomically switches to the new (index, pack).
+    if avra_rename(idx_tmp, p.index_path) == 0 {
+        let _ = avra_remove_file(idx_tmp)
+        return 0
+    }
+    b.keys.length
+}
+
+/// Resolve a unit's IR by key hash: key -> art_hash -> (offset,len) -> pack
+/// slice. Returns null on any miss (absent index/pack, unknown key, damaged
+/// range). Rare today (readers are mid-migration); a replay path will parse
+/// the index once and serve many, but the round-trip is correct as-is.
+export fn fn_unit_pack_lookup(p: FnUnitPack, key_hash: string) -> string? {
+    if !avra_selfhost_file_exists(p.index_path) {
+        return null
+    }
+    let idx = avra_selfhost_read_file(p.index_path)
+    if idx.length == 0 {
+        return null
+    }
+    mut pack_name = ""
+    mut art_hash = ""
+    for line in idx.split("\n") {
+        if line.starts_with("PACK ") {
+            pack_name = line.substring(5, line.length)
+        } else if line.starts_with("K ") {
+            let parts = line.split(" ")
+            if parts.length == 3 && parts[1] == key_hash {
+                art_hash = parts[2]
+            }
+        }
+    }
+    if art_hash.length == 0 || pack_name.length == 0 {
+        return null
+    }
+    mut off = 0 - 1
+    mut len = 0 - 1
+    for line in idx.split("\n") {
+        if line.starts_with("A ") {
+            let parts = line.split(" ")
+            if parts.length == 4 && parts[1] == art_hash {
+                off = avra_parse_int(parts[2])
+                len = avra_parse_int(parts[3])
+            }
+        }
+    }
+    if off < 0 || len < 0 {
+        return null
+    }
+    let pack_path = p.dir + pack_name
+    if !avra_selfhost_file_exists(pack_path) {
+        return null
+    }
+    let suffix = avra_selfhost_read_file_from(pack_path, off)
+    if suffix.length < len {
+        return null
+    }
+    suffix.substring(0, len)
 }
