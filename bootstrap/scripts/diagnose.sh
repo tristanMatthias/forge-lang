@@ -1594,54 +1594,95 @@ mode_check_fixedpoint() {
 # slot forever.
 COMPILE_SLOT_DIR=""
 
-# Memory-aware default for acquire_compile_slot's slot count. A
-# no-metadata fixture compile is a ~5GB WHOLE-PROGRAM compile, and
-# these run CONCURRENTLY with the memory-aware test shards, so a fixed
-# `2` could still tip a tight box over the OOM cliff (the fixture half
-# of the snw0 full-suite peak). Derive it from MemAvailable — ~1 slot
-# per 6GB past a 4GB base, floored at 1 — so a 16GB box runs one
-# fixture compile at a time while a big box still parallelises them.
-# Linux /proc/meminfo only; non-Linux / read failure keeps the historic
+# Stable slot count for acquire_compile_slot's pool. Sized from MemTotal
+# (NOT MemAvailable): a live-avail read shrinks to 1 mid-suite as memory
+# fills, re-serialising the fixture-run phase — the exact regression this
+# unblocks (uzs9.7). Fixtures come in two weight classes since #880 moved
+# the bulk onto the ~1.8GB metadata fast-path; the no-metadata WHOLE-PROGRAM
+# fixtures (build/cache probes, the test-runner self-test) are still ~5.5GB
+# (measured). The pool size bounds concurrent LIGHT (fast-path) compiles —
+# heavy compiles run EXCLUSIVELY (see acquire_compile_slot), grabbing the
+# whole pool, so a ~5.5GB compile never stacks on a full light batch. ~1
+# slot per 3GB past a 4GB base, capped at the core count (a fixture compile
+# is CPU-bound too). Measured safe at 4 on a 16GB/4-core box (min-avail
+# 4.1GB alongside the shards). Non-Linux / read failure keeps the historic
 # default of 2. AVRA_FIXTURE_JOBS overrides this explicitly.
 _default_compile_slots() {
-  local avail
-  avail=$(awk '/^MemAvailable:/ {print int($2/1024); exit}' /proc/meminfo 2>/dev/null)
-  case "$avail" in ''|*[!0-9]*) echo 2; return;; esac
-  [ "$avail" -le 0 ] && { echo 2; return; }
-  local n=$(( (avail - 4096) / 6000 ))
+  local total
+  total=$(awk '/^MemTotal:/ {print int($2/1024); exit}' /proc/meminfo 2>/dev/null)
+  case "$total" in ''|*[!0-9]*) echo 2; return;; esac
+  [ "$total" -le 0 ] && { echo 2; return; }
+  local cores n
+  cores=$(nproc 2>/dev/null || echo 2)
+  n=$(( (total - 4096) / 2900 ))
+  [ "$n" -gt "$cores" ] && n=$cores
   [ "$n" -lt 1 ] && n=1
   echo "$n"
 }
 
+# Cross-process fixture-compile gate with two weight classes. A LIGHT
+# compile (AVRA_USE_METADATA set — the ~1.8GB metadata fast-path) holds ONE
+# of N slots, so up to N run concurrently. A HEAVY compile (AVRA_USE_METADATA
+# stripped — a ~5.5GB no-metadata WHOLE-PROGRAM compile) is EXCLUSIVE: it
+# grabs the WHOLE pool and runs alone, so it never stacks on a full light
+# batch over the OOM cliff. Writer-preference: while a live heavy is pending
+# it re-asserts a `heavy_pending` flag each attempt, and new light
+# acquisitions yield to it, so a heavy can't be starved by a stream of
+# lights. AVRA_SLOT_DIR overrides the namespace (spec tests use a private
+# pool). Dead owners (slots and the pending flag) are reaped.
 acquire_compile_slot() {
-  # AVRA_SLOT_DIR overrides the namespace — spec tests use a private
-  # one so they never contend with (or corrupt) a real suite's slots.
-  local n="${AVRA_FIXTURE_JOBS:-$(_default_compile_slots)}" base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}" dir owner i
+  local base="${AVRA_SLOT_DIR:-$BUILD_DIR/compile_slots}"
+  local n="${AVRA_FIXTURE_JOBS:-$(_default_compile_slots)}"
+  local pend="$base/heavy_pending"
+  local heavy=0
+  [ -z "${AVRA_USE_METADATA:-}" ] && heavy=1
   mkdir -p "$base"
-  while :; do
-    i=0
-    while [ "$i" -lt "$n" ]; do
-      dir="$base/slot.$i"
-      if mkdir "$dir" 2>/dev/null; then
-        echo $$ > "$dir/pid"
-        COMPILE_SLOT_DIR="$dir"
-        return 0
+  COMPILE_SLOT_DIR=""
+  local i dir owner got k held
+  if [ "$heavy" -eq 1 ]; then
+    while :; do
+      echo $$ > "$pend"                 # (re)assert each attempt: lights yield
+      got=""; k=0
+      for i in $(seq 0 $((n - 1))); do
+        dir="$base/slot.$i"
+        if mkdir "$dir" 2>/dev/null; then
+          echo $$ > "$dir/pid"; got="$got $dir"; k=$((k + 1))
+        else
+          owner=$(cat "$dir/pid" 2>/dev/null)
+          [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+        fi
+      done
+      if [ "$k" -eq "$n" ]; then
+        # Hold the whole pool: no light can grab (all slots taken), so the
+        # advisory flag is no longer needed and its removal can't let a
+        # light in. On release every slot is freed.
+        COMPILE_SLOT_DIR="$got"; rm -f "$pend" 2>/dev/null; return 0
       fi
-      # Reap a slot whose owner died without releasing. The pid file
-      # is written right after mkdir; an empty read means the owner is
-      # mid-acquire — leave it alone.
-      owner=$(cat "$dir/pid" 2>/dev/null)
-      if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-        rm -rf "$dir" 2>/dev/null || :
-      fi
-      i=$((i + 1))
+      for held in $got; do rm -rf "$held" 2>/dev/null; done   # release partial
+      sleep "0.$(( (RANDOM % 4) + 2 ))"                       # jitter → no livelock
     done
-    sleep 0.2
-  done
+  else
+    while :; do
+      # Yield to a LIVE pending heavy (reap a stale flag whose owner died).
+      if [ -f "$pend" ]; then
+        owner=$(cat "$pend" 2>/dev/null)
+        if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then sleep 0.2; continue; fi
+        rm -f "$pend" 2>/dev/null
+      fi
+      for i in $(seq 0 $((n - 1))); do
+        dir="$base/slot.$i"
+        if mkdir "$dir" 2>/dev/null; then echo $$ > "$dir/pid"; COMPILE_SLOT_DIR="$dir"; return 0; fi
+        owner=$(cat "$dir/pid" 2>/dev/null)
+        [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+      done
+      sleep 0.2
+    done
+  fi
 }
 
 release_compile_slot() {
-  [ -n "$COMPILE_SLOT_DIR" ] && rm -rf "$COMPILE_SLOT_DIR" 2>/dev/null
+  local d
+  for d in $COMPILE_SLOT_DIR; do rm -rf "$d" 2>/dev/null; done
   COMPILE_SLOT_DIR=""
 }
 
@@ -1654,6 +1695,49 @@ mode_slot_exec() {
   acquire_compile_slot
   trap release_compile_slot EXIT
   "$@"
+}
+
+# Contention fuzz for the acquire/release gate (uzs9.7). Spawns mixed
+# LIGHT + HEAVY workers that acquire, observe the live holder set, hold
+# briefly, then release — asserting the invariants the exclusion design
+# guarantees: (1) never a HEAVY holding alongside any LIGHT, (2) never a
+# second HEAVY, (3) never more than N LIGHTs. A deadlock/livelock instead
+# manifests as the per-round `wait` never returning → the caller's timeout
+# fires. `--slot-fuzz [rounds] [jobs] [N]` (default 30 x 8, N=4).
+mode_slot_fuzz() {
+  local rounds="${1:-30}" jobs="${2:-8}" nslots="${3:-4}"
+  local root="$BUILD_DIR/slot_fuzz" pool="$BUILD_DIR/slot_fuzz/pool"
+  local obs="$BUILD_DIR/slot_fuzz/obs" viol="$BUILD_DIR/slot_fuzz/viol"
+  rm -rf "$root"; mkdir -p "$pool" "$obs"; : > "$viol"
+  local r j
+  for r in $(seq 1 "$rounds"); do
+    for j in $(seq 1 "$jobs"); do
+      (
+        local mode
+        if [ $((RANDOM % 4)) -eq 0 ]; then unset AVRA_USE_METADATA; mode=heavy
+        else export AVRA_USE_METADATA=1; mode=light; fi
+        AVRA_SLOT_DIR="$pool" AVRA_FIXTURE_JOBS="$nslots" acquire_compile_slot
+        local tok="$obs/$mode.$$"; : > "$tok"
+        local nl nh
+        nl=$(find "$obs" -name 'light.*' 2>/dev/null | wc -l)
+        nh=$(find "$obs" -name 'heavy.*' 2>/dev/null | wc -l)
+        [ "$mode" = heavy ] && [ "$nl" -gt 0 ] && echo "heavy holding with $nl light(s)" >> "$viol"
+        [ "$mode" = light ] && [ "$nh" -gt 0 ] && echo "light holding with $nh heavy" >> "$viol"
+        [ "$nl" -gt "$nslots" ] && echo "$nl lights > cap $nslots" >> "$viol"
+        [ "$nh" -gt 1 ] && echo "$nh heavies concurrently" >> "$viol"
+        sleep "0.$(( (RANDOM % 3) + 1 ))"
+        rm -f "$tok"
+        AVRA_SLOT_DIR="$pool" release_compile_slot
+      ) &
+    done
+    wait
+  done
+  local nv; nv=$(wc -l < "$viol" 2>/dev/null | tr -d ' ')
+  if [ "${nv:-0}" -eq 0 ]; then
+    ok "slot-fuzz: ${rounds}x${jobs} workers (N=${nslots}) — 0 invariant violations, no hang"
+    return 0
+  fi
+  err "slot-fuzz: ${nv} invariant violation(s):"; head -5 "$viol"; return 1
 }
 
 # Compile + link + run a .av with bs2 (or stage1).
@@ -2883,6 +2967,7 @@ main() {
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
     --slot-exec)          mode_slot_exec "$@" ;;
+    --slot-fuzz)          mode_slot_fuzz "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
     --prune-tmp-scratch)  mode_prune_tmp_scratch "$@" ;;
