@@ -33,7 +33,7 @@
 
 use core.{Stmt, Expr, ExprId, ParamEntry, Pattern, MatchArm, ValueType, BinOp, LogicOp}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, synth_expr_id}
-use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, self_vtype, emit_call, ident_field_access, name_vtype, pattern_from_names}
+use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, self_vtype, emit_call, ident_field_access, name_vtype, pattern_from_names, node_hop}
 
 // ── Public entry ──
 
@@ -141,12 +141,6 @@ fn pair_eq(a: Expr, b: Expr, kind: FieldShape, parent: string) -> Expr {
 fn eq_method_call(a: Expr, b: Expr) -> Expr {
     let args: List<ExprId> = [synth_expr_id(b)]
     emit_call(Expr.FieldAccess(synth_expr_id(a), "eq"), args)
-}
-
-/// `x.node` — the 1-hop wrapper projection.
-@comptime
-fn node_hop(x: Expr) -> Expr {
-    Expr.FieldAccess(synth_expr_id(x), "node")
 }
 
 /// `<helper>(a, b, (x: T, y: T) -> x.eq(y))` — pairwise/none-guarded

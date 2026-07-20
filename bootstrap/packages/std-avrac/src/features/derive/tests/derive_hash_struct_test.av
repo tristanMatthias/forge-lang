@@ -1,0 +1,59 @@
+// The hash emitter on a STRUCT — proves the engine's struct path (single
+// synthetic variant, `let __hash_a<i> = self.<field>` projections, no
+// match) drives the same arm hook that serves enums. Mixed leaf kinds
+// (int + string) exercise the `content_id_for(string(x))` uniform leaf hash;
+// the nullable-node case exercises `opt_hash_by`.
+//
+// NOTE the fixtures import NEITHER `opt_hash_by` NOR any list_ops helper —
+// the hash emitter qualifies every @std ref (`@std::avrac::list_ops::…`), so
+// a derived hash resolves import-free even on the metadata fast-path (the
+// y9y4.19 discipline). eq's fixtures still hand-import their combinators.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "derive_hash: content hash on a struct" {
+    then "equal values hash equal; differing int or string leaves hash differently" {
+        let out = write_fixture_and_run("/tmp/avra_derive_hash_struct_test.av",
+            "use @std.avrac.features.derive.{derive_hash}\n" +
+            "\n" +
+            "@expand(derive_hash)\n" +
+            "type Pt = { x: int, y: int, tag: string }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let a = Pt { x: 1, y: 2, tag: \"origin\" }\n" +
+            "    let b = Pt { x: 1, y: 2, tag: \"origin\" }\n" +
+            "    let c = Pt { x: 1, y: 2, tag: \"other\" }\n" +
+            "    let d = Pt { x: 9, y: 2, tag: \"origin\" }\n" +
+            "    println(\"same=\" + string(a.hash() == b.hash()))\n" +
+            "    println(\"tag_diff=\" + string(a.hash() != c.hash()))\n" +
+            "    println(\"num_diff=\" + string(a.hash() != d.hash()))\n" +
+            "}\n")
+        out.contains("same=true") && out.contains("tag_diff=true") && out.contains("num_diff=true")
+    }
+}
+
+spec "derive_hash: nullable self field none-guards through opt_hash_by" {
+    then "absent vs present, present-same, and present-diff all hash correctly (no combinator import)" {
+        let out = write_fixture_and_run("/tmp/avra_derive_hash_optional_test.av",
+            "use @std.avrac.features.derive.{derive_hash}\n" +
+            "\n" +
+            "@expand(derive_hash)\n" +
+            "type OChain = { v: int, next: OChain? }\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let flat1 = OChain { v: 1, next: null }\n" +
+            "    let flat2 = OChain { v: 1, next: null }\n" +
+            "    let deep1 = OChain { v: 1, next: OChain { v: 2, next: null } }\n" +
+            "    let deep2 = OChain { v: 1, next: OChain { v: 2, next: null } }\n" +
+            "    let deep3 = OChain { v: 1, next: OChain { v: 9, next: null } }\n" +
+            "    println(\"flat_stable=\" + string(flat1.hash() == flat2.hash()))\n" +
+            "    println(\"flat_vs_deep=\" + string(flat1.hash() != deep1.hash()))\n" +
+            "    println(\"deep_same=\" + string(deep1.hash() == deep2.hash()))\n" +
+            "    println(\"deep_diff=\" + string(deep1.hash() != deep3.hash()))\n" +
+            "}\n")
+        out.contains("flat_stable=true") &&
+            out.contains("flat_vs_deep=true") &&
+            out.contains("deep_same=true") &&
+            out.contains("deep_diff=true")
+    }
+}

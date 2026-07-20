@@ -1,0 +1,129 @@
+// WHY: ps3t.8.11 — @query's value type V is no longer string-only. The
+// generated compute adapter's early-cutoff key is V's CONTENT HASH:
+// `content_id_for` for string (byte-identical to v1), `v.hash()` (from
+// @derive(Hash)) for a non-generic named struct/enum. These specs prove a
+// non-string V works end-to-end (memoize + the derived-hash early cutoff)
+// and that the widened shape gate still rejects illegal V precisely (F4013).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
+
+// Compile-check a fixture, capturing diagnostics (for the F4013 gate specs).
+fn qvh_check_out(path: string, source: string) -> string {
+    write_fixture(path, source)
+    avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+}
+
+// The shared value type + engine imports every runtime fixture uses. `Doc`
+// derives Hash, so the @query adapter can early-cutoff on `v.hash()`.
+fn qvh_prelude() -> string {
+    "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
+    "\n" +
+    "@derive(Hash)\n" +
+    "type Doc = { n: int }\n" +
+    "\n"
+}
+
+spec "@query over a non-string value (@derive(Hash) struct) memoizes" {
+    then "a struct value flows through fetch/compute and the second fetch is a memo hit" {
+        let out = write_fixture_and_run("/tmp/avra_qvh_struct_test.av",
+            qvh_prelude() +
+            "enum Fam { Seed, Doc2 }\n" +
+            "\n" +
+            "@query(Fam.Doc2)\n" +
+            "fn doc(ctx: QueryCtx<Doc>, arg: int) -> Result<Doc, QueryCycle> {\n" +
+            "    let s = ctx.fetch(qk(Fam.Seed.ordinal, arg))?\n" +
+            "    Result.Ok(Doc { n: s.n * 2 })\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let mut db: Db<Doc> = db_new(avra_query_dispatch)\n" +
+            "    db.set_input(qk(Fam.Seed.ordinal, 7), Doc { n: 5 }, 100)\n" +
+            "    let r1 = db.fetch(qk(doc_family(), 7))\n" +
+            "    match r1 {\n" +
+            "        .Ok(f) -> println(\"doc=\" + string(f.value.n))\n" +
+            "        .Err(_) -> println(\"cycle\")\n" +
+            "    }\n" +
+            "    let r2 = db.fetch(qk(doc_family(), 7))\n" +
+            "    match r2 {\n" +
+            "        .Ok(f) -> println(\"again=\" + string(f.value.n) + \" computes=\" + string(db.computes_of(doc_family())))\n" +
+            "        .Err(_) -> println(\"cycle\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("doc=10") && out.contains("again=10 computes=1")
+    }
+}
+
+spec "the derived value hash drives early cutoff across a query chain" {
+    then "an upstream recompute to an equal-hash value cuts off the downstream query" {
+        // mid maps seed -> Doc{ seed.n / 10 }: seeds 50 and 51 both give Doc{5}.
+        // top doubles mid. Editing the seed 50->51 recomputes mid to an EQUAL
+        // Doc{5} (same v.hash()), so top must NOT recompute — the memo cutoff.
+        let out = write_fixture_and_run("/tmp/avra_qvh_cutoff_test.av",
+            qvh_prelude() +
+            "enum Fam { Seed, Mid, Top }\n" +
+            "\n" +
+            "@query(Fam.Mid)\n" +
+            "fn mid(ctx: QueryCtx<Doc>, arg: int) -> Result<Doc, QueryCycle> {\n" +
+            "    let s = ctx.fetch(qk(Fam.Seed.ordinal, arg))?\n" +
+            "    Result.Ok(Doc { n: s.n / 10 })\n" +
+            "}\n" +
+            "\n" +
+            "@query(Fam.Top)\n" +
+            "fn top(ctx: QueryCtx<Doc>, arg: int) -> Result<Doc, QueryCycle> {\n" +
+            "    let m = mid_fetch(ctx, arg)?\n" +
+            "    Result.Ok(Doc { n: m.n * 2 })\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let mut db: Db<Doc> = db_new(avra_query_dispatch)\n" +
+            "    db.set_input(qk(Fam.Seed.ordinal, 7), Doc { n: 50 }, 1)\n" +
+            "    let a = db.fetch(qk(top_family(), 7))\n" +
+            "    match a {\n" +
+            "        .Ok(f) -> println(\"top=\" + string(f.value.n))\n" +
+            "        .Err(_) -> println(\"cycle\")\n" +
+            "    }\n" +
+            "    db.set_input(qk(Fam.Seed.ordinal, 7), Doc { n: 51 }, 2)\n" +
+            "    let b = db.fetch(qk(top_family(), 7))\n" +
+            "    match b {\n" +
+            "        .Ok(f) -> println(\"still=\" + string(f.value.n) + \" mid_computes=\" + string(db.computes_of(mid_family())) + \" top_computes=\" + string(db.computes_of(top_family())))\n" +
+            "        .Err(_) -> println(\"cycle\")\n" +
+            "    }\n" +
+            "}\n")
+        out.contains("top=10") && out.contains("still=10 mid_computes=2 top_computes=1")
+    }
+}
+
+spec "@query value-type shape gate (ps3t.8.11 widening)" {
+    then "a non-nominal value type (int) is F4013" {
+        let out = qvh_check_out("/tmp/avra_qvh_badval_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
+            "fn q(ctx: QueryCtx<int>, arg: int) -> Result<int, QueryCycle> {\n" +
+            "    Result.Ok(0)\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4013") && out.contains("deriving `Hash`")
+    }
+    then "a ctx/return value-type mismatch is F4013" {
+        let out = qvh_check_out("/tmp/avra_qvh_mismatch_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "@derive(Hash)\n" +
+            "type Doc = { n: int }\n" +
+            "\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
+            "fn q(ctx: QueryCtx<Doc>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4013") && out.contains("value type mismatch")
+    }
+}

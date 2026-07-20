@@ -497,8 +497,18 @@ macro-generated `use` has no pre-expand phantom, `resolve_and_expand_program`
 arms the `t-tiz0` alias re-resolution on a narrow `has_cross_module_use` flag
 (set only when a site lives in a sibling module) — so single-module programs and
 the compiler's own self-compile stay on the cheap path, byte-identical. A
-top-level site needs no import. Still `V=string`; non-`string` `V` waits on
-`ps3t.8.11` (per-type hashing).
+top-level site needs no import.
+
+`V` is no longer `string`-only (`ps3t.8.11`). The compute adapter's
+early-cutoff key is `V`'s **content hash** — `content_id_for(v)` for `string`
+(byte-identical to v1), `v.hash()` for a non-generic `Hash`-deriving `V`. `L4`
+grew a third derive capability, `@derive(Hash)` (`fn T__hash(self) -> int`, a
+left `FNV-1a` fold over field/variant hashes seeded by the variant/type name's
+own content id — struct + enum, uniform), and the surface's resolution-free
+shape gate widened from "`V is string`" to "`V` is `string` or a non-generic
+nominal"; the same `V` must name the context and the return. A generic or
+non-nominal `V` is a precise `F4013`; a nominal `V` that never derived `Hash`
+fails loudly at the generated `v.hash()`.
 
 ### 12.5 Family naming — enum ordinals (`ps3t.8.13` → `ps3t.8.10`)
 
