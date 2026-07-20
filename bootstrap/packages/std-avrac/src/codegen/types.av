@@ -1189,7 +1189,7 @@ impl Ctx {
             self.global_str(self.source_file, "src_file"), self.i64(self.source_file.length),
             self.i64(self.source_line)
         ])
-        let _ = avra_llvm_build_unreachable(self.builder)
+        self.unreachable()
         // Hot path: value is non-null → carry on.
         self.position(cont_bb)
     }

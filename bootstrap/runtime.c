@@ -255,7 +255,18 @@ static void rc_region_init(void) {
 }
 
 static inline int rc_region_contains(void* ptr) {
-    return rc_region_enabled && (char*)ptr >= rc_region_base && (char*)ptr < rc_region_frontier;
+    // Bound by rc_region_end, NOT the live rc_region_frontier. Membership is
+    // read on every retain/release (is_rc_managed) with no lock — the whole
+    // point of the region is a lock-free hot path — but rc_region_frontier is
+    // mutated under rc_lock by the allocator, so reading it here would be a data
+    // race (and a stale frontier could misjudge a freshly-allocated region
+    // object as non-RC → a leak or premature free). base/end/enabled are set
+    // once in the constructor and never mutated, so this read is race-free.
+    // Safe by construction: a real region object is always < frontier ≤ end;
+    // the only pointers in [frontier, end) are reserved-but-untouched region
+    // space (never handed to retain/release), and were a stray pointer to land
+    // there its zero header (type_tag != RC_MAGIC) makes retain/release a no-op.
+    return rc_region_enabled && (char*)ptr >= rc_region_base && (char*)ptr < rc_region_end;
 }
 
 // Allocate `payload` bytes from the region; returns the user pointer (past the
@@ -1463,8 +1474,22 @@ typedef struct {
     int64_t  inline_buf[AVRA_ARRAY_SBO];
 } AvraArray;
 
+// Arrays service arbitrary user (Avra) programs, so an allocation failure gets a
+// graceful diagnostic + exit (matching avra_rc_alloc) rather than an unguarded
+// null-deref. Centralised so every array alloc/grow site is covered uniformly.
+static void* avra_arr_xmalloc(size_t bytes) {
+    void* p = malloc(bytes);
+    if (!p) { avra_runtime_errorf("out of memory (array alloc %zu bytes)", bytes); exit(1); }
+    return p;
+}
+static void* avra_arr_xrealloc(void* old, size_t bytes) {
+    void* p = realloc(old, bytes);
+    if (!p) { avra_runtime_errorf("out of memory (array grow %zu bytes)", bytes); exit(1); }
+    return p;
+}
+
 void* avra_array_new(void) {
-    AvraArray* a = (AvraArray*)malloc(sizeof(AvraArray));   // single allocation
+    AvraArray* a = (AvraArray*)avra_arr_xmalloc(sizeof(AvraArray));   // single allocation
     a->cap = AVRA_ARRAY_SBO;
     a->len = 0;
     a->data = a->inline_buf;                                // backing lives inline
@@ -1477,11 +1502,11 @@ void avra_array_push(void* arr, int64_t value) {
         int64_t newcap = a->cap * 2;
         if (a->data == a->inline_buf) {
             // First growth out of inline storage: malloc a real buffer + copy.
-            int64_t* nd = (int64_t*)malloc((size_t)newcap * sizeof(int64_t));
+            int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
             memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
             a->data = nd;
         } else {
-            a->data = (int64_t*)realloc(a->data, (size_t)newcap * sizeof(int64_t));
+            a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
         }
         a->cap = newcap;
     }
@@ -1542,14 +1567,14 @@ void* avra_array_slice(void* arr, int64_t start, int64_t end) {
     if (start >= end) return avra_array_new();
 
     int64_t count = end - start;
-    AvraArray* dst = (AvraArray*)malloc(sizeof(AvraArray));
+    AvraArray* dst = (AvraArray*)avra_arr_xmalloc(sizeof(AvraArray));
     dst->len = count;
     if (count <= AVRA_ARRAY_SBO) {
         dst->cap = AVRA_ARRAY_SBO;
         dst->data = dst->inline_buf;                        // small slice: no second malloc
     } else {
         dst->cap = count;
-        dst->data = (int64_t*)malloc((size_t)dst->cap * sizeof(int64_t));
+        dst->data = (int64_t*)avra_arr_xmalloc((size_t)dst->cap * sizeof(int64_t));
     }
     memcpy(dst->data, src->data + start, (size_t)count * sizeof(int64_t));
     return dst;
@@ -2775,11 +2800,11 @@ void* avra_array_insert(void* arr, int64_t idx, int64_t value) {
         if (newcap == 0) newcap = AVRA_ARRAY_SBO;
         if (a->data == a->inline_buf) {
             // Growing out of inline storage — realloc on inline_buf is UB.
-            int64_t* nd = (int64_t*)malloc((size_t)newcap * sizeof(int64_t));
+            int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
             memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
             a->data = nd;
         } else {
-            a->data = (int64_t*)realloc(a->data, (size_t)newcap * sizeof(int64_t));
+            a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
         }
         a->cap = newcap;
     }

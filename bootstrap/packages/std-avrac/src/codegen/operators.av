@@ -289,9 +289,10 @@ fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inne
 }
 
 /// Present-values equality as a raw `i1`, dispatched by inner KIND so an
-/// optional's `==` matches its non-optional counterpart: strings strcmp,
-/// enums tag-compare, floats fcmp; value scalars compare by value and the
-/// remaining reference types by pointer identity (both an integer icmp).
+/// optional's `==` matches its non-optional counterpart: strings via
+/// `avra_streq`, enums tag-compare, floats fcmp; value scalars compare by
+/// value and the remaining reference types by pointer identity (both an
+/// integer icmp).
 fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
     if vtype_is_str(inner) {
         // avra_streq = strcmp==0 with a first-byte fast-reject (returns i64 1/0).
