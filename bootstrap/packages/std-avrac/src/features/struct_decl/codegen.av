@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, render_expr}
+use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, variant_index, render_expr}
 use features.closures.{emit_expected}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, expr_is_shared_alias}
 use core.{type_registry_id_for, vtype_struct}
@@ -231,6 +231,14 @@ export fn emit_field_assign(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
 /// (3) `.length` on Str/List/Map — routes to the runtime helper.
 /// Otherwise emits a struct-field GEP + load.
 export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: string) -> Result<EmitValue, string> {
+    // `EnumName.Variant.ordinal` — the variant's 0-based declaration-order
+    // index, constant-folded to an i64. Typeck (F1207) has already gated the
+    // receiver to a static variant reference; a -1 here means it wasn't one,
+    // so fall through to normal field access.
+    if field == "ordinal" {
+        let ord = enum_variant_ordinal(ctx, obj)
+        if ord >= 0 { return ok_emit(ctx.i64(ord), .Int) }
+    }
     // Bare `EnumName.Variant` (zero-arg enum constructor)
     let head_name = match obj { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
     if head_name != "" {
@@ -243,6 +251,28 @@ export fn emit_field_access(ctx: Ctx, env: List<VarBinding>, obj: Expr, field: s
 
     let r = ctx.emit_member(env, obj)?
     emit_field_on_value(ctx, r, obj, field)
+}
+
+/// The declaration-order ordinal of a static enum-variant reference receiver
+/// (`EnumName.Variant`, or a zero-arg `EnumCtor`), or -1 when the receiver is
+/// not a static variant. Shares `variant_index` — the one ordinal resolver —
+/// with the typeck gate and the @query surface.
+fn enum_variant_ordinal(ctx: Ctx, obj: Expr) -> int {
+    match obj {
+        .EnumCtor(tn, variant, args) -> {
+            if args.length != 0 { return -1 }
+            let el = ctx.lookup_enum(tn)
+            if el.found { variant_index(el.variants, variant) } else { -1 }
+        }
+        .FieldAccess(head_id, variant) -> {
+            let head = ctx.nodes.exprs.get(head_id)
+            let en = match head { .Ident(h) -> h, .QualifiedIdent(h) -> h, _ -> "" }
+            if en == "" { return -1 }
+            let el = ctx.lookup_enum(en)
+            if el.found { variant_index(el.variants, variant) } else { -1 }
+        }
+        _ -> -1
+    }
 }
 
 /// Field/property access on an ALREADY-EMITTED receiver `r`. Split out of

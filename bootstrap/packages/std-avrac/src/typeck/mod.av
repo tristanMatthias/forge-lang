@@ -401,7 +401,7 @@ fn enum_type_reg_register(reg: EnumTypeReg, name: string, tp: List<TypeParamEntr
 }
 
 /// Membership probe for the enum registry.
-fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
+export fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     avra_map_has_cstr(reg.idx, name) != 0
 }
 

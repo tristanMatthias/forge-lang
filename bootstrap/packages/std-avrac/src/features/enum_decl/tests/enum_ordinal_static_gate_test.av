@@ -1,0 +1,43 @@
+// WHY: negative-path spec for the F1207 gate on the `.ordinal` accessor
+// (ps3t.8.13). An ordinal is the variant's declaration-order position,
+// resolved and constant-folded at compile time — so it exists only for a
+// STATIC variant reference (`Color.Red.ordinal`), never a runtime enum value
+// whose variant isn't known until it runs. Each rejection is paired with a
+// positive control so the gate is proven to fire on the runtime case
+// specifically, not on `.ordinal` in general — including the crucial control
+// that a struct field legitimately named `ordinal` is NOT hijacked.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn eon_compile_out(source: string) -> string {
+    let path = "/tmp/avra_eon_neg.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "`.ordinal` requires a statically-known variant (F1207)" {
+    then "`.ordinal` on a local runtime enum value is F1207" {
+        let out = eon_compile_out("enum C { Red, Green, Blue }
+fn main() { let c = C.Green
+let n = c.ordinal }")
+        out.contains("F1207")
+    }
+    then "`.ordinal` on an enum-typed parameter is F1207" {
+        let out = eon_compile_out("enum C { Red, Green, Blue }
+fn f(c: C) -> int { c.ordinal }
+fn main() { let n = f(C.Red) }")
+        out.contains("F1207")
+    }
+    then "a static variant reference compiles (positive control)" {
+        let out = eon_compile_out("enum C { Red, Green, Blue }
+fn main() { let n = C.Green.ordinal }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+    then "a struct field named `ordinal` is NOT hijacked (positive control)" {
+        let out = eon_compile_out("type T = { ordinal: int }
+fn main() { let t = T { ordinal: 5 }
+let n = t.ordinal }")
+        out.contains("__AVRA_COMPILE_OK__")
+    }
+}
