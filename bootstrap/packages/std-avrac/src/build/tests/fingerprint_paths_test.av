@@ -1,0 +1,76 @@
+// WHY: fingerprint_paths is the soundness linchpin of the F4 @std
+// prebuild-skip gate (forge-crafting-intepreters-uzs9.5.4). The gate skips
+// re-running the 7 `bs2 build --lib` spawns when a digest over EVERY input
+// to the producer .o's (all @std/* src + manifests + compiler + runtime
+// objects) matches the last successful prebuild. If that digest failed to
+// change when a listed file changed, the gate would serve a STALE producer
+// .o and every shard would link old @std — silent wrong results with
+// nothing in the diff (the F6 correctness class).
+//
+// These specs pin the two properties the gate leans on:
+//   * DETERMINISM — same paths + same content ⇒ identical digest (so two
+//     runs / two processes agree, and a warm run recognises "unchanged").
+//   * CONTENT SENSITIVITY — change ANY listed file's content and the digest
+//     changes (so an @std edit always invalidates the marker ⇒ rebuild,
+//     never a stale skip). Also: adding/removing a path changes it, and a
+//     missing path degrades gracefully (no crash) rather than aliasing.
+
+use @std.avrac.build.{fingerprint_paths}
+use @std.avrac.core.{avra_selfhost_write_file, avra_getpid}
+
+fn tmp(slot: string) -> string {
+    "build/_fp_paths_${string(avra_getpid())}_${slot}"
+}
+
+spec "fingerprint_paths: deterministic + content-sensitive (F4 gate soundness)" {
+    then "same paths + same content yields the identical digest (determinism)" {
+        let a = tmp("det_a")
+        let b = tmp("det_b")
+        let _ = avra_selfhost_write_file(a, "alpha\n")
+        let _ = avra_selfhost_write_file(b, "beta\n")
+        let paths: List<string> = [a, b]
+        fingerprint_paths(paths) == fingerprint_paths(paths)
+    }
+    then "changing ONE listed file's content changes the digest (no stale skip)" {
+        let a = tmp("sens_a")
+        let b = tmp("sens_b")
+        let _ = avra_selfhost_write_file(a, "one\n")
+        let _ = avra_selfhost_write_file(b, "two\n")
+        let paths: List<string> = [a, b]
+        let before = fingerprint_paths(paths)
+        // Mutate b — mirrors an @std source edit under the real gate.
+        let _ = avra_selfhost_write_file(b, "two-EDITED\n")
+        let after = fingerprint_paths(paths)
+        before != after
+    }
+    then "adding a path to the set changes the digest" {
+        let a = tmp("add_a")
+        let b = tmp("add_b")
+        let _ = avra_selfhost_write_file(a, "x\n")
+        let _ = avra_selfhost_write_file(b, "y\n")
+        let one: List<string> = [a]
+        let two: List<string> = [a, b]
+        fingerprint_paths(one) != fingerprint_paths(two)
+    }
+    then "order of paths is part of the identity (list-order fold)" {
+        let a = tmp("ord_a")
+        let b = tmp("ord_b")
+        let _ = avra_selfhost_write_file(a, "aa\n")
+        let _ = avra_selfhost_write_file(b, "bb\n")
+        let ab: List<string> = [a, b]
+        let ba: List<string> = [b, a]
+        // Distinct-content files in swapped order ⇒ distinct digest. (The
+        // real callers pass `find | sort` output, so order is stable; this
+        // just documents that the fold is order-dependent by design.)
+        fingerprint_paths(ab) != fingerprint_paths(ba)
+    }
+    then "a missing path degrades gracefully (no crash, still a digest)" {
+        let present = tmp("miss_present")
+        let _ = avra_selfhost_write_file(present, "here\n")
+        let paths: List<string> = [present, tmp("miss_absent_never_written")]
+        // Must return a stable 64-char hex digest, not crash. (The gate then
+        // re-validates the real producer .o downstream, so a missing input
+        // can only cause a redundant rebuild, never a stale skip.)
+        fingerprint_paths(paths).length == 64
+    }
+}

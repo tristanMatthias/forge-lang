@@ -35,6 +35,27 @@ export type Fingerprint = {
     hex: string,
 }
 
+/// Fold a path list into ONE sha256 hex digest by hashing each file's
+/// CONTENT in list order. The shared primitive behind the CLI's
+/// test-universe fp and the F4 @std prebuild-freshness fp
+/// (uzs9.5.4) — one definition so the two can never drift in how they
+/// combine per-file hashes. Callers pass a DETERMINISTICALLY-ORDERED list
+/// (e.g. sorted `find` output) so the digest is stable run-to-run and
+/// across processes. A missing file contributes its (empty) hash — safe
+/// because callers only ever compare a digest to another computed the same
+/// way, and any consumer gating reuse on it re-validates the real artifact
+/// downstream. Collision-resistant: change ANY listed file's content and
+/// the digest changes.
+export fn fingerprint_paths(paths: List<string>) -> string {
+    mut acc = ""
+    mut i = 0
+    while i < paths.length {
+        acc = acc + sha256_file(paths[i]) + "\n"
+        i = i + 1
+    }
+    sha256_hex(acc)
+}
+
 /// Build the fingerprint for a unit.
 ///
 /// `sources` is the list of source-file paths that belong to the
