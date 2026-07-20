@@ -5,12 +5,16 @@
 // from_bytes codecs), persist those, and un-project on load — `idx` rebuilt
 // from the parallel `args` list via `mk_family_memo`, `compute` re-supplied by
 // the caller. V is fixed to `string` here (the v1 memo value type, ps3t.8.11);
-// a generic on-disk value type is a later increment. This is increment 1: the
-// in-memory projection + round-trip. The namespaced on-disk read/write
-// (validate-on-read, atomic materialise) is increment 2.
+// a generic on-disk value type is a later increment.
+//
+// Increment 1 (below the header): the in-memory projection + round-trip.
+// Increment 2 (bottom of this file): the namespaced on-disk read/write with
+// validate-on-read. The differential-oracle wire-in (warm cache-hit build ==
+// cold build) is increment 3, not here.
 
 use query.{Db, FamilyMemo, MemoEntry, QueryKey, QueryCtx, Computed, QueryCycle, mk_family_memo, from_bytes_QueryKey}
 use diagnostics.{Diagnostic, from_bytes_Diagnostic}
+use core.{avra_mkdir_p, avra_selfhost_file_exists, avra_selfhost_read_file_bytes, avra_selfhost_write_file_bytes}
 
 /// One memo cell as plain data. `arg` is recovered from `FamilyMemo.args` (a
 /// `MemoEntry` doesn't store its own arg — the engine's `idx` intmap owns
@@ -117,4 +121,89 @@ export fn serdb_to_db(sdb: SerDb, compute: fn(QueryCtx<string>, QueryKey) -> Res
     }
     let active: List<QueryKey> = []
     Db { current_rev: sdb.current_rev, families, compute, active }
+}
+
+// ── Increment 2: namespaced on-disk read/write (validate-on-read) ──
+//
+// A serialized memo blob is content-addressed by a caller-supplied `key` (a
+// content hash) and NAMESPACED by the running toolchain: the path segment
+// `<compiler_ver>_<hash_ver>` means a compiler or hash-scheme change lands in
+// a DIFFERENT directory, so a version bump can never even find — let alone
+// serve — a stale blob. Layout under `dir_root` (the project's `build/`
+// directory) is:
+//
+//     <dir_root>/cache/qmemo/<compiler_ver>_<hash_ver>/<key>.bin
+//
+// Writes go through `avra_selfhost_write_file_bytes`, which materialises via a
+// same-directory per-pid temp + rename(2) at the C level (runtime.c
+// `avra_write_file_atomic`) — the exact "materialise atomically" discipline
+// the build cache (build/cache.av) relies on, so a killed writer never leaves
+// a truncated final a later reader would serve. Reads validate-on-read
+// (pdme.2): a blob is served ONLY when it is whole AND its header magic +
+// compiler_version + hash_version match the running toolchain; any mismatch
+// is an honest cold MISS (null), never a stale serve.
+
+/// Trailing-slash normaliser, self-contained so this module doesn't depend on
+/// @std string utilities (matching build/cache.av's discipline).
+fn qmemo_slashed(s: string) -> string {
+    if s.length == 0 { return "/" }
+    let last = s.substring(s.length - 1, s.length)
+    if last == "/" { s } else { s + "/" }
+}
+
+/// The toolchain namespace segment: `<compiler_ver>_<hash_ver>`. A change to
+/// either lands blobs in a sibling directory the older reader never consults.
+fn qmemo_ns(compiler_version: string, hash_version: int) -> string {
+    compiler_version + "_" + string(hash_version)
+}
+
+/// The namespaced directory a memo blob for this toolchain lives in
+/// (`<dir_root>/cache/qmemo/<ns>/`, trailing slash). Exported so a caller /
+/// oracle can pre-create or inspect the namespace.
+export fn qmemo_dir(dir_root: string, compiler_version: string, hash_version: int) -> string {
+    qmemo_slashed(dir_root) + "cache/qmemo/" + qmemo_ns(compiler_version, hash_version) + "/"
+}
+
+/// Absolute path of the content-addressed blob for `key` under this
+/// toolchain's namespace. `key` is the caller's content hash; `.bin` suffix
+/// matches the rest of the cache tree (metadata.bin, unit.bin, …).
+export fn qmemo_path(dir_root: string, compiler_version: string, hash_version: int, key: string) -> string {
+    qmemo_dir(dir_root, compiler_version, hash_version) + key + ".bin"
+}
+
+/// Persist `sdb` to its namespaced content-addressed slot under `dir_root`.
+/// The namespace is derived from the blob's OWN header (`sdb.compiler_version`
+/// / `sdb.hash_version`), so what is written and where it is written can never
+/// disagree. Marshals to bytes and writes ATOMICALLY (per-pid temp + rename,
+/// inside `avra_selfhost_write_file_bytes`), creating the namespaced directory
+/// first. Returns true on success, false if the mkdir or write failed (no
+/// partial slot is ever left — the write is all-or-nothing at the rename).
+export fn serdb_write(dir_root: string, key: string, sdb: SerDb) -> bool {
+    let dir = qmemo_dir(dir_root, sdb.compiler_version, sdb.hash_version)
+    if avra_mkdir_p(dir) == 0 { return false }
+    let path = dir + key + ".bin"
+    avra_selfhost_write_file_bytes(path, sdb.to_bytes()) != 0
+}
+
+/// Load the blob for `key` under the `(compiler_version, hash_version)`
+/// namespace, VALIDATING on read. Returns null (an honest cold MISS) when:
+///   * the file is absent (never written, or written under another toolchain
+///     namespace — a version bump lands in a different directory);
+///   * the file is empty / unreadable (a half-materialised or foreign blob);
+///   * the decoded header fails validation — magic != `serdb_magic()`, or
+///     `compiler_version` / `hash_version` disagree with what was asked for.
+/// Only a whole, magic-matching, version-matching blob is served (pdme.2:
+/// serve only when whole AND stamped with the key it was looked up under).
+/// The header check is belt-and-suspenders atop the namespaced path: even a
+/// key collision across a hand-planted mismatched blob refuses to serve.
+export fn serdb_read(dir_root: string, key: string, compiler_version: string, hash_version: int) -> SerDb? {
+    let path = qmemo_path(dir_root, compiler_version, hash_version, key)
+    if avra_selfhost_file_exists(path) == 0 { return null }
+    let buf = avra_selfhost_read_file_bytes(path)
+    if buf.length == 0 { return null }
+    let sdb = from_bytes_SerDb(buf)
+    if sdb.magic != serdb_magic() { return null }
+    if sdb.compiler_version != compiler_version { return null }
+    if sdb.hash_version != hash_version { return null }
+    sdb
 }
