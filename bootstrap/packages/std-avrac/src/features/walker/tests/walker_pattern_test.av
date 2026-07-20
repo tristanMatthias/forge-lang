@@ -5,16 +5,16 @@
 // own Pattern carried @expand, and the synth'd Pattern__children
 // was missing at consumer codegen).
 //
-// Bypasses metadata mode at fixture invocation — 9p1d: metadata
-// strips @comptime annotations + bodies. Until that lands, consumers
-// of std-avrac-shipped @comptime macros opt out at the bs2
-// invocation.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: applied to core/ast.av's Pattern enum" {
     then "Pattern.children() — id payloads are walker-scalars (F2)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_pattern_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_pattern_test.av", 
             "use @std.avrac.core.{Pattern, ParamEntry, PatId, new_node_store, build_line_index}\n" +
             "fn main() {\n" +
             "    let wild_ok = Pattern.Wildcard.children().length == 0\n" +

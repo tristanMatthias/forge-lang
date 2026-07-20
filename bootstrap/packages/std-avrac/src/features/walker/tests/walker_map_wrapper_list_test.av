@@ -11,16 +11,17 @@
 // map still passed wrapper-lists through unchanged the node value would
 // be stale; if the rewrap dropped siblings the extra would reset.
 //
-// Bypasses metadata mode (9p1d) so derive_walker + the novel wrapper's
-// struct decl are both visible to the @comptime discovery path.
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: map descends into wrapper-list children, preserving siblings" {
     then "Branch(kids: List<MyWrap>).map bumps every leaf and keeps `extra`" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_list_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_map_wrapper_list_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "export type MyWrap = {\n" +
             "    node: MyTree,\n" +
@@ -63,9 +64,8 @@ spec "derive_walker: map descends into wrapper-list children, preserving sibling
     }
 
     then "empty wrapper-list maps to empty (no crash); nested wrapper-lists descend every level" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_edge_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_map_wrapper_edge_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "export type MyWrap = { node: MyTree, extra: int }\n" +
             "\n" +
@@ -102,9 +102,8 @@ spec "derive_walker: map descends into wrapper-list children, preserving sibling
     }
 
     then "stress: 1000-wide wrapper-list + 300-deep nesting map correctly without stack overflow" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_stress_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_map_wrapper_stress_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "export type MyWrap = { node: MyTree, extra: int }\n" +
             "\n" +
@@ -133,9 +132,8 @@ spec "derive_walker: map descends into wrapper-list children, preserving sibling
     }
 
     then "combinatorial: a variant mixing DirectSelf + WrapperListOfSelf + Scalar maps each kind right; map result feeds an if-expr with a captured closure" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_map_wrapper_combo_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_map_wrapper_combo_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{unwrap_node_list, map_node_list}\n" +
             "\n" +
             "export type MyWrap = { node: MyTree, extra: int }\n" +
             "\n" +

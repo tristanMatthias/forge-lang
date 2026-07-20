@@ -6,14 +6,16 @@
 // recursive c.visit(f) call). Required the Stmt decoder coverage
 // from y9y4.12 to land.
 //
-// Bypasses metadata mode — @comptime annotations don't survive
-// metadata roundtrip yet (forge-crafting-intepreters-9p1d).
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: visit() depth-first pre-order on a tiny recursive enum" {
     then "Node(Leaf(1), Node(Leaf(2), Leaf(3))) visits in pre-order: node, leaf:1, node, leaf:2, leaf:3" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_visit_test.av", 
+        let out = write_fixture_and_run("/tmp/avra_walker_visit_test.av", 
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

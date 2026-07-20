@@ -13,17 +13,17 @@
 // child, a field like `Stmt.If.else_branch` can migrate to `SStmt?` and
 // still walk/rewrite mechanically.
 //
-// Bypasses metadata mode so derive_walker + the wrapper struct decl are
-// both visible to the @comptime discovery path (mirrors
-// walker_wrapper_single_test.av).
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
     then "children() omits none + includes present; map descends present + leaves none" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_opt_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
             "\n" +
             "export type SNode = { node: Tree, span: int }\n" +
             "\n" +
@@ -60,9 +60,8 @@ spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
     }
 
     then "optional child mixed with list-of-self + scalar siblings; deep nesting descends without overflow" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_mixed_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_opt_mixed_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
             "\n" +
             "@expand(derive_walker)\n" +
             "export enum Tree {\n" +
@@ -96,9 +95,8 @@ spec "derive_walker: nullable single child (Self? / Wrapper?) is none-guarded" {
     }
 
     then "optional of a non-Self type (int?) stays a Scalar — never walked as a child" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_walker_opt_scalar_fixture.av",
+        let out = write_fixture_and_run("/tmp/avra_walker_opt_scalar_fixture.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
-            "use @std.avrac.core.{map_node, map_node_list, unwrap_node_list, self_opt_to_list, unwrap_node_opt, map_self_opt, map_node_opt}\n" +
             "\n" +
             "@expand(derive_walker)\n" +
             "export enum Tree {\n" +

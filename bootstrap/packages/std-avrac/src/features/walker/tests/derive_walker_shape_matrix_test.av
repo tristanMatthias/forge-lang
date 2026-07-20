@@ -17,10 +17,12 @@
 // variant scalar 1 field, E2LN = 2-variant Leaf/Node, E3X = 3-
 // variant Mix, …).
 //
-// AVRA_USE_METADATA must be stripped because @comptime fn bodies
-// aren't preserved across the metadata roundtrip (9p1d).
+// Runs on the @std metadata fast-path (the shard default): the walker
+// emitter fully-qualifies its @std helper refs (y9y4.19), so a
+// metadata-loaded derive_walker resolves them without the consumer
+// importing @std.
 //
-// 1h9l: routed through cached_fixture_check_no_metadata instead of
+// 1h9l: routed through cached_fixture_check instead of
 // a raw avra_shell_exec. The fixture uses @expand(derive_walker)
 // from @std.avrac.features.walker, so it can't run through in-
 // process check_source (which skips file-based module loading).
@@ -37,7 +39,7 @@
 //     fields), wide-list-self (5 fields), all-empty (5 variants),
 //     and a mixed-primitives variant
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 fn shape_corpus() -> string {
     "use @std.avrac.features.walker.{derive_walker}\n" +
@@ -84,7 +86,7 @@ spec "T8 shape matrix: 30 derive_walker shapes type-check clean" {
     then "no F1xxx / F3xxx / F9999 from any shape in the corpus" {
         let fixture = "/tmp/avra_t8_shape_matrix.av"
         write_fixture(fixture, shape_corpus())
-        let out = cached_fixture_check_no_metadata(fixture)
+        let out = cached_fixture_check(fixture)
         // On regression, the F-code source line in `out` names the
         // breaking enum (e.g. `enum E1SDL` for the s+d+l mix shape).
         // F1000 = typeck, F1003 = Display strictness on Unknown,
