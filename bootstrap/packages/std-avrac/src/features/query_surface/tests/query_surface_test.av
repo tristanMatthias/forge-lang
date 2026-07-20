@@ -308,6 +308,25 @@ spec "@query family constraints" {
             "fn main() {}\n")
         out.contains("duplicate @query family `Fam.A`") && !out.contains("F4000")
     }
+    then "two same-named @query fns is F4013 (program-wide unique fn names — ps3t.8.14 cross-module symbol collision)" {
+        let out = query_check_out("/tmp/avra_query_surface_dupfn_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "enum Fam { A, B }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
+            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "@query(Fam.B)\n" +
+            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("duplicate @query fn name `q`") && !out.contains("F4000")
+    }
     then "two @query fns from DIFFERENT enums is F4013 (single-enum invariant)" {
         let out = query_check_out("/tmp/avra_query_surface_crossenum_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +

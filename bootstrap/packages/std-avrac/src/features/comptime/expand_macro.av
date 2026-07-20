@@ -611,6 +611,14 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                     let gen = query_surface_stmts_for(store, node, stmt_unwrap(store, node))
                     let fam_key = "query-family:${gen.family}"
                     let enum_key = "query-family-enum:${gen.family_enum}"
+                    // The BARE fn name keys the program-global dispatcher symbols
+                    // `<name>_family`/`<name>_compute` — cross-module (ps3t.8.14)
+                    // the dispatcher imports those by bare name, so two same-named
+                    // @query fns in DIFFERENT modules would silently collide (one
+                    // dispatcher arm resolving to the wrong module's compute). Made
+                    // a loud program-wide invariant here, exactly like the family +
+                    // single-enum checks: @query fn names must be unique program-wide.
+                    let fn_key = "query-fn:${gen.fn_name}"
                     // Membership-only bookkeeping (no string-slicing): a fixed
                     // sentinel records "some @query seen", and one enum_key per
                     // program records WHICH enum — a later site whose enum_key
@@ -621,6 +629,13 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         bag = bag_report(bag, diag_error(
                             DiagCode.QueryBadShape,
                             "duplicate @query family `${gen.family}` — another @query fn in this program already claims it; each query needs its own variant of the family enum",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        out.push(store.restmt(strip_query_annotation(store, node), id))
+                    } else if gen.stmts != null && list_contains_str(seen, fn_key) {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.QueryBadShape,
+                            "duplicate @query fn name `${gen.fn_name}` — another @query fn in this program shares this name; @query fn names must be unique program-wide because they generate the program-global dispatcher's `${gen.fn_name}_family`/`${gen.fn_name}_compute` symbols (imported by bare name across modules)",
                             span_at(0, 0, p.line, p.col, p.file)
                         ))
                         out.push(store.restmt(strip_query_annotation(store, node), id))
@@ -643,6 +658,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         out.push(store.restmt(strip_query_annotation(store, node), id))
                     } else {
                         seen = seen.push(fam_key)
+                        seen = seen.push(fn_key)
                         // Record the family enum ONCE (first site) so a later
                         // site naming a DIFFERENT enum trips the check above.
                         if !any_query {
