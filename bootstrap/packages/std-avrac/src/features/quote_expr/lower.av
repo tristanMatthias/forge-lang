@@ -1562,14 +1562,47 @@ export fn construct_stmt(store: NodeStore, stmt: Stmt) -> Expr {
     }
 }
 
-/// Catch-all for Stmt variants we haven't taught construct_stmt yet
-/// (decls, complex Match arms). Returns a synthesized Stmt.NoOp at the
-/// AST level — at runtime the user gets a NoOp instead of a crash, and
-/// the missing variant becomes a feature request rather than a silent
-/// corruption. Filed as vez6.3.10 (`quote decl`) for completion.
+/// Catch-all for Stmt variants `construct_stmt` cannot yet encode (decls,
+/// `match`-with-arms — the vez6.3.10 `quote decl` set). This is the SINGLE
+/// chokepoint that knows "unsupported", so it is where the diagnostic is
+/// raised — no separate predicate to drift against `construct_stmt`'s arms
+/// (rule 8). It used to bake a silent `Stmt.NoOp`, dropping the statement
+/// with no error (the CLAUDE.md "empty match arm swallows behavior" anti-
+/// pattern, and a violation of the design's own §3.4 "wrong splice = compile
+/// error at macro-expansion time"). Instead it now emits a
+/// `synth_unsupported_stmt("<Variant>")` marker: `construct_stmt` is a pure
+/// AST transform with no diagnostic channel, but the marker carries the
+/// failure to the point where the constructed AST is EVALUATED during
+/// `@expand`, where features/eval intercepts it and raises a comptime error
+/// naming the variant (surfaced as F4005). So an unsupported quoted statement
+/// now fails the expansion loudly instead of vanishing. 2h5s.
 fn stmt_passthrough(store: NodeStore, stmt: Stmt) -> Expr {
-    let empty: List<Expr> = []
-    stmt_ctor(store, "NoOp", empty)
+    synth_shim_call(store, "synth_unsupported_stmt", string_lit_expr(stmt_variant_name(stmt)))
+}
+
+/// Human-readable name of a Stmt variant, for the unsupported-quote
+/// diagnostic. Only the variants that actually reach `stmt_passthrough`
+/// need naming; a `_` fallback keeps this total (and correct if a new
+/// unsupported variant appears — it still errors, just with a generic
+/// name) without duplicating `construct_stmt`'s handled-arm list.
+fn stmt_variant_name(stmt: Stmt) -> string {
+    match stmt {
+        .Match(_, _) -> "match"
+        .NewtypeDecl(_, _) -> "type (newtype)"
+        .UnionAliasDecl(_, _) -> "type (union alias)"
+        .ShapeDecl(_, _) -> "shape"
+        .ExternFn(_, _, _) -> "extern fn"
+        .LetDestructure(_, _) -> "destructuring let"
+        .SpecBlock(_, _) -> "spec"
+        .GivenBlock(_, _) -> "given"
+        .ThenBlock(_, _) -> "then"
+        .Select(_) -> "select"
+        .Module(_, _) -> "mod"
+        .Use(_, _) -> "use"
+        .AssocType(_, _) -> "associated type"
+        .ComponentDef(_, _, _, _, _, _) -> "component"
+        _ -> "statement"
+    }
 }
 
 /// Sister to expr_ctor for Stmt.
