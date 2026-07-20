@@ -116,6 +116,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     decl(m, "avra_rc_collect", i64t, [])
     decl(m, "memcpy", pt, [pt, pt, i64t])
     decl(m, "strcmp", i32t, [pt, pt])
+    decl(m, "avra_streq", i64t, [pt, pt])
     decl_va(m, "snprintf", i32t, [pt, i64t, pt])
     decl(m, "atoi", i32t, [pt])
     decl(m, "avra_parse_int", i64t, [pt])

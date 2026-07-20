@@ -2382,6 +2382,22 @@ int64_t avra_intmap_has(void* map, int64_t key) {
 // Returned strings are heap-allocated (caller doesn't free in
 // the bootstrap's GC-free model — acceptable for a compiler).
 
+// String equality with a first-byte fast-reject. Codegen lowers a
+// `match s { "a" -> …, "b" -> … }` to a SEQUENCE of these — one per arm —
+// so a non-matching subject (the common case: an identifier that is not a
+// keyword walks all ~60 keyword arms) pays a full strcmp per arm. The vast
+// majority of those arms differ from the subject in byte 0, so a single
+// char compare rejects them before the (AVX2-setup-heavy) strcmp call.
+// Semantically identical to `strcmp(a,b)==0`: byte 0 equal is necessary for
+// equality, and reading a[0]/b[0] is always valid on NUL-terminated strings
+// (empty string ⇒ a[0]=='\0', handled by the strcmp fall-through). Returns
+// 1 when equal, 0 otherwise.
+int64_t avra_streq(const char* a, const char* b) {
+    if (a == b) return 1;
+    if ((unsigned char)a[0] != (unsigned char)b[0]) return 0;
+    return strcmp(a, b) == 0 ? 1 : 0;
+}
+
 int64_t avra_str_contains(const char* haystack, const char* needle) {
     return strstr(haystack, needle) != NULL;
 }
