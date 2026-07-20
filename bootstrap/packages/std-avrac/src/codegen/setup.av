@@ -17,7 +17,8 @@ use codegen.{emit_expr, emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}
-use features.fn_decl.{emit_function_bodies, emit_one_fn_body}
+use features.fn_decl.{emit_function_bodies, emit_one_fn_body, emit_fn_body_by_id, fn_name_belongs_to_roots}
+use core.{content_id_for}
 use core.{TypeRegistry, type_registry_id_for, variant_payload_name}
 use core.{avra_coverage_declare, avra_covmap_begin, avra_covmap_end}
 use core.{exit}
@@ -76,7 +77,7 @@ type DeclaredCtx = {
 /// wrapper (`main` / `__bs_top_level` / `__avra_lib_top_level`). No user
 /// function BODY is emitted here — that is the caller's next phase. The
 /// returned Ctx has its builder positioned at the wrapper's entry block.
-fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool, define_release: bool) -> DeclaredCtx {
+fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, with_main_entry: bool, define_shared: bool) -> DeclaredCtx {
     let lc = avra_llvm_context_create()
     let m = avra_llvm_module_create("bootstrap", lc)
     let builder = avra_llvm_create_builder(lc)
@@ -347,7 +348,13 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     avra_llvm_type_array_free(union_arr)
     let trait_decls = collect_trait_decls(store, stmts, trait_decl_reg_new())
     let empty_top: List<TopLevelVarMeta> = []
-    let top_level_vars = declare_globals(store, m, lc, i64t, i1t, dt, pt, structs, enums, stmts, type_reg, empty_top)
+    // Per-fn/CGU unit (define_shared=false): declare `let`/`mut` module globals
+    // as EXTERNAL (no initializer) so a unit that reads/writes one references
+    // the wrapper's single definition at link time — emitting a defined global
+    // in every unit duplicate-symbols at link. The wrapper (and the
+    // whole-program path) DEFINES them (null initializer). `const` globals are
+    // linkonce_odr regardless, so they dedup either way.
+    let top_level_vars = declare_globals(store, m, lc, i64t, i1t, dt, pt, structs, enums, stmts, type_reg, empty_top, define_shared)
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
     let i8t = avra_llvm_int8_type(lc)
     let i16t = avra_llvm_int16_type(lc)
@@ -452,6 +459,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
         lib_pkg_roots: parse_pkg_roots(avra_process_env_get("AVRA_LIB_PKG_ROOT")),
         in_erased_body: false,
+        cgu_unit_tag: "",
     }
 
     // Analyze which types are cycle-capable (can reference themselves
@@ -462,11 +470,11 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     // Generate __release_TypeName functions for recursive RC field cleanup.
     // Must happen after Ctx is built (needs all type registries) but before
     // function bodies (they may call release functions via emit_rc_release_typed).
-    // Per-fn CGU (define_release=false): declare the release fns as externs
-    // only — the wrapper unit owns their single definition, and a per-fn
-    // module resolves its __release_* calls against it at link time. Emitting
-    // the bodies in every per-fn module would duplicate-symbol at link.
-    if define_release {
+    // Per-fn/CGU unit (define_shared=false): declare the release fns as externs
+    // only — the wrapper unit owns their single definition, and a unit resolves
+    // its __release_* calls against it at link time. Emitting the bodies in
+    // every unit would duplicate-symbol at link (same rule as module globals).
+    if define_shared {
         emit_release_functions(ctx, cycles)
     } else {
         declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
@@ -619,18 +627,7 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
     // the call resolves at link against the wrapper's definition. When there
     // is no module-level code (no __bs_top_level), this is a no-op.
     if target == "main" {
-        let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
-        let main_fn = ctx.get_fn("main")
-        if top_fn != null && main_fn != null {
-            let user_entry = avra_llvm_get_entry_basic_block(main_fn)
-            let first_instr = avra_llvm_get_first_instruction(user_entry)
-            if first_instr != null {
-                avra_llvm_position_before(ctx.builder, first_instr)
-            } else {
-                avra_llvm_position_at_end(ctx.builder, user_entry)
-            }
-            avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
-        }
+        inject_bs_top_level_into_main(ctx)
     }
     ctx.cov_finalize_fn()
     let module_ok = ctx.verify_module()
@@ -639,6 +636,28 @@ export fn emit_one_fn_module(target: string, stmts: List<StmtId>, debug_null_che
         return Result.Err("emit_one_fn_module: LLVM module verification failed for '${target}'")
     }
     Result.Ok(ctx)
+}
+
+/// The user-defined-main injection (ps3t.8.6.1 3b), shared by the per-fn and
+/// bounded-K CGU unit emitters: when `main`'s body lives in THIS unit, insert
+/// a `__bs_top_level()` call at the top of main so module-level statements
+/// (spec blocks, initializers) run before main's body. `__bs_top_level` is
+/// declare-only here; the call resolves at link against the wrapper unit's
+/// definition. A no-op when there is no `__bs_top_level` (no module-level code)
+/// or no `main` in the module.
+fn inject_bs_top_level_into_main(ctx: Ctx) {
+    let top_fn = avra_llvm_get_named_function(ctx.module, "__bs_top_level")
+    let main_fn = ctx.get_fn("main")
+    if top_fn != null && main_fn != null {
+        let user_entry = avra_llvm_get_entry_basic_block(main_fn)
+        let first_instr = avra_llvm_get_first_instruction(user_entry)
+        if first_instr != null {
+            avra_llvm_position_before(ctx.builder, first_instr)
+        } else {
+            avra_llvm_position_at_end(ctx.builder, user_entry)
+        }
+        avra_llvm_build_call_void(ctx.builder, ctx.module, "__bs_top_level", avra_llvm_value_array_new(0), 0)
+    }
 }
 
 /// Per-fn CGU driver (ps3t.8.6.1): emit ONLY `target`'s per-fn module and
@@ -659,36 +678,44 @@ export fn compile_one_fn_module(target: string, ids: List<StmtId>, output_path: 
     }
 }
 
-/// One per-fn CGU target: the fn's resolved name (for emit_fn_object) plus
-/// its AST item id (for the content-fingerprint cache key — item_sig_fp /
-/// item_body_fp / mono_erased regime).
+/// One CGU target: the fn's resolved name (its emitted symbol) plus its AST
+/// item id (for emit_fn_body_by_id + the content-fingerprint cache key —
+/// item_sig_fp / item_body_fp / mono_erased regime).
 export type FnTarget = {
     name: string,
     id: StmtId,
 }
 
-/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn — the targets,
-/// each of which becomes its own per-fn module. Mirrors emit_function_bodies'
-/// walk (recurses Impl + non-external Module; skips @external_unit), so the
-/// target set is precisely the bodies the whole-program module would have
-/// defined. The synthesized wrapper (main/__bs_top_level) is NOT here — it's
-/// the wrapper unit, emitted separately. (Whole-program scope: lib-ownership
-/// filtering, for the library CGU path, is a later concern — emit_one_fn_body
-/// already re-checks ownership per target.)
-export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>) -> List<FnTarget> {
+/// Per-fn CGU (ps3t.8.6.1): collect every non-external fn OWNED by this
+/// unit — the targets, each of which becomes its own per-fn module (or, under
+/// bounded-K, a member of one). Mirrors emit_function_bodies' walk EXACTLY:
+/// recurses Impl + non-external Module, skips @external_unit, AND applies the
+/// same lib-package ownership filter (`fn_name_belongs_to_roots`) so the
+/// collected set is precisely the bodies emit_function_bodies would define.
+///
+/// `roots` is the lib-package ownership list (ctx.lib_pkg_roots, from
+/// AVRA_LIB_PKG_ROOT via parse_pkg_roots) — EMPTY in whole-program mode, where
+/// the filter is a no-op and every non-external fn is collected. In library
+/// mode (roots set), a collected-but-not-owned fn would make emit_one_fn_body
+/// return Ok(false) → emit_one_fn_module Err("not found (or not owned)") →
+/// build_binary_cgu hard-fail; filtering here keeps collect and emit in
+/// lockstep so the library CGU path builds correctly (ps3t.8.6.2, closing the
+/// CodeRabbit gap on PR #862). The synthesized wrapper (main/__bs_top_level)
+/// is NOT here — it's the wrapper unit, emitted separately.
+export fn collect_fn_targets(store: NodeStore, stmts: List<StmtId>, acc: List<FnTarget>, roots: List<string>) -> List<FnTarget> {
     mut out = acc
     for id in stmts {
         let node = store.stmts.get(id)
         let is_external = find_annotation(store, node, "external_unit") != null
         match stmt_unwrap(store, node) {
             .Function(name, _, _, _, _) -> {
-                if !is_external {
+                if !is_external && fn_name_belongs_to_roots(name, roots) {
                     out = out.push(FnTarget { name: name, id: id })
                 }
             }
-            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out) }
+            .Impl(_, methods) -> { out = collect_fn_targets(store, methods, out, roots) }
             .Module(_, body) -> {
-                if !is_external { out = collect_fn_targets(store, body, out) }
+                if !is_external { out = collect_fn_targets(store, body, out, roots) }
             }
             _ -> {}
         }
@@ -713,7 +740,9 @@ export fn fn_target_is_erased(store: NodeStore, id: StmtId) -> bool {
 export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store: NodeStore) -> Result<Ctx, string> {
     avra_ice_phase("codegen")
     let dc = build_declared_ctx(stmts, false, false, "", type_reg, false, store, true, true)
-    mut ctx = dc.ctx
+    // Tag "w": the wrapper's own lambdas (from module-level / top-level code)
+    // get a name disjoint from every "b<i>" unit's lambdas.
+    mut ctx = dc.ctx with { cgu_unit_tag: "w" }
     let entry = dc.entry
     let user_main = dc.user_main
     // NO emit_function_bodies — user fns are per-fn units (declare-only here).
@@ -744,7 +773,7 @@ export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store
 }
 
 /// Emit a freshly-built module's object to disk and dispose the Ctx —
-/// the shared tail of emit_fn_object / emit_wrapper_object. `what` names
+/// the shared tail of emit_cgu_object / emit_wrapper_object. `what` names
 /// the unit for the error message. A build error propagates untouched.
 fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -> Result<int, string> {
     match built {
@@ -758,14 +787,97 @@ fn emit_ctx_object(built: Result<Ctx, string>, obj_path: string, what: string) -
     }
 }
 
-/// Emit a single per-fn module's object to disk (per-fn CGU unit).
-export fn emit_fn_object(target: string, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
-    emit_ctx_object(emit_one_fn_module(target, stmts, false, false, "", type_reg, false, store), obj_path, "fn '${target}'")
-}
-
 /// Emit the wrapper unit's object to disk (top-level entry + __release_* defs).
 export fn emit_wrapper_object(stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore) -> Result<int, string> {
     emit_ctx_object(emit_wrapper_module(stmts, type_reg, store), obj_path, "wrapper unit")
+}
+
+/// Bounded-K CGU partitioning (ps3t.8.6.2, the Rust codegen-unit model):
+/// assign each target to bucket `abs(content_id_for(name) mod k)` — a STABLE,
+/// NAME-ONLY hash, so a fn always lands in the same bucket regardless of what
+/// else is in the program. That is the load-bearing incrementality property:
+/// editing a fn's BODY (name unchanged) changes only its bucket's cache key →
+/// only that ONE unit re-emits; adding/removing a fn perturbs only its own
+/// bucket. Returns exactly `k` buckets in index order (empty ones included, so
+/// bucket identity is index-stable across programs — the caller skips empties).
+/// Members within a bucket preserve `targets` (stmts-appearance) order, giving
+/// deterministic emission and a stable combined cache key. `k` must be >= 1.
+///
+/// One hash per target (into `idx`), then a k-pass distribution — O(n + k·n),
+/// no nested-list mutation. Bounding the bucket COUNT (not the bucket size)
+/// caps the repeated declare-pass cost at k·program regardless of fn count.
+export fn partition_targets(targets: List<FnTarget>, k: int) -> List<List<FnTarget>> {
+    mut idx: List<int> = []
+    for t in targets {
+        let h = content_id_for(t.name)
+        idx.push(((h % k) + k) % k)
+    }
+    mut buckets: List<List<FnTarget>> = []
+    mut bi = 0
+    while bi < k {
+        mut bucket: List<FnTarget> = []
+        mut ti = 0
+        while ti < targets.length {
+            if idx[ti] == bi { bucket.push(targets[ti]) }
+            ti = ti + 1
+        }
+        buckets.push(bucket)
+        bi = bi + 1
+    }
+    buckets
+}
+
+/// Bounded-K CGU (ps3t.8.6.2): build a self-contained module that declares the
+/// whole program (build_declared_ctx, per-fn regime: release fns declare-only,
+/// no main body) and DEFINES the bodies of exactly `members` — one bounded
+/// codegen unit. Generalizes emit_one_fn_module from a single fn to a set:
+/// each member is emitted by its id via emit_fn_body_by_id (byte-identical to
+/// the walk path per fn). When `main` is among the members its __bs_top_level
+/// injection runs here. Returns the compiled Ctx, or Err if a member is
+/// unexpectedly not owned/emittable (collect_fn_targets already applied the
+/// same ownership filter, so this is a defensive collect/emit-disagreement
+/// guard) or the module fails verification.
+export fn emit_cgu_module(members: List<FnTarget>, stmts: List<StmtId>, debug_null_checks: bool, coverage: bool, source_file: string, type_reg: TypeRegistry, library: bool, store: NodeStore, unit_tag: string) -> Result<Ctx, string> {
+    avra_ice_phase("codegen")
+    let dc = build_declared_ctx(stmts, debug_null_checks, coverage, source_file, type_reg, library, store, false, false)
+    // Tag this unit so its lambdas get a unit-disjoint symbol name (see the
+    // Ctx.cgu_unit_tag / emit_lambda_typed WHY). The `with` copies the tag
+    // into every derived Ctx (ctx with {in_erased_body:…}) down to the lambda
+    // emitter.
+    mut ctx = dc.ctx with { cgu_unit_tag: unit_tag }
+    mut has_main = false
+    for m in members {
+        match emit_fn_body_by_id(ctx, m.id) {
+            .Ok(found) -> {
+                if !found {
+                    ctx.dispose()
+                    return Result.Err("emit_cgu_module: member '${m.name}' not found (or not owned by this unit)")
+                }
+            }
+            .Err(e) -> {
+                ctx.dispose()
+                return Result.Err(e)
+            }
+        }
+        if m.name == "main" { has_main = true }
+    }
+    if has_main {
+        inject_bs_top_level_into_main(ctx)
+    }
+    ctx.cov_finalize_fn()
+    let module_ok = ctx.verify_module()
+    if !module_ok {
+        ctx.dispose()
+        return Result.Err("emit_cgu_module: LLVM module verification failed")
+    }
+    Result.Ok(ctx)
+}
+
+/// Emit one bounded-K CGU's object to disk (a set of per-fn bodies + declares).
+/// `unit_tag` (e.g. "b3") qualifies the unit's lambda symbol names so they
+/// can't collide with any other unit's or the wrapper's.
+export fn emit_cgu_object(members: List<FnTarget>, stmts: List<StmtId>, obj_path: string, type_reg: TypeRegistry, store: NodeStore, unit_tag: string) -> Result<int, string> {
+    emit_ctx_object(emit_cgu_module(members, stmts, false, false, "", type_reg, false, store, unit_tag), obj_path, "cgu unit")
 }
 
 /// Compile a program to LLVM IR and write the result to disk.
@@ -1056,11 +1168,17 @@ fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr
 /// Declare a single LLVM global for an `export let / mut / const`
 /// binding. Initializes to null/zero of the appropriate LLVM type;
 /// the actual init expression runs in `emit_top_level_init`.
-fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, type_reg: TypeRegistry, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
+fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, type_reg: TypeRegistry, reg: List<TopLevelVarMeta>, define: bool) -> List<TopLevelVarMeta> {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { infer_global_init_ty(init, type_reg) }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = avra_llvm_add_global(m, llvm_ty, name)
-    avra_llvm_set_initializer(g, avra_llvm_const_null(llvm_ty))
+    // A global WITH an initializer is a DEFINITION; without one it is an
+    // external declaration. Per-fn/CGU units (define=false) declare only — the
+    // wrapper unit owns the single definition — so N units linking together
+    // don't duplicate-symbol on the same `mut`/`let` global.
+    if define {
+        avra_llvm_set_initializer(g, avra_llvm_const_null(llvm_ty))
+    }
     mut out = reg
     out = out.push(TopLevelVarMeta { name: name, llvm_global: g, ty: vt })
     out
@@ -1117,16 +1235,19 @@ fn const_initializer_for(store: NodeStore, init: Expr, llvm_ty: ptr, i64t: ptr, 
 }
 
 /// Walk the AST collecting every top-level `let` / `mut` / `const`
-/// and emit an LLVM global for it. Recurses into modules.
-fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<StmtId>, type_reg: TypeRegistry, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
+/// and emit an LLVM global for it. Recurses into modules. `define` gates
+/// whether `let`/`mut` globals are DEFINED here (whole-program / wrapper) or
+/// only declared external (per-fn/CGU units); `const` globals are linkonce_odr
+/// regardless, so they dedup across units either way.
+fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: List<StmtId>, type_reg: TypeRegistry, reg: List<TopLevelVarMeta>, define: bool) -> List<TopLevelVarMeta> {
     mut cur = reg
     mut i = 0
     while i < stmts.length {
         let ss = stmts[i]
         let stmt = stmt_unwrap(store, store.stmts.get(ss))
         cur = match stmt {
-            .Let(name, ty_vt, init) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), type_reg, cur)
-            .Mut(name, ty_vt, init) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), type_reg, cur)
+            .Let(name, ty_vt, init) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), type_reg, cur, define)
+            .Mut(name, ty_vt, init) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), type_reg, cur, define)
             // Const: try to fold a literal int initializer directly
             // into the global's static initial value. Sidesteps the
             // -O2 dead-store elimination of runtime const stores
@@ -1134,7 +1255,7 @@ fn declare_globals(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: 
             // C `const int` does — value is in .data at load time,
             // no init function needed.
             .Const(name, ty_vt, init) -> declare_one_const_global(store, m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, store.exprs.get(init), cur)
-            .Module(_, body) -> declare_globals(store, m, ctx, i64t, i1t, dt, pt, structs, enums, body, type_reg, cur)
+            .Module(_, body) -> declare_globals(store, m, ctx, i64t, i1t, dt, pt, structs, enums, body, type_reg, cur, define)
             _ -> cur
         }
         i = i + 1
@@ -1525,7 +1646,7 @@ fn type_belongs_to_lib_pkg(ctx: Ctx, type_name: string) -> bool {
 /// (duplicate symbols at link). AVRA_LIB_OBJS keeps colons because
 /// its values are paths, a domain where colon is conventional and
 /// safe.
-fn parse_pkg_roots(raw: string) -> List<string> {
+export fn parse_pkg_roots(raw: string) -> List<string> {
     mut out: List<string> = []
     if raw == "" { return out }
     for part in raw.split(",") {

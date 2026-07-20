@@ -1,0 +1,108 @@
+// Bounded-K CGU partitioning (ps3t.8.6.2). partition_targets groups fns into
+// <= K codegen units by a STABLE name-hash. The load-bearing property is
+// incrementality: a fn's bucket depends ONLY on its name, so editing a body
+// (name unchanged) never moves it, and adding/removing a fn perturbs only its
+// own bucket. This spec pins:
+//   * every target is placed exactly once (nothing lost/duplicated);
+//   * placement matches abs(content_id_for(name) mod K) exactly;
+//   * exactly K buckets returned, order-stable;
+//   * within-bucket order = input (stmts-appearance) order;
+//   * STABILITY — a name lands in the same bucket regardless of the rest of
+//     the program (the incrementality guarantee).
+
+use @std.avrac.core.{NodeStore, StmtId, Stmt, ValueType, content_id_for}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.codegen.{partition_targets, FnTarget}
+
+fn fresh_store() -> NodeStore { parse_program_source("").store }
+
+fn mk_target(store: NodeStore, name: string) -> FnTarget {
+    FnTarget { name: name, id: store.stmts.add_leaf(Stmt.Function(name, [], [], ValueType.Void, [])) }
+}
+
+fn expected_bucket(name: string, k: int) -> int {
+    let h = content_id_for(name)
+    ((h % k) + k) % k
+}
+
+/// Total members across all buckets.
+fn total_members(buckets: List<List<FnTarget>>) -> int {
+    mut n = 0
+    for b in buckets { n = n + b.length }
+    n
+}
+
+/// Which bucket index `name` landed in (-1 if absent).
+fn bucket_of(buckets: List<List<FnTarget>>, name: string) -> int {
+    mut bi = 0
+    while bi < buckets.length {
+        for t in buckets[bi] { if t.name == name { return bi } }
+        bi = bi + 1
+    }
+    -1
+}
+
+spec "bounded-K CGU: partition_targets is stable, complete, and correctly bucketed" {
+    then "K buckets returned; every target placed once, in its hash bucket" {
+        let store = fresh_store()
+        let names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
+        mut targets: List<FnTarget> = []
+        for n in names { targets.push(mk_target(store, n)) }
+        let k = 4
+        let buckets = partition_targets(targets, k)
+
+        // exactly K buckets, all targets placed exactly once
+        mut ok = buckets.length == k && total_members(buckets) == names.length
+        // each name lands in its computed bucket
+        for n in names {
+            if bucket_of(buckets, n) != expected_bucket(n, k) { ok = false }
+        }
+        ok
+    }
+    then "within-bucket order preserves input order" {
+        let store = fresh_store()
+        // Two names known to share a bucket would be ideal, but we don't rely
+        // on a collision: instead assert that for EVERY bucket, its members
+        // appear in the same relative order as the input list.
+        let names = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"]
+        mut targets: List<FnTarget> = []
+        for n in names { targets.push(mk_target(store, n)) }
+        let buckets = partition_targets(targets, 3)
+        // Build the input-index of each name.
+        mut ok = true
+        for b in buckets {
+            mut prev = -1
+            for t in b {
+                // index of t.name in `names`
+                mut idx = -1
+                mut i = 0
+                while i < names.length {
+                    if names[i] == t.name { idx = i }
+                    i = i + 1
+                }
+                if idx <= prev { ok = false }
+                prev = idx
+            }
+        }
+        ok
+    }
+    then "STABILITY: a name's bucket is independent of the rest of the program" {
+        let store = fresh_store()
+        let k = 5
+        // partition of just ["solo"]
+        let one = partition_targets([mk_target(store, "solo")], k)
+        // partition of ["x","solo","y","z"]
+        mut many: List<FnTarget> = []
+        for n in ["x", "solo", "y", "z"] { many.push(mk_target(store, n)) }
+        let big = partition_targets(many, k)
+        // "solo" must land in the SAME bucket index in both (the incrementality
+        // guarantee: bucket = f(name) only).
+        bucket_of(one, "solo") == bucket_of(big, "solo")
+            && bucket_of(one, "solo") == expected_bucket("solo", k)
+    }
+    then "empty target list yields K empty buckets" {
+        let empty: List<FnTarget> = []
+        let buckets = partition_targets(empty, 8)
+        buckets.length == 8 && total_members(buckets) == 0
+    }
+}

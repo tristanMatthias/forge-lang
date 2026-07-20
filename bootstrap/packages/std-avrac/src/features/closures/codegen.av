@@ -550,7 +550,17 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     } else {
         ctx.lib_pkg_root + "::"
     }
-    let name = "${lambda_prefix}__lambda_${string(id)}"
+    // Bounded-K CGU (ps3t.8.6.2): qualify the lambda name with the emitting
+    // unit's tag so lambdas in different units never collide. The lambda-id
+    // counter is process-global and emission-order/cache-sensitive — a cached
+    // unit bakes `__lambda_0`, and a rebuild where that unit is a HIT lets the
+    // re-emitted wrapper's fresh counter also produce `__lambda_0` → duplicate
+    // symbol at link. The tag ("b<i>"/"w") is disjoint per unit, so a cached
+    // unit's names can never clash with any other unit's. Whole-program /
+    // standalone emission uses the empty tag → the historical name, byte-
+    // identical.
+    let unit_seg = if ctx.cgu_unit_tag == "" { "" } else { ctx.cgu_unit_tag + "_" }
+    let name = "${lambda_prefix}__lambda_${unit_seg}${string(id)}"
     let params = ctx.resolve_params(raw_params)
 
     // Detect captured variables from the enclosing scope.

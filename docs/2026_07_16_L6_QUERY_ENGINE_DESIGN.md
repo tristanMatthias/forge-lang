@@ -289,6 +289,47 @@ byte-identical" acceptance criterion, or is a follow-on optimization):
   `item_body_fp` — **correct**, just not decomposed into (base, args).
 - ThinLTO to recover the cross-fn inlining a single module gets for free.
 
+### 8.2 As-built (`ps3t.8.6.2`, the default-flip + bounded-K + library-CGU)
+
+The flip landed. The binary-linking default (`build_binary`, whose sole
+production caller is the `bs2 test` path) now routes a non-coverage build
+through `build_binary_cgu`; coverage falls back to the whole-program
+instrumented path (per-unit objects are uninstrumented). **`compile_program`
+(the `bs2 compile → single .ll` path) stays whole-program by seed-train
+necessity** — the seed is one self-contained `.ll`, so the selfhost fixed
+point and diff-test (both `compile_program`) remain byte-identical; the flip
+is verified run-equivalent (full suite + the 7 CGU shapes).
+
+- **Bounded-K partitioning.** `partition_targets` groups fns into ≤ `CGU_COUNT`
+  (16, Rust's non-incremental default) units by a stable name-hash
+  (`content_id_for(name) mod k`) — name-only so a body edit never moves a fn's
+  bucket (the incrementality guarantee). This bounds the repeated declare-pass
+  cost at k·program (object emission is in-process `avra_llvm_emit_object`, so
+  the cold cost is the declare pass, not `llc` spawns). One object per unit,
+  cache-keyed by `fn_unit_key_cgu` (every member's `sig_fp`/`body_fp`/erased ⊕
+  type table ⊕ modes ⊕ toolchain); a one-fn edit re-emits exactly its unit. A
+  content-keyed link cache skips the re-link when all objects are unchanged.
+- **Library-ownership filter** (the `collect_fn_targets` gap CodeRabbit flagged
+  on PR #862). Factored the ownership rule into the pure
+  `fn_name_belongs_to_roots(name, roots)`; `collect_fn_targets` applies it so
+  target collection matches `emit_function_bodies`' skip set — a not-owned fn
+  is never collected (and so never handed to an emitter that would `Err`).
+- **Cross-unit symbol hygiene.** Splitting one module into N objects meant
+  every strong symbol had to be defined in exactly one object. Three hazards,
+  each fixed on the CGU path only (whole-program byte-identical): module
+  `let`/`mut` globals define once in the wrapper + declare-external in units
+  (`define_shared`, the `__release_*` rule); lambda names carry a per-unit tag
+  (`Ctx.cgu_unit_tag` → `__lambda_b<i>_N` / `__lambda_w_N`) so the
+  emission-order/cache-sensitive lambda-id counter can't collide across units;
+  and the float-trait `__vtable_wrap` becomes `linkonce_odr` in CGU mode.
+  Guard: `cgu_cross_unit_symbols_test` (the general no-strong-dup invariant +
+  the unit-tag invariant + the float-trait wrapper).
+
+**Still open** (not gating the flip, `ps3t.8.6.2` stays open for them): mono-key
+decomposition and ThinLTO (see §8.1's out-of-scope list — the substituted-body
+key is already correct, so decomposition is a principled-key refactor with no
+functional cache-hit gain; both carry whole-program byte-identity risk).
+
 ## 9. Persistence: in-process → on-disk → daemon
 
 **Daemon-ready design, in-process first** (§4 decided): the three persistence

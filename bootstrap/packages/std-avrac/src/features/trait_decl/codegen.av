@@ -1,7 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.{Expr, VarBinding, ValueType, vtype_struct_name, vtype_enum_name}
-use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_get_insert_block, avra_llvm_function_type, avra_llvm_add_function, avra_llvm_type_array_new, avra_llvm_type_array_set, avra_llvm_type_array_free, avra_llvm_get_param, avra_llvm_count_params, avra_llvm_build_ret, avra_llvm_build_bitcast, avra_llvm_fn_type_of, avra_llvm_value_array_new, avra_llvm_value_array_set, avra_llvm_value_array_free, avra_llvm_build_call_coerce}
+use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_get_insert_block, avra_llvm_function_type, avra_llvm_add_function, avra_llvm_type_array_new, avra_llvm_type_array_set, avra_llvm_type_array_free, avra_llvm_get_param, avra_llvm_count_params, avra_llvm_build_ret, avra_llvm_build_bitcast, avra_llvm_fn_type_of, avra_llvm_value_array_new, avra_llvm_value_array_set, avra_llvm_value_array_free, avra_llvm_build_call_coerce, avra_llvm_set_linkonce_odr}
 use codegen.{Ctx, EmitValue, TraitMethodMeta, ok_emit, err_emit, trait_decl_lookup}
 use core.{method_mangled_name, type_registry_id_for, type_registry_name_for}
 use features.fn_decl.{emit_first_arg}
@@ -130,6 +130,17 @@ fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: in
     let fn_type = avra_llvm_function_type(ctx.i64_type, param_arr, arity, 0)
     avra_llvm_type_array_free(param_arr)
     let wrapper = avra_llvm_add_function(ctx.module, wrap_name, fn_type)
+    // Bounded-K CGU (ps3t.8.6.2): this wrapper is emitted at box time inside a
+    // fn body, so under CGU it lands in whichever unit boxes the float-trait —
+    // and the `ctx.get_fn` memo above is per-MODULE, so two units that box the
+    // same type each define `${mangled}__vtable_wrap` → duplicate symbol at
+    // link. The name is deterministic and the body identical per type, so
+    // linkonce_odr dedups them safely (same rule as __init_<mod> / mono specs).
+    // Gated on CGU mode: whole-program (empty tag) emits it once with external
+    // linkage, unchanged and byte-identical.
+    if ctx.cgu_unit_tag != "" {
+        avra_llvm_set_linkonce_odr(wrapper)
+    }
     // Save current builder position
     let saved_bb = avra_llvm_get_insert_block(ctx.builder)
     // Build wrapper body

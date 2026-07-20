@@ -88,6 +88,36 @@ export fn fn_unit_key(name: string, sig_fp: int, body_fp: int, type_table_fp: in
     FnUnitKey { hash: sha256_hex(canonical) }
 }
 
+/// One member of a bounded-K CGU: enough of its identity to make the
+/// containing unit's cache key body-and-signature-exact. `erased` carries the
+/// @mono_erased layout regime (unbound T lays out as wide i64), same as the
+/// per-fn key's `erased` component.
+export type CguMember = {
+    name: string,
+    sig_fp: int,
+    body_fp: int,
+    erased: bool,
+}
+
+/// Key for a bounded-K codegen unit (ps3t.8.6.2): the combined identity of
+/// every member fn folded in stmts-appearance order, plus the same
+/// whole-unit components a per-fn key carries (type table, codegen modes,
+/// toolchain). A one-fn body edit changes exactly its member's body_fp → its
+/// bucket's key → that ONE unit re-emits; every other unit hits. Members are
+/// order-significant (emission order within the unit is the appearance order),
+/// so the caller must pass them in the same order it emits them.
+export fn fn_unit_key_cgu(members: List<CguMember>, type_table_fp: int, modes: string, toolchain: string) -> FnUnitKey {
+    mut parts = ""
+    for m in members {
+        let e = if m.erased { "1" } else { "0" }
+        parts = parts + string(m.name.length) + ":" + m.name + ":"
+            + string(m.sig_fp) + ":" + string(m.body_fp) + ":" + e + ";"
+    }
+    let canonical = "cgu:v1:" + string(members.length) + ":" + parts
+        + "|" + string(type_table_fp) + ":" + modes + ":" + toolchain
+    FnUnitKey { hash: sha256_hex(canonical) }
+}
+
 /// Key for a monomorphized instance: the instance's mangled symbol name,
 /// its signature fp, the generic base's body_fp, and each type argument's
 /// structure fingerprint, order-significant. Stamped at mono time (the

@@ -156,9 +156,11 @@ export type Ctx = {
     // --lib-pkg-root=<qualifier>.
     lib_pkg_root: string,
     // The same ownership as a parsed set: AVRA_LIB_PKG_ROOT is
-    // colon-separated (mirrors AVRA_LIB_OBJS) because a BATCHED test
-    // shard owns several test modules at once — a fn belongs to the
-    // unit when ANY root prefixes it. Empty list = whole-program.
+    // COMMA-separated (NOT colon like AVRA_LIB_OBJS — the roots are
+    // qualified module names whose `::` separators a colon split would
+    // shred; see parse_pkg_roots) because a BATCHED test shard owns
+    // several test modules at once — a fn belongs to the unit when ANY
+    // root prefixes it. Empty list = whole-program.
     lib_pkg_roots: List<string>,
     // Layout-boundary erasure gate (ps3t.4.5(d), spec §6). True only
     // while emitting the body of an ERASED generic base (a `@mono_erased`
@@ -169,6 +171,15 @@ export type Ctx = {
     // is false and an under-determined type at layout is a hard F9999 ICE
     // — the compiler must resolve or hard-error, never guess a layout.
     in_erased_body: bool,
+    // Bounded-K CGU (ps3t.8.6.2): a per-unit tag ("b<i>" for a codegen unit,
+    // "w" for the wrapper, "" for whole-program / standalone). Lambda symbol
+    // names are qualified with it (`…__lambda_<tag>_<id>`) so lambdas in
+    // DIFFERENT units never collide on a name — the process-global lambda-id
+    // counter is emission-order/cache-sensitive (a cached unit bakes an id
+    // that the re-emitted wrapper's fresh counter can reuse), which duplicate-
+    // symbols at link. Empty tag keeps the whole-program name (`…__lambda_<id>`)
+    // byte-identical.
+    cgu_unit_tag: string,
 }
 
 /// Bundle of every type-resolution registry. Passed as a single
