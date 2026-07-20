@@ -31,10 +31,11 @@ use features.grammar.{parse_grammar, Grammar, Rule}
 /// is the correct — and byte-identity-preserving — home for it (ps3t.6.7 Step C).
 export fn avra_expr_grammar() -> Grammar {
     let gp = grammar {
-  expression = logic_or
-  logic_or   = l:logic_and ( op:("||") r:logic_and )* -> fold_logical(l, op, r)
-  logic_and  = l:equality ( op:("&&") r:equality )* -> fold_logical(l, op, r)
-  equality   = l:bitor ( op:("!=" | "==") r:bitor )* -> fold_binary(l, op, r)
+  expression    = null_coalesce
+  null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
+  logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
+  logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
+  equality      = l:bitor ( op:("!=" | "==") r:bitor )* -> fold_binary(l, op, r)
   bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
   bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
   bitand     = l:comparison ( op:("&") r:comparison )* -> fold_binary(l, op, r)

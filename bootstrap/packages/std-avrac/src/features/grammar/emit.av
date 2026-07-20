@@ -113,7 +113,7 @@ fn is_fold(seq: GSeq) -> bool {
 /// that take the specialised emit_fold path.
 fn build_is_expr_fold(build: GBuild) -> bool {
     match build {
-        .Call(name, _) -> name == "fold_binary" || name == "fold_logical" || name == "fold_postfix"
+        .Call(name, _) -> name == "fold_binary" || name == "fold_logical" || name == "fold_nullish" || name == "fold_postfix"
         _ -> false
     }
 }
@@ -428,6 +428,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // ── Expression builds (target: Expr) ──
         "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"
         "fold_logical" -> "CapVal.Node(fold_logical_expr(st, ${arg3(args)}))"
+        "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
         "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
         "Grouping" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, ${args[0]}))))"
@@ -492,6 +493,7 @@ fn arg2(args: List<string>) -> string { "${args[0]}, ${args[1]}" }
 fn build_fn(name: string) -> string {
     if name == "fold_binary" { return "fold_binary_expr" }
     if name == "fold_logical" { return "fold_logical_expr" }
+    if name == "fold_nullish" { return "fold_nullish_expr" }
     if name == "fold_postfix" { return "fold_postfix_expr" }
     if name == "Unary" { return "unary_expr" }
     name
@@ -748,7 +750,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_postfix" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_postfix" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,

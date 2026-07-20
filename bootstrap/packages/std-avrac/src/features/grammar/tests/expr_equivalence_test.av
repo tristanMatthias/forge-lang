@@ -140,4 +140,19 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a with { x: 1 } with { y: 2 }")
         }
     }
+    // ── ps3t.6.7 Step C: the DSL-owned infix layers ABOVE the operator ladder.
+    given "null-coalescing `??` (the null_coalesce stratum)" {
+        then "single, chained, and mixed-with-ops null-coalesce agree" {
+            dsl("a ?? b") != "<err>" &&
+            agree("a ?? b") && agree("a ?? b ?? c") &&
+            agree("a ?? b + c") && agree("f() ?? 0") && agree("a.b ?? c.d")
+        }
+    }
+    given "keyword logical operators (`or` / `and`)" {
+        then "or/and keywords fold to the same LogicOp as ||/&& and agree" {
+            agree("a or b") && agree("a and b") &&
+            agree("a and b or c") && agree("a or b and c") &&
+            agree("a and b == c") && agree("not a or b")
+        }
+    }
 }

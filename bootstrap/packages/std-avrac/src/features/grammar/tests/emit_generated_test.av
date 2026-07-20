@@ -34,6 +34,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "every rule lowers to `fn parse_<name>(st: PState) -> CapVal`" {
         let src = emit_all()
         src.contains("fn parse_expression(st: PState) -> CapVal") &&
+        src.contains("fn parse_null_coalesce(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_or(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_and(st: PState) -> CapVal") &&
         src.contains("fn parse_equality(st: PState) -> CapVal") &&
@@ -51,8 +52,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("p.recover_to(")
     }
 
-    then "a pass-through rule is a bare delegating call (`expression = logic_or`)" {
-        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_logic_or(st)\n}")
+    then "a pass-through rule is a bare delegating call (`expression = null_coalesce`)" {
+        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_null_coalesce(st)\n}")
+    }
+
+    then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
+        let src = emit_all()
+        src.contains("while st.cur().text == \"??\" {") &&
+        src.contains("CapVal.Node(fold_nullish_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
     then "a fold rule accumulates ops+rhs and folds via the build helper" {
@@ -67,10 +74,12 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "the logical strata use fold_logical_expr (`||`, `&&`)" {
+    then "the logical strata use fold_logical_expr and accept keyword spellings" {
+        // ps3t.6.7 Step C: `||`/`or` and `&&`/`and` both spell the same LogicOp
+        // (logicop_of maps both) — the guard unions the two token texts.
         let src = emit_all()
-        src.contains("while st.cur().text == \"||\" {") &&
-        src.contains("while st.cur().text == \"&&\" {") &&
+        src.contains("while st.cur().text == \"||\" || st.cur().text == \"or\" {") &&
+        src.contains("while st.cur().text == \"&&\" || st.cur().text == \"and\" {") &&
         src.contains("CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 

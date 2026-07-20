@@ -1165,6 +1165,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "fold_binary" if args.length == 3 -> CapVal.Node(fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "Unary" if args.length == 2 -> CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
         "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "Grouping" if args.length == 1 -> {
             // Preserve the parenthesisation node so the produced AST matches
             // the hand-written parser (which wraps `(e)` in Expr.Grouping),
@@ -1921,8 +1922,26 @@ export fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVa
 }
 
 fn logicop_of(sym: string) -> LogicOp {
-    if sym == "||" { return LogicOp.Or }
+    // Both the symbolic (`||`/`&&`) and keyword (`or`/`and`) spellings map to the
+    // same LogicOp — the hand parser's parse_or/parse_and accept both (mod.av).
+    if sym == "||" || sym == "or" { return LogicOp.Or }
     LogicOp.And
+}
+
+/// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce` chain
+/// (`a ?? b ?? c` = `(a ?? b) ?? c`) — the hand parser's parse_null_coalesce
+/// shape. Sibling of fold_binary_expr / fold_logical_expr.
+export fn fold_nullish_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        acc = st.store.exprs.add_leaf(Expr.NullCoalesce(acc, rs[i]))
+        i = i + 1
+    }
+    acc
 }
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Binary` chain.
