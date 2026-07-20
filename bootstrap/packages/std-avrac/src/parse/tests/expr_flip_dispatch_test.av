@@ -1,0 +1,76 @@
+// ps3t.6.7 — the expression-family FLIP dispatch (parse_expression → grammar-DSL).
+//
+// parse_expression routes through run_dsl_expr_at_shared (the inverse-@hand
+// expression runner) when the parser's `expr_flip` field is set, falling back to
+// the hand parser on a DSL error. The field is read once from AVRA_PARSER_EXPR_FLIP
+// at construction, but is a plain `mut bool` so a test can set it directly —
+// exercising the flip path (reused @hand delegate, seek-based leaf positioning,
+// seek-based cursor resync) with NO process-env dependency, in a single low-memory
+// process. The full-selfhost byte-identity proof is memory-heavy and lives in the
+// diff-test / promotion step; this pins the dispatch + field wiring + the mode
+// threading (allow_struct_lit in control-flow headers, etc.).
+//
+// Sibling of parse/tests/type_flip_dispatch_test.av + match_expr/tests/
+// pat_flip_dispatch_test.av — the three family flips share one dispatch shape.
+use @std.avrac.parse.{parser_new}
+use @std.avrac.features.grammar.{dump_expr}
+
+// parse_expression via the FLIP path (expr_flip set → DSL authoritative).
+fn flip_expr(src: string) -> string {
+    mut p = parser_new(src)
+    p.expr_flip = true
+    match p.parse_expression() {
+        .Ok(id) -> dump_expr(p.store, id)
+        .Err(_) -> "<flip parse error>"
+    }
+}
+
+// The HAND path explicitly (parse_expression_hand) — robust to a future promoted
+// default, so this stays a real hand baseline regardless of the flag's default.
+fn hand_expr(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_expression_hand() {
+        .Ok(id) -> dump_expr(p.store, id)
+        .Err(_) -> "<parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_expr(src) == hand_expr(src)
+}
+
+spec "ps3t.6.7: parse_expression flip dispatch == hand path (expr_flip field)" {
+    given "the field toggles the path (sanity: flip really took the DSL branch)" {
+        then "flip and hand build the same non-error tree for a representative form" {
+            flip_expr("a + b * c") == hand_expr("a + b * c") &&
+            !flip_expr("a + b * c").contains("parse error")
+        }
+    }
+    given "the operator ladder — every precedence stratum" {
+        then "arithmetic, comparison, equality, bitwise, shift, logical agree" {
+            agree("1 + 2") && agree("1 - 2 - 3") && agree("1 * 2 + 3") && agree("1 + 2 * 3") &&
+            agree("1 % 2") && agree("1 < 2") && agree("1 <= 2 == 3") && agree("1 != 2") &&
+            agree("1 | 2") && agree("1 & 2 ^ 3") && agree("1 << 2 >> 3") &&
+            agree("a && b || c") && agree("a or b and c") && agree("a ?? b ?? c")
+        }
+    }
+    given "the @hand leaf — unary / postfix / primary forms" {
+        then "prefix unary, calls, field/index, closures, match/if agree" {
+            agree("-a") && agree("!x") && agree("~b") && agree("not a") &&
+            agree("f(1, 2)") && agree("a.b.c") && agree("a[0][1]") && agree("f(a).b(c)") &&
+            agree("(x) -> x + 1") && agree("match x { _ -> 1 }") && agree("if a { 1 } else { 2 }") &&
+            agree("a?.b") && agree("f() catch { 0 }") && agree("a with { x: 1 }")
+        }
+    }
+    given "assignment / is / in / pipe (the top strata)" {
+        then "retargeted assign, is-check, membership, and pipe agree" {
+            agree("x = 1") && agree("a.b = f(1)") && agree("a is .Some") &&
+            agree("x in [1, 2]") && agree("x in 1..10") && agree("a |> f |> g(1)")
+        }
+    }
+    given "block bodies (the map-vs-block lookahead, is_map_literal)" {
+        then "a block expression and a map literal both agree" {
+            agree("{ 1 }") && agree("{ \"k\": 1 }") && agree("{ y }")
+        }
+    }
+}

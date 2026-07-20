@@ -257,6 +257,15 @@ export type Parser = {
     // carries the full ladder; the program grammar still has an older leaf).
     mut expr_flip: bool,
     mut dsl_expr_grammar: Grammar?,
+    // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
+    // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
+    // Before each flip expression its cursor+line state is SYNCED to this parser's
+    // (copy_cursor_from), so it parses the leaves carrying the SAME accumulated
+    // line — including the deliberate is_map_literal line nudges the hand parser
+    // leaves in self.line — and this parser then ADOPTS the delegate's end state.
+    // That reproduces the hand parser's line accounting byte-for-byte (a seek that
+    // re-derives the "true" line instead would DIVERGE from the hand's nudged line).
+    mut hand_delegate: Parser?,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -635,6 +644,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it — unlike type/pat_flip, which are on.
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
         dsl_expr_grammar: null,
+        hand_delegate: null,
     }
     parser.advance_token()
     parser
@@ -1059,11 +1069,34 @@ impl Parser {
                 quote_depth: self.quote_depth,
                 cell_mode: self.cell_mode,
             }
-            let dsl = run_dsl_expr_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_expression_grammar(), modes)
+            // One reusable @hand delegate per file (built lazily; shares this
+            // parser's store + source file so delegate-parsed nodes carry the same
+            // @src_file attribution). SYNC it to THIS parser's exact cursor + line
+            // state so it parses the expression's leaves carrying the accumulated
+            // line (incl. the is_map_literal nudges the hand parser leaves) — then
+            // ADOPT its end state so this parser continues from the expression's end
+            // with the same line the hand parser would have. This reproduces the
+            // hand parser's line accounting byte-for-byte across the split parse.
+            if self.hand_delegate == null {
+                mut d = parser_new_with_store(self.source, self.file, self.store)
+                d.records_roots = 0
+                d.expr_flip = false
+                self.hand_delegate = d
+            }
+            let d = self.hand_delegate!
+            d.copy_cursor_from(self)
+            let dsl = run_dsl_expr_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_expression_grammar(), modes, d)
             if !dsl.had_error {
-                while self.current_start < dsl.stop_byte && !self.is_at_end() {
-                    self.advance_token()
+                // The delegate stops at the last @hand LEAF's end; the DSL itself
+                // consumed the trailing STRUCTURAL tokens after it (the `]` of `in
+                // [...]`, a `)`, etc.), so the delegate lags stop_byte. Forward-
+                // advance it to stop_byte (lexing those tokens — they are not blocks,
+                // so they add their newlines but NO is_map_literal nudge), so its
+                // position AND line match the expression's true end, then adopt.
+                while d.current_start < dsl.stop_byte && !d.is_at_end() {
+                    d.advance_token()
                 }
+                self.copy_cursor_from(d)
                 return .Ok(dsl.expr)
             }
             // DSL parse error → fall through to the authoritative hand parser.
@@ -2422,6 +2455,27 @@ impl Parser {
     fn advance(self) {
         self.prev_line = self.current_line
         self.advance_token()
+    }
+
+    /// Copy the full lexer/cursor + line-tracking state from `other` (same source),
+    /// WITHOUT touching the store, features, or mode flags. The ps3t.6.7 expression
+    /// flip uses this to (a) SYNC the @hand delegate to this parser's exact position
+    /// + accumulated line before parsing an expression's leaves, and (b) ADOPT the
+    /// delegate's end state afterwards — so the deliberate is_map_literal line nudge
+    /// the delegate incurs propagates into this parser's continuous line, matching a
+    /// from-scratch hand parse byte-for-byte. These are exactly the ten cursor fields
+    /// save_state/restore_state round-trip (minus the store mark / diagnostics).
+    fn copy_cursor_from(self, other: Parser) {
+        self.start = other.start
+        self.current = other.current
+        self.line = other.line
+        self.column = other.column
+        self.current_kind = other.current_kind
+        self.current_lexeme = other.current_lexeme
+        self.current_line = other.current_line
+        self.current_column = other.current_column
+        self.prev_line = other.prev_line
+        self.current_start = other.current_start
     }
 
     fn consume(self, kind: Tk, message: string) -> bool {
