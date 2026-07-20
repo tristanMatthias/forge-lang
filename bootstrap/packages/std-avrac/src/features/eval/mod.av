@@ -1185,6 +1185,14 @@ fn eval_call(runtime: Runtime, callee: Expr, args: List<ExprId>) -> StepResult {
     // Value space — the boxed node Value already is the payload the
     // decoder consumes, so the call passes its argument straight
     // through, exactly like the span wrappers above.
+    // `synth_unsupported_stmt(name)` (2h5s): NOT an identity shim — the quote
+    // lowerer emits it in place of a silent NoOp for a Stmt variant
+    // `construct_stmt` cannot encode. Reaching it here means the constructed
+    // AST is being evaluated during macro expansion, so it is a hard error
+    // naming the variant (surfaced as F4005), per design §3.4.
+    if callee_last_segment(callee) == "synth_unsupported_stmt" {
+        return eval_synth_unsupported_stmt(runtime, args)
+    }
     if call_is_synth_shim(callee) {
         // `synth_expr_id` additionally coerces a spliced SCALAR to a boxed Expr
         // literal (rmzs GAP2): `~(expr)` in an expression slot lowers to
@@ -1545,6 +1553,22 @@ fn call_builtin(runtime: Runtime, name: string, args: List<Value>) -> StepResult
 fn eval_shim_passthrough(runtime: Runtime, args: List<ExprId>) -> StepResult {
     if args.length == 0 { return error_result(runtime, "id-shim call needs at least one argument") }
     eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+}
+
+/// `synth_unsupported_stmt(name)` eval (2h5s): the quote lowerer emits this
+/// in place of a NoOp for a Stmt variant `construct_stmt` cannot encode. It
+/// is NOT an identity — reaching it during `@expand` evaluation is a hard
+/// error naming the variant, so an unsupported quoted statement fails the
+/// expansion loudly (design §3.4) instead of vanishing. The @expand pass
+/// wraps this as F4005 (macro evaluation failed).
+fn eval_synth_unsupported_stmt(runtime: Runtime, args: List<ExprId>) -> StepResult {
+    mut name = "statement"
+    if args.length >= 1 {
+        let r = eval_expr(runtime, runtime.nodes.exprs.get(args[0]))
+        if r.had_error { return r }
+        if r.value.kind == "string" { name = r.value.text }
+    }
+    error_result(runtime, "quote: cannot construct a `${name}` statement — this statement kind is not yet supported inside a quote/macro body")
 }
 
 /// `synth_expr_id` eval: identity for an already-Expr value (the Expr-enum a

@@ -71,6 +71,22 @@ export fn synth_stmt_ids(body: List<Stmt>) -> List<StmtId> {
     []
 }
 
+/// Unsupported-variant marker (2h5s). The quote lowerer emits a call to
+/// this in place of a silent `Stmt.NoOp` whenever `construct_stmt` meets a
+/// statement variant it cannot yet encode (a decl / `match`-with-arms in a
+/// quote body). It is NOT an identity shim: reaching it at macro-expansion
+/// time is a hard error naming the variant (features/eval intercepts it and
+/// returns an eval error, surfaced as F4005), so an unsupported quoted
+/// statement fails the expansion — design §3.4 (wrong splice = compile
+/// error) — instead of vanishing silently. The `Stmt` return type lets the
+/// call sit wherever a constructed statement is expected; the eval intercept
+/// errors before any value is produced, and the compiled body is unreachable
+/// for the same reason as every other shim.
+export fn synth_unsupported_stmt(variant: string) -> Stmt {
+    synth_shim_unreachable("synth_unsupported_stmt")
+    Stmt.NoOp
+}
+
 // ── Read shims (id → node): introspection inverse of the write shims ──
 // Identity at eval; the received child is already a boxed, matchable
 // node Value, so the shim only re-types it for `match`.

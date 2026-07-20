@@ -1,0 +1,94 @@
+// 2h5s: an `@expand` macro that quotes a statement `construct_stmt` cannot
+// yet encode (a `match`-with-arms, a decl — the vez6.3.10 `quote decl` set)
+// used to lower to a SILENT `Stmt.NoOp`: the statement vanished from the
+// expansion with no diagnostic — the CLAUDE.md "empty match arm swallows
+// behavior" anti-pattern, and a violation of the design's own §3.4 ("splicing
+// a wrong-typed value into a hole is a compile-time error at macro-expansion
+// time"). The single chokepoint that knows "unsupported" (`stmt_passthrough`
+// in features/quote_expr/lower.av) now emits a `synth_unsupported_stmt` marker
+// instead; when `@expand` EVALUATES the constructed AST, features/eval
+// intercepts the marker and raises a comptime error naming the variant,
+// surfaced as F4005 (macro evaluation failed). So the expansion now fails
+// LOUDLY — no silent drop, no F9999 ICE.
+//
+// `qus_`-prefixed fixtures against cross-shard filename collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn qus_compile_out(tag: string, source: string) -> string {
+    let path = "/tmp/avra_quote_unsupported_${tag}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "an unsupported statement in a quoted macro body fails the expansion (2h5s)" {
+    then "a quoted `match` statement is a comptime error, not a silent NoOp" {
+        // The macro returns `quote stmts { match ... }`. `construct_stmt`
+        // cannot encode `Stmt.Match`, so evaluating the expansion must error
+        // (F4005) and name the `match` variant — NOT compile clean having
+        // silently dropped the statement.
+        let out = qus_compile_out("match",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_bad() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        match 1 {\n" +
+            "            1 -> println(\"one\")\n" +
+            "            _ -> println(\"other\")\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_bad)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4005") && out.contains("match")
+    }
+    then "the failure is loud, not an ICE (F9999) or a clean compile" {
+        let out = qus_compile_out("noice",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_bad2() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        match 1 {\n" +
+            "            _ -> println(\"x\")\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_bad2)\n" +
+            "fn placeholder2() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // A diagnostic fired (the statement did not vanish silently) and it is
+        // the clean F4005, not the raw-abort ICE the silent NoOp used to risk.
+        out.contains("F4005") && !out.contains("F9999")
+    }
+}
+
+spec "a supported statement in a quoted macro body still expands clean (2h5s control)" {
+    then "a quoted `println` expands with no unsupported-variant error" {
+        // The over-fire guard: the marker must fire ONLY on the passthrough
+        // variants. A plain expression statement encodes normally, so the
+        // expansion compiles clean — no F4005 from `synth_unsupported_stmt`.
+        let out = qus_compile_out("ok",
+            "use @std.avrac.core.{StmtId}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn make_ok() -> List<StmtId> {\n" +
+            "    return quote stmts {\n" +
+            "        println(\"alpha\")\n" +
+            "    }\n" +
+            "}\n" +
+            "\n" +
+            "@expand(make_ok)\n" +
+            "fn placeholder3() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        !out.contains("F4005") && !out.contains("F9999")
+    }
+}
