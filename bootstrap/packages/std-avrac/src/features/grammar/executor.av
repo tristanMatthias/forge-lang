@@ -762,6 +762,9 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The remaining primaries served by parse_primary: enum constructors
     // (`.Variant(..)`) and list literals (`[ .. ]`) (ps3t.6.7 Step C).
     if name == "more_primary" { return tok.text == "." || tok.text == "[" }
+    // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
+    // shared exported predicate, mirrored by emit's hand_first_guard.
+    if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
     false
 }
 
@@ -976,7 +979,28 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary"
+}
+
+/// The FIRST-set of a leaf expression — every token that can begin the
+/// procedural unary/postfix/primary layer the DSL delegates wholesale via
+/// `@hand(hand_unary)` (→ `parse_unary`). Kept as ONE exported predicate so the
+/// executor's `hand_starts` AND the emitted static parser's FIRST-guard share a
+/// single source of truth (rule 8). It is the union of `parse_unary`'s prefix
+/// operators (`! - ~ not` + quote-only `~`splice) and `parse_primary`'s FIRST
+/// tokens (parse/mod.av) — literals by kind, keyword/enum/delimiter primaries by
+/// text. WHY delegate the whole leaf rather than express it in the DSL: the hand
+/// postfix loop (`parse_call`) is NEWLINE-SENSITIVE (`.UpperIdent` / `[` / `(` on
+/// a new line = a new statement, `dot_is_postfix`) and mode-stateful
+/// (`allow_struct_lit` / `allow_dot_postfix` / `allow_it_sugar` / `quote_depth`),
+/// which the stateless token-grammar cannot reproduce byte-identically.
+export fn tok_starts_expr_leaf(tok: Token) -> bool {
+    if tok.kind == "IDENT" || tok.kind == "NUMBER" || tok.kind == "STRING" || tok.kind == "BOOL" || tok.kind == "TEMPLATE" { return true }
+    let t = tok.text
+    t == "~" || t == "!" || t == "-" || t == "not" || t == "@" || t == "." ||
+    t == "(" || t == "[" || t == "{" ||
+    t == "match" || t == "if" || t == "spawn" || t == "channel" || t == "isolated" || t == "when" || t == "quote" ||
+    t == "null" || t == "none"
 }
 
 /// Run an EXPRESSION hand rule by delegating to the real hand parser over the
@@ -1007,6 +1031,11 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "brace_expr"    -> bp.parse_brace_expr()
         "ident_expr"    -> bp.parse_primary()
         "more_primary"  -> bp.parse_primary()
+        // The whole procedural leaf: prefix unary ops + `with`/splice + the
+        // newline-sensitive postfix chain + every primary form (parse/mod.av
+        // parse_unary → parse_call → parse_primary). The DSL owns only the
+        // declarative binary/infix ladder ABOVE this (ps3t.6.7 Step C).
+        "hand_unary"    -> bp.parse_unary()
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
