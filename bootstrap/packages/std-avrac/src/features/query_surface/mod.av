@@ -33,11 +33,14 @@
 // them by hand, and spec Axis 28 reserves `__` for compiler-generated
 // dispatch symbols users never type.
 //
-// V is `string` in v1: the adapter's early-cutoff hash is `content_id_for`,
-// which is string-keyed. The engine itself stays fully generic over V —
-// non-string value types keep the raw hand-wrapped path (db_new + a custom
-// hash) until per-type content hashing lands. A non-string V is a precise
-// F4013, never a confusing downstream typeck error.
+// V is `string` OR a non-generic `Hash`-deriving type (ps3t.8.11): the
+// adapter's early-cutoff key is V's CONTENT HASH — `content_id_for` for
+// `string` (string-keyed, byte-identical to v1), `v.hash()` (from
+// @derive(Hash)) otherwise. The engine was always generic over V; the surface
+// widened once L4 grew a per-type Hash capability to key on. A generic or
+// non-nominal V (int, list, tuple, a bare type param) is a precise F4013,
+// never a confusing downstream typeck error; a nominal V that never derived
+// Hash fails loudly at the generated `v.hash()`.
 //
 // Generation renders SOURCE TEXT and parses it back through
 // `parse_program_source_shared` into the caller's arena — the same
@@ -87,9 +90,10 @@ fn qs_fail(msg: string) -> QuerySurfaceOut {
     QuerySurfaceOut { stmts: null, family: "", family_enum: "", fn_name: "", error: msg }
 }
 
-/// The one shape `@query` accepts, stated once for every diagnostic.
+/// The one shape `@query` accepts, stated once for every diagnostic. `V` is
+/// the value type — `string` or a non-generic type deriving `Hash` (ps3t.8.11).
 fn qs_expected() -> string {
-    "`@query(Fam.Variant)` fn must be `fn name(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle>`"
+    "`@query(Fam.Variant)` fn must be `fn name(ctx: QueryCtx<V>, arg: int) -> Result<V, QueryCycle>` (V = `string` or a `Hash`-deriving type)"
 }
 
 /// Expand one `@query`-annotated declaration. `node` is the decl WITH
@@ -155,25 +159,36 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
     if params.length != 2 {
         return qs_fail("${qs_expected()} — got ${string(params.length)} parameter(s)")
     }
-    // Param 0: QueryCtx<string>. Kind-agnostic base-name match (a
-    // parser-default Struct and a resolved nominal of the same name are
-    // the same type pre/post-rewrite), short-name so an already-qualified
-    // reference still matches.
+    // Param 0: QueryCtx<V>. Kind-agnostic base-name match (a parser-default
+    // Struct and a resolved nominal of the same name are the same type
+    // pre/post-rewrite), short-name so an already-qualified reference still
+    // matches. V is `string` (engine-hashed via content_id_for) or a
+    // non-generic `Hash`-deriving type (adapter calls `v.hash()`) — ps3t.8.11.
     let ctx_args = named_type_args(params[0].vtype, "QueryCtx")
     if ctx_args == null {
-        return qs_fail("${qs_expected()} — first parameter is `${vt_debug(params[0].vtype)}`, not `QueryCtx<string>`")
+        return qs_fail("${qs_expected()} — first parameter is `${vt_debug(params[0].vtype)}`, not `QueryCtx<V>`")
     }
-    if ctx_args!.length != 1 || !(ctx_args![0] is .Str) {
-        return qs_fail("@query value type must be `string` in v1 — the generated adapter hashes with `content_id_for`, which is string-keyed; wrap the engine by hand (db_new + a custom hash) for other value types")
+    if ctx_args!.length != 1 {
+        return qs_fail("${qs_expected()} — `QueryCtx` takes exactly one value-type argument")
+    }
+    let vparam = ctx_args![0]
+    let vr = query_value_render(vparam)
+    if vr == null {
+        return qs_fail("@query value type must be `string` or a non-generic type deriving `Hash` — `${vt_debug(vparam)}` is neither. The generated adapter's early-cutoff key needs a content hash: `content_id_for` for `string`, `v.hash()` (from `@derive(Hash)`) otherwise")
     }
     // Param 1: int — the engine's argument key.
     if !(params[1].vtype is .Int) {
         return qs_fail("${qs_expected()} — second parameter is `${vt_debug(params[1].vtype)}`, not `int` (the engine keys queries by `(family, int arg)`)")
     }
-    // Return: Result<string, QueryCycle>.
+    // Return: Result<V, QueryCycle> — the SAME V as the ctx (both name the
+    // one memoised value type).
     let ret_args = named_type_args(ret, "Result")
-    if ret_args == null || ret_args!.length != 2 || !(ret_args![0] is .Str) || named_type_args(ret_args![1], "QueryCycle") == null {
-        return qs_fail("${qs_expected()} — return type is `${vt_debug(ret)}`, not `Result<string, QueryCycle>`")
+    if ret_args == null || ret_args!.length != 2 || named_type_args(ret_args![1], "QueryCycle") == null {
+        return qs_fail("${qs_expected()} — return type is `${vt_debug(ret)}`, not `Result<${vr!}, QueryCycle>`")
+    }
+    let vret = query_value_render(ret_args![0])
+    if vret == null || vret! != vr! {
+        return qs_fail("@query value type mismatch — the context is `QueryCtx<${vr!}>` but the return is `Result<${vt_debug(ret_args![0])}, …>`; both must name the same value type")
     }
 
     // The family's dense int is the variant's declaration-order `.ordinal`
@@ -201,6 +216,11 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
     // sync, and a user's own same-named symbol (their `computed`, say)
     // can never capture a generated reference.
     let q = "@std::avrac::query::"
+    // V's rendered type + its early-cutoff hash expression (ps3t.8.11): for
+    // `string` these are `string` + `content_id_for(v)` — BYTE-IDENTICAL to
+    // the v1 template — so single-string @query output (and diff-test) is
+    // unchanged; a `Hash`-deriving V renders its own name + `v.hash()`.
+    let vhash = query_value_hash_expr(vparam)
     // `export` so a program-level dispatcher can `use` these across a module
     // boundary (ps3t.8.14). Codegen-neutral: `export` is an @export annotation
     // the resolver's visibility pass consumes and codegen peels via stmt_unwrap,
@@ -208,12 +228,12 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
     let src = "export fn ${sname}_family() -> int {\n" +
         "    ${fexpr}\n" +
         "}\n" +
-        "export fn ${sname}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
+        "export fn ${sname}_fetch(ctx: ${q}QueryCtx<${vr!}>, arg: int) -> Result<${vr!}, ${q}QueryCycle> {\n" +
         "    ctx.fetch(${q}qk(${fexpr}, arg))\n" +
         "}\n" +
-        "export fn ${sname}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+        "export fn ${sname}_compute(ctx: ${q}QueryCtx<${vr!}>, qkey: ${q}QueryKey) -> Result<${q}Computed<${vr!}>, ${q}QueryCycle> {\n" +
         "    let v = ${sname}(ctx, qkey.arg)?\n" +
-        "    Result.Ok(${q}computed(v, @std::avrac::core::content_id_for(v)))\n" +
+        "    Result.Ok(${q}computed(v, ${vhash}))\n" +
         "}\n"
     let parsed = parse_program_source_shared(src, "<@query ${sname}>", store)
     if parsed.had_error == 1 || parsed.ids == null {
@@ -283,6 +303,36 @@ fn named_type_args(vt: ValueType, want: string) -> List<ValueType>? {
         .Struct(n, args, _) -> if type_short_name(n) == want { args } else { null }
         .Enum(n, args, _) -> if type_short_name(n) == want { args } else { null }
         _ -> null
+    }
+}
+
+/// The parse-valid source rendering of a @query value type V, or null when V
+/// isn't a legal query value (ps3t.8.11). A legal V is `string` — hashed by
+/// the engine's built-in `content_id_for` — or a NON-GENERIC named struct/
+/// enum, which must derive `Hash` (the generated adapter calls `v.hash()`).
+/// The bare SHORT name is rendered: it resolves in the driver's module
+/// exactly as the original fn's own `QueryCtx<V>` signature did. A generic V
+/// (type args present) or any non-nominal V (int, list, tuple, a bare type
+/// param) is rejected — those have no derivable content hash.
+fn query_value_render(v: ValueType) -> string? {
+    match v {
+        .Str -> "string"
+        .Struct(n, args, _) -> if args.length == 0 { type_short_name(n) } else { null }
+        .Enum(n, args, _) -> if args.length == 0 { type_short_name(n) } else { null }
+        _ -> null
+    }
+}
+
+/// The early-cutoff value-hash EXPRESSION the compute adapter wraps V's
+/// answer with (over the bound `v`). `string` hashes through the engine's
+/// string-keyed `content_id_for` — byte-identical to v1; any other legal V
+/// hashes through its derived `v.hash()` (`@derive(Hash)`, ps3t.8.11). A V
+/// that reached here but never derived Hash fails LOUDLY at the generated
+/// `.hash()` — the same generated-code error contract the derive emitters use.
+fn query_value_hash_expr(v: ValueType) -> string {
+    match v {
+        .Str -> "@std::avrac::core::content_id_for(v)"
+        _ -> "v.hash()"
     }
 }
 
