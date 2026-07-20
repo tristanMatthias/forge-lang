@@ -17,14 +17,14 @@
 // build_origins call in expand_macro) flips the assertion: the
 // "[from @expand(bad_macro)]" prefix disappears.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 fn run_capture(source: string) -> string {
     // The fixture defines a @comptime fn inline; metadata mode strips
     // @comptime bodies (per walker_basic_test.av's docs), so the
     // macro evaluator never sees `bad_macro`. Force the source-driven
     // path so the @expand site dispatches via the live interpreter.
-    write_fixture_and_run_no_metadata("/tmp/avra_t3_macro_blame.av", source)
+    write_fixture_and_run("/tmp/avra_t3_macro_blame.av", source)
 }
 
 spec "so07.3 / T3: typeck blames the macro on synthetic-fn errors" {

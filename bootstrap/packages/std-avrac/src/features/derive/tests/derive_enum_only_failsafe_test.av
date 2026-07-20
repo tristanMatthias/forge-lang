@@ -4,11 +4,11 @@
 // EmitPlan.enum_only gate so a plan/decl-kind mismatch degrades exactly
 // like the pre-engine walker did (failsafe, not a crash or half-derive).
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive engine: enum-only plan on a struct falls back untouched" {
     then "the struct compiles and behaves normally, with no derived methods" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_enum_only_failsafe_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_enum_only_failsafe_test.av",
             "use @std.avrac.features.walker.{derive_walker}\n" +
             "\n" +
             "@expand(derive_walker)\n" +

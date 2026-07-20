@@ -29,7 +29,7 @@
 
 use @std.avrac.check.{check_source}
 use @std.avrac.diagnostics.{bag_has_errors}
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 spec "pry2: tc_check_stmt_returns honours let/mut/const bindings" {
     then "fn with `let o = list[0]` + return through o.field type-checks clean (inline types)" {
@@ -64,7 +64,7 @@ spec "pry2: tc_check_stmt_returns honours let/mut/const bindings" {
 // handling without touching the bare let-binding path, the spec
 // above stays green but this one trips.
 //
-// Routed through cached_fixture_check_no_metadata so warm reruns
+// Routed through cached_fixture_check so warm reruns
 // serve from disk cache. Cold ~14s once per toolchain_fp change.
 spec "pry2: imported-type field access through let-binding still type-checks" {
     then "the same fix, via @std.avrac.diagnostics imports" {
@@ -81,7 +81,7 @@ spec "pry2: imported-type field access through let-binding still type-checks" {
             "}\n" +
             "\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(fixture)
+        let out = cached_fixture_check(fixture)
         // `bs2 check` prints "ok" on success, F-codes on failure.
         // Pre-fix this fixture produced F1000 "(tuple) vs (tuple)";
         // post-fix o.expand_site resolves to Span and the assertion

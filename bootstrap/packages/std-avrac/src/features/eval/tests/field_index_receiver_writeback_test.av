@@ -17,7 +17,7 @@ use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 /// an F-code from a fixture that must fail compilation.
 fn fw_compile_diags(path: string, source: string) -> string {
     write_fixture(path, source)
-    avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_STD_LISTING_FILE -u AVRA_LIB_PKG_ROOT -u AVRA_STD_UNIVERSE_FP -u AVRA_TEST_RESULTS_BIN_PATH ./build/bs2 compile '${path}' 2>&1 || true")
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
 }
 
 spec "eval mutator write-back walks FieldAccess/Index receiver chains (xerh)" {

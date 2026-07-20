@@ -7,7 +7,7 @@
 // the `ifnz` guard: an `if let` / comparison of a tagged-scalar
 // non-optional to `none` is a compile error.
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 fn le_pick(x: int?) -> int {
     let v = x else { return -1 }
@@ -128,7 +128,7 @@ spec "let-else — a non-diverging else is rejected (F1203)" {
         write_fixture(f,
             "fn u(x: int?) -> int { let v = x else { 0 }\n v }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1203")
     }
     then "a diverging else (`return`) does NOT report F1203" {
@@ -136,7 +136,7 @@ spec "let-else — a non-diverging else is rejected (F1203)" {
         write_fixture(f,
             "fn u(x: int?) -> int { let v = x else { return -1 }\n v }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1203")
     }
 }
@@ -152,7 +152,7 @@ spec "let-else — the binding carries the unwrapped type into typeck" {
             "fn u(x: string?) -> int { let v = x else { return -1 }\n" +
             " let n: int = v\n n }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1000")
     }
 }
@@ -163,7 +163,7 @@ spec "ifnz — non-optional `none` comparison is rejected" {
         write_fixture(f,
             "fn u() -> int { if let v = 5 { v } else { 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1000")
     }
     then "a real optional `if let` is accepted (no F1000)" {
@@ -171,7 +171,7 @@ spec "ifnz — non-optional `none` comparison is rejected" {
         write_fixture(f,
             "fn u(x: int?) -> int { if let v = x { v } else { 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1000")
     }
 }

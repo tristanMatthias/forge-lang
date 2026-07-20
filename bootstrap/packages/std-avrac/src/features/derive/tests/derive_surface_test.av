@@ -7,12 +7,12 @@
 // 16-iteration cap duplicating the error).
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture, write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 // Compile-check a fixture, capturing diagnostics + a sentinel on success.
 fn derive_check_out(path: string, source: string) -> string {
     write_fixture(path, source)
-    avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
 spec "@derive inside a loaded module file gets its implicit imports" {
@@ -23,7 +23,7 @@ spec "@derive inside a loaded module file gets its implicit imports" {
         write_fixture("/tmp/avra_dsm_helper.av",
             "@derive(Eq)\n" +
             "export type Pt = { x: int, y: int }\n")
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_modfile_main_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_modfile_main_test.av",
             "mod avra_dsm_helper\n" +
             "use avra_dsm_helper.{Pt}\n" +
             "\n" +
@@ -38,7 +38,7 @@ spec "@derive inside a loaded module file gets its implicit imports" {
 
 spec "@derive(Eq) on a struct needs no imports" {
     then "the implicit shim injection makes .eq available from a bare fixture" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_eq_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_surface_eq_test.av",
             "@derive(Eq)\n" +
             "type Pt = { x: int, y: int }\n" +
             "\n" +
@@ -55,7 +55,7 @@ spec "@derive(Eq) on a struct needs no imports" {
 
 spec "@derive(Walk, Eq) merges capabilities on one enum" {
     then "walker methods and eq both work; the decl splices once" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_multi_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_surface_multi_test.av",
             "@derive(Walk, Eq)\n" +
             "enum Tree {\n" +
             "    Leaf(v: int)\n" +
@@ -124,7 +124,7 @@ spec "a macro emitting its own @expand'd decl is an F4012 cycle" {
 
 spec "memoization: one @derive site expands its decl exactly once" {
     then "a derived method defined twice would F3000-collide; a clean compile proves single expansion" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_memo_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_surface_memo_test.av",
             "@derive(Eq)\n" +
             "type Once = { v: int }\n" +
             "\n" +
@@ -138,7 +138,7 @@ spec "memoization: one @derive site expands its decl exactly once" {
 
 spec "@derive(Marshal) round-trips with zero imports" {
     then "to_bytes/from_bytes work; the trait import is injected implicitly" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_marshal_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_surface_marshal_test.av",
             "@derive(Marshal)\n" +
             "type Wire = { a: int, tag: string }\n" +
             "\n" +
@@ -153,7 +153,7 @@ spec "@derive(Marshal) round-trips with zero imports" {
 
 spec "@marshal stays a working alias through the unified pass" {
     then "the legacy spelling derives exactly once (no duplicate impls)" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_surface_marshal_alias_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_surface_marshal_alias_test.av",
             "use @std.process.{Marshal}\n" +
             "\n" +
             "@marshal\n" +

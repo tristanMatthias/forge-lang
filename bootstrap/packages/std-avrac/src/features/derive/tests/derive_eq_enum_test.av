@@ -7,11 +7,11 @@
 // Runs uncached/no-metadata like every @comptime-macro fixture (9p1d:
 // @comptime bodies aren't preserved across the metadata roundtrip yet).
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_eq: structural equality on a recursive enum" {
     then "same / diff / cross-variant / empty / list cases all answer correctly" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_enum_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_eq_enum_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "use @std.avrac.list_ops.{list_eq_by}\n" +
             "\n" +
@@ -54,7 +54,7 @@ spec "derive_eq: structural equality on a recursive enum" {
 
 spec "derive_eq: deep recursion compares whole subtrees" {
     then "a three-level mismatch is found through nested .eq calls" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_deep_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_eq_deep_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "\n" +
             "@expand(derive_eq)\n" +
@@ -76,7 +76,7 @@ spec "derive_eq: deep recursion compares whole subtrees" {
 
 spec "derive_eq: base-case variant terminates a self-typed recursion" {
     then "a linked pair compares by structure, not identity" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_enum_chain_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_eq_enum_chain_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "\n" +
             "@expand(derive_eq)\n" +

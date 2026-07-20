@@ -5,7 +5,7 @@
 // trapped at runtime. Sibling of the F1204 ordering reject; equality and `??`
 // stay permissive because they ARE defined on optionals.
 
-use @std.avrac.test_runner.{write_fixture, cached_fixture_check_no_metadata}
+use @std.avrac.test_runner.{write_fixture, cached_fixture_check}
 
 spec "arithmetic on an optional is rejected (F1205)" {
     then "`a + b` on two int? operands is F1205" {
@@ -13,7 +13,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
         write_fixture(f,
             "fn g(a: int?, b: int?) -> int { a + b }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1205")
     }
     then "`a + 5` on an optional vs a bare literal is F1205 (was: works until none)" {
@@ -21,7 +21,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
         write_fixture(f,
             "fn g(a: int?) -> int { a + 5 }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1205")
     }
     then "`*`, `/`, `%` and a float? are covered too" {
@@ -32,7 +32,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
             "fn c(x: int?, y: int?) -> int { x % y }\n" +
             "fn d(x: float?, y: float?) -> float { x + y }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1205")
     }
     then "bitwise and shift on an optional are covered" {
@@ -41,7 +41,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
             "fn a(x: int?) -> int { x & 1 }\n" +
             "fn b(x: int?) -> int { x << 2 }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         out.contains("F1205")
     }
     then "the remedy compiles: unwrap, then compute" {
@@ -50,7 +50,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
             "fn g(a: int?, b: int?) -> int { a! + b! }\n" +
             "fn h(a: int?) -> int { (a ?? 0) + 5 }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1205")
     }
     then "arithmetic on NON-optionals is unaffected" {
@@ -58,7 +58,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
         write_fixture(f,
             "fn g(a: int, b: int) -> int { a + b * 2 }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1205")
     }
     then "and the present-bind body computes fine (v is non-optional inner)" {
@@ -66,7 +66,7 @@ spec "arithmetic on an optional is rejected (F1205)" {
         write_fixture(f,
             "fn g(a: int?) -> int { if let v = a { v + 5 } else { 0 } }\n" +
             "fn main() -> int { 0 }\n")
-        let out = cached_fixture_check_no_metadata(f)
+        let out = cached_fixture_check(f)
         !out.contains("F1205")
     }
 }

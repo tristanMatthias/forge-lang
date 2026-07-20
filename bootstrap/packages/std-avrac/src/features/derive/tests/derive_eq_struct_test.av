@@ -3,11 +3,11 @@
 // no match) drives the same arm hook that serves enums. Mixed leaf kinds
 // (int + string) exercise the `==` leaf comparison across reprs.
 
-use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture_and_run}
 
 spec "derive_eq: structural equality on a struct" {
     then "field-wise comparison over int + string leaves" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_struct_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_eq_struct_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "\n" +
             "@expand(derive_eq)\n" +
@@ -28,7 +28,7 @@ spec "derive_eq: structural equality on a struct" {
 
 spec "derive_eq: nullable self field none-guards through opt_eq_by" {
     then "absent/absent, absent/present, and present/present cases all answer correctly" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_derive_eq_optional_test.av",
+        let out = write_fixture_and_run("/tmp/avra_derive_eq_optional_test.av",
             "use @std.avrac.features.derive.{derive_eq}\n" +
             "use @std.avrac.list_ops.{opt_eq_by}\n" +
             "\n" +

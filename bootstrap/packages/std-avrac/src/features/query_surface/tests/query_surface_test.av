@@ -8,12 +8,12 @@
 // program-wide duplicate-family check, and the single-enum invariant.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.test_runner.{write_fixture, write_fixture_and_run_no_metadata}
+use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
 // Compile-check a fixture, capturing diagnostics + a sentinel on success.
 fn query_check_out(path: string, source: string) -> string {
     write_fixture(path, source)
-    avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
 // The family enum every runtime fixture shares: `Src` (ordinal 0) is the input
@@ -58,7 +58,7 @@ fn query_fn_decl() -> string {
 
 spec "@query(Fam.Variant) generates a working memoized query" {
     then "family/fetch/compute drive the engine end-to-end and the second fetch is a memo hit" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_basic_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_basic_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
             "\n" +
             query_fam_enum() +
@@ -74,7 +74,7 @@ spec "@query implicit imports dedupe against the driver's own" {
         // the driver below imports NEITHER — the injection supplies
         // exactly the missing names without doubling the ones the
         // driver does import (qk, QueryKey, …).
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_inject_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_inject_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
             query_fam_enum() +
@@ -89,7 +89,7 @@ spec "a user symbol shadowing an engine name cannot capture generated code" {
         // Generated code references the engine FULLY QUALIFIED, so the
         // driver's own `computed` — a plausible name for query code —
         // neither collides nor gets captured.
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_shadow_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_shadow_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
             query_fam_enum() +
@@ -105,7 +105,7 @@ spec "a user symbol shadowing an engine name cannot capture generated code" {
 
 spec "the generated fetch helper is itself dependency-recording" {
     then "a second query reading through text_len_fetch memoizes and recomputes correctly" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_fetch_helper_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_fetch_helper_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
             "use @std.avrac.core.{content_id_for}\n" +
             "\n" +
@@ -147,7 +147,7 @@ spec "the generated fetch helper is itself dependency-recording" {
 
 spec "@query coexists with @derive in one program" {
     then "one pipeline pass expands both spellings" {
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_with_derive_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_with_derive_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
             "\n" +
             "@derive(Eq)\n" +
@@ -175,7 +175,7 @@ spec "the generated dispatcher errors loudly on an unregistered family (ps3t.8.1
         // Families are compiler-generated; a fetch reaching compute for an
         // unregistered family is a bug, so avra_query_dispatch panics rather
         // than silently defaulting. 4242 is claimed by no @query variant.
-        let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_unknown_family_test.av",
+        let out = write_fixture_and_run("/tmp/avra_query_surface_unknown_family_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
             query_fam_enum() +
