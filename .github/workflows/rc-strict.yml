@@ -53,19 +53,24 @@ jobs:
 
       - name: Spec suite under AVRA_RC_STRICT=1
         env:
-          # Two independent OOM sources on the 16GB hosted runner, one cap
-          # each (local boxes keep the faster defaults):
-          # - AVRA_JOBS=2 bounds the shard-COMPILE fan-out (default 8): a
-          #   COLD suite — any PR whose source change rotates the
-          #   compile-cache key — runs 8 concurrent bs2+llc shard compiles,
-          #   which OOMs the VM and kills the runner service mid-suite
-          #   (surfaces as "runner received a shutdown signal").
-          # - AVRA_TEST_JOBS=1 serializes RUN-time unit workers: heavy
-          #   fixtures each spawn their own ~3.5GB `bs2 --emit_metadata
-          #   @std::avrac` rebuild, and two overlapping exceed the runner's
-          #   memory — the kernel silently SIGKILLs the biggest child and
-          #   the suite reports "1 shard failed to compile/run" with zero
-          #   test failures.
-          AVRA_JOBS: "2"
+          # - AVRA_JOBS=4 bounds the shard-COMPILE fan-out (= the runner's
+          #   vCPU count). The memory-aware governor (compute_shard_jobs,
+          #   main.av) clamps this by live MemAvailable — jobs =
+          #   min(AVRA_JOBS, (avail-6GB)/per_shard) — so it can only ever
+          #   LOWER 4, never OOM. Held at 2 historically because heavy
+          #   whole-program fixtures (~5GB/shard) pushed per_shard up and a
+          #   cold 8-wide fan-out could tip the VM over; y9y4.19 moved the
+          #   last of those onto the ~1.8GB metadata fast-path, so the
+          #   governor now sizes 4 shards safely (measured: `tests` dir cold
+          #   208s@2 -> 112s@4, ~1.86x, min-avail 2.7GB — no OOM). 4 matches
+          #   the CPU bound; going higher just oversubscribes 4 cores.
+          # - AVRA_TEST_JOBS=1 serializes RUN-time unit workers. This is the
+          #   FLAKE-PARITY knob (in-shard test interleaving), NOT a memory or
+          #   speed lever — it is pinned to match seed-train.yml so PR CI
+          #   exercises the same interleaving the post-merge train does.
+          #   Raising it surfaces the still-open parallel-interleaving flakes
+          #   (uzs9.2 / uzs9.4) and must move in BOTH gates together; it is a
+          #   correctness investigation, not a speed knob (see hama).
+          AVRA_JOBS: "4"
           AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite

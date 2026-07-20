@@ -88,11 +88,14 @@ jobs:
           # silently SIGKILLs the biggest child. Keep in lockstep with
           # seed-train-verify.yml.
           AVRA_TEST_JOBS: "1"
-          # Cap the shard-compile fan-out (default 8): a COLD suite — the
-          # train's cache rotates on every merged source change — runs 8
-          # concurrent bs2+llc shard compiles, which OOMs the 16GB hosted
-          # runner VM ("runner received a shutdown signal" mid-suite).
-          AVRA_JOBS: "2"
+          # Shard-compile fan-out = the runner's 4 vCPUs. The memory-aware
+          # governor (compute_shard_jobs, main.av) clamps this by live
+          # MemAvailable, so it can only ever LOWER 4, never OOM. Held at 2
+          # historically because heavy whole-program fixtures (~5GB/shard) kept
+          # per_shard high; y9y4.19 moved the last onto the ~1.8GB fast-path so
+          # the governor now sizes 4 shards (measured: `tests` cold 208s@2 ->
+          # 112s@4). Kept in lockstep with seed-train-verify.yml.
+          AVRA_JOBS: "4"
           # Skip the redundant suite ONLY when the merged PR's seed-train-verify
           # published a PASS status for this exact seed×source fingerprint. Any
           # miss → empty → the suite runs (today's behaviour). Build + fixed point
