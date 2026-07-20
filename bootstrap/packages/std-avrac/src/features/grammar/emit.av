@@ -513,7 +513,7 @@ fn is_stmt_hand_name(n: string) -> bool {
     n == "component_decl" || n == "let_stmt" || n == "return_stmt"
 }
 fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
-fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" }
+fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" }
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -544,6 +544,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "template_expr" { return "st.cur().kind == \"TEMPLATE\"" }
     if hf == "brace_expr" { return "st.cur().text == \"{\"" }
     if hf == "ident_expr" { return "st.cur().kind == \"IDENT\" || st.cur().text == \"@\"" }
+    if hf == "more_primary" { return "st.cur().text == \".\" || st.cur().text == \"[\"" }
     "false"
 }
 

@@ -84,4 +84,14 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a && b == c + d * e")
         }
     }
+    given "enum constructors and list literals (@hand(more_primary))" {
+        then "nullary/payload enum ctors, nested, and list literals agree" {
+            dsl(".Some(1)") != "<err>" &&
+            agree(".None") && agree(".Some(1)") && agree(".Pair(1, 2)") &&
+            agree(".Wrap(.Inner(x))") &&
+            agree("[]") && agree("[1]") && agree("[1, 2, 3]") &&
+            agree("[a + 1, b]") && agree("[[1], [2]]") &&
+            agree(".Some(1 + 2)") && agree("[f(1), g(2)]")
+        }
+    }
 }
