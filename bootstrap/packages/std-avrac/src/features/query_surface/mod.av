@@ -191,12 +191,6 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
         return qs_fail("@query value type mismatch — the context is `QueryCtx<${vr!}>` but the return is `Result<${vt_debug(ret_args![0])}, …>`; both must name the same value type")
     }
 
-    // The family's dense int is the variant's declaration-order `.ordinal`
-    // (ps3t.8.13) — rendered into the generated code and constant-folded by
-    // codegen, so the surface never resolves it and needs no view of the
-    // enum decl. Referencing the driver's own `Fam` unqualified is correct:
-    // the generated decls splice into the driver's module, where `Fam` is in
-    // scope exactly as the annotation saw it.
     // The generated siblings are named after the BARE query fn name and call
     // the original fn UNqualified — both resolve in the query's own module. The
     // module/metadata pipeline hands us a qualified name (`producer::text_len`);
