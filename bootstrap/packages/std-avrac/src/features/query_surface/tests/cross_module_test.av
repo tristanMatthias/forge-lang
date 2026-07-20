@@ -1,0 +1,15 @@
+// WHY: cross-module @query (ps3t.8.14). The @query fn lives in `mod producer`;
+// the program-level `avra_query_dispatch` (spliced in the entry) routes to its
+// generated `text_len_compute` across the module boundary via an auto-generated
+// `use producer.{text_len_family, text_len_compute}` over the `export`ed
+// siblings — the import-based cross-module path (t-tiz0/#869), since `mod::fn()`
+// qualified calls don't parse. Proves memoize + the second-fetch memo hit work
+// through the boundary.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "@query dispatches to a sibling module's compute (ps3t.8.14)" {
+    then "a @query fn in `mod producer` memoizes across the module boundary" {
+        let out = avra_shell_exec("bash scripts/diagnose.sh --run packages/std-avrac/src/features/query_surface/tests/cross_module/entry.av 2>&1 || true")
+        out.contains("len=5") && out.contains("again=5 computes=1") && !out.contains("cycle")
+    }
+}

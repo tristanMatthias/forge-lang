@@ -51,7 +51,7 @@ use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_repo
 use list_ops.{list_concat, list_contains_str}
 use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
 use features.marshal.{derive_marshal_stmts_for}
-use features.query_surface.{query_surface_stmts_for, build_query_dispatcher}
+use features.query_surface.{query_surface_stmts_for, build_query_dispatcher, QuerySite}
 
 // ── ResolverCtx state stack (step 5) ──
 //
@@ -276,6 +276,13 @@ export type ExpandResult = {
     stmts: List<StmtId>,
     bag: DiagnosticBag,
     origins: List<MacroFnOrigin>,
+    // 1 iff the spliced @query dispatcher imported a SIBLING module's siblings
+    // (a cross-module `use producer.{…}`). That macro-generated `use` has no
+    // pre-expand phantom to trip the t-tiz0 re-resolution, so this narrowly
+    // arms it — WITHOUT the too-broad `added_globals` gate that would re-walk
+    // the whole compiler's resolution. 0 for every single-module program → the
+    // self-compile stays on the cheap path, byte-identical.
+    has_cross_module_use: int,
 }
 
 /// Phase 2 (post-resolve): walk the stmt list, invoke every macro
@@ -307,13 +314,26 @@ export fn expand_macros_eval_with_state(plan: ExpandPlan, state: ResolverState) 
 /// dispatch)` resolves. No-op without sites — splice-free programs stay
 /// byte-identical. Spliced at the fixpoint exit (both pipelines route through
 /// expand_macros_fixpoint), so the dispatcher lands once, in one place.
-fn with_query_dispatch(store: NodeStore, current: List<StmtId>, sites: List<string>) -> List<StmtId> {
+/// 1 iff any @query site lives in a sibling module — i.e. the dispatcher will
+/// emit a cross-module `use`, which needs the post-expand alias re-resolution.
+fn sites_cross_module(sites: List<QuerySite>) -> int {
+    for s in sites {
+        if s.module != "" { return 1 }
+    }
+    0
+}
+
+fn with_query_dispatch(store: NodeStore, current: List<StmtId>, sites: List<QuerySite>) -> List<StmtId> {
     if sites.length == 0 { return current }
     let disp = build_query_dispatcher(store, sites)
     if disp == null { return current }
-    store.mark_from_macro(disp!)
     mut out = current
-    out.push(disp!)
+    // The dispatcher may come with `use` imports (cross-module sites) ahead of
+    // the fn; mark and splice each generated stmt.
+    for id in disp! {
+        store.mark_from_macro(id)
+        out.push(id)
+    }
     out
 }
 
@@ -325,7 +345,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     // ps3t.8.12: @query site names aggregated across fixpoint iterations
     // (@query expands in iter 0; the annotation is stripped, so later
     // iterations see none — persist here rather than reading the last walk).
-    mut all_query_sites: List<string> = []
+    mut all_query_sites: List<QuerySite> = []
     // The cycle-detecting memo (design §3.2): every (decl,
     // mechanism) pair that expands is keyed here; a RE-encounter across
     // iterations means a macro (transitively) emitted its own annotated
@@ -338,7 +358,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
     while iters < 16 {
         let comp_macros = if iters == 0 { initial_comp_macros } else { collect_component_macros(state.nodes, current) }
         if !any_annotation_named(state.nodes, current, expansion_annotation_names()) && comp_macros.length == 0 {
-            return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins }
+            return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins, has_cross_module_use: sites_cross_module(all_query_sites) }
         }
         if iters > 0 {
             current_state = register_macro_decls(current_state, current)
@@ -355,7 +375,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
         // A detected cycle is terminal: the offending annotation was
         // stripped and the error reported — stop iterating rather than
         // re-walking a poisoned program.
-        if walked.found_cycle { return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins } }
+        if walked.found_cycle { return ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins, has_cross_module_use: sites_cross_module(all_query_sites) } }
         iters = iters + 1
     }
     bag = bag_report(bag, diag_error(
@@ -363,7 +383,7 @@ fn expand_macros_fixpoint(stmts: List<StmtId>, initial_comp_macros: List<CompMac
         "@expand recursion limit (16) exceeded — a macro is likely emitting code that contains another @expand to itself",
         span_at(0, 0, 0, 0, "")
     ))
-    ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins }
+    ExpandResult { stmts: with_query_dispatch(state.nodes, current, all_query_sites), bag, origins, has_cross_module_use: sites_cross_module(all_query_sites) }
 }
 
 
@@ -511,7 +531,7 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
     mut origins: List<MacroFnOrigin> = []
     mut seen = in_seen
     mut found_cycle = false
-    mut query_sites: List<string> = []
+    mut query_sites: List<QuerySite> = []
     for id in ids {
         let node = store.stmts.get(id)
         let inner = stmt_unwrap(store, node)
@@ -591,6 +611,14 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                     let gen = query_surface_stmts_for(store, node, stmt_unwrap(store, node))
                     let fam_key = "query-family:${gen.family}"
                     let enum_key = "query-family-enum:${gen.family_enum}"
+                    // The BARE fn name keys the program-global dispatcher symbols
+                    // `<name>_family`/`<name>_compute` — cross-module (ps3t.8.14)
+                    // the dispatcher imports those by bare name, so two same-named
+                    // @query fns in DIFFERENT modules would silently collide (one
+                    // dispatcher arm resolving to the wrong module's compute). Made
+                    // a loud program-wide invariant here, exactly like the family +
+                    // single-enum checks: @query fn names must be unique program-wide.
+                    let fn_key = "query-fn:${gen.fn_name}"
                     // Membership-only bookkeeping (no string-slicing): a fixed
                     // sentinel records "some @query seen", and one enum_key per
                     // program records WHICH enum — a later site whose enum_key
@@ -601,6 +629,13 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         bag = bag_report(bag, diag_error(
                             DiagCode.QueryBadShape,
                             "duplicate @query family `${gen.family}` — another @query fn in this program already claims it; each query needs its own variant of the family enum",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        out.push(store.restmt(strip_query_annotation(store, node), id))
+                    } else if gen.stmts != null && list_contains_str(seen, fn_key) {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.QueryBadShape,
+                            "duplicate @query fn name `${gen.fn_name}` — another @query fn in this program shares this name; @query fn names must be unique program-wide because they generate the program-global dispatcher's `${gen.fn_name}_family`/`${gen.fn_name}_compute` symbols (imported by bare name across modules)",
                             span_at(0, 0, p.line, p.col, p.file)
                         ))
                         out.push(store.restmt(strip_query_annotation(store, node), id))
@@ -623,15 +658,18 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         out.push(store.restmt(strip_query_annotation(store, node), id))
                     } else {
                         seen = seen.push(fam_key)
+                        seen = seen.push(fn_key)
                         // Record the family enum ONCE (first site) so a later
                         // site naming a DIFFERENT enum trips the check above.
                         if !any_query {
                             seen = seen.push("query-family-seen")
                             seen = seen.push(enum_key)
                         }
-                        // ps3t.8.12: record the site so the post-walk splice can
-                        // generate `avra_query_dispatch`'s arm for it.
-                        query_sites = query_sites.push(decl_name_of(store, inner))
+                        // ps3t.8.12: record the site (name + declaring module,
+                        // ps3t.8.14) so the post-walk splice can generate
+                        // `avra_query_dispatch`'s arm — and, for a site in a
+                        // sibling module, the `use` that imports its siblings.
+                        query_sites = query_sites.push(QuerySite { module: current_module, name: gen.fn_name })
                         mut repl: List<StmtId> = [store.stmts.add_leaf(strip_query_annotation(store, node))]
                         for g in gen.stmts! { repl.push(g) }
                         splice_expansion(store, out, id, repl)
@@ -719,7 +757,7 @@ type WalkerOut = {
     // ps3t.8.12: every @query fn name this walk saw, source order, aggregated
     // up through Module recursion — the program-wide site list the generated
     // `avra_query_dispatch` routes over.
-    query_sites: List<string>,
+    query_sites: List<QuerySite>,
 }
 
 /// Internal carrier for a single macro-expansion attempt. `replacement`
@@ -1409,7 +1447,13 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     // macro-dense) compiler resolution on every self-compile, which must never
     // change its result. reresolve now fires ONLY for the actual cross-module
     // import-of-a-macro-decl case the fixtures exercise.
-    let post_state = if added_globals && pre.had_error == 1 {
+    // Also re-resolve when the @query dispatcher spliced a cross-module `use`
+    // (ps3t.8.14): that macro-generated import has no pre-expand phantom, so
+    // `pre.had_error` stays 0, yet its alias must bind against the sibling
+    // module's now-registered exported `_family`/`_compute`. The flag is set
+    // ONLY for a genuine cross-module @query program, so the compiler's own
+    // self-compile (flag 0, pre clean) keeps the cheap path — byte-identical.
+    let post_state = if added_globals && (pre.had_error == 1 || expanded.has_cross_module_use == 1) {
         reresolve_use_aliases(registered, expanded.stmts)
     } else {
         registered
