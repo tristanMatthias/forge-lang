@@ -900,7 +900,23 @@ export fn run_hand_type(name: string, st: PState) -> TypeExpr {
     mut bp = parser_new_with_file(st.src, "")
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let result = bp.parse_type_atom("expected type")
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    // Resync the DSL cursor to where the hand delegate stopped. If the delegate
+    // closed a NESTED qualified generic by SPLITTING a `>>` (its own
+    // maybe_split_shr, stopping ON the second `>`), the DSL's own `>>` token
+    // straddles bp.current_start: the delegate consumed the first `>`, and the
+    // second must stay for the ENCLOSING generic's close — e.g. the outer
+    // `List<…>` of `List<@pkg::mod::T<V>>`. Split it in place instead of
+    // advancing past the whole shift token (which would swallow the `>` the DSL
+    // needs to close the outer generic, mis-parsing the type). This is the
+    // executor-side mirror of the hand parser's maybe_split_shr and of
+    // parse_type_expr's own resync split (ps3t.6.7).
+    while !st.at_end() && st.cur().pos < bp.current_start {
+        if st.cur().text == ">>" && st.cur().pos + 1 == bp.current_start {
+            let _ = st.split_gt()
+        } else {
+            let _ = st.advance()
+        }
+    }
     match result {
         .Ok(te) -> te
         .Err(m) -> {

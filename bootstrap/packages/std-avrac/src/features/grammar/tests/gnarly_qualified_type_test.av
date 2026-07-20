@@ -86,6 +86,25 @@ spec "grammar-DSL gnarly-5%: @pkg::T qualified types via @hand == hand parser (p
             agree("Map<string, List<@std::core::ExprId>>")
         }
     }
+    given "a QUALIFIED GENERIC whose own `>` fuses with the outer `>` (ps3t.6.7 db_new)" {
+        // The gnarliest close: the @hand qualified atom ITSELF carries generic
+        // args, so ITS `>` and the enclosing generic's `>` lex as ONE `>>`. The
+        // hand delegate (run_hand_type -> parse_generic_type_args) splits the
+        // `>>` and stops ON the second `>`; the executor's resync must SPLIT the
+        // DSL's own `>>` token in place (not advance past it) so the outer
+        // generic keeps its close. Without the split the outer `List` loses its
+        // `>`, back-tracks to a bare `Named("List")`, and the type is corrupted
+        // — the exact shape of @std::query::db_new's body annotation
+        // `List<@std::avrac::query::FamilyMemo<V>>` that returned a null Db under
+        // the metadata round-trip (ps3t.6.7).
+        then "List<@pkg::Box<V>> and deeper fusions agree with the hand parser" {
+            agree("List<@pkg::Box<V>>") &&
+            agree("List<@std::core::Result<T, E>>") &&
+            agree("Map<int, @pkg::Box<V>>") &&
+            agree("List<List<@pkg::Box<V>>>") &&
+            agree("List<@a::b::Cell<@a::b::Inner<V>>>")
+        }
+    }
     given "qualified types in union / list positions" {
         then "@hand composes with the other type forms" {
             agree("@pkg::A | @pkg::B") &&
