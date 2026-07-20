@@ -978,9 +978,10 @@ impl Parser {
             let row_line = self.current_line
             mut cell_ids: List<ExprId> = []
             while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == row_line {
-                // parse_bitwise_xor stops before `|`, so the column
-                // separator is never swallowed as a bitwise-or operand.
-                let val_id = self.parse_bitwise_xor()?
+                // parse_binary_pratt(12) starts at the bitwise-XOR level, so it
+                // stops before `|` (lbp 10) — the column separator is never
+                // swallowed as a bitwise-or operand.
+                let val_id = self.parse_binary_pratt(12)?
                 cell_ids.push(val_id)
                 if self.check(Tk.Pipe) {
                     self.advance()
@@ -1285,7 +1286,7 @@ impl Parser {
 
     fn parse_equality(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
-        let left = self.parse_bitwise_or()?
+        let left = self.parse_binary_pratt(10)?
 
         if self.check(Tk.KwIs) {
             self.advance()
@@ -1315,11 +1316,11 @@ impl Parser {
             // `left` is SHARED by both comparisons — in the boxed tree the same
             // node value appears twice, and in the arena the same row id backs
             // both edges (a deliberate DAG; the canonical ingest would copy).
-            let start = self.parse_bitwise_or()?
+            let start = self.parse_binary_pratt(10)?
             if !self.consume(Tk.DotDot, "expected `..` in range expression after `in`") {
                 return .Err("parse error")
             }
-            let end = self.parse_bitwise_or()?
+            let end = self.parse_binary_pratt(10)?
             let ge = self.alloc_at(Expr.Binary(left, BinOp.Ge, start), sp_start)
             let le = self.alloc_at(Expr.Binary(left, BinOp.Le, end), sp_start)
             return .Ok(self.alloc_at(Expr.Logical(ge, LogicOp.And, le), sp_start))
@@ -1329,116 +1330,102 @@ impl Parser {
         while self.current_kind in [Tk.EqualEqual, Tk.BangEqual] {
             let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
             self.advance()
-            let right = self.parse_bitwise_or()?
+            let right = self.parse_binary_pratt(10)?
             eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
         }
 
         .Ok(eid)
     }
 
-    fn parse_bitwise_or(self) -> Result<ExprId, string> {
+    // The seven uniform binary levels (bitwise-or → factor) that used to live
+    // here as separate recursive-descent methods (parse_bitwise_or …
+    // parse_factor) are now the single `parse_binary_pratt` loop below — same
+    // trees, ~7x fewer frames per leaf. See its comment for the equivalence.
+
+    // ── The uniform binary-operator ladder as ONE Pratt loop (ps3t.6.7 / Step G) ──
+    //
+    // The seven hand-written RD levels bitwise-or → factor (| ^ & < <= > >=
+    // << >> + - * / %) are ALL uniform: left-associative, building
+    // `Expr.Binary(l, op, r)` with the span of the leftmost operand. That is
+    // exactly a Pratt (precedence-climbing) parser — a single loop over a
+    // binding-power TABLE — which replaces the seven-frame descent with one
+    // frame per leaf. `min_bp` selects the entry precedence, so this reproduces
+    // BOTH RD entry points byte-identically: parse_bitwise_or ⇒ min_bp 10 (folds
+    // every operator here), parse_bitwise_xor ⇒ min_bp 12 (the table-cell caller,
+    // which must stop before the `|` column separator — 12 > lbp(`|`)=10).
+    //
+    // Byte-identity with the RD ladder, point by point: (1) the fold span is the
+    // leftmost operand — `sp_start` captured once, matching each RD level's
+    // constant per-call sp_start; (2) left-associativity via rbp = lbp + 1, so a
+    // same-level operator on the right is left for the enclosing fold; (3) the
+    // leaf is the same `parse_unary`; (4) the `+`/`-` cell_mode line guard
+    // (parse_term) is reproduced. The `is`/`in`/`==` equality forms, the logical
+    // (`&&`/`||`) and `??` levels, assignment and pipe stay in their hand rules
+    // above this — only the uniform middle collapses.
+    fn parse_binary_pratt(self, min_bp: int) -> Result<ExprId, string> {
         let sp_start = self.current_start
-        let left = self.parse_bitwise_xor()?
-        mut eid = left
-        while self.check(Tk.Pipe) {
+        mut lhs = self.parse_unary()?
+        while true {
+            let lbp = self.binary_lbp(self.current_kind)
+            if lbp == 0 || lbp < min_bp { break }
+            // Table-cell mode: a `+`/`-` opening the NEXT source line is the next
+            // row's value, not a continuation of this cell (parse_term's guard).
+            if (self.current_kind == Tk.Plus || self.current_kind == Tk.Minus)
+                && self.cell_mode && self.current_line != self.prev_line { break }
+            let op = self.binary_op(self.current_kind)
             self.advance()
-            let right = self.parse_bitwise_xor()?
-            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitOr, right), sp_start)
+            let rhs = self.parse_binary_pratt(lbp + 1)?
+            lhs = self.alloc_at(Expr.Binary(lhs, op, rhs), sp_start)
         }
-        .Ok(eid)
+        .Ok(lhs)
     }
 
-    fn parse_bitwise_xor(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_bitwise_and()?
-        mut eid = left
-        while self.check(Tk.Caret) {
-            self.advance()
-            let right = self.parse_bitwise_and()?
-            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitXor, right), sp_start)
+    // The left binding power of a uniform-ladder binary operator (0 = not one,
+    // ends the Pratt loop). Precedence rises with the number, matching the RD
+    // nesting depth: bitor(10) < bitxor(12) < bitand(14) < comparison(16) <
+    // shift(18) < term(20) < factor(22). Even steps leave the odd rbp = lbp+1
+    // for left-associativity.
+    fn binary_lbp(self, k: Tk) -> int {
+        match k {
+            .Pipe         -> 10
+            .Caret        -> 12
+            .Amp          -> 14
+            .Less         -> 16
+            .LessEqual    -> 16
+            .Greater      -> 16
+            .GreaterEqual -> 16
+            .Shl          -> 18
+            .Shr          -> 18
+            .Plus         -> 20
+            .Minus        -> 20
+            .Star         -> 22
+            .Slash        -> 22
+            .Percent      -> 22
+            _             -> 0
         }
-        .Ok(eid)
     }
 
-    fn parse_bitwise_and(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_comparison()?
-        mut eid = left
-        while self.check(Tk.Amp) {
-            self.advance()
-            let right = self.parse_comparison()?
-            eid = self.alloc_at(Expr.Binary(eid, BinOp.BitAnd, right), sp_start)
+    // The BinOp a uniform-ladder operator token builds — the exact mapping the
+    // RD levels used (parse_bitwise_* / parse_comparison / parse_shift /
+    // parse_term / parse_factor). Only ever called on a token whose binary_lbp
+    // is non-zero; the `_` tail is Mod (`%`), the last factor operator.
+    fn binary_op(self, k: Tk) -> BinOp {
+        match k {
+            .Pipe         -> BinOp.BitOr
+            .Caret        -> BinOp.BitXor
+            .Amp          -> BinOp.BitAnd
+            .Less         -> BinOp.Lt
+            .LessEqual    -> BinOp.Le
+            .Greater      -> BinOp.Gt
+            .GreaterEqual -> BinOp.Ge
+            .Shl          -> BinOp.Shl
+            .Shr          -> BinOp.Shr
+            .Plus         -> BinOp.Add
+            .Minus        -> BinOp.Sub
+            .Star         -> BinOp.Mul
+            .Slash        -> BinOp.Div
+            _             -> BinOp.Mod
         }
-        .Ok(eid)
-    }
-
-    fn parse_comparison(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_shift()?
-
-        mut eid = left
-        while self.current_kind in [Tk.Greater, Tk.GreaterEqual, Tk.Less, Tk.LessEqual] {
-            let op = match {
-                self.check(Tk.Less)         -> BinOp.Lt
-                self.check(Tk.LessEqual)    -> BinOp.Le
-                self.check(Tk.Greater)      -> BinOp.Gt
-                _                           -> BinOp.Ge
-            }
-            self.advance()
-            let right = self.parse_shift()?
-            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
-        }
-
-        .Ok(eid)
-    }
-
-    fn parse_shift(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_term()?
-        mut eid = left
-        while self.current_kind in [Tk.Shl, Tk.Shr] {
-            let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
-            self.advance()
-            let right = self.parse_term()?
-            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
-        }
-        .Ok(eid)
-    }
-
-    fn parse_term(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_factor()?
-
-        mut eid = left
-        // In table-cell mode a `+`/`-` that starts the *next* line is the
-        // next row's value, not a continuation of this cell — stop here.
-        while self.current_kind in [Tk.Plus, Tk.Minus] && !(self.cell_mode && self.current_line != self.prev_line) {
-            let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
-            self.advance()
-            let right = self.parse_factor()?
-            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
-        }
-
-        .Ok(eid)
-    }
-
-    fn parse_factor(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let left = self.parse_unary()?
-
-        mut eid = left
-        while self.current_kind in [Tk.Star, Tk.Slash, Tk.Percent] {
-            let op = match {
-                self.check(Tk.Star)    -> BinOp.Mul
-                self.check(Tk.Percent) -> BinOp.Mod
-                _                      -> BinOp.Div
-            }
-            self.advance()
-            let right = self.parse_unary()?
-            eid = self.alloc_at(Expr.Binary(eid, op, right), sp_start)
-        }
-
-        .Ok(eid)
     }
 
     fn parse_unary(self) -> Result<ExprId, string> {

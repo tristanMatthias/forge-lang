@@ -1,0 +1,47 @@
+// WHY: ps3t.6.7 / Step G — the seven uniform binary levels (bitwise-or → factor:
+// | ^ & < <= > >= << >> + - * / %) are parsed by ONE Pratt loop
+// (parse_binary_pratt) with a binding-power table, replacing seven hand-written
+// recursive-descent methods. This test pins the ladder's PRECEDENCE and
+// ASSOCIATIVITY contract by VALUE: each expression is compiled through the real
+// parser and evaluated, so a wrong binding power or a right-associative fold
+// would change the result. (Byte-identity with the old RD ladder is separately
+// proven on the whole selfhost; this is the readable, format-independent guard.)
+
+spec "Pratt binary ladder: precedence by computed value" {
+    then "factor (* / %) binds tighter than term (+ -)" {
+        (2 + 3 * 4 == 14) && (2 * 3 + 4 == 10) && (20 - 2 * 3 == 14) &&
+        (2 + 12 / 4 == 5) && (10 % 3 + 1 == 2)
+    }
+    then "term (+ -) binds tighter than shift (<< >>)" {
+        (2 << 3 + 1 == 32) && (1 + 1 << 2 == 8) && (256 >> 1 + 1 == 64)
+    }
+    then "shift (<< >>) binds tighter than comparison (< <= > >=)" {
+        (1 << 2 > 3) && (16 >> 2 <= 4) && !(2 << 1 < 4)
+    }
+    then "bitwise nests | looser than ^ looser than & (all above comparison)" {
+        (1 | 2 & 3 == 3) && (5 ^ 3 & 1 == 4) && (1 | 6 ^ 3 == 5) &&
+        (7 & 3 | 8 == 11)
+    }
+}
+
+spec "Pratt binary ladder: left-associativity by computed value" {
+    then "additive/multiplicative fold LEFT" {
+        (10 - 2 - 3 == 5) && (10 - 3 + 2 == 9) && (16 / 2 / 2 == 4) &&
+        (100 - 10 - 20 - 5 == 65)
+    }
+    then "shift folds LEFT" {
+        (256 >> 2 >> 1 == 32) && (1 << 1 << 2 == 8)
+    }
+    then "bitwise-or folds LEFT" {
+        (1 | 2 | 4 == 7) && (15 & 9 & 3 == 1)
+    }
+}
+
+spec "Pratt binary ladder: composes with the levels kept above it" {
+    then "equality (==) is looser than the whole Pratt ladder" {
+        (1 + 2 == 3) && (2 * 3 == 6) && (1 << 3 == 8) && (7 & 3 == 3)
+    }
+    then "logical (&& ||) wraps equality + the ladder" {
+        (2 * 3 + 4 == 10 && 1 << 2 == 4) && (1 + 1 == 3 || 6 / 2 == 3)
+    }
+}
