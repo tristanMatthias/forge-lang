@@ -41,9 +41,15 @@ concurrency:
 jobs:
   seed-train-verify:
     runs-on: ubuntu-24.04
-    # Build-from-pin + fixed point + suite is ~the train's runtime; 30m of
-    # headroom matches the bootstrap-window gate.
-    timeout-minutes: 30
+    # Build-from-pin + fixed point + suite. The bounded-K CGU default
+    # (ps3t.8.6.2) links each test binary from N codegen-unit objects, which
+    # costs more COLD wall-time than the old whole-program single-object build
+    # (the per-unit declare pass; recovered warm by the object cache), so the
+    # cold suite runs ~35m here. rc-strict (the comprehensive full-suite gate)
+    # confirms it passes at that runtime; 45m gives headroom while staying well
+    # under the train's 90m. Reducing the cold cost (reuse the declare pass
+    # across units) is tracked as a follow-up.
+    timeout-minutes: 45
     # Expose the verified fingerprint to the isolated publish job below.
     outputs:
       fp: ${{ steps.fp.outputs.fp }}
