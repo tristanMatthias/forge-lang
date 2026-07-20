@@ -296,6 +296,14 @@ fn at_hand_primary(p: GP) -> bool {
 
 // labeled = ( NAME ":" )? postfix
 fn parse_labeled(p: GP) -> GItem {
+    // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
+    // matches only on the same source line as the previous token (the
+    // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
+    mut sameline = false
+    if p.peek().kind == "PUNCT" && p.peek().text == "^" {
+        let _ = p.advance()
+        sameline = true
+    }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
     // bare NAME primary isn't mistaken for a label.
@@ -307,7 +315,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim }
+    GItem { label, rep: base.rep, prim: base.prim, sameline }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

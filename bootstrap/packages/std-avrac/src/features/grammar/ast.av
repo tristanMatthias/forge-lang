@@ -49,6 +49,11 @@ export type GItem = {
     label: string,
     rep: GRep,
     prim: GPrim,
+    // ps3t.6.7 newline-sensitivity (the `^` marker): when true, this item matches
+    // only if its first token is on the SAME source line as the previously-
+    // consumed token — the postfix-chain / bare-return cutoff the hand parser
+    // does with `current_line == prev_line`. Default false (line-insensitive).
+    sameline: bool,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -99,7 +104,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim }
+    GItem { label: "", rep: GRep.One, prim, sameline: false }
 }
 
 /// True when a sequence has no explicit build — the executor then

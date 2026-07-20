@@ -632,6 +632,21 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
     }
 }
 
+/// ps3t.6.7 newline-sensitivity gate: true unless `item.sameline` (the `^`
+/// marker) requires the current token to be on the same source line as the
+/// previously-consumed token and it isn't. The line of a byte offset comes from
+/// the store's LineIndex (built from the same source `Token.pos` indexes into),
+/// so this is the executor mirror of the hand parser's `current_line ==
+/// prev_line` postfix gate — a cross-line postfix (`.method` / `(` / `[` on the
+/// next line) ends the chain instead of continuing it.
+fn sameline_ok(st: PState, item: GItem) -> bool {
+    if !item.sameline { return true }
+    if st.pos == 0 { return true }
+    let prev_line = st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line
+    let cur_line = st.store.lines.to_linecol(st.cur().pos).line
+    prev_line == cur_line
+}
+
 /// Execute one postfix item, honouring its repetition, and bind its
 /// capture (scalar in a normal position, list-append inside `*`/`+`).
 fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
@@ -643,7 +658,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
             v
         }
         .Opt -> {
-            if tok_starts_prim(g, item.prim, st.cur(), empty) {
+            if tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
                 let v = exec_primary(g, item.prim, st, env, multi, annots)
                 bind(env, item.label, v, multi)
                 return v
@@ -669,7 +684,9 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
 /// Bounded — a non-consuming iteration breaks the loop.
 fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
     let empty: List<string> = []
-    while tok_starts_prim(g, item.prim, st.cur(), empty) {
+    // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
+    // mirror of the hand parser's newline-terminated postfix loop.
+    while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
         bind(env, item.label, v, true)
