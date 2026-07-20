@@ -1167,18 +1167,31 @@ impl Ctx {
         avra_llvm_build_call_coerce(self.builder, ft, fn_val, arg_arr, arg_count, "")
     }
 
-    // Emit a null-deref trap (branchless — C function checks internally).
+    // Emit a null-deref check. The common (non-null) case must be as cheap as
+    // possible: a single icmp + a not-taken branch. Previously this emitted an
+    // UNCONDITIONAL 8-argument call to avra_null_deref_trap on EVERY deref, whose
+    // body just did `if (!is_null) return` — so every access paid a full call to
+    // check a flag. That call was ~10% of a compile (callgrind). Now the is_null
+    // branch is INLINE and the (aborting) trap call lives in an off-path block
+    // reached only when the value is actually null, so the hot path is branch-only.
     fn null_check(self, val: ptr, field_name: string, type_name: string) {
         let val_i64 = self.to_i64(val, "nc_val")
         let is_null_i1 = self.icmp(32, val_i64, avra_llvm_const_int(self.i64_type, 0, 0), "null_chk")
-        let is_null = self.zext(is_null_i1, self.i64_type, "null_ext")
+        let trap_bb = self.bb("nullchk_trap")
+        let cont_bb = self.bb("nullchk_cont")
+        self.cond_br(is_null_i1, trap_bb, cont_bb)
+        // Cold path: value is null → report + abort (avra_null_deref_trap aborts).
+        self.position(trap_bb)
         self.call("avra_null_deref_trap", [
             self.global_str(field_name, "fld_name"), self.i64(field_name.length),
             self.global_str(type_name, "sty_name"), self.i64(type_name.length),
-            is_null,
+            self.i64(1),
             self.global_str(self.source_file, "src_file"), self.i64(self.source_file.length),
             self.i64(self.source_line)
         ])
+        let _ = avra_llvm_build_unreachable(self.builder)
+        // Hot path: value is non-null → carry on.
+        self.position(cont_bb)
     }
 
     // ── Level 1: raw LLVM (eliminate ctx.builder repetition) ──
