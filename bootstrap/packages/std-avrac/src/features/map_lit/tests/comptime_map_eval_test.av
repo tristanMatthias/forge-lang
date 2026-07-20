@@ -137,7 +137,7 @@ spec "@comptime map literals + methods evaluate (rmzs GAP3)" {
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
             "fn main() {}\n")
-        let out = avra_shell_exec("./build/bs2 expand '${path}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 expand '${path}' 2>&1 || true")
         me_count(out, "MAP_CHAIN_OK") == me_count(out, "MAP_CHAIN_BAD") + 1
     }
     then "a non-string key reaching eval (m.set(2, 3)) is a clean F4005, not a crash" {
@@ -156,7 +156,7 @@ spec "@comptime map literals + methods evaluate (rmzs GAP3)" {
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
             "fn main() {}\n")
-        let out = avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 compile '${path}' 2>&1 || true")
         out.contains("F4005") && out.contains("map key must be a string (got kind=number)")
     }
 }

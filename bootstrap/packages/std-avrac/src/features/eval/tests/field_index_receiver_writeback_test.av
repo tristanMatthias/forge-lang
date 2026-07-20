@@ -12,12 +12,17 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 
-/// Compile `path` with the metadata fast-path env stripped and return the
-/// combined diagnostics — the comptime_map_eval_test pattern for asserting
-/// an F-code from a fixture that must fail compilation.
+/// Compile `path` on the @std metadata fast-path and return the combined
+/// diagnostics — the comptime_map_eval_test pattern for asserting an F-code
+/// from a fixture that must fail compilation. These F4005/F3001 errors are
+/// raised during @comptime evaluation of the fixture's own `build()`, so the
+/// fast-path (which rehydrates @std @comptime bodies per 9p1d) surfaces them
+/// byte-identically to the old whole-program strip — no `env -u` needed.
+/// Slot-capped (diagnose.sh --slot-exec) so the direct shell-out still holds
+/// an AVRA_FIXTURE_JOBS OOM-guard slot under the parallel shard fan-out.
 fn fw_compile_diags(path: string, source: string) -> string {
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+    avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 compile '${path}' 2>&1 || true")
 }
 
 spec "eval mutator write-back walks FieldAccess/Index receiver chains (xerh)" {

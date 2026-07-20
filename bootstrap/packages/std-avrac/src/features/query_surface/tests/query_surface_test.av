@@ -13,7 +13,7 @@ use @std.avrac.test_runner.{write_fixture, write_fixture_and_run}
 // Compile-check a fixture, capturing diagnostics + a sentinel on success.
 fn query_check_out(path: string, source: string) -> string {
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
+    avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
 // The family enum every runtime fixture shares: `Src` (ordinal 0) is the input

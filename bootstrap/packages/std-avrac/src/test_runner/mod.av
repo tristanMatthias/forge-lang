@@ -500,9 +500,16 @@ export fn cached_fixture_check_no_metadata(fixture_path: string) -> string {
 /// the no-metadata strip but reuses the prebuilt @std instead of recompiling
 /// all of it per fixture (~10x cheaper). Use `_no_metadata` ONLY for tests
 /// that genuinely exercise the whole-program build path itself (build/cache).
+///
+/// Still slot-capped (diagnose.sh --slot-exec): unlike the no-metadata
+/// sibling the check is now a LIGHT fast-path compile, but on a cold cache
+/// (every rc-strict run) it still MISSES and shells out a real bs2 per
+/// fixture across the parallel shard fan-out — so it holds one of the
+/// AVRA_FIXTURE_JOBS OOM-guard slots, exactly as `--run` does for
+/// write_fixture_and_run. On a cache HIT the command never runs.
 export fn cached_fixture_check(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path,
-        "./build/bs2 check '${fixture_path}' 2>&1 || true",
+        "bash scripts/diagnose.sh --slot-exec ./build/bs2 check '${fixture_path}' 2>&1 || true",
         "check")
 }
 
