@@ -97,7 +97,7 @@ use @std.avrac.build.{
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
-    package_full_fingerprint, source_slot_fp,
+    package_full_fingerprint, source_slot_fp, fingerprint_paths,
 }
 use @std.crypto.{sha256_hex, sha256_file}
 extern fn avra_bytes_to_hex(b: bytes) -> string
@@ -3147,7 +3147,7 @@ fn compute_test_universe_fp(listing_file: string, reporter_path: string, runtime
     paths.push(reporter_path)
     paths.push(runtime_o)
     paths.push(llvm_wrap_o)
-    sha256_hex(list_fold(paths, "", (acc: string, p: string) -> acc + sha256_file(p) + "\n"))
+    fingerprint_paths(paths)
 }
 
 /// Read a newline-separated path listing produced by `find ... | sort`.
@@ -3287,6 +3287,28 @@ fn available_memory_mb() -> int {
 /// fast-path; `lib_objs` only populates on success.
 type LibMode = { want_meta: bool, lib_objs: string }
 
+/// F4 (uzs9.5.4): one fingerprint over EVERY input that feeds the @std/*
+/// producer `.o`s — all `packages/std-*/src/**.av` (tests excluded; they
+/// aren't compiled into the producers), every package `avra.toml` (a dep
+/// edit changes the object), the compiler binary, and the two C runtime
+/// objects. Hashing this whole set ONCE (~0.4s) is the spawn-free
+/// replacement for launching `bs2 build --lib` per package (~2.7s) just to
+/// re-derive per-package freshness. Because it covers ALL packages (not the
+/// std-avrac-only universe_fp), a match proves NO producer .o can be stale —
+/// so the prebuild gate can skip every spawn soundly. `find | sort` gives a
+/// deterministic order so the digest is stable run-to-run and cross-process.
+fn std_prebuild_fingerprint(project_dir: string, compiler_path: string) -> string {
+    let src_listing = avra_shell_exec("find '${project_dir}/packages'/std-*/src -name '*.av' -type f -not -path '*/tests/*' 2>/dev/null | sort")
+    let manifest_listing = avra_shell_exec("find '${project_dir}/packages'/std-*/ -maxdepth 2 -name 'avra.toml' 2>/dev/null | sort")
+    mut paths: List<string> = []
+    for p in src_listing.split("\n") { if p != "" { paths.push(p) } }
+    for p in manifest_listing.split("\n") { if p != "" { paths.push(p) } }
+    paths.push(compiler_path)
+    paths.push("${project_dir}/build/runtime.o")
+    paths.push("${project_dir}/build/llvm_wrapper.o")
+    fingerprint_paths(paths)
+}
+
 /// P6 library-mode pre-build. Each @std/* package's .meta.bin + .o
 /// is freshened before shards dispatch so AVRA_USE_METADATA=1 can
 /// link against pre-built producer objects (paired flag — metadata-
@@ -3307,6 +3329,24 @@ fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMod
     let want_meta_req = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
     let skip = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
     if !want_meta_req || skip { return off }
+    // F4 (uzs9.5.4): skip the per-package `bs2 build --lib` spawns when @std
+    // is UNCHANGED since the last successful prebuild. std_prebuild_fingerprint
+    // folds every input to the producer .o's, so a match means none can be
+    // stale — collect_workspace_lib_objs then resolves the still-fresh .o's
+    // straight from the persisted `last/` sidecars with ZERO subprocesses
+    // (the warm suite spends ~2.7s/run on those 7 cache-checking spawns
+    // otherwise, paid PER `bs2 test` invocation → per sweep dir). A mismatch,
+    // an empty fp, OR a since-deleted producer .o (collect returns "") falls
+    // through to the full prebuild below — the gate only skips provably
+    // redundant work, it never risks linking a stale @std.
+    let prebuild_fp = std_prebuild_fingerprint(project_dir, compiler_path)
+    let marker_path = "${project_dir}/build/.std_prebuild_fp"
+    if prebuild_fp != "" && avra_selfhost_read_file(marker_path).trim() == prebuild_fp {
+        let cached_objs = collect_workspace_lib_objs(project_dir)
+        if cached_objs != "" {
+            return LibMode { want_meta: true, lib_objs: cached_objs }
+        }
+    }
     let rc = pre_build_workspace_std_packages(project_dir, compiler_path)
     if rc != 0 {
         eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(rc)}) — disabling metadata fast-path for this run")
@@ -3318,6 +3358,11 @@ fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMod
     // collect returns "" (and logs) when any package's realobj is missing —
     // its all-or-nothing rule. Without producer .o's, stubbing is unsound.
     if objs == "" { return off }
+    // Record freshness ONLY after a fully-successful prebuild + collect, so a
+    // future run with an unchanged @std takes the spawn-free fast path above.
+    // A torn/garbage marker (concurrent writer) simply mismatches next run →
+    // a redundant-but-safe full prebuild.
+    let _ = avra_selfhost_write_file(marker_path, prebuild_fp)
     LibMode { want_meta: true, lib_objs: objs }
 }
 
