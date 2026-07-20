@@ -23,6 +23,18 @@ SEED_REPO_SLUG="${AVRA_SEED_REPO:-tristanmatthias/forge-lang}"
 SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
 RUNTIME_O="$BUILD_DIR/runtime.o"
+# runtime.c optimization level. It is bs2's OWN runtime (allocator, RC, sha256
+# fingerprinting, arrays, string ops) AND is linked into every compiled program,
+# so its speed is on the compiler's hot path. It was historically built at -O0,
+# which leaves ~20%+ of compiler instructions on the floor: -O0 ignores every
+# `static inline` (sha256_rotr alone was a real call 44M times / 8.8% of a
+# compile) and optimizes nothing. llvm_wrapper.c already builds at -O2, so -O2 C
+# in this toolchain is established-safe. -fno-strict-aliasing is REQUIRED: the
+# region allocator and RC header type-pun the same memory (`*(size_t*)base`,
+# `*(void**)base`, `(RcHeader*)((char*)p-8)`), which -O2 strict-aliasing would be
+# free to reorder/elide. Override with AVRA_RUNTIME_OPT=-O0 for a clean-backtrace
+# debug build (the LLDB debugging protocol).
+RUNTIME_OPT="${AVRA_RUNTIME_OPT:--O2 -fno-strict-aliasing}"
 RUNTIME_ASAN_O="$BUILD_DIR/runtime_asan.o"
 BS2="$BUILD_DIR/bs2"
 BS2_O0="$BUILD_DIR/bs2_O0"
@@ -541,7 +553,7 @@ ensure_runtime() {
   if [ ! -f "$RUNTIME_O" ] || [ "$cur_hash" != "$old_hash" ]; then
     mkdir -p "$BUILD_DIR"
     log "compiling runtime → $RUNTIME_O"
-    cc -c -O0 -g -o "$RUNTIME_O" "$RUNTIME_C" || die "runtime build failed"
+    cc -c $RUNTIME_OPT -g -o "$RUNTIME_O" "$RUNTIME_C" || die "runtime build failed"
     echo "$cur_hash" > "$hash_file"
   fi
 }
@@ -3631,7 +3643,7 @@ $links"
 # whatever the dev tree currently holds.
 window_c_objects() {
   local win="$1"
-  cc -c -O0 -g -o "$win/runtime.o" "$win/tree/bootstrap/runtime.c" \
+  cc -c $RUNTIME_OPT -g -o "$win/runtime.o" "$win/tree/bootstrap/runtime.c" \
     || die "window runtime.c compile failed"
   cc -c -O2 -I"$LLVM_PREFIX/include" -o "$win/llvm_wrapper.o" "$win/tree/bootstrap/llvm_wrapper.c" \
     || die "window llvm_wrapper.c compile failed"
