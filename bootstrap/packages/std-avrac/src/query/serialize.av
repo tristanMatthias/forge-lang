@@ -1,0 +1,209 @@
+// WHY: ps3t.8.8 on-disk memo cache — the plain-data PROJECTION of the L6
+// query engine's `Db<V>` (query/mod.av). `Db` can't `@marshal` directly: its
+// `idx: ptr` intmaps and `compute: fn` are runtime-only. So project to `Ser*`
+// DTOs (all `@marshal`'d, so `@std::process` synthesises their to_bytes /
+// from_bytes codecs), persist those, and un-project on load — `idx` rebuilt
+// from the parallel `args` list via `mk_family_memo`, `compute` re-supplied by
+// the caller. V is fixed to `string` here (the v1 memo value type, ps3t.8.11);
+// a generic on-disk value type is a later increment.
+//
+// Increment 1 (below the header): the in-memory projection + round-trip.
+// Increment 2 (bottom of this file): the namespaced on-disk read/write with
+// validate-on-read. The differential-oracle wire-in (warm cache-hit build ==
+// cold build) is increment 3, not here.
+
+use query.{Db, FamilyMemo, MemoEntry, QueryKey, QueryCtx, Computed, QueryCycle, mk_family_memo, from_bytes_QueryKey}
+use diagnostics.{Diagnostic, from_bytes_Diagnostic}
+use core.{avra_mkdir_p, avra_selfhost_file_exists, avra_selfhost_read_file_bytes, avra_selfhost_write_file_bytes}
+
+/// One memo cell as plain data. `arg` is recovered from `FamilyMemo.args` (a
+/// `MemoEntry` doesn't store its own arg — the engine's `idx` intmap owns
+/// arg->slot, but has no deterministic key iteration). Otherwise field-for-
+/// field with `MemoEntry<string>`.
+@marshal
+export type SerCell = {
+    arg: int,
+    value: string,
+    answer_hash: int,
+    deps: List<QueryKey>,
+    diags: List<Diagnostic>,
+    changed_at: int,
+    verified_at: int,
+}
+
+/// One family's memo as plain data. `family` is the family TAG — the index of
+/// this family in `Db.families` (the engine's dense-family contract, §2.1),
+/// which `FamilyMemo` doesn't store on itself, so it is captured at projection.
+@marshal
+export type SerFamily = {
+    family: int,
+    computes: int,
+    cells: List<SerCell>,
+}
+
+/// The whole database as plain data, plus a validate-on-read header: a `magic`
+/// tag, the `compiler_version`, and the `hash_version`. A reader rejects any
+/// blob whose header doesn't match the running toolchain -> an honest cold
+/// MISS, never a stale serve (the acceptance's hard requirement). The
+/// content-addressed KEY (increment 2) makes an entry location-independent;
+/// this header makes it toolchain-safe.
+@marshal
+export type SerDb = {
+    magic: string,
+    compiler_version: string,
+    hash_version: int,
+    current_rev: int,
+    families: List<SerFamily>,
+}
+
+/// The fixed magic tag every serialized memo blob opens with — the first,
+/// cheapest validate-on-read check.
+export fn serdb_magic() -> string { "AVRAQMEMO1" }
+
+/// Project a live `Db<string>` to its serializable form. `families` is walked
+/// by index (the index IS the family tag), each cell paired with its arg from
+/// the parallel `args` list. `compiler_version` / `hash_version` stamp the
+/// header so a later load can validate-on-read.
+export fn db_to_serdb(db: Db<string>, compiler_version: string, hash_version: int) -> SerDb {
+    mut fams: List<SerFamily> = []
+    mut tag = 0
+    while tag < db.families.length {
+        let fm = db.families[tag]
+        mut cells: List<SerCell> = []
+        mut i = 0
+        while i < fm.cells.length {
+            let c = fm.cells[i]
+            cells.push(SerCell {
+                arg: fm.args[i],
+                value: c.value,
+                answer_hash: c.answer_hash,
+                deps: c.deps,
+                diags: c.diags,
+                changed_at: c.changed_at,
+                verified_at: c.verified_at,
+            })
+            i = i + 1
+        }
+        fams.push(SerFamily { family: tag, computes: fm.computes, cells })
+        tag = tag + 1
+    }
+    SerDb {
+        magic: serdb_magic(),
+        compiler_version,
+        hash_version,
+        current_rev: db.current_rev,
+        families: fams,
+    }
+}
+
+/// Rebuild a live `Db<string>` from a deserialized `SerDb`. `compute` is the
+/// driver's dispatcher (runtime-only, never serialized — re-supplied here).
+/// Families restore in tag order; each family's `idx` intmap is rebuilt from
+/// its cells' args via `mk_family_memo`, so the loaded Db answers fetches
+/// identically to the one that was projected.
+export fn serdb_to_db(sdb: SerDb, compute: fn(QueryCtx<string>, QueryKey) -> Result<Computed<string>, QueryCycle>) -> Db<string> {
+    mut families: List<FamilyMemo<string>> = []
+    for sf in sdb.families {
+        mut cells: List<MemoEntry<string>> = []
+        mut args: List<int> = []
+        for sc in sf.cells {
+            cells.push(MemoEntry {
+                value: sc.value,
+                answer_hash: sc.answer_hash,
+                deps: sc.deps,
+                diags: sc.diags,
+                changed_at: sc.changed_at,
+                verified_at: sc.verified_at,
+            })
+            args.push(sc.arg)
+        }
+        families.push(mk_family_memo(cells, args, sf.computes))
+    }
+    let active: List<QueryKey> = []
+    Db { current_rev: sdb.current_rev, families, compute, active }
+}
+
+// ── Increment 2: namespaced on-disk read/write (validate-on-read) ──
+//
+// A serialized memo blob is content-addressed by a caller-supplied `key` (a
+// content hash) and NAMESPACED by the running toolchain: the path segment
+// `<compiler_ver>_<hash_ver>` means a compiler or hash-scheme change lands in
+// a DIFFERENT directory, so a version bump can never even find — let alone
+// serve — a stale blob. Layout under `dir_root` (the project's `build/`
+// directory) is:
+//
+//     <dir_root>/cache/qmemo/<compiler_ver>_<hash_ver>/<key>.bin
+//
+// Writes go through `avra_selfhost_write_file_bytes`, which materialises via a
+// same-directory per-pid temp + rename(2) at the C level (runtime.c
+// `avra_write_file_atomic`) — the exact "materialise atomically" discipline
+// the build cache (build/cache.av) relies on, so a killed writer never leaves
+// a truncated final a later reader would serve. Reads validate-on-read
+// (pdme.2): a blob is served ONLY when it is whole AND its header magic +
+// compiler_version + hash_version match the running toolchain; any mismatch
+// is an honest cold MISS (null), never a stale serve.
+
+/// Trailing-slash normaliser, self-contained so this module doesn't depend on
+/// @std string utilities (matching build/cache.av's discipline).
+fn qmemo_slashed(s: string) -> string {
+    if s.length == 0 { return "/" }
+    let last = s.substring(s.length - 1, s.length)
+    if last == "/" { s } else { s + "/" }
+}
+
+/// The toolchain namespace segment: `<compiler_ver>_<hash_ver>`. A change to
+/// either lands blobs in a sibling directory the older reader never consults.
+fn qmemo_ns(compiler_version: string, hash_version: int) -> string {
+    compiler_version + "_" + string(hash_version)
+}
+
+/// The namespaced directory a memo blob for this toolchain lives in
+/// (`<dir_root>/cache/qmemo/<ns>/`, trailing slash). Exported so a caller /
+/// oracle can pre-create or inspect the namespace.
+export fn qmemo_dir(dir_root: string, compiler_version: string, hash_version: int) -> string {
+    qmemo_slashed(dir_root) + "cache/qmemo/" + qmemo_ns(compiler_version, hash_version) + "/"
+}
+
+/// Absolute path of the content-addressed blob for `key` under this
+/// toolchain's namespace. `key` is the caller's content hash; `.bin` suffix
+/// matches the rest of the cache tree (metadata.bin, unit.bin, …).
+export fn qmemo_path(dir_root: string, compiler_version: string, hash_version: int, key: string) -> string {
+    qmemo_dir(dir_root, compiler_version, hash_version) + key + ".bin"
+}
+
+/// Persist `sdb` to its namespaced content-addressed slot under `dir_root`.
+/// The namespace is derived from the blob's OWN header (`sdb.compiler_version`
+/// / `sdb.hash_version`), so what is written and where it is written can never
+/// disagree. Marshals to bytes and writes ATOMICALLY (per-pid temp + rename,
+/// inside `avra_selfhost_write_file_bytes`), creating the namespaced directory
+/// first. Returns true on success, false if the mkdir or write failed (no
+/// partial slot is ever left — the write is all-or-nothing at the rename).
+export fn serdb_write(dir_root: string, key: string, sdb: SerDb) -> bool {
+    let dir = qmemo_dir(dir_root, sdb.compiler_version, sdb.hash_version)
+    if avra_mkdir_p(dir) == 0 { return false }
+    let path = dir + key + ".bin"
+    avra_selfhost_write_file_bytes(path, sdb.to_bytes()) != 0
+}
+
+/// Load the blob for `key` under the `(compiler_version, hash_version)`
+/// namespace, VALIDATING on read. Returns null (an honest cold MISS) when:
+///   * the file is absent (never written, or written under another toolchain
+///     namespace — a version bump lands in a different directory);
+///   * the file is empty / unreadable (a half-materialised or foreign blob);
+///   * the decoded header fails validation — magic != `serdb_magic()`, or
+///     `compiler_version` / `hash_version` disagree with what was asked for.
+/// Only a whole, magic-matching, version-matching blob is served (pdme.2:
+/// serve only when whole AND stamped with the key it was looked up under).
+/// The header check is belt-and-suspenders atop the namespaced path: even a
+/// key collision across a hand-planted mismatched blob refuses to serve.
+export fn serdb_read(dir_root: string, key: string, compiler_version: string, hash_version: int) -> SerDb? {
+    let path = qmemo_path(dir_root, compiler_version, hash_version, key)
+    if avra_selfhost_file_exists(path) == 0 { return null }
+    let buf = avra_selfhost_read_file_bytes(path)
+    if buf.length == 0 { return null }
+    let sdb = from_bytes_SerDb(buf)
+    if sdb.magic != serdb_magic() { return null }
+    if sdb.compiler_version != compiler_version { return null }
+    if sdb.hash_version != hash_version { return null }
+    sdb
+}

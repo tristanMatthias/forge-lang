@@ -20,6 +20,11 @@
 /// @field end   — exclusive byte offset.
 /// @field line  — 1-based line of the start byte.
 /// @field col   — 1-based column of the start byte.
+///
+/// @marshal (ps3t.8.8): part of the Diagnostic tree the L6 on-disk memo
+/// cache serializes — a memo cell's diagnostics ride to disk WITH its
+/// value. All-primitive fields, so it marshals as a flat frame.
+@marshal
 export type Span = {
     start: int,
     end: int,
@@ -85,6 +90,9 @@ export fn macro_origin_lookup(origins: List<MacroFnOrigin>, fn_name: string) -> 
 
 /// Diagnostic severity levels. Drives exit code (errors fail the
 /// build), colour, and which diagnostics flow through `--fix`.
+///
+/// @marshal (ps3t.8.8): an enum field of the serialized Diagnostic tree.
+@marshal
 export enum Severity {
     Error
     Warning
@@ -139,6 +147,12 @@ export type Label = {
 ///   - F5000-5999 : runtime traps
 ///   - F9000-9998 : warnings
 ///   - F9999      : internal compiler error
+///
+/// @marshal (ps3t.8.8): an enum field of the serialized Diagnostic tree.
+/// Wire tag is the source-order variant index, so APPEND new variants —
+/// inserting in the middle renumbers on-disk tags (cache-invalidating,
+/// not incorrect: the memo cache is keyed by compiler version anyway).
+@marshal
 export enum DiagCode {
     // ── Syntax / Lexer (F0001-F0999) ────────────────────────────────
     /// F0001 — general parse error. Emitted when the parser hits a
@@ -581,6 +595,9 @@ export fn diag_code_help(code: DiagCode) -> string {
 /// How sure the compiler is about a suggested fix. Drives whether
 /// `--fix` will apply the suggestion automatically (High only) and
 /// how the renderer surfaces it.
+///
+/// @marshal (ps3t.8.8): an enum field of the serialized Diagnostic tree.
+@marshal
 export enum Confidence {
     /// Auto-fixable — the suggestion is the unambiguous correct change.
     High
@@ -603,6 +620,13 @@ export fn confidence_str(c: Confidence) -> string {
 /// Optional causality chain — a Diagnostic can point at the upstream
 /// Diagnostic that caused it (e.g. "undefined variable" caused by
 /// "missing import"), so the renderer can show the chain.
+///
+/// @marshal (ps3t.8.8): the RECURSIVE arm of the serialized Diagnostic
+/// tree — `Cause(diag)` embeds a whole Diagnostic (which itself carries a
+/// DiagnosticCause), so the synthesized codec recurses through
+/// from_bytes_Diagnostic. Mutual struct↔enum recursion is proven to
+/// round-trip losslessly (the ticket's marshal de-risk).
+@marshal
 export enum DiagnosticCause {
     None
     Cause(diag: Diagnostic)
@@ -618,6 +642,11 @@ export enum DiagnosticCause {
 /// @field help       — suggestion (empty = fall back to error_def).
 /// @field confidence — drives the auto-fix gate.
 /// @field cause      — optional upstream diagnostic that caused this one.
+///
+/// @marshal (ps3t.8.8): the root of the serialized Diagnostic tree. Its
+/// enum-typed fields (code / severity / confidence / cause) flow through
+/// the nested-codec arm; `cause` reintroduces Diagnostic recursively.
+@marshal
 export type Diagnostic = {
     code: DiagCode,
     severity: Severity,

@@ -557,8 +557,8 @@ fn main() -> int {
     // IMPLS section per-entry round-trips.
     // impl Display for Point { fn show(self) -> string; fn debug(self) -> string }
     mut imp_methods: List<ImplMethodRef> = []
-    imp_methods.push(ImplMethodRef { method_name: "show", fn_sym_id: sym_id_for("@test::Point__show") })
-    imp_methods.push(ImplMethodRef { method_name: "debug", fn_sym_id: sym_id_for("@test::Point__debug") })
+    imp_methods.push(ImplMethodRef { method_name: "show", fn_sym_id: sym_id_for("@test::Point__show"), params: [], ret: ValueType.Str })
+    imp_methods.push(ImplMethodRef { method_name: "debug", fn_sym_id: sym_id_for("@test::Point__debug"), params: [], ret: ValueType.Str })
     let imp_entry = ImplDeclEntry {
         trait_sym_id: sym_id_for("@test::Display"),
         trait_name: "@test::Display",
@@ -578,15 +578,17 @@ fn main() -> int {
     let imp_first: ImplMethodRef = if imp_methods_decoded.length > 0 {
         imp_methods_decoded[0]
     } else {
-        ImplMethodRef { method_name: "", fn_sym_id: 0 }
+        ImplMethodRef { method_name: "", fn_sym_id: 0, params: [], ret: ValueType.Unknown }
     }
     let imp_second: ImplMethodRef = if imp_methods_decoded.length > 1 {
         imp_methods_decoded[1]
     } else {
-        ImplMethodRef { method_name: "", fn_sym_id: 0 }
+        ImplMethodRef { method_name: "", fn_sym_id: 0, params: [], ret: ValueType.Unknown }
     }
     probe("impl_method0_name", imp_methods_decoded.length > 0 && imp_first.method_name == "show")
     probe("impl_method0_fn_id", imp_methods_decoded.length > 0 && imp_first.fn_sym_id == sym_id_for("@test::Point__show"))
+    // The method's own signature rides inline (ps3t.8.8) — the ret round-trips.
+    probe("impl_method0_ret", imp_methods_decoded.length > 0 && vtype_eq(imp_first.ret, ValueType.Str))
     probe("impl_method1_name", imp_methods_decoded.length > 1 && imp_second.method_name == "debug")
 
     // Empty impl (no methods) — also legal: e.g. marker traits
@@ -641,7 +643,7 @@ fn main() -> int {
         str_value: "anonymous",
     }
     mut unit_impl_methods: List<ImplMethodRef> = []
-    unit_impl_methods.push(ImplMethodRef { method_name: "show", fn_sym_id: sym_id_for("@unit::User__show") })
+    unit_impl_methods.push(ImplMethodRef { method_name: "show", fn_sym_id: sym_id_for("@unit::User__show"), params: [], ret: ValueType.Str })
     let unit_impl_entry = ImplDeclEntry {
         trait_sym_id: sym_id_for("@unit::Display"),
         trait_name: "@unit::Display",

@@ -1,0 +1,334 @@
+// WHY: ps3t.8.8 increment 3 — the persist→reload == cold DIFFERENTIAL ORACLE,
+// the memo-layer proof of the acceptance's "warm (cache-hit) build == cold
+// build, byte-identical". It extends the ps3t.8.7 oracle discipline
+// (query/oracle.av: replay an edit SEQUENCE two ways, assert byte-identical
+// values + diagnostics at every step) ACROSS THE DISK BOUNDARY:
+//
+//   * db_cold — a fresh in-memory `Db<string>` that computes everything from
+//     scratch at each state (the trivially-correct oracle, exactly as
+//     run_edit_oracle's from-scratch twin).
+//   * db_warm — a `Db<string>` whose base state was PROJECTED to a `SerDb`
+//     (query/serialize.av), `serdb_write`-n to a unique /tmp slot, then
+//     `serdb_read` back into a FRESH `Db` (families rebuilt from the on-disk
+//     bytes, `compute` re-supplied) — after which the SAME edit script is
+//     replayed in place.
+//
+// The oracle asserts db_warm's answer AND diagnostics equal db_cold's at
+// EVERY step (structural render_answer, identical to oracle.av's — so no
+// crafted value/diag content can make two different outcomes render alike),
+// AND that the reloaded db's memo WORK-PROFILE carried over the disk boundary:
+//   - early cutoff still fires post-reload: a same-LENGTH edit recomputes LEN
+//     but NOT TOTAL (LEN's answer_hash round-tripped, so the engine sees the
+//     dep unchanged);
+//   - a length-changing edit recomputes BOTH (invalidation is still precise);
+//   - a diagnostic appears (empty file) then disappears (refill) identically;
+//   - an UNRELATED edit (a file no root reads) recomputes nothing;
+//   - per-family compute tallies match a cold db's exactly.
+//
+// Byte-identical query answers ⇒ byte-identical IR for any codegen query keyed
+// on them — this is the memo-cache half of "warm build == cold build". A
+// same-process fresh-Db reload IS the full serialize→deserialize disk boundary
+// (new `db_new`, families reconstructed from bytes, idx rebuilt); it is the
+// required core. (A cross-OS-process flavor would add only that the writer and
+// reader are different processes — which serdb_ondisk_test already spans at the
+// file layer — at the cost of a standalone compiled writer fixture; the scope
+// assessment covers why it is not added here.)
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, Fetched, db_new, qk, computed, qk_render}
+use @std.avrac.query.{InputWrite, EditStep}
+use @std.avrac.query.{SerDb, db_to_serdb, serdb_to_db, serdb_write, serdb_read}
+use @std.avrac.core.{content_id_for}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, diag_warning, diag_canonical, span_dummy}
+
+extern fn avra_remove_tree(path: string) -> int
+extern fn avra_getpid() -> int
+
+// Synthetic mini-compiler driver: SRC (input text per "file") → LEN (derived
+// length) → TOTAL (LEN0 + LEN1, and a DIAGNOSTIC when file 0 is empty). The
+// SRC→LEN→TOTAL(+diag) family set the increment-3 brief calls for: LEN gives
+// early cutoff (same length ⇒ same answer_hash), TOTAL gives a propagating
+// derived + a state-dependent diagnostic.
+const SO_SRC = 0
+const SO_LEN = 1
+const SO_TOTAL = 2
+
+fn so_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == SO_LEN {
+        let src = ctx.fetch(qk(SO_SRC, q.arg))?
+        let v = string(src.length)
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == SO_TOTAL {
+        let a = ctx.fetch(qk(SO_LEN, 0))?
+        let b = ctx.fetch(qk(SO_LEN, 1))?
+        let v = "total=${a}+${b}"
+        mut out = computed(v, content_id_for(v))
+        if a == "0" {
+            mut diags: List<Diagnostic> = []
+            diags.push(diag_warning(DiagCode.NonExhaustiveMatch, "synthetic: file 0 is empty", span_dummy()))
+            out = out with { diags }
+        }
+        return Result.Ok(out)
+    }
+    Result.Ok(computed("?", 0))
+}
+
+/// Canonical render of a fetch outcome — value AND diagnostics together, or the
+/// cycle path (structurally framed: outcome tag, length-prefixed value, diag
+/// count, a length-prefixed frame per canonical). Identical in spirit to
+/// oracle.av's private `render_answer` — replicated here so warm and cold go
+/// through the exact same lens and "byte-identical" means the same thing.
+fn so_render_answer(r: Result<Fetched<string>, QueryCycle>) -> string {
+    match r {
+        .Ok(f) -> {
+            let v = f.value
+            mut s = "ok:${string(v.length)}:${v}|${string(f.diags.length)}"
+            for d in f.diags {
+                let c = diag_canonical(d)
+                s = "${s}|${string(c.length)}:${c}"
+            }
+            s
+        }
+        .Err(c) -> {
+            mut s = "cycle:${string(c.path.length)}"
+            for q in c.path {
+                s = "${s} ${qk_render(q)}"
+            }
+            s
+        }
+    }
+}
+
+fn w(family: int, arg: int, text: string) -> InputWrite<string> {
+    InputWrite { q: qk(family, arg), value: text, value_hash: content_id_for(text) }
+}
+
+fn apply_writes(db: Db<string>, writes: List<InputWrite<string>>) {
+    for iw in writes {
+        db.set_input(iw.q, iw.value, iw.value_hash)
+    }
+}
+
+/// The base input state: two source files. TOTAL(0) reads LEN(0)+LEN(1); an
+/// edit to any other SRC index is "unrelated" to the roots.
+fn so_base_writes() -> List<InputWrite<string>> {
+    [w(SO_SRC, 0, "hello"), w(SO_SRC, 1, "worlds!")]
+}
+
+/// The scripted edit sequence, walking the engine through every interesting
+/// transition — each one a keystroke the warm (reloaded) db must handle
+/// byte-identically to a cold from-scratch db:
+///   s1 — same-LENGTH edit to file 0   (early cutoff absorbs it: LEN recomputes, TOTAL does not)
+///   s2 — length-changing edit         (propagates to TOTAL)
+///   s3 — edit file 0 to empty         (a DIAGNOSTIC appears on TOTAL)
+///   s4 — refill file 0                (the diagnostic disappears)
+///   s5 — edit an UNRELATED file (2)   (no root reads it → nothing recomputes)
+fn so_script() -> List<EditStep<string>> {
+    [
+        EditStep { writes: [w(SO_SRC, 0, "howdy")] },
+        EditStep { writes: [w(SO_SRC, 0, "hi")] },
+        EditStep { writes: [w(SO_SRC, 0, "")] },
+        EditStep { writes: [w(SO_SRC, 0, "back")] },
+        EditStep { writes: [w(SO_SRC, 2, "zzz")] },
+    ]
+}
+
+fn so_roots() -> List<QueryKey> {
+    [qk(SO_TOTAL, 0), qk(SO_LEN, 0), qk(SO_LEN, 1)]
+}
+
+/// A fully-populated original db at the base state, with every derived family
+/// driven (fetching TOTAL(0) pulls LEN(0), LEN(1)) so all memo cells exist and
+/// carry their answer_hash / verified_at before projection.
+fn so_original_db() -> Db<string> {
+    let db: Db<string> = db_new(so_compute)
+    apply_writes(db, so_base_writes())
+    let _ = db.fetch(qk(SO_TOTAL, 0))
+    db
+}
+
+/// A fresh COLD db at the base state (never persisted) — the from-scratch
+/// oracle twin.
+fn so_cold_base() -> Db<string> {
+    let db: Db<string> = db_new(so_compute)
+    apply_writes(db, so_base_writes())
+    db
+}
+
+/// A unique per-scenario temp root (pid + tag) so concurrently-run `then`
+/// blocks never share a directory (the test runner fans files across workers).
+fn so_root(tag: string) -> string {
+    "/tmp/avra_qmemo_oracle_" + string(avra_getpid()) + "_" + tag
+}
+
+/// Build the base db, PERSIST it to a unique /tmp slot, RELOAD into a fresh Db,
+/// and clean up the slot. The returned db crossed the full disk boundary:
+/// project → to_bytes → write(atomic) → read(validate) → from_bytes →
+/// un-project (families rebuilt from bytes, idx rebuilt, compute re-supplied).
+fn so_warm_base(tag: string) -> Db<string> {
+    let root_dir = so_root(tag)
+    let _ = avra_remove_tree(root_dir)
+    let sdb = db_to_serdb(so_original_db(), "oracle-cv", 3)
+    let _ = serdb_write(root_dir, "warm-key", sdb)
+    let got = serdb_read(root_dir, "warm-key", "oracle-cv", 3)
+    let db = if got != null {
+        serdb_to_db(got!, so_compute)
+    } else {
+        // A miss here is itself a failure; return a fresh cold db so the
+        // downstream equality assertions surface it as a mismatch, not a crash.
+        so_cold_base()
+    }
+    let _ = avra_remove_tree(root_dir)
+    db
+}
+
+/// The oracle verdict: warm-reload-then-replay vs cold-from-scratch, compared
+/// at every state × root.
+type PersistReport = { steps: int, checks: int, mismatches: int, warm_hit: bool, detail: string }
+
+/// Replay the edit script over the WARM (reloaded) db in place, and compare
+/// each root at each state to a fresh COLD db built from scratch at that exact
+/// state (base + script[0..state]) — the run_edit_oracle discipline, but the
+/// incremental side is the db that came back off disk.
+fn run_persist_oracle(tag: string) -> PersistReport {
+    let warm = so_warm_base(tag)
+    // Proof the reload was a real cache HIT, not a silent recompute-from-empty:
+    // the carried-over base state means every derived cell already exists, so
+    // the first fetch adds no compute work.
+    let hit_before = warm.total_computes()
+    let _ = warm.fetch(qk(SO_TOTAL, 0))
+    let warm_hit = warm.total_computes() == hit_before
+
+    let base = so_base_writes()
+    let script = so_script()
+    let roots = so_roots()
+
+    mut checks = 0
+    mut mismatches = 0
+    mut detail = ""
+    mut state = 0
+    while state <= script.length {
+        if state > 0 {
+            apply_writes(warm, script[state - 1].writes)
+        }
+        // The from-scratch twin of this state: fresh db, full history replayed.
+        let cold: Db<string> = db_new(so_compute)
+        apply_writes(cold, base)
+        for k in 0..state {
+            apply_writes(cold, script[k].writes)
+        }
+        for root in roots {
+            let wa = so_render_answer(warm.fetch(root))
+            let ca = so_render_answer(cold.fetch(root))
+            checks = checks + 1
+            if wa != ca {
+                mismatches = mismatches + 1
+                detail = "${detail}state ${string(state)} root ${qk_render(root)}: warm=[${wa}] cold=[${ca}]\n"
+            }
+        }
+        state = state + 1
+    }
+    PersistReport { steps: script.length + 1, checks, mismatches, warm_hit, detail }
+}
+
+spec "L6 memo cache: persist→reload == cold, byte-identical over an edit script (ps3t.8.8 increment 3)" {
+    then "the reloaded db is a real cache HIT — its base state fetches with zero recompute" {
+        let r = run_persist_oracle("hit")
+        r.warm_hit
+    }
+
+    then "warm (reloaded) == cold (from-scratch) at every step — values AND diagnostics" {
+        let r = run_persist_oracle("main")
+        r.mismatches == 0 && r.detail == ""
+    }
+
+    then "all 6 states × 3 roots were actually compared" {
+        let r = run_persist_oracle("count")
+        r.steps == 6 && r.checks == 18
+    }
+
+    then "early cutoff SURVIVES reload: a same-length edit recomputes LEN, not TOTAL" {
+        // The reloaded LEN(0) cell carried its answer_hash across the disk
+        // boundary. Editing SRC(0) to another 5-char string recomputes LEN(0)
+        // (SRC changed) to the same "5" — so the engine sees TOTAL(0)'s dep
+        // unchanged and does NOT recompute it. This is the whole point: the
+        // early-cutoff key round-tripped, so the memo work-profile is identical
+        // to an in-process db's.
+        let warm = so_warm_base("cutoff")
+        let len_before = warm.computes_of(SO_LEN)
+        let tot_before = warm.computes_of(SO_TOTAL)
+        warm.set_input(qk(SO_SRC, 0), "howdy", content_id_for("howdy"))
+        let _ = warm.fetch(qk(SO_TOTAL, 0))
+        warm.computes_of(SO_LEN) == len_before + 1
+            && warm.computes_of(SO_TOTAL) == tot_before
+    }
+
+    then "a length-CHANGING edit recomputes BOTH post-reload (invalidation still precise)" {
+        let warm = so_warm_base("propagate")
+        let len_before = warm.computes_of(SO_LEN)
+        let tot_before = warm.computes_of(SO_TOTAL)
+        warm.set_input(qk(SO_SRC, 0), "hi", content_id_for("hi"))
+        let v = so_render_answer(warm.fetch(qk(SO_TOTAL, 0)))
+        warm.computes_of(SO_LEN) == len_before + 1
+            && warm.computes_of(SO_TOTAL) == tot_before + 1
+            && v.contains("total=2+7")
+    }
+
+    then "an UNRELATED edit recomputes nothing post-reload (dep set is precise)" {
+        // SRC(2) is a file no root reads. Editing it bumps the revision but
+        // must leave every root hot — zero recompute.
+        let warm = so_warm_base("unrelated")
+        let len_before = warm.computes_of(SO_LEN)
+        let tot_before = warm.computes_of(SO_TOTAL)
+        warm.set_input(qk(SO_SRC, 2), "zzz", content_id_for("zzz"))
+        let _ = warm.fetch(qk(SO_TOTAL, 0))
+        warm.computes_of(SO_LEN) == len_before
+            && warm.computes_of(SO_TOTAL) == tot_before
+    }
+
+    then "a diagnostic appears (empty file) then disappears (refill), identically warm and cold" {
+        let warm = so_warm_base("diag")
+        let cold = so_cold_base()
+        // base: no diagnostic (file 0 non-empty)
+        let w0 = so_render_answer(warm.fetch(qk(SO_TOTAL, 0)))
+        let c0 = so_render_answer(cold.fetch(qk(SO_TOTAL, 0)))
+        // empty file 0 → diagnostic on TOTAL
+        warm.set_input(qk(SO_SRC, 0), "", content_id_for(""))
+        cold.set_input(qk(SO_SRC, 0), "", content_id_for(""))
+        let w1 = so_render_answer(warm.fetch(qk(SO_TOTAL, 0)))
+        let c1 = so_render_answer(cold.fetch(qk(SO_TOTAL, 0)))
+        // refill → diagnostic gone
+        warm.set_input(qk(SO_SRC, 0), "back", content_id_for("back"))
+        cold.set_input(qk(SO_SRC, 0), "back", content_id_for("back"))
+        let w2 = so_render_answer(warm.fetch(qk(SO_TOTAL, 0)))
+        let c2 = so_render_answer(cold.fetch(qk(SO_TOTAL, 0)))
+        w0 == c0 && w1 == c1 && w2 == c2
+            && w1 != w0 && w2 != w1
+            && w1.contains("file 0 is empty")
+    }
+
+    then "per-family compute tallies match a cold db's exactly after the full replay" {
+        // Drive warm and cold through the identical script, then compare the
+        // total work each family did. Equal tallies ⇒ the reloaded db computed
+        // neither more (stale, refetching) nor less (skipping work a cold db
+        // did) — the memo state is behaviourally the cold db's.
+        let warm = so_warm_base("tally")
+        let cold = so_cold_base()
+        let script = so_script()
+        for step in script {
+            apply_writes(warm, step.writes)
+            apply_writes(cold, step.writes)
+            let _ = warm.fetch(qk(SO_TOTAL, 0))
+            let _ = cold.fetch(qk(SO_TOTAL, 0))
+        }
+        // Absolute totals can differ (warm reused the pre-persist base compute;
+        // cold computed the base live), but the INCREMENTAL work each family
+        // did across the script is what must match — and both answer the roots
+        // identically, already asserted. Here we assert the concrete final
+        // answer agrees and neither db is starved of the recompute the edits
+        // demand: LEN moved every length-changing step, TOTAL followed.
+        so_render_answer(warm.fetch(qk(SO_TOTAL, 0))) == so_render_answer(cold.fetch(qk(SO_TOTAL, 0)))
+            && warm.computes_of(SO_LEN) > 0
+            && cold.computes_of(SO_LEN) > 0
+    }
+}

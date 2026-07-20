@@ -15,7 +15,11 @@ name = "std-avrac"
 path = "src/avrac.av"
 
 [dependencies]
-"@std/cli"    = { path = "../std-cli" }
-"@std/lsp"    = { path = "../std-lsp" }
-"@std/json"   = { path = "../std-json" }
-"@std/crypto" = { path = "../std-crypto" }
+"@std/cli"     = { path = "../std-cli" }
+"@std/lsp"     = { path = "../std-lsp" }
+"@std/json"    = { path = "../std-json" }
+"@std/crypto"  = { path = "../std-crypto" }
+# ps3t.8.8: the diagnostics module carries @marshal types (the L6 on-disk
+# memo cache serializes the Diagnostic tree), whose synthesized codecs
+# reference `@std::process::Marshal` + `bytes_builder`/`bytes_reader`.
+"@std/process" = { path = "../std-process" }

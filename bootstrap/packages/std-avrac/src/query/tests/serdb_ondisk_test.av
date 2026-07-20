@@ -1,0 +1,165 @@
+// WHY: ps3t.8.8 increment 2 — the namespaced on-disk persistence tier of the
+// L6 memo cache. A live `Db<string>` projects to a `SerDb`
+// (query/serialize.av), gets `serdb_write`-n to a content-addressed,
+// toolchain-namespaced slot, and `serdb_read`-s back with a validate-on-read
+// gate. This spec proves:
+//   * a written blob reads back in the same process and un-projects to a Db
+//     that answers fetches identically (values + a memo-hit + a diag survive);
+//   * a version-mismatch read is an honest cold MISS (null), NEVER a stale
+//     serve — via BOTH the namespaced path (a bumped version looks in a
+//     sibling dir) AND the header validate-on-read (a hand-planted blob whose
+//     header disagrees with the lookup version is refused);
+//   * an absent key is a cold MISS.
+//
+// The differential-oracle wire-in (warm cache-hit build == cold build) is
+// increment 3; this tier is the persistence it builds on.
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed, SerDb, db_to_serdb, serdb_to_db, serdb_magic, serdb_write, serdb_read, qmemo_dir, qmemo_path}
+use @std.avrac.core.{content_id_for}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, DiagnosticCause, diag_error, diag_with_cause, diag_canonical, span_dummy}
+
+// Binary-safe write + dir make + cleanup, re-declared locally (the pattern
+// core/tests/atomic_write_test.av uses) so this test file needs no extra
+// import surface. `serdb_write` is the real subject; these plant a
+// mismatched-header blob and tidy up.
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_mkdir_p(path: string) -> int
+extern fn avra_remove_tree(path: string) -> int
+extern fn avra_getpid() -> int
+
+// Same synthetic driver shape as serdb_roundtrip_test: SRC → LEN (derived
+// length) plus a DIAG family carrying a cause chain, so every family holds
+// populated memo state before projection.
+const OD_SRC = 0
+const OD_LEN = 1
+const OD_DIAG = 2
+
+fn od_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == OD_LEN {
+        let src = ctx.fetch(qk(OD_SRC, q.arg))?
+        let v = string(src.length)
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == OD_DIAG {
+        let src = ctx.fetch(qk(OD_SRC, q.arg))?
+        let root = diag_error(DiagCode.UndefinedVariable, "root cause", span_dummy())
+        let top = diag_with_cause(diag_error(DiagCode.TypeMismatch, "top: ${src}", span_dummy()), root)
+        mut diags: List<Diagnostic> = []
+        diags.push(top)
+        let out = computed("diag=${src}", content_id_for(src)) with { diags }
+        return Result.Ok(out)
+    }
+    Result.Ok(computed("?", 0))
+}
+
+fn fetch_value(db: Db<string>, q: QueryKey) -> string {
+    match db.fetch(q) {
+        .Ok(f) -> f.value
+        .Err(_) -> "unexpected-cycle"
+    }
+}
+
+/// A small populated db: two SRC inputs, both LEN cells + one DIAG cell driven.
+fn od_original_db() -> Db<string> {
+    let mut db: Db<string> = db_new(od_compute)
+    db.set_input(qk(OD_SRC, 0), "hello", content_id_for("hello"))
+    db.set_input(qk(OD_SRC, 1), "worlds!", content_id_for("worlds!"))
+    let _ = fetch_value(db, qk(OD_LEN, 0))
+    let _ = fetch_value(db, qk(OD_LEN, 1))
+    let _ = fetch_value(db, qk(OD_DIAG, 0))
+    db
+}
+
+/// A unique per-scenario temp root so concurrently-run `then` blocks (the test
+/// runner fans files across worker threads) never share a directory.
+fn od_root(tag: string) -> string {
+    "/tmp/avra_qmemo_test_" + string(avra_getpid()) + "_" + tag
+}
+
+spec "L6 memo cache: namespaced on-disk read/write with validate-on-read (ps3t.8.8)" {
+    then "a written blob reads back and un-projects to an identical Db" {
+        let root = od_root("roundtrip")
+        let _ = avra_remove_tree(root)
+        let sdb = db_to_serdb(od_original_db(), "cv-A", 1)
+        let wrote = serdb_write(root, "key-alpha", sdb)
+        let got = serdb_read(root, "key-alpha", "cv-A", 1)
+        let ok = if got != null {
+            let db2 = serdb_to_db(got!, od_compute)
+            // values survive
+            let vals = fetch_value(db2, qk(OD_LEN, 0)) == "5"
+                && fetch_value(db2, qk(OD_LEN, 1)) == "7"
+            // the cells are hot: a same-rev fetch does no recompute (memo hit)
+            let before = db2.computes_of(OD_LEN)
+            let _ = fetch_value(db2, qk(OD_LEN, 0))
+            let hot = db2.computes_of(OD_LEN) == before
+            // the diagnostic + its cause chain survive
+            let diag_ok = match db2.fetch(qk(OD_DIAG, 0)) {
+                .Ok(f) -> if f.diags.length == 1 {
+                    match f.diags[0].cause {
+                        .Cause(c) -> c.message == "root cause"
+                        .None -> false
+                    }
+                } else { false }
+                .Err(_) -> false
+            }
+            vals && hot && diag_ok
+        } else { false }
+        let _ = avra_remove_tree(root)
+        wrote && ok
+    }
+
+    then "restored header equals the original (magic + version stamped)" {
+        let root = od_root("header")
+        let _ = avra_remove_tree(root)
+        let sdb = db_to_serdb(od_original_db(), "cv-A", 1)
+        let _ = serdb_write(root, "k", sdb)
+        let got = serdb_read(root, "k", "cv-A", 1)
+        let ok = if got != null {
+            got!.magic == serdb_magic() && got!.compiler_version == "cv-A" && got!.hash_version == 1
+        } else { false }
+        let _ = avra_remove_tree(root)
+        ok
+    }
+
+    then "a version-mismatched read is a cold MISS (different namespace)" {
+        let root = od_root("verns")
+        let _ = avra_remove_tree(root)
+        let sdb = db_to_serdb(od_original_db(), "A", 1)
+        let _ = serdb_write(root, "k", sdb)
+        // compiler_version bump → sibling namespace dir → absent → null
+        let diff_cv = serdb_read(root, "k", "B", 1) == null
+        // hash_version bump → sibling namespace dir → absent → null
+        let diff_hv = serdb_read(root, "k", "A", 2) == null
+        // exact match → served
+        let same = serdb_read(root, "k", "A", 1) != null
+        let _ = avra_remove_tree(root)
+        diff_cv && diff_hv && same
+    }
+
+    then "validate-on-read refuses a header-mismatched blob at a matching path" {
+        // Plant a blob whose HEADER says (A,1) into the (B,1) namespace path,
+        // so the file is FOUND but its stamp disagrees with the lookup. The
+        // header gate — belt-and-suspenders atop the namespaced path — rejects
+        // it as an honest MISS, never a stale serve (the hard requirement).
+        let root = od_root("planted")
+        let _ = avra_remove_tree(root)
+        let sdb_a = db_to_serdb(od_original_db(), "A", 1)
+        let dir_b = qmemo_dir(root, "B", 1)
+        let _ = avra_mkdir_p(dir_b)
+        let path_b = qmemo_path(root, "B", 1, "k")
+        let _ = avra_selfhost_write_file_bytes(path_b, sdb_a.to_bytes())
+        // File exists at the (B,1) path, but its header stamps (A,1):
+        let miss = serdb_read(root, "k", "B", 1) == null
+        let _ = avra_remove_tree(root)
+        miss
+    }
+
+    then "an absent key is a cold MISS" {
+        let root = od_root("absent")
+        let _ = avra_remove_tree(root)
+        // Nothing was ever written under this namespace.
+        let miss = serdb_read(root, "never-written", "cv-A", 1) == null
+        let _ = avra_remove_tree(root)
+        miss
+    }
+}

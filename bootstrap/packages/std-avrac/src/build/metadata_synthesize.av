@@ -117,7 +117,7 @@ export fn synthesize_unit_body(m: UnitMetadata, store: NodeStore) -> List<StmtId
     // still take the extern path; private fns never appear in xs.
     let after_fns = insert_fns(after_types, m.fns, m.unit_name, m.generic_bodies, store)
     let after_consts = insert_consts(store, after_fns, m.consts, m.unit_name)
-    let after_impls = insert_impls(store, after_consts, m.impls, m.unit_name, m.types)
+    let after_impls = insert_impls(store, after_consts, m.impls, m.unit_name)
     // bd8n / P6 phase 2: inherent impls also surface as
     // `impl Type { ... }` blocks so consumer call sites
     // (`bytes_writer.unit(meta)`) can resolve to the producer's
@@ -342,7 +342,7 @@ fn insert_consts(store: NodeStore, trie: SubMod, xs: List<ConstDeclEntry>, unit_
     t
 }
 
-fn insert_impls(store: NodeStore, trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string, types: List<TypeDeclEntry>) -> SubMod {
+fn insert_impls(store: NodeStore, trie: SubMod, xs: List<ImplDeclEntry>, unit_name: string) -> SubMod {
     mut t = trie
     mut i = 0
     while i < xs.length {
@@ -351,7 +351,7 @@ fn insert_impls(store: NodeStore, trie: SubMod, xs: List<ImplDeclEntry>, unit_na
         // so use the type's qualified name to derive the path.
         let rp = relative_path(e.type_name, unit_name)
         if rp.belongs_to_unit {
-            let decl = synth_impl_decl(store, e, types)
+            let decl = synth_impl_decl(store, e)
             t = trie_insert_decl(t, rp.segs, 0, decl)
         }
         i = i + 1
@@ -636,75 +636,46 @@ fn synth_impl_method_stmts_from_sigs(store: NodeStore, ms: List<MetaTraitMethod>
     acc
 }
 
-fn synth_impl_decl(store: NodeStore, e: ImplDeclEntry, types: List<TypeDeclEntry>) -> StmtId {
-    let trait_local = local_name(e.trait_name)
+fn synth_impl_decl(store: NodeStore, e: ImplDeclEntry) -> StmtId {
+    // Keep the trait name FULLY QUALIFIED (not local_name'd). The impl lands
+    // in the TYPE's module, but the trait may live in ANOTHER module/package
+    // (e.g. `@std::process::Marshal` implemented on @std::avrac's own types
+    // via `@marshal` — ps3t.8.8). Stripping the trait to its bare name let the
+    // re-resolve re-qualify it to the TYPE's module (`@std::avrac::diagnostics::
+    // Marshal`), so conformance reported an "unknown trait" for a trait that is
+    // really in @std::process. A `::`-qualified name passes through
+    // resolve_type_in_ctx untouched, so the trait resolves to its true home
+    // while the type's LOCAL name still re-qualifies into this module. (Same-
+    // module trait impls are unaffected: the full name already points there.)
     let type_local = local_name(e.type_name)
-    let impl_name = "${trait_local}:${type_local}"
-    // For trait impls, recover the per-method signatures from the
-    // trait declaration's MetaTraitMethodList — impl methods must
-    // match the trait's signature for typeck conformance, so this
-    // is also the right answer. Inherent impls (no trait) have no
-    // entry here (extractor skips them). Falls back to Unknown sig
-    // when the trait isn't in this unit's metadata (cross-package
-    // impls — those won't pass typeck anyway).
-    let trait_methods = lookup_trait_methods(types, e.trait_name)
-    let methods = synth_impl_method_stmts(store, e.methods, trait_methods, e.type_name)
+    let impl_name = "${e.trait_name}:${type_local}"
+    // Each ImplMethodRef ships its own signature inline, so trait-impl synth
+    // no longer needs the trait's declaration (which a cross-package impl
+    // couldn't reach anyway — ps3t.8.8).
+    let methods = synth_impl_method_stmts(store, e.methods, e.type_name)
     store.stmts.add_leaf(Stmt.Impl(impl_name, methods))
 }
 
-// Walk the synth'd impl-method-ref list, looking up each method's
-// signature in the trait's MetaTraitMethodList (matched by name)
-// and applying the `<qualified-Type>__<method>` mangling the
-// resolver would produce on the source-parse path. The typeck's
-// conformance check builds the same mangled name from the trait's
-// type binding, so the impl methods MUST be qualified-mangled or
-// every method is reported as missing (9ixv F1000s on Corpus.extract
-// etc.). Avoiding this step also prevents resolve_names from falling
-// into the `is_mangled_method` branch and skipping qualification —
-// the synth impl methods carry an `@external_unit` Annotated wrapper
-// which short-circuits rewrite_impl_methods's Function arm.
-fn synth_impl_method_stmts(store: NodeStore, ms: List<ImplMethodRef>, trait_methods: List<MetaTraitMethod>, qualified_type: string) -> List<StmtId> {
+// Walk the synth'd impl-method-ref list, emitting one `@external_unit`
+// `Type__method` stub per method with the method's OWN signature (shipped
+// inline on each ImplMethodRef — ps3t.8.8; previously cribbed from the trait,
+// which broke cross-package impls). The `<qualified-Type>__<method>` mangling
+// mirrors what the resolver produces on the source-parse path — typeck's
+// conformance check builds the same mangled name from the trait's type
+// binding, so the impl methods MUST be qualified-mangled or every method is
+// reported as missing (9ixv). The `@external_unit` wrapper also stops
+// resolve_names from re-qualifying the already-mangled name.
+fn synth_impl_method_stmts(store: NodeStore, ms: List<ImplMethodRef>, qualified_type: string) -> List<StmtId> {
     mut acc: List<StmtId> = []
     mut i = 0
     while i < ms.length {
         let m = ms[i]
-        let sig = lookup_trait_method_sig(trait_methods, m.method_name)
         let mangled = "${qualified_type}__${m.method_name}"
         let empty_tp: List<TypeParamEntry> = []
         let empty_body: List<StmtId> = []
-        let fn_decl = Stmt.Function(mangled, empty_tp, sig.params, sig.ret, empty_body)
+        let fn_decl = Stmt.Function(mangled, empty_tp, m.params, m.ret, empty_body)
         acc.push(store.stmts.add_leaf(wrap_external_unit(store, fn_decl)))
         i = i + 1
     }
     acc
-}
-
-type FnSig = {
-    params: List<ParamEntry>,
-    ret: ValueType,
-}
-
-fn lookup_trait_methods(types: List<TypeDeclEntry>, trait_qn: string) -> List<MetaTraitMethod> {
-    mut i = 0
-    while i < types.length {
-        let e = types[i]
-        if e.kind is .TraitDecl && e.name == trait_qn {
-            return e.methods
-        }
-        i = i + 1
-    }
-    []
-}
-
-fn lookup_trait_method_sig(ms: List<MetaTraitMethod>, name: string) -> FnSig {
-    mut i = 0
-    while i < ms.length {
-        let m = ms[i]
-        if m.name == name {
-            return FnSig { params: m.params, ret: m.ret }
-        }
-        i = i + 1
-    }
-    let empty_p: List<ParamEntry> = []
-    FnSig { params: empty_p, ret: ValueType.Unknown }
 }

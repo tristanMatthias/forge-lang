@@ -1,0 +1,166 @@
+// WHY: ps3t.8.8 increment 1 — the in-memory round-trip of the L6 memo cache
+// projection. A live `Db<string>` projects to the plain-data `SerDb`
+// (query/serialize.av), marshals to bytes, un-marshals, and un-projects back
+// to a `Db<string>` that MUST answer fetches identically to the original:
+// same values, same answer_hash (observed via memo-hit / compute counts),
+// same discovered deps (observed via post-load invalidation), same per-family
+// compute tallies, and a diagnostic cause-CHAIN preserved bit-for-bit.
+//
+// The engine's `idx` intmap and `compute` fn are runtime-only, so they are NOT
+// serialized — `idx` is rebuilt from the parallel `args` list on load and
+// `compute` is re-supplied by the caller. This spec is what proves that
+// reconstruction is faithful: the restored Db is behaviourally the projected
+// one. Increment 2 (namespaced on-disk read/write) builds on this.
+
+use @std.avrac.query.{Db, QueryCtx, QueryKey, Computed, QueryCycle, db_new, qk, computed, SerDb, db_to_serdb, serdb_to_db, serdb_magic, from_bytes_SerDb}
+use @std.avrac.core.{content_id_for}
+use @std.avrac.diagnostics.{Diagnostic, DiagCode, DiagnosticCause, diag_error, diag_with_cause, diag_canonical, span_dummy}
+
+// Synthetic driver: SRC (input text per "file") → LEN (derived length) plus a
+// DIAG family whose answer carries a diagnostic with a cause chain — the
+// recursive shape the on-disk codec must preserve.
+const RT_SRC = 0
+const RT_LEN = 1
+const RT_DIAG = 2
+
+fn rt_compute(ctx: QueryCtx<string>, q: QueryKey) -> Result<Computed<string>, QueryCycle> {
+    if q.family == RT_LEN {
+        let src = ctx.fetch(qk(RT_SRC, q.arg))?
+        let v = string(src.length)
+        return Result.Ok(computed(v, content_id_for(v)))
+    }
+    if q.family == RT_DIAG {
+        let src = ctx.fetch(qk(RT_SRC, q.arg))?
+        // A two-level cause chain: top diagnostic caused by a root one.
+        let root = diag_error(DiagCode.UndefinedVariable, "root cause", span_dummy())
+        let top = diag_with_cause(diag_error(DiagCode.TypeMismatch, "top: ${src}", span_dummy()), root)
+        mut diags: List<Diagnostic> = []
+        diags.push(top)
+        let out = computed("diag=${src}", content_id_for(src)) with { diags }
+        return Result.Ok(out)
+    }
+    Result.Ok(computed("?", 0))
+}
+
+fn fetch_value(db: Db<string>, q: QueryKey) -> string {
+    match db.fetch(q) {
+        .Ok(f) -> f.value
+        .Err(_) -> "unexpected-cycle"
+    }
+}
+
+/// The original db: two SRC inputs, both LEN cells + one DIAG cell driven
+/// (so every family carries populated memo state before projection).
+fn original_db() -> Db<string> {
+    let mut db: Db<string> = db_new(rt_compute)
+    db.set_input(qk(RT_SRC, 0), "hello", content_id_for("hello"))
+    db.set_input(qk(RT_SRC, 1), "worlds!", content_id_for("worlds!"))
+    let _ = fetch_value(db, qk(RT_LEN, 0))
+    let _ = fetch_value(db, qk(RT_LEN, 1))
+    let _ = fetch_value(db, qk(RT_DIAG, 0))
+    db
+}
+
+/// Project → to_bytes → from_bytes → un-project. The restored Db is what
+/// every assertion below drives.
+fn roundtrip_db() -> Db<string> {
+    let db = original_db()
+    let sdb = db_to_serdb(db, "test-compiler", 7)
+    let sdb2 = from_bytes_SerDb(sdb.to_bytes())
+    serdb_to_db(sdb2, rt_compute)
+}
+
+/// The intermediate SerDb after a bytes round-trip — for header assertions.
+fn roundtrip_serdb() -> SerDb {
+    let db = original_db()
+    let sdb = db_to_serdb(db, "test-compiler", 7)
+    from_bytes_SerDb(sdb.to_bytes())
+}
+
+spec "L6 memo cache: SerDb projection round-trips in memory (ps3t.8.8)" {
+    then "the header survives the bytes round-trip" {
+        let s = roundtrip_serdb()
+        s.magic == serdb_magic()
+            && s.compiler_version == "test-compiler"
+            && s.hash_version == 7
+    }
+    then "current_rev is preserved" {
+        let db = original_db()
+        let restored = roundtrip_db()
+        restored.current_rev == db.current_rev
+    }
+    then "restored derived values equal the originals" {
+        let db2 = roundtrip_db()
+        fetch_value(db2, qk(RT_LEN, 0)) == "5"
+            && fetch_value(db2, qk(RT_LEN, 1)) == "7"
+    }
+    then "restored cells are hot: a same-revision fetch does no recompute" {
+        // verified_at + current_rev restore intact, so the very first fetch on
+        // the loaded db is a memo hit — its compute counter stays at the
+        // value carried over, never incremented by the fetch.
+        let db2 = roundtrip_db()
+        let before = db2.computes_of(RT_LEN)
+        let _ = fetch_value(db2, qk(RT_LEN, 0))
+        db2.computes_of(RT_LEN) == before
+    }
+    then "per-family compute tallies are carried over" {
+        let db = original_db()
+        let db2 = roundtrip_db()
+        db2.computes_of(RT_LEN) == db.computes_of(RT_LEN)
+            && db2.computes_of(RT_DIAG) == db.computes_of(RT_DIAG)
+            && db.computes_of(RT_LEN) == 2
+    }
+    then "discovered deps survive: a post-load input edit still invalidates" {
+        // LEN(0) recorded SRC(0) as a dep. If deps round-tripped, editing
+        // SRC(0) on the loaded db forces exactly one recompute and the new
+        // length; if they were lost, the stale value would replay.
+        let db2 = roundtrip_db()
+        let base = db2.computes_of(RT_LEN)
+        db2.set_input(qk(RT_SRC, 0), "hi", content_id_for("hi"))
+        let v = fetch_value(db2, qk(RT_LEN, 0))
+        v == "2" && db2.computes_of(RT_LEN) == base + 1
+    }
+    then "an unrelated input edit does NOT recompute (dep set is precise)" {
+        // LEN(0) depends only on SRC(0); editing SRC(1) must leave LEN(0) hot.
+        let db2 = roundtrip_db()
+        let base = db2.computes_of(RT_LEN)
+        db2.set_input(qk(RT_SRC, 1), "changed-but-unread-by-len0", content_id_for("x"))
+        let _ = fetch_value(db2, qk(RT_LEN, 0))
+        db2.computes_of(RT_LEN) == base
+    }
+    then "a diagnostic with a cause chain round-trips bit-for-bit" {
+        let db = original_db()
+        let db2 = roundtrip_db()
+        let orig = match db.fetch(qk(RT_DIAG, 0)) {
+            .Ok(f) -> if f.diags.length == 1 { diag_canonical(f.diags[0]) } else { "none" }
+            .Err(_) -> "cycle"
+        }
+        let round = match db2.fetch(qk(RT_DIAG, 0)) {
+            .Ok(f) -> if f.diags.length == 1 { diag_canonical(f.diags[0]) } else { "none" }
+            .Err(_) -> "cycle"
+        }
+        orig == round && orig != "none"
+    }
+    then "the restored diagnostic's cause is the root, not lost" {
+        let db2 = roundtrip_db()
+        match db2.fetch(qk(RT_DIAG, 0)) {
+            .Ok(f) -> {
+                if f.diags.length != 1 { false }
+                else {
+                    match f.diags[0].cause {
+                        .Cause(c) -> c.message == "root cause"
+                        .None -> false
+                    }
+                }
+            }
+            .Err(_) -> false
+        }
+    }
+    then "the restored db keeps computing new derived queries correctly" {
+        // A family/arg never touched pre-projection still computes on demand
+        // through the re-supplied dispatcher — the loaded db is a live engine.
+        let db2 = roundtrip_db()
+        db2.set_input(qk(RT_SRC, 5), "abcd", content_id_for("abcd"))
+        fetch_value(db2, qk(RT_LEN, 5)) == "4"
+    }
+}

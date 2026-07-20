@@ -614,10 +614,13 @@ fn extract_impl_methods(store: NodeStore, methods: List<StmtId>, type_qn: string
             // form via features::impl_decl::parser. The
             // post-mangle method name is everything after the
             // final "__".
-            .Function(mangled, _, _, _, _) -> {
+            .Function(mangled, _, params, ret, _) -> {
                 let method_name = strip_mangle(mangled)
                 let fn_qn = qualify(type_qn, method_name)
-                out.push(ImplMethodRef { method_name, fn_sym_id: sym_id_for(fn_qn) })
+                // Capture the method's own signature inline (ps3t.8.8) so the
+                // consumer synthesizes a correctly-typed stub without needing
+                // the trait's declaration — see ImplMethodRef's WHY.
+                out.push(ImplMethodRef { method_name, fn_sym_id: sym_id_for(fn_qn), params, ret })
             }
             _ -> {}
         }
