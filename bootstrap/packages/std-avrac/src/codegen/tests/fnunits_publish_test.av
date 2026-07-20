@@ -48,24 +48,29 @@ fn meta_compile(dir: string) -> int {
 }
 
 spec "per-fn cache write side: metadata package build publishes always-on; standalone does not" {
-    then "a metadata package build (no flag) publishes units; rerun dedupes to the same set" {
+    then "a metadata package build (no flag) publishes a pack + index; rerun is byte-identical" {
         let dir = mk_pkg()
         let rc1 = meta_compile(dir)
         // The lib-root gate hangs the store off the package cache root;
-        // locate it by find so the test is robust to the exact layout.
-        let keydir = avra_shell_exec("find '${dir}' -type d -path '*/fnunits/key' 2>/dev/null | head -1").trim()
-        let artdir = avra_shell_exec("find '${dir}' -type d -path '*/fnunits/art' 2>/dev/null | head -1").trim()
-        let keys1 = avra_shell_exec("ls '${keydir}' 2>/dev/null | wc -l").trim()
-        let arts1 = avra_shell_exec("ls '${artdir}' 2>/dev/null | wc -l").trim()
+        // locate the index by find so the test is robust to the exact layout.
+        let idx = avra_shell_exec("find '${dir}' -type f -path '*/fnunits/index' 2>/dev/null | head -1").trim()
+        let store = avra_shell_exec("dirname '${idx}' 2>/dev/null").trim()
+        let keys1 = avra_shell_exec("grep -c '^K ' '${idx}' 2>/dev/null").trim()
+        let arts1 = avra_shell_exec("grep -c '^A ' '${idx}' 2>/dev/null").trim()
+        let packs1 = avra_shell_exec("ls '${store}'/pack.* 2>/dev/null | wc -l").trim()
+        let idxsum1 = avra_shell_exec("sha256sum '${idx}' 2>/dev/null | cut -d' ' -f1").trim()
+        // A deterministic rerun re-hashes to the SAME content-addressed pack
+        // (no orphan) and rewrites a byte-identical index — the dedup/
+        // determinism guarantee the old per-file layout checked as counts.
         let rc2 = meta_compile(dir)
-        let keys2 = avra_shell_exec("ls '${keydir}' 2>/dev/null | wc -l").trim()
-        let arts2 = avra_shell_exec("ls '${artdir}' 2>/dev/null | wc -l").trim()
+        let idxsum2 = avra_shell_exec("sha256sum '${idx}' 2>/dev/null | cut -d' ' -f1").trim()
+        let packs2 = avra_shell_exec("ls '${store}'/pack.* 2>/dev/null | wc -l").trim()
         let ok = rc1 == 0 && rc2 == 0
-            && keydir.length > 0
-            && keys1 != "0" && arts1 != "0"
-            && keys2 == keys1 && arts2 == arts1
+            && idx.length > 0
+            && keys1 != "0" && arts1 != "0" && packs1 == "1"
+            && idxsum2 == idxsum1 && packs2 == "1"
         if !ok {
-            println("fnunits meta publish: rc1=${string(rc1)} rc2=${string(rc2)} keydir=${keydir} keys1=${keys1} arts1=${arts1} keys2=${keys2} arts2=${arts2}")
+            println("fnunits meta publish: rc1=${string(rc1)} rc2=${string(rc2)} idx=${idx} keys1=${keys1} arts1=${arts1} packs1=${packs1} idxsum1=${idxsum1} idxsum2=${idxsum2} packs2=${packs2}")
             println("build.log tail: ${avra_shell_exec("tail -6 '${dir}/build.log' 2>/dev/null")}")
         }
         avra_shell_exec("rm -rf '${dir}'")

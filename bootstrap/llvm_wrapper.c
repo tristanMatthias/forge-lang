@@ -753,6 +753,127 @@ int64_t avra_llvm_fn_print_to_file(LLVMValueRef fn, const char* path) {
     return 1;
 }
 
+// Record separator between per-function units in the packed string that
+// avra_llvm_module_split_defines returns. \x1e (ASCII RS) never occurs in
+// LLVM's printable-ASCII textual IR, so splitting on it is unambiguous.
+const char* avra_llvm_unit_sep(void) { return "\x1e"; }
+
+// The raw (unescaped) name of an LLVM value — the SAME string
+// avra_llvm_module_split_defines emits per block. The Avra caller keys its
+// cache-key map by this so blocks match regardless of how codegen mangled
+// the source name. Heap copy (Avra copies at the FFI boundary).
+const char* avra_llvm_value_name(LLVMValueRef v) {
+    if (!v) return "";
+    size_t len = 0;
+    const char* name = LLVMGetValueName2(v, &len);
+    if (!name || len == 0) return "";
+    char* copy = (char*)malloc(len + 1);
+    if (!copy) return "";
+    memcpy(copy, name, len);
+    copy[len] = '\0';
+    return copy;
+}
+
+// Hex nibble for LLVM's `\XX` quoted-name escapes; -1 if not a hex digit.
+static int avra_hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// Whole-module per-function IR extraction — the O(n) replacement for
+// calling LLVMPrintValueToString once per function (which is O(module)
+// EACH, because it rebuilds a module SlotTracker per call: ~3.8k fns ×
+// O(module) = quadratic, ~80s on @std/avrac). Here the module is printed
+// ONCE (one SlotTracker), then split into `define … }` blocks.
+//
+// Returns the defined functions as `name\n<function-ir>\x1e` records
+// (record sep = \x1e; name/ir split at the first \n). Each block SELF-
+// IDENTIFIES: its name is parsed from its own `define … @<name>(` line —
+// the first `@` after "define " (return type / linkage / attrs carry no
+// `@`), unescaped from LLVM's `@"…"` quoting (`\XX` -> byte). No reliance
+// on print-order matching any external iteration order, so a parse miss
+// yields a cache MISS (recompute), never a mis-keyed unit. The name equals
+// LLVMGetValueName2, which the Avra caller keys its cache map by.
+//
+// v1 handles textual IR; a bitcode artifact slots in behind the same seam.
+const char* avra_llvm_module_split_defines(LLVMModuleRef m) {
+    if (!m) return "";
+    char* ir = LLVMPrintModuleToString(m);
+    if (!ir) return "";
+    size_t n = strlen(ir);
+    size_t cap = n + 65536, outlen = 0;
+    char* out = (char*)malloc(cap);
+    if (!out) { LLVMDisposeMessage(ir); return ""; }
+
+    size_t i = 0;
+    while (i < n) {
+        int at_line_start = (i == 0) || (ir[i - 1] == '\n');
+        if (at_line_start && strncmp(ir + i, "define ", 7) == 0) {
+            size_t start = i;
+            // Block ends at a line that is exactly "}" (then \n or EOF).
+            size_t j = i, end = 0;
+            while (j < n) {
+                if (ir[j] == '\n' && ir[j + 1] == '}' &&
+                    (j + 2 >= n || ir[j + 2] == '\n')) {
+                    end = j + 2;   // include the closing brace
+                    break;
+                }
+                j++;
+            }
+            if (end == 0) break;   // malformed — stop rather than emit garbage
+
+            // Parse the function name from the `define` line (first '@').
+            char namebuf[8192];
+            size_t nl = 0;
+            size_t p = start + 7;
+            while (p < end && ir[p] != '@' && ir[p] != '\n') p++;
+            if (p < end && ir[p] == '@') {
+                p++;
+                if (p < end && ir[p] == '"') {              // quoted name
+                    p++;
+                    while (p < end && ir[p] != '"' && nl < sizeof(namebuf) - 1) {
+                        int h1, h2;
+                        if (ir[p] == '\\' && p + 2 < end &&
+                            (h1 = avra_hexval(ir[p + 1])) >= 0 &&
+                            (h2 = avra_hexval(ir[p + 2])) >= 0) {
+                            namebuf[nl++] = (char)((h1 << 4) | h2);
+                            p += 3;
+                        } else {
+                            namebuf[nl++] = ir[p++];
+                        }
+                    }
+                } else {                                     // bareword name
+                    while (p < end && ir[p] != '(' && ir[p] != ' ' &&
+                           nl < sizeof(namebuf) - 1) {
+                        namebuf[nl++] = ir[p++];
+                    }
+                }
+            }
+
+            size_t blocklen = end - start;
+            size_t need = outlen + nl + 1 + blocklen + 1;
+            if (need > cap) {
+                while (need > cap) cap *= 2;
+                char* grown = (char*)realloc(out, cap);
+                if (!grown) { free(out); LLVMDisposeMessage(ir); return ""; }
+                out = grown;
+            }
+            memcpy(out + outlen, namebuf, nl); outlen += nl;
+            out[outlen++] = '\n';
+            memcpy(out + outlen, ir + start, blocklen); outlen += blocklen;
+            out[outlen++] = '\x1e';
+            i = end;
+        } else {
+            i++;
+        }
+    }
+    out[outlen] = '\0';
+    LLVMDisposeMessage(ir);
+    return out;
+}
+
 int avra_llvm_verify_module_print(LLVMModuleRef m) {
     char* error = NULL;
     int result = LLVMVerifyModule(m, LLVMPrintMessageAction, &error);
