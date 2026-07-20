@@ -1,16 +1,16 @@
-// WHY: the `@query` surface (design §3.1/§3.3) — the ergonomic
+// WHY: the `@query` surface (design §3.1/§3.3 + §12.5) — the ergonomic
 // layer over the L6 query engine (src/query/mod.av), now that L4 exists to
-// host it (§10.B: hand-wrapped memo until L4; L4 is here). `@query(N)` on a fn
+// host it (§10.B: hand-wrapped memo until L4; L4 is here). `@query(Fam.Variant)`
+// on a fn — the family is NAMED by a variant of one `enum Fam`:
 //
-//     @query(1)
+//     enum Fam { Src, TextLen }        // Src (0) = input family, TextLen (1) = this query
+//     @query(Fam.TextLen)
 //     fn text_len(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> { … }
 //
 // generates the three per-query boilerplate pieces a hand-wrapped driver
-// needs, leaving the DISPATCHER hand-written (that is the §10.B contract —
-// the engine's compute dispatcher stays the driver's, each arm becomes a
-// one-liner):
+// needs; the program-level DISPATCHER is generated too (ps3t.8.12):
 //
-//     fn text_len_family() -> int              — the annotation's family int
+//     fn text_len_family() -> int              — `Fam.TextLen.ordinal` (folded)
 //     fn text_len_fetch(ctx, arg) -> Result<V, QueryCycle>
 //         — the ergonomic call-through: `ctx.fetch(qk(family, arg))`,
 //         recording the dependency edge like any engine read.
@@ -18,15 +18,16 @@
 //         — the compute-arm adapter: runs the original fn, wraps its answer
 //         in `computed(v, content_id_for(v))` for the memo store.
 //
-// The family is the DRIVER AUTHOR'S dense int, stated in the annotation —
-// per the engine's §2.1 contract ("family is a small dense int the driver
-// assigns"; `Db.family(tag)` grows a dense list to `tag`, so a fabricated
-// wide id — a content hash, say — is not an option: content-addressing is
-// the ARG key's scheme, not the family's). The surface enforces what it can
-// see: a non-negative int literal per site, and no two `@query` sites in
-// one program claiming the same family (the expansion walk's seen-set).
-// Collisions with HAND-assigned input families remain the driver author's
-// contract, exactly as with a hand-written arm.
+// The family's dense int (the engine's §2.1 contract: `Db.family(tag)` grows a
+// dense list to `tag`, so it must be small and dense) is the variant's
+// declaration-order `.ordinal` (ps3t.8.13) — the surface renders
+// `Fam.TextLen.ordinal` into the generated code and CODEGEN constant-folds it;
+// the surface never resolves it and needs no view of the enum decl. Because one
+// `enum Fam` names every query AND its inputs (`qk(Fam.Src.ordinal, …)`), all
+// families are that enum's ordinals 0..n-1 and CANNOT collide — a guarantee the
+// old hand-picked int could not give. The surface enforces it: exactly one
+// `Fam.Variant` per site, no two sites claiming the same variant, and every
+// site drawing from the SAME enum (the expansion walk's seen-set — §12.5).
 //
 // Generated names use SINGLE-underscore suffixes: the dispatcher references
 // them by hand, and spec Axis 28 reserves `__` for compiler-generated
@@ -53,68 +54,66 @@
 use core.{NodeStore, StmtId, Stmt, Expr, ValueType, ParamEntry, find_annotation, type_short_name}
 use parse.{parse_program_source_shared}
 
-/// C runtime int parse (extern decls don't cross modules) — the
-/// annotation's family literal arrives as `Expr.Number`'s source string.
-extern fn avra_parse_int(s: string) -> int
+/// A `@query(Fam.Variant)` family reference: the enum name and the variant
+/// naming the family. The family's dense int is the variant's ORDINAL,
+/// resolved and constant-folded at codegen via the `.ordinal` accessor
+/// (ps3t.8.13) — the surface never computes it, it renders `Fam.Variant.ordinal`
+/// into the generated code. `key` ("Fam.Variant") is the program-wide
+/// duplicate identity.
+export type QueryFamilyRef = { enum_name: string, variant: string, key: string }
 
 /// Result of one `@query` expansion: the generated decl ids (family +
 /// fetch + compute, NOT the original — the caller re-splices the
-/// stripped original itself, mirroring the native-Marshal contract) and
-/// the family int the site claimed (for the caller's program-wide
-/// duplicate check), or a shape-violation message for the caller's
-/// F4013 (the caller owns the diagnostic so it carries the annotation
-/// site's span).
-export type QuerySurfaceOut = { stmts: List<StmtId>?, family: int, error: string }
+/// stripped original itself, mirroring the native-Marshal contract), the
+/// family's identity (`family` = "Fam.Variant" for the caller's program-wide
+/// duplicate check; `family_enum` = "Fam" for the single-enum check that
+/// makes cross-family collisions impossible by construction), or a
+/// shape-violation message for the caller's F4013 (the caller owns the
+/// diagnostic so it carries the annotation site's span).
+export type QuerySurfaceOut = { stmts: List<StmtId>?, family: string, family_enum: string, error: string }
 
 fn qs_fail(msg: string) -> QuerySurfaceOut {
-    QuerySurfaceOut { stmts: null, family: 0, error: msg }
+    QuerySurfaceOut { stmts: null, family: "", family_enum: "", error: msg }
 }
 
 /// The one shape `@query` accepts, stated once for every diagnostic.
 fn qs_expected() -> string {
-    "`@query(N)` fn must be `fn name(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle>`"
+    "`@query(Fam.Variant)` fn must be `fn name(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle>`"
 }
 
 /// Expand one `@query`-annotated declaration. `node` is the decl WITH
-/// its annotation layers (the family int lives on the annotation),
+/// its annotation layers (the family enum-variant lives on the annotation),
 /// `inner` the same decl unwrapped.
 export fn query_surface_stmts_for(store: NodeStore, node: Stmt, inner: Stmt) -> QuerySurfaceOut {
-    let family = query_family_of(store, node)
-    if family == null {
-        return qs_fail("@query needs the query's dense family int as its one argument — `@query(N)`, the same int a hand-written driver would pass to `qk` (the engine's §2.1 family contract)")
-    }
-    if family! < 0 {
-        return qs_fail("@query family must be non-negative — the engine's memo store is dense-indexed by family")
+    let fam = query_family_ref(store, node)
+    if fam == null {
+        return qs_fail("@query needs an enum-variant family — `@query(Fam.Variant)`, where `enum Fam { … }` names every query and input family in one place. The family's dense int is the variant's `.ordinal` (its declaration-order position), so families never collide by construction")
     }
     match inner {
         .Function(name, type_params, params, ret, _) ->
-            build_query_surface(store, name, family!, type_params, params, ret)
+            build_query_surface(store, name, fam!, type_params, params, ret)
         _ -> qs_fail("@query applies only to `fn` declarations")
     }
 }
 
-/// The `N` of `@query(N)`: the annotation's single int-literal argument,
-/// null for any other arg shape (missing, several, non-literal).
+/// The `Fam.Variant` of `@query(Fam.Variant)`: the annotation's single
+/// enum-variant argument, null for any other arg shape (missing, several,
+/// an int, an arbitrary expression). `Fam.Variant` parses as
+/// `FieldAccess(Ident("Fam"), "Variant")` (parens-less enum-ctor shape) —
+/// the surface renders it back as `Fam.Variant.ordinal`, so the ordinal
+/// (a dense compile-time int) is resolved by codegen, not here.
+///
 /// Statement-match + early returns rather than a match EXPRESSION with
-/// `null` arms: the null-mix `T?` merge fix (arm_store_value_mixed)
-/// landed WITH this feature, so the pinned seed compiling THIS file
-/// still mis-merges `null` arms into `Some(0)` — the standard "don't
-/// dogfood just-fixed semantics in compiler src until the seed
-/// advances" discipline. Rewritable as a match expression after the
-/// next seed cycle.
-fn query_family_of(store: NodeStore, node: Stmt) -> int? {
+/// `null` arms: the null-mix `T?` merge discipline (don't rely on
+/// just-fixed arm-merge semantics in compiler src until the seed advances).
+fn query_family_ref(store: NodeStore, node: Stmt) -> QueryFamilyRef? {
     let found = find_annotation(store, node, "query")
     if found == null || found!.arg_ids == none || found!.arg_ids!.length != 1 { return null }
     match store.exprs.get(found!.arg_ids![0]) {
-        .Number(n) -> { return avra_parse_int(n) }
-        .Unary(op, operand) -> {
-            // `-N` parses as unary minus on a literal; fold it so the
-            // negative-family diagnostic (not the arg-shape one) fires.
-            if op is .Neg {
-                match store.exprs.get(operand) {
-                    .Number(n) -> { return 0 - avra_parse_int(n) }
-                    _ -> {}
-                }
+        .FieldAccess(head_id, variant) -> {
+            match store.exprs.get(head_id) {
+                .Ident(enum_name) -> { return QueryFamilyRef { enum_name, variant, key: "${enum_name}.${variant}" } }
+                _ -> {}
             }
         }
         _ -> {}
@@ -122,7 +121,7 @@ fn query_family_of(store: NodeStore, node: Stmt) -> int? {
     null
 }
 
-fn build_query_surface(store: NodeStore, name: string, family: int, type_params: List<string>, params: List<ParamEntry>, ret: ValueType) -> QuerySurfaceOut {
+fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type_params: List<string>, params: List<ParamEntry>, ret: ValueType) -> QuerySurfaceOut {
     if type_params.length > 0 {
         return qs_fail("@query fn cannot be generic — the memo key is `(family, arg)`, monomorphic by construction")
     }
@@ -150,18 +149,24 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
         return qs_fail("${qs_expected()} — return type is `${vt_debug(ret)}`, not `Result<string, QueryCycle>`")
     }
 
-    let fam = string(family)
-    // Every engine/core reference is FULLY QUALIFIED — the same rendering
+    // The family's dense int is the variant's declaration-order `.ordinal`
+    // (ps3t.8.13) — rendered into the generated code and constant-folded by
+    // codegen, so the surface never resolves it and needs no view of the
+    // enum decl. Referencing the driver's own `Fam` unqualified is correct:
+    // the generated decls splice into the driver's module, where `Fam` is in
+    // scope exactly as the annotation saw it.
+    let fexpr = "${fam.enum_name}.${fam.variant}.ordinal"
+    // Every ENGINE/CORE reference is FULLY QUALIFIED — the same rendering
     // the metadata roundtrip re-parses — so the generated code resolves
     // regardless of the driver's imports: no implicit injection to keep in
     // sync, and a user's own same-named symbol (their `computed`, say)
     // can never capture a generated reference.
     let q = "@std::avrac::query::"
     let src = "fn ${name}_family() -> int {\n" +
-        "    ${fam}\n" +
+        "    ${fexpr}\n" +
         "}\n" +
         "fn ${name}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
-        "    ctx.fetch(${q}qk(${fam}, arg))\n" +
+        "    ctx.fetch(${q}qk(${fexpr}, arg))\n" +
         "}\n" +
         "fn ${name}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
         "    let v = ${name}(ctx, qkey.arg)?\n" +
@@ -170,11 +175,11 @@ fn build_query_surface(store: NodeStore, name: string, family: int, type_params:
     let parsed = parse_program_source_shared(src, "<@query ${name}>", store)
     if parsed.had_error == 1 || parsed.ids == null {
         // Unreachable by construction — the template is closed over a
-        // validated identifier + an int literal. Surfaced as an error
-        // (not a silent skip) so a template regression is loud.
+        // validated identifier + a validated `Fam.Variant`. Surfaced as an
+        // error (not a silent skip) so a template regression is loud.
         return qs_fail("internal: generated @query surface for `${name}` failed to parse")
     }
-    QuerySurfaceOut { stmts: parsed.ids, family, error: "" }
+    QuerySurfaceOut { stmts: parsed.ids, family: fam.key, family_enum: fam.enum_name, error: "" }
 }
 
 /// Synthesise the program-level query dispatcher (ps3t.8.12): ONE

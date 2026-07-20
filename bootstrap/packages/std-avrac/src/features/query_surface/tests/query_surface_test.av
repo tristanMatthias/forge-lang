@@ -1,9 +1,11 @@
-// WHY: the @query(N) surface (design §3.1/§3.3 + §10.B) — the
-// generated per-query boilerplate (family/fetch/compute) over the L6
-// engine, the implicit engine imports (deduped against what the driver
-// already imports), the F4013 shape diagnostics (fail-fast, reported
-// once — a failed @query strips its annotation like a failed @derive),
-// and the program-wide duplicate-family check.
+// WHY: the @query(Fam.Variant) surface (design §3.1/§3.3 + §10.B + ps3t.8.10) —
+// families are named by an enum's variants, the dense int being the variant's
+// `.ordinal` (ps3t.8.13, constant-folded). ONE `enum Fam` names every query AND
+// input family, so their ordinals share a dense space and cannot collide by
+// construction. Covers the generated per-query boilerplate (family/fetch/compute),
+// the implicit engine imports, the F4013 shape diagnostics (fail-fast, reported
+// once — a failed @query strips its annotation like a failed @derive), the
+// program-wide duplicate-family check, and the single-enum invariant.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture, write_fixture_and_run_no_metadata}
@@ -14,14 +16,22 @@ fn query_check_out(path: string, source: string) -> string {
     avra_shell_exec("bash scripts/diagnose.sh --slot-exec env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
-// The shared driver tail every runtime fixture appends: a main that
-// fetches twice and prints the observable memo profile. NO hand-written
-// dispatcher (ps3t.8.12) — `db_new(avra_query_dispatch)` uses the
-// compiler-generated program-wide dispatcher routing every @query family.
+// The family enum every runtime fixture shares: `Src` (ordinal 0) is the input
+// family; `TextLen` (1) and `Doubled` (2) are compute families. One enum → one
+// dense ordinal space → inputs and computes can never collide.
+fn query_fam_enum() -> string {
+    "enum Fam { Src, TextLen, Doubled }\n\n"
+}
+
+// The shared driver tail every runtime fixture appends: a main that fetches
+// twice and prints the observable memo profile. NO hand-written dispatcher
+// (ps3t.8.12) — `db_new(avra_query_dispatch)` uses the compiler-generated
+// program-wide dispatcher routing every @query family. The input is set on
+// `Fam.Src` (ordinal 0), the same family the @query fn reads.
 fn query_driver_tail() -> string {
     "fn main() {\n" +
     "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
-    "    db.set_input(qk(0, 7), \"hello\", 42)\n" +
+    "    db.set_input(qk(Fam.Src.ordinal, 7), \"hello\", 42)\n" +
     "    let r1 = db.fetch(qk(text_len_family(), 7))\n" +
     "    match r1 {\n" +
     "        .Ok(f) -> println(\"len=\" + f.value)\n" +
@@ -35,22 +45,23 @@ fn query_driver_tail() -> string {
     "}\n"
 }
 
-// The @query fn every runtime fixture shares: reads input family 0,
-// answers with the text's length.
+// The @query fn every runtime fixture shares: reads the input on `Fam.Src`,
+// answers with the text's length. `@query(Fam.TextLen)` names its family.
 fn query_fn_decl() -> string {
-    "@query(1)\n" +
+    "@query(Fam.TextLen)\n" +
     "fn text_len(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
-    "    let src = ctx.fetch(qk(0, arg))?\n" +
+    "    let src = ctx.fetch(qk(Fam.Src.ordinal, arg))?\n" +
     "    Result.Ok(string(src.length))\n" +
     "}\n" +
     "\n"
 }
 
-spec "@query(N) generates a working memoized query" {
+spec "@query(Fam.Variant) generates a working memoized query" {
     then "family/fetch/compute drive the engine end-to-end and the second fetch is a memo hit" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_basic_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
             "\n" +
+            query_fam_enum() +
             query_fn_decl() +
             query_driver_tail())
         out.contains("len=5") && out.contains("again=5 computes=1")
@@ -66,6 +77,7 @@ spec "@query implicit imports dedupe against the driver's own" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_inject_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
+            query_fam_enum() +
             query_fn_decl() +
             query_driver_tail())
         out.contains("len=5") && out.contains("again=5 computes=1")
@@ -80,6 +92,7 @@ spec "a user symbol shadowing an engine name cannot capture generated code" {
         let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_shadow_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
+            query_fam_enum() +
             "fn computed(tag: string) -> string {\n" +
             "    \"user-\" + tag\n" +
             "}\n" +
@@ -96,8 +109,9 @@ spec "the generated fetch helper is itself dependency-recording" {
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}\n" +
             "use @std.avrac.core.{content_id_for}\n" +
             "\n" +
+            query_fam_enum() +
             query_fn_decl() +
-            "@query(2)\n" +
+            "@query(Fam.Doubled)\n" +
             "fn doubled(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
             "    let n = text_len_fetch(ctx, arg)?\n" +
             "    Result.Ok(n + n)\n" +
@@ -105,14 +119,14 @@ spec "the generated fetch helper is itself dependency-recording" {
             "\n" +
             "fn main() {\n" +
             "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
-            "    db.set_input(qk(0, 7), \"hello\", 42)\n" +
+            "    db.set_input(qk(Fam.Src.ordinal, 7), \"hello\", 42)\n" +
             "    let r1 = db.fetch(qk(doubled_family(), 7))\n" +
             "    match r1 {\n" +
             "        .Ok(f) -> println(\"doubled=\" + f.value)\n" +
             "        .Err(_) -> println(\"cycle\")\n" +
             "    }\n" +
             "    // Same-hash re-set: no revision bump, everything stays memoized.\n" +
-            "    db.set_input(qk(0, 7), \"hello\", 42)\n" +
+            "    db.set_input(qk(Fam.Src.ordinal, 7), \"hello\", 42)\n" +
             "    let r2 = db.fetch(qk(doubled_family(), 7))\n" +
             "    match r2 {\n" +
             "        .Ok(f) -> println(\"still=\" + f.value + \" computes=\" + string(db.computes_of(doubled_family())))\n" +
@@ -120,7 +134,7 @@ spec "the generated fetch helper is itself dependency-recording" {
             "    }\n" +
             "    // Real edit: the input changes, the chain recomputes through\n" +
             "    // the recorded text_len dependency.\n" +
-            "    db.set_input(qk(0, 7), \"hi\", 43)\n" +
+            "    db.set_input(qk(Fam.Src.ordinal, 7), \"hi\", 43)\n" +
             "    let r3 = db.fetch(qk(doubled_family(), 7))\n" +
             "    match r3 {\n" +
             "        .Ok(f) -> println(\"edited=\" + f.value)\n" +
@@ -139,13 +153,14 @@ spec "@query coexists with @derive in one program" {
             "@derive(Eq)\n" +
             "type Pt = { x: int, y: int }\n" +
             "\n" +
+            query_fam_enum() +
             query_fn_decl() +
             "fn main() {\n" +
             "    let a = Pt { x: 1, y: 2 }\n" +
             "    let b = Pt { x: 1, y: 2 }\n" +
             "    println(\"eq=\" + string(a.eq(b)))\n" +
             "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
-            "    db.set_input(qk(0, 3), \"abc\", 9)\n" +
+            "    db.set_input(qk(Fam.Src.ordinal, 3), \"abc\", 9)\n" +
             "    match db.fetch(qk(text_len_family(), 3)) {\n" +
             "        .Ok(f) -> println(\"len=\" + f.value)\n" +
             "        .Err(_) -> println(\"cycle\")\n" +
@@ -159,14 +174,15 @@ spec "the generated dispatcher errors loudly on an unregistered family (ps3t.8.1
     then "fetching a family with no @query site hits avra_query_dispatch's panic fallthrough" {
         // Families are compiler-generated; a fetch reaching compute for an
         // unregistered family is a bug, so avra_query_dispatch panics rather
-        // than silently defaulting. 4242 is claimed by no @query site.
+        // than silently defaulting. 4242 is claimed by no @query variant.
         let out = write_fixture_and_run_no_metadata("/tmp/avra_query_surface_unknown_family_test.av",
             "use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk}\n" +
             "\n" +
+            query_fam_enum() +
             query_fn_decl() +
             "fn main() {\n" +
             "    let mut db: Db<string> = db_new(avra_query_dispatch)\n" +
-            "    db.set_input(qk(0, 0), \"x\", 1)\n" +
+            "    db.set_input(qk(Fam.Src.ordinal, 0), \"x\", 1)\n" +
             "    let _ = db.fetch(qk(4242, 0))\n" +
             "    println(\"UNREACHABLE\")\n" +
             "}\n")
@@ -174,7 +190,7 @@ spec "the generated dispatcher errors loudly on an unregistered family (ps3t.8.1
     }
 }
 
-spec "@query without a family int is F4013" {
+spec "@query without a family is F4013" {
     then "the bare annotation errors once and names the expected spelling" {
         let out = query_check_out("/tmp/avra_query_surface_bare_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
@@ -185,14 +201,31 @@ spec "@query without a family int is F4013" {
             "}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("F4013") && out.contains("@query(N)") && !out.contains("F4000")
+        out.contains("F4013") && out.contains("@query(Fam.Variant)") && !out.contains("F4000")
+    }
+}
+
+spec "the old hand-picked int form is rejected" {
+    then "@query(1) is F4013 — families are now enum variants, not dense ints" {
+        let out = query_check_out("/tmp/avra_query_surface_intform_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "@query(1)\n" +
+            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("F4013") && out.contains("enum-variant family") && !out.contains("F4000")
     }
 }
 
 spec "@query on a non-fn decl is F4013" {
     then "a type declaration cannot be a query" {
         let out = query_check_out("/tmp/avra_query_surface_nonfn_test.av",
-            "@query(1)\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
             "type Pt = { x: int }\n" +
             "\n" +
             "fn main() {}\n")
@@ -205,7 +238,9 @@ spec "@query with the wrong signature is F4013" {
         let out = query_check_out("/tmp/avra_query_surface_arity_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
             "\n" +
-            "@query(1)\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
             "fn q(arg: int) -> Result<string, QueryCycle> {\n" +
             "    Result.Ok(\"\")\n" +
             "}\n" +
@@ -217,7 +252,9 @@ spec "@query with the wrong signature is F4013" {
         let out = query_check_out("/tmp/avra_query_surface_vtype_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
             "\n" +
-            "@query(1)\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
             "fn q(ctx: QueryCtx<int>, arg: int) -> Result<string, QueryCycle> {\n" +
             "    Result.Ok(\"\")\n" +
             "}\n" +
@@ -228,66 +265,67 @@ spec "@query with the wrong signature is F4013" {
 }
 
 spec "@query family constraints" {
-    then "a negative family is F4013 (the memo store is dense-indexed)" {
-        let out = query_check_out("/tmp/avra_query_surface_negfam_test.av",
-            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
-            "\n" +
-            "@query(-1)\n" +
-            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
-            "    Result.Ok(\"\")\n" +
-            "}\n" +
-            "\n" +
-            "fn main() {}\n")
-        out.contains("F4013") && out.contains("non-negative")
-    }
-    then "several family args are F4013 (exactly one int)" {
+    then "several family args are F4013 (exactly one enum variant)" {
         let out = query_check_out("/tmp/avra_query_surface_multiarg_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
             "\n" +
-            "@query(1, 2)\n" +
+            "enum Fam { A, B }\n" +
+            "\n" +
+            "@query(Fam.A, Fam.B)\n" +
             "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
             "    Result.Ok(\"\")\n" +
             "}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("F4013") && out.contains("dense family int")
+        out.contains("F4013") && out.contains("enum-variant family")
     }
     then "@query on an extern fn is F4013 (only fn declarations)" {
         let out = query_check_out("/tmp/avra_query_surface_extern_test.av",
-            "@query(1)\n" +
+            "enum Fam { A }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
             "extern fn puts(s: string) -> int\n" +
             "\n" +
             "fn main() {}\n")
         out.contains("F4013") && out.contains("only to `fn`")
     }
-    then "a non-literal family arg is F4013 (idents don't resolve at expansion)" {
-        let out = query_check_out("/tmp/avra_query_surface_identfam_test.av",
-            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
-            "\n" +
-            "const FAM = 1\n" +
-            "@query(FAM)\n" +
-            "fn q(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
-            "    Result.Ok(\"\")\n" +
-            "}\n" +
-            "\n" +
-            "fn main() {}\n")
-        out.contains("F4013") && out.contains("dense family int")
-    }
-    then "two @query fns claiming one family is F4013 at the second site" {
+    then "two @query fns claiming one variant is F4013 at the second site" {
         let out = query_check_out("/tmp/avra_query_surface_dupfam_test.av",
             "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
             "\n" +
-            "@query(1)\n" +
+            "enum Fam { A, B }\n" +
+            "\n" +
+            "@query(Fam.A)\n" +
             "fn a(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
             "    Result.Ok(\"\")\n" +
             "}\n" +
             "\n" +
-            "@query(1)\n" +
+            "@query(Fam.A)\n" +
             "fn b(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
             "    Result.Ok(\"\")\n" +
             "}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("duplicate @query family 1") && !out.contains("F4000")
+        out.contains("duplicate @query family `Fam.A`") && !out.contains("F4000")
+    }
+    then "two @query fns from DIFFERENT enums is F4013 (single-enum invariant)" {
+        let out = query_check_out("/tmp/avra_query_surface_crossenum_test.av",
+            "use @std.avrac.query.{QueryCtx, QueryCycle}\n" +
+            "\n" +
+            "enum FamA { X }\n" +
+            "enum FamB { Y }\n" +
+            "\n" +
+            "@query(FamA.X)\n" +
+            "fn a(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "@query(FamB.Y)\n" +
+            "fn b(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {\n" +
+            "    Result.Ok(\"\")\n" +
+            "}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("different enum") && !out.contains("F4000")
     }
 }

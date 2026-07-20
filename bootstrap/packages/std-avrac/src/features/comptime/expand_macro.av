@@ -579,18 +579,35 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                     // decls are rendered source, no interpreter round
                     // trip) and cycle-free (they carry no annotations,
                     // so the fixpoint converges without a cycle key).
-                    // The seen-set instead guards FAMILY uniqueness: two
-                    // @query sites claiming one dense family int would
-                    // silently share a memo family — wrong answers, no
-                    // symptom — so the collision is an error here, at
-                    // the second site, while the walk can still see it.
+                    // The seen-set guards FAMILY uniqueness on two axes:
+                    // (1) no two sites claim the same `Fam.Variant` (they
+                    // would share a memo family — wrong answers, no
+                    // symptom); (2) every site draws from ONE enum, so the
+                    // families are that enum's ordinals 0..n-1 and can
+                    // never collide (with each other OR with same-enum
+                    // inputs) by construction. Both are errors here, at the
+                    // offending site, while the walk can still see it.
                     let p = store.stmt_pos(id)
                     let gen = query_surface_stmts_for(store, node, stmt_unwrap(store, node))
-                    let fam_key = "query-family:${string(gen.family)}"
+                    let fam_key = "query-family:${gen.family}"
+                    let enum_key = "query-family-enum:${gen.family_enum}"
+                    // Membership-only bookkeeping (no string-slicing): a fixed
+                    // sentinel records "some @query seen", and one enum_key per
+                    // program records WHICH enum — a later site whose enum_key
+                    // isn't present is a different enum.
+                    let any_query = list_contains_str(seen, "query-family-seen")
+                    let same_enum = list_contains_str(seen, enum_key)
                     if gen.stmts != null && list_contains_str(seen, fam_key) {
                         bag = bag_report(bag, diag_error(
                             DiagCode.QueryBadShape,
-                            "duplicate @query family ${string(gen.family)} — another @query fn in this program already claims it; each query needs its own dense family int",
+                            "duplicate @query family `${gen.family}` — another @query fn in this program already claims it; each query needs its own variant of the family enum",
+                            span_at(0, 0, p.line, p.col, p.file)
+                        ))
+                        out.push(store.restmt(strip_query_annotation(store, node), id))
+                    } else if gen.stmts != null && any_query && !same_enum {
+                        bag = bag_report(bag, diag_error(
+                            DiagCode.QueryBadShape,
+                            "@query family `${gen.family}` names a different enum than an earlier @query in this program — all @query families (and their inputs) must come from ONE enum so their ordinals share a dense space and cannot collide",
                             span_at(0, 0, p.line, p.col, p.file)
                         ))
                         out.push(store.restmt(strip_query_annotation(store, node), id))
@@ -606,6 +623,12 @@ fn expand_stmt_list(ids: List<StmtId>, reg: CompTimeRegistry, comp_macros: List<
                         out.push(store.restmt(strip_query_annotation(store, node), id))
                     } else {
                         seen = seen.push(fam_key)
+                        // Record the family enum ONCE (first site) so a later
+                        // site naming a DIFFERENT enum trips the check above.
+                        if !any_query {
+                            seen = seen.push("query-family-seen")
+                            seen = seen.push(enum_key)
+                        }
                         // ps3t.8.12: record the site so the post-walk splice can
                         // generate `avra_query_dispatch`'s arm for it.
                         query_sites = query_sites.push(decl_name_of(store, inner))
