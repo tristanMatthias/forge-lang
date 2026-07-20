@@ -137,7 +137,30 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
         i = i + 1
     }
     items.push(json_str(runtime_o))
-    items.push(json_str(llvm_wrapper_o))
+    // F5 (uzs9.5.5): LAZY-load llvm_wrapper.o so a PURE program (one that
+    // never calls the compiler's LLVM C-API wrappers — every test fixture,
+    // every `bs2 run` target) doesn't drag in libLLVM.so and pay its
+    // startup-relocation tax. Measured: mapping + eagerly relocating the
+    // 137MB libLLVM.so at process start costs ~12ms/exec; a pure program
+    // that sheds it starts in ~1.4ms (8.7× faster). On lld the wrapper goes
+    // inside `-Wl,--start-lib … --end-lib`, making it an archive-style
+    // member pulled ONLY when some object references a symbol it defines;
+    // paired with `--as-needed -lLLVM` below, libLLVM.so then drops out of
+    // DT_NEEDED for pure programs and stays for wrapper-referencing ones
+    // (bs2 itself, an @comptime JIT body). ld64 has no `--start-lib`, so
+    // macOS keeps the mandatory-wrapper + unconditional-libLLVM link.
+    // GUARDED by build/tests/link_surface_test.av — do NOT flatten this
+    // back to a bare `llvm_wrapper.o` + `-lLLVM`; that silently reintroduces
+    // the 8.7× startup tax and would sail through diff-test (link-stage, IR
+    // unchanged).
+    let is_mac = host_is_macos()
+    if is_mac {
+        items.push(json_str(llvm_wrapper_o))
+    } else {
+        items.push(json_str("-Wl,--start-lib"))
+        items.push(json_str(llvm_wrapper_o))
+        items.push(json_str("-Wl,--end-lib"))
+    }
     // Export the program's symbols to the dynamic symbol table so an
     // in-process MCJIT (compiled-comptime, ps3t.5) can resolve the
     // `avra_*` runtime functions a JIT'd `@comptime` body calls (e.g. the
@@ -148,7 +171,6 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
     items.push(json_str("-rdynamic"))
     items.push(json_str("-o"))
     items.push(json_str(out))
-    let is_mac = host_is_macos()
     // Main-thread stack size: macOS pins it at link time via ld64's
     // `-stack_size`; Linux derives it from RLIMIT_STACK (the driver
     // raises the soft limit), so the flag is macOS-only.
@@ -157,7 +179,19 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
     }
     let llvm_prefix = resolve_llvm_prefix(opts)
     items.push(json_str("-L${llvm_prefix}/lib"))
-    items.push(json_str("-lLLVM"))
+    // --as-needed so libLLVM.so lands in DT_NEEDED ONLY if the lazy wrapper
+    // above (or a direct LLVM-C-API reference) actually pulled a live LLVM
+    // symbol; a pure program pulls none, so it drops — the F5 startup win.
+    // lld-only; macOS links -lLLVM unconditionally (see the wrapper comment
+    // above). --no-as-needed restores default linkage so the trailing libs
+    // (-lstdc++ / -lc++) are unaffected.
+    if is_mac {
+        items.push(json_str("-lLLVM"))
+    } else {
+        items.push(json_str("-Wl,--as-needed"))
+        items.push(json_str("-lLLVM"))
+        items.push(json_str("-Wl,--no-as-needed"))
+    }
     // C++ runtime libLLVM was built against, plus the linker. macOS:
     // libc++ + default ld64. Linux: libstdc++ + LLD (GNU ld mis-parses
     // the `@`-prefixed mangled symbols as version separators).

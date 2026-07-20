@@ -1,0 +1,113 @@
+// WHY: the test-binary link deliberately LAZY-loads llvm_wrapper.o so a
+// PURE Avra program (one that never calls the compiler's LLVM C-API
+// wrappers — i.e. every test fixture + every `bs2 run` target) does NOT
+// drag in libLLVM.so. Measured: mapping + eagerly relocating the 137MB
+// libLLVM.so at process startup costs ~12ms/exec; without it a pure
+// program starts in ~1.4ms (8.7× faster). See build/link.av
+// build_link_argv (forge-crafting-intepreters-uzs9.5.5 / F5).
+//
+// The mechanism is the linker's own laziness, NOT a heuristic:
+//   * llvm_wrapper.o is wrapped in `-Wl,--start-lib … --end-lib` (lld),
+//     so it's pulled ONLY if some object references a symbol it defines.
+//   * `-Wl,--as-needed -lLLVM -Wl,--no-as-needed` then drops libLLVM.so
+//     from DT_NEEDED when nothing pulled the wrapper.
+// A program that DOES reference a wrapper symbol (bs2 itself, an
+// @comptime JIT body) pulls the wrapper → its 136 undefined LLVM refs go
+// live → --as-needed keeps libLLVM. Correct in both directions, zero
+// per-link analysis.
+//
+// THE REGRESSION THIS GUARDS: a future edit (human or LLM) that "simplifies"
+// the link back to a bare mandatory `llvm_wrapper.o` + unconditional
+// `-lLLVM` silently reintroduces the 8.7× startup tax on every binary the
+// toolchain produces. That looks like a harmless cleanup and would sail
+// through diff-test (IR is unchanged — this is link-stage). This spec is
+// the teeth: it links a pure program THROUGH the real `link_objects` and
+// asserts libLLVM is absent, so the regression goes red here with a
+// pointer back to the rationale.
+//
+// lld-only (Linux): the `--start-lib`/`--as-needed` flags are lld
+// extensions, so build_link_argv applies the lazy link only when NOT
+// macOS. The shed-assertions below gate on the same host check; on macOS
+// they assert only that the binary still links + runs.
+
+use @std.avrac.build.{llvm_prefix_dir, atomic_obj_llc_cmd, link_objects, default_link_options}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_getpid}
+
+extern fn avra_host_os() -> string
+
+fn llc_bin() -> string { "${llvm_prefix_dir()}/bin/llc" }
+
+// The lazy-link optimization is lld-only; on macOS the link keeps the
+// mandatory-wrapper + unconditional-libLLVM behaviour, so a pure program
+// still carries libLLVM there. Mirror build_link_argv's own gate.
+fn lazy_link_platform() -> bool { avra_host_os() != "macos" }
+
+// Count of libLLVM entries in the binary's DT_NEEDED (0 = shed).
+fn llvm_needed_count(bin: string) -> string {
+    avra_shell_exec("readelf -d '${bin}' 2>/dev/null | grep -c 'NEEDED.*LLVM' || true").trim()
+}
+
+// Compile a pure `.av` → `.ll` → `.o`, link via the REAL link_objects,
+// and return the linked binary path (empty string on any failure).
+fn build_pure_binary(slot: string, pid: int) -> string {
+    let av = "${slot}.av"
+    let _ = avra_selfhost_write_file(av, "fn main() -> int {\n    println(\"LINKSURFACE_OK\")\n    0\n}\n")
+    if avra_shell_exec_status("./build/bs2 compile '${av}' >/dev/null 2>&1") != 0 { return "" }
+    let obj = "${slot}.o"
+    if avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O2", "${av}.ll", obj, "${slot}_llc.log", pid)) != 0 { return "" }
+    let objs = [obj]
+    let bin = "${slot}.bin"
+    if link_objects(objs, "build/runtime.o", "build/llvm_wrapper.o", bin, default_link_options()) != 0 { return "" }
+    bin
+}
+
+// Build a binary whose EXTRA object references a wrapper symbol
+// (avra_llvm_build_alloca), simulating an @comptime-JIT / compiler-style
+// program. This object must FORCE the lazy wrapper to be pulled, which
+// must in turn keep libLLVM. Returns the binary path (empty on failure).
+fn build_wrapper_ref_binary(pure_bin_slot: string, slot: string, pid: int) -> string {
+    // Reuse the pure program's own object as the "main"; add a C object
+    // that takes the address of a wrapper symbol so the linker must pull
+    // llvm_wrapper.o to resolve it.
+    let cfile = "${slot}.c"
+    let _ = avra_selfhost_write_file(cfile,
+        "extern void* avra_llvm_build_alloca(void*, void*, const char*);\nvoid* volatile avra_link_surface_keep = (void*)&avra_llvm_build_alloca;\n")
+    let usewrap_o = "${slot}.wrap.o"
+    if avra_shell_exec_status("cc -c '${cfile}' -o '${usewrap_o}' 2>/dev/null") != 0 { return "" }
+    let objs = ["${pure_bin_slot}.o", usewrap_o]
+    let bin = "${slot}.bin"
+    if link_objects(objs, "build/runtime.o", "build/llvm_wrapper.o", bin, default_link_options()) != 0 { return "" }
+    bin
+}
+
+spec "test-binary link sheds libLLVM for pure programs (F5 lazy link)" {
+    then "a pure Avra program links + runs correctly through link_objects" {
+        let pid = avra_getpid()
+        let bin = build_pure_binary("build/_linksurface_pure_${string(pid)}", pid)
+        bin != "" && avra_shell_exec("'${bin}' 2>&1").contains("LINKSURFACE_OK")
+    }
+    then "a pure program does NOT carry libLLVM in DT_NEEDED (the startup-tax fix)" {
+        let pid = avra_getpid()
+        let bin = build_pure_binary("build/_linksurface_shed_${string(pid)}", pid)
+        // On lld (Linux) the lazy wrapper isn't pulled, so --as-needed
+        // drops libLLVM: count MUST be 0. If someone reverts to a bare
+        // mandatory llvm_wrapper.o + unconditional -lLLVM, this count
+        // becomes 1 and the guard fires. On macOS the optimization is
+        // off, so we only require the binary to exist (asserted above).
+        if lazy_link_platform() {
+            bin != "" && llvm_needed_count(bin) == "0"
+        } else {
+            bin != ""
+        }
+    }
+    then "a program that references a wrapper symbol KEEPS libLLVM (--as-needed doesn't over-strip)" {
+        let pid = avra_getpid()
+        let pure_slot = "build/_linksurface_ref_pure_${string(pid)}"
+        let pbin = build_pure_binary(pure_slot, pid)
+        let bin = build_wrapper_ref_binary(pure_slot, "build/_linksurface_ref_${string(pid)}", pid)
+        // The wrapper reference forces llvm_wrapper.o to be pulled, whose
+        // 136 undefined LLVM refs then keep libLLVM live under --as-needed.
+        // On macOS libLLVM is unconditional, so it's present either way.
+        pbin != "" && bin != "" && llvm_needed_count(bin) != "0"
+    }
+}
