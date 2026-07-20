@@ -506,8 +506,16 @@ accessor** `Fam.TextLen.ordinal`, the variant's 0-based declaration-order index,
 resolved via the shared `variant_index` and constant-folded to a literal (so a
 family is still a compile-time dense int — the engine's index contract is
 preserved). It is additive and language-general (does not change the existing
-`djb2` variant tags); the `@query` surface then reads a `Fam.Variant` annotation
-argument through the same `variant_index` at expansion time.
+`djb2` variant tags).
+
+`ps3t.8.10` then delivers the surface: `@query(Fam.TextLen)` reads the annotation's
+`Fam.Variant` argument and RENDERS `Fam.TextLen.ordinal` into the generated
+`_family`/`_fetch` code — the ordinal is resolved and folded by the subsequent
+typecheck + codegen, so the surface itself needs no view of the enum decl. The
+expansion walk enforces the invariant that makes collisions impossible: exactly
+one variant per site, no duplicate variant, and every `@query` site drawing from
+ONE enum — so all families (queries and their `qk(Fam.Src.ordinal, …)` inputs)
+are that enum's ordinals `0..n-1`.
 
 ## 13. What this design explicitly does NOT do
 
