@@ -456,6 +456,18 @@ fn collect_derive_capabilities(store: NodeStore, ids: List<StmtId>) -> List<stri
                 }
             }
         }
+        // The `@marshal` alias spells `@derive(Marshal)` — it must inject the
+        // same implicit `use @std.process.{Marshal}` so the native marshal
+        // derive's synthesized `impl @std::process::Marshal:T` finds its
+        // trait. `@derive(Marshal)` flows through the loop above; `@marshal`
+        // is a distinct annotation name, so recognize it here (no args — the
+        // capability is fixed). Without this a `@marshal` type in a library
+        // module (e.g. diagnostics' Diagnostic tree, ps3t.8.8) fails
+        // conformance with "unknown trait `@std::process::Marshal`" because
+        // the trait's module was never loaded.
+        if find_annotation(store, node, "marshal") != null {
+            if !name_list_has(out, "Marshal") { out.push("Marshal") }
+        }
         match stmt_unwrap(store, node) {
             .Module(_, body) -> {
                 let sub = collect_derive_capabilities(store, body)

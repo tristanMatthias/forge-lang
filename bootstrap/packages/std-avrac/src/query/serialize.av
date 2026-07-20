@@ -1,0 +1,120 @@
+// WHY: ps3t.8.8 on-disk memo cache — the plain-data PROJECTION of the L6
+// query engine's `Db<V>` (query/mod.av). `Db` can't `@marshal` directly: its
+// `idx: ptr` intmaps and `compute: fn` are runtime-only. So project to `Ser*`
+// DTOs (all `@marshal`'d, so `@std::process` synthesises their to_bytes /
+// from_bytes codecs), persist those, and un-project on load — `idx` rebuilt
+// from the parallel `args` list via `mk_family_memo`, `compute` re-supplied by
+// the caller. V is fixed to `string` here (the v1 memo value type, ps3t.8.11);
+// a generic on-disk value type is a later increment. This is increment 1: the
+// in-memory projection + round-trip. The namespaced on-disk read/write
+// (validate-on-read, atomic materialise) is increment 2.
+
+use query.{Db, FamilyMemo, MemoEntry, QueryKey, QueryCtx, Computed, QueryCycle, mk_family_memo, from_bytes_QueryKey}
+use diagnostics.{Diagnostic, from_bytes_Diagnostic}
+
+/// One memo cell as plain data. `arg` is recovered from `FamilyMemo.args` (a
+/// `MemoEntry` doesn't store its own arg — the engine's `idx` intmap owns
+/// arg->slot, but has no deterministic key iteration). Otherwise field-for-
+/// field with `MemoEntry<string>`.
+@marshal
+export type SerCell = {
+    arg: int,
+    value: string,
+    answer_hash: int,
+    deps: List<QueryKey>,
+    diags: List<Diagnostic>,
+    changed_at: int,
+    verified_at: int,
+}
+
+/// One family's memo as plain data. `family` is the family TAG — the index of
+/// this family in `Db.families` (the engine's dense-family contract, §2.1),
+/// which `FamilyMemo` doesn't store on itself, so it is captured at projection.
+@marshal
+export type SerFamily = {
+    family: int,
+    computes: int,
+    cells: List<SerCell>,
+}
+
+/// The whole database as plain data, plus a validate-on-read header: a `magic`
+/// tag, the `compiler_version`, and the `hash_version`. A reader rejects any
+/// blob whose header doesn't match the running toolchain -> an honest cold
+/// MISS, never a stale serve (the acceptance's hard requirement). The
+/// content-addressed KEY (increment 2) makes an entry location-independent;
+/// this header makes it toolchain-safe.
+@marshal
+export type SerDb = {
+    magic: string,
+    compiler_version: string,
+    hash_version: int,
+    current_rev: int,
+    families: List<SerFamily>,
+}
+
+/// The fixed magic tag every serialized memo blob opens with — the first,
+/// cheapest validate-on-read check.
+export fn serdb_magic() -> string { "AVRAQMEMO1" }
+
+/// Project a live `Db<string>` to its serializable form. `families` is walked
+/// by index (the index IS the family tag), each cell paired with its arg from
+/// the parallel `args` list. `compiler_version` / `hash_version` stamp the
+/// header so a later load can validate-on-read.
+export fn db_to_serdb(db: Db<string>, compiler_version: string, hash_version: int) -> SerDb {
+    mut fams: List<SerFamily> = []
+    mut tag = 0
+    while tag < db.families.length {
+        let fm = db.families[tag]
+        mut cells: List<SerCell> = []
+        mut i = 0
+        while i < fm.cells.length {
+            let c = fm.cells[i]
+            cells.push(SerCell {
+                arg: fm.args[i],
+                value: c.value,
+                answer_hash: c.answer_hash,
+                deps: c.deps,
+                diags: c.diags,
+                changed_at: c.changed_at,
+                verified_at: c.verified_at,
+            })
+            i = i + 1
+        }
+        fams.push(SerFamily { family: tag, computes: fm.computes, cells })
+        tag = tag + 1
+    }
+    SerDb {
+        magic: serdb_magic(),
+        compiler_version,
+        hash_version,
+        current_rev: db.current_rev,
+        families: fams,
+    }
+}
+
+/// Rebuild a live `Db<string>` from a deserialized `SerDb`. `compute` is the
+/// driver's dispatcher (runtime-only, never serialized — re-supplied here).
+/// Families restore in tag order; each family's `idx` intmap is rebuilt from
+/// its cells' args via `mk_family_memo`, so the loaded Db answers fetches
+/// identically to the one that was projected.
+export fn serdb_to_db(sdb: SerDb, compute: fn(QueryCtx<string>, QueryKey) -> Result<Computed<string>, QueryCycle>) -> Db<string> {
+    mut families: List<FamilyMemo<string>> = []
+    for sf in sdb.families {
+        mut cells: List<MemoEntry<string>> = []
+        mut args: List<int> = []
+        for sc in sf.cells {
+            cells.push(MemoEntry {
+                value: sc.value,
+                answer_hash: sc.answer_hash,
+                deps: sc.deps,
+                diags: sc.diags,
+                changed_at: sc.changed_at,
+                verified_at: sc.verified_at,
+            })
+            args.push(sc.arg)
+        }
+        families.push(mk_family_memo(cells, args, sf.computes))
+    }
+    let active: List<QueryKey> = []
+    Db { current_rev: sdb.current_rev, families, compute, active }
+}

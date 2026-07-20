@@ -76,6 +76,10 @@ extern fn avra_intmap_has(map: ptr, key: int) -> int
 /// assigns per query kind (`source`, `ast`, `typeck`, …); `arg` is the
 /// content-addressed argument (an L3 content id for per-item queries, a file
 /// id for per-file ones — NEVER per-node, §2.1).
+///
+/// @marshal (ps3t.8.8): a memo cell's dependency edges (`deps: List<QueryKey>`)
+/// ride to disk with it, so QueryKey serializes. Two int fields — a flat frame.
+@marshal
 export type QueryKey = { family: int, arg: int }
 
 /// Construct a QueryKey.
@@ -120,7 +124,7 @@ export type Fetched<V> = { value: V, diags: List<Diagnostic> }
 /// One memo cell (§2.1's MemoEntry). `answer_hash` covers value AND
 /// diagnostics — the early-cutoff comparison. Invariant at all times:
 /// `changed_at <= verified_at <= db.current_rev`.
-type MemoEntry<V> = {
+export type MemoEntry<V> = {
     value: V,
     answer_hash: int,
     deps: List<QueryKey>,
@@ -133,7 +137,13 @@ type MemoEntry<V> = {
 /// `computes` counts compute runs (the instrumentation the differential
 /// oracle asserts cutoff with — a cutoff that "works" but recomputes
 /// everything would otherwise be invisible).
-type FamilyMemo<V> = { idx: ptr, cells: List<MemoEntry<V>>, computes: int }
+/// `args` runs parallel to `cells` (args[i] is the arg key of cells[i]),
+/// recovering each cell's arg for serialization (ps3t.8.8): a MemoEntry
+/// doesn't store its own arg — `idx` owns arg->slot, but the intmap has no
+/// deterministic key iteration. The ordered `cells`/`args` pair is both
+/// smaller and byte-deterministic (what the differential oracle needs); `idx`
+/// is rebuilt from `args` on load, never serialized.
+export type FamilyMemo<V> = { idx: ptr, cells: List<MemoEntry<V>>, args: List<int>, computes: int }
 
 /// The query database (§2.1): the revision counter, the per-family memo
 /// stores, the driver's compute dispatcher (one pure fn from `(ctx, key)` to
@@ -178,9 +188,25 @@ impl FamilyMemo<V> {
     fn insert(self, arg: int, cell: MemoEntry<V>) -> int {
         let slot = self.cells.length
         self.cells.push(cell)
+        self.args.push(arg)
         avra_intmap_set(self.idx, arg, slot)
         slot
     }
+}
+
+/// Rebuild a FamilyMemo from a deserialized (cells, args) pair (ps3t.8.8): the
+/// `idx` intmap isn't serialized (a runtime `ptr`), so reconstruct it from
+/// `args` — cells[i] indexes under args[i], exactly as `insert` wrote it. The
+/// one place the on-disk memo cache re-enters the engine's intmap, kept beside
+/// `insert` so the arg->slot contract lives in a single file.
+export fn mk_family_memo<V>(cells: List<MemoEntry<V>>, args: List<int>, computes: int) -> FamilyMemo<V> {
+    let idx = avra_intmap_new()
+    mut i = 0
+    while i < args.length {
+        avra_intmap_set(idx, args[i], i)
+        i = i + 1
+    }
+    FamilyMemo { idx, cells, args, computes }
 }
 
 impl Db<V> {
@@ -279,7 +305,8 @@ impl Db<V> {
     fn family(self, tag: int) -> FamilyMemo<V> {
         while self.families.length <= tag {
             let cells: List<MemoEntry<V>> = []
-            let fresh: FamilyMemo<V> = FamilyMemo { idx: avra_intmap_new(), cells, computes: 0 }
+            let args: List<int> = []
+            let fresh: FamilyMemo<V> = FamilyMemo { idx: avra_intmap_new(), cells, args, computes: 0 }
             self.families.push(fresh)
         }
         self.families[tag]
