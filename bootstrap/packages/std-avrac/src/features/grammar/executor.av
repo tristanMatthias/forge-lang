@@ -1166,6 +1166,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "Unary" if args.length == 2 -> CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
         "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, env.get(args[0]), env.get(args[1])))
         "Grouping" if args.length == 1 -> {
             // Preserve the parenthesisation node so the produced AST matches
             // the hand-written parser (which wraps `(e)` in Expr.Grouping),
@@ -1926,6 +1927,26 @@ fn logicop_of(sym: string) -> LogicOp {
     // same LogicOp — the hand parser's parse_or/parse_and accept both (mod.av).
     if sym == "||" || sym == "or" { return LogicOp.Or }
     LogicOp.And
+}
+
+/// `l ( "=" r )?` → an assignment, RETARGETING by the LHS shape (the hand
+/// parser's parse_assignment: an `Ident` LHS → `Expr.Assign`, a `FieldAccess`
+/// LHS → `Expr.FieldAssign`; any other target is an F-code-worthy error). With
+/// no `=` (rcap Nil) the left passes through unchanged. Right-associative — the
+/// grammar's `r:assignment` recursion supplies the nested value.
+export fn mk_assign_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
+    let l = capval_to_expr(st, lcap)
+    match rcap {
+        .Nil -> l
+        _ -> {
+            let r = capval_to_expr(st, rcap)
+            match st.store.exprs.get(l) {
+                .Ident(name) -> st.store.exprs.add_leaf(Expr.Assign(name, r))
+                .FieldAccess(obj, field) -> st.store.exprs.add_leaf(Expr.FieldAssign(obj, field, r))
+                _ -> st.error_node("invalid assignment target")
+            }
+        }
+    }
 }
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce` chain

@@ -34,6 +34,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "every rule lowers to `fn parse_<name>(st: PState) -> CapVal`" {
         let src = emit_all()
         src.contains("fn parse_expression(st: PState) -> CapVal") &&
+        src.contains("fn parse_assignment(st: PState) -> CapVal") &&
         src.contains("fn parse_null_coalesce(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_or(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_and(st: PState) -> CapVal") &&
@@ -52,8 +53,17 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("p.recover_to(")
     }
 
-    then "a pass-through rule is a bare delegating call (`expression = null_coalesce`)" {
-        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_null_coalesce(st)\n}")
+    then "a pass-through rule is a bare delegating call (`expression = assignment`)" {
+        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_assignment(st)\n}")
+    }
+
+    then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
+        // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
+        let src = emit_all()
+        src.contains("let l = parse_null_coalesce(st)") &&
+        src.contains("if st.cur().text == \"=\" {") &&
+        src.contains("r = parse_assignment(st)") &&
+        src.contains("CapVal.Node(mk_assign_expr(st, l, r))")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {

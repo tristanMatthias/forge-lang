@@ -155,4 +155,11 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a and b == c") && agree("not a or b")
         }
     }
+    given "assignment `=` (retargeting Assign / FieldAssign, right-assoc)" {
+        then "ident and field-access targets, chained, and rhs expressions agree" {
+            dsl("x = 1") != "<err>" &&
+            agree("x = 1") && agree("a.b = 1") && agree("a.b.c = 1") &&
+            agree("x = y = 1") && agree("x = 1 + 2") && agree("obj.field = f(1)")
+        }
+    }
 }
