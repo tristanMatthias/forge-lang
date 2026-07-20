@@ -1,0 +1,57 @@
+// Consumer of the cross-module @marshal fixture (t-tiz0). Imports the
+// @marshal type + its derive-generated free decoder from `producer`, builds a
+// nested Widget exercising the full struct<->enum recursion, round-trips it
+// through bytes, and prints per-field checks.
+//
+// `from_bytes_Widget` is a FREE fn the derive generates and calls by BARE name;
+// before t-tiz0 it was un-exported (module-private to producer), so this
+// `use producer.{from_bytes_Widget}` failed with F3101 and decode couldn't
+// compose across the module boundary. `to_bytes` (a method) always did.
+mod producer
+use producer.{Widget, Tag, from_bytes_Widget}
+
+fn check(label: string, ok: bool) {
+    if ok { println("${label}: ok") } else { println("${label}: FAIL") }
+}
+
+fn tag_is_plain(t: Tag) -> bool {
+    match t {
+        .Plain -> true
+        _ -> false
+    }
+}
+
+fn main() -> int {
+    let leaf = Widget { id: 3, name: "leaf", tag: Tag.Plain, kids: [] }
+    let child = Widget { id: 2, name: "child", tag: Tag.Labeled("lbl", 7), kids: [leaf] }
+    let root = Widget { id: 1, name: "root", tag: Tag.Wrapped(child), kids: [child, leaf] }
+
+    // Encode with the method (already cross-module), decode with the imported
+    // free fn (the t-tiz0 fix).
+    let decoded = from_bytes_Widget(root.to_bytes())
+
+    check("root.id", decoded.id == 1)
+    check("root.name", decoded.name == "root")
+    check("root.kids.length", decoded.kids.length == 2)
+    check("root.kids[0].id", decoded.kids[0].id == 2)
+    check("root.kids[0].name", decoded.kids[0].name == "child")
+    // recursion depth 2: root.kids[0].kids[0] is the leaf
+    check("root.kids[0].kids[0].id", decoded.kids[0].kids[0].id == 3)
+
+    // struct -> enum -> struct: root.tag is Wrapped(child)
+    match decoded.tag {
+        .Wrapped(inner) -> {
+            check("root.tag.Wrapped.inner.id", inner.id == 2)
+            check("root.tag.Wrapped.inner.name", inner.name == "child")
+            // enum -> struct -> enum: inner.tag is Labeled("lbl", 7)
+            match inner.tag {
+                .Labeled(l, c) -> check("inner.tag.Labeled", l == "lbl" && c == 7)
+                _ -> check("inner.tag.Labeled", false)
+            }
+        }
+        _ -> check("root.tag.Wrapped", false)
+    }
+
+    check("leaf.tag.Plain", tag_is_plain(decoded.kids[1].tag))
+    0
+}

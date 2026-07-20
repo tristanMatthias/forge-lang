@@ -779,6 +779,26 @@ fn list_has_code(list: List<Diagnostic>, code: DiagCode) -> bool {
     false
 }
 
+/// True iff every ERROR-severity diagnostic in `bag` is an import-resolution
+/// error (ImportNotFound / ImportPrivate). The @expand pipeline uses this to
+/// decide whether a pre-expand resolve failure is a PHANTOM that macro
+/// expansion may satisfy — a `use A.{from_bytes_T}` of a decl a derive only
+/// synthesises during expansion — versus a genuine error that must short-
+/// circuit before expansion runs (t-tiz0). An empty or warning-only bag returns
+/// true: there is no blocking error to defer around.
+export fn bag_errors_all_imports(bag: DiagnosticBag) -> bool {
+    for diag in bag.diagnostics {
+        if diag.severity is .Error {
+            let is_import = match diag.code {
+                .ImportNotFound or .ImportPrivate -> true
+                _ -> false
+            }
+            if !is_import { return false }
+        }
+    }
+    true
+}
+
 /// Concatenate two bags. Used between phases to roll up per-pass
 /// diagnostics into one program-level bag for rendering. Appends b
 /// onto a so insertion order across passes is preserved.

@@ -43,11 +43,11 @@
 
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
-use resolve.{ResolverState, NameResolveResult, register_macro_decls, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, reresolve_use_aliases, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
-use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, diag_error, diag_warning, span_at}
+use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, bag_errors_all_imports, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
 use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
 use features.marshal.{derive_marshal_stmts_for}
@@ -1334,10 +1334,23 @@ fn build_resolver_ctx(handle: int) -> Value {
 /// eval decoders, so this file no longer touches `List<SStmt>`.
 export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> NameResolveResult {
     let pre = resolve_names_pre_expand(ids, store)
-    if pre.had_error == 1 {
+    let plan = expand_macros_collect(store, pre.stmts)
+    // A pre-expand resolve error normally short-circuits before any macro
+    // runs. But a cross-module `use A.{from_bytes_T}` of a decl a derive/macro
+    // in A only SYNTHESISES during expansion surfaces here as an
+    // ImportNotFound/ImportPrivate against A's PRE-expand export set — a
+    // PHANTOM error the expansion itself resolves. So when there IS expansion
+    // work and every pre-expand error is import-resolution, DEFER the bail:
+    // run expansion, then re-resolve `use` aliases below against the now-
+    // complete module tree (t-tiz0). Any import error that SURVIVES that
+    // re-resolution is re-reported there. Genuine non-import pre-errors still
+    // short-circuit — nothing downstream fixes them, and running macros over a
+    // badly-resolved program risks confusing secondary diagnostics. Programs
+    // that compile clean (pre.had_error == 0) take the unchanged path.
+    let defer_import_errors = plan_has_work(plan) && bag_errors_all_imports(pre.state.bag)
+    if pre.had_error == 1 && !defer_import_errors {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
-    let plan = expand_macros_collect(store, pre.stmts)
     if !plan_has_work(plan) {
         return validate_scopes_after_expand(pre.stmts, pre.state)
     }
@@ -1345,7 +1358,7 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     populate_resolver_data(pre.state, pre.stmts)
     let expanded = expand_macros_eval_with_state(plan, pre.state)
     avra_resolver_ctx_pop()
-    let post_state = register_macro_decls(pre.state, expanded.stmts)
+    let registered = register_macro_decls(pre.state, expanded.stmts)
     // When expansion introduced new GLOBAL items (free fns like
     // marshal's `from_bytes_T` — not just methods), re-run the FULL ident
     // rewrite: any non-macro caller — same module or cross-module — was
@@ -1356,7 +1369,29 @@ export fn resolve_and_expand_program(ids: List<StmtId>, store: NodeStore) -> Nam
     // already-resolved rows (it IS the pass that resolved them), so
     // splice-free programs keep the cheap partial walk and the HRN gate
     // stays byte-identical.
-    let rewritten = if post_state.graph.all_items.length > pre.state.graph.all_items.length {
+    let added_globals = registered.graph.all_items.length > pre.state.graph.all_items.length
+    // Cross-module `use`-alias re-resolution (t-tiz0): register_macro_decls is
+    // additive and skips it, so an import of a now-exported macro decl never
+    // bound its alias and its stale pre-expand phantom F3101/F3102 lingered.
+    // Re-resolve against the now-complete tree/graph so those aliases bind and
+    // the import bag is rebuilt without the phantoms.
+    //
+    // Gate it TIGHTLY on `pre.had_error == 1`: we only reach here having NOT
+    // bailed, so an error at this point IS a deferred import-only phantom (the
+    // bail above already returned for every other error class). A program that
+    // resolved CLEAN pre-expand — every existing program, the whole compiler
+    // included — has `pre.had_error == 0`, so this is a strict NO-OP for it:
+    // `post_state` stays `registered`, identical to before this change. Gating on
+    // `added_globals` alone was too broad — it re-walked the entire (huge,
+    // macro-dense) compiler resolution on every self-compile, which must never
+    // change its result. reresolve now fires ONLY for the actual cross-module
+    // import-of-a-macro-decl case the fixtures exercise.
+    let post_state = if added_globals && pre.had_error == 1 {
+        reresolve_use_aliases(registered, expanded.stmts)
+    } else {
+        registered
+    }
+    let rewritten = if added_globals {
         rewrite_uses(expanded.stmts, post_state)
     } else {
         rewrite_uses_macro_only(expanded.stmts, post_state)

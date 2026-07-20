@@ -19,7 +19,7 @@
 // @marshal type, since resolve_and_expand_program expands the
 // annotation itself.
 
-use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
+use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, Annotation, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
 use core.{NodeStore}
 
 // ── Synthesis ──
@@ -51,6 +51,24 @@ fn marshal_artifact_name(prefix: string, type_name: string) -> string {
     prefix + type_short_name(type_name)
 }
 
+/// Wrap a synthesised top-level decl in an `@export` annotation, allocate it,
+/// and return the leaf id — the EXACT shape the parser emits for a source
+/// `export fn` (`Stmt.Annotated([@export], inner)`, parse/mod.av). Codegen does
+/// not branch on `@export` (it's peeled by `stmt_unwrap` before the `.Function`
+/// arm and never affects linkage/mangling), so wrapping is IR byte-identical
+/// for every existing @marshal type; it ONLY makes the name importable via
+/// `use mod.{name}`. This is what lets `from_bytes_<T>` — a FREE fn the derive
+/// calls by BARE name — compose across module boundaries: `to_bytes` already
+/// does, as an `impl` method, but the un-exported free `from_bytes_<T>` was
+/// module-private, so a cross-module consumer's `use A.{from_bytes_T}` (or a
+/// derive-generated nested read of an imported type) could not resolve it
+/// (t-tiz0).
+fn export_wrap(store: NodeStore, inner: Stmt) -> StmtId {
+    let no_arg_ids: List<ExprId> = []
+    let annots: List<Annotation> = [Annotation { name: "export", arg_ids: no_arg_ids }]
+    store.stmts.add_leaf(Stmt.Annotated(annots, store.stmts.add_leaf(inner)))
+}
+
 /// Build the synthesised stmts for a `@marshal type T = {...}`:
 ///   - `impl T { fn to_bytes(self) -> bytes { ... } }` (instance method)
 ///   - `fn from_bytes_T(b: bytes) -> T { ... }` (top-level fn)
@@ -76,7 +94,11 @@ fn derive_stmts(store: NodeStore, type_name: string, fields: List<FieldEntry>) -
     let impl_stmt = Stmt.Impl("@std::process::Marshal:" + type_name, methods)
     let from_bytes_fn = build_from_bytes_fn(store, type_name, fields)
     let isolated_fn = build_isolated_fn(store, type_name, vtype_struct(type_name, 0))
-    [store.stmts.add_leaf(impl_stmt), store.stmts.add_leaf(from_bytes_fn), store.stmts.add_leaf(isolated_fn)]
+    // from_bytes is @export-wrapped so it's importable across module
+    // boundaries (t-tiz0); the impl (to_bytes) already composes as a method
+    // and isolated_<T> stays module-private (only reachable via a local
+    // `isolated { }` on the type).
+    [store.stmts.add_leaf(impl_stmt), export_wrap(store, from_bytes_fn), store.stmts.add_leaf(isolated_fn)]
 }
 
 fn build_to_bytes_fn(store: NodeStore, fields: List<FieldEntry>) -> Stmt {
@@ -612,7 +634,10 @@ fn derive_enum_stmts(store: NodeStore, type_name: string, variants: List<Variant
     let empty_args: List<ValueType> = []
     let isolated_fn = build_isolated_fn(store, type_name,
         ValueType.Enum(type_name, empty_args, 0))
-    [store.stmts.add_leaf(impl_stmt), store.stmts.add_leaf(from_bytes_fn), store.stmts.add_leaf(isolated_fn)]
+    // Same export-wrap as the struct path (t-tiz0): the enum's from_bytes_<T>
+    // is a free fn called by bare name, so cross-module consumers must be able
+    // to import it.
+    [store.stmts.add_leaf(impl_stmt), export_wrap(store, from_bytes_fn), store.stmts.add_leaf(isolated_fn)]
 }
 
 fn build_enum_to_bytes_fn(store: NodeStore, type_name: string, variants: List<Variant>) -> Stmt {
