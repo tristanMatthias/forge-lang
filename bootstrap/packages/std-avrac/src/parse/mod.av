@@ -2022,6 +2022,23 @@ impl Parser {
     // The content between `${` and `}` is parsed as a full expression
     // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
     // `${string(x)}` all work.
+    // The interpolated-string primary in isolation — the @hand(template_expr)
+    // entry for the grammar-DSL (ps3t.6.7). A `Tk.Template` token (an
+    // interpolated `"..{e}.."` string) desugars to the `+`-chain of text +
+    // string(expr) fragments; desugar_template re-parses each embedded
+    // expression via parse_template_expr. Byte-identical to parse_primary's
+    // Tk.Template arm — the stateless token-grammar can't re-express the nested
+    // expression re-parse, so the @hand bridge delegates it (like quote_expr).
+    fn parse_template_primary(self) -> Result<ExprId, string> {
+        if self.check(Tk.Template) {
+            let raw = self.current_lexeme
+            self.advance()
+            return self.desugar_template(raw)
+        }
+        self.set_error("expected an interpolated string")
+        .Err("parse error")
+    }
+
     fn desugar_template(self, raw: string) -> Result<ExprId, string> {
         mut acc = TemplateFold { have: false, result: Expr.None, result_id: ExprId(0) }
         mut i = 0

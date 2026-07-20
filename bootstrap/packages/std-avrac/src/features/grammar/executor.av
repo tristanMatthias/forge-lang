@@ -733,6 +733,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
     if name == "quote_expr" { return tok.text == "quote" }
+    // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
+    if name == "template_expr" { return tok.kind == "TEMPLATE" }
     false
 }
 
@@ -947,7 +949,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr"
+    name == "quote_expr" || name == "template_expr"
 }
 
 /// Run an EXPRESSION hand rule by delegating to the real hand parser over the
@@ -973,8 +975,9 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     bp.records_roots = 0
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let result = match name {
-        "quote_expr" -> bp.parse_quote()
-        _            -> .Err("no hand expression rule `${name}`")
+        "quote_expr"    -> bp.parse_quote()
+        "template_expr" -> bp.parse_template_primary()
+        _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
     match result {
