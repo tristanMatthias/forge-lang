@@ -1040,19 +1040,35 @@ impl BytesReader {
 //   [u32 method_count]
 //   [per method:
 //     [string method_name]
-//     [u64 fn_sym_id]              — points into the FNS section by sym_id
+//     [u64 fn_sym_id]              — sym_id of the impl fn (Type__method)
+//     [param_list params]          — the method's own signature (ps3t.8.8)
+//     [vtype ret]
 //   ]
 //
-// `fn_sym_id` is the sym_id of the impl fn (e.g. the
-// `Type__method` entry the codegen emits). Decoders cross-reference
-// the FNS section to recover the full signature without having to
-// re-store params and return type on every impl entry.
+// `fn_sym_id` is the sym_id of the impl fn (e.g. the `Type__method`
+// entry the codegen emits). The signature is stored INLINE (params +
+// ret) rather than cribbed from the trait declaration: a cross-package
+// trait impl's trait lives in a package this unit's metadata doesn't
+// carry, so trait-cribbing produced a zero-arg stub and an arity-
+// mismatched call. Inline sigs make impl synth self-contained.
 
 // One impl method ref — `List<ImplMethodRef>` rows replace the
 // prior bespoke ImplMethodRefList cons-list (lkze.4).
+//
+// `params` + `ret` ship the method's OWN signature inline (ps3t.8.8). The
+// original design recovered the sig from the trait declaration via the
+// trait's MetaTraitMethodList — but that FAILS for a CROSS-PACKAGE trait
+// impl (e.g. `@marshal` puts `impl @std::process::Marshal:T` on @std::avrac's
+// own types), because the trait's declaration lives in a package this unit's
+// metadata never carries, so the consumer synthesized a zero-arg stub and
+// codegen emitted a call with the wrong arity (verifier failure). Shipping the
+// sig inline — exactly as InherentImplEntry already does — makes trait-impl
+// synth self-contained and correct regardless of where the trait lives.
 export type ImplMethodRef = {
     method_name: string,
     fn_sym_id: int,
+    params: List<ParamEntry>,
+    ret: ValueType,
 }
 
 export type ImplDeclEntry = {
@@ -1075,6 +1091,8 @@ impl BytesWriter {
             let m = e.methods[i]
             self.string(m.method_name)
             self.u64_le(m.fn_sym_id)
+            self.param_list(m.params)
+            self.vtype(m.ret)
             i = i + 1
         }
     }
@@ -1092,7 +1110,9 @@ impl BytesReader {
         while i < count {
             let name = self.string()
             let fn_id = self.u64_le()
-            methods.push(ImplMethodRef { method_name: name, fn_sym_id: fn_id })
+            let params = self.param_list()
+            let ret = self.vtype()
+            methods.push(ImplMethodRef { method_name: name, fn_sym_id: fn_id, params, ret })
             i = i + 1
         }
         ImplDeclEntry {

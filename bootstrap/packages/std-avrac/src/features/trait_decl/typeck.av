@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.{StmtId, NodeStore, vtype_is_unknown, stmt_unwrap}
+use core.{StmtId, NodeStore, vtype_is_unknown, stmt_unwrap, find_annotation}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
@@ -33,6 +33,16 @@ export fn find_trait_separator(name: string) -> int {
 export fn check_trait_conformance(tc: TC, impl_name: string, methods: List<StmtId>) -> TC {
     let colon_idx = find_trait_separator(impl_name)
     if colon_idx < 0 { return tc }
+
+    // A synthesised EXTERNAL-UNIT impl stub (reconstructed from a dependency's
+    // metadata.bin) was already conformance-checked in its PRODUCING unit —
+    // re-checking it here is redundant, and for a CROSS-PACKAGE trait (e.g.
+    // `@std::process::Marshal` implemented on @std::avrac's own @marshal types,
+    // ps3t.8.8) it is impossible: the trait's declaration lives in a package
+    // this consumer never `use`s, so `trait_get` can't find it and the stub
+    // would spuriously F1000 "unknown trait". Trust the stub — its methods
+    // carry `@external_unit`, the same marker codegen uses to skip their bodies.
+    if impl_is_external_stub(tc.nodes, methods) { return tc }
 
     let trait_name = impl_name.substring(0, colon_idx)
     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
@@ -126,6 +136,23 @@ fn impl_method_param_count(store: NodeStore, methods: List<StmtId>, name: string
         i = i + 1
     }
     -1
+}
+
+/// True when an impl block is a synthesised external-unit stub: it has at
+/// least one method and EVERY method carries the `@external_unit` annotation
+/// (`wrap_external_unit`, metadata_synthesize.av). Such an impl was produced
+/// from a dependency's metadata.bin — its conformance was verified when that
+/// dependency compiled, so the consumer skips re-checking (see
+/// `check_trait_conformance`). An empty method list is NOT a stub (a genuine
+/// user `impl Trait for T {}` that forgot every method must still be caught).
+fn impl_is_external_stub(store: NodeStore, methods: List<StmtId>) -> bool {
+    if methods.length == 0 { return false }
+    for id in methods {
+        if find_annotation(store, store.stmts.get(id), "external_unit") == null {
+            return false
+        }
+    }
+    true
 }
 
 /// True when `methods` contains a `Function` with the given
