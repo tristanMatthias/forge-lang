@@ -1,0 +1,31 @@
+// uzs9.7: the contention net for the fixture-compile slot gate
+// (acquire_compile_slot / release_compile_slot, diagnose.sh). The gate
+// has two weight classes since #880 moved most fixtures onto the ~1.8GB
+// metadata fast-path: a LIGHT compile holds one of N slots (up to N run
+// concurrently), a HEAVY (~5.5GB no-metadata WHOLE-PROGRAM) compile is
+// EXCLUSIVE — it grabs the whole pool and runs alone so it never stacks
+// on a full light batch over the OOM cliff. This fuzz spawns mixed
+// light/heavy workers against a private pool and asserts the invariants
+// the design guarantees: never a heavy holding alongside any light,
+// never a second heavy, never more than N lights — and a deadlock or
+// livelock instead surfaces as the per-round wait never returning (the
+// harness would hang, failing the shell timeout). The full acceptance
+// run is `diagnose.sh --slot-fuzz 40 16 4`; this wrapper keeps the suite
+// cost to a couple of seconds.
+//
+// @@fixture-stateful@@ — shells out to the shared toolchain via
+// diagnose.sh; a transient environment hiccup must re-probe, not freeze
+// as a permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec}
+
+spec "uzs9.7: fixture-compile slot gate holds its exclusion invariants under contention" {
+    then "mixed light/heavy workers never violate exclusion/cap and never hang" {
+        // `timeout` (repo convention, cf. comptime/tests) so a livelock in the
+        // gate fails FAST as a missing sentinel instead of hanging the runner —
+        // the spec's per-then guard isolates crashes, not runtime hangs. A
+        // healthy 8x8/N=3 run finishes in ~2-3s, far under the 120s ceiling.
+        let out = avra_shell_exec("timeout 120 bash scripts/diagnose.sh --slot-fuzz 8 8 3 2>&1 || true")
+        out.contains("0 invariant violations, no hang")
+    }
+}
