@@ -488,9 +488,17 @@ an unregistered family** (families are compiler-generated and inputs are
 never a silent default). Drivers write `db_new(avra_query_dispatch)` and delete
 their hand router. Spliced at the shared `expand_macros_fixpoint` exit (marked
 `from_macro`), so it lands **once** and both compile pipelines register it.
-v1 is single-module + `V=string`; the cross-module case (dispatcher → a sibling
-module's `_compute`) waits on `t-tiz0` (macro-generated cross-module reference),
-and non-`string` `V` on `ps3t.8.11` (per-type hashing).
+**Cross-module (`ps3t.8.14`, as-built):** a `@query` fn in a sibling `mod` is
+dispatched too. Its generated `_family`/`_fetch`/`_compute` are `export`ed, and
+the program-level dispatcher reaches them by emitting `use producer.{name_family,
+name_compute}` + unqualified arms — the import-based path `@marshal`'s decode
+uses (`t-tiz0`/#869), since `mod::fn()` qualified calls don't parse. Because the
+macro-generated `use` has no pre-expand phantom, `resolve_and_expand_program`
+arms the `t-tiz0` alias re-resolution on a narrow `has_cross_module_use` flag
+(set only when a site lives in a sibling module) — so single-module programs and
+the compiler's own self-compile stay on the cheap path, byte-identical. A
+top-level site needs no import. Still `V=string`; non-`string` `V` waits on
+`ps3t.8.11` (per-type hashing).
 
 ### 12.5 Family naming — enum ordinals (`ps3t.8.13` → `ps3t.8.10`)
 

@@ -69,11 +69,22 @@ export type QueryFamilyRef = { enum_name: string, variant: string, key: string }
 /// duplicate check; `family_enum` = "Fam" for the single-enum check that
 /// makes cross-family collisions impossible by construction), or a
 /// shape-violation message for the caller's F4013 (the caller owns the
-/// diagnostic so it carries the annotation site's span).
-export type QuerySurfaceOut = { stmts: List<StmtId>?, family: string, family_enum: string, error: string }
+/// diagnostic so it carries the annotation site's span). `fn_name` is the
+/// BARE query fn name (short, unqualified) the generated siblings are named
+/// after — the module/metadata pipeline hands the surface a module-qualified
+/// name, so the caller uses `fn_name` (not the raw decl name) for the
+/// dispatcher's arms + cross-module `use`.
+export type QuerySurfaceOut = { stmts: List<StmtId>?, family: string, family_enum: string, fn_name: string, error: string }
+
+/// One @query site as the dispatcher needs to see it: the fn `name` plus the
+/// `module` it was declared in ("" = the program's top module). The dispatcher
+/// is spliced at program level, so a site in `mod producer` (module="producer")
+/// needs a generated `use producer.{name_family, name_compute}` to reach its
+/// exported siblings; a top-level site is already in scope.
+export type QuerySite = { module: string, name: string }
 
 fn qs_fail(msg: string) -> QuerySurfaceOut {
-    QuerySurfaceOut { stmts: null, family: "", family_enum: "", error: msg }
+    QuerySurfaceOut { stmts: null, family: "", family_enum: "", fn_name: "", error: msg }
 }
 
 /// The one shape `@query` accepts, stated once for every diagnostic.
@@ -110,10 +121,26 @@ fn query_family_ref(store: NodeStore, node: Stmt) -> QueryFamilyRef? {
     let found = find_annotation(store, node, "query")
     if found == null || found!.arg_ids == none || found!.arg_ids!.length != 1 { return null }
     match store.exprs.get(found!.arg_ids![0]) {
+        // `Fam.Variant` parses as a FieldAccess. Its head is a bare `Ident`
+        // pre-resolve (the no-metadata single-file path) but a `QualifiedIdent`
+        // once the module path qualified it (the metadata / build_binary
+        // pipeline expands POST-qualification). `type_short_name` yields the
+        // bare enum name in both cases — and the bare name is exactly what the
+        // generated `Fam.Variant.ordinal` (spliced into the query's OWN module,
+        // where `Fam` is in scope) must resolve against.
         .FieldAccess(head_id, variant) -> {
-            match store.exprs.get(head_id) {
-                .Ident(enum_name) -> { return QueryFamilyRef { enum_name, variant, key: "${enum_name}.${variant}" } }
-                _ -> {}
+            let en = match store.exprs.get(head_id) {
+                .Ident(n) -> type_short_name(n)
+                .QualifiedIdent(n) -> type_short_name(n)
+                _ -> ""
+            }
+            if en != "" { return QueryFamilyRef { enum_name: en, variant, key: "${en}.${variant}" } }
+        }
+        // A resolver arm may reclassify `Fam.Variant` into a zero-arg enum ctor.
+        .EnumCtor(tn, variant, args) -> {
+            if tn != "" && args.length == 0 {
+                let en = type_short_name(tn)
+                return QueryFamilyRef { enum_name: en, variant, key: "${en}.${variant}" }
             }
         }
         _ -> {}
@@ -155,6 +182,18 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
     // enum decl. Referencing the driver's own `Fam` unqualified is correct:
     // the generated decls splice into the driver's module, where `Fam` is in
     // scope exactly as the annotation saw it.
+    // The generated siblings are named after the BARE query fn name and call
+    // the original fn UNqualified — both resolve in the query's own module. The
+    // module/metadata pipeline hands us a qualified name (`producer::text_len`);
+    // `type_short_name` recovers `text_len`. Single-module names are already
+    // short, so `sname == name` there → byte-identical.
+    let sname = type_short_name(name)
+    // The family's dense int is the variant's declaration-order `.ordinal`
+    // (ps3t.8.13) — rendered into the generated code and constant-folded by
+    // codegen, so the surface never resolves it and needs no view of the
+    // enum decl. Referencing the driver's own `Fam` unqualified is correct:
+    // the generated decls splice into the driver's module, where `Fam` is in
+    // scope exactly as the annotation saw it.
     let fexpr = "${fam.enum_name}.${fam.variant}.ordinal"
     // Every ENGINE/CORE reference is FULLY QUALIFIED — the same rendering
     // the metadata roundtrip re-parses — so the generated code resolves
@@ -162,58 +201,76 @@ fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type
     // sync, and a user's own same-named symbol (their `computed`, say)
     // can never capture a generated reference.
     let q = "@std::avrac::query::"
-    let src = "fn ${name}_family() -> int {\n" +
+    // `export` so a program-level dispatcher can `use` these across a module
+    // boundary (ps3t.8.14). Codegen-neutral: `export` is an @export annotation
+    // the resolver's visibility pass consumes and codegen peels via stmt_unwrap,
+    // so a single-module program's IR is byte-identical.
+    let src = "export fn ${sname}_family() -> int {\n" +
         "    ${fexpr}\n" +
         "}\n" +
-        "fn ${name}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
+        "export fn ${sname}_fetch(ctx: ${q}QueryCtx<string>, arg: int) -> Result<string, ${q}QueryCycle> {\n" +
         "    ctx.fetch(${q}qk(${fexpr}, arg))\n" +
         "}\n" +
-        "fn ${name}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
-        "    let v = ${name}(ctx, qkey.arg)?\n" +
+        "export fn ${sname}_compute(ctx: ${q}QueryCtx<string>, qkey: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+        "    let v = ${sname}(ctx, qkey.arg)?\n" +
         "    Result.Ok(${q}computed(v, @std::avrac::core::content_id_for(v)))\n" +
         "}\n"
-    let parsed = parse_program_source_shared(src, "<@query ${name}>", store)
+    let parsed = parse_program_source_shared(src, "<@query ${sname}>", store)
     if parsed.had_error == 1 || parsed.ids == null {
         // Unreachable by construction — the template is closed over a
         // validated identifier + a validated `Fam.Variant`. Surfaced as an
         // error (not a silent skip) so a template regression is loud.
         return qs_fail("internal: generated @query surface for `${name}` failed to parse")
     }
-    QuerySurfaceOut { stmts: parsed.ids, family: fam.key, family_enum: fam.enum_name, error: "" }
+    QuerySurfaceOut { stmts: parsed.ids, family: fam.key, family_enum: fam.enum_name, fn_name: sname, error: "" }
 }
 
-/// Synthesise the program-level query dispatcher (ps3t.8.12): ONE
+/// Synthesise the program-level query dispatcher (ps3t.8.12 + ps3t.8.14): ONE
 /// `avra_query_dispatch(ctx, q)` routing `q.family` to each @query site's
 /// generated `<name>_compute`, retiring the hand-written driver dispatcher
 /// (the old §10.B "hand-wrapped memo" contract — obsolete now that the
-/// whole-program derive walk collects every site). `names` is every @query
-/// fn name the walk saw, in source order. Returns null when there are no
-/// sites (nothing to dispatch).
+/// whole-program derive walk collects every site). `sites` is every @query
+/// site the walk saw (fn name + declaring module), in source order. Returns
+/// the generated stmts (the `use` imports it needs, then the dispatcher fn),
+/// or null when there are no sites (nothing to dispatch).
+///
+/// CROSS-MODULE (ps3t.8.14): a site in `mod producer` has its generated
+/// `producer::name_compute` out of the program-level dispatcher's scope, and
+/// `mod::fn()` qualified calls don't parse — so the dispatcher instead
+/// `use producer.{name_family, name_compute}` (the site's siblings are
+/// `export`ed) and calls them unqualified, exactly the import-based cross-module
+/// path @marshal's decode uses (t-tiz0/#869). A top-level site (module "") is
+/// already in scope and needs no import — so single-module output is unchanged.
 ///
 /// Engine refs are FULLY QUALIFIED (like the per-site siblings) so the
 /// dispatcher resolves regardless of the driver's imports. An unregistered
 /// family `panic`s LOUDLY — families are compiler-generated and inputs are
 /// `set_input`-only, so a fetch reaching compute for an unknown family is a
 /// bug, never a silent default (design §10.B / the ticket's loud-error rule).
-export fn build_query_dispatcher(store: NodeStore, names: List<string>) -> StmtId? {
-    if names.length == 0 { return null }
+export fn build_query_dispatcher(store: NodeStore, sites: List<QuerySite>) -> List<StmtId>? {
+    if sites.length == 0 { return null }
     let q = "@std::avrac::query::"
+    mut uses = ""
     mut arms = ""
-    for name in names {
-        arms = arms + "    if q.family == ${name}_family() { return ${name}_compute(ctx, q) }\n"
+    for s in sites {
+        if s.module != "" {
+            uses = uses + "use ${s.module}.{${s.name}_family, ${s.name}_compute}\n"
+        }
+        arms = arms + "    if q.family == ${s.name}_family() { return ${s.name}_compute(ctx, q) }\n"
     }
-    let src = "fn avra_query_dispatch(ctx: ${q}QueryCtx<string>, q: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
+    let src = uses +
+        "fn avra_query_dispatch(ctx: ${q}QueryCtx<string>, q: ${q}QueryKey) -> Result<${q}Computed<string>, ${q}QueryCycle> {\n" +
         arms +
         "    panic(\"avra_query_dispatch: no @query family \" + string(q.family) + \" is registered — @query families are compiler-generated; a fetch reached compute for an unset input or unknown family\")\n" +
         "}\n"
     let parsed = parse_program_source_shared(src, "<@query dispatch>", store)
     if parsed.had_error == 1 || parsed.ids == null || parsed.ids!.length == 0 {
         // Unreachable by construction — the template is closed over validated
-        // @query fn names. Surfaced as null (caller drops the dispatcher, and
-        // the driver's own db_new call then fails loudly) rather than silently.
+        // @query fn names + module paths. Surfaced as null (caller drops the
+        // dispatcher, and the driver's own db_new call then fails loudly).
         return null
     }
-    parsed.ids![0]
+    parsed.ids
 }
 
 // ── ValueType shape probes (local, pre/post-resolve tolerant) ──────────

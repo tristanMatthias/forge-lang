@@ -1,0 +1,14 @@
+// Producer half of the cross-module @query fixture (ps3t.8.14): a @query fn in
+// a sibling module. Its generated `text_len_family`/`_fetch`/`_compute` are
+// auto-`export`ed, so the program-level `avra_query_dispatch` (spliced in the
+// entry) can `use` them across the module boundary. `Fam` is exported so the
+// entry names the same families.
+use @std.avrac.query.{QueryCtx, QueryKey, QueryCycle, Computed, qk, computed}
+
+export enum Fam { Src, TextLen }
+
+@query(Fam.TextLen)
+fn text_len(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle> {
+    let src = ctx.fetch(qk(Fam.Src.ordinal, arg))?
+    Result.Ok(string(src.length))
+}

@@ -1,0 +1,23 @@
+// Entry of the cross-module @query fixture (ps3t.8.14). The @query fn lives in
+// `mod producer`; the compiler splices `avra_query_dispatch` HERE (top module),
+// so it must reach `producer`'s exported `text_len_compute` via a generated
+// `use producer.{...}`. main names the family through `Fam.TextLen.ordinal`
+// (the same dense int the query claims), so it only imports the enum — the
+// cross-module wiring under test is the dispatcher's, not main's.
+use @std.avrac.query.{Db, QueryCtx, QueryKey, QueryCycle, Computed, db_new, qk, computed}
+mod producer
+use producer.{Fam}
+
+fn main() -> int {
+    let mut db: Db<string> = db_new(avra_query_dispatch)
+    db.set_input(qk(Fam.Src.ordinal, 7), "hello", 42)
+    match db.fetch(qk(Fam.TextLen.ordinal, 7)) {
+        .Ok(f) -> println("len=" + f.value)
+        .Err(_) -> println("cycle")
+    }
+    match db.fetch(qk(Fam.TextLen.ordinal, 7)) {
+        .Ok(f) -> println("again=" + f.value + " computes=" + string(db.computes_of(Fam.TextLen.ordinal)))
+        .Err(_) -> println("cycle")
+    }
+    0
+}
