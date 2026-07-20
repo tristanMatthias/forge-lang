@@ -728,6 +728,15 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         .Logical(l, op, r) -> expr_ctor(store, "Logical", three_args(construct_expr_id(store, l), construct_logicop(store, op), construct_expr_id(store, r)))
         .Grouping(inner) -> expr_ctor(store, "Grouping", one_arg(construct_expr_id(store, inner)))
         .Call(callee, args) -> expr_ctor(store, "Call", two_args(construct_expr_id(store, callee), construct_expr_ids(store, args)))
+        // A quoted explicit-type-arg call `f<int>(x)` — NOT desugared to
+        // `.Call` (it keeps its `type_args`), so it must be constructed here
+        // or it falls through and gets evaluated at expansion instead of built
+        // (t-nad3). The `type_args: List<ValueType>` ride the same
+        // `construct_value_type_list` the decl encoders use.
+        .GenericCall(callee, type_args, args) -> expr_ctor(store, "GenericCall",
+            three_args(construct_expr_id(store, callee),
+                       construct_value_type_list(store, type_args),
+                       construct_expr_ids(store, args)))
         .FieldAccess(obj, field) -> expr_ctor(store, "FieldAccess", two_args(construct_expr_id(store, obj), string_lit_expr(field)))
         .Index(obj, idx) -> expr_ctor(store, "Index", two_args(construct_expr_id(store, obj), construct_expr_id(store, idx)))
         .IfExpr(c, t, el) -> expr_ctor(store, "IfExpr", three_args(construct_expr_id(store, c), construct_expr_id(store, t), construct_expr_id(store, el)))
@@ -770,8 +779,42 @@ export fn construct_expr(store: NodeStore, e: Expr) -> Expr {
         // quote machinery. Proper meta-quote (outer captures inner
         // Quote form verbatim) is a separate language design call.
         .Quote(_, body) -> construct_expr(store, unwrap_quote_body(store, store.exprs.get(body)))
-        .When(_) -> e
-        _ -> e
+        // Every Expr variant construct_expr cannot build (when / catch /
+        // channel / list-comprehension / type-literal, and the parser's
+        // Error/Missing placeholders) routes through expr_passthrough — the
+        // expression sibling of stmt_passthrough. It used to return the raw
+        // node `e`, which EVALUATES the expression at expansion time and
+        // splices its runtime value instead of constructing the AST the user
+        // quoted (silent mishandling — the CLAUDE.md passthrough-arm anti-
+        // pattern, design §3.4). Now it fails the expansion loudly. t-nad3.
+        _ -> expr_passthrough(store, e)
+    }
+}
+
+/// Catch-all for Expr variants `construct_expr` cannot yet build (when /
+/// catch / channel / list-comprehension / type-literal — plus the parser's
+/// Error/Missing placeholders). The single chokepoint that knows
+/// "unhandled", so the diagnostic is raised here (no predicate to drift
+/// against construct_expr's arms, rule 8): it emits a
+/// `synth_unsupported_expr("<Variant>")` marker that features/eval intercepts
+/// during `@expand` and raises as F4005, naming the variant. The expression
+/// sibling of `stmt_passthrough`. t-nad3.
+fn expr_passthrough(store: NodeStore, e: Expr) -> Expr {
+    synth_shim_call(store, "synth_unsupported_expr", string_lit_expr(expr_variant_name(e)))
+}
+
+/// Human-readable name of an Expr variant, for the unsupported-quote
+/// diagnostic. Only the variants that actually reach `expr_passthrough` need
+/// naming; a `_` fallback keeps this total (and correct for any future
+/// variant) without duplicating `construct_expr`'s handled-arm list.
+fn expr_variant_name(e: Expr) -> string {
+    match e {
+        .When(_) -> "when"
+        .Catch(_, _, _, _, _) -> "catch"
+        .ChannelNew(_, _) -> "channel"
+        .ListComp(_, _, _, _) -> "list comprehension"
+        .TypeLit(_) -> "type literal"
+        _ -> "expression"
     }
 }
 
