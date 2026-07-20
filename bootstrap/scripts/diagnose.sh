@@ -1717,7 +1717,11 @@ mode_slot_fuzz() {
         if [ $((RANDOM % 4)) -eq 0 ]; then unset AVRA_USE_METADATA; mode=heavy
         else export AVRA_USE_METADATA=1; mode=light; fi
         AVRA_SLOT_DIR="$pool" AVRA_FIXTURE_JOBS="$nslots" acquire_compile_slot
-        local tok="$obs/$mode.$$"; : > "$tok"
+        # $BASHPID (this subshell's own pid), NOT $$ — $$ is the parent shell's
+        # pid, identical across every background worker, so all lights would
+        # write ONE obs/light.<pid> token and the nl/nh cap checks (>N lights,
+        # >1 heavy) could never observe more than one holder per mode.
+        local tok="$obs/$mode.$BASHPID"; : > "$tok"
         local nl nh
         nl=$(find "$obs" -name 'light.*' 2>/dev/null | wc -l)
         nh=$(find "$obs" -name 'heavy.*' 2>/dev/null | wc -l)

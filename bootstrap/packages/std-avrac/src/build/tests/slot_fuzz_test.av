@@ -21,7 +21,11 @@ use @std.avrac.core.{avra_shell_exec}
 
 spec "uzs9.7: fixture-compile slot gate holds its exclusion invariants under contention" {
     then "mixed light/heavy workers never violate exclusion/cap and never hang" {
-        let out = avra_shell_exec("bash scripts/diagnose.sh --slot-fuzz 8 8 3 2>&1 || true")
+        // `timeout` (repo convention, cf. comptime/tests) so a livelock in the
+        // gate fails FAST as a missing sentinel instead of hanging the runner —
+        // the spec's per-then guard isolates crashes, not runtime hangs. A
+        // healthy 8x8/N=3 run finishes in ~2-3s, far under the 120s ceiling.
+        let out = avra_shell_exec("timeout 120 bash scripts/diagnose.sh --slot-fuzz 8 8 3 2>&1 || true")
         out.contains("0 invariant violations, no hang")
     }
 }
