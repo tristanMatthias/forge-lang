@@ -19,6 +19,7 @@ use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
+use list_ops.{lower_bound}
 
 // ── Capture values + environment ──
 
@@ -948,10 +949,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// annotations is bounded and harmless (each call returns a fresh TypeExpr
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
-    mut idx = 0
-    while idx < toks.length && toks[idx].pos < start_byte {
-        idx = idx + 1
-    }
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     mut diag = ""
@@ -976,10 +974,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// sharing shape. Reuses the caller's token + grammar caches (lex-once), so a
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
-    mut idx = 0
-    while idx < toks.length && toks[idx].pos < start_byte {
-        idx = idx + 1
-    }
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     mut diag = ""
@@ -1003,10 +998,7 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// control-flow headers, etc.). Reuses the caller's token + grammar caches
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
-    mut idx = 0
-    while idx < toks.length && toks[idx].pos < start_byte {
-        idx = idx + 1
-    }
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     mut diag = ""
