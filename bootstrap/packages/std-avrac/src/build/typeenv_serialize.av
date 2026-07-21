@@ -1,0 +1,266 @@
+// WHY (F2 / forge-crafting-intepreters-uzs9.5.2, increment 3a): serialize the
+// SerTypeEnv snapshot (the typechecked @std type-environment — increments 1/2)
+// to bytes, so the ONE @std producer build can persist it and shards LOAD it
+// instead of re-collecting @std every process (~1s/shard, ~80-115s cold suite).
+//
+// Reuses build/metadata.av's BytesWriter / BytesReader codecs — the SAME `.vtype`
+// / `.field_list` / `.param_list` / `.type_param_list` / `.variant_list` methods
+// meta.bin already uses for FnDeclEntry / TypeDeclEntry (rule 8: ONE byte codec,
+// never a parallel scheme). Lives in `build/` (not typeck) because `build`
+// depends on `typeck` — it serializes typeck's output — so the codec can import
+// SerTypeEnv here without the cycle a typeck→build import would create.
+//
+// The encoding is a flat sequence of the 9 registries collect_decls populates,
+// each `[u32 count][entries]`, entries composed from the shared primitives. It
+// round-trips through sertypeenv_eq (increment 2) — see the roundtrip test.
+//
+// This increment adds only the codec + its round-trip proof; no producer write
+// or shard read is wired yet (increment 3b), so the compiler is byte-identical.
+
+use typeck.{
+    SerTypeEnv, FnTypeMeta, StructTypeMeta, EnumTypeMeta, NewtypeMeta,
+    UnionAliasMeta, TraitRegMeta, TraitMethod, TraitImplEntry, AssocTypeEntry,
+}
+
+// ── list primitives not already in metadata.av ──
+
+fn f2_write_strings(w: BytesWriter, ss: List<string>) {
+    w.u32_le(ss.length)
+    mut i = 0
+    while i < ss.length {
+        w.string(ss[i])
+        i = i + 1
+    }
+}
+fn f2_read_strings(r: BytesReader) -> List<string> {
+    let n = r.u32_le()
+    mut out: List<string> = []
+    mut i = 0
+    while i < n {
+        out.push(r.string())
+        i = i + 1
+    }
+    out
+}
+fn f2_write_trait_methods(w: BytesWriter, ms: List<TraitMethod>) {
+    w.u32_le(ms.length)
+    mut i = 0
+    while i < ms.length {
+        w.string(ms[i].name)
+        w.u32_le(ms[i].param_count)
+        i = i + 1
+    }
+}
+fn f2_read_trait_methods(r: BytesReader) -> List<TraitMethod> {
+    let n = r.u32_le()
+    mut out: List<TraitMethod> = []
+    mut i = 0
+    while i < n {
+        let nm = r.string()
+        let pc = r.u32_le()
+        out.push(TraitMethod { name: nm, param_count: pc })
+        i = i + 1
+    }
+    out
+}
+
+/// Serialize a SerTypeEnv snapshot to bytes. Encodes the 9 collect_decls
+/// registries in order, each `[u32 count][entries]`, reusing the metadata.av
+/// vtype / entry-list codecs for the leaves.
+export fn sertypeenv_to_bytes(env: SerTypeEnv) -> bytes {
+    let w = writer_new()
+
+    // fns: [name][type_params][params][ret vtype][u8 is_extern]
+    w.u32_le(env.fns.length)
+    mut i = 0
+    while i < env.fns.length {
+        let m = env.fns[i]
+        w.string(m.name)
+        w.type_param_list(m.tp)
+        w.param_list(m.params)
+        w.vtype(m.ret_ty)
+        w.u8(if m.is_extern { 1 } else { 0 })
+        i = i + 1
+    }
+
+    // structs: [name][type_params][fields]
+    w.u32_le(env.structs.length)
+    i = 0
+    while i < env.structs.length {
+        let m = env.structs[i]
+        w.string(m.name)
+        w.type_param_list(m.tp)
+        w.field_list(m.fields)
+        i = i + 1
+    }
+
+    // shapes: [strings]
+    f2_write_strings(w, env.shapes)
+
+    // enums: [name][type_params][variants]
+    w.u32_le(env.enums.length)
+    i = 0
+    while i < env.enums.length {
+        let m = env.enums[i]
+        w.string(m.name)
+        w.type_param_list(m.tp)
+        w.variant_list(m.variants)
+        i = i + 1
+    }
+
+    // newtypes: [name][inner vtype][u8 opaque][friend strings]
+    w.u32_le(env.newtypes.length)
+    i = 0
+    while i < env.newtypes.length {
+        let m = env.newtypes[i]
+        w.string(m.name)
+        w.vtype(m.inner_vt)
+        w.u8(if m.opaque { 1 } else { 0 })
+        f2_write_strings(w, m.friends)
+        i = i + 1
+    }
+
+    // union_aliases: [name][type vtype]
+    w.u32_le(env.union_aliases.length)
+    i = 0
+    while i < env.union_aliases.length {
+        w.string(env.union_aliases[i].name)
+        w.vtype(env.union_aliases[i].type_vt)
+        i = i + 1
+    }
+
+    // traits: [name][methods][assoc type strings]
+    w.u32_le(env.traits.length)
+    i = 0
+    while i < env.traits.length {
+        let m = env.traits[i]
+        w.string(m.name)
+        f2_write_trait_methods(w, m.methods)
+        f2_write_strings(w, m.assoc_types)
+        i = i + 1
+    }
+
+    // trait_impls: [trait_name][type_name]
+    w.u32_le(env.trait_impls.length)
+    i = 0
+    while i < env.trait_impls.length {
+        w.string(env.trait_impls[i].trait_name)
+        w.string(env.trait_impls[i].type_name)
+        i = i + 1
+    }
+
+    // assoc_type_defs: [key][concrete vtype]
+    w.u32_le(env.assoc_type_defs.length)
+    i = 0
+    while i < env.assoc_type_defs.length {
+        w.string(env.assoc_type_defs[i].key)
+        w.vtype(env.assoc_type_defs[i].concrete_vt)
+        i = i + 1
+    }
+
+    w.finish()
+}
+
+/// Read a SerTypeEnv from a BytesReader positioned at a `sertypeenv_to_bytes`
+/// payload. The inverse of `sertypeenv_to_bytes`, field-for-field.
+export fn sertypeenv_read(r: BytesReader) -> SerTypeEnv {
+    let fn_n = r.u32_le()
+    mut fns: List<FnTypeMeta> = []
+    mut i = 0
+    while i < fn_n {
+        let name = r.string()
+        let tp = r.type_param_list()
+        let params = r.param_list()
+        let ret_ty = r.vtype()
+        let is_extern = r.u8() == 1
+        fns.push(FnTypeMeta { name, tp, params, ret_ty, is_extern })
+        i = i + 1
+    }
+
+    let st_n = r.u32_le()
+    mut structs: List<StructTypeMeta> = []
+    i = 0
+    while i < st_n {
+        let name = r.string()
+        let tp = r.type_param_list()
+        let fields = r.field_list()
+        structs.push(StructTypeMeta { name, tp, fields })
+        i = i + 1
+    }
+
+    let shapes = f2_read_strings(r)
+
+    let en_n = r.u32_le()
+    mut enums: List<EnumTypeMeta> = []
+    i = 0
+    while i < en_n {
+        let name = r.string()
+        let tp = r.type_param_list()
+        let variants = r.variant_list()
+        enums.push(EnumTypeMeta { name, tp, variants })
+        i = i + 1
+    }
+
+    let nt_n = r.u32_le()
+    mut newtypes: List<NewtypeMeta> = []
+    i = 0
+    while i < nt_n {
+        let name = r.string()
+        let inner_vt = r.vtype()
+        let opaque = r.u8() == 1
+        let friends = f2_read_strings(r)
+        newtypes.push(NewtypeMeta { name, inner_vt, opaque, friends })
+        i = i + 1
+    }
+
+    let ua_n = r.u32_le()
+    mut union_aliases: List<UnionAliasMeta> = []
+    i = 0
+    while i < ua_n {
+        let name = r.string()
+        let type_vt = r.vtype()
+        union_aliases.push(UnionAliasMeta { name, type_vt })
+        i = i + 1
+    }
+
+    let tr_n = r.u32_le()
+    mut traits: List<TraitRegMeta> = []
+    i = 0
+    while i < tr_n {
+        let name = r.string()
+        let methods = f2_read_trait_methods(r)
+        let assoc_types = f2_read_strings(r)
+        traits.push(TraitRegMeta { name, methods, assoc_types })
+        i = i + 1
+    }
+
+    let ti_n = r.u32_le()
+    mut trait_impls: List<TraitImplEntry> = []
+    i = 0
+    while i < ti_n {
+        let tn = r.string()
+        let ty = r.string()
+        trait_impls.push(TraitImplEntry { trait_name: tn, type_name: ty })
+        i = i + 1
+    }
+
+    let at_n = r.u32_le()
+    mut assoc_type_defs: List<AssocTypeEntry> = []
+    i = 0
+    while i < at_n {
+        let key = r.string()
+        let concrete_vt = r.vtype()
+        assoc_type_defs.push(AssocTypeEntry { key, concrete_vt })
+        i = i + 1
+    }
+
+    SerTypeEnv {
+        fns, structs, shapes, enums, newtypes, union_aliases,
+        traits, trait_impls, assoc_type_defs,
+    }
+}
+
+/// Round-trip convenience: decode a SerTypeEnv from a byte buffer.
+export fn sertypeenv_from_bytes(buf: bytes) -> SerTypeEnv {
+    sertypeenv_read(reader_new(buf))
+}

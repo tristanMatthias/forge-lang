@@ -111,7 +111,7 @@ fn type_pop_scope(env: List<TypeEntry>, depth: int) -> List<TypeEntry> {
 /// `Int` (not the unresolved `T`) when called with a `List<int>`,
 /// letting downstream call chains and let-bindings carry the
 /// concrete type forward.
-type FnTypeMeta = {
+export type FnTypeMeta = {
     name: string,
     tp: List<TypeParamEntry>,
     params: List<ParamEntry>,
@@ -296,7 +296,7 @@ export fn tc_result_ok_payload(tc: TC, ename: string) -> ValueType? {
 /// structs / shapes) so field-access typing can map a generic
 /// instance's `type_args` back onto the field's declared `T`,
 /// mirroring EnumTypeMeta.
-type StructTypeMeta = { name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry> }
+export type StructTypeMeta = { name: string, tp: List<TypeParamEntry>, fields: List<FieldEntry> }
 
 /// Struct-name → `List<FieldEntry>` table. Populated during the
 /// `collect_decls` pre-pass; consulted by struct-literal and
@@ -379,7 +379,7 @@ fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
 /// the enum's declared type parameters so pattern-binding
 /// substitution can map `T` → concrete from the subject's
 /// `.Enum(_, type_args, _)` shape (so07.7.4 step 2).
-type EnumTypeMeta = { name: string, tp: List<TypeParamEntry>, variants: List<Variant> }
+export type EnumTypeMeta = { name: string, tp: List<TypeParamEntry>, variants: List<Variant> }
 
 /// Enum-name → `List<Variant>` table. Mirror of StructTypeReg for
 /// enums — hashmap-backed for O(1) lookup.
@@ -470,7 +470,7 @@ export type TraitMethod = {
 }
 
 /// One trait's metadata in TraitRegistry's `ord` list.
-type TraitRegMeta = {
+export type TraitRegMeta = {
     name: string,
     methods: List<TraitMethod>,
     assoc_types: List<string>,
@@ -553,7 +553,7 @@ fn is_shape(set: List<string>, name: string) -> bool {
 /// `friends` modules named as the annotation's string args. Handles
 /// stay opaque everywhere else — compared and looked-up, never
 /// inspected (the L3 typed-identity rule).
-type NewtypeMeta = { name: string, inner_vt: ValueType, opaque: bool, friends: List<string> }
+export type NewtypeMeta = { name: string, inner_vt: ValueType, opaque: bool, friends: List<string> }
 
 /// Newtype-name → inner-type table. Populated by `collect_decls`,
 /// consulted by `resolve_vtype` to peel newtype wrappers when
@@ -628,7 +628,7 @@ fn opaque_peel_allowed(caller_module: string, decl_module: string, friends: List
 }
 
 /// One union-alias's metadata in UnionAliasReg's `ord` list.
-type UnionAliasMeta = { name: string, type_vt: ValueType }
+export type UnionAliasMeta = { name: string, type_vt: ValueType }
 
 /// Union-alias table: `type Json = string | int | bool` → name
 /// → Union ValueType. Used to expand the alias when typechecking.
@@ -661,7 +661,7 @@ fn union_alias_vtype_lookup(reg: UnionAliasReg, name: string) -> ValueType {
 /// Item = ConcreteType }`. Key shape: `"TypeName.AssocName"` (e.g.
 /// `"Circle.Item"`); value is the concrete ValueType the impl
 /// pinned the trait's associated type to.
-type AssocTypeEntry = { key: string, concrete_vt: ValueType }
+export type AssocTypeEntry = { key: string, concrete_vt: ValueType }
 
 /// Look up an associated-type definition by `"TypeName.AssocName"`
 /// key. Returns Unknown when the impl didn't pin that assoc type.
