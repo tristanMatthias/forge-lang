@@ -129,3 +129,201 @@ export fn restore_typeenv(tc: TC, ser: SerTypeEnv) -> TC {
         assoc_type_defs: ser.assoc_type_defs,
     }
 }
+
+// ─── Increment 2: the seeded collect + the warm==cold oracle ────────────────
+//
+// `typecheck_env` (typeck/mod.av) runs `collect_decls` over the WHOLE folded
+// program — the @std stub decls AND the shard's own code. `collect_decls` is a
+// pure left-fold (`mut cur = tc; for id: cur = register(cur, id)`) whose
+// per-element step reads only the accumulator + the immutable AST arena /
+// type_reg, so it is COMPOSITIONAL: collecting @std then own is registry-
+// identical to collecting them together (a left-fold split at any point). The
+// only non-fold step, `rewrite_fn_ret_tys`, runs once at the end over the
+// merged fns and is idempotent on already-resolved signatures (an @std fn sig
+// can't reference a shard-local type), so running it over the merged registry
+// matches the cold path regardless of where collect was split.
+//
+// `typecheck_env_seeded` is the shard-side hook: instead of re-collecting the
+// @std decls, it SEEDS the registries from a snapshot (produced once by the
+// @std build) and collects only the shard's own ids on top. It is byte-
+// identical to `typecheck_env(std ++ own)` by the argument above — the oracle
+// (typeck/tests/typeenv_seeded_oracle_test.av) proves it empirically.
+
+/// The shard-side entry: seed the collect_decls registries from `std_snapshot`
+/// (the @std env, captured once) and run collect_decls only over `own_ids`.
+/// Mirrors `typecheck_env` step-for-step — same tc_new / stamp / rewrite / lint
+/// — but replaces the @std collect with a snapshot restore. Registry-identical
+/// to `typecheck_env(std_ids ++ own_ids)`; the redundant @std collect is gone.
+export fn typecheck_env_seeded(own_ids: List<StmtId>, std_snapshot: SerTypeEnv, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TC {
+    let tc0_pre = tc_new(type_reg, macro_origins, store)
+    let stamped_ids = stamp_ids_stmt_ids(store, own_ids, type_reg)
+    let tc0 = report_stamp_leaks(tc0_pre, stamped_ids, type_reg)
+    let seeded = restore_typeenv(tc0, std_snapshot)
+    let tc_first = collect_decls(seeded, own_ids)
+    let collected = tc_first with { fns: rewrite_fn_ret_tys(tc_first, tc_first.fns) }
+    lint_index_loops(collected, own_ids)
+}
+
+// ── structural registry equality (the oracle's assertion primitive) ──
+// A full field-wise compare of two snapshots, with `vtype_eq` on every
+// resolved ValueType leaf — a compositionality break would change a registry
+// length or a resolved type, both of which this catches.
+
+fn f2_strs_eq(a: List<string>, b: List<string>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length { if a[i] != b[i] { return false } i = i + 1 }
+    true
+}
+fn f2_tps_eq(a: List<TypeParamEntry>, b: List<TypeParamEntry>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i].name != b[i].name || a[i].bounds != b[i].bounds { return false }
+        i = i + 1
+    }
+    true
+}
+fn f2_params_eq(a: List<ParamEntry>, b: List<ParamEntry>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i].name != b[i].name { return false }
+        if !vtype_eq(a[i].vtype, b[i].vtype) { return false }
+        i = i + 1
+    }
+    true
+}
+fn f2_fields_eq(a: List<FieldEntry>, b: List<FieldEntry>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i].name != b[i].name { return false }
+        if !vtype_eq(a[i].resolved, b[i].resolved) { return false }
+        i = i + 1
+    }
+    true
+}
+fn f2_variants_eq(a: List<Variant>, b: List<Variant>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i].name != b[i].name { return false }
+        if !f2_fields_eq(a[i].fields, b[i].fields) { return false }
+        i = i + 1
+    }
+    true
+}
+
+/// True iff two snapshots are registry-identical (all 9 registries, field-wise,
+/// resolved types compared by `vtype_eq`). The warm==cold oracle's assertion.
+export fn sertypeenv_eq(a: SerTypeEnv, b: SerTypeEnv) -> bool {
+    // fns
+    if a.fns.length != b.fns.length { return false }
+    mut i = 0
+    while i < a.fns.length {
+        let x = a.fns[i]
+        let y = b.fns[i]
+        if x.name != y.name || x.is_extern != y.is_extern { return false }
+        if !vtype_eq(x.ret_ty, y.ret_ty) { return false }
+        if !f2_params_eq(x.params, y.params) { return false }
+        if !f2_tps_eq(x.tp, y.tp) { return false }
+        i = i + 1
+    }
+    // structs
+    if a.structs.length != b.structs.length { return false }
+    i = 0
+    while i < a.structs.length {
+        let x = a.structs[i]
+        let y = b.structs[i]
+        if x.name != y.name { return false }
+        if !f2_tps_eq(x.tp, y.tp) { return false }
+        if !f2_fields_eq(x.fields, y.fields) { return false }
+        i = i + 1
+    }
+    // shapes
+    if !f2_strs_eq(a.shapes, b.shapes) { return false }
+    // enums
+    if a.enums.length != b.enums.length { return false }
+    i = 0
+    while i < a.enums.length {
+        let x = a.enums[i]
+        let y = b.enums[i]
+        if x.name != y.name { return false }
+        if !f2_tps_eq(x.tp, y.tp) { return false }
+        if !f2_variants_eq(x.variants, y.variants) { return false }
+        i = i + 1
+    }
+    // newtypes
+    if a.newtypes.length != b.newtypes.length { return false }
+    i = 0
+    while i < a.newtypes.length {
+        let x = a.newtypes[i]
+        let y = b.newtypes[i]
+        if x.name != y.name || x.opaque != y.opaque { return false }
+        if !vtype_eq(x.inner_vt, y.inner_vt) { return false }
+        if !f2_strs_eq(x.friends, y.friends) { return false }
+        i = i + 1
+    }
+    // union_aliases
+    if a.union_aliases.length != b.union_aliases.length { return false }
+    i = 0
+    while i < a.union_aliases.length {
+        if a.union_aliases[i].name != b.union_aliases[i].name { return false }
+        if !vtype_eq(a.union_aliases[i].type_vt, b.union_aliases[i].type_vt) { return false }
+        i = i + 1
+    }
+    // traits (name + method count + assoc types)
+    if a.traits.length != b.traits.length { return false }
+    i = 0
+    while i < a.traits.length {
+        let x = a.traits[i]
+        let y = b.traits[i]
+        if x.name != y.name { return false }
+        if x.methods.length != y.methods.length { return false }
+        if !f2_strs_eq(x.assoc_types, y.assoc_types) { return false }
+        i = i + 1
+    }
+    // trait_impls
+    if a.trait_impls.length != b.trait_impls.length { return false }
+    i = 0
+    while i < a.trait_impls.length {
+        if a.trait_impls[i].trait_name != b.trait_impls[i].trait_name { return false }
+        if a.trait_impls[i].type_name != b.trait_impls[i].type_name { return false }
+        i = i + 1
+    }
+    // assoc_type_defs
+    if a.assoc_type_defs.length != b.assoc_type_defs.length { return false }
+    i = 0
+    while i < a.assoc_type_defs.length {
+        if a.assoc_type_defs[i].key != b.assoc_type_defs[i].key { return false }
+        if !vtype_eq(a.assoc_type_defs[i].concrete_vt, b.assoc_type_defs[i].concrete_vt) { return false }
+        i = i + 1
+    }
+    true
+}
+
+/// A parsed program partitioned at a boundary fn: `prefix` models the @std env
+/// (the producer collects it), `suffix` (the marker fn onward) models the
+/// shard's own code (the consumer seeds from prefix's snapshot + collects this).
+export type SplitIds = { prefix: List<StmtId>, suffix: List<StmtId> }
+
+/// Split `ids` at the first top-level fn named `marker`: that fn and everything
+/// after it is the `suffix`; everything before is the `prefix`. Robust to
+/// pipeline-injected stmts (intrinsics) — both the cold and seeded paths
+/// partition the SAME `ids`, so an injected decl lands identically on one side.
+export fn f2_split_at_marker(store: NodeStore, ids: List<StmtId>, marker: string) -> SplitIds {
+    mut prefix: List<StmtId> = []
+    mut suffix: List<StmtId> = []
+    mut hit = false
+    for id in ids {
+        if !hit {
+            match stmt_unwrap(store, store.stmts.get(id)) {
+                .Function(name, _, _, _, _) -> { if name == marker { hit = true } }
+                _ -> {}
+            }
+        }
+        if hit { suffix.push(id) } else { prefix.push(id) }
+    }
+    SplitIds { prefix, suffix }
+}
