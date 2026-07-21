@@ -3259,17 +3259,20 @@ fn compute_shard_jobs(want_meta: bool) -> int {
     // spike so the shard count backs off to keep the combined peak
     // clear of the cliff.
     let reserve_mb = 6144
-    // Heaviest-realistic per-shard peak. MEASURED (2026-07-21, mid-suite,
-    // per-process RSS): a metadata shard peaks at ~3.6GB, NOT the ~1.5GB a
-    // single fast-path FIXTURE uses — a shard BATCHES ~8 test files into one
-    // binary, so its in-memory LLVM module + bump-arena working set is ~2x a
-    // lone fixture. The old 1800 estimate confused the two, so on a 16GB box it
-    // dispatched ~5 metadata shards ((15210-6144)/1800≈5) that each ramped to
-    // 3.6GB AFTER dispatch → ~18GB → OOM/container takedown (observed twice).
-    // 4096 budgets the measured heaviest + margin, so the count backs off to a
-    // safe 2 on a 16GB box (2×3.6 + 6GB reserve ≈ 13GB, clear of the cliff).
-    // Whole-program shards stay ~5GB (up to ~11GB heaviest) → jobs=1 on ≤16GB.
-    let per_shard_mb = if want_meta { 4096 } else { 6000 }
+    // Heaviest-realistic per-shard peak. MEASURED CLEAN (2026-07-21, jobs=1 so
+    // no cross-shard contention, per-process RSS of a pure-metadata dir): a
+    // metadata shard peaks at ~1.85GB. (An earlier ~3.6GB reading was taken
+    // MID-SWEEP under 5-way contention + session pressure — the snw0-warned
+    // inflation — and a ~5.4GB reading was a WHOLE-PROGRAM shard, not a metadata
+    // one; both misled a prior bump to 4096 that halved jobs 5→2 and DOUBLED CI
+    // wall-time.) 1800 is correct for metadata shards: 5×1.8 + 6GB reserve ≈
+    // 15GB fits a 16GB box, which is exactly why CI ran green at jobs=5 for
+    // months. The few WHOLE-PROGRAM shards (~5GB, fixture_capture_taint /
+    // build-cache tests strip the fast-path) are absorbed by the 6GB reserve.
+    // (A pressured 16GB SESSION container — claude + residual — can still OOM at
+    // jobs=5 when two whole-program shards coincide; run local sweeps with
+    // AVRA_JOBS=2 rather than globally penalising CI for that.)
+    let per_shard_mb = if want_meta { 1800 } else { 6000 }
     let budget = avail_mb - reserve_mb
     mut by_mem = budget / per_shard_mb
     if by_mem < 1 { by_mem = 1 }
