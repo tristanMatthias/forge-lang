@@ -3657,9 +3657,40 @@ fn check_none_compare(tc: TC, left_id: ExprId, left: Expr, op: BinOp, l_ty: Valu
     tc_report_at_expr(tc, if l_none { right_id } else { left_id }, DiagCode.TypeMismatch, msg)
 }
 
+/// True when `vt` is an AGGREGATE operand (list or map) — never a valid
+/// arithmetic/bitwise operand. `xs + 1` / `m + 1` currently reach codegen and
+/// emit INVALID IR (the LLVM verifier rejects `add`/`mul` on an aggregate ptr).
+/// Deliberately narrow: only list/map are flagged. Strings are NOT (`str + x`
+/// concatenation is lenient — the RHS may be typed Unknown/Void yet be a string
+/// at runtime, as the compiler's own `write_last_inputs` does; the str-with-
+/// numeric ICE is a separate, subtler fix — see t-fws6 (c-str)). Numeric
+/// (int/float/sized-int, incl. through newtypes), bool, Unknown, and type-param
+/// placeholders all pass, so the compiler's arithmetic + generic bodies are
+/// untouched (byte-identical).
+fn arith_aggregate_operand(vt: ValueType) -> bool {
+    // Peel newtypes: `type Nums = List<int>` is layout-transparent, so `n + 1`
+    // on a newtype-over-list/map hits the SAME invalid-IR path as a bare list —
+    // classify the underlying. A numeric newtype (`type MyInt = int`) peels to a
+    // non-aggregate and stays accepted.
+    match vtype_newtype_underlying(vt) {
+        .List(_) -> true
+        .Map(_, _) -> true
+        _ -> false
+    }
+}
+
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     // If either operand is Float, arithmetic produces Float.
     let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
+    // Reject aggregate (list/map) arithmetic operands BEFORE returning a result
+    // type — otherwise `xs + 1` reaches codegen and emits INVALID IR (an `add` on
+    // a list ptr, caught only by the LLVM verifier). A clean F1000 here upholds
+    // the no-ICE/no-invalid-IR-from-input policy (spec Axis 20). Optional operands
+    // were already gated (check_optional_arithmetic, F1205).
+    if binop_is_arithmetic(op) && (arith_aggregate_operand(left) || arith_aggregate_operand(right)) {
+        return tc_er(tc_report(tc, DiagCode.TypeMismatch,
+            "`${binop_str(op)}` is not valid on `${vtype_render_full(left)}` and `${vtype_render_full(right)}` — arithmetic operators need numeric operands, not lists or maps"), .Unknown)
+    }
     match op {
         .Add -> {
             if vtype_eq(left, .Str) || vtype_eq(right, .Str) { return tc_er(tc, .Str) }
