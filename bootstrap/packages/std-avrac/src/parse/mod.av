@@ -22,7 +22,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // the @hand bridge (grammar -> parse). The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar}
+use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -276,6 +276,16 @@ export type Parser = {
     // lazily, once, exactly like dsl_expr_grammar.
     mut stmt_flip: bool,
     mut dsl_stmt_grammar: Grammar?,
+    // ps3t.6.7 Step G slice 4b — declaration/whole-program-family swap-in: when
+    // true, parse_declaration delegates to the grammar-DSL (avra_decl_flip_grammar:
+    // @hand(decl_hand) for the doc/annotation/export wrapping + decl keywords +
+    // component-vs-expr IDENT disambiguation, and the proven statement grammar for
+    // the non-declaration fall-through), with a hand fallback on any DSL error.
+    // Read once at construction, settable by tests. Default OFF until proven
+    // byte-identical on the full selfhost, then promoted (like type/pat_flip).
+    // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
+    mut decl_flip: bool,
+    mut dsl_decl_grammar: Grammar?,
     // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
     // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
     // Before each flip expression its cursor+line state is SYNCED to this parser's
@@ -672,6 +682,10 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it (like type/pat_flip).
         stmt_flip: avra_process_env_get("AVRA_PARSER_STMT_FLIP") == "1",
         dsl_stmt_grammar: null,
+        // ps3t.6.7 Step G slice 4b — opt-in via AVRA_PARSER_DECL_FLIP=1. Default
+        // OFF until the full-selfhost byte-identity proof promotes it.
+        decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") == "1",
+        dsl_decl_grammar: null,
         hand_delegate: null,
     }
     parser.advance_token()
@@ -819,6 +833,39 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Result<StmtId, string> {
+        // ps3t.6.7 Step G slice 4b declaration-family swap-in — mirror
+        // parse_statement's flip: delegate the whole declaration to the grammar-DSL
+        // (@hand(decl_hand) for true declarations + the wrapping/dispatch, the
+        // proven statement grammar for the non-declaration fall-through), threading
+        // this parser's live modes + the shared @hand delegate, then resync to the
+        // stop byte. A DSL error falls through to the authoritative hand parser.
+        if self.decl_flip {
+            let modes = ExprModes {
+                allow_struct_lit: self.allow_struct_lit,
+                allow_dot_postfix: self.allow_dot_postfix,
+                allow_it_sugar: self.allow_it_sugar,
+                quote_depth: self.quote_depth,
+                cell_mode: self.cell_mode,
+            }
+            let d = self.ensure_hand_delegate()
+            d.copy_cursor_from(self)
+            let dsl = run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
+            if !dsl.had_error {
+                while d.current_start < dsl.stop_byte && !d.is_at_end() {
+                    d.advance_token()
+                }
+                self.copy_cursor_from(d)
+                return .Ok(dsl.stmt)
+            }
+            // DSL parse error → fall through to the authoritative hand parser.
+        }
+        self.parse_declaration_hand()
+    }
+
+    /// The hand-written declaration dispatcher: the swap-in oracle, and the
+    /// fallback when the declaration flip is off or errors. (Was the body of
+    /// parse_declaration.)
+    fn parse_declaration_hand(self) -> Result<StmtId, string> {
         // Reserved future keywords produce an error immediately.
         if self.check(Tk.KwReserved) {
             self.reject_reserved_keyword("yet")
@@ -1056,6 +1103,7 @@ impl Parser {
             mut d = parser_new_with_store(self.source, self.file, self.store)
             d.records_roots = 0
             d.stmt_flip = false
+            d.decl_flip = false
             d.expr_flip = false
             d.expr_static = false
             self.hand_delegate = d
@@ -1217,6 +1265,16 @@ impl Parser {
             self.dsl_stmt_grammar = avra_stmt_flip_grammar()
         }
         self.dsl_stmt_grammar ?? avra_stmt_flip_grammar()
+    }
+
+    /// The DSL declaration grammar (`declaration = @hand(decl_hand) | statement`
+    /// over the composed statement + expression grammars), built at most once per
+    /// parser — the declaration sibling of dsl_statement_grammar.
+    fn dsl_declaration_grammar(self) -> Grammar {
+        if self.dsl_decl_grammar == null {
+            self.dsl_decl_grammar = avra_decl_flip_grammar()
+        }
+        self.dsl_decl_grammar ?? avra_decl_flip_grammar()
     }
 
     /// Boxed readback for callers not yet converted to ids (statements,

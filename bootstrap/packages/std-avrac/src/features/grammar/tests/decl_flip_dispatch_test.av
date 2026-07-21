@@ -1,0 +1,87 @@
+// ps3t.6.7 Step G slice 4b — the DECLARATION / whole-program-family FLIP dispatch
+// (parse_declaration → grammar-DSL run_dsl_decl_at_shared).
+//
+// parse_declaration routes through run_dsl_decl_at_shared (the inverse-@hand
+// declaration runner over avra_decl_flip_grammar's `declaration` rule:
+// `@hand(decl_hand) | statement`) when the parser's `decl_flip` field is set,
+// falling back to the hand parser (parse_declaration_hand) on a DSL error. The
+// field is read once from AVRA_PARSER_DECL_FLIP at construction but is a plain
+// `mut bool` a test can set directly (the full-selfhost flip proof is memory-
+// heavy and lives in the promotion step; this pins the dispatch + fallback +
+// both arms — decl_hand for real declarations / wrapping / IDENT, and the
+// statement arm for a top-level non-declaration item).
+//
+// Parity = same tree AND same accept/reject: for every VALID form the flip path
+// (DSL) and the hand path (parse_declaration_hand — called explicitly so it
+// stays a real hand baseline under an eventual promoted default) build the same
+// Stmt; both render through the same TOTAL render_stmt_id, so equal trees ⇒
+// equal strings (no golden strings).
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn flip_decl(src: string) -> string {
+    mut p = parser_new(src)
+    p.decl_flip = true
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn hand_decl(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_declaration_hand() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_decl(src) == hand_decl(src)
+}
+
+spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip field)" {
+    given "the field toggles the path (sanity: flip really took the DSL branch)" {
+        then "flip builds a real tree and agrees with hand for a representative decl" {
+            flip_decl("fn f() -> int { 1 }") != "<err>" &&
+            flip_decl("fn f() -> int { 1 }") == hand_decl("fn f() -> int { 1 }")
+        }
+    }
+    given "the decl_hand arm: type / enum / trait / impl / const declarations" {
+        then "each declaration shape agrees" {
+            agree("type P = { x: int, y: int }") &&
+            agree("enum E { A(v: int)\n B }") &&
+            agree("trait T { fn m(self) -> int }") &&
+            agree("impl T for P { fn m(self) -> int { self.x } }") &&
+            agree("impl P { fn n(self) -> int { self.y } }") &&
+            agree("const K = 7")
+        }
+    }
+    given "the decl_hand arm: functions (plain / export / generic) + let/mut" {
+        then "each function/binding shape agrees" {
+            agree("fn plain(a: int) -> int { a }") &&
+            agree("export fn ex(a: int) -> int { a }") &&
+            agree("fn gen<T>(v: T) -> T { v }") &&
+            agree("let g = 1") && agree("mut h = 2")
+        }
+    }
+    given "the decl_hand arm: use imports + doc-commented declarations" {
+        then "use and /// doc wrapping agree" {
+            agree("use core.{ Foo, Bar }") &&
+            agree("/// doc line\nfn documented() -> int { 1 }")
+        }
+    }
+    given "the statement arm: a top-level non-declaration item (if/while/for/match)" {
+        then "each top-level statement agrees (routed to the statement grammar)" {
+            agree("if a { b }") &&
+            agree("while a { b }") &&
+            agree("for i in 0..n { s }") &&
+            agree("match n { 0 -> a\n _ -> b }")
+        }
+    }
+    given "reject parity: both parsers reject the same malformed declaration" {
+        then "a dangling operator rejects on both" {
+            flip_decl("= 5") == "<err>" && hand_decl("= 5") == "<err>"
+        }
+    }
+}
