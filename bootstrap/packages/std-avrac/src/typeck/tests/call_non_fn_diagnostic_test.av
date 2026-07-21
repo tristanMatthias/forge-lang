@@ -1,0 +1,53 @@
+// WHY: calling a value that is NOT a function — `let x = 5; x()` — reached
+// codegen and ICEd (F9999 "undefined function `x`"), even though `x` IS defined
+// (just not callable). typeck now rejects a call whose callee is a concrete
+// non-callable value (scalar / string / bytes / list / map / enum / non-type-param
+// struct) with a clean F1000. Deliberately conservative: functions, closures,
+// fn-returning-fn results, and generic type-param callees all still dispatch (a
+// type param could be bound to a fn at instantiation). Part of t-fws6 (a); sibling
+// of the scalar field/method gates (t-vmhy / #921) and the m0fd index gate. An
+// F9999 from ordinary source violates the no-ICE-from-input policy (spec Axis 20).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn cn_out(source: string) -> string {
+    let path = "/tmp/avra_cn_call.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "calling a non-function value is a clean diagnostic, not an ICE (t-fws6 a)" {
+    then "calling an int is F1000, never the F9999 ICE" {
+        let out = cn_out("fn main() {\n    let x = 5\n    let _ = x()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "calling a string is F1000, never the ICE" {
+        let out = cn_out("fn main() {\n    let s = \"hi\"\n    let _ = s()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "calling a list is F1000, never the ICE" {
+        let out = cn_out("fn main() {\n    let xs = [1, 2]\n    let _ = xs()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "the diagnostic explains what is callable" {
+        let out = cn_out("fn main() {\n    let x = 5\n    let _ = x()\n}")
+        out.contains("not callable") && out.contains("functions and closures")
+    }
+    then "a closure call still compiles (no false F1000)" {
+        let out = cn_out("fn main() {\n    let f = (x: int) -> x + 1\n    let _ = f(3)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a named-fn call still compiles (no false F1000)" {
+        let out = cn_out("fn g(a: int) -> int { a * 2 }\nfn main() {\n    let _ = g(5)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a call through a fn-returning-fn result still compiles" {
+        let out = cn_out("fn mk() -> fn(int) -> int { (x: int) -> x + 1 }\nfn main() {\n    let f = mk()\n    let _ = f(4)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a generic type-param callee is NOT gated (could be a fn at instantiation)" {
+        let out = cn_out("fn apply<T>(f: T) -> int { 0 }\nfn main() {\n    let _ = apply(5)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+}
