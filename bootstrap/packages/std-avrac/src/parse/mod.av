@@ -693,10 +693,18 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it — unlike type/pat_flip, which are on.
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
         dsl_expr_grammar: null,
-        // ps3t.6.7 Step G — opt-in via AVRA_PARSER_EXPR_STATIC=1: the checked-in
-        // generated STATIC parser as the production expression parser. Default OFF
-        // until the full-selfhost byte-identity proof + perf win promote it.
-        expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") == "1",
+        // ps3t.6.7 Step G — PROMOTED default-ON: the checked-in generated STATIC
+        // parser is the production expression parser (run_static_expr), replacing
+        // the hand recursive-descent expression ladder (parse_expression_hand) for
+        // every VALID expression at straight-line speed. Byte-identical over the
+        // full selfhost + corpus (diff-test), INCLUDING byte spans — the DSL
+        // compound builders (mk_binary / fold_logical / fold_nullish / mk_assign /
+        // rebind_eq) now stamp the hand parser's [start, next-token) convention
+        // (expr_span_test passes under both parsers). On any DSL error it falls
+        // through to parse_expression_hand, the incumbent byte-identical error path
+        // (the hand parser is still the swap-in oracle). AVRA_PARSER_EXPR_STATIC=0
+        // routes back to the hand ladder unconditionally.
+        expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") != "0",
         decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
         // ps3t.6.7 Step G slice 4 — opt-in via AVRA_PARSER_STMT_FLIP=1: the
         // grammar-DSL statement parser. Default OFF until the full-selfhost

@@ -64,7 +64,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // `equality = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)` with
         // the eq_tail partial (is / in-list / in-range / ==-chain) retargeted.
         let src = emit_all()
-        src.contains("CapVal.Node(rebind_eq_expr(st, base, tail))") &&
+        src.contains("CapVal.Node(rebind_eq_expr(st, sp_start, base, tail))") &&
         src.contains("CapVal.Node(mk_is_expr(st, v))") &&
         src.contains("mk_eqchain_expr(st, CapVal.Toks(op_list), CapVal.Nodes(r_list))") &&
         src.contains("mk_inrange_expr(st, s, e)")
@@ -76,7 +76,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let l = parse_pipe(st)") &&
         src.contains("if st.cur().text == \"=\" {") &&
         src.contains("r = parse_assignment(st)") &&
-        src.contains("CapVal.Node(mk_assign_expr(st, l, r))")
+        src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
     }
 
     then "the pipe stratum folds `|>` with @hand(pipe_rhs) operands" {
@@ -85,13 +85,13 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let src = emit_all()
         src.contains("while st.cur().text == \"|>\" {") &&
         src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
-        src.contains("CapVal.Node(fold_pipe_expr(st, l, CapVal.Nodes(r_list)))")
+        src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
         let src = emit_all()
         src.contains("while st.cur().text == \"??\" {") &&
-        src.contains("CapVal.Node(fold_nullish_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
+        src.contains("CapVal.Node(fold_nullish_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
     then "the uniform binary ladder collapses to ONE Pratt loop (Step G slice 1)" {
@@ -114,7 +114,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let src = emit_all()
         src.contains("while st.cur().text == \"||\" || st.cur().text == \"or\" {") &&
         src.contains("while st.cur().text == \"&&\" || st.cur().text == \"and\" {") &&
-        src.contains("CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
+        src.contains("CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
     then "the Pratt loop climbs precedence ExprId-internal (slice 2: no CapVal box)" {
