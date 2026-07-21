@@ -46,6 +46,20 @@ fn ni_slice_len(n: NiNums) -> int {
     s.length
 }
 
+/// Slice a newtype-over-string — the result must stay nominally NiStr, so a
+/// newtype-only `.raw()` (which codegen can only dispatch on a newtype value)
+/// works on it. Regression for the str-slice branch returning bare `.Str`.
+fn ni_str_slice_raw(s: NiStr) -> string {
+    let sub = s[0..3]
+    sub.raw()
+}
+
+/// Same for a list newtype: the slice stays NiNums, so `.raw()` peels it.
+fn ni_list_slice_raw(n: NiNums) -> List<int> {
+    let sub = n[1..3]
+    sub.raw()
+}
+
 /// A fn whose RETURN type is a newtype — the call result arrives as a
 /// parser-default `.Struct`, exercising the resolve-then-peel path.
 fn ni_mk() -> NiNums { NiNums([10, 20, 30]) }
@@ -71,6 +85,12 @@ spec "index/iter/slice on a newtype see through to the underlying layout (t-4udz
     }
     then "slice a newtype-over-list" {
         ni_slice_len(NiNums([7, 8, 9, 10])) == 2
+    }
+    then "slice a string-newtype stays the newtype (raw() dispatches)" {
+        ni_str_slice_raw(NiStr("hello")) == "hel"
+    }
+    then "slice a list-newtype stays the newtype (raw() dispatches)" {
+        ni_list_slice_raw(NiNums([10, 20, 30, 40])).length == 2
     }
     given "a fn returning a newtype (call result arrives as a parser-default struct)" {
         then "member access on the call result works" {

@@ -1,6 +1,6 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
-use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full, vtype_newtype_underlying}
+use core.{Expr, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full, vtype_newtype_underlying}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
 /// Codegen for `obj[idx]`. Dispatches by container type:
@@ -61,7 +61,12 @@ export fn emit_slice(ctx: Ctx, env: List<VarBinding>, obj: Expr, start: Expr, en
     let base_ty = vtype_newtype_underlying(ctx.resolve_codegen_vtype(obj_r.ty))
     if vtype_is_str(base_ty) {
         let result = ctx.call("avra_str_substring", [obj_r.value, start_r.value, end_r.value])
-        return ok_emit(result, ValueType.Str)
+        // Keep obj_r.ty (not bare `.Str`) so a slice of a string-NEWTYPE stays
+        // that nominal type, matching typeck's `.Slice` (returns o.ty) and the
+        // list branch below. A plain string's obj_r.ty IS `.Str`, so this is
+        // unchanged for non-newtypes; without it, `nt[0..1].raw()` typechecks as
+        // the newtype but codegen sees `.Str` and cannot dispatch `.raw()`.
+        return ok_emit(result, obj_r.ty)
     }
     let result = ctx.call("avra_array_slice", [obj_r.value, start_r.value, end_r.value])
     ok_emit(result, obj_r.ty)
