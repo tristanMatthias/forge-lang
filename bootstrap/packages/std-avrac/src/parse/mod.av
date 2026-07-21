@@ -24,7 +24,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // already cycles the same way).
 use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
-use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
+use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
@@ -853,8 +853,13 @@ impl Parser {
                 quote_depth: self.quote_depth,
                 cell_mode: self.cell_mode,
             }
-            let d = self.ensure_hand_delegate()
+            mut d = self.ensure_hand_delegate()
             d.copy_cursor_from(self)
+            // Fresh per-item diagnostic scratch on the (single-level, pure-hand)
+            // delegate: any diagnostic it reports while parsing THIS item is merged
+            // back into this parser's bag on the error path below, so a reset keeps
+            // the merge from re-copying prior items' diagnostics.
+            d.bag = bag_new()
             let dsl = run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
             if !dsl.had_error {
                 while d.current_start < dsl.stop_byte && !d.is_at_end() {
@@ -863,7 +868,37 @@ impl Parser {
                 self.copy_cursor_from(d)
                 return .Ok(dsl.stmt)
             }
-            // DSL parse error → fall through to the authoritative hand parser.
+            // Error path (ps3t.6.7 Slice 5.4). The delegate reported the diagnostic
+            // into its own (fresh) bag; merge it into THIS parser's bag — the diag
+            // home parse_file_program returns and codegen gates on — and mark
+            // had_error, so the error is surfaced WITHOUT a re-parse (re-parsing is
+            // the orphan-Error-row + cascade source the full-program flip hit).
+            self.bag = bag_merge(self.bag, d.bag)
+            self.had_error = true
+            // Distinguish a WHOLE-ITEM failure from an already-recovered BODY error.
+            // A bare `Stmt.Error` means the delegate returned .Err on the item itself
+            // (a malformed top-level declaration / statement) — hand it back as .Err
+            // so the caller's list-parser does the authoritative synchronize +
+            // spanned-Error recovery, byte-identical to the hand-only path. Adopting
+            // the delegate's cursor first keeps that synchronize starting where the
+            // hand parser would. A non-Error node (a fn / impl / block whose nested
+            // statement list ALREADY recovered + spanned the bad region internally,
+            // the pure-hand delegate being the oracle) is ADOPTED verbatim: it is
+            // already byte-identical to hand, and re-parsing it would duplicate the
+            // whole subtree as orphan Error rows.
+            match self.stmt_of(dsl.stmt) {
+                .Error -> {
+                    self.copy_cursor_from(d)
+                    return .Err("parse error")
+                }
+                _ -> {
+                    while d.current_start < dsl.stop_byte && !d.is_at_end() {
+                        d.advance_token()
+                    }
+                    self.copy_cursor_from(d)
+                    return .Ok(dsl.stmt)
+                }
+            }
         }
         self.parse_declaration_hand()
     }
@@ -1121,17 +1156,25 @@ impl Parser {
             // tokenization cost 0454a086 flagged), the single-pipeline shape.
             d.features = self.features
             d.grammar_toks = self.grammar_tokens()
-            // ps3t.6.7 Slice 5.1 (full-program flip): the delegate FLIPS bodies —
-            // its statement/declaration list loops (a fn body, an if/while/for
-            // block, a closure body) re-enter the DSL so the WHOLE program flows
-            // through the grammar, not just top-level items. The @hand statement/
-            // declaration leaves call the *_hand dispatcher for the CURRENT item
-            // (run_hand_stmt), so this never re-parses the same item — only its
-            // nested bodies flip. EXPRESSION flips stay OFF on the delegate: the
-            // procedural expression leaf (parse_unary) owns its whole sub-tree, so
-            // a nested expression must NOT re-flip (it is part of the leaf).
-            d.stmt_flip = true
-            d.decl_flip = true
+            // ps3t.6.7 Slice 5.4 (promoted production flip): the delegate does NOT
+            // flip its bodies — every flip toggle is OFF, so it is a SINGLE-LEVEL,
+            // PURE-HAND parser. When the outer flip routes a top-level item to a
+            // @hand leaf (run_hand_stmt → d.parse_declaration_hand), `d` parses the
+            // WHOLE item — signature AND nested body — by hand, exactly as the
+            // hand-only oracle would. This is what makes the production flip
+            // byte-identical on EVERY path, including error recovery: a single
+            // delegate means a SINGLE diagnostic bag to merge back (parse_declaration's
+            // error path), and no re-parse cascade — the Slice 5.1 full-program flip
+            // (delegate flips its bodies) left orphan `Stmt.Error` rows on invalid
+            // input because each enclosing level independently discarded + re-parsed
+            // the malformed subtree (measured: 18 orphan Error nodes for one 2-deep
+            // nested error). The DSL still drives the whole TOP-LEVEL dispatch
+            // (declaration vs statement vs expr-stmt) — retiring the hand RD driver's
+            // dispatch loop — while the @hand leaves own the intra-item parse. The
+            // full-program flip stays proven (diff-test) for the eventual static
+            // generated parser, which needs no delegate/interpreter at all.
+            d.stmt_flip = false
+            d.decl_flip = false
             d.expr_flip = false
             d.expr_static = false
             self.hand_delegate = d
