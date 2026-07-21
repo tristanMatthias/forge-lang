@@ -15,13 +15,14 @@ use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use features.comptime.{resolve_and_expand_program, run_comptime}
-use typeck.{typecheck_program}
+use typeck.{typecheck_env, typecheck_program_from_env, typecheck_env_seeded, snapshot_typeenv, f2_partition_std_own, f2_typeenv_cache_enabled, TC}
 use features.generics.{monomorphize}
-use diagnostics.{DiagnosticBag, bag_has_errors, render_bag}
+use diagnostics.{DiagnosticBag, bag_has_errors, render_bag, MacroFnOrigin}
 use codegen.{codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
 use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key_cgu, CguMember, fn_unit_lookup, fn_unit_publish}
+use build.{f2_typeenv_read, f2_typeenv_write}
 
 /// Bounded-K CGU width (ps3t.8.6.2, the Rust codegen-unit model): the number
 /// of codegen units a program's fns are partitioned into. Bounding the unit
@@ -83,6 +84,58 @@ type FrontendMono = {
     type_reg: TypeRegistry,
 }
 
+/// F2 (forge-crafting-intepreters-uzs9.5.2, increment 3b-iii): the @std type-env
+/// CROSS-SHARD cache, wired onto the SHARD typeck path (this is the single
+/// typeck chokepoint every test shard passes through — frontend_to_mono, called
+/// by both build_binary branches). ~110 test-shard processes each re-run
+/// collect_decls over the identical imported-@std stub env (~1s/shard, ~115s of
+/// a cold suite); this lets a shard LOAD that env from a sidecar instead of
+/// re-deriving it.
+///
+/// Gated OFF by default: taken ONLY when AVRA_F2_TYPEENV_CACHE is set AND the
+/// per-shard universe fingerprint + cache dir are present (AVRA_STD_UNIVERSE_FP
+/// / AVRA_F2_CACHE_DIR, set by the orchestrator's build_shard_env_prefix — a
+/// bare `bs2 compile` has neither, so it always takes the today path). ⇒ flag
+/// off ⇒ byte-identical (the diff-test gate). The key is the universe fp — a
+/// fingerprint over ALL packages/std-*/src (incl. std-avrac, the compiler) + the
+/// runtime objects, so any @std OR compiler-source change invalidates the
+/// sidecar; the validate-on-read header (increment 3b-i) refuses any
+/// non-matching blob.
+///
+/// HIT: seed the imported-package registries from the sidecar and collect only
+/// the shard's OWN ids (typecheck_env_seeded — proven registry-identical to the
+/// cold collect by the increment-2 oracle: collect_decls is a compositional
+/// left-fold over the std|own partition). MISS: run today's typecheck_env for
+/// THIS compile (byte-identical), and separately snapshot the @std-ONLY env +
+/// write the sidecar so later shards HIT. Orthogonal cross-process cache of the
+/// SAME pure result — no query-engine change, no new package edge (this lives in
+/// build, which already depends on typeck and owns f2_typeenv_read/write).
+fn f2_typeck_env_cached(stmts: List<StmtId>, type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: NodeStore) -> TC {
+    if !f2_typeenv_cache_enabled() {
+        return typecheck_env(stmts, type_reg, macro_origins, store)
+    }
+    let key = avra_process_env_get("AVRA_STD_UNIVERSE_FP")
+    let dir_root = avra_process_env_get("AVRA_F2_CACHE_DIR")
+    if key == "" || dir_root == "" {
+        return typecheck_env(stmts, type_reg, macro_origins, store)
+    }
+    let split = f2_partition_std_own(store, stmts)
+    if split.std_ids.length == 0 {
+        // No imported packages to reuse — nothing to seed.
+        return typecheck_env(stmts, type_reg, macro_origins, store)
+    }
+    let cached = f2_typeenv_read(dir_root, key, key)
+    if cached != null {
+        typecheck_env_seeded(split.own_ids, cached!, type_reg, macro_origins, store)
+    } else {
+        // First shard for this @std universe: snapshot the @std-ONLY env and
+        // write it for later shards; return today's full env for THIS compile.
+        let std_env = typecheck_env(split.std_ids, type_reg, macro_origins, store)
+        let _ = f2_typeenv_write(dir_root, key, key, snapshot_typeenv(std_env))
+        typecheck_env(stmts, type_reg, macro_origins, store)
+    }
+}
+
 /// Run the front half of the pipeline — quote-lowering through
 /// monomorphization — shared by whole-program builds (build_binary) and
 /// per-fn CGU emission (build_fn_module). Each stage that carries a
@@ -116,7 +169,12 @@ fn frontend_to_mono(target: CompileTarget) -> Result<FrontendMono, string> {
     }
     let post_comptime = run_comptime(named.stmts, target.store, named.type_reg)
     let _ = guard_bag(post_comptime.bag, target.diag_filename, "comptime fold failed")?
-    let tc_result = typecheck_program(post_comptime.stmts, named.type_reg, named.macro_origins, target.store)
+    // F2 (uzs9.5.2, 3b-iii): the env-collect phase routes through the @std
+    // type-env sidecar cache when enabled (flag off ⇒ tc_env == typecheck_env,
+    // so typecheck_program_from_env(tc_env, …) == typecheck_program(…) ⇒
+    // byte-identical). The per-item fold is unchanged.
+    let tc_env = f2_typeck_env_cached(post_comptime.stmts, named.type_reg, named.macro_origins, target.store)
+    let tc_result = typecheck_program_from_env(tc_env, post_comptime.stmts, named.type_reg)
     let _ = guard_bag(tc_result.bag, target.diag_filename, "type check failed")?
     let mono = monomorphize(tc_result.stmts, tc_result.trait_impls, target.store)
     let _ = guard_bag(mono.bag, target.diag_filename, "monomorphization failed")?

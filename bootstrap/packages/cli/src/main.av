@@ -3208,7 +3208,7 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     RunCtx {
         log_dir: log_dir,
         compiler_path: compiler_path,
-        env_prefix: build_shard_env_prefix(lib, listing_file, universe_fp),
+        env_prefix: build_shard_env_prefix(lib, listing_file, universe_fp, project_dir),
         filter_arg: if args.filter == "" { "" } else { " --filter '${args.filter}'" },
         want_meta: lib.want_meta,
         jobs: jobs,
@@ -3413,12 +3413,22 @@ fn format_env_prefix(vars: List<EnvAssignment>) -> string {
 /// Bake the per-shard env once. AVRA_SKIP_ENSURE_BS2=1 stops the
 /// diagnose.sh inside shards from re-running the rebuild check (10
 /// concurrent rebuilds triggered jetsam mass-kills before).
-fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: string) -> string {
+fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: string, project_dir: string) -> string {
     format_env_prefix([
         EnvAssignment { name: "AVRA_USE_METADATA",    value: if lib.want_meta { "1" } else { "" } },
         EnvAssignment { name: "AVRA_LIB_OBJS",        value: lib.lib_objs },
         EnvAssignment { name: "AVRA_STD_LISTING_FILE", value: listing_file },
         EnvAssignment { name: "AVRA_STD_UNIVERSE_FP",  value: universe_fp },
+        // F2 (uzs9.5.2, 3b-iii): the cross-shard @std type-env sidecar root —
+        // shared, stable, keyed by the universe fp inside f2_typeenv_* as
+        // <root>/cache/typeenv/<universe_fp>/. Always set (inert unless the flag
+        // below is also set — f2_typeck_env_cached checks the flag first).
+        EnvAssignment { name: "AVRA_F2_CACHE_DIR",     value: "${project_dir}/build" },
+        // Forward the F2 flag to shards (the spawn uses an explicit env prefix,
+        // not full inheritance). Empty when unset ⇒ format_env_prefix drops it ⇒
+        // shards keep the today path ⇒ byte-identical; set ⇒ shards seed the
+        // @std env from the sidecar.
+        EnvAssignment { name: "AVRA_F2_TYPEENV_CACHE", value: avra_process_env_get("AVRA_F2_TYPEENV_CACHE") },
         EnvAssignment { name: "AVRA_SKIP_ENSURE_BS2",  value: "1" },
     ])
 }
