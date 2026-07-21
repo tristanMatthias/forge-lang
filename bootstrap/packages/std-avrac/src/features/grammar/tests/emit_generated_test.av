@@ -117,18 +117,21 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "the Pratt loop climbs precedence over a generated binding-power table" {
-        // parse_binary_pratt_g: the leaf is parse_unary (the @hand delegation),
-        // left-assoc via rbp = lbp+1, one Expr.Binary per operator via mk_binary;
-        // binary_lbp_g maps each operator text to its level (factor ops *,/,% → 22),
-        // the generated twin of the hand parser's binary_lbp/binary_op tables.
+    then "the Pratt loop climbs precedence ExprId-internal (slice 2: no CapVal box)" {
+        // parse_binary_pratt_g_id returns ExprId directly: the leaf is the @hand
+        // delegation called RAW (run_hand_expr → ExprId, no box), the recursion is
+        // ExprId→ExprId (no CapVal.Node/capval_to_expr round-trip), left-assoc via
+        // rbp = lbp+1, one Expr.Binary per operator via mk_binary; binary_lbp_g maps
+        // each operator text to its level (factor ops *,/,% → 22). The ONE CapVal
+        // box lives at the thin boundary wrapper parse_binary_pratt_g.
         let src = emit_all()
-        src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal {") &&
-        src.contains("mut lhs = capval_to_expr(st, parse_unary(st))") &&
+        src.contains("fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {") &&
+        src.contains("mut lhs = run_hand_expr(\"hand_unary\", st)") &&
         src.contains("let lbp = binary_lbp_g(st.cur())") &&
-        src.contains("let rhs = capval_to_expr(st, parse_binary_pratt_g(st, lbp + 1))") &&
+        src.contains("let rhs = parse_binary_pratt_g_id(st, lbp + 1)") &&
         src.contains("lhs = mk_binary(st, lhs, tx, rhs)") &&
-        src.contains("if x == \"*\" || x == \"/\" || x == \"%\" { return 22 }")
+        src.contains("if x == \"*\" || x == \"/\" || x == \"%\" { return 22 }") &&
+        src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
     then "the procedural leaf `unary` is a bare @hand(hand_unary) delegation" {

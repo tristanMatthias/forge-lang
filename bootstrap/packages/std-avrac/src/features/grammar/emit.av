@@ -177,10 +177,43 @@ fn chain_lbp_of(chain: List<ChainRule>, name: string) -> int {
     -1
 }
 
+/// The ExprId-returning call for the ladder's leaf (ps3t.6.7 Step G slice 2). When
+/// the leaf rule is a bare `@hand` expression delegation (`unary = @hand(hand_unary)`),
+/// call `run_hand_expr` DIRECTLY — it already yields an `ExprId`, so the Pratt loop
+/// skips the `CapVal.Node` box + `capval_to_expr` unbox round-trip per leaf. Any
+/// other leaf shape falls back to the boxed `capval_to_expr(parse_<leaf>)`.
+fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
+    for r in g.rules {
+        if r.name == leaf {
+            match r.body {
+                .Alt(branches) -> {
+                    // Only a STRICT bare delegation gets the inline: one branch, one
+                    // item, `One` repetition (not `*`/`+`), and NO build. Otherwise a
+                    // repetition or a `-> build` on the leaf would be silently dropped
+                    // by inlining run_hand_expr — fall back to the boxed parse_<leaf>.
+                    if branches.length == 1 && branches[0].items.length == 1 &&
+                        rep_is_one(branches[0].items[0].rep) && build_is_none(branches[0].build) {
+                        match branches[0].items[0].prim {
+                            .Hand(hf) -> {
+                                if is_expr_hand_name(hf) { return "run_hand_expr(\"${hf}\", st)" }
+                            }
+                            _ -> {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "capval_to_expr(st, parse_${leaf}(st))"
+}
+
 /// The emitted Pratt prelude: `binary_lbp_g` (generated from the chain's operators)
-/// + `parse_binary_pratt_g` (the precedence-climbing loop, the generated twin of the
-/// hand `parse_binary_pratt`, including the table-cell `+`/`-` newline guard).
-fn emit_pratt_prelude(chain: List<ChainRule>, leaf: string) -> string {
+/// + the precedence-climbing loop, the generated twin of the hand `parse_binary_pratt`
+/// (incl. the table-cell `+`/`-` newline guard). Slice 2: the loop is emitted
+/// ExprId-internal (`parse_binary_pratt_g_id`) — no `CapVal.Node` box on the leaf or
+/// the recursion, dropping a malloc + rc_set per node — with ONE thin `CapVal`
+/// wrapper (`parse_binary_pratt_g`) at the boundary the per-rule wrappers call.
+fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> string {
     mut lbp = "fn binary_lbp_g(t: Token) -> int {\n    let x = t.text\n"
     for c in chain {
         mut cond = ""
@@ -193,18 +226,20 @@ fn emit_pratt_prelude(chain: List<ChainRule>, leaf: string) -> string {
         lbp = lbp + "    if ${cond} { return ${string(c.lbp)} }\n"
     }
     lbp = lbp + "    0\n}\n\n"
-    let loop = "fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal {\n" +
-        "    mut lhs = capval_to_expr(st, parse_${leaf}(st))\n" +
+    let leaf_call = leaf_exprid_call(g, leaf)
+    let loop = "fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {\n" +
+        "    mut lhs = ${leaf_call}\n" +
         "    while true {\n" +
         "        let lbp = binary_lbp_g(st.cur())\n" +
         "        if lbp == 0 || lbp < min_bp { break }\n" +
         "        let tx = st.cur().text\n" +
         "        if (tx == \"+\" || tx == \"-\") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }\n" +
         "        let _ = st.advance()\n" +
-        "        let rhs = capval_to_expr(st, parse_binary_pratt_g(st, lbp + 1))\n" +
+        "        let rhs = parse_binary_pratt_g_id(st, lbp + 1)\n" +
         "        lhs = mk_binary(st, lhs, tx, rhs)\n" +
         "    }\n" +
-        "    CapVal.Node(lhs)\n}\n\n"
+        "    lhs\n}\n\n" +
+        "fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }\n\n"
     lbp + loop
 }
 
@@ -217,7 +252,7 @@ export fn emit_parser_source(g: Grammar) -> string {
     mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
     if chain.length > 0 {
         let leaf = chain[chain.length - 1].operand
-        out = out + emit_pratt_prelude(chain, leaf)
+        out = out + emit_pratt_prelude(g, chain, leaf)
     }
     for r in g.rules {
         let bp = chain_lbp_of(chain, r.name)
