@@ -3401,9 +3401,28 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
             // divide, safe here because a ctor arg is concrete, not an inference
             // artifact), so this position uses it directly rather than routing
             // through that gate, which would narrow coverage. + generic-arg below.
+            //
+            // `vtype_is_value_scalar` is newtype-BLIND (a `type ExprId = int`
+            // reads as non-scalar, like any nominal), so on its own it MISSES a
+            // ptr value dropped into a scalar-newtype field — e.g. a boxed `Expr`
+            // into the B-final-flipped `Binary(ExprId, …)` slot, which a
+            // @comptime fn folding a compound `quote { 1 + 2 }` to a value
+            // reconstructs. That stored an `Expr` pointer where an i64 id belongs
+            // → a wild `.raw()` index at render (yfb6). `top_level_settled_layout_conflict`
+            // resolves the newtype to its underlying layout (`ExprId → int`,
+            // scalar) and catches it — the exact sibling of the `List<Expr>` vs
+            // `List<ExprId>` F1000 the generic-arg gate below already raises for a
+            // folded `Call`. It also GUARDS the id-type representation drift: a
+            // bare `.Struct("StmtId")` arg (a newtype not yet upgraded to its
+            // `.Newtype` form) is `top_level_layout_unresolved` — StmtId is in
+            // neither the struct nor enum registry — so it is skipped, never
+            // false-flagged against a resolved `.Newtype("StmtId")` field ("expects
+            // StmtId, got StmtId"). ADDITIVE: it keeps every `value_scalar` catch
+            // (incl. `null`→scalar, which the layout check skips as Void) and only
+            // adds the newtype ptr↔scalar divide.
             let f0 = vtype_strip_optional(fty)
             let a0 = vtype_strip_optional(aty)
-            if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {
+            if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) || top_level_settled_layout_conflict(cur, fty, aty) {
                 let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}`"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             } else if generic_args_layout_conflict(cur, aty, fty) {
