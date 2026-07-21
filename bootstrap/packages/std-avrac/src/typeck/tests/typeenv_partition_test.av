@@ -1,0 +1,33 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) increment 3b-ii — the @std/own
+// partition. f2_partition_std_own splits folded top-level stmts into imported
+// PACKAGE modules (top-level Stmt.Module("@<scope>", …) — the reusable env F2
+// seeds from a snapshot) vs the shard's OWN code (collected fresh). Verified
+// predicate (features/modules/resolver.av:1099): imported packages are wrapped
+// as TOP-LEVEL "@"-named module outers; bare-named submodules live inside them.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{f2_partition_std_own}
+use @std.avrac.core.{Stmt}
+use @std.avrac.list_ops.{list_concat}
+
+spec "F2: partition splits @-package modules from own code (increment 3b-ii)" {
+    then "top-level @-named modules → std; a bare user module + fns → own" {
+        let r = typecheck_source("fn own_fn() -> int { 0 }\n fn main() -> int { own_fn() }\n")
+        let empty: List<StmtId> = []
+        // The resolver emits each imported package as a top-level
+        // Stmt.Module("@scope", …); a user `mod foo` stays bare "foo".
+        let std_a = r.store.stmts.add_leaf(Stmt.Module("@std", empty))
+        let std_b = r.store.stmts.add_leaf(Stmt.Module("@mypkg", empty))
+        let user_mod = r.store.stmts.add_leaf(Stmt.Module("localmod", empty))
+        let mixed = list_concat([std_a, std_b, user_mod], r.stmts)
+        let split = f2_partition_std_own(r.store, mixed)
+        // Two @-modules → std; the bare user module + the 2 own fns → own.
+        split.std_ids.length == 2 && split.own_ids.length == r.stmts.length + 1
+    }
+
+    then "a program with no imported packages → all own, empty std" {
+        let r = typecheck_source("fn a() -> int { 1 }\n fn main() -> int { a() }\n")
+        let split = f2_partition_std_own(r.store, r.stmts)
+        split.std_ids.length == 0 && split.own_ids.length == r.stmts.length
+    }
+}
