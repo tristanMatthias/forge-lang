@@ -3259,11 +3259,17 @@ fn compute_shard_jobs(want_meta: bool) -> int {
     // spike so the shard count backs off to keep the combined peak
     // clear of the cliff.
     let reserve_mb = 6144
-    // Heaviest-realistic per-shard peak: a metadata shard ~1.5GB, a
-    // whole-program shard ~5GB but up to ~11GB for the heaviest, so
-    // the fallback estimate is set high enough to pick jobs=1 on a
-    // ≤16GB box (safe: one ~11GB shard fits, two never would).
-    let per_shard_mb = if want_meta { 1800 } else { 6000 }
+    // Heaviest-realistic per-shard peak. MEASURED (2026-07-21, mid-suite,
+    // per-process RSS): a metadata shard peaks at ~3.6GB, NOT the ~1.5GB a
+    // single fast-path FIXTURE uses — a shard BATCHES ~8 test files into one
+    // binary, so its in-memory LLVM module + bump-arena working set is ~2x a
+    // lone fixture. The old 1800 estimate confused the two, so on a 16GB box it
+    // dispatched ~5 metadata shards ((15210-6144)/1800≈5) that each ramped to
+    // 3.6GB AFTER dispatch → ~18GB → OOM/container takedown (observed twice).
+    // 4096 budgets the measured heaviest + margin, so the count backs off to a
+    // safe 2 on a 16GB box (2×3.6 + 6GB reserve ≈ 13GB, clear of the cliff).
+    // Whole-program shards stay ~5GB (up to ~11GB heaviest) → jobs=1 on ≤16GB.
+    let per_shard_mb = if want_meta { 4096 } else { 6000 }
     let budget = avail_mb - reserve_mb
     mut by_mem = budget / per_shard_mb
     if by_mem < 1 { by_mem = 1 }
