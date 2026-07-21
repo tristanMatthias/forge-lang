@@ -1,0 +1,42 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) increment 3a — the SerTypeEnv byte
+// codec round-trip proof. sertypeenv_to_bytes → sertypeenv_from_bytes must
+// reproduce the snapshot exactly (sertypeenv_eq, increment 2), across every
+// registry the codec touches: fns, structs, enums, newtypes, traits, impls.
+// A byte-layout mismatch (wrong field order, a dropped list) would diverge the
+// decoded env and this fails. This is the persistence foundation for shards to
+// LOAD the @std type-env instead of re-collecting it.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{typecheck_env, snapshot_typeenv, sertypeenv_eq, MacroFnOrigin}
+use @std.avrac.build.{sertypeenv_to_bytes, sertypeenv_from_bytes}
+
+spec "F2: SerTypeEnv byte codec round-trips (increment 3a)" {
+    then "to_bytes -> from_bytes preserves the whole type-env" {
+        let src =
+            "type Box = { v: int }\n" +
+            "enum Tree { Leaf(v: int), Node(l: int, r: int) }\n" +
+            "type UserId = int\n" +
+            "trait Show { fn show(self) -> int }\n" +
+            "impl Show for Box { fn show(self) -> int { self.v } }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn wrap(n: int) -> UserId { UserId(n) }\n" +
+            "fn main() -> int { let b = Box { v: 7 }\n println(string(use_box(b)))\n 0 }\n"
+        let r = typecheck_source(src)
+        let mo: List<MacroFnOrigin> = []
+        let snap = snapshot_typeenv(typecheck_env(r.stmts, r.type_reg, mo, r.store))
+        let round = sertypeenv_from_bytes(sertypeenv_to_bytes(snap))
+        sertypeenv_eq(snap, round)
+    }
+
+    then "a non-trivial env was actually exercised (guards against empty vacuity)" {
+        let src =
+            "type Box = { v: int }\n" +
+            "enum Tree { Leaf(v: int) }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int { use_box(Box { v: 1 }) }\n"
+        let r = typecheck_source(src)
+        let mo: List<MacroFnOrigin> = []
+        let snap = snapshot_typeenv(typecheck_env(r.stmts, r.type_reg, mo, r.store))
+        snap.structs.length > 0 && snap.enums.length > 0 && snap.fns.length > 0
+    }
+}
