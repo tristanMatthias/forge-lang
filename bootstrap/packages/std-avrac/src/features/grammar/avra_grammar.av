@@ -85,6 +85,68 @@ export fn avra_stmt_grammar() -> Grammar {
     compose_grammars(gp.grammar, avra_expr_grammar())
 }
 
+/// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
+/// flip (`AVRA_PARSER_STMT_FLIP`, parse_statement) runs. Unlike the §2
+/// avra_stmt_grammar above (a family-ISOLATED oracle view whose `return_stmt`
+/// is structural), this is the byte-identical production dispatch:
+///
+///   * `break` / `continue` — trivial DSL-native leaves (a single position-
+///     free Stmt.Break / Stmt.Continue; the outer parse_statement_list_ids
+///     records their SrcPos, exactly as for the hand parser).
+///   * `@hand(stmt_hand)` — EVERY nested-statement-containing / feature-parser
+///     form (block, `if`/`while`/`for`/`match`/`defer`/`errdefer`/`return`),
+///     delegated wholesale to parse_statement. These MUST stay @hand: their
+///     nested body statements get per-statement SrcPos entries only through
+///     parse_statement_list_ids' record_pos, which the stateless grammar
+///     actions (mk_block / mk_if / mk_while / mk_for_loop) do not write —
+///     so a DSL-native rebuild would drop those side-table positions and
+///     diverge. `return` is additionally newline-sensitive, and `{` is the
+///     block-vs-map-literal ambiguity parse_statement resolves internally.
+///   * `expr_stmt` — the fall-through expression statement, over the SAME
+///     shared expression grammar (byte-identical to parse_expression), then
+///     wrapped as Stmt.Expr exactly as the hand parser does.
+///
+/// The alternation order (break/continue, then @hand, then expr_stmt) matches
+/// parse_statement's dispatch order; `hand_starts("stmt_hand")` is the exact
+/// FIRST-set (`{` + the stmt keywords) so `if`/`match` route to @hand and never
+/// to expr_stmt (which would mis-parse them as expressions).
+export fn avra_stmt_flip_grammar() -> Grammar {
+    let gp = grammar {
+  statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
+  break_stmt    = "break" -> Break()
+  continue_stmt = "continue" -> Continue()
+  expr_stmt     = e:expression -> ExprStmt(e)
+    }
+    compose_grammars(gp.grammar, avra_expr_grammar())
+}
+
+/// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
+/// the declaration flip (`AVRA_PARSER_DECL_FLIP`, parse_declaration) runs. The
+/// declaration dispatch splits cleanly by FIRST-set into two arms:
+///
+///   * `@hand(decl_hand)` — everything parse_declaration handles itself:
+///     doc-comment + `@`-annotation + `export` RECURSIVE WRAPPING (position-
+///     recorded on the wrapped inner), the decl KEYWORDS (fn/type/enum/…/let/
+///     mut/const, each a feature parser), and a bare IDENT — the component-
+///     instantiation-vs-expression-statement disambiguation (2-token lookahead
+///     the stateless grammar FIRST-set cannot do). All of these MUST stay @hand.
+///   * `statement` — the fall-through: every non-declaration item (stmt keywords
+///     if/while/for/match/…, `break`/`continue`, `{` blocks, non-ident expression
+///     statements), routed to the SAME proven statement grammar the statement
+///     flip uses. This is where the real structuralization lives — a function
+///     body's statements parse through the DSL, not a blanket @hand.
+///
+/// The alternation order (decl_hand first, then statement) + hand_starts(
+/// "decl_hand") being the exact declaration-lead FIRST-set is what keeps IDENT/`@`
+/// on the parse_declaration path (component/annotation) and everything else on
+/// the statement path. Byte-identical: each arm's builder IS the hand parser's.
+export fn avra_decl_flip_grammar() -> Grammar {
+    let gp = grammar {
+  declaration = @hand(decl_hand) | statement
+    }
+    compose_grammars(gp.grammar, avra_stmt_flip_grammar())
+}
+
 /// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
 /// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
 /// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
