@@ -89,7 +89,7 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     // scalar is newtype-blind), so a newtype-over-struct still peels at codegen.
     if vtype_is_value_scalar(o.ty) {
         return tc_er(tc_report(o.tc, DiagCode.TypeMismatch,
-            "type `${vtype_render_full(o.ty)}` has no field or member `${field}` — only strings, lists, maps, and structs have members"), .Unknown)
+            "type `${vtype_render_full(o.ty)}` has no field or member `${field}` — only strings, bytes, lists, maps, and structs have members"), .Unknown)
     }
     // Map .get is handled in method call
     tc_er(o.tc, .Unknown)

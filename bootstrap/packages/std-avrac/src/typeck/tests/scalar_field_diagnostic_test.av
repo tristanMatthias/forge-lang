@@ -43,7 +43,7 @@ spec "field access on a scalar is a clean diagnostic, not an ICE (t-o6gy sibling
     }
     then "the diagnostic names what has members" {
         let out = sf_out("fn main() {\n    let n = 5\n    let _ = n.foo\n}")
-        out.contains("strings, lists, maps, and structs")
+        out.contains("strings, bytes, lists, maps, and structs")
     }
     then "string .length still compiles (no false F1000)" {
         let out = sf_out("fn main() {\n    let _ = \"hi\".length\n}")
