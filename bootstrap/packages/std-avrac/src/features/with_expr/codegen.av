@@ -5,7 +5,7 @@
 // Implementation: malloc new struct, copy all fields from original,
 // then overwrite the specified fields with new values.
 
-use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_render_full}
+use core.{Expr, FieldEntry, FieldInit, VarBinding, field_index_of, vtype_render_full, vtype_newtype_underlying}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, vtype_is_ptr_type, expr_is_shared_alias}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.closures.{emit_expected}
@@ -30,7 +30,19 @@ fn emit_with_inner(ctx: Ctx, env: List<VarBinding>, obj: Expr, overrides: List<F
     // resolved_struct_name reclassifies an Enum-form mangled generic name
     // (`Box__int`, from a return / let / param annotation) to its registered
     // struct — same fix as the field read/assign paths, kept in sync here.
-    let struct_name = ctx.resolved_struct_name(r.ty)
+    //
+    // A newtype is layout-transparent: `with` updates the UNDERLYING struct's
+    // fields (field READ on a newtype-over-struct already works — aujl), so peel
+    // to the underlying struct for the lookup. The result keeps r.ty (the
+    // newtype), so the `with`-value stays nominally the newtype. Resolve first so
+    // a call-returned newtype (arriving as a parser-default `.Struct`) peels too;
+    // a non-newtype takes the exact prior path (byte-identical).
+    let resolved_ty = ctx.resolve_codegen_vtype(r.ty)
+    let struct_name = if resolved_ty is .Newtype {
+        ctx.resolved_struct_name(vtype_newtype_underlying(resolved_ty))
+    } else {
+        ctx.resolved_struct_name(r.ty)
+    }
     if struct_name == "" {
         return err_emit("`with` requires a struct value (got ty=${vtype_render_full(r.ty)})")
     }

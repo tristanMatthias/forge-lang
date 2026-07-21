@@ -1,0 +1,42 @@
+// Regression (forge-crafting-intepreters-t-o6gy, part 1): `with` on a newtype-
+// over-struct ICE'd (F9999 "`with` requires a struct value (got ty=P2)") because
+// emit_with_inner's resolved_struct_name returned "" for a `.Newtype`. A newtype
+// is layout-transparent — field READ on a newtype-over-struct already works
+// (aujl), so field UPDATE via `with` must peel to the underlying struct for the
+// field lookup while keeping the newtype nominal type on the result. Sibling of
+// the t-4udz index/slice/for-in peel.
+
+type WnPoint = { x: int, y: int }
+type WnP2 = WnPoint
+
+/// `with` on a newtype-over-struct param — updates the underlying struct's field,
+/// result stays nominally WnP2.
+fn wn_update(p: WnP2) -> int {
+    let q = p with { x: 9 }
+    q.x + q.y
+}
+
+/// The unchanged field survives the copy.
+fn wn_keep_other(p: WnP2) -> int {
+    let q = p with { x: 100 }
+    q.y
+}
+
+/// `with` on a fn-RETURNED newtype (arrives as a parser-default `.Struct`,
+/// exercising the resolve-then-peel path).
+fn wn_mk() -> WnP2 { WnP2(WnPoint { x: 1, y: 2 }) }
+
+spec "`with` on a newtype-over-struct peels to the underlying layout (t-o6gy)" {
+    then "override a field; result stays the newtype and reads back correctly" {
+        wn_update(WnP2(WnPoint { x: 3, y: 5 })) == 14
+    }
+    then "non-overridden fields are preserved through the copy" {
+        wn_keep_other(WnP2(WnPoint { x: 3, y: 5 })) == 5
+    }
+    given "a fn returning a newtype (call result arrives as a parser-default struct)" {
+        then "`with` on the call result works" {
+            let q = wn_mk() with { x: 7 }
+            q.x == 7 && q.y == 2
+        }
+    }
+}
