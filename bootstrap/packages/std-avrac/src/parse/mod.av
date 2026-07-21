@@ -272,13 +272,18 @@ export type Parser = {
     // the Grammar-tree interpreter (run_dsl_decl_at_shared / exec_rule). Same PState +
     // builders + @hand leaves (run_hand_stmt) ⇒ byte-identical AST, but straight-line
     // (no exec_rule grammar walk) — erasing the interpreter's top-level-dispatch tax.
-    // Opt-in via AVRA_PARSER_DECL_STATIC=1: proven byte-identical over the full
-    // selfhost (915,728 lines) + the corpus + most of the error-path suite, but the
-    // generated fold/optional rules don't yet PROPAGATE a failed sub-parse the way
-    // exec_rule/the hand parser do (a dangling `= 5` builds Assign(Error, 5) instead
-    // of rejecting — decl_flip_dispatch_test's reject-parity). Default OFF until that
-    // emit error-propagation lands; the interpreter (run_dsl_decl_at_shared) stays
-    // the production path + the differential oracle. Only active when decl_flip is on.
+    // PROMOTED default-ON: byte-identical over the full selfhost + corpus + the FULL
+    // error-path suite. The static parser drives every VALID item at straight-line
+    // speed; its generated fold/optional rules do NOT reproduce the interpreter's
+    // exact error-RECOVERY tree (they build partial nodes where exec_rule bails), so
+    // on ANY error parse_declaration ROLLS THE STORE BACK over the abandoned static
+    // rows (store.mark/truncate_to_mark) and re-parses THAT item with the interpreter
+    // — the incumbent byte-identical error path. Errors are rare (invalid programs
+    // only), so the common valid case keeps the straight-line win while error trees
+    // stay byte-identical without chasing them through emit. AVRA_PARSER_DECL_STATIC=0
+    // routes back to the interpreter unconditionally (still the differential oracle).
+    // Only active when decl_flip is on (the escape hatch AVRA_PARSER_DECL_FLIP=0
+    // disables both, dropping to the pure hand parser).
     mut decl_static: bool,
     // ps3t.6.7 Step G slice 4 — statement-family swap-in: when true,
     // parse_statement delegates the whole statement to the grammar-DSL
@@ -692,7 +697,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // generated STATIC parser as the production expression parser. Default OFF
         // until the full-selfhost byte-identity proof + perf win promote it.
         expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") == "1",
-        decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") == "1",
+        decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
         // ps3t.6.7 Step G slice 4 — opt-in via AVRA_PARSER_STMT_FLIP=1: the
         // grammar-DSL statement parser. Default OFF until the full-selfhost
         // byte-identity proof promotes it (like type/pat_flip).
@@ -881,10 +886,33 @@ impl Parser {
             // Both share the token stream, modes, @hand delegate, store, and the
             // error-path handling below — they differ only in HOW they drive the
             // identical builders (straight-line generated fn vs exec_rule walk).
-            let dsl = if self.decl_static {
+            // Snapshot the store so a failed STATIC parse leaves NO rows behind (its
+            // partial CapVal nodes would otherwise be orphan arena rows a flat scan
+            // counts) — the speculative-parse mark/truncate contract (B1).
+            let store_mark = self.store.mark()
+            mut dsl = if self.decl_static {
                 run_static_decl(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
             } else {
                 run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
+            }
+            // ps3t.6.7 Phase 2 — INTERPRETER FALLBACK ON ERROR. The static generated
+            // parser is byte-identical to the interpreter on every VALID item (proven
+            // over the full selfhost + corpus), but its CapVal fold/optional rules do
+            // NOT reproduce the interpreter's exact error-RECOVERY tree (they build
+            // partial nodes where exec_rule bails). Rather than chase byte-identical
+            // error trees through emit, re-parse THIS item with the interpreter — the
+            // incumbent byte-identical error path — on any error, resetting the
+            // delegate to the item start. Errors are rare (invalid programs only), so
+            // the straight-line win on the valid common case is preserved, and the
+            // shared error-path handling below sees an interpreter-shaped result.
+            if self.decl_static && dsl.had_error {
+                // Roll the store back over the abandoned static parse (no orphan rows),
+                // reset the delegate to the item start, and re-parse with the
+                // interpreter — the store now holds EXACTLY the interpreter's rows.
+                self.store.truncate_to_mark(store_mark)
+                d.copy_cursor_from(self)
+                d.bag = bag_new()
+                dsl = run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
             }
             if !dsl.had_error {
                 while d.current_start < dsl.stop_byte && !d.is_at_end() {
