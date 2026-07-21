@@ -683,13 +683,15 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         stmt_flip: avra_process_env_get("AVRA_PARSER_STMT_FLIP") == "1",
         dsl_stmt_grammar: null,
         // ps3t.6.7 Step G slice 5.4 — PROMOTED default-ON: the grammar-DSL is now
-        // the production parser. decl_flip is the OUTER flip; via the shared
-        // hand-delegate (ensure_hand_delegate, stmt_flip+decl_flip ON there) the
-        // WHOLE program — top-level decls, fn bodies, nested control flow — flows
-        // through the DSL. Proven byte-identical over the full selfhost
-        // (912,811 lines) + corpus (#903). Escape hatch AVRA_PARSER_DECL_FLIP=0
-        // routes back to the hand RD driver, which stays the @hand leaf
-        // implementation + DSL-error fallback + test oracle.
+        // the production parser. decl_flip is the OUTER flip — it drives the whole
+        // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt) through the
+        // DSL. Each item is then routed to a @hand leaf whose shared hand-delegate
+        // (ensure_hand_delegate) is a SINGLE-LEVEL, PURE-HAND oracle (its own
+        // stmt_flip/decl_flip are OFF), so it parses the item — signature AND
+        // nested body — by hand; bodies do NOT re-enter the DSL through the
+        // delegate. Proven byte-identical over the full selfhost + corpus. Escape
+        // hatch AVRA_PARSER_DECL_FLIP=0 routes back to the hand RD driver, which
+        // stays the @hand leaf implementation + DSL-error fallback + test oracle.
         decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") != "0",
         dsl_decl_grammar: null,
         hand_delegate: null,
@@ -846,13 +848,7 @@ impl Parser {
         // this parser's live modes + the shared @hand delegate, then resync to the
         // stop byte. A DSL error falls through to the authoritative hand parser.
         if self.decl_flip {
-            let modes = ExprModes {
-                allow_struct_lit: self.allow_struct_lit,
-                allow_dot_postfix: self.allow_dot_postfix,
-                allow_it_sugar: self.allow_it_sugar,
-                quote_depth: self.quote_depth,
-                cell_mode: self.cell_mode,
-            }
+            let modes = self.current_modes()
             mut d = self.ensure_hand_delegate()
             d.copy_cursor_from(self)
             // Fresh per-item diagnostic scratch on the (single-level, pure-hand)
@@ -1139,6 +1135,21 @@ impl Parser {
     /// a new flip flag updates this ONE site — the two-site drift CodeRabbit
     /// flagged on #899 (parse_statement had to be hand-edited alongside
     /// parse_expression to force stmt_flip off).
+    /// Snapshot this parser's live mode flags for a flip hand-off (ps3t.6.7).
+    /// The single home for the `ExprModes` construction the three flip sites
+    /// (parse_declaration / parse_statement / parse_expression) thread to the
+    /// grammar-DSL runner — so a new `ExprModes` field can't drift across copies
+    /// (the two-site drift #899 fixed, now three-site-proof).
+    fn current_modes(self) -> ExprModes {
+        ExprModes {
+            allow_struct_lit: self.allow_struct_lit,
+            allow_dot_postfix: self.allow_dot_postfix,
+            allow_it_sugar: self.allow_it_sugar,
+            quote_depth: self.quote_depth,
+            cell_mode: self.cell_mode,
+        }
+    }
+
     fn ensure_hand_delegate(self) -> Parser {
         if self.hand_delegate == null {
             mut d = parser_new_with_store(self.source, self.file, self.store)
@@ -1190,13 +1201,7 @@ impl Parser {
         // line first, its end state adopted after), then resync to the stop byte.
         // A DSL error falls through to the authoritative hand parser.
         if self.stmt_flip {
-            let modes = ExprModes {
-                allow_struct_lit: self.allow_struct_lit,
-                allow_dot_postfix: self.allow_dot_postfix,
-                allow_it_sugar: self.allow_it_sugar,
-                quote_depth: self.quote_depth,
-                cell_mode: self.cell_mode,
-            }
+            let modes = self.current_modes()
             // One reusable @hand delegate per file (see ensure_hand_delegate),
             // SYNCED to this parser's cursor+line before the parse, its end state
             // adopted after.
@@ -1269,13 +1274,7 @@ impl Parser {
         // allow_struct_lit=false), then resync the token cursor to the stop byte.
         // A DSL error falls through to the authoritative hand parser.
         if self.expr_flip || self.expr_static {
-            let modes = ExprModes {
-                allow_struct_lit: self.allow_struct_lit,
-                allow_dot_postfix: self.allow_dot_postfix,
-                allow_it_sugar: self.allow_it_sugar,
-                quote_depth: self.quote_depth,
-                cell_mode: self.cell_mode,
-            }
+            let modes = self.current_modes()
             // One reusable @hand delegate per file (see ensure_hand_delegate).
             // SYNC it to THIS parser's exact cursor + line state so it parses the
             // expression's leaves carrying the accumulated line (incl. the
