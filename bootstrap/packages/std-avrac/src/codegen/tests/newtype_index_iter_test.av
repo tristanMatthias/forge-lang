@@ -1,0 +1,98 @@
+// Regression (forge-crafting-intepreters-t-4udz): indexing, slicing, and for-in
+// iteration on a NEWTYPE are layout-transparent — a `type Nums = List<int>`
+// value IS a list ptr — but the index/for-in emit sites (and the typeck map-
+// index gate) didn't peel the newtype, so they ICE'd (F9999) instead of working
+// (list/str) or reporting a clean F1206 (map). The aujl sibling: emit_field_on_value
+// peels newtypes for `.length`/fields; this extends the same peel to emit_index /
+// emit_slice / emit_for_in, and peels in the typeck `.Index` gate so a newtype-
+// over-map gets the clean F1206 rather than a codegen ICE.
+//
+// A fn's newtype RETURN type arrives at the call site as a parser-default
+// `.Struct("Nums")` (the string roundtrip drops the struct/newtype distinction),
+// which `is .Newtype` alone missed — `mk().length` / `mk()[0]` ICE'd as "unknown
+// struct Nums". Every peel site now resolves THROUGH the codegen registry first
+// (resolve_codegen_vtype maps that `.Struct` back to its `.Newtype`), so call
+// results are handled too.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+type NiNums = List<int>
+type NiStr = string
+
+/// Index a newtype-over-list param.
+fn ni_index(n: NiNums) -> int { n[0] + n[2] }
+
+/// Index a newtype-over-string param (single-char substring).
+fn ni_str_index(s: NiStr) -> string { s[0] }
+
+/// Iterate a newtype-over-list param.
+fn ni_sum(n: NiNums) -> int {
+    mut acc = 0
+    for x in n { acc = acc + x }
+    acc
+}
+
+/// Iterate a newtype-over-string param (count chars).
+fn ni_charcount(s: NiStr) -> int {
+    mut c = 0
+    for _ch in s { c = c + 1 }
+    c
+}
+
+/// Slice a newtype-over-list — stays nominally NiNums, then read its length.
+fn ni_slice_len(n: NiNums) -> int {
+    let s = n[0..2]
+    s.length
+}
+
+/// A fn whose RETURN type is a newtype — the call result arrives as a
+/// parser-default `.Struct`, exercising the resolve-then-peel path.
+fn ni_mk() -> NiNums { NiNums([10, 20, 30]) }
+
+fn ni_compile_out(source: string) -> string {
+    let path = "/tmp/avra_t4udz_ni.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "index/iter/slice on a newtype see through to the underlying layout (t-4udz)" {
+    then "index a newtype-over-list" {
+        ni_index(NiNums([1, 2, 3])) == 4
+    }
+    then "index a newtype-over-string" {
+        ni_str_index(NiStr("hello")) == "h"
+    }
+    then "iterate a newtype-over-list" {
+        ni_sum(NiNums([4, 5, 6])) == 15
+    }
+    then "iterate a newtype-over-string" {
+        ni_charcount(NiStr("world")) == 5
+    }
+    then "slice a newtype-over-list" {
+        ni_slice_len(NiNums([7, 8, 9, 10])) == 2
+    }
+    given "a fn returning a newtype (call result arrives as a parser-default struct)" {
+        then "member access on the call result works" {
+            ni_mk().length == 3
+        }
+        then "indexing the call result works" {
+            ni_mk()[1] == 20
+        }
+    }
+}
+
+spec "indexing a newtype-over-map is a clean F1206, never the F9999 ICE (t-4udz)" {
+    then "newtype-over-map [] is F1206 (like a plain Map), not an ICE" {
+        let out = ni_compile_out("type NiMap = Map<string, int>\nfn g(m: NiMap) -> int { m[\"a\"] }\nfn main() { let _ = g(NiMap({\"a\": 1})) }")
+        out.contains("F1206") && !out.contains("F9999")
+    }
+    then "the newtype-over-map diagnostic still points at .get(key)" {
+        let out = ni_compile_out("type NiMap = Map<string, int>\nfn g(m: NiMap) -> int { m[\"a\"] }\nfn main() { let _ = g(NiMap({\"a\": 1})) }")
+        out.contains(".get(key)")
+    }
+    then "newtype-over-list indexing compiles clean (no false F1206/F9999)" {
+        let out = ni_compile_out("type NiList = List<int>\nfn g(n: NiList) -> int { n[0] }\nfn main() { let _ = g(NiList([1, 2])) }")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1206") && !out.contains("F9999")
+    }
+}

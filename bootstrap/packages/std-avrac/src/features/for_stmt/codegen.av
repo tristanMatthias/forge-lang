@@ -3,7 +3,7 @@
 // Arena-eligible loops (non-escaping allocations only) use per-scope
 // bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
-use core.{Expr, Stmt, VarBinding, env_extend, ValueType, vtype_list_elem, vtype_is_str}
+use core.{Expr, Stmt, VarBinding, env_extend, ValueType, vtype_list_elem, vtype_is_str, vtype_newtype_underlying}
 use codegen.{Ctx, LoopStackFrame, StmtResult, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.{is_arena_eligible}
@@ -117,7 +117,19 @@ export fn emit_for_in(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<Stm
 fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let coll_r = ctx.emit(env, collection)?
-    let coll_ty = emit_value_ty(coll_r)
+    // A newtype is layout-transparent — iterating `type Nums = List<int>` walks
+    // the underlying list. Peel so `is_string`/`vtype_list_elem` see the base;
+    // without it the element type resolves to `.Unknown` and hits the layout
+    // boundary ICE (and a newtype-over-string would mis-route to the array path).
+    // resolve_codegen_vtype first so a call-returned newtype (a parser-default
+    // `.Struct`) peels too. Peel ONLY when the resolved type is a Newtype — a
+    // non-newtype keeps its RAW emit type, because resolve_codegen_vtype also
+    // canonicalizes a list's element type, and threading the resolved elem into
+    // `vtype_list_elem` would change the loop-variable binding (and body IR) for
+    // every ordinary `for x in list` (diff-test divergence).
+    let coll_ty_raw = emit_value_ty(coll_r)
+    let coll_resolved = ctx.resolve_codegen_vtype(coll_ty_raw)
+    let coll_ty = if coll_resolved is .Newtype { vtype_newtype_underlying(coll_resolved) } else { coll_ty_raw }
     let is_string = vtype_is_str(coll_ty)
 
     // Get length — strings use strlen, lists use array_len
