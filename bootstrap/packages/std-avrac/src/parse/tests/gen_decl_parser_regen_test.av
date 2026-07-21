@@ -1,0 +1,30 @@
+// WHY: ps3t.6.7 Phase 2 — the REGEN GUARD for the checked-in production declaration
+// static parser (parse/gen_decl_parser.av). That file MUST always equal
+// emit_decl_parser_file() = the fixed import header + emit_parser_source_ex(
+// avra_decl_dispatch_grammar(), true). Editing the §2 declaration/statement grammars
+// (avra_grammar.av) without running `bash scripts/diagnose.sh --emit-regen-decl`
+// leaves the checked-in parser stale (silently dispatching the OLD grammar in
+// production under AVRA_PARSER_DECL_STATIC=1) — and this test fails until it's
+// regenerated + committed. Sibling of gen_expr_parser_regen_test.av.
+//
+// Fast + in-process: the emitter is already linked via the import, so no nested
+// compile. Textual equality is the guard; the BEHAVIOURAL proof that the emitted
+// text parses byte-equivalent to the hand parser is the full-selfhost differential
+// under AVRA_PARSER_DECL_STATIC=1 (byte-identical over 915,655 lines + the corpus).
+
+use @std.avrac.features.grammar.{emit_decl_parser_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in production declaration static parser stays current with the §2 grammar" {
+    then "parse/gen_decl_parser.av == emit_decl_parser_file() (else run --emit-regen-decl)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_decl_parser.av")
+        let expected = emit_decl_parser_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        // Same F4012 double-expansion hazard gen_expr_parser_header guards: a globbed
+        // in-package compiler-src module MUST import relatively.
+        !emit_decl_parser_file().contains("use @std.avrac.")
+    }
+}

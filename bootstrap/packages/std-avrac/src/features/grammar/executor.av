@@ -1207,6 +1207,26 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
     run_dsl_snode_at_shared("declaration", toks, start_byte, src, file, store, grammar, modes, delegate)
 }
 
+/// ps3t.6.7 Phase 2 — the STATIC-parser boundary for the statement/declaration
+/// family. IDENTICAL PState setup to run_dsl_snode_at_shared, but drives the
+/// CHECKED-IN generated static parser (parse/gen_decl_parser.av's `parse` fn,
+/// passed in so this module needs no import back into `parse`) instead of the
+/// Grammar-tree interpreter (`exec_rule`). Same builders (capval_to_stmt), same
+/// PState, same `@hand` leaves (run_hand_stmt for decl_hand/stmt_hand) ⇒
+/// byte-identical AST to both the interpreter flip AND the hand parser, at
+/// straight-line speed (no per-node Grammar dispatch). The declaration entry
+/// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
+export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    let stmt = capval_to_stmt(st, parse(st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslStmtResult { stmt, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
 /// (`run_hand_expr` → ExprId over the shared store) — distinct from the
 /// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`

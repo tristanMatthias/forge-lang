@@ -766,7 +766,11 @@ fn emit_hand_result(hf: string) -> string {
 // is_expr_hand (kept local — file-private there; the classes are small and
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
-    n == "component_decl" || n == "let_stmt" || n == "return_stmt"
+    n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
+    // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
+    // the production statement/declaration flips delegate to (parse_statement /
+    // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
+    n == "stmt_hand" || n == "decl_hand"
 }
 fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
 fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "pipe_rhs" }
@@ -806,6 +810,16 @@ fn hand_first_guard(hf: string) -> string {
     // the FIRST-set has ONE source of truth across both consumers (rule 8).
     if hf == "hand_unary" { return "tok_starts_expr_leaf(st.cur())" }
     if hf == "pipe_rhs" { return "tok_starts_expr_leaf(st.cur())" }
+    // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch FIRST
+    // sets, mirroring executor.hand_starts("stmt_hand" / "decl_hand") exactly so
+    // the generated static parser routes to run_hand_stmt on the same tokens the
+    // interpreter flip does (byte-identical dispatch).
+    if hf == "stmt_hand" {
+        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"for\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
+    }
+    if hf == "decl_hand" {
+        return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
+    }
     "false"
 }
 
