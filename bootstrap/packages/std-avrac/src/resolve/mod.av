@@ -34,7 +34,8 @@ type ScopeBinding = {
 /// and returns a Resolver — the pass is purely functional under the
 /// hood despite the imperative-looking call sites.
 /// @field scopes        — head of the binding scope stack.
-/// @field functions     — fns declared so far (mutually-visible).
+/// @field fn_set        — declared-fn membership set (cstr map), O(1)
+///                         lookup; mutually-visible after collection.
 /// @field depth         — current scope depth (0 = top level).
 /// @field had_error     — sticky flag: any error sets this for life.
 /// @field error_message — the first error's message (legacy).
@@ -48,7 +49,7 @@ type ScopeBinding = {
 ///                         can render snippets from the right file.
 type Resolver = {
     scopes: List<ScopeBinding>,
-    functions: List<string>,
+    fn_set: ptr,
     depth: int,
     had_error: int,
     error_message: string,
@@ -67,6 +68,19 @@ type Resolver = {
 /// declares the language's built-in fns so they resolve like normal
 /// declarations.
 extern fn avra_ice_phase(phase: string)
+
+// Declared-function membership set (cstr-keyed hash map). Backs the O(1)
+// `lookup_fn`, replacing the prior O(n) linear scan of a `List<string>`
+// that EVERY bare-identifier reference paid during resolve — the bootstrap
+// has ~5000 fns and hundreds of thousands of references, so the linear
+// membership test was O(refs × fns) ≈ O(N²). Mirrors the same cstr-map
+// pattern already used by the global item index (resolve/names.av) and the
+// typeck FnTypeReg. The map is mutated in place and its ptr is shared across
+// `Resolver with { … }` updates (like FnTypeReg.idx) — safe because
+// `collect_function_names` is a single linear pass with no branch isolation.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 
 export fn resolve_program(ids: List<StmtId>, parse_store: NodeStore) -> ResolveResult {
     avra_ice_phase("resolve")
@@ -153,7 +167,7 @@ fn collect_method_names(r: Resolver, methods: List<StmtId>) -> Resolver {
 fn resolver_new(parse_store: NodeStore) -> Resolver {
     Resolver {
         scopes: [],
-        functions: [],
+        fn_set: avra_map_new_cstr(),
         depth: 0,
         had_error: false,
         error_message: "",
@@ -308,11 +322,11 @@ fn mark_defined(entries: List<ScopeBinding>, name: string, depth: int) -> List<S
 }
 
 /// Register a top-level fn name. Visible across the whole program
-/// after `collect_function_names` finishes.
+/// after `collect_function_names` finishes. Mutates the shared cstr
+/// map in place (its ptr is unchanged), so `r` is returned as-is.
 fn declare_function(r: Resolver, name: string) -> Resolver {
-    mut functions = r.functions
-    functions.push(name)
-    r with { functions }
+    avra_map_set_cstr(r.fn_set, name, 1)
+    r
 }
 
 /// Result of `lookup_name`: was the name found, has it been defined
@@ -339,15 +353,10 @@ fn lookup_name(entries: List<ScopeBinding>, name: string) -> NameLookup {
     NameLookup { found: false, defined: false, mutable: false }
 }
 
-/// Membership test for the declared-functions list — true iff
-/// `name` was registered via `declare_function`.
-fn lookup_fn(fns: List<string>, name: string) -> bool {
-    mut i = 0
-    while i < fns.length {
-        if fns[i] == name { return true }
-        i = i + 1
-    }
-    false
+/// Membership test for the declared-functions set — true iff `name`
+/// was registered via `declare_function`. O(1) hash lookup.
+fn lookup_fn(fn_set: ptr, name: string) -> bool {
+    avra_map_has_cstr(fn_set, name) != 0
 }
 
 /// Resolve a single statement. Each variant gets its own arm — most
@@ -478,7 +487,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
                 }
                 return r
             }
-            if lookup_fn(r.functions, name) {
+            if lookup_fn(r.fn_set, name) {
                 return r
             }
             set_resolve_error(r, "undefined variable `${name}`")
