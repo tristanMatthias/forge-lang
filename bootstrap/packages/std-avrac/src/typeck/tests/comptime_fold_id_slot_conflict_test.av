@@ -25,16 +25,17 @@
 use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
 
 // Fold a @comptime fn whose body is `quote { <q> }` to a VALUE and render it.
-// `tag` gives each case its OWN fixture path — the three `then` blocks run as
-// parallel `@deferred_init` units (d4jv), so a shared path would race (one
-// case's source clobbering another's before it compiles). The
-// `_no_metadata` runner is REQUIRED: a standalone @comptime fixture must
-// WHOLE-PROGRAM compile @std (the fold path needs the @comptime bodies), and
-// the metadata fast-path stubs @std, so the leaf case — which reaches the
-// linker instead of failing at typeck — otherwise fails on undefined @std
-// symbols rather than rendering.
-fn cfi_out(tag: string, q: string) -> string {
-    write_fixture_and_run_no_metadata("/tmp/avra_comptime_fold_id_slot_${tag}.av",
+// The `then` blocks in one spec file run SEQUENTIALLY within a single
+// `@deferred_init` unit (only whole test FILES fan out across worker threads,
+// d4jv), so a single file-scoped fixture path cannot race and needs no
+// per-case tag. The `_no_metadata` runner IS required: a standalone @comptime
+// fixture must WHOLE-PROGRAM compile @std (the fold path needs the @comptime
+// bodies), and the metadata fast-path stubs @std, so the leaf case — which
+// reaches the linker instead of failing at typeck — otherwise fails on
+// undefined @std symbols rather than rendering. (The content-keyed capture
+// also keys on the source, so the three distinct sources never collide.)
+fn cfi_out(q: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_comptime_fold_id_slot.av",
         "use @std.avrac.core.{Expr, render_expr, new_node_store, build_line_index}\n" +
         "@comptime\n" +
         "fn cfi_mk() -> Expr {\n" +
@@ -48,7 +49,7 @@ fn cfi_out(tag: string, q: string) -> string {
 
 spec "yfb6: a compound comptime fold-to-value is a clean F1000, never a runtime store crash" {
     then "a folded `quote { 1 + 2 }` (scalar ExprId operands) is F1000, not `out of bounds`" {
-        let out = cfi_out("bin", "1 + 2")
+        let out = cfi_out("1 + 2")
         // The decisive check: the OLD bug stored an `Expr` ptr in the `ExprId`
         // slot and crashed at render with a wild index. Now it is caught at
         // typeck.
@@ -57,11 +58,41 @@ spec "yfb6: a compound comptime fold-to-value is a clean F1000, never a runtime 
             && !out.contains("out of bounds")
     }
     then "a folded `quote { foo(5) }` (List<ExprId> args) is also F1000 (the sibling the gate already caught)" {
-        let out = cfi_out("call", "foo(5)")
+        let out = cfi_out("foo(5)")
         out.contains("F1000") && !out.contains("out of bounds")
     }
     then "a folded LEAF `quote { 42 }` (no id operands) still folds and renders — no false positive" {
-        let out = cfi_out("leaf", "42")
+        let out = cfi_out("42")
         out.contains("OUT=[42]") && !out.contains("F1000")
+    }
+}
+
+// The sibling newtype-blind hole in the SAME gate: `null` into a scalar-newtype
+// field. `vtype_is_value_scalar` reads `type Id = int` as non-scalar, so a
+// `null` (Void) — also non-scalar — showed no conflict and slipped to codegen,
+// where `null` into a plain `int` field is already an F1000. The
+// `vtype_underlying_value_scalar` disjunct closes it: a settled scalar-newtype
+// field receiving `null` is the same wild store as `null` into an `int`.
+fn nsn_out(field_ty: string, arg: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_comptime_fold_id_slot_nsn.av",
+        "type NsnId = int\n" +
+        "enum NsnWrap { W(v: " + field_ty + "), N }\n" +
+        "fn main() {\n" +
+        "    let e: NsnWrap = NsnWrap.W(" + arg + ")\n" +
+        "    let _ = e\n" +
+        "}\n")
+}
+
+spec "yfb6 sibling: `null` into a scalar-newtype ctor field is a clean F1000, not a codegen ICE" {
+    then "`null` into a scalar-newtype `NsnId` field is F1000 (parity with `null` into `int`)" {
+        let out = nsn_out("NsnId", "null")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a valid `NsnId(5)` into the newtype field still compiles — no false positive" {
+        // The null-gate fires only on a `void` arg; an explicitly-constructed
+        // `NsnId` value must sail through. (A bare `int` here is a separate,
+        // pre-existing nominal mismatch from the first disjunct — not this gate.)
+        let out = nsn_out("NsnId", "NsnId(5)")
+        !out.contains("F1000") && !out.contains("F9999")
     }
 }
