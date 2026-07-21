@@ -327,3 +327,33 @@ export fn f2_split_at_marker(store: NodeStore, ids: List<StmtId>, marker: string
     }
     SplitIds { prefix, suffix }
 }
+
+/// Folded top-level stmts partitioned into imported PACKAGE modules (the
+/// reusable env F2 seeds from a snapshot) vs the shard's OWN code (collected
+/// fresh). `std_ids` are the `@<scope>` package outers; `own_ids` is everything
+/// else, in original order.
+export type StdOwnSplit = { std_ids: List<StmtId>, own_ids: List<StmtId> }
+
+/// Partition folded top-level `ids` at the package boundary: a top-level
+/// `Stmt.Module` whose name starts with `@` is an imported package outer
+/// (the resolver wraps every `use @scope.pkg` as a TOP-LEVEL
+/// `Stmt.Module("@<scope>", [inner])` — features/modules/resolver.av:1099; the
+/// bare-named per-package submodules live INSIDE that outer, never at the top
+/// level, so this `@`-prefix test — the same `is_package_use` predicate — is
+/// exact). Everything else (own fns/types, and pipeline-injected intrinsics) is
+/// own code. The @std env a shard re-collects every process is exactly the
+/// `std_ids` here; F2 seeds those from a snapshot and collects only `own_ids`.
+export fn f2_partition_std_own(store: NodeStore, ids: List<StmtId>) -> StdOwnSplit {
+    mut std_ids: List<StmtId> = []
+    mut own_ids: List<StmtId> = []
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Module(name, _) -> {
+                if name.length > 0 && name[0] == "@" { std_ids.push(id) }
+                else { own_ids.push(id) }
+            }
+            _ -> own_ids.push(id)
+        }
+    }
+    StdOwnSplit { std_ids, own_ids }
+}
