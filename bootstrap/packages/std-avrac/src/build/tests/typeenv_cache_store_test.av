@@ -1,0 +1,48 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) increment 3b-i — the on-disk sidecar
+// store round-trip + validate-on-read proof. f2_typeenv_write persists a
+// snapshot atomically under a version-namespaced slot; f2_typeenv_read serves it
+// ONLY when whole and header-matching (magic + compiler_version + key fp), else
+// an honest cold MISS (null). This is the persistence tier a shard will read to
+// skip re-collecting the @std env.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{typecheck_env, snapshot_typeenv, sertypeenv_eq, MacroFnOrigin}
+use @std.avrac.build.{f2_typeenv_write, f2_typeenv_read}
+
+extern fn avra_getpid() -> int
+extern fn avra_remove_tree(path: string) -> int
+
+spec "F2: type-env cache store round-trips + validates on read (increment 3b-i)" {
+    then "write → read returns an equal env; wrong key / version are cold MISS" {
+        let src =
+            "type Box = { v: int }\n" +
+            "enum E { X(v: int), Y }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int { use_box(Box { v: 1 }) }\n"
+        let r = typecheck_source(src)
+        let mo: List<MacroFnOrigin> = []
+        let snap = snapshot_typeenv(typecheck_env(r.stmts, r.type_reg, mo, r.store))
+
+        let root = "/tmp/avra_f2_testore_" + string(avra_getpid())
+        let cv = "test-cv-1"
+        let key = "abc123fp"
+
+        let wrote = f2_typeenv_write(root, cv, key, snap)
+        let hit = f2_typeenv_read(root, cv, key)           // HIT: same (cv, key)
+        let miss_key = f2_typeenv_read(root, cv, "other_fp") // MISS: wrong key fp
+        let miss_cv = f2_typeenv_read(root, "other-cv", key) // MISS: sibling namespace
+
+        let _ = avra_remove_tree(root)
+
+        wrote
+            && hit != null && sertypeenv_eq(snap, hit!)
+            && miss_key == null
+            && miss_cv == null
+    }
+
+    then "reading an absent slot is a cold MISS (no write at all)" {
+        let root = "/tmp/avra_f2_testore_absent_" + string(avra_getpid())
+        let got = f2_typeenv_read(root, "cv", "nokey")
+        got == null
+    }
+}
