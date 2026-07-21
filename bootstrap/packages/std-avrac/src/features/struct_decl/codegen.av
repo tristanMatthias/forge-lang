@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, variant_index, render_expr}
+use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, variant_index, render_expr, vtype_newtype_underlying}
 use features.closures.{emit_expected}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, expr_is_shared_alias}
 use core.{type_registry_id_for, vtype_struct}
@@ -281,7 +281,14 @@ fn enum_variant_ordinal(ctx: Ctx, obj: Expr) -> int {
 /// silently returned the receiver for non-struct targets). `obj` is kept only
 /// to render the error message. Covers `.await`, the str/bytes/list/map
 /// `.length` builtins, narrowed-enum payloads, and plain struct fields.
-export fn emit_field_on_value(ctx: Ctx, r: EmitValue, obj: Expr, field: string) -> Result<EmitValue, string> {
+export fn emit_field_on_value(ctx: Ctx, r0: EmitValue, obj: Expr, field: string) -> Result<EmitValue, string> {
+    // A newtype is layout-transparent: its runtime value IS the underlying
+    // value (`type MyStr = string` → a string ptr), so member/builtin dispatch
+    // operates on the peeled underlying type. The nominal distinction is a
+    // typeck concern only; codegen sees through it. Peel BEFORE the str/bytes/
+    // list/map `.length` builtins and the struct-field path so a newtype over
+    // any of them resolves instead of hitting the non-struct-value error.
+    let r = if r0.ty is .Newtype { r0 with { ty: vtype_newtype_underlying(r0.ty) } } else { r0 }
     // Task.await — join the thread and return its result with the Task's result type.
     if field == "await" {
         let result = ctx.call("avra_task_await", [r.value])

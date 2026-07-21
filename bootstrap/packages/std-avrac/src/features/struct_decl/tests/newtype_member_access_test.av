@@ -1,0 +1,59 @@
+// Regression (forge-crafting-intepreters-aujl): direct member/builtin access on
+// a newtype value ICE'd in codegen — `field access on non-struct value
+// (ty=MyStr, field=length)` (F9999). A newtype is nominally distinct but
+// LAYOUT-TRANSPARENT (its runtime value IS the underlying value), so codegen's
+// `.length`/field dispatch must see through the newtype to its underlying type.
+// The ticket surfaced it through a type-pattern binding in a union match
+// (`match v { MyStr(s) -> s.length }`), but the bug is broader: ANY member
+// access on a newtype — param, let-binding, or pattern binding — over string /
+// list / map / bytes / struct hit the same non-struct-value error. The fix peels
+// the newtype in emit_field_on_value (struct_decl/codegen.av) before the builtin
+// and struct-field dispatch, so no `.raw()` unwrap is needed for member access.
+
+type MaStr = string
+type MaNums = List<int>
+type MaInt = int
+type MaPoint = { x: int, y: int }
+type MaP2 = MaPoint
+
+/// `.length` on a newtype-over-string param — the leaf shape.
+fn ma_str_len(s: MaStr) -> int { s.length }
+
+/// `.length` on a newtype-over-list param.
+fn ma_list_len(n: MaNums) -> int { n.length }
+
+/// Field access on a newtype-over-struct param.
+fn ma_point_x(p: MaP2) -> int { p.x }
+
+/// The ticket's exact shape: a union type-pattern binding whose bound var
+/// carries the newtype, then direct member access on it.
+fn ma_union_len(v: MaInt | MaStr) -> int {
+    match v {
+        MaInt(n) -> n
+        MaStr(s) -> s.length
+    }
+}
+
+spec "newtype member access sees through to the underlying layout (aujl)" {
+    then "newtype-over-string .length works without .raw()" {
+        ma_str_len(MaStr("hello")) == 5
+    }
+    then "newtype-over-list .length works" {
+        ma_list_len(MaNums([1, 2, 3, 4])) == 4
+    }
+    then "newtype-over-struct field access works" {
+        ma_point_x(MaP2(MaPoint { x: 7, y: 9 })) == 7
+    }
+    then "newtype .length on a let-bound value" {
+        let s = MaStr("worldly")
+        s.length == 7
+    }
+    given "a union type-pattern binding (the ticket's repro)" {
+        then "member access on the newtype-typed binding works" {
+            ma_union_len(MaStr("abcdef")) == 6
+        }
+        then "the sibling union arm still returns its raw underlying" {
+            ma_union_len(MaInt(42)) == 42
+        }
+    }
+}
