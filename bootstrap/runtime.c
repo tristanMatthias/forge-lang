@@ -4463,8 +4463,21 @@ typedef struct ProcessEntry {
 #define MAX_PROCESSES 256
 static ProcessEntry process_registry[MAX_PROCESSES];
 static int64_t next_process_id = 1;
+// The async Process API (avra_process_spawn_bg/wait/kill) is reachable from the
+// parallel test runner's WORKER THREADS (a test file that spawns a background
+// process runs as a @deferred_init unit on a worker thread, d4jv). Without this
+// lock, two concurrent spawns raced on the non-atomic `next_process_id++` and
+// could get the SAME id → the SAME slot → one silently overwrote the other's
+// entry, so a later wait/kill read the wrong pid/fds (wrong exit code). The
+// entry writes/reads are guarded too so a lookup can't observe a half-written
+// slot. Uncontended cost is ~20ns against a fork+exec (~ms), so no g_rc_-style
+// gating is needed. NOTE: the id%MAX_PROCESSES slot mapping still collides once
+// >256 processes are concurrently live — a separate pre-existing bound, not this
+// race; real suites stay well under it.
+static pthread_mutex_t process_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int64_t registry_add(pid_t pid, int stdout_fd, int stderr_fd) {
+    pthread_mutex_lock(&process_registry_mutex);
     int64_t id = next_process_id++;
     int slot = (int)(id % MAX_PROCESSES);
     process_registry[slot].pid = pid;
@@ -4472,19 +4485,24 @@ static int64_t registry_add(pid_t pid, int stdout_fd, int stderr_fd) {
     process_registry[slot].stderr_fd = stderr_fd;
     process_registry[slot].alive = 1;
     process_registry[slot].cached_exit_code = INT_MIN;
+    pthread_mutex_unlock(&process_registry_mutex);
     return id;
 }
 
 static ProcessEntry* registry_get(int64_t id) {
+    pthread_mutex_lock(&process_registry_mutex);
     int slot = (int)(id % MAX_PROCESSES);
-    if (process_registry[slot].pid != 0) return &process_registry[slot];
-    return NULL;
+    ProcessEntry* e = (process_registry[slot].pid != 0) ? &process_registry[slot] : NULL;
+    pthread_mutex_unlock(&process_registry_mutex);
+    return e;
 }
 
 static void registry_remove(int64_t id) {
+    pthread_mutex_lock(&process_registry_mutex);
     int slot = (int)(id % MAX_PROCESSES);
     process_registry[slot].pid = 0;
     process_registry[slot].alive = 0;
+    pthread_mutex_unlock(&process_registry_mutex);
 }
 
 // Core: fork + exec with pipes. Returns pid, sets stdout_fd/stderr_fd.
