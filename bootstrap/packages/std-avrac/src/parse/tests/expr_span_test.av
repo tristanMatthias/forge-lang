@@ -91,6 +91,44 @@ spec "bare compound exprs carry real byte spans (ps3t.3.9)" {
     }
 }
 
+spec "DSL-native compound exprs carry hand-identical byte spans (ps3t.6.7 slice 3)" {
+    // The logical / null-coalesce / assignment / equality strata are built by the
+    // DSL expression builders (fold_logical_expr, fold_nullish_expr, mk_assign_expr,
+    // rebind_eq_expr) — span-free (byte_span_none) before slice 3. They now thread
+    // the rule-entry sp_start so each carries [start, next-token) exactly as the
+    // hand parse_or/parse_null_coalesce/parse_assignment/parse_equality stamp it.
+    // Passing under BOTH the hand parser (default) AND AVRA_PARSER_EXPR_STATIC=1
+    // is the byte-identity proof; the full-selfhost differential seals it.
+    then "a logical `&&` spans its whole expression" {
+        let sp = root_span_of("a && b")
+        sp[0] == 0 && sp[1] >= 6
+    }
+    then "a logical `||` chain spans start to end" {
+        let sp = root_span_of("a || b || c")
+        sp[0] == 0 && sp[1] >= 11
+    }
+    then "a `??` null-coalesce spans its whole expression" {
+        let sp = root_span_of("x ?? y")
+        sp[0] == 0 && sp[1] >= 6
+    }
+    then "an assignment spans LHS through value" {
+        let sp = root_span_of("p = 1")
+        sp[0] == 0 && sp[1] >= 5
+    }
+    then "an `is` check spans subject through variant" {
+        let sp = root_span_of("a is .B")
+        sp[0] == 0 && sp[1] >= 7
+    }
+    then "an `in [ … ]` membership spans the whole form" {
+        let sp = root_span_of("a in [1, 2]")
+        sp[0] == 0 && sp[1] >= 11
+    }
+    then "an `==` comparison spans both operands" {
+        let sp = root_span_of("a == b")
+        sp[0] == 0 && sp[1] >= 6
+    }
+}
+
 spec "interned pure leaves stay span-free by design" {
     then "a repeated ident dedups to one row and that row has no span" {
         interned_operands_span_free("x + x")

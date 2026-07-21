@@ -28,6 +28,7 @@ use @std.avrac.core.{Expr, ExprId, NodeStore}
 fn parse_expression(st: PState) -> CapVal { parse_logic_or(st) }
 
 fn parse_logic_or(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     let l = parse_logic_and(st)
     mut ops: List<Token> = []
     mut rs: List<ExprId> = []
@@ -35,10 +36,11 @@ fn parse_logic_or(st: PState) -> CapVal {
         ops.push(st.advance())
         rs.push(capval_to_expr(st, parse_logic_and(st)))
     }
-    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
 }
 
 fn parse_logic_and(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     let l = parse_equality(st)
     mut ops: List<Token> = []
     mut rs: List<ExprId> = []
@@ -46,7 +48,7 @@ fn parse_logic_and(st: PState) -> CapVal {
         ops.push(st.advance())
         rs.push(capval_to_expr(st, parse_equality(st)))
     }
-    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
 }
 
 fn parse_equality(st: PState) -> CapVal {

@@ -20,6 +20,7 @@ fn binary_lbp_g(t: Token) -> int {
 }
 
 fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {
+    let sp_start = st.cur().pos
     mut lhs = run_hand_expr("hand_unary", st)
     while true {
         let lbp = binary_lbp_g(st.cur())
@@ -28,7 +29,7 @@ fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {
         if (tx == "+" || tx == "-") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }
         let _ = st.advance()
         let rhs = parse_binary_pratt_g_id(st, lbp + 1)
-        lhs = mk_binary(st, lhs, tx, rhs)
+        lhs = mk_binary(st, sp_start, lhs, tx, rhs)
     }
     lhs
 }
@@ -40,23 +41,25 @@ export fn parse_expression(st: PState) -> CapVal {
 }
 
 fn parse_assignment(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     mut r: CapVal = CapVal.Nil
     let l = parse_pipe(st)
     if st.cur().text == "=" {
         let _ = st.advance()
         r = parse_assignment(st)
     }
-    CapVal.Node(mk_assign_expr(st, l, r))
+    CapVal.Node(mk_assign_expr(st, sp_start, l, r))
 }
 
 fn parse_pipe(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     mut r_list: List<ExprId> = []
     let l = parse_null_coalesce(st)
     while st.cur().text == "|>" {
         let _ = st.advance()
         r_list.push(capval_to_expr(st, parse_pipe_arg(st)))
     }
-    CapVal.Node(fold_pipe_expr(st, l, CapVal.Nodes(r_list)))
+    CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))
 }
 
 fn parse_pipe_arg(st: PState) -> CapVal {
@@ -64,6 +67,7 @@ fn parse_pipe_arg(st: PState) -> CapVal {
 }
 
 fn parse_null_coalesce(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     let l = parse_logic_or(st)
     if !(st.cur().text == "??") { return l }
     mut ops: List<Token> = []
@@ -72,10 +76,11 @@ fn parse_null_coalesce(st: PState) -> CapVal {
         ops.push(st.advance())
         rs.push(capval_to_expr(st, parse_logic_or(st)))
     }
-    CapVal.Node(fold_nullish_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+    CapVal.Node(fold_nullish_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
 }
 
 fn parse_logic_or(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     let l = parse_logic_and(st)
     if !(st.cur().text == "||" || st.cur().text == "or") { return l }
     mut ops: List<Token> = []
@@ -84,10 +89,11 @@ fn parse_logic_or(st: PState) -> CapVal {
         ops.push(st.advance())
         rs.push(capval_to_expr(st, parse_logic_and(st)))
     }
-    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
 }
 
 fn parse_logic_and(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     let l = parse_equality(st)
     if !(st.cur().text == "&&" || st.cur().text == "and") { return l }
     mut ops: List<Token> = []
@@ -96,16 +102,17 @@ fn parse_logic_and(st: PState) -> CapVal {
         ops.push(st.advance())
         rs.push(capval_to_expr(st, parse_equality(st)))
     }
-    CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
+    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
 }
 
 fn parse_equality(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
     mut tail: CapVal = CapVal.Nil
     let base = parse_bitor(st)
     if st.cur().text == "is" || st.cur().text == "in" || st.cur().text == "==" || st.cur().text == "!=" {
         tail = parse_eq_tail(st)
     }
-    CapVal.Node(rebind_eq_expr(st, base, tail))
+    CapVal.Node(rebind_eq_expr(st, sp_start, base, tail))
 }
 
 fn parse_eq_tail(st: PState) -> CapVal {

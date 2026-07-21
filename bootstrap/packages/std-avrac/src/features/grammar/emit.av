@@ -228,6 +228,7 @@ fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> strin
     lbp = lbp + "    0\n}\n\n"
     let leaf_call = leaf_exprid_call(g, leaf)
     let loop = "fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {\n" +
+        "    let sp_start = st.cur().pos\n" +
         "    mut lhs = ${leaf_call}\n" +
         "    while true {\n" +
         "        let lbp = binary_lbp_g(st.cur())\n" +
@@ -236,7 +237,7 @@ fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> strin
         "        if (tx == \"+\" || tx == \"-\") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }\n" +
         "        let _ = st.advance()\n" +
         "        let rhs = parse_binary_pratt_g_id(st, lbp + 1)\n" +
-        "        lhs = mk_binary(st, lhs, tx, rhs)\n" +
+        "        lhs = mk_binary(st, sp_start, lhs, tx, rhs)\n" +
         "    }\n" +
         "    lhs\n}\n\n" +
         "fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }\n\n"
@@ -313,7 +314,10 @@ fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
         return emit_fold(g, seq)
     }
     // General: emit the item statements, then the build as the (returned) tail.
-    emit_seq_stmts(g, seq, "    ") + "    ${emit_seq_result(g, seq)}\n"
+    // A span-stamping build (mk_assign / fold_pipe / rebind_eq) captures the
+    // rule-entry byte first — before any item (the leftmost operand) is parsed.
+    let sp_prelude = if seq_build_uses_sp_start(seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+    sp_prelude + emit_seq_stmts(g, seq, "    ") + "    ${emit_seq_result(g, seq)}\n"
 }
 
 /// True for `name = otherrule` — one One-item nonterminal, no build.
@@ -354,7 +358,11 @@ fn emit_fold(g: Grammar, seq: GSeq) -> string {
     let seed = seq.items[0]
     let inner = group_inner_seq(seq.items[1].prim)
     let guard = seq_first_guard(g, inner, [])
-    mut out = "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
+    // Capture the rule-entry byte BEFORE the seed is parsed (the leftmost operand's
+    // first token) when the fold build stamps spans — the operator-absent fast-path
+    // below returns the seed unchanged and doesn't reference it.
+    mut out = if seq_build_uses_sp_start(seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+    out = out + "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
     // ps3t.6.7 Step G perf: fast-path the operator-ABSENT case (the common one for
     // every expression that isn't a `??`/`||`/`&&` chain) — return the seed directly
     // with ZERO list allocation and no fold call, matching the hand parser's bare-ExprId
@@ -402,9 +410,31 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
             for a in args {
                 rendered.push(emit_fold_arg(a, seed_label, inner))
             }
-            "CapVal.Node(${build_fn(name)}(st, ${join_commas(rendered)}))"
+            // fold_logical/fold_nullish take the rule-entry sp_start (emit_fold
+            // captures it); fold_binary→Pratt and fold_postfix→@hand do not.
+            let sp_arg = if build_uses_sp_start(name) { "sp_start, " } else { "" }
+            "CapVal.Node(${build_fn(name)}(st, ${sp_arg}${join_commas(rendered)}))"
         }
         _ -> "CapVal.Node(st.error_node(\"fold rule without a build\"))"
+    }
+}
+
+/// The DSL compound builders that take the hand parser's rule-entry `sp_start`
+/// (executor.av) to stamp [production-entry, next-token) byte spans — the twin
+/// of the executor builders' new signatures. Rules whose build is one of these
+/// emit `let sp_start = st.cur().pos` at fn entry (emit_fold / emit_single_branch);
+/// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
+/// fold_postfix / mk_is / etc. are excluded.
+fn build_uses_sp_start(name: string) -> bool {
+    name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
+        name == "mk_assign" || name == "rebind_eq"
+}
+
+/// The GBuild-level predicate for whether a rule's build threads sp_start.
+fn seq_build_uses_sp_start(build: GBuild) -> bool {
+    match build {
+        .Call(name, _) -> build_uses_sp_start(name)
+        _ -> false
     }
 }
 
@@ -666,14 +696,18 @@ fn emit_call_build(name: string, args: List<string>) -> string {
     match name {
         // ── Expression builds (target: Expr) ──
         "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"
-        "fold_logical" -> "CapVal.Node(fold_logical_expr(st, ${arg3(args)}))"
-        "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, ${arg3(args)}))"
+        // sp_start (the rule fn's entry byte, emitted below by build_uses_sp_start)
+        // threads the hand parser's [production-entry, next-token) span into the
+        // DSL compound builders — see executor.av. fold_binary→Pratt and
+        // fold_postfix→@hand keep their span-free signatures.
+        "fold_logical" -> "CapVal.Node(fold_logical_expr(st, sp_start, ${arg3(args)}))"
+        "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, sp_start, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
-        "mk_assign" -> "CapVal.Node(mk_assign_expr(st, ${args[0]}, ${args[1]}))"
-        "fold_pipe" -> "CapVal.Node(fold_pipe_expr(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
+        "mk_assign" -> "CapVal.Node(mk_assign_expr(st, sp_start, ${args[0]}, ${args[1]}))"
+        "fold_pipe" -> "CapVal.Node(fold_pipe_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         // The is/in/==-chain equality suffix (ps3t.6.7 Step C). mk_inlist's `a`
         // and mk_eqchain's `op`/`r` are repetition captures (list accumulators).
-        "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, ${args[0]}, ${args[1]}))"
+        "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, sp_start, ${args[0]}, ${args[1]}))"
         "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
         "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
