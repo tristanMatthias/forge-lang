@@ -1,0 +1,55 @@
+// 8m36 regression guard. A macro that emits `type Foo = { x: int }` via
+// `quote stmts { ... }` once produced a type whose field carried
+// `ValueType.Unknown` (resolve hadn't run over the macro-fn body, so
+// `construct_field_list` encoded the field's `resolved` slot as Unknown) —
+// the compiler couldn't see `x: int` even though the source said so. That is
+// now fixed: macro-emitted field types survive to typeck. This guards it.
+//
+// The LOAD-BEARING check is the NEGATIVE one: assigning a `string` to the
+// macro-declared `int` field must be an F1000 type error. If the field type
+// had regressed to Unknown, the mismatch would be silently accepted — so the
+// F1000 is what proves the type is genuinely `int`, not Unknown-permissive.
+// Both checks are compile-only (deterministic, no runtime/harness flake).
+//
+// `mtf_`-prefixed fixtures against cross-shard filename collisions.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+const MTF_MACRO: string =
+    "use @std.avrac.core.{StmtId}\n" +
+    "@comptime\n" +
+    "fn mt() -> List<StmtId> {\n" +
+    "    return quote stmts {\n" +
+    "        type Foo = { x: int }\n" +
+    "    }\n" +
+    "}\n" +
+    "@expand(mt)\n" +
+    "fn ph() {}\n"
+
+fn mtf_compile(tag: string, body: string) -> string {
+    let path = "/tmp/avra_macro_typed_field_${tag}.av"
+    write_fixture(path, MTF_MACRO + body)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
+}
+
+spec "8m36: a macro-emitted `type Foo = { x: int }` keeps the field's int type" {
+    then "assigning a string to the int field is an F1000 (the type is enforced, not Unknown)" {
+        // The decisive check: a regressed Unknown field type would accept this
+        // silently; a real `int` field rejects it.
+        let out = mtf_compile("neg",
+            "fn main() {\n" +
+            "    let f = Foo { x: \"hi\" }\n" +
+            "    let _ = f\n" +
+            "}\n")
+        out.contains("F1000") && out.contains("expects `int`")
+    }
+    then "the field is usable as an int (correct construction compiles clean)" {
+        let out = mtf_compile("pos",
+            "fn main() {\n" +
+            "    let f = Foo { x: 5 }\n" +
+            "    let _ = f.x + 10\n" +
+            "}\n")
+        !out.contains("F1000") && !out.contains("F9999") && !out.contains("error[")
+    }
+}
