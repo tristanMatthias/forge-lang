@@ -4283,6 +4283,27 @@ fn check_call(tc: TC, callee: Expr, args: List<ExprId>) -> ExprResult {
     check_call_with_expected(tc, callee, args, ValueType.Unknown)
 }
 
+/// True when a variable of type `vt` is DEFINITELY not callable — a concrete
+/// value scalar / string / bytes / list / map / enum / (non-type-param) struct.
+/// Used to reject `x()` where `x` is such a value with a clean F1000 instead of
+/// the codegen `undefined function` F9999. Deliberately conservative: a Newtype
+/// (newtype-blind classifier; a newtype-over-fn could dispatch), an in-scope
+/// type-param placeholder (`.Struct("T")` where T is a bound param — it could be
+/// a fn at instantiation), Optional, and any Fn/Closure/FnTyped are NOT rejected
+/// — they fall through to the existing closure-call path.
+fn type_call_rejected(vt: ValueType, scope_tp: List<TypeParamEntry>) -> bool {
+    if vtype_is_value_scalar(vt) { return true }
+    match vt {
+        .Str -> true
+        .Bytes -> true
+        .List(_) -> true
+        .Map(_, _) -> true
+        .Enum(_, _, _) -> true
+        .Struct(sname, _, _) -> !type_param_has(scope_tp, sname)
+        _ -> false
+    }
+}
+
 /// Typecheck `f::<T, U>(args)` — explicit-type-arg generic call.
 /// Pre-so07.7.1: GenericCall typeck dropped the type-args and
 /// delegated to check_call, leaving generic return types as
@@ -4377,6 +4398,19 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             let var_ty = type_lookup(checked.types, name)
             if vtype_is_unknown(var_ty) {
                 return tc_er(tc_gate_lambda_args(checked, args), .Unknown)
+            }
+            // Calling a value that is NOT a function — `let x = 5; x()`. A concrete
+            // non-callable type (scalar / str / bytes / list / map / struct / enum)
+            // reached codegen as `undefined function \`x\`` F9999. Reject cleanly
+            // here (no-ICE-from-input, spec Axis 20). Conservative on purpose: only
+            // definitely-non-callable concrete types are gated — a `.Newtype` (a
+            // newtype-over-fn could dispatch), an in-scope type-param placeholder
+            // (`.Struct("T")` is a Struct, so excluded via the fn/closure carve —
+            // handled by falling through when the name is a type param), Optional,
+            // and Fn/Closure/FnTyped all fall through to the closure-call path.
+            if type_call_rejected(var_ty, checked.current_scope_tp) {
+                return tc_er(tc_report(tc_gate_lambda_args(checked, args), DiagCode.TypeMismatch,
+                    "`${name}` is not callable — it has type `${vtype_render_full(var_ty)}` (only functions and closures can be called)"), .Unknown)
             }
             let arg_gated = tc_gate_lambda_args(checked, args)
             tc_er(tc_check_closure_args(arg_gated, "`${name}`", var_ty, args), vtype_fn_ret(var_ty))
