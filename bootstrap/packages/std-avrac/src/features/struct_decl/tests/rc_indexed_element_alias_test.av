@@ -1,0 +1,73 @@
+// RC ownership regression (t-c6y7 sub-case 4, sibling of the struct-literal
+// alias-retain fix rc_field_alias_retain_test.av). A struct field initialised
+// from an INDEXED-ELEMENT read of a pure access-path container — `Hold { r:
+// xs[0] }`, `Hold { r: m[k] }` — stores a pointer the CONTAINER still owns (the
+// list/map keeps the element in its backing store). The holder's scope-exit
+// `__release_<Struct>` recurses into that field, so without a retain-on-store
+// the shared element was freed out from under the container: a fn that builds
+// such a holder called TWICE on the same container crashed on the second call
+// (the first holder's release had already freed `xs[0]`'s heap innards —
+// observed as a runtime error in `avra_array_len` reading the freed list).
+//
+// Fix (two halves in lockstep): escape.av's `expr_is_shared_alias` now
+// classifies `.Index(access-path, _)` as a SHARE (fill_struct_fields retains
+// the stored element ptr), and its `remove_escaped_expr` `.Index` arm keeps a
+// bare-ident container base RELEASABLE (a read, like `.FieldAccess(Ident)`)
+// while still sweeping the index sub-expr. These specs pin the survival shapes
+// for both a PARAM container (caller-owned) and a LOCAL container (its own
+// __release must still fire — no leak, no double-free).
+
+type IElem = { items: List<int>, label: string }
+type IHold = { grabbed: IElem, n: int }
+
+fn ie_make() -> IElem { IElem { items: [1, 2, 3], label: "shared" } }
+
+/// Stores an indexed element of a PARAM list into a struct field; the holder
+/// dies at scope exit. The list (caller-owned) must keep element 0 alive.
+fn hold_param_index(xs: List<IElem>) -> int {
+    let h = IHold { grabbed: xs[0], n: 1 }
+    h.n + xs[0].items.length
+}
+
+/// Same, but the container is a LOCAL list — its own scope-exit release must
+/// still free the (retained) element exactly once: no leak, no double-free.
+fn hold_local_index() -> int {
+    let xs = [ie_make()]
+    let h = IHold { grabbed: xs[0], n: 2 }
+    h.n + xs[0].items.length
+}
+
+/// A VARIABLE index (`xs[i]`) — the element is still container-owned; the index
+/// name must not perturb the share classification.
+fn hold_var_index(xs: List<IElem>, i: int) -> int {
+    let h = IHold { grabbed: xs[i], n: 3 }
+    h.n + xs[i].items.length
+}
+
+spec "struct-literal indexed-element inits retain: the container's element survives the holder (RC)" {
+    given "a PARAM list's element stored into a struct field by a fn called repeatedly" {
+        then "the element's contents survive every call (was: crash in avra_array_len on call 2)" {
+            let xs = [ie_make()]
+            let a = hold_param_index(xs)
+            let b = hold_param_index(xs)
+            let c = hold_param_index(xs)
+            a == 4 && b == 4 && c == 4 && xs[0].items.length == 3 && xs[0].label == "shared"
+        }
+    }
+    given "a LOCAL list's element aliased into a holder within the fn" {
+        then "the local container's own release frees the element exactly once (no leak, no double-free)" {
+            let a = hold_local_index()
+            let b = hold_local_index()
+            let c = hold_local_index()
+            a == 5 && b == 5 && c == 5
+        }
+    }
+    given "a VARIABLE-indexed element stored into a holder" {
+        then "the element survives (index name does not change container ownership)" {
+            let xs = [ie_make()]
+            let a = hold_var_index(xs, 0)
+            let b = hold_var_index(xs, 0)
+            a == 6 && b == 6 && xs[0].items.length == 3
+        }
+    }
+}

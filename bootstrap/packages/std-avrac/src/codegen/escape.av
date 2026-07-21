@@ -183,7 +183,21 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
         .Logical(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
         .Grouping(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Index(obj, idx) -> remove_escaped_expr(store, store.exprs.get(idx), remove_escaped_expr(store, store.exprs.get(obj), set))
+        // `xs[i]` is a READ of the container `xs` — the element is
+        // container-owned and, when stored into a holder, is RETAINED there
+        // (expr_is_shared_alias's `.Index` arm). So a bare-ident container base
+        // must stay releasable (its own __release frees the element the holder
+        // retained), exactly like `.FieldAccess(Ident(_), _)` keeps its base.
+        // The index sub-expr is still swept — a name used only to index does
+        // not escape, but `xs[consume()]` must sweep `consume`'s idents. t-c6y7.
+        .Index(obj, idx) -> {
+            let s1 = remove_escaped_expr(store, store.exprs.get(idx), set)
+            let obj_expr = store.exprs.get(obj)
+            match obj_expr {
+                .Ident(_) -> s1
+                _ -> remove_escaped_expr(store, obj_expr, s1)
+            }
+        }
         .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set)
         .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set))
         .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set)
@@ -328,6 +342,17 @@ export fn expr_is_shared_alias(store: NodeStore, expr: Expr, foreign_names: List
         .QualifiedIdent(_) -> true
         .FieldAccess(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
         .TupleIndex(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
+        // An indexed-element read `xs[i]` / `m[k]` of a pure access-path
+        // container: the ELEMENT is owned by the container (the list/map keeps
+        // it in its own backing store), so storing it into a struct field is a
+        // SHARE, not a transfer — the holder must retain its own tick or its
+        // recursive __release frees an element the container still owns (the
+        // t-c6y7 residual: `Hold { r: xs[0] }` double-freed `xs[0]` on the
+        // holder's release). The idx sub-expr is irrelevant to element
+        // ownership; only the container path decides. Escape's `.Index` arm
+        // keeps the container base releasable in lockstep (a bare-ident base is
+        // a read, like `.FieldAccess`).
+        .Index(obj, _) -> expr_is_access_path(store, store.exprs.get(obj))
         .Grouping(inner) -> expr_is_shared_alias(store, store.exprs.get(inner), foreign_names)
         _ -> false
     }
