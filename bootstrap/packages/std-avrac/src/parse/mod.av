@@ -272,11 +272,13 @@ export type Parser = {
     // the Grammar-tree interpreter (run_dsl_decl_at_shared / exec_rule). Same PState +
     // builders + @hand leaves (run_hand_stmt) ⇒ byte-identical AST, but straight-line
     // (no exec_rule grammar walk) — erasing the interpreter's top-level-dispatch tax.
-    // PROMOTED default-ON (proven byte-identical over the full selfhost — 915,728
-    // lines — + the corpus + the error-path suite); AVRA_PARSER_DECL_STATIC=0 routes
-    // back to the Grammar-tree interpreter (still the differential oracle). Only
-    // active when decl_flip is on (the escape hatch AVRA_PARSER_DECL_FLIP=0 disables
-    // both, dropping to the pure hand parser).
+    // Opt-in via AVRA_PARSER_DECL_STATIC=1: proven byte-identical over the full
+    // selfhost (915,728 lines) + the corpus + most of the error-path suite, but the
+    // generated fold/optional rules don't yet PROPAGATE a failed sub-parse the way
+    // exec_rule/the hand parser do (a dangling `= 5` builds Assign(Error, 5) instead
+    // of rejecting — decl_flip_dispatch_test's reject-parity). Default OFF until that
+    // emit error-propagation lands; the interpreter (run_dsl_decl_at_shared) stays
+    // the production path + the differential oracle. Only active when decl_flip is on.
     mut decl_static: bool,
     // ps3t.6.7 Step G slice 4 — statement-family swap-in: when true,
     // parse_statement delegates the whole statement to the grammar-DSL
@@ -690,7 +692,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // generated STATIC parser as the production expression parser. Default OFF
         // until the full-selfhost byte-identity proof + perf win promote it.
         expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") == "1",
-        decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
+        decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") == "1",
         // ps3t.6.7 Step G slice 4 — opt-in via AVRA_PARSER_STMT_FLIP=1: the
         // grammar-DSL statement parser. Default OFF until the full-selfhost
         // byte-identity proof promotes it (like type/pat_flip).
