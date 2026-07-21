@@ -1388,6 +1388,33 @@ export fn typecheck_env(ids: List<StmtId>, type_reg: TypeRegistry, macro_origins
     lint_index_loops(collected, ids)
 }
 
+/// The per-item fold (check + naming + annotate) then assemble, over a
+/// PRECOMPUTED collect env — the second half of typecheck_program, extracted
+/// so a caller that obtained `env` another way (F2: seeded from the @std
+/// type-env sidecar, build/compile.av) runs the IDENTICAL fold. Byte-identical
+/// to the inline fold it replaces.
+///
+/// Passes 2 (check), 2.5 (naming), 3 (annotate) as ONE per-item fold over
+/// `typecheck_item` (ps3t.8.3 Step B): each item is checked, named, and
+/// annotated as a pure unit over (env, check-bindings chain, annotate-scope
+/// chain). The engine's per-item TYPECK families (query/passes.av) run the
+/// SAME unit with ctx.fetch-recorded chain deps and hand their outs to the
+/// same `typecheck_assemble` — one fold semantics, two drivers.
+export fn typecheck_program_from_env(env: TC, ids: List<StmtId>, type_reg: TypeRegistry) -> TypeCheckResult {
+    mut bindings = env.types
+    mut ann_types = env.types
+    mut outs: List<TypeckItemOut> = []
+    mut i = 0
+    for id in ids {
+        let out = typecheck_item(env, bindings, ann_types, id, i < ids.length - 1)
+        bindings = out.bindings
+        ann_types = out.ann_types
+        outs.push(out)
+        i = i + 1
+    }
+    typecheck_assemble(env, outs, type_reg)
+}
+
 /// Top-level entry: run the type-checker over `stmts`. Three
 /// passes: pre-pass `typecheck_env` (id-stamp + collect) registers
 /// types/fns; main `check_stmt_ids` walks the AST inferring + checking
@@ -1402,31 +1429,16 @@ export fn typecheck_program(ids: List<StmtId>, type_reg: TypeRegistry, macro_ori
     let t_start = avra_uptime_ms()
     let env = typecheck_env(ids, type_reg, macro_origins, store)
     let t_collect = avra_uptime_ms()
-    // Passes 2 (check), 2.5 (naming), 3 (annotate) as ONE per-item fold over
-    // `typecheck_item` (ps3t.8.3 Step B): each item is checked, named, and
-    // annotated as a pure unit over (env, check-bindings chain, annotate-scope
-    // chain). The engine's per-item TYPECK families (query/passes.av) run the
-    // SAME unit with ctx.fetch-recorded chain deps and hand their outs to the
-    // same `typecheck_assemble` — one fold semantics, two drivers.
-    mut bindings = env.types
-    mut ann_types = env.types
-    mut outs: List<TypeckItemOut> = []
-    mut i = 0
-    for id in ids {
-        let out = typecheck_item(env, bindings, ann_types, id, i < ids.length - 1)
-        bindings = out.bindings
-        ann_types = out.ann_types
-        outs.push(out)
-        i = i + 1
-    }
+    let result = typecheck_program_from_env(env, ids, type_reg)
     let t_items = avra_uptime_ms()
     if timings_on {
-        // The three phases interleave inside the per-item fold, so the fold
-        // reports as one figure (instrument inside typecheck_item if a perf
-        // investigation needs the per-phase ranking again).
+        // collect vs the per-item fold (check+naming+annotate, now including the
+        // small typecheck_assemble merge — a diagnostic boundary shift only,
+        // invisible to IR/results since AVRA_TIMINGS_TYPECK is never set in
+        // diff-test/tests).
         eprintln("[timings:typeck] collect=${string(t_collect - t_start)}ms items=${string(t_items - t_collect)}ms total=${string(t_items - t_start)}ms")
     }
-    typecheck_assemble(env, outs, type_reg)
+    result
 }
 
 /// Assemble the whole-program TypeCheckResult from the per-item outs — the
