@@ -23,6 +23,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
 use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar}
+use parse.static_expr_entry.{run_static_expr}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
@@ -257,6 +258,13 @@ export type Parser = {
     // carries the full ladder; the program grammar still has an older leaf).
     mut expr_flip: bool,
     mut dsl_expr_grammar: Grammar?,
+    // ps3t.6.7 Step G — the STATIC expression parser (the CHECKED-IN generated
+    // parser, parse/gen_expr_parser.av, driven via run_static_expr) instead of the
+    // Grammar-tree interpreter. Same PState + builders + @hand leaf as expr_flip, so
+    // byte-identical AST, but straight-line (no per-node dispatch / capture-env alloc)
+    // — the path to promoting the expression flip on. Read once at construction,
+    // settable by tests. Default OFF until proven byte-identical on the full selfhost.
+    mut expr_static: bool,
     // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
     // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
     // Before each flip expression its cursor+line state is SYNCED to this parser's
@@ -644,6 +652,10 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it — unlike type/pat_flip, which are on.
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
         dsl_expr_grammar: null,
+        // ps3t.6.7 Step G — opt-in via AVRA_PARSER_EXPR_STATIC=1: the checked-in
+        // generated STATIC parser as the production expression parser. Default OFF
+        // until the full-selfhost byte-identity proof + perf win promote it.
+        expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") == "1",
         hand_delegate: null,
     }
     parser.advance_token()
@@ -1062,7 +1074,7 @@ impl Parser {
         // (so an `@hand(hand_unary)` in an `if Foo { … }` header sees
         // allow_struct_lit=false), then resync the token cursor to the stop byte.
         // A DSL error falls through to the authoritative hand parser.
-        if self.expr_flip {
+        if self.expr_flip || self.expr_static {
             let modes = ExprModes {
                 allow_struct_lit: self.allow_struct_lit,
                 allow_dot_postfix: self.allow_dot_postfix,
@@ -1082,11 +1094,20 @@ impl Parser {
                 mut d = parser_new_with_store(self.source, self.file, self.store)
                 d.records_roots = 0
                 d.expr_flip = false
+                d.expr_static = false
                 self.hand_delegate = d
             }
             let d = self.hand_delegate!
             d.copy_cursor_from(self)
-            let dsl = run_dsl_expr_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_expression_grammar(), modes, d)
+            // ps3t.6.7 Step G: the STATIC generated parser (run_static_expr) when
+            // expr_static, else the Grammar-tree interpreter (run_dsl_expr_at_shared).
+            // Both share the token stream, modes, @hand delegate, and resync below —
+            // they differ only in HOW they drive the identical builders.
+            let dsl = if self.expr_static {
+                run_static_expr(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
+            } else {
+                run_dsl_expr_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_expression_grammar(), modes, d)
+            }
             if !dsl.had_error {
                 // The delegate stops at the last @hand LEAF's end; the DSL itself
                 // consumed the trailing STRUCTURAL tokens after it (the `]` of `in

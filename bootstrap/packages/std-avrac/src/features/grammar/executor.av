@@ -476,6 +476,7 @@ export fn new_pstate(src: string) -> PState {
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.expr_flip = false
+    d.expr_static = false
     PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: d }
 }
 
@@ -1040,6 +1041,26 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
+/// ps3t.6.7 Step G — the STATIC-parser boundary. IDENTICAL PState setup to
+/// run_dsl_expr_at_shared, but drives the CHECKED-IN generated static parser
+/// (parse/gen_expr_parser.av's `parse_expression`, passed in as `parse` so this
+/// module needs no import back into `parse` — the generated module imports THIS
+/// one's builders, not the reverse) instead of the Grammar-tree interpreter
+/// (`exec_rule`). Same builders, same PState, same `@hand` leaf ⇒ byte-identical
+/// AST to both the interpreter flip AND the hand parser, at straight-line speed
+/// (no per-node Grammar dispatch / capture-env allocation). Proven byte-identical
+/// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
+export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    let expr = capval_to_expr(st, parse(st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
 /// (`run_hand_expr` → ExprId over the shared store) — distinct from the
 /// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
@@ -1121,11 +1142,12 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     bp.quote_depth = st.modes.quote_depth
     bp.cell_mode = st.modes.cell_mode
     // The @hand leaf IS the hand parser — it must NOT re-enter the expression
-    // flip for its nested sub-expressions (a `f(arg)` call's args, a slice index,
-    // …), or the DSL runner would recurse into itself per nested expr. Force the
-    // delegate's expr_flip off; the top operator ladder stays DSL, the whole
-    // leaf-and-below is hand-parsed (byte-identical, since the ladders match).
+    // flip/static path for its nested sub-expressions (a `f(arg)` call's args, a
+    // slice index, …), or the runner would recurse into itself per nested expr.
+    // Force BOTH delegate toggles off; the top operator ladder stays DSL/static, the
+    // whole leaf-and-below is hand-parsed (byte-identical, since the ladders match).
     bp.expr_flip = false
+    bp.expr_static = false
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let result = match name {
         "quote_expr"    -> bp.parse_quote()

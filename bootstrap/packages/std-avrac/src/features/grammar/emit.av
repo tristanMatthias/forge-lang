@@ -248,18 +248,30 @@ fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> strin
 /// that chain is collapsed into ONE emitted `parse_binary_pratt_g` loop + per-rule
 /// wrappers (ps3t.6.7 Step G); every other rule emits one fn as before.
 export fn emit_parser_source(g: Grammar) -> string {
+    emit_parser_source_ex(g, false)
+}
+
+/// Like `emit_parser_source`, but when `export_start` the START rule's fn is
+/// emitted `export fn` — the module's public entry. ps3t.6.7 Step G: the
+/// checked-in PRODUCTION static parser (parse/gen_expr_parser.av) exposes
+/// `parse_<start>` to its boundary runner (static_expr_entry.av); every other
+/// rule stays module-private. `emit_parser_source(g)` is the unchanged
+/// `export_start = false` form used by the emit tests + emit-gen-check.
+export fn emit_parser_source_ex(g: Grammar, export_start: bool) -> string {
     let chain = binary_fold_chain(g)
+    let start = if g.rules.length > 0 { g.rules[0].name } else { "" }
     mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
     if chain.length > 0 {
         let leaf = chain[chain.length - 1].operand
         out = out + emit_pratt_prelude(g, chain, leaf)
     }
     for r in g.rules {
+        let pfx = if export_start && r.name == start { "export " } else { "" }
         let bp = chain_lbp_of(chain, r.name)
         if bp >= 0 {
-            out = out + "fn parse_${r.name}(st: PState) -> CapVal { parse_binary_pratt_g(st, ${string(bp)}) }\n\n"
+            out = out + "${pfx}fn parse_${r.name}(st: PState) -> CapVal { parse_binary_pratt_g(st, ${string(bp)}) }\n\n"
         } else {
-            out = out + emit_rule_fn_in(g, r) + "\n"
+            out = out + pfx + emit_rule_fn_in(g, r) + "\n"
         }
     }
     out
