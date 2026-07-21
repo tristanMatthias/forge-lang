@@ -36,7 +36,7 @@ fn type_grammar_src() -> string {
     "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
     "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
     "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
-    "  named_type = name:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
+    "  named_type = name:IDENT ( \".\" name:IDENT )* ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +
     "}"
 }
 
@@ -49,7 +49,10 @@ fn dsl_type(src: string) -> string {
 
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_type_expr("expected type") {
+    // parse_type_expr_hand, NOT parse_type_expr: type_flip is default-on, so
+    // parse_type_expr routes through the DSL — comparing DSL-against-DSL would
+    // make the "== hand parser" oracle tautological. Pin the hand parser.
+    match p.parse_type_expr_hand("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)
@@ -103,6 +106,28 @@ spec "grammar-DSL gnarly-5%: @pkg::T qualified types via @hand == hand parser (p
             agree("Map<int, @pkg::Box<V>>") &&
             agree("List<List<@pkg::Box<V>>>") &&
             agree("List<@a::b::Cell<@a::b::Inner<V>>>")
+        }
+    }
+    given "a DOTTED type path `A.B.C` — associated-type projection + qualified name (ps3t.6.7)" {
+        // A `.`-joined type path has no pure-grammar production in `named_type`
+        // (a bare IDENT): an associated-type projection `Self.Item` in a trait
+        // method return, or a module-qualified `core.ast.BinOp`, must fold to
+        // `Named("Self.Item")` / `Named("core.ast.BinOp")` exactly as the hand
+        // parser's parse_type_atom dotted-path loop does. The DSL `named_type`
+        // now carries `( "." tn:IDENT )*` and `capval_tok_text` joins the `.Toks`
+        // — without it the flip parsed `Self` and left `.Item`, F0001-ing
+        // `bootstrap/tests/assoc_types_test.av` under the type flip.
+        then "bare, generic, nullable, and generic-nested dotted paths agree" {
+            agree("Self.Item") &&
+            agree("core.ast.BinOp") &&
+            agree("a.b.c.Deep") &&
+            agree("Self.Item?") &&
+            agree("List<Self.Item>") &&
+            agree("Map<Self.Key, Self.Value>") &&
+            agree("List<a.b.Cell<Self.Item>>") &&
+            // canonical: the dotted name round-trips flat through the render.
+            dsl_type("Self.Item") == "Self.Item" &&
+            dsl_type("core.ast.BinOp") == "core.ast.BinOp"
         }
     }
     given "qualified types in union / list positions" {

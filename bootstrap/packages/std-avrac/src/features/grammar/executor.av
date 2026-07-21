@@ -2250,6 +2250,25 @@ export fn capval_nodes(v: CapVal) -> List<ExprId> {
 export fn capval_tok_text(v: CapVal) -> string {
     match v {
         .Tok(t) -> t.text
+        // A dotted type path `A.B.C` — an associated-type projection
+        // (`Self.Item`) or a module-qualified name (`core.ast.BinOp`) — captures
+        // its segments into ONE repeated `.Toks` label (`tn:IDENT ( "." tn:IDENT
+        // )*`); join them with `.` to reconstruct the flat dotted name the hand
+        // parser's parse_type_atom folds into `Named("A.B.C")`. This arm is a
+        // pure EXTENSION of the previous `_ -> ""`: no other caller passes a
+        // `.Toks` here (every other repeated capture reads through the `_list`
+        // accessors), and a `.Toks` used to collapse to "" — so nothing that
+        // works today changes.
+        .Toks(ts) -> {
+            mut out = ""
+            mut i = 0
+            for t in ts {
+                if i > 0 { out = out + "." }
+                out = out + t.text
+                i = i + 1
+            }
+            out
+        }
         _ -> ""
     }
 }

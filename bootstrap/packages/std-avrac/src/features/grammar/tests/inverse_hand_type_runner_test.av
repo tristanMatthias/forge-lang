@@ -37,7 +37,10 @@ fn dsl_at_type(src: string) -> string {
 // The hand-written parser's ValueType for `src`, rendered the SAME way.
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_type_expr("expected type") {
+    // parse_type_expr_hand, NOT parse_type_expr: type_flip is default-on, so
+    // parse_type_expr routes through the DSL — comparing DSL-against-DSL would
+    // make the "== hand parser" oracle tautological. Pin the hand parser.
+    match p.parse_type_expr_hand("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)

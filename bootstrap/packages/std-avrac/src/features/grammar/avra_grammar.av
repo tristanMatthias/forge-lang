@@ -40,7 +40,7 @@ export fn avra_expr_grammar() -> Grammar {
   logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
   equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
   eq_tail       = "is" "." v:IDENT -> mk_is(v)
-                | "in" in_rhs
+                | "in" ir:in_rhs -> ir
                 | ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
   in_rhs        = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
                 | s:bitor ".." e:bitor -> mk_inrange(s, e)
@@ -120,7 +120,7 @@ export fn avra_type_grammar() -> Grammar {
   dyn_type   = "dyn" t:IDENT -> TyDyn(t)
   list_type  = "[" e:type_expr "]" -> TyList(e)
   paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
-  named_type = name:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
     }
     gp.grammar
 }
@@ -170,7 +170,7 @@ export fn avra_program_grammar() -> Grammar {
   dyn_type    = "dyn" dt:IDENT -> TyDyn(dt)
   list_type   = "[" el:type_expr "]" -> TyList(el)
   paren_type  = "(" ( pt2:type_expr ( "," pt2:type_expr )* )? ")" -> TyParen(pt2)
-  named_type  = tn:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
+  named_type  = tn:IDENT ( "." tn:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
   expression  = equality
   equality    = l:comparison ( op:("!=" | "==") r:comparison )* -> fold_binary(l, op, r)
   comparison  = l:term ( op:("<" | "<=" | ">" | ">=") r:term )* -> fold_binary(l, op, r)
