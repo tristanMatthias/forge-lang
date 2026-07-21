@@ -44,6 +44,7 @@ impl Parser {
                 kind: tk_to_grammar_kind(k),
                 text: self.current_lexeme,
                 pos: self.current_start,
+                tk: k,
             })
             if k == Tk.Eof { break }
             self.advance_token()
