@@ -65,6 +65,7 @@ fn parse_pipe_arg(st: PState) -> CapVal {
 
 fn parse_null_coalesce(st: PState) -> CapVal {
     let l = parse_logic_or(st)
+    if !(st.cur().text == "??") { return l }
     mut ops: List<Token> = []
     mut rs: List<ExprId> = []
     while st.cur().text == "??" {
@@ -76,6 +77,7 @@ fn parse_null_coalesce(st: PState) -> CapVal {
 
 fn parse_logic_or(st: PState) -> CapVal {
     let l = parse_logic_and(st)
+    if !(st.cur().text == "||" || st.cur().text == "or") { return l }
     mut ops: List<Token> = []
     mut rs: List<ExprId> = []
     while st.cur().text == "||" || st.cur().text == "or" {
@@ -87,6 +89,7 @@ fn parse_logic_or(st: PState) -> CapVal {
 
 fn parse_logic_and(st: PState) -> CapVal {
     let l = parse_equality(st)
+    if !(st.cur().text == "&&" || st.cur().text == "and") { return l }
     mut ops: List<Token> = []
     mut rs: List<ExprId> = []
     while st.cur().text == "&&" || st.cur().text == "and" {
