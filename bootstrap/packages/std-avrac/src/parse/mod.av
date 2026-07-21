@@ -682,9 +682,15 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it (like type/pat_flip).
         stmt_flip: avra_process_env_get("AVRA_PARSER_STMT_FLIP") == "1",
         dsl_stmt_grammar: null,
-        // ps3t.6.7 Step G slice 4b — opt-in via AVRA_PARSER_DECL_FLIP=1. Default
-        // OFF until the full-selfhost byte-identity proof promotes it.
-        decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") == "1",
+        // ps3t.6.7 Step G slice 5.4 — PROMOTED default-ON: the grammar-DSL is now
+        // the production parser. decl_flip is the OUTER flip; via the shared
+        // hand-delegate (ensure_hand_delegate, stmt_flip+decl_flip ON there) the
+        // WHOLE program — top-level decls, fn bodies, nested control flow — flows
+        // through the DSL. Proven byte-identical over the full selfhost
+        // (912,811 lines) + corpus (#903). Escape hatch AVRA_PARSER_DECL_FLIP=0
+        // routes back to the hand RD driver, which stays the @hand leaf
+        // implementation + DSL-error fallback + test oracle.
+        decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") != "0",
         dsl_decl_grammar: null,
         hand_delegate: null,
     }
