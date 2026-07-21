@@ -1332,6 +1332,20 @@ export fn vtype_is_value_scalar(t: ValueType) -> bool {
     }
 }
 
+/// `vtype_is_value_scalar` seeing THROUGH newtypes: a `type ExprId = int`
+/// laid out as i64 is a value scalar, though its own `.Newtype` node is not a
+/// primitive variant. Resolves the underlying type (`.Newtype` carries its
+/// inner) before classifying — the newtype-aware sibling of
+/// `vtype_is_value_scalar`, mirroring how `vtype_is_ptr_layout` already
+/// resolves a newtype to its underlying layout. Used where a scalar-newtype
+/// FIELD must reject a non-scalar value (e.g. `null` into an `ExprId` slot).
+export fn vtype_underlying_value_scalar(t: ValueType) -> bool {
+    match t {
+        .Newtype(_, inner, _) -> vtype_underlying_value_scalar(inner)
+        _ -> vtype_is_value_scalar(t)
+    }
+}
+
 /// The inner type of an optional, or `t` unchanged when not optional.
 /// `vtype_strip_optional(T?) == T`; `vtype_strip_optional(T) == T`.
 export fn vtype_strip_optional(t: ValueType) -> ValueType {

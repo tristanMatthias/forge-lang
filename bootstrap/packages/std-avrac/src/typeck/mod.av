@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
@@ -3401,9 +3401,51 @@ fn tc_check_enum_ctor_args(tc: TC, tn: string, variant: string, args: List<ExprI
             // divide, safe here because a ctor arg is concrete, not an inference
             // artifact), so this position uses it directly rather than routing
             // through that gate, which would narrow coverage. + generic-arg below.
+            //
+            // `vtype_is_value_scalar` is newtype-BLIND (a `type ExprId = int`
+            // reads as non-scalar, like any nominal), so on its own it MISSES a
+            // ptr value dropped into a scalar-newtype field — e.g. a boxed `Expr`
+            // into the B-final-flipped `Binary(ExprId, …)` slot, which a
+            // @comptime fn folding a compound `quote { 1 + 2 }` to a value
+            // reconstructs. That stored an `Expr` pointer where an i64 id belongs
+            // → a wild `.raw()` index at render (yfb6). `top_level_settled_layout_conflict`
+            // resolves the newtype to its underlying layout (`ExprId → int`,
+            // scalar) and catches it — the exact sibling of the `List<Expr>` vs
+            // `List<ExprId>` F1000 the generic-arg gate below already raises for a
+            // folded `Call`. It also GUARDS the id-type representation drift: a
+            // bare `.Struct("StmtId")` arg (a newtype not yet upgraded to its
+            // `.Newtype` form) is `top_level_layout_unresolved` — StmtId is in
+            // neither the struct nor enum registry — so it is skipped, never
+            // false-flagged against a resolved `.Newtype("StmtId")` field ("expects
+            // StmtId, got StmtId"). ADDITIVE: it keeps every `value_scalar` catch
+            // and only adds the newtype ptr↔scalar divide.
+            //
+            // `null` (`.Void`) into a scalar-newtype field is the remaining
+            // newtype-blind hole: `vtype_is_value_scalar(ExprId)` and
+            // `vtype_is_value_scalar(Void)` are both false (first disjunct
+            // misses it) AND `top_level_settled_layout_conflict` short-circuits
+            // on `.Void` (second misses it), so a bare `null` in an `ExprId`
+            // slot slipped to codegen — where `null`→primitive-scalar (`int`)
+            // is already F1000. The third disjunct closes it with the
+            // newtype-AWARE `vtype_underlying_value_scalar` on the FIELD: a
+            // settled scalar-newtype field receiving `null` is the same wild
+            // store as `null` into an `int`. Drift-safe by construction — the
+            // arg is `.Void`, never a nominal, so the id-type representation
+            // drift the ptr check guards against cannot arise here.
             let f0 = vtype_strip_optional(fty)
             let a0 = vtype_strip_optional(aty)
-            if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0) {
+            // Only a NON-optional field: a `void` value into a `StmtId?` /
+            // `ExprId?` slot is a valid absent-optional (the arg need not be the
+            // literal `.None` the `null_into_optional` skip above covers — an
+            // optional-absent value typed `void` reaches here too), so gate on
+            // the un-stripped `fty` being non-optional.
+            let null_into_scalar_newtype = (a0 is .Void)
+                && !vtype_is_optional(fty)
+                && !top_level_layout_unresolved(cur, f0)
+                && vtype_underlying_value_scalar(f0)
+            if vtype_is_value_scalar(f0) != vtype_is_value_scalar(a0)
+                || top_level_settled_layout_conflict(cur, fty, aty)
+                || null_into_scalar_newtype {
                 let msg = "`${tn}.${variant}` field `${fields[i].name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(aty)}`"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             } else if generic_args_layout_conflict(cur, aty, fty) {

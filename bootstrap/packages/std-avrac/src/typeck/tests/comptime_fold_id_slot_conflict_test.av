@@ -1,0 +1,98 @@
+// WHY: yfb6 — a @comptime fn that folds a COMPOUND quote to a VALUE
+// (`let e: Expr = mk()` where `mk` returns `quote { 1 + 2 }`) used to
+// reconstruct `Expr.Binary(op, leftId, rightId)` with the operand children
+// as BOXED `Expr` values dropped into the B-final-flipped scalar `ExprId`
+// slots. The `tc_check_enum_ctor_args` representation-class gate is
+// newtype-BLIND (`vtype_is_value_scalar` reads `type ExprId = int` as
+// non-scalar, like any nominal), so `Expr`(ptr) → `ExprId`(seen-as-ptr)
+// showed no conflict: codegen stored the `Expr` POINTER into an i64 id slot,
+// and `render` later read it back via `.raw()` as a wild index →
+// `index <heap-ptr> out of bounds` at RUNTIME. A compiler must never emit
+// memory-corrupting code for a compilable-looking program.
+//
+// FIX: the gate now also runs `top_level_settled_layout_conflict`, which
+// resolves the newtype to its underlying layout (`ExprId → int`, scalar) and
+// catches the ptr↔scalar divide at COMPILE time — the exact sibling of the
+// `List<Expr>` vs `List<ExprId>` F1000 the generic-arg gate already raises
+// for a folded `Call`. The scalar `Binary` case now matches that: a clean
+// F1000, not a runtime crash.
+//
+// This is the SAFETY half of yfb6 (no more corruption). RENDERING a compound
+// comptime value standalone (the grammar.md `render_expr(e)` intent) is the
+// separate store-model feature tracked on yfb6 itself. Leaf folds
+// (`quote { 42 }` → Number, no id children) are unaffected and still render.
+
+use @std.avrac.test_runner.{write_fixture_and_run_no_metadata}
+
+// Fold a @comptime fn whose body is `quote { <q> }` to a VALUE and render it.
+// The `then` blocks in one spec file run SEQUENTIALLY within a single
+// `@deferred_init` unit (only whole test FILES fan out across worker threads,
+// d4jv), so a single file-scoped fixture path cannot race and needs no
+// per-case tag. The `_no_metadata` runner IS required: a standalone @comptime
+// fixture must WHOLE-PROGRAM compile @std (the fold path needs the @comptime
+// bodies), and the metadata fast-path stubs @std, so the leaf case — which
+// reaches the linker instead of failing at typeck — otherwise fails on
+// undefined @std symbols rather than rendering. (The content-keyed capture
+// also keys on the source, so the three distinct sources never collide.)
+fn cfi_out(q: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_comptime_fold_id_slot.av",
+        "use @std.avrac.core.{Expr, render_expr, new_node_store, build_line_index}\n" +
+        "@comptime\n" +
+        "fn cfi_mk() -> Expr {\n" +
+        "    return quote { " + q + " }\n" +
+        "}\n" +
+        "fn main() {\n" +
+        "    let e: Expr = cfi_mk()\n" +
+        "    println(\"OUT=[\" + render_expr(new_node_store(build_line_index(\"\")), e) + \"]\")\n" +
+        "}\n")
+}
+
+spec "yfb6: a compound comptime fold-to-value is a clean F1000, never a runtime store crash" {
+    then "a folded `quote { 1 + 2 }` (scalar ExprId operands) is F1000, not `out of bounds`" {
+        let out = cfi_out("1 + 2")
+        // The decisive check: the OLD bug stored an `Expr` ptr in the `ExprId`
+        // slot and crashed at render with a wild index. Now it is caught at
+        // typeck.
+        out.contains("F1000")
+            && out.contains("expects `@std::avrac::core::ExprId`, got `@std::avrac::core::Expr`")
+            && !out.contains("out of bounds")
+    }
+    then "a folded `quote { foo(5) }` (List<ExprId> args) is also F1000 (the sibling the gate already caught)" {
+        let out = cfi_out("foo(5)")
+        out.contains("F1000") && !out.contains("out of bounds")
+    }
+    then "a folded LEAF `quote { 42 }` (no id operands) still folds and renders — no false positive" {
+        let out = cfi_out("42")
+        out.contains("OUT=[42]") && !out.contains("F1000")
+    }
+}
+
+// The sibling newtype-blind hole in the SAME gate: `null` into a scalar-newtype
+// field. `vtype_is_value_scalar` reads `type Id = int` as non-scalar, so a
+// `null` (Void) — also non-scalar — showed no conflict and slipped to codegen,
+// where `null` into a plain `int` field is already an F1000. The
+// `vtype_underlying_value_scalar` disjunct closes it: a settled scalar-newtype
+// field receiving `null` is the same wild store as `null` into an `int`.
+fn nsn_out(field_ty: string, arg: string) -> string {
+    write_fixture_and_run_no_metadata("/tmp/avra_comptime_fold_id_slot_nsn.av",
+        "type NsnId = int\n" +
+        "enum NsnWrap { W(v: " + field_ty + "), N }\n" +
+        "fn main() {\n" +
+        "    let e: NsnWrap = NsnWrap.W(" + arg + ")\n" +
+        "    let _ = e\n" +
+        "}\n")
+}
+
+spec "yfb6 sibling: `null` into a scalar-newtype ctor field is a clean F1000, not a codegen ICE" {
+    then "`null` into a scalar-newtype `NsnId` field is F1000 (parity with `null` into `int`)" {
+        let out = nsn_out("NsnId", "null")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a valid `NsnId(5)` into the newtype field still compiles — no false positive" {
+        // The null-gate fires only on a `void` arg; an explicitly-constructed
+        // `NsnId` value must sail through. (A bare `int` here is a separate,
+        // pre-existing nominal mismatch from the first disjunct — not this gate.)
+        let out = nsn_out("NsnId", "NsnId(5)")
+        !out.contains("F1000") && !out.contains("F9999")
+    }
+}
