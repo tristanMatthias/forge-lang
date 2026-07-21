@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has}
+use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_unknown, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has, vtype_is_value_scalar}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot, enum_type_has}
 use diagnostics.{DiagCode}
 
@@ -79,6 +79,17 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         // When the receiver is a generic struct instance (`Box<int>`),
         // specialise the field's declared `T` to the instance's arg.
         return tc_er(o.tc, tc_specialize_field_ty(o.tc.structs, o.ty, field_ty))
+    }
+    // A value scalar (int/bool/float/sized-int) has NO fields or members —
+    // `.length` above already handled the collection receivers, so anything
+    // reaching here on a scalar is invalid. Reject cleanly instead of falling
+    // through to the `.Unknown` return, which lets it hit codegen's F9999
+    // "field access on non-struct value" ICE (the field twin of the `.Index`
+    // scalar gate, F1206). Newtypes are NOT value scalars here (vtype_is_value_
+    // scalar is newtype-blind), so a newtype-over-struct still peels at codegen.
+    if vtype_is_value_scalar(o.ty) {
+        return tc_er(tc_report(o.tc, DiagCode.TypeMismatch,
+            "type `${vtype_render_full(o.ty)}` has no field or member `${field}` — only strings, lists, maps, and structs have members"), .Unknown)
     }
     // Map .get is handled in method call
     tc_er(o.tc, .Unknown)
