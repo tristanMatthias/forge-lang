@@ -306,6 +306,15 @@ export type Parser = {
     // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
     mut decl_flip: bool,
     mut dsl_decl_grammar: Grammar?,
+    // ps3t.6.7 slice 5a — DIAGNOSTIC hook (AVRA_NO_STATIC_FALLBACK=1, default OFF).
+    // When set, parse_declaration/parse_statement do NOT re-parse a failed static
+    // parse with the interpreter; the static parser's RAW error-recovery tree is
+    // used verbatim. Default OFF keeps production byte-identical (the fallback is
+    // still the incumbent byte-identical error path). This is the observability the
+    // error-recovery differential oracle needs to measure + close the static
+    // parser's error-tree gap vs the interpreter/hand oracle (the slice-5 crux),
+    // before the interpreter fallback can be retired.
+    mut no_static_fallback: bool,
     // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
     // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
     // Before each flip expression its cursor+line state is SYNCED to this parser's
@@ -723,6 +732,8 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // stays the @hand leaf implementation + DSL-error fallback + test oracle.
         decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") != "0",
         dsl_decl_grammar: null,
+        // ps3t.6.7 slice 5a diagnostic hook — default OFF (byte-identical production).
+        no_static_fallback: avra_process_env_get("AVRA_NO_STATIC_FALLBACK") == "1",
         hand_delegate: null,
     }
     parser.advance_token()
@@ -913,10 +924,12 @@ impl Parser {
             // delegate to the item start. Errors are rare (invalid programs only), so
             // the straight-line win on the valid common case is preserved, and the
             // shared error-path handling below sees an interpreter-shaped result.
-            if self.decl_static && dsl.had_error {
+            if self.decl_static && dsl.had_error && !self.no_static_fallback {
                 // Roll the store back over the abandoned static parse (no orphan rows),
                 // reset the delegate to the item start, and re-parse with the
                 // interpreter — the store now holds EXACTLY the interpreter's rows.
+                // (ps3t.6.7 slice 5a: AVRA_NO_STATIC_FALLBACK=1 skips this re-parse so
+                // the static parser's RAW error tree is observable — the oracle hook.)
                 self.store.truncate_to_mark(store_mark)
                 d.copy_cursor_from(self)
                 d.bag = bag_new()
