@@ -1102,8 +1102,30 @@ impl Parser {
         if self.hand_delegate == null {
             mut d = parser_new_with_store(self.source, self.file, self.store)
             d.records_roots = 0
-            d.stmt_flip = false
-            d.decl_flip = false
+            // Share the outer parser's REGISTRY and TOKEN STREAM with the delegate
+            // (ps3t.6.7 Slice 5.1). Registry: the component DSL registers names
+            // during the parse (register_component_name / raw-body components); a
+            // full-program flip parses a component's DEFINITION and its
+            // INSTANTIATIONS across the delegate chain, so they MUST see one
+            // registry or the instantiation isn't recognised (→ its raw body is
+            // mis-parsed as statements). Tokens: every delegate over the same
+            // source lexes identical tokens (lex_real is a pure fn of source), so
+            // sharing the one array turns the delegate chain into cursor-holders
+            // over ONE token stream — no per-level re-lex (the redundant-
+            // tokenization cost 0454a086 flagged), the single-pipeline shape.
+            d.features = self.features
+            d.grammar_toks = self.grammar_tokens()
+            // ps3t.6.7 Slice 5.1 (full-program flip): the delegate FLIPS bodies —
+            // its statement/declaration list loops (a fn body, an if/while/for
+            // block, a closure body) re-enter the DSL so the WHOLE program flows
+            // through the grammar, not just top-level items. The @hand statement/
+            // declaration leaves call the *_hand dispatcher for the CURRENT item
+            // (run_hand_stmt), so this never re-parses the same item — only its
+            // nested bodies flip. EXPRESSION flips stay OFF on the delegate: the
+            // procedural expression leaf (parse_unary) owns its whole sub-tree, so
+            // a nested expression must NOT re-flip (it is part of the leaf).
+            d.stmt_flip = true
+            d.decl_flip = true
             d.expr_flip = false
             d.expr_static = false
             self.hand_delegate = d
