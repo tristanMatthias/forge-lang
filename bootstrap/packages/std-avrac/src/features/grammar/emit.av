@@ -187,7 +187,12 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
         if r.name == leaf {
             match r.body {
                 .Alt(branches) -> {
-                    if branches.length == 1 && branches[0].items.length == 1 {
+                    // Only a STRICT bare delegation gets the inline: one branch, one
+                    // item, `One` repetition (not `*`/`+`), and NO build. Otherwise a
+                    // repetition or a `-> build` on the leaf would be silently dropped
+                    // by inlining run_hand_expr — fall back to the boxed parse_<leaf>.
+                    if branches.length == 1 && branches[0].items.length == 1 &&
+                        rep_is_one(branches[0].items[0].rep) && build_is_none(branches[0].build) {
                         match branches[0].items[0].prim {
                             .Hand(hf) -> {
                                 if is_expr_hand_name(hf) { return "run_hand_expr(\"${hf}\", st)" }
