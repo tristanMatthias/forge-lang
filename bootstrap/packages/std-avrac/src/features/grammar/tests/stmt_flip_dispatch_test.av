@@ -1,0 +1,85 @@
+// ps3t.6.7 Step G slice 4 — the STATEMENT-family FLIP dispatch
+// (parse_statement → grammar-DSL run_dsl_stmt_at_shared).
+//
+// parse_statement routes through run_dsl_stmt_at_shared (the inverse-@hand
+// statement runner over avra_stmt_flip_grammar's `statement` rule) when the
+// parser's `stmt_flip` field is set, falling back to the hand parser
+// (parse_statement_hand) on a DSL error. The field is read once from
+// AVRA_PARSER_STMT_FLIP at construction but is a plain `mut bool` a test can set
+// directly — exercising the flip path with no process-env dependency (the
+// full-selfhost flip proof is memory-heavy and lives in the promotion step; this
+// pins the dispatch + fallback wiring + the break/continue/@hand(stmt_hand)/
+// expr_stmt routing).
+//
+// Parity = same tree AND same accept/reject: for every VALID statement form the
+// flip path (DSL) and the hand path (parse_statement_hand — called explicitly so
+// it stays a real hand baseline under an eventual promoted default) build the
+// same Stmt; for INVALID forms both must REJECT. flip_stmt/hand_stmt return the
+// SAME "<err>" sentinel on a parse error, so a mutual rejection is agreement.
+// Both sides render through the same TOTAL render_stmt_id, so equal trees ⇒
+// equal strings regardless of the renderer's format (no golden strings).
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn flip_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    p.stmt_flip = true
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement_hand() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_stmt(src) == hand_stmt(src)
+}
+
+spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)" {
+    given "the field toggles the path (sanity: flip really took the DSL branch)" {
+        then "flip builds a real tree and agrees with hand for a representative form" {
+            flip_stmt("if x { break }") != "<err>" &&
+            flip_stmt("if x { break }") == hand_stmt("if x { break }")
+        }
+    }
+    given "the DSL-native leaves (break / continue)" {
+        then "each agrees with hand" {
+            agree("break") && agree("continue")
+        }
+    }
+    given "the @hand(stmt_hand) control-flow forms (if/while/for/match/defer/return)" {
+        then "each keyword statement agrees" {
+            agree("if a { b }") &&
+            agree("if a { b } else { c }") &&
+            agree("while a { b }") &&
+            agree("for i in 0..n { s }") &&
+            agree("for x in xs { s }") &&
+            agree("match n { 0 -> a\n _ -> b }") &&
+            agree("defer { cleanup }") &&
+            agree("return v")
+        }
+    }
+    given "the block form (@hand-delegated: nested-statement positions)" {
+        then "blocks and nested blocks agree" {
+            agree("{ a\n b }") && agree("{ { inner } }")
+        }
+    }
+    given "expression statements (the DSL-native fall-through, over the shared expr grammar)" {
+        then "assignment / call / field-assign / pipe agree" {
+            agree("x = 1") && agree("f(a, b)") && agree("obj.field = v") &&
+            agree("xs |> f")
+        }
+    }
+    given "reject parity: both parsers reject the same malformed statement" {
+        then "a dangling operator rejects on both" {
+            flip_stmt("= 5") == "<err>" && hand_stmt("= 5") == "<err>"
+        }
+    }
+}

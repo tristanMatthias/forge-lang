@@ -475,6 +475,7 @@ export fn new_pstate(src: string) -> PState {
     // (only line/span accounting differs, which dump-based equivalence ignores).
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
+    d.stmt_flip = false
     d.expr_flip = false
     d.expr_static = false
     PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: d }
@@ -803,6 +804,18 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
     if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
+    // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
+    // map-literal statement, disambiguated inside parse_statement) plus the
+    // statement KEYWORDS parse_statement routes to feature parsers. `break` /
+    // `continue` are DSL-native alternatives ordered BEFORE this one; every
+    // other token is an expression statement handled by the `expr_stmt`
+    // alternative ordered AFTER it. The keyword list mirrors the registered
+    // stmt_keyword set (if/while/for/match/defer/errdefer/return) exactly.
+    if name == "stmt_hand" {
+        let t = tok.text
+        return t == "{" || t == "if" || t == "while" || t == "for" ||
+               t == "match" || t == "defer" || t == "errdefer" || t == "return"
+    }
     false
 }
 
@@ -817,7 +830,10 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// is ReturnEmpty + a separate statement, decided by the hand parser's
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl" || name == "let_stmt" || name == "return_stmt"
+    name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
+    // ps3t.6.7 G.4 — the whole-statement dispatch leaf the production statement
+    // flip delegates to (parse_statement).
+    name == "stmt_hand"
 }
 
 /// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
@@ -842,16 +858,37 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         return st.store.stmts.add_leaf(Stmt.Error)
     }
     let start_byte = st.cur().pos
-    // Share the DSL store (so the built ids live where the DSL expects), then
-    // walk the lexer to the hand rule's first token by CONSUMING the input up
-    // to it — advancing token by token, NOT just reassigning the cursor — so
-    // `line`/`column` stay accurate (each skipped newline is counted) for a
-    // rule at a nonzero offset; the hand parser records those coordinates on
-    // the built node's body spans. The bridging parser's fresh gensym counter
-    // starts at 0 — matching a single-statement oracle parse — so a hygienic
-    // desugar (`let … else`) mints the identical temp name.
-    mut bp = parser_new_with_store(st.src, "", st.store)
+    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) when
+    // present — created once per file and SYNCED to the outer parser's cursor +
+    // line before this statement (see parse_statement's flip), so it lexes each
+    // token once (O(source), not O(source²)) AND carries the accumulated line/
+    // column/gensym state the continuous hand parse would have. This is the
+    // statement-family mirror of run_hand_expr's delegate reuse. Fallback to a
+    // fresh parser when no delegate is threaded (the differential oracle + unit
+    // tests): a fresh gensym counter at 0 matches a single-statement oracle
+    // parse, so a `let … else` desugar mints the identical temp name.
+    mut bp = if st.hand_delegate == null {
+        parser_new_with_store(st.src, "", st.store)
+    } else {
+        st.hand_delegate!
+    }
     bp.records_roots = 0
+    bp.had_error = false
+    bp.error_message = ""
+    // The @hand leaf IS the hand parser — it must NOT re-enter the statement /
+    // expression flip for its own sub-parses, or the runner recurses into
+    // itself. Force the delegate's flips off (type/pattern stay at their live
+    // defaults — those flips are already the production oracle).
+    bp.stmt_flip = false
+    bp.expr_flip = false
+    bp.expr_static = false
+    // Reproduce the ORIGINAL parse context (a no-op on the fresh-parser oracle
+    // path, where st.modes are a fresh parser's defaults).
+    bp.allow_struct_lit = st.modes.allow_struct_lit
+    bp.allow_dot_postfix = st.modes.allow_dot_postfix
+    bp.allow_it_sugar = st.modes.allow_it_sugar
+    bp.quote_depth = st.modes.quote_depth
+    bp.cell_mode = st.modes.cell_mode
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     // Dispatch to the real hand-parser entry (method calls on the local `bp`,
     // so its cursor advances in place for the resync below). Each builds into
@@ -860,6 +897,10 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "component_decl" -> bp.parse_component_decl()
         "let_stmt"       -> bp.parse_let_statement()
         "return_stmt"    -> bp.parse_return_statement()
+        // The whole statement dispatch (block, if/while/for/match/defer/
+        // errdefer/return, and their position-recorded nested bodies) —
+        // parse_statement itself, the position-faithful oracle (ps3t.6.7 G.4).
+        "stmt_hand"      -> bp.parse_statement()
         _                -> .Err("no hand statement rule `${name}`")
     }
     // Resync the DSL token cursor past everything the hand parser consumed (its
@@ -1061,6 +1102,34 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
+/// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
+/// in the caller's shared `store` — statements are arena-backed, like
+/// expressions/patterns), the stop byte for cursor resync, and the error channel.
+export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
+/// family sibling of `run_dsl_expr_at_shared`. Runs `grammar`'s `statement` rule
+/// over the pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned
+/// `store` (the returned id is valid in it — the hand parser reads it straight
+/// back), and threads the caller's parser `modes` + `@hand` delegate into the
+/// PState. The gnarly statement forms (block, `if`/`while`/`for`/`match`/`defer`/
+/// `errdefer`/`return` — the feature parsers, and their position-recorded nested
+/// bodies) delegate wholesale via `@hand(stmt_hand)` → `parse_statement`; only
+/// `break`/`continue` and the fall-through expression-statement are DSL-native.
+/// The expr-stmt's `@hand(hand_unary)` leaf reproduces the original mode-
+/// sensitive parse byte-identically. Reuses the caller's token + grammar caches
+/// (lex-once), so a file's many statements cost one lex + one grammar build.
+export fn run_dsl_stmt_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    let stmt = capval_to_stmt(st, exec_rule(grammar, "statement", st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslStmtResult { stmt, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
 /// (`run_hand_expr` → ExprId over the shared store) — distinct from the
 /// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
@@ -1144,8 +1213,11 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // The @hand leaf IS the hand parser — it must NOT re-enter the expression
     // flip/static path for its nested sub-expressions (a `f(arg)` call's args, a
     // slice index, …), or the runner would recurse into itself per nested expr.
-    // Force BOTH delegate toggles off; the top operator ladder stays DSL/static, the
+    // Force ALL delegate toggles off; the top operator ladder stays DSL/static, the
     // whole leaf-and-below is hand-parsed (byte-identical, since the ladders match).
+    // stmt_flip too: a leaf's nested block (closure body, `if`-expr arm) parses
+    // statements by hand, never re-entering the statement flip on this delegate.
+    bp.stmt_flip = false
     bp.expr_flip = false
     bp.expr_static = false
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
