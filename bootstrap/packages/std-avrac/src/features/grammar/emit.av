@@ -38,11 +38,194 @@
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 
-/// Render the whole grammar as parser-fn source — one function per rule.
-export fn emit_parser_source(g: Grammar) -> string {
-    mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
+// ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
+//
+// The grammar spells the operator precedence ladder as a CHAIN of uniform
+// left-assoc fold rules — `bitor = l:bitxor ( op:("|") r:bitxor )* -> fold_binary`,
+// `bitxor = l:bitand …`, … down to `factor = l:unary …`. Emitting one parse fn per
+// rule makes the generated parser DESCEND all N frames per leaf — exactly the cost
+// the hand parser shed by collapsing those same levels into ONE `parse_binary_pratt`
+// loop (mod.av). We give the GENERATED parser the same collapse: detect the chain,
+// emit a single precedence-climbing loop over a binding-power table, and lower each
+// chain rule to a one-line wrapper `parse_<rule>(st) = parse_binary_pratt_g(st, <lbp>)`
+// so every call site keeps its exact entry precedence. Byte/tree-identical to the
+// fold descent (both build left-assoc `Expr.Binary` via the shared `binop_of`), and
+// N frames per leaf become 1.
+type ChainRule = { name: string, operand: string, ops: List<string>, lbp: int }
+
+/// The rule name a `.Ref` primary points at (else "").
+fn prim_ref_name(prim: GPrim) -> string {
+    match prim { .Ref(n) -> n  _ -> "" }
+}
+
+/// The `Call` build's helper name (else "").
+fn build_call_name(build: GBuild) -> string {
+    match build { .Call(n, _) -> n  _ -> "" }
+}
+
+/// Every literal-terminal text reachable from a primary: a bare `.Lit`, or the
+/// branches of a `( "a" | "b" | … )` group (each a one-item Lit seq). Used to pull
+/// a fold rule's operator set out of its `op:( … )` group.
+fn lits_of_prim(prim: GPrim) -> List<string> {
+    mut out: List<string> = []
+    match prim {
+        .Lit(t) -> out.push(t)
+        .Group(inner) -> {
+            match inner {
+                .Alt(branches) -> {
+                    for b in branches {
+                        for it in b.items {
+                            match it.prim { .Lit(t) -> out.push(t)  _ -> {} }
+                        }
+                    }
+                }
+            }
+        }
+        _ -> {}
+    }
+    out
+}
+
+/// A uniform binary-ladder fold rule: the `l:X ( op:(…) r:X )* -> fold_binary(…)`
+/// shape whose seed ref and accumulator operand ref are the SAME rule X. Returns
+/// (operand X, operator texts) or ("", []) when the rule isn't one.
+fn binary_fold_of(seq: GSeq) -> ChainRule {
+    let no_chain = ChainRule { name: "", operand: "", ops: [], lbp: 0 }
+    if !is_fold(seq) || build_call_name(seq.build) != "fold_binary" { return no_chain }
+    let seed_ref = prim_ref_name(seq.items[0].prim)
+    if seed_ref == "" { return no_chain }
+    let inner = group_inner_seq(seq.items[1].prim)
+    mut operand = ""
+    mut ops: List<string> = []
+    for it in inner.items {
+        if prim_is_ref(it.prim) { operand = prim_ref_name(it.prim) }
+        else {
+            for l in lits_of_prim(it.prim) { ops.push(l) }
+        }
+    }
+    if operand != seed_ref || ops.length == 0 { return no_chain }
+    ChainRule { name: "", operand, ops, lbp: 0 }
+}
+
+/// True iff `name` is any binary-fold rule's operand — i.e. it sits BELOW some
+/// fold in the ladder (so it is not the loosest/head level).
+fn is_some_fold_operand(g: Grammar, name: string) -> bool {
     for r in g.rules {
-        out = out + emit_rule_fn_in(g, r) + "\n"
+        match r.body {
+            .Alt(branches) -> {
+                if branches.length == 1 {
+                    let cr = binary_fold_of(branches[0])
+                    if cr.operand == name && r.name != name { return true }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// The single-branch fold body of a rule, or a null-name ChainRule.
+fn rule_binary_fold(r: Rule) -> ChainRule {
+    match r.body {
+        .Alt(branches) -> {
+            if branches.length == 1 {
+                let cr = binary_fold_of(branches[0])
+                if cr.operand != "" { return ChainRule { name: r.name, operand: cr.operand, ops: cr.ops, lbp: 0 } }
+            }
+            ChainRule { name: "", operand: "", ops: [], lbp: 0 }
+        }
+    }
+}
+
+/// Detect the binary-operator ladder as an ORDERED chain, loosest first. The head
+/// is the fold rule that is no other fold's operand; we then follow operand links
+/// down to the leaf. Each level's lbp = 10 + 2*index (matching the hand parser's
+/// bitor=10 … factor=22). Empty when the grammar has no such ladder.
+fn binary_fold_chain(g: Grammar) -> List<ChainRule> {
+    mut folds: List<ChainRule> = []
+    for r in g.rules {
+        let cr = rule_binary_fold(r)
+        if cr.name != "" { folds.push(cr) }
+    }
+    mut chain: List<ChainRule> = []
+    if folds.length == 0 { return chain }
+    // Head = a fold whose name is not any fold's operand.
+    mut head = ""
+    for f in folds {
+        if !is_some_fold_operand(g, f.name) { head = f.name }
+    }
+    if head == "" { return chain }
+    // Follow operand links from head to the leaf, assigning lbp per depth.
+    mut cur = head
+    mut idx = 0
+    mut guard = 0
+    while cur != "" && guard < folds.length + 1 {
+        mut found = ChainRule { name: "", operand: "", ops: [], lbp: 0 }
+        for f in folds {
+            if f.name == cur { found = f }
+        }
+        if found.name == "" { break }
+        chain.push(ChainRule { name: found.name, operand: found.operand, ops: found.ops, lbp: 10 + 2 * idx })
+        cur = found.operand
+        idx = idx + 1
+        guard = guard + 1
+    }
+    chain
+}
+
+fn chain_lbp_of(chain: List<ChainRule>, name: string) -> int {
+    for c in chain { if c.name == name { return c.lbp } }
+    -1
+}
+
+/// The emitted Pratt prelude: `binary_lbp_g` (generated from the chain's operators)
+/// + `parse_binary_pratt_g` (the precedence-climbing loop, the generated twin of the
+/// hand `parse_binary_pratt`, including the table-cell `+`/`-` newline guard).
+fn emit_pratt_prelude(chain: List<ChainRule>, leaf: string) -> string {
+    mut lbp = "fn binary_lbp_g(t: Token) -> int {\n    let x = t.text\n"
+    for c in chain {
+        mut cond = ""
+        mut j = 0
+        for op in c.ops {
+            if j > 0 { cond = cond + " || " }
+            cond = cond + "x == \"${op}\""
+            j = j + 1
+        }
+        lbp = lbp + "    if ${cond} { return ${string(c.lbp)} }\n"
+    }
+    lbp = lbp + "    0\n}\n\n"
+    let loop = "fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal {\n" +
+        "    mut lhs = capval_to_expr(st, parse_${leaf}(st))\n" +
+        "    while true {\n" +
+        "        let lbp = binary_lbp_g(st.cur())\n" +
+        "        if lbp == 0 || lbp < min_bp { break }\n" +
+        "        let tx = st.cur().text\n" +
+        "        if (tx == \"+\" || tx == \"-\") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }\n" +
+        "        let _ = st.advance()\n" +
+        "        let rhs = capval_to_expr(st, parse_binary_pratt_g(st, lbp + 1))\n" +
+        "        lhs = mk_binary(st, lhs, tx, rhs)\n" +
+        "    }\n" +
+        "    CapVal.Node(lhs)\n}\n\n"
+    lbp + loop
+}
+
+/// Render the whole grammar as parser-fn source — one function per rule. When the
+/// grammar carries a uniform binary-operator ladder (a chain of `fold_binary` rules),
+/// that chain is collapsed into ONE emitted `parse_binary_pratt_g` loop + per-rule
+/// wrappers (ps3t.6.7 Step G); every other rule emits one fn as before.
+export fn emit_parser_source(g: Grammar) -> string {
+    let chain = binary_fold_chain(g)
+    mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
+    if chain.length > 0 {
+        let leaf = chain[chain.length - 1].operand
+        out = out + emit_pratt_prelude(chain, leaf)
+    }
+    for r in g.rules {
+        let bp = chain_lbp_of(chain, r.name)
+        if bp >= 0 {
+            out = out + "fn parse_${r.name}(st: PState) -> CapVal { parse_binary_pratt_g(st, ${string(bp)}) }\n\n"
+        } else {
+            out = out + emit_rule_fn_in(g, r) + "\n"
+        }
     }
     out
 }
@@ -466,7 +649,13 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         //    constructor cores (executor.apply_build's exact twins). args[N]_list
         //    names a rep/list capture; a bare arg is a scalar/opt-scalar CapVal. ──
         "TyUnion" -> "fold_type_union(st, ${args[0]}, ${args[1]}_list)"
-        "MkNamed" -> "mk_named_type(capval_tok_text(${args[0]}), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
+        // The name is captured as a repeated `.Toks` (`name:IDENT ( "." name:IDENT )*`,
+        // the dotted type path Self.Item / a.b.C), so join it via CapVal.Toks — the
+        // emit twin of the executor's `capval_tok_text(env.get("name"))`, which
+        // reconstructs the flat dotted name. A single-segment name is a one-element
+        // list, joined to itself. (ps3t.6.7 — was `capval_tok_text(name)`, undefined
+        // once the dotted star made `name` a list label.)
+        "MkNamed" -> "mk_named_type(capval_tok_text(CapVal.Toks(${args[0]}_list)), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
         "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
         "TyParen" -> "mk_paren_type(${args[0]}_list)"
         "TyDyn" -> "CapVal.TExpr(TypeExpr.Named(capval_tok_text(${args[0]})))"

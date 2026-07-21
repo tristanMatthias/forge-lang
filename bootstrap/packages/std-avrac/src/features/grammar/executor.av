@@ -2273,6 +2273,17 @@ export fn capval_tok_text(v: CapVal) -> string {
     }
 }
 
+/// The emitted Pratt loop's ONE build step (ps3t.6.7 Step G, slice 1): fold a
+/// left operand, an operator token's text, and a right operand into an
+/// `Expr.Binary`, mapping the operator via the shared `binop_of` — the exact
+/// node the RD-ladder fold (`fold_binary_expr`) and the hand `parse_binary_pratt`
+/// build. Exported so the GENERATED expression parser can collapse the 7 chained
+/// fold rules (bitor→…→factor) into one precedence-climbing loop instead of a
+/// 7-frame descent, without importing `BinOp`/`Expr` into the generated module.
+export fn mk_binary(st: PState, lhs: ExprId, op_text: string, rhs: ExprId) -> ExprId {
+    st.store.exprs.add_leaf(Expr.Binary(lhs, binop_of(op_text), rhs))
+}
+
 fn binop_of(sym: string) -> BinOp {
     if sym == "-" { return BinOp.Sub }
     if sym == "*" { return BinOp.Mul }

@@ -94,16 +94,18 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_nullish_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "a fold rule accumulates ops+rhs and folds via the build helper" {
-        // `term = l:factor ( op:("+"|"-") r:factor )* -> fold_binary(l, op, r)`
+    then "the uniform binary ladder collapses to ONE Pratt loop (Step G slice 1)" {
+        // bitor→bitxor→bitand→comparison→shift→term→factor are no longer 7
+        // descending fold fns — each is a one-line wrapper into the shared
+        // precedence-climbing loop parse_binary_pratt_g at its binding power
+        // (bitor=10 … factor=22, matching the hand parse_binary_pratt), so the
+        // generated parser does one loop frame per leaf instead of seven.
         let src = emit_all()
-        src.contains("let l = parse_factor(st)") &&
-        src.contains("mut ops: List<Token> = []") &&
-        src.contains("mut rs: List<ExprId> = []") &&
-        src.contains("while st.cur().text == \"+\" || st.cur().text == \"-\" {") &&
-        src.contains("ops.push(st.advance())") &&
-        src.contains("rs.push(capval_to_expr(st, parse_factor(st)))") &&
-        src.contains("CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
+        src.contains("fn parse_bitor(st: PState) -> CapVal { parse_binary_pratt_g(st, 10) }") &&
+        src.contains("fn parse_term(st: PState) -> CapVal { parse_binary_pratt_g(st, 20) }") &&
+        src.contains("fn parse_factor(st: PState) -> CapVal { parse_binary_pratt_g(st, 22) }") &&
+        // the old per-level fold loop is gone (no accumulate-then-fold_binary_expr)
+        !src.contains("rs.push(capval_to_expr(st, parse_factor(st)))")
     }
 
     then "the logical strata use fold_logical_expr and accept keyword spellings" {
@@ -115,12 +117,18 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "the factor rule's operand recurses into the @hand leaf (`r:unary`)" {
-        // `factor = l:unary ( op:("*"|"/"|"%") r:unary )* -> fold_binary`
+    then "the Pratt loop climbs precedence over a generated binding-power table" {
+        // parse_binary_pratt_g: the leaf is parse_unary (the @hand delegation),
+        // left-assoc via rbp = lbp+1, one Expr.Binary per operator via mk_binary;
+        // binary_lbp_g maps each operator text to its level (factor ops *,/,% → 22),
+        // the generated twin of the hand parser's binary_lbp/binary_op tables.
         let src = emit_all()
-        src.contains("let l = parse_unary(st)") &&
-        src.contains("while st.cur().text == \"*\" || st.cur().text == \"/\" || st.cur().text == \"%\" {") &&
-        src.contains("rs.push(capval_to_expr(st, parse_unary(st)))")
+        src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal {") &&
+        src.contains("mut lhs = capval_to_expr(st, parse_unary(st))") &&
+        src.contains("let lbp = binary_lbp_g(st.cur())") &&
+        src.contains("let rhs = capval_to_expr(st, parse_binary_pratt_g(st, lbp + 1))") &&
+        src.contains("lhs = mk_binary(st, lhs, tx, rhs)") &&
+        src.contains("if x == \"*\" || x == \"/\" || x == \"%\" { return 22 }")
     }
 
     then "the procedural leaf `unary` is a bare @hand(hand_unary) delegation" {
