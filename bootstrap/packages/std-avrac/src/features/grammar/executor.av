@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
@@ -363,8 +363,8 @@ impl PState {
     /// pos is the second `>`'s byte offset, so spans stay honest.
     fn split_gt(self) -> Token {
         let cur = self.cur()
-        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1 })
-        Token { kind: "PUNCT", text: ">", pos: cur.pos }
+        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1, tk: Tk.Greater })
+        Token { kind: "PUNCT", text: ">", pos: cur.pos, tk: Tk.Greater }
     }
 
     fn report(self, msg: string) {

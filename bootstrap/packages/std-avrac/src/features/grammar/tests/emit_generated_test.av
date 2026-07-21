@@ -72,25 +72,26 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
         // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
+        // ps3t.6.7 perf: the `=` guard dispatches on the Tk enum (tk_guard), not text.
         let src = emit_all()
         src.contains("let l = parse_pipe(st)") &&
-        src.contains("if st.cur().text == \"=\" {") &&
+        src.contains("if st.cur().tk == Tk.Equal {") &&
         src.contains("r = parse_assignment(st)") &&
         src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
     }
 
     then "the pipe stratum folds `|>` with @hand(pipe_rhs) operands" {
         // `pipe = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)` with
-        // `pipe_arg = @hand(pipe_rhs)` (parse_or + it-sugar).
+        // `pipe_arg = @hand(pipe_rhs)` (parse_or + it-sugar). The `|>` guard is Tk-dispatched.
         let src = emit_all()
-        src.contains("while st.cur().text == \"|>\" {") &&
+        src.contains("while st.cur().tk == Tk.PipeGt {") &&
         src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
         src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
         let src = emit_all()
-        src.contains("while st.cur().text == \"??\" {") &&
+        src.contains("while st.cur().tk == Tk.QuestionQuestion {") &&
         src.contains("CapVal.Node(fold_nullish_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
@@ -110,10 +111,11 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "the logical strata use fold_logical_expr and accept keyword spellings" {
         // ps3t.6.7 Step C: `||`/`or` and `&&`/`and` both spell the same LogicOp
-        // (logicop_of maps both) — the guard unions the two token texts.
+        // (logicop_of maps both) — the guard unions the operator's Tk (tk_guard,
+        // ps3t.6.7 perf) with the keyword text (keywords stay on the text compare).
         let src = emit_all()
-        src.contains("while st.cur().text == \"||\" || st.cur().text == \"or\" {") &&
-        src.contains("while st.cur().text == \"&&\" || st.cur().text == \"and\" {") &&
+        src.contains("while st.cur().tk == Tk.PipePipe || st.cur().text == \"or\" {") &&
+        src.contains("while st.cur().tk == Tk.AmpAmp || st.cur().text == \"and\" {") &&
         src.contains("CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
@@ -122,8 +124,9 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // delegation called RAW (run_hand_expr → ExprId, no box), the recursion is
         // ExprId→ExprId (no CapVal.Node/capval_to_expr round-trip), left-assoc via
         // rbp = lbp+1, one Expr.Binary per operator via mk_binary; binary_lbp_g maps
-        // each operator text to its level (factor ops *,/,% → 22). The ONE CapVal
-        // box lives at the thin boundary wrapper parse_binary_pratt_g.
+        // each operator's Tk to its level (factor ops *,/,% → 22; ps3t.6.7 perf: the
+        // precedence table is Tk-dispatched too). The ONE CapVal box lives at the
+        // thin boundary wrapper parse_binary_pratt_g.
         let src = emit_all()
         src.contains("fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {") &&
         src.contains("let sp_start = st.cur().pos") &&
@@ -131,7 +134,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let lbp = binary_lbp_g(st.cur())") &&
         src.contains("let rhs = parse_binary_pratt_g_id(st, lbp + 1)") &&
         src.contains("lhs = mk_binary(st, sp_start, lhs, tx, rhs)") &&
-        src.contains("if x == \"*\" || x == \"/\" || x == \"%\" { return 22 }") &&
+        src.contains("if t.tk == Tk.Star || t.tk == Tk.Slash || t.tk == Tk.Percent { return 22 }") &&
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
@@ -147,9 +150,9 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
         // emit_rule_fn(g, term) needs the grammar to resolve factor's FIRST set
-        // for its `while` guard — the operator group here.
+        // for its `while` guard — the operator group here (Tk-dispatched, ps3t.6.7 perf).
         let g = avra_expr_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
-        term.contains("while st.cur().text == \"+\" || st.cur().text == \"-\" {")
+        term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
     }
 }

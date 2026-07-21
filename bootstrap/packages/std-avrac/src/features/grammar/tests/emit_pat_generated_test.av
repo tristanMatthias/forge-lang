@@ -23,7 +23,9 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
 
     then "the pattern dispatch guards the leading forms and delegates" {
         let src = emit_all()
-        src.contains("if st.cur().text == \".\" {") &&
+        // ps3t.6.7 perf: the `.` (variant) guard dispatches on the Tk enum (tk_guard);
+        // the STRING named terminal still matches by kind.
+        src.contains("if st.cur().tk == Tk.Dot {") &&
         src.contains("return parse_variant_pat(st)") &&
         src.contains("if st.cur().kind == \"STRING\" {")
     }
@@ -46,7 +48,7 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
         let src = emit_all()
         // A structural (multi-branch) group becomes an if/else-if on each
         // branch's FIRST, then the MkVariant conditional build on the sub-list.
-        src.contains("} else if st.cur().text == \".\" {") &&
+        src.contains("} else if st.cur().tk == Tk.Dot {") &&
         src.contains("if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(")
     }
 

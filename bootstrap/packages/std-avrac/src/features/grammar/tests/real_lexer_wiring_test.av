@@ -19,7 +19,7 @@
 //      tokens ⇒ same `Expr.String`, so the escaped-string corpus now agrees.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt_toks, lex_real, Token}
 use @std.avrac.parse.{parser_new}
-use @std.avrac.core.{render_stmt_id, new_node_store, build_line_index, NodeStore}
+use @std.avrac.core.{render_stmt_id, new_node_store, build_line_index, NodeStore, Tk}
 
 fn decl_grammar_src() -> string {
     "grammar Decl {\n" +
@@ -138,6 +138,37 @@ spec "grammar-DSL real-lexer wiring: run_grammar_*_toks over real tokens == hand
         then "field / param / variant names round-trip" {
             dsl_stmt("type Rec = { name: string, age: int }") == hand_stmt("type Rec = { name: string, age: int }") &&
             dsl_stmt("enum Shape { Circle(r: int), Rect(w: int, h: int) }") == hand_stmt("enum Shape { Circle(r: int), Rect(w: int, h: int) }")
+        }
+    }
+    given "each token carries its Tk enum kind (ps3t.6.7 perf: the generated parser dispatches on tk, not text)" {
+        then "operator/punctuation tokens' tk is 1:1 with their text — the byte-identity invariant behind tk_guard" {
+            // The generated static parser replaced `st.cur().text == \"X\"` with
+            // `st.cur().tk == Tk.X` for operators. That is byte-identical ONLY
+            // because lex_real tags each operator lexeme with the matching Tk
+            // (1:1) — asserted here directly.
+            let a = lex_real("x |> y ?? z == w")
+            // x@0  |>@2  y@5  ??@7  z@10  ==@12  w@15  EOF@16
+            a[0].tk == Tk.Identifier       && a[0].text == "x"  &&
+            a[1].tk == Tk.PipeGt           && a[1].text == "|>" &&
+            a[3].tk == Tk.QuestionQuestion && a[3].text == "??" &&
+            a[5].tk == Tk.EqualEqual       && a[5].text == "==" &&
+            // a second stream covering more hot operators + punctuation
+            {
+                let b = lex_real("p || q && r != s <= t + u * v")
+                b[1].tk == Tk.PipePipe   && b[1].text == "||" &&
+                b[3].tk == Tk.AmpAmp     && b[3].text == "&&" &&
+                b[5].tk == Tk.BangEqual  && b[5].text == "!=" &&
+                b[7].tk == Tk.LessEqual  && b[7].text == "<=" &&
+                b[9].tk == Tk.Plus       && b[9].text == "+"  &&
+                b[11].tk == Tk.Star      && b[11].text == "*"
+            } &&
+            // keyword operators ("or"/"and"/"is"/"in") are deliberately NOT
+            // Tk-dispatched (tk_guard returns the string form) — they still lex
+            // as their Kw* variant, but the guard keeps the text compare.
+            {
+                let c = lex_real("a and b or c")
+                c[1].text == "and" && c[3].text == "or"
+            }
         }
     }
 }

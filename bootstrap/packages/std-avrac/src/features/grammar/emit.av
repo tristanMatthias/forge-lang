@@ -214,13 +214,23 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
 /// the recursion, dropping a malloc + rc_set per node — with ONE thin `CapVal`
 /// wrapper (`parse_binary_pratt_g`) at the boundary the per-rule wrappers call.
 fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> string {
-    mut lbp = "fn binary_lbp_g(t: Token) -> int {\n    let x = t.text\n"
+    // ps3t.6.7 perf: the precedence table dispatches on the Tk enum too (same
+    // tk_guard rule) — every binary operator in the chain is punctuation with a
+    // 1:1 Tk variant, so `t.tk == Tk.X` is byte-identical to `t.text == "X"` but
+    // free of the per-iteration streq. An operator tk_variant_for can't name
+    // falls back to the text compare (none today, but keeps the invariant safe).
+    mut lbp = "fn binary_lbp_g(t: Token) -> int {\n"
     for c in chain {
         mut cond = ""
         mut j = 0
         for op in c.ops {
             if j > 0 { cond = cond + " || " }
-            cond = cond + "x == \"${op}\""
+            let tkv = tk_variant_for(op)
+            if tkv == "" {
+                cond = cond + "t.text == \"${op}\""
+            } else {
+                cond = cond + "t.tk == Tk.${tkv}"
+            }
             j = j + 1
         }
         lbp = lbp + "    if ${cond} { return ${string(c.lbp)} }\n"
@@ -816,9 +826,77 @@ fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_ex
 // a group unions its branches. Nullable leading items (Opt/Star) are crossed
 // so a guard spans them (executor.tok_starts_seq).
 
+// ── ps3t.6.7 perf: Tk-enum terminal dispatch ──
+//
+// A literal terminal (`"+"`, `"|>"`) was matched by string-comparing the token
+// `text` (`st.cur().text == "|>"`) — an avra_streq PER descent level, the #1
+// cost of the generated parser (~+17M Ir vs the hand parser). The real lexer
+// already tags every token with its `Tk` enum kind, and for OPERATOR /
+// PUNCTUATION lexemes that tag is 1:1 with the text (a `|>` is ALWAYS
+// `Tk.PipeGt`, and nothing else is), so `text == "|>"` ⟺ `tk == Tk.PipeGt` —
+// an int compare that is byte-identical in behaviour but drops the streq.
+//
+// KEYWORDS are deliberately EXCLUDED: a keyword lexeme could (contextually) lex
+// as an identifier, so `text == "is"` is NOT guaranteed equivalent to
+// `tk == Tk.KwIs`; those fall back to the string compare (`tk_variant_for`
+// returns "" → the caller emits the `.text` form). This keeps the fast path
+// provably safe while covering the hot operator guards.
+fn tk_variant_for(text: string) -> string {
+    // punctuation
+    if text == "(" { return "LeftParen" }
+    if text == ")" { return "RightParen" }
+    if text == "{" { return "LeftBrace" }
+    if text == "}" { return "RightBrace" }
+    if text == "[" { return "LeftBracket" }
+    if text == "]" { return "RightBracket" }
+    if text == "," { return "Comma" }
+    if text == "." { return "Dot" }
+    if text == ".." { return "DotDot" }
+    if text == ":" { return "Colon" }
+    if text == "->" { return "Arrow" }
+    if text == "<-" { return "LeftArrow" }
+    if text == "@" { return "At" }
+    if text == "~" { return "Tilde" }
+    if text == "?" { return "Question" }
+    if text == "?." { return "QuestionDot" }
+    if text == "??" { return "QuestionQuestion" }
+    // operators
+    if text == "+" { return "Plus" }
+    if text == "-" { return "Minus" }
+    if text == "*" { return "Star" }
+    if text == "/" { return "Slash" }
+    if text == "%" { return "Percent" }
+    if text == "=" { return "Equal" }
+    if text == "==" { return "EqualEqual" }
+    if text == "!" { return "Bang" }
+    if text == "!=" { return "BangEqual" }
+    if text == "<" { return "Less" }
+    if text == "<=" { return "LessEqual" }
+    if text == ">" { return "Greater" }
+    if text == ">=" { return "GreaterEqual" }
+    if text == "&" { return "Amp" }
+    if text == "&&" { return "AmpAmp" }
+    if text == "|" { return "Pipe" }
+    if text == "||" { return "PipePipe" }
+    if text == "|>" { return "PipeGt" }
+    if text == "^" { return "Caret" }
+    if text == "<<" { return "Shl" }
+    if text == ">>" { return "Shr" }
+    ""
+}
+
+/// Emit a single-terminal FIRST guard over `st.cur()`. Operator/punctuation
+/// terminals dispatch on the `Tk` enum (fast int compare, byte-identical);
+/// keywords and everything else keep the `.text` string compare.
+fn tk_guard(text: string) -> string {
+    let v = tk_variant_for(text)
+    if v == "" { return "st.cur().text == \"${text}\"" }
+    "st.cur().tk == Tk.${v}"
+}
+
 fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
     match prim {
-        .Lit(t) -> "st.cur().text == \"${t}\""
+        .Lit(t) -> tk_guard(t)
         .Named(tok) -> "st.cur().kind == \"${tok}\""
         .Hand(hf) -> hand_first_guard(hf)
         .Group(inner) -> node_first_guard(g, inner, visited)
@@ -833,12 +911,12 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
-    if hf == "qualified_type" { return "st.cur().text == \"@\"" }
+    if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     if hf == "template_expr" { return "st.cur().kind == \"TEMPLATE\"" }
-    if hf == "brace_expr" { return "st.cur().text == \"{\"" }
-    if hf == "ident_expr" { return "st.cur().kind == \"IDENT\" || st.cur().text == \"@\"" }
-    if hf == "more_primary" { return "st.cur().text == \".\" || st.cur().text == \"[\"" }
+    if hf == "brace_expr" { return tk_guard("{") }
+    if hf == "ident_expr" { return "st.cur().kind == \"IDENT\" || ${tk_guard("@")}" }
+    if hf == "more_primary" { return "${tk_guard(".")} || ${tk_guard("[")}" }
     // The leaf's FIRST is the shared exported predicate (executor's
     // tok_starts_expr_leaf) — the emitted static parser calls it directly, so
     // the FIRST-set has ONE source of truth across both consumers (rule 8).
@@ -1017,7 +1095,7 @@ fn prim_lit_text(prim: GPrim) -> string {
 /// named terminal on `.kind`.
 fn term_guard(prim: GPrim) -> string {
     match prim {
-        .Lit(t) -> "st.cur().text == \"${t}\""
+        .Lit(t) -> tk_guard(t)
         .Named(tok) -> "st.cur().kind == \"${tok}\""
         _ -> "false"
     }
