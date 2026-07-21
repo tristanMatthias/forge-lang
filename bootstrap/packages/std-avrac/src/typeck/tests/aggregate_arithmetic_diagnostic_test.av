@@ -1,0 +1,66 @@
+// WHY: arithmetic on an aggregate (list/map) operand — `xs + 1`, `m + 1`,
+// `[1] - [2]` — had no typeck gate, so it reached codegen and emitted INVALID IR
+// (an `add`/`mul` on a list/map ptr, caught only by the LLVM verifier as an
+// F9999 "codegen produced invalid IR"). This is the worst zero-raw-errors class:
+// not just an ICE, but invalid IR generation. check_binary_type now rejects an
+// aggregate arithmetic operand with a clean F1000 before codegen. Numeric
+// (int/float/sized-int, incl. through newtypes), bool, and string concatenation
+// are untouched. Part of t-fws6 (c-aggregate); sibling of the scalar
+// field/method/index gates. spec Axis 20: F9999 is never for user input.
+//
+// The str-with-numeric arithmetic ICE (`"a" - "b"`, `"a" + 1`) is NOT gated here
+// — string `+` concat is lenient (the RHS may be Unknown/Void-typed yet a string
+// at runtime, as the compiler itself relies on), so that matrix is a subtler
+// separate fix (t-fws6 c-str).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn ag_out(source: string) -> string {
+    let path = "/tmp/avra_ag_arith.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "arithmetic on a list/map is a clean F1000, never invalid IR (t-fws6 c)" {
+    then "list + int is F1000, never the invalid-IR F9999" {
+        let out = ag_out("fn main() {\n    let _ = [1, 2] + 1\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "int + list is F1000 (operand order doesn't matter)" {
+        let out = ag_out("fn main() {\n    let _ = 1 + [1, 2]\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "list - list is F1000" {
+        let out = ag_out("fn main() {\n    let _ = [1] - [2]\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "map + int is F1000" {
+        let out = ag_out("fn main() {\n    let _ = {\"a\": 1} + 1\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "list * int is F1000" {
+        let out = ag_out("fn main() {\n    let _ = [1] * 3\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a bitwise op on a list is gated too" {
+        let out = ag_out("fn main() {\n    let _ = [1] & 3\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "the diagnostic explains arithmetic needs numeric operands" {
+        let out = ag_out("fn main() {\n    let _ = [1] + 1\n}")
+        out.contains("numeric operands") && out.contains("not lists or maps")
+    }
+    then "string concatenation still compiles (no false F1000)" {
+        let out = ag_out("fn main() {\n    let _ = \"a\" + \"b\"\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "integer arithmetic still compiles (no false F1000)" {
+        let out = ag_out("fn main() {\n    let _ = 2 + 3 * 4\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "newtype-over-int arithmetic still compiles (through-newtype numeric)" {
+        let out = ag_out("type MyInt = int\nfn main() {\n    let n = MyInt(5)\n    let _ = n + 1\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+}
