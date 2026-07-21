@@ -353,7 +353,16 @@ fn build_is_expr_fold(build: GBuild) -> bool {
 fn emit_fold(g: Grammar, seq: GSeq) -> string {
     let seed = seq.items[0]
     let inner = group_inner_seq(seq.items[1].prim)
+    let guard = seq_first_guard(g, inner, [])
     mut out = "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
+    // ps3t.6.7 Step G perf: fast-path the operator-ABSENT case (the common one for
+    // every expression that isn't a `??`/`||`/`&&` chain) — return the seed directly
+    // with ZERO list allocation and no fold call, matching the hand parser's bare-ExprId
+    // threading. Byte-identical: fold_X_expr(seed, [], []) folds nothing and returns
+    // capval_to_expr(seed), and the seed is already a CapVal.Node (every parse_<rule>
+    // returns one), so `seed` == `CapVal.Node(fold_X_expr(seed, [], []))`. The list
+    // allocations + fold only happen when an operator is actually present.
+    out = out + "    if !(${guard}) { return ${seed.label} }\n"
     // One accumulator list per labelled item inside the starred group.
     for it in inner.items {
         if it.label != "" {
@@ -361,7 +370,7 @@ fn emit_fold(g: Grammar, seq: GSeq) -> string {
             out = out + "    mut ${it.label}s: List<${ty}> = []\n"
         }
     }
-    out = out + "    while ${seq_first_guard(g, inner, [])} {\n"
+    out = out + "    while ${guard} {\n"
     for it in inner.items {
         out = out + emit_accumulate(it, "        ")
     }
