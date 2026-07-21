@@ -1,0 +1,62 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) increment 2 — the warm==cold ORACLE.
+//
+// Increment 1 proved snapshot→restore is lossless. This proves the other half:
+// that SEEDING the @std env from a snapshot and collecting only the shard's own
+// code (typecheck_env_seeded) is REGISTRY-IDENTICAL to collecting the whole
+// program cold (typecheck_env). Together they mean a shard can skip the ~1s
+// re-collect of @std and get a byte-identical type-environment.
+//
+// The claim rests on collect_decls being a compositional left-fold; this test
+// exercises it end-to-end on a program whose "own" suffix USES the "@std-like"
+// prefix (a struct, an enum, and a fn), so a broken seed (missing/mismatched a
+// decl) would leave the suffix's references unresolved and diverge the registry
+// — sertypeenv_eq would then return false.
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{
+    typecheck_env, typecheck_env_seeded, snapshot_typeenv, sertypeenv_eq,
+    f2_split_at_marker, MacroFnOrigin,
+}
+
+spec "F2: seeded env is registry-identical to the cold env (warm==cold oracle)" {
+    then "seed(@std snapshot) + collect(own) == collect(@std ++ own)" {
+        let src =
+            "type A = { x: int }\n" +
+            "enum E { X(v: int), Y }\n" +
+            "fn amk() -> A { A { x: 1 } }\n" +
+            "fn boundary() -> int { 0 }\n" +
+            "fn use_a(a: A) -> int { a.x }\n" +
+            "fn use_e(e: E) -> int { match e { .X(v) -> v, .Y -> 0 } }\n" +
+            "fn main() -> int { use_a(amk()) + use_e(E.Y) + boundary() }\n"
+        let r = typecheck_source(src)
+        let mo: List<MacroFnOrigin> = []
+
+        // COLD: collect the whole folded program in one pass.
+        let env_cold = typecheck_env(r.stmts, r.type_reg, mo, r.store)
+
+        // WARM: the producer collects the @std-like prefix and snapshots it; the
+        // shard seeds from that snapshot and collects only its own suffix.
+        let sp = f2_split_at_marker(r.store, r.stmts, "boundary")
+        let env_pfx = typecheck_env(sp.prefix, r.type_reg, mo, r.store)
+        let snap = snapshot_typeenv(env_pfx)
+        let env_warm = typecheck_env_seeded(sp.suffix, snap, r.type_reg, mo, r.store)
+
+        // The two type-environments must be registry-identical.
+        sertypeenv_eq(snapshot_typeenv(env_cold), snapshot_typeenv(env_warm))
+    }
+
+    then "the split is non-trivial — prefix and suffix are both populated" {
+        let src =
+            "type A = { x: int }\n" +
+            "fn amk() -> A { A { x: 1 } }\n" +
+            "fn boundary() -> int { 0 }\n" +
+            "fn use_a(a: A) -> int { a.x }\n" +
+            "fn main() -> int { use_a(amk()) + boundary() }\n"
+        let r = typecheck_source(src)
+        let sp = f2_split_at_marker(r.store, r.stmts, "boundary")
+        // A real partition: prefix has the type + producer fn, suffix has the
+        // boundary + consumer fns. (Guards against a degenerate all-in-one-side
+        // split that would make the oracle above vacuously true.)
+        sp.prefix.length > 0 && sp.suffix.length > 0
+    }
+}
