@@ -54,7 +54,7 @@ spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)
             agree("break") && agree("continue")
         }
     }
-    given "the @hand(stmt_hand) control-flow forms (if/while/for/match/defer/return)" {
+    given "the @hand(stmt_hand) control-flow forms (if/while/for/match/defer/errdefer/return)" {
         then "each keyword statement agrees" {
             agree("if a { b }") &&
             agree("if a { b } else { c }") &&
@@ -63,7 +63,17 @@ spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)
             agree("for x in xs { s }") &&
             agree("match n { 0 -> a\n _ -> b }") &&
             agree("defer { cleanup }") &&
+            agree("errdefer { cleanup }") &&
             agree("return v")
+        }
+    }
+    given "forms outside the stmt_hand keyword set (let/mut/const are DECL keywords)" {
+        // let/mut/const dispatch through parse_declaration, not parse_statement,
+        // so at parse_statement position they take the expr_stmt / hand-fallback
+        // path. The point is only that the flip and the hand path AGREE on them —
+        // whichever path each ends up on, the outcome is identical.
+        then "each still agrees between flip and hand" {
+            agree("let x = 1") && agree("mut y = 2") && agree("const Z = 3")
         }
     }
     given "the block form (@hand-delegated: nested-statement positions)" {

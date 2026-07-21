@@ -1044,6 +1044,25 @@ impl Parser {
     // Feature-specific parsers live in features/*/parser.av.
     // They extend Parser via `impl Parser { ... }` blocks.
 
+    /// Lazily build (once per file) the reusable @hand delegate the statement /
+    /// expression flips share: a parser over THIS parser's source + store, with
+    /// root-recording and every flip/static toggle forced OFF so the @hand leaves
+    /// parse by hand (the byte-identical oracle) and never re-enter a flip. Adding
+    /// a new flip flag updates this ONE site — the two-site drift CodeRabbit
+    /// flagged on #899 (parse_statement had to be hand-edited alongside
+    /// parse_expression to force stmt_flip off).
+    fn ensure_hand_delegate(self) -> Parser {
+        if self.hand_delegate == null {
+            mut d = parser_new_with_store(self.source, self.file, self.store)
+            d.records_roots = 0
+            d.stmt_flip = false
+            d.expr_flip = false
+            d.expr_static = false
+            self.hand_delegate = d
+        }
+        self.hand_delegate!
+    }
+
     fn parse_statement(self) -> Result<StmtId, string> {
         // ps3t.6.7 Step G slice 4 statement-family swap-in — mirror
         // parse_expression's flip: delegate the whole statement to the grammar-DSL
@@ -1059,21 +1078,10 @@ impl Parser {
                 quote_depth: self.quote_depth,
                 cell_mode: self.cell_mode,
             }
-            // One reusable @hand delegate per file (built lazily; shares this
-            // parser's store + source file so delegate-parsed nodes carry the same
-            // @src_file attribution). Its flips are forced OFF so the @hand
-            // statement/expression leaves parse by hand (the byte-identical oracle)
-            // and never re-enter the flip. The SAME field backs the expression
-            // flip's delegate — both keep it all-hand.
-            if self.hand_delegate == null {
-                mut d = parser_new_with_store(self.source, self.file, self.store)
-                d.records_roots = 0
-                d.stmt_flip = false
-                d.expr_flip = false
-                d.expr_static = false
-                self.hand_delegate = d
-            }
-            let d = self.hand_delegate!
+            // One reusable @hand delegate per file (see ensure_hand_delegate),
+            // SYNCED to this parser's cursor+line before the parse, its end state
+            // adopted after.
+            let d = self.ensure_hand_delegate()
             d.copy_cursor_from(self)
             let dsl = run_dsl_stmt_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_statement_grammar(), modes, d)
             if !dsl.had_error {
@@ -1149,23 +1157,14 @@ impl Parser {
                 quote_depth: self.quote_depth,
                 cell_mode: self.cell_mode,
             }
-            // One reusable @hand delegate per file (built lazily; shares this
-            // parser's store + source file so delegate-parsed nodes carry the same
-            // @src_file attribution). SYNC it to THIS parser's exact cursor + line
-            // state so it parses the expression's leaves carrying the accumulated
-            // line (incl. the is_map_literal nudges the hand parser leaves) — then
-            // ADOPT its end state so this parser continues from the expression's end
-            // with the same line the hand parser would have. This reproduces the
-            // hand parser's line accounting byte-for-byte across the split parse.
-            if self.hand_delegate == null {
-                mut d = parser_new_with_store(self.source, self.file, self.store)
-                d.records_roots = 0
-                d.stmt_flip = false
-                d.expr_flip = false
-                d.expr_static = false
-                self.hand_delegate = d
-            }
-            let d = self.hand_delegate!
+            // One reusable @hand delegate per file (see ensure_hand_delegate).
+            // SYNC it to THIS parser's exact cursor + line state so it parses the
+            // expression's leaves carrying the accumulated line (incl. the
+            // is_map_literal nudges the hand parser leaves) — then ADOPT its end
+            // state so this parser continues from the expression's end with the
+            // same line the hand parser would have. This reproduces the hand
+            // parser's line accounting byte-for-byte across the split parse.
+            let d = self.ensure_hand_delegate()
             d.copy_cursor_from(self)
             // ps3t.6.7 Step G: the STATIC generated parser (run_static_expr) when
             // expr_static, else the Grammar-tree interpreter (run_dsl_expr_at_shared).
