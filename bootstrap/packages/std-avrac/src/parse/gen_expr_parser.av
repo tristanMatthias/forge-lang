@@ -8,14 +8,13 @@ use core.{ExprId, Tk}
 
 // generated recursive-descent parser for grammar `grammar`
 fn binary_lbp_g(t: Token) -> int {
-    let x = t.text
-    if x == "|" { return 10 }
-    if x == "^" { return 12 }
-    if x == "&" { return 14 }
-    if x == "<" || x == "<=" || x == ">" || x == ">=" { return 16 }
-    if x == "<<" || x == ">>" { return 18 }
-    if x == "+" || x == "-" { return 20 }
-    if x == "*" || x == "/" || x == "%" { return 22 }
+    if t.tk == Tk.Pipe { return 10 }
+    if t.tk == Tk.Caret { return 12 }
+    if t.tk == Tk.Amp { return 14 }
+    if t.tk == Tk.Less || t.tk == Tk.LessEqual || t.tk == Tk.Greater || t.tk == Tk.GreaterEqual { return 16 }
+    if t.tk == Tk.Shl || t.tk == Tk.Shr { return 18 }
+    if t.tk == Tk.Plus || t.tk == Tk.Minus { return 20 }
+    if t.tk == Tk.Star || t.tk == Tk.Slash || t.tk == Tk.Percent { return 22 }
     0
 }
 

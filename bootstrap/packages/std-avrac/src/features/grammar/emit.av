@@ -214,13 +214,23 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
 /// the recursion, dropping a malloc + rc_set per node — with ONE thin `CapVal`
 /// wrapper (`parse_binary_pratt_g`) at the boundary the per-rule wrappers call.
 fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> string {
-    mut lbp = "fn binary_lbp_g(t: Token) -> int {\n    let x = t.text\n"
+    // ps3t.6.7 perf: the precedence table dispatches on the Tk enum too (same
+    // tk_guard rule) — every binary operator in the chain is punctuation with a
+    // 1:1 Tk variant, so `t.tk == Tk.X` is byte-identical to `t.text == "X"` but
+    // free of the per-iteration streq. An operator tk_variant_for can't name
+    // falls back to the text compare (none today, but keeps the invariant safe).
+    mut lbp = "fn binary_lbp_g(t: Token) -> int {\n"
     for c in chain {
         mut cond = ""
         mut j = 0
         for op in c.ops {
             if j > 0 { cond = cond + " || " }
-            cond = cond + "x == \"${op}\""
+            let tkv = tk_variant_for(op)
+            if tkv == "" {
+                cond = cond + "t.text == \"${op}\""
+            } else {
+                cond = cond + "t.tk == Tk.${tkv}"
+            }
             j = j + 1
         }
         lbp = lbp + "    if ${cond} { return ${string(c.lbp)} }\n"
