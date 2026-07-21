@@ -1,0 +1,193 @@
+// ps3t.6.7 / Step C — the grammar-DSL EXPRESSION family, grown toward selfhost
+// fidelity. avra_expr_grammar has the full operator-precedence spine (logic_or ->
+// ... -> unary -> postfix -> primary); this test proves it builds the same tree
+// as the hand parser's parse_expression over the covered surface, and grows with
+// the grammar. The mode primitives (interpolation @hand(template_expr), map/block
+// @hand(brace_expr)) are wired into the primary here.
+//
+// Interpolated sources are built by concatenating a lone "$" with "{...}", so no
+// interpolation syntax appears in this file (which would interpolate here).
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_expr_id}
+
+fn dsl(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_expression() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl(src) == hand(src)
+}
+
+spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surface)" {
+    given "literals and identifiers" {
+        then "numbers, bools, idents agree and are not errors" {
+            dsl("1") != "<err>" &&
+            agree("1") && agree("42") && agree("true") && agree("false") && agree("a") && agree("foo")
+        }
+    }
+    given "binary operators across every precedence level" {
+        then "arithmetic, comparison, equality, bitwise, shift, logical agree" {
+            agree("1 + 2") && agree("1 - 2 - 3") && agree("1 * 2") && agree("1 / 2") && agree("1 % 2") &&
+            agree("1 + 2 * 3") && agree("1 * 2 + 3") &&
+            agree("1 < 2") && agree("1 <= 2") && agree("1 == 2") && agree("1 != 2") &&
+            agree("1 | 2") && agree("1 & 2") && agree("1 ^ 2") && agree("1 << 2") && agree("1 >> 2") &&
+            agree("a && b") && agree("a || b") && agree("a && b || c")
+        }
+    }
+    given "grouping and postfix (field / index / call)" {
+        then "parenthesised precedence and field/index/call suffixes agree" {
+            agree("(1 + 2) * 3") && agree("1 * (2 + 3)") &&
+            agree("a.b") && agree("a.b.c") && agree("f(1)") && agree("f(1, 2)") &&
+            agree("a[0]") && agree("a[0][1]") && agree("f(a + 1)")
+        }
+    }
+    given "the wired mode primitives (interpolation, map/block)" {
+        then "interpolated strings and brace literals agree" {
+            let d = "$"
+            agree("\"" + "hi " + d + "{x}" + "\"") &&
+            agree("{ \"k\": 1 }") &&
+            agree("{ y }")
+        }
+    }
+    given "the ident-primary @hand: struct literals (Ident { ... }) + postfix" {
+        then "struct literals, nested fields, and struct-then-postfix agree" {
+            dsl("Foo { x: 1 }") != "<err>" &&
+            agree("Foo { x: 1 }") &&
+            agree("Point { x: 1, y: 2 }") &&
+            agree("Foo { x: a + 1 }") &&
+            agree("Foo { x: 1 }.x")
+        }
+    }
+    given "prefix unary operators (logical not, bitwise not, negation)" {
+        then "unary on idents and nesting agree" {
+            agree("!x") && agree("~b") && agree("-a") &&
+            agree("!!x") && agree("- -a") && agree("!(a && b)") &&
+            agree("-a + b") && agree("!x || y")
+        }
+    }
+    given "string literals and mixed nesting" {
+        then "plain strings, deep grouping, and mixed operators agree" {
+            agree("\"hi\"") && agree("\"\"") &&
+            agree("((1 + 2) * (3 - 4))") &&
+            agree("a.b.c + f(1)[2]") &&
+            agree("a && b == c + d * e")
+        }
+    }
+    given "enum constructors and list literals (@hand(more_primary))" {
+        then "nullary/payload enum ctors, nested, and list literals agree" {
+            dsl(".Some(1)") != "<err>" &&
+            agree(".None") && agree(".Some(1)") && agree(".Pair(1, 2)") &&
+            agree(".Wrap(.Inner(x))") &&
+            agree("[]") && agree("[1]") && agree("[1, 2, 3]") &&
+            agree("[a + 1, b]") && agree("[[1], [2]]") &&
+            agree(".Some(1 + 2)") && agree("[f(1), g(2)]")
+        }
+    }
+    // ── ps3t.6.7 Step C: the @hand(hand_unary) leaf — the procedural forms the
+    // DSL delegates wholesale to parse_unary (newline-sensitive + mode-stateful).
+    given "float literals (parse_primary Tk.Float, via the @hand leaf)" {
+        then "decimals build FloatLit (not Int Number) and agree" {
+            dsl("3.14") != "<err>" &&
+            agree("3.14") && agree("0.5") && agree("1.0 + 2.5") && agree("- 3.14")
+        }
+    }
+    given "closures / lambdas ( ( params ) -> body )" {
+        then "zero/one/multi-param and typed closures agree" {
+            dsl("(x) -> x + 1") != "<err>" &&
+            agree("(x) -> x + 1") && agree("() -> 1") && agree("(x, y) -> x + y") &&
+            agree("(x: int) -> x") && agree("(a) -> (b) -> a + b")
+        }
+    }
+    given "prefix `not` and null/none primaries" {
+        then "logical not keyword and the absence literals agree" {
+            agree("not a") && agree("not (a && b)") && agree("not not a") &&
+            agree("null") && agree("none")
+        }
+    }
+    given "match / if / when expressions (keyword primaries)" {
+        then "match, if/else, and when expressions agree" {
+            dsl("match x { _ -> 1 }") != "<err>" &&
+            agree("match x { _ -> 1 }") &&
+            agree("if a { 1 } else { 2 }") &&
+            agree("when { true -> 1 }")
+        }
+    }
+    given "the newline-sensitive / stateful postfix chain (parse_call)" {
+        then "generic-call, optional-chain, try, catch, slice, await, method chains agree" {
+            agree("f<int>()") && agree("f<int>(x)") && agree("g<A, B>(x, y)") &&
+            agree("a?.b") && agree("a?.b.c") && agree("a?.m(x)") &&
+            agree("f()?") && agree("a?") &&
+            agree("f() catch { 0 }") && agree("f() catch (e) { 1 }") &&
+            agree("a[1..2]") && agree("a[i..j]") &&
+            agree("f().await") &&
+            agree("a.map(f).filter(g)")
+        }
+    }
+    given "struct-update `with` (parse_unary with-loop, via the @hand leaf)" {
+        then "single and chained struct updates agree" {
+            agree("a with { x: 1 }") && agree("p with { x: 1, y: 2 }") &&
+            agree("a with { x: 1 } with { y: 2 }")
+        }
+    }
+    // ── ps3t.6.7 Step C: the DSL-owned infix layers ABOVE the operator ladder.
+    given "null-coalescing `??` (the null_coalesce stratum)" {
+        then "single, chained, and mixed-with-ops null-coalesce agree" {
+            dsl("a ?? b") != "<err>" &&
+            agree("a ?? b") && agree("a ?? b ?? c") &&
+            agree("a ?? b + c") && agree("f() ?? 0") && agree("a.b ?? c.d")
+        }
+    }
+    given "keyword logical operators (`or` / `and`)" {
+        then "or/and keywords fold to the same LogicOp as ||/&& and agree" {
+            agree("a or b") && agree("a and b") &&
+            agree("a and b or c") && agree("a or b and c") &&
+            agree("a and b == c") && agree("not a or b")
+        }
+    }
+    given "assignment `=` (retargeting Assign / FieldAssign, right-assoc)" {
+        then "ident and field-access targets, chained, and rhs expressions agree" {
+            dsl("x = 1") != "<err>" &&
+            agree("x = 1") && agree("a.b = 1") && agree("a.b.c = 1") &&
+            agree("x = y = 1") && agree("x = 1 + 2") && agree("obj.field = f(1)")
+        }
+    }
+    given "the `is` type-check (`expr is .Variant`)" {
+        then "is-checks on idents, fields, and calls agree" {
+            dsl("a is .Some") != "<err>" &&
+            agree("a is .Some") && agree("x.y is .None") && agree("f() is .Ok") &&
+            agree("a + b is .Big")
+        }
+    }
+    given "the `in` membership (list and range, via missing-node rebind)" {
+        then "list-membership and range-membership desugars agree" {
+            dsl("x in [1, 2, 3]") != "<err>" &&
+            agree("x in [1, 2, 3]") && agree("a in [b, c]") && agree("x in []") &&
+            agree("x in 1..10") && agree("i in a..b") && agree("n + 1 in [0, 1]")
+        }
+    }
+    given "the `==`/`!=` chain still folds after the equality restructure" {
+        then "equality chains and comparison-below-equality agree" {
+            agree("a == b") && agree("a != b") && agree("a == b == c") &&
+            agree("a < b == c") && agree("1 + 2 == 3") && agree("a == b != c")
+        }
+    }
+    given "the pipe `|>` (desugar to Call, prepend / placeholder / it-sugar)" {
+        then "bare, arg-prepend, placeholder, chained, and it-sugar pipes agree" {
+            dsl("a |> f") != "<err>" &&
+            agree("a |> f") && agree("a |> f(b)") && agree("a |> f(_, b)") &&
+            agree("a |> f |> g") && agree("xs |> filter(it > 2)") &&
+            agree("x |> g(1) |> h")
+        }
+    }
+}

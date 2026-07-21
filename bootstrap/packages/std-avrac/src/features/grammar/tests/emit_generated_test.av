@@ -1,10 +1,14 @@
-// ps3t.6.5.11 — emit.av now RENDERS the GENERATED STATIC PARSER: real,
-// compilable `fn parse_<rule>(st: PState) -> CapVal` source (not the retired
-// pseudo-syntax `p.match(...)` / `collect x +=` / `p.node(...)`). These specs
-// pin, per rule family, that the emitted text is the CapVal/PState static form
-// — the exact shape tests/gen_expr_parser_test.av hand-writes and proves
-// behaviourally (differential vs the hand parser), and that
-// diagnose.sh --emit-gen-check compiles + runs end-to-end (GENPASS).
+// ps3t.6.5.11 — emit.av RENDERS the GENERATED STATIC PARSER: real, compilable
+// `fn parse_<rule>(st: PState) -> CapVal` source (not the retired pseudo-syntax
+// `p.match(...)` / `collect x +=` / `p.node(...)`). These specs pin, per rule
+// family, that the emitted text is the CapVal/PState static form.
+//
+// ps3t.6.7 Step C: avra_expr_grammar now owns only the DECLARATIVE operator
+// ladder (logic_or → factor); the PROCEDURAL leaf (unary/postfix/primary) is a
+// single `@hand(hand_unary)` delegation — the hand postfix chain is newline-
+// sensitive + mode-stateful, so it is NOT expressible byte-identically in the
+// stateless token-grammar. The emitter lowers that leaf to a guarded
+// `run_hand_expr("hand_unary", st)` call, mirrored here.
 //
 // This is the fast in-suite regression guard on the emitter; the airtight
 // "generated fns compile + pass the differential test" gate is the diagnose
@@ -30,14 +34,18 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "every rule lowers to `fn parse_<name>(st: PState) -> CapVal`" {
         let src = emit_all()
         src.contains("fn parse_expression(st: PState) -> CapVal") &&
+        src.contains("fn parse_assignment(st: PState) -> CapVal") &&
+        src.contains("fn parse_pipe(st: PState) -> CapVal") &&
+        src.contains("fn parse_null_coalesce(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_or(st: PState) -> CapVal") &&
+        src.contains("fn parse_logic_and(st: PState) -> CapVal") &&
         src.contains("fn parse_equality(st: PState) -> CapVal") &&
+        src.contains("fn parse_eq_tail(st: PState) -> CapVal") &&
+        src.contains("fn parse_in_rhs(st: PState) -> CapVal") &&
+        src.contains("fn parse_comparison(st: PState) -> CapVal") &&
         src.contains("fn parse_term(st: PState) -> CapVal") &&
         src.contains("fn parse_factor(st: PState) -> CapVal") &&
-        src.contains("fn parse_unary(st: PState) -> CapVal") &&
-        src.contains("fn parse_postfix(st: PState) -> CapVal") &&
-        src.contains("fn parse_suffix(st: PState) -> CapVal") &&
-        src.contains("fn parse_primary(st: PState) -> CapVal")
+        src.contains("fn parse_unary(st: PState) -> CapVal")
     }
 
     then "the retired pseudo-syntax is GONE (real primitives only)" {
@@ -48,8 +56,42 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("p.recover_to(")
     }
 
-    then "a pass-through rule is a bare delegating call (`expression = logic_or`)" {
-        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_logic_or(st)\n}")
+    then "a pass-through rule is a bare delegating call (`expression = assignment`)" {
+        emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_assignment(st)\n}")
+    }
+
+    then "the equality stratum retargets is/in/==-chain via rebind_eq_expr" {
+        // `equality = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)` with
+        // the eq_tail partial (is / in-list / in-range / ==-chain) retargeted.
+        let src = emit_all()
+        src.contains("CapVal.Node(rebind_eq_expr(st, base, tail))") &&
+        src.contains("CapVal.Node(mk_is_expr(st, v))") &&
+        src.contains("mk_eqchain_expr(st, CapVal.Toks(op_list), CapVal.Nodes(r_list))") &&
+        src.contains("mk_inrange_expr(st, s, e)")
+    }
+
+    then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
+        // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
+        let src = emit_all()
+        src.contains("let l = parse_pipe(st)") &&
+        src.contains("if st.cur().text == \"=\" {") &&
+        src.contains("r = parse_assignment(st)") &&
+        src.contains("CapVal.Node(mk_assign_expr(st, l, r))")
+    }
+
+    then "the pipe stratum folds `|>` with @hand(pipe_rhs) operands" {
+        // `pipe = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)` with
+        // `pipe_arg = @hand(pipe_rhs)` (parse_or + it-sugar).
+        let src = emit_all()
+        src.contains("while st.cur().text == \"|>\" {") &&
+        src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
+        src.contains("CapVal.Node(fold_pipe_expr(st, l, CapVal.Nodes(r_list)))")
+    }
+
+    then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
+        let src = emit_all()
+        src.contains("while st.cur().text == \"??\" {") &&
+        src.contains("CapVal.Node(fold_nullish_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
     then "a fold rule accumulates ops+rhs and folds via the build helper" {
@@ -64,73 +106,38 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_binary_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "the logical strata use fold_logical_expr (`||`, `&&`)" {
+    then "the logical strata use fold_logical_expr and accept keyword spellings" {
+        // ps3t.6.7 Step C: `||`/`or` and `&&`/`and` both spell the same LogicOp
+        // (logicop_of maps both) — the guard unions the two token texts.
         let src = emit_all()
-        src.contains("while st.cur().text == \"||\" {") &&
-        src.contains("while st.cur().text == \"&&\" {") &&
+        src.contains("while st.cur().text == \"||\" || st.cur().text == \"or\" {") &&
+        src.contains("while st.cur().text == \"&&\" || st.cur().text == \"and\" {") &&
         src.contains("CapVal.Node(fold_logical_expr(st, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "a prefix rule guards its op set then recurses, else falls through" {
-        // `unary = op:("!"|"-"|"~") operand:unary -> Unary(op, operand) | postfix`
+    then "the factor rule's operand recurses into the @hand leaf (`r:unary`)" {
+        // `factor = l:unary ( op:("*"|"/"|"%") r:unary )* -> fold_binary`
         let src = emit_all()
-        src.contains("if st.cur().text == \"!\" || st.cur().text == \"-\" || st.cur().text == \"~\" {") &&
-        src.contains("let op = CapVal.Tok(st.advance())") &&
-        src.contains("let operand = parse_unary(st)") &&
-        src.contains("return CapVal.Node(unary_expr(st, op, operand))") &&
-        src.contains("    parse_postfix(st)\n}")
+        src.contains("let l = parse_unary(st)") &&
+        src.contains("while st.cur().text == \"*\" || st.cur().text == \"/\" || st.cur().text == \"%\" {") &&
+        src.contains("rs.push(capval_to_expr(st, parse_unary(st)))")
     }
 
-    then "the postfix rule accumulates suffixes and folds them left-assoc" {
+    then "the procedural leaf `unary` is a bare @hand(hand_unary) delegation" {
+        // ps3t.6.7 Step C: unary/postfix/primary collapse to ONE @hand rule — a
+        // single-branch rule, so it lowers to the bare tail call (no FIRST-guard
+        // / error tail; those belong to multi-branch dispatch). The whole
+        // newline-sensitive leaf is delegated to the hand parser via run_hand_expr.
         let src = emit_all()
-        src.contains("let base = parse_primary(st)") &&
-        src.contains("while st.cur().text == \".\" || st.cur().text == \"[\" || st.cur().text == \"(\" {") &&
-        src.contains("CapVal.Node(fold_postfix_expr(st, base, CapVal.Nodes(ss)))")
-    }
-
-    then "the suffix dispatch builds partial FieldAccess / Index / Call nodes" {
-        let src = emit_all()
-        src.contains("Expr.FieldAccess(st.missing_node(), capval_tok_text(name))") &&
-        src.contains("Expr.Index(st.missing_node(), capval_to_expr(st, idx))") &&
-        src.contains("Expr.Call(st.missing_node(), a_list)")
-    }
-
-    then "the call-suffix arg list is a delimited-list accumulation" {
-        let src = emit_all()
-        src.contains("mut a_list: List<ExprId> = []") &&
-        src.contains("a_list.push(capval_to_expr(st, parse_expression(st)))") &&
-        src.contains("while st.cur().text == \",\" {")
-    }
-
-    then "primary dispatches literals by kind, keywords by text, IDENT via @hand" {
-        let src = emit_all()
-        src.contains("if st.cur().kind == \"NUMBER\" {") &&
-        src.contains("if st.cur().kind == \"STRING\" {") &&
-        src.contains("if st.cur().text == \"true\" {") &&
-        src.contains("if st.cur().text == \"false\" {") &&
-        src.contains("return CapVal.Node(literal_node(st, st.advance()))") &&
-        src.contains("if st.cur().kind == \"IDENT\" {") &&
-        src.contains("return CapVal.Node(run_hand(\"ident\", st))")
-    }
-
-    then "the grouping branch lowers @expect/@recover to report + synchronize" {
-        let src = emit_all()
-        src.contains("let e = parse_expression(st)") &&
-        src.contains("if st.cur().text == \")\" { let _ = st.advance() } else {") &&
-        src.contains("st.report(\"expected ')'\")") &&
-        src.contains("st.synchronize(\")\")") &&
-        src.contains("Expr.Grouping(capval_to_expr(st, e))")
-    }
-
-    then "a whole-construct no-match tail emits an error node" {
-        emit_all().contains("CapVal.Node(st.error_node(\"expected an expression\"))")
+        src.contains("fn parse_unary(st: PState) -> CapVal {") &&
+        src.contains("CapVal.Node(run_hand_expr(\"hand_unary\", st))")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
-        // emit_rule_fn(g, postfix) needs the grammar to resolve suffix's FIRST
-        // set for its `while` guard.
+        // emit_rule_fn(g, term) needs the grammar to resolve factor's FIRST set
+        // for its `while` guard — the operator group here.
         let g = avra_expr_grammar()
-        let postfix = emit_rule_fn(g, rule_named(g, "postfix"))
-        postfix.contains("while st.cur().text == \".\" || st.cur().text == \"[\" || st.cur().text == \"(\" {")
+        let term = emit_rule_fn(g, rule_named(g, "term"))
+        term.contains("while st.cur().text == \"+\" || st.cur().text == \"-\" {")
     }
 }

@@ -1,0 +1,74 @@
+// ps3t.6.5.12 — the pattern-family FLIP dispatch (parse_pattern_or → grammar-DSL).
+//
+// parse_pattern_or routes through run_dsl_pattern_at_shared (the inverse-@hand
+// pattern runner over avra_pat_grammar's `pattern_or` rule) when the parser's
+// `pat_flip` field is set, falling back to the hand parser on a DSL error. The
+// field is read once from AVRA_PARSER_PAT_FLIP at construction but is a plain
+// `mut bool` a test can set directly — exercising the flip path with no
+// process-env dependency (the full-selfhost flip proof is memory-heavy and
+// lives in the promotion step; this pins the dispatch + fallback wiring).
+//
+// Parity = same tree AND same accept/reject: for every VALID pattern form the
+// flip path (DSL) and the hand path (parse_pattern_or_hand — called explicitly
+// so it stays a real hand baseline under the promoted default) build the same
+// Pattern; for INVALID forms both must REJECT. flip_pat/hand_pat return the SAME
+// "<err>" sentinel on a parse error, so a mutual rejection is agreement (a
+// bare identifier cannot bind at pattern top level, and a variant sub-pattern
+// cannot mix with a bare-ident sub — both parsers reject those identically).
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_pat_id}
+
+fn flip_pat(src: string) -> string {
+    mut p = parser_new(src)
+    p.pat_flip = true
+    match p.parse_pattern_or() {
+        .Ok(id) -> render_pat_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn hand_pat(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_pattern_or_hand() {
+        .Ok(id) -> render_pat_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_pat(src) == hand_pat(src)
+}
+
+spec "ps3t.6.5.12: parse_pattern_or flip dispatch == hand path (pat_flip field)" {
+    given "the field toggles the path (sanity: flip really took the DSL branch)" {
+        then "flip builds a real tree and agrees with hand for a representative form" {
+            flip_pat(".Foo(a, b)") != "<err>" &&
+            flip_pat(".Foo(a, b)") == hand_pat(".Foo(a, b)")
+        }
+    }
+    given "wildcard, rest, and literals (incl. negatives)" {
+        then "each atom shape agrees" {
+            agree("_") && agree("rest") &&
+            agree("1") && agree("-1") && agree("1.5") && agree("-2.5") &&
+            agree("\"hi\"") && agree("true") && agree("false")
+        }
+    }
+    given "variant patterns: nullary, bindings, nested sub-patterns" {
+        then "each variant shape agrees" {
+            agree(".None") && agree(".Some(x)") && agree(".Pair(a, b)") &&
+            agree(".Wrap(.Inner(y))")
+        }
+    }
+    given "or-patterns (right-recursive) and the optional-match surface" {
+        then "or chains and let/none/null agree" {
+            agree(".A or .B") && agree("1 or 2 or 3") && agree(".Some(x) or .None") &&
+            agree("let v") && agree("none") && agree("null")
+        }
+    }
+    given "reject parity: both parsers reject the same invalid forms" {
+        then "bare-ident top-level and mixed variant/bare subs reject on both" {
+            flip_pat("x") == "<err>" && hand_pat("x") == "<err>" &&
+            flip_pat(".Node(.Leaf(v), r)") == "<err>" && hand_pat(".Node(.Leaf(v), r)") == "<err>"
+        }
+    }
+}

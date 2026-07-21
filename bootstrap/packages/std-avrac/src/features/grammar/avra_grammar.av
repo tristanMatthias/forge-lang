@@ -16,19 +16,34 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar, Rule}
+use features.grammar.{parse_grammar, Grammar, Rule, build_rule_index}
 
-/// The canonical §2 Avra expression grammar as a `grammar { }` block. The
-/// operator stratification (logical → bitwise → shift → comparison → additive →
-/// multiplicative → unary → postfix → primary) folds left-associatively via the
-/// build helpers; `@hand(ident)` is the escape hatch for identifiers; grouping
-/// carries the @expect/@recover error annotations.
+/// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
+/// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
+/// comparison → additive → multiplicative), folding left-associatively via the
+/// build helpers. The PROCEDURAL leaf — prefix unary ops, `with`/splice, the
+/// newline-sensitive postfix chain, and every primary form — delegates wholesale
+/// to the hand parser via `@hand(hand_unary)` (→ `parse_unary`). That leaf is NOT
+/// expressible in the stateless token-grammar byte-identically: `parse_call`'s
+/// postfix loop is newline-sensitive (`.UpperIdent`/`[`/`(` on a new line = a new
+/// statement) and mode-stateful (`allow_struct_lit`, `allow_dot_postfix`,
+/// `allow_it_sugar`, `quote_depth`), so the @hand escape hatch (GRAMMAR_DSL.md §5)
+/// is the correct — and byte-identity-preserving — home for it (ps3t.6.7 Step C).
 export fn avra_expr_grammar() -> Grammar {
     let gp = grammar {
-  expression = logic_or
-  logic_or   = l:logic_and ( op:("||") r:logic_and )* -> fold_logical(l, op, r)
-  logic_and  = l:equality ( op:("&&") r:equality )* -> fold_logical(l, op, r)
-  equality   = l:bitor ( op:("!=" | "==") r:bitor )* -> fold_binary(l, op, r)
+  expression    = assignment
+  assignment    = l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
+  pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
+  pipe_arg      = @hand(pipe_rhs)
+  null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
+  logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
+  logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
+  equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
+  eq_tail       = "is" "." v:IDENT -> mk_is(v)
+                | "in" ir:in_rhs -> ir
+                | ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
+  in_rhs        = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
+                | s:bitor ".." e:bitor -> mk_inrange(s, e)
   bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
   bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
   bitand     = l:comparison ( op:("&") r:comparison )* -> fold_binary(l, op, r)
@@ -36,13 +51,7 @@ export fn avra_expr_grammar() -> Grammar {
   shift      = l:term ( op:("<<" | ">>") r:term )* -> fold_binary(l, op, r)
   term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
-  unary      = op:("!" | "-" | "~") operand:unary -> Unary(op, operand) | postfix
-  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)
-  suffix     = "." name:IDENT -> field_suffix(name)
-             | "[" idx:expression "]" -> index_suffix(idx)
-             | "(" ( a:expression ( "," a:expression )* )? ")" -> call_suffix(a)
-  primary    = NUMBER | STRING | "true" | "false" | @hand(ident)
-             | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
+  unary      = @hand(hand_unary)
     }
     gp.grammar
 }
@@ -56,7 +65,7 @@ fn compose_grammars(head: Grammar, tail: Grammar) -> Grammar {
     mut rules: List<Rule> = []
     for r in head.rules { rules.push(r) }
     for r in tail.rules { rules.push(r) }
-    Grammar { name: head.name, rules }
+    Grammar { name: head.name, rules, rule_idx: build_rule_index(rules) }
 }
 
 /// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return
@@ -111,7 +120,7 @@ export fn avra_type_grammar() -> Grammar {
   dyn_type   = "dyn" t:IDENT -> TyDyn(t)
   list_type  = "[" e:type_expr "]" -> TyList(e)
   paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
-  named_type = name:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
     }
     gp.grammar
 }
@@ -161,7 +170,7 @@ export fn avra_program_grammar() -> Grammar {
   dyn_type    = "dyn" dt:IDENT -> TyDyn(dt)
   list_type   = "[" el:type_expr "]" -> TyList(el)
   paren_type  = "(" ( pt2:type_expr ( "," pt2:type_expr )* )? ")" -> TyParen(pt2)
-  named_type  = tn:IDENT ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
+  named_type  = tn:IDENT ( "." tn:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
   expression  = equality
   equality    = l:comparison ( op:("!=" | "==") r:comparison )* -> fold_binary(l, op, r)
   comparison  = l:term ( op:("<" | "<=" | ">" | ">=") r:term )* -> fold_binary(l, op, r)

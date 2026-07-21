@@ -17,8 +17,9 @@
 
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
-use features.grammar.{Token, lex_real}
-use parse.{parser_new_with_file}
+use features.grammar.{Token, lex_real, rule_index_of}
+use parse.{parser_new_with_file, parser_new_with_store, Parser}
+use list_ops.{lower_bound}
 
 // ── Capture values + environment ──
 
@@ -321,7 +322,25 @@ export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags
 // char-level lookahead). Empty on the caller-provided-token path (the
 // eventual swap-in uses a real Parser for @hand, not this interpreter).
 // EXPORTED (ps3t.6.5.11): the generated static parser drives a PState directly.
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool }
+//
+// `modes` (ps3t.6.7 Step B) carries the caller parser's context-sensitive modes
+// so an `@hand` expression delegation (run_hand_expr → a fresh hand parser)
+// reproduces the ORIGINAL parse: `allow_struct_lit` (a `{` in an if/while/for
+// header is a block, not a struct literal), `allow_dot_postfix` (match-arm
+// bodies), `allow_it_sugar` (the `it` pronoun), `quote_depth` (a leading `~` is
+// splice, not bit-not), `cell_mode` (a leading `+`/`-` on a table-cell's next
+// line ends the cell). Every non-expr-flip PState defaults these to a fresh hand
+// parser's values, so the already-promoted type/pattern @hand paths are unchanged.
+export type ExprModes = { allow_struct_lit: int, allow_dot_postfix: int, allow_it_sugar: int, quote_depth: int, cell_mode: bool }
+
+/// The modes of a freshly-constructed hand parser (parser_new_with_file) — the
+/// default for every PState that isn't the expression flip, so run_hand_expr's
+/// delegated parser behaves exactly as it does today on those paths.
+export fn default_expr_modes() -> ExprModes {
+    ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
+}
+
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, modes: ExprModes, file: string, hand_delegate: Parser? }
 
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
@@ -426,9 +445,12 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, tok: Token, visited: List<string>) -> b
 }
 
 fn lookup_rule(g: Grammar, name: string) -> Rule {
-    for r in g.rules {
-        if r.name == name { return r }
-    }
+    // O(1) resolution via the Grammar's precomputed name->index map
+    // (build_rule_index), replacing the former O(rules) linear name scan
+    // that ran on every rule descent. First-match semantics preserved:
+    // build_rule_index keeps the earliest index for a duplicated name.
+    let idx = rule_index_of(g, name)
+    if idx >= 0 { return g.rules[idx] }
     Rule { name: "", body: GNode.Alt([]) }
 }
 
@@ -441,7 +463,20 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// then `parse_<start>(st)`, then `capval_to_expr(st, …)` for the root — exactly
 /// the `run_grammar_expr_src` boundary, minus the interpreter.
 export fn new_pstate(src: string) -> PState {
-    PState { toks: lex_real(src), pos: 0, store: new_node_store(build_line_index(src)), src, diags: [], had_error: false }
+    let store = new_node_store(build_line_index(src))
+    // Attach ONE reusable @hand delegate (sharing the store) so run_hand_expr
+    // forward-advances a SINGLE parser across the whole parse — O(source) — rather
+    // than building a fresh parser (~53 build_registry registrations) AND re-lexing
+    // from byte 0 to the leaf on EVERY @hand leaf, which is O(source^2). That
+    // quadratic fallback made the emit-gen generated parser ~72x slower than the
+    // hand parser (measured, callgrind); the reused delegate closes that gap. Leaf
+    // positions are visited monotonically (predictive LL, no backtracking), so the
+    // delegate advances each token once. Tree-equivalent to the fresh-parser path
+    // (only line/span accounting differs, which dump-based equivalence ignores).
+    mut d = parser_new_with_store(src, "", store)
+    d.records_roots = 0
+    d.expr_flip = false
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: d }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -467,7 +502,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -502,7 +537,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -526,7 +561,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -559,7 +594,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// path) so a `@hand` type rule (`@pkg::T` → `run_hand_type` → parse_type_atom)
 /// can delegate over the original source (ps3t.6.5.10).
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -632,6 +667,21 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
     }
 }
 
+/// ps3t.6.7 newline-sensitivity gate: true unless `item.sameline` (the `^`
+/// marker) requires the current token to be on the same source line as the
+/// previously-consumed token and it isn't. The line of a byte offset comes from
+/// the store's LineIndex (built from the same source `Token.pos` indexes into),
+/// so this is the executor mirror of the hand parser's `current_line ==
+/// prev_line` postfix gate — a cross-line postfix (`.method` / `(` / `[` on the
+/// next line) ends the chain instead of continuing it.
+fn sameline_ok(st: PState, item: GItem) -> bool {
+    if !item.sameline { return true }
+    if st.pos == 0 { return true }
+    let prev_line = st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line
+    let cur_line = st.store.lines.to_linecol(st.cur().pos).line
+    prev_line == cur_line
+}
+
 /// Execute one postfix item, honouring its repetition, and bind its
 /// capture (scalar in a normal position, list-append inside `*`/`+`).
 fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
@@ -643,7 +693,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
             v
         }
         .Opt -> {
-            if tok_starts_prim(g, item.prim, st.cur(), empty) {
+            if tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
                 let v = exec_primary(g, item.prim, st, env, multi, annots)
                 bind(env, item.label, v, multi)
                 return v
@@ -669,7 +719,9 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
 /// Bounded — a non-consuming iteration breaks the loop.
 fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
     let empty: List<string> = []
-    while tok_starts_prim(g, item.prim, st.cur(), empty) {
+    // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
+    // mirror of the hand parser's newline-terminated postfix loop.
+    while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
         bind(env, item.label, v, true)
@@ -733,6 +785,23 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
     if name == "quote_expr" { return tok.text == "quote" }
+    // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
+    if name == "template_expr" { return tok.kind == "TEMPLATE" }
+    // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
+    if name == "brace_expr" { return tok.text == "{" }
+    // The ident-primary (bare ident / struct literal / qualified @pkg::T /
+    // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
+    // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
+    // adds field/index/call suffixes.
+    if name == "ident_expr" { return tok.kind == "IDENT" || tok.text == "@" }
+    // The remaining primaries served by parse_primary: enum constructors
+    // (`.Variant(..)`) and list literals (`[ .. ]`) (ps3t.6.7 Step C).
+    if name == "more_primary" { return tok.text == "." || tok.text == "[" }
+    // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
+    // shared exported predicate, mirrored by emit's hand_first_guard.
+    if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
+    // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
+    if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
     false
 }
 
@@ -780,8 +849,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // the built node's body spans. The bridging parser's fresh gensym counter
     // starts at 0 — matching a single-statement oracle parse — so a hygienic
     // desugar (`let … else`) mints the identical temp name.
-    mut bp = parser_new_with_file(st.src, "")
-    bp.store = st.store
+    mut bp = parser_new_with_store(st.src, "", st.store)
     bp.records_roots = 0
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     // Dispatch to the real hand-parser entry (method calls on the local `bp`,
@@ -832,7 +900,23 @@ export fn run_hand_type(name: string, st: PState) -> TypeExpr {
     mut bp = parser_new_with_file(st.src, "")
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let result = bp.parse_type_atom("expected type")
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    // Resync the DSL cursor to where the hand delegate stopped. If the delegate
+    // closed a NESTED qualified generic by SPLITTING a `>>` (its own
+    // maybe_split_shr, stopping ON the second `>`), the DSL's own `>>` token
+    // straddles bp.current_start: the delegate consumed the first `>`, and the
+    // second must stay for the ENCLOSING generic's close — e.g. the outer
+    // `List<…>` of `List<@pkg::mod::T<V>>`. Split it in place instead of
+    // advancing past the whole shift token (which would swallow the `>` the DSL
+    // needs to close the outer generic, mis-parsing the type). This is the
+    // executor-side mirror of the hand parser's maybe_split_shr and of
+    // parse_type_expr's own resync split (ps3t.6.7).
+    while !st.at_end() && st.cur().pos < bp.current_start {
+        if st.cur().text == ">>" && st.cur().pos + 1 == bp.current_start {
+            let _ = st.split_gt()
+        } else {
+            let _ = st.advance()
+        }
+    }
     match result {
         .Ok(te) -> te
         .Err(m) -> {
@@ -840,6 +924,120 @@ export fn run_hand_type(name: string, st: PState) -> TypeExpr {
             TypeExpr.Named("")
         }
     }
+}
+
+/// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
+/// stopped at (so a hand-parser caller can resync its token cursor), and the
+/// error channel.
+export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand TYPE runner (ps3t.6.5.12 slice 1) — the exact mirror of
+/// `run_hand_type`. Where `run_hand_type` lets a DSL type rule delegate a span
+/// to the hand parser, THIS lets the hand parser delegate a whole type
+/// expression to the DSL: it runs the UNIFIED program grammar's `type_expr`
+/// rule over `src` starting at byte `start_byte`, and reports the byte where the
+/// DSL stopped (`stop_byte`) so a caller can resync its own cursor.
+///
+/// It is PURE w.r.t. any live `Parser` (it takes `src` + a byte offset, not a
+/// mutable parser), so ONE function serves both consumers of the swap-in:
+///   * the FLIP — the caller advances its token cursor to `stop_byte`;
+///   * the SHADOW canary — the caller compares `te` to its own parse and
+///     discards `stop_byte`, leaving the authoritative parser untouched.
+/// Byte positions align exactly because `lex_real` drives the SAME shipping
+/// lexer the hand parser streams (so `Token.pos` == `Parser.current_start` at
+/// every boundary), and `PState.cur()` returns the trailing EOF token — whose
+/// `pos` is the end-of-source byte — so `stop_byte` is valid even at EOF.
+///
+/// The PROGRAM grammar (not the isolated `avra_type_grammar`) is used so its
+/// `type_atom = @hand(qualified_type) | ...` alternative serves the qualified
+/// `@pkg::mod::T` form that re-emitted `@comptime` bodies carry — the one
+/// selfhost-critical type atom the isolated grammar can't build.
+export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
+    run_dsl_type_at_toks(lex_real(src), start_byte, src)
+}
+
+/// Token-sharing form of `run_dsl_type_at` (the "lex-once" layer, ps3t.6.5.12
+/// Step D). Takes a PRE-LEXED `toks` list so a caller that parses many type
+/// annotations from ONE source (the flip inside `parse_type_expr`) lexes it
+/// exactly once and reuses the list — instead of `run_dsl_type_at` re-lexing the
+/// whole file per annotation (the O(n²) + per-call allocation that OOM'd the
+/// full-selfhost flip compile). `src` is still threaded for the `@hand`
+/// delegation (`@pkg::T` → the hand parser over the original source) and the
+/// line index. Behaviour is otherwise identical to `run_dsl_type_at`.
+export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) -> DslTypeResult {
+    run_dsl_type_at_shared(toks, start_byte, src, new_node_store(build_line_index(src)), avra_program_grammar())
+}
+
+/// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
+/// `grammar` in addition to pre-lexed `toks`, so a caller parsing many type
+/// annotations from one source builds NONE of the three per annotation. The
+/// `run_dsl_type_at_toks` layer still re-lexed once but rebuilt a fresh node
+/// store (a fresh ARENA) + the 41-rule grammar + a line index PER call — fresh
+/// arenas never free, so across a selfhost compile's thousands of annotations
+/// they accumulated to ~7.5GB over the hand baseline. Reusing one store + one
+/// grammar per parser bounds it. The store is the DSL's OWN scratch arena
+/// (isolated from the hand parser's, so the real parse's node-id space is
+/// unaffected — byte-identity preserved); accumulation across a file's
+/// annotations is bounded and harmless (each call returns a fresh TypeExpr
+/// value, never a store id).
+export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
+/// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
+/// in the caller's shared `store` — patterns are arena-backed, unlike types),
+/// the stop byte for cursor resync, and the error channel.
+export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand PATTERN runner (ps3t.6.5.12) — the pattern-family sibling of
+/// `run_dsl_type_at_shared`. Runs `grammar`'s `rule` (`pattern_or` for the
+/// or-pattern top entry, `pattern` for a bare atom entry) over the pre-lexed
+/// `toks` at byte `start_byte`, returning the built PatId + the resync stop
+/// byte. UNLIKE the type runner, patterns are arena-backed, so it allocates into
+/// the caller-owned `store` and returns an id VALID in it (the hand parser reads
+/// the id straight back) — the `run_hand_stmt`/`run_grammar_pat_toks` store-
+/// sharing shape. Reuses the caller's token + grammar caches (lex-once), so a
+/// file's many patterns cost one lex + one grammar build.
+export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
+/// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
+/// VALID in the caller's shared `store` — expressions are arena-backed, like
+/// patterns), the stop byte for cursor resync, and the error channel.
+export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, diag: string }
+
+/// INVERSE-@hand EXPRESSION runner (ps3t.6.5.12) — the expression-family sibling
+/// of `run_dsl_pattern_at_shared`. Runs `grammar`'s `expression` rule over the
+/// pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned `store` (the
+/// returned id is valid in it — the hand parser reads it straight back), and
+/// threads the caller's parser `modes` into the PState so the `@hand(hand_unary)`
+/// leaf reproduces the original mode-sensitive parse (allow_struct_lit in
+/// control-flow headers, etc.). Reuses the caller's token + grammar caches
+/// (lex-once), so a file's many expressions cost one lex + one grammar build.
+export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
 /// True for hand rules that build an EXPRESSION via REAL hand delegation
@@ -851,7 +1049,28 @@ export fn run_hand_type(name: string, st: PState) -> TypeExpr {
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "pipe_rhs"
+}
+
+/// The FIRST-set of a leaf expression — every token that can begin the
+/// procedural unary/postfix/primary layer the DSL delegates wholesale via
+/// `@hand(hand_unary)` (→ `parse_unary`). Kept as ONE exported predicate so the
+/// executor's `hand_starts` AND the emitted static parser's FIRST-guard share a
+/// single source of truth (rule 8). It is the union of `parse_unary`'s prefix
+/// operators (`! - ~ not` + quote-only `~`splice) and `parse_primary`'s FIRST
+/// tokens (parse/mod.av) — literals by kind, keyword/enum/delimiter primaries by
+/// text. WHY delegate the whole leaf rather than express it in the DSL: the hand
+/// postfix loop (`parse_call`) is NEWLINE-SENSITIVE (`.UpperIdent` / `[` / `(` on
+/// a new line = a new statement, `dot_is_postfix`) and mode-stateful
+/// (`allow_struct_lit` / `allow_dot_postfix` / `allow_it_sugar` / `quote_depth`),
+/// which the stateless token-grammar cannot reproduce byte-identically.
+export fn tok_starts_expr_leaf(tok: Token) -> bool {
+    if tok.kind == "IDENT" || tok.kind == "NUMBER" || tok.kind == "STRING" || tok.kind == "BOOL" || tok.kind == "TEMPLATE" { return true }
+    let t = tok.text
+    t == "~" || t == "!" || t == "-" || t == "not" || t == "@" || t == "." ||
+    t == "(" || t == "[" || t == "{" ||
+    t == "match" || t == "if" || t == "spawn" || t == "channel" || t == "isolated" || t == "when" || t == "quote" ||
+    t == "null" || t == "none"
 }
 
 /// Run an EXPRESSION hand rule by delegating to the real hand parser over the
@@ -872,13 +1091,57 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         return st.error_node("`@hand(${name})` needs the source, unavailable here")
     }
     let start_byte = st.cur().pos
-    mut bp = parser_new_with_file(st.src, "")
-    bp.store = st.store
+    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) — created
+    // once per file and SYNCED to the outer parser's cursor+line before this
+    // expression (see parse_expression). It forward-advances from its CURRENT
+    // position to the leaf (WITHIN this expression), never from byte 0, so it lexes
+    // each token once (O(source) over a file, not O(source²)) AND carries the
+    // accumulated line — including the deliberate is_map_literal nudges — so the
+    // leaf's nodes get the SAME line the hand parser would. Building a fresh parser
+    // per leaf instead would (a) pay build_registry() ~53 registrations per leaf
+    // (the OOM) and (b) re-derive line from offset 0, LOSING the accumulated nudge.
+    // Fallback to a fresh parser when no delegate is threaded (the type/pattern
+    // @hand paths + unit tests, which need no cross-expression line continuity).
+    mut bp = if st.hand_delegate == null {
+        parser_new_with_store(st.src, st.file, st.store)
+    } else {
+        st.hand_delegate!
+    }
     bp.records_roots = 0
+    bp.had_error = false
+    bp.error_message = ""
+    // ps3t.6.7 Step B — reproduce the ORIGINAL parse context. On the type/pattern
+    // @hand paths PState carries a fresh parser's defaults (no-op); on the
+    // expression flip these are the caller's live modes, so an `@hand(hand_unary)`
+    // in an `if Foo { … }` condition sees allow_struct_lit=false (Foo-then-block,
+    // not a struct literal) — the difference that makes the flip byte-identical.
+    bp.allow_struct_lit = st.modes.allow_struct_lit
+    bp.allow_dot_postfix = st.modes.allow_dot_postfix
+    bp.allow_it_sugar = st.modes.allow_it_sugar
+    bp.quote_depth = st.modes.quote_depth
+    bp.cell_mode = st.modes.cell_mode
+    // The @hand leaf IS the hand parser — it must NOT re-enter the expression
+    // flip for its nested sub-expressions (a `f(arg)` call's args, a slice index,
+    // …), or the DSL runner would recurse into itself per nested expr. Force the
+    // delegate's expr_flip off; the top operator ladder stays DSL, the whole
+    // leaf-and-below is hand-parsed (byte-identical, since the ladders match).
+    bp.expr_flip = false
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let result = match name {
-        "quote_expr" -> bp.parse_quote()
-        _            -> .Err("no hand expression rule `${name}`")
+        "quote_expr"    -> bp.parse_quote()
+        "template_expr" -> bp.parse_template_primary()
+        "brace_expr"    -> bp.parse_brace_expr()
+        "ident_expr"    -> bp.parse_primary()
+        "more_primary"  -> bp.parse_primary()
+        // The whole procedural leaf: prefix unary ops + `with`/splice + the
+        // newline-sensitive postfix chain + every primary form (parse/mod.av
+        // parse_unary → parse_call → parse_primary). The DSL owns only the
+        // declarative binary/infix ladder ABOVE this (ps3t.6.7 Step C).
+        "hand_unary"    -> bp.parse_unary()
+        // The RHS of a `|>` step — a parse_or-level expr with `it`-sugar on, so
+        // the DSL pipe stratum's operands match parse_pipe byte-for-byte.
+        "pipe_rhs"      -> bp.parse_pipe_rhs()
+        _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
     match result {
@@ -1007,6 +1270,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "fold_binary" if args.length == 3 -> CapVal.Node(fold_binary_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "Unary" if args.length == 2 -> CapVal.Node(unary_expr(st, env.get(args[0]), env.get(args[1])))
         "fold_logical" if args.length == 3 -> CapVal.Node(fold_logical_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
+        "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, env.get(args[0]), env.get(args[1])))
+        "fold_pipe" if args.length == 2 -> CapVal.Node(fold_pipe_expr(st, env.get(args[0]), env.get(args[1])))
+        "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, env.get(args[0]), env.get(args[1])))
+        "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
+        "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
+        "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
+        "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
         "Grouping" if args.length == 1 -> {
             // Preserve the parenthesisation node so the produced AST matches
             // the hand-written parser (which wraps `(e)` in Expr.Grouping),
@@ -1763,8 +2034,169 @@ export fn fold_logical_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVa
 }
 
 fn logicop_of(sym: string) -> LogicOp {
-    if sym == "||" { return LogicOp.Or }
+    // Both the symbolic (`||`/`&&`) and keyword (`or`/`and`) spellings map to the
+    // same LogicOp — the hand parser's parse_or/parse_and accept both (mod.av).
+    if sym == "||" || sym == "or" { return LogicOp.Or }
     LogicOp.And
+}
+
+/// `l ( "=" r )?` → an assignment, RETARGETING by the LHS shape (the hand
+/// parser's parse_assignment: an `Ident` LHS → `Expr.Assign`, a `FieldAccess`
+/// LHS → `Expr.FieldAssign`; any other target is an F-code-worthy error). With
+/// no `=` (rcap Nil) the left passes through unchanged. Right-associative — the
+/// grammar's `r:assignment` recursion supplies the nested value.
+export fn mk_assign_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
+    let l = capval_to_expr(st, lcap)
+    match rcap {
+        .Nil -> l
+        _ -> {
+            let r = capval_to_expr(st, rcap)
+            match st.store.exprs.get(l) {
+                .Ident(name) -> st.store.exprs.add_leaf(Expr.Assign(name, r))
+                .FieldAccess(obj, field) -> st.store.exprs.add_leaf(Expr.FieldAssign(obj, field, r))
+                _ -> st.error_node("invalid assignment target")
+            }
+        }
+    }
+}
+
+// ── The `is` / `in` / `==`-chain equality suffix (ps3t.6.7 Step C) ──
+//
+// The DSL alternation can't left-factor "parse bitor THEN branch on is/in/==",
+// so the suffix rule (eq_tail) builds a PARTIAL node whose subject is a
+// `Expr.Missing` sentinel, and rebind_eq_expr retargets that sentinel to the
+// real `base` — the fold_postfix `rebind_receiver` pattern, lifted to the
+// equality stratum. is/in are mutually exclusive with the `==`/`!=` chain
+// (the hand parse_equality returns after is/in), which the eq_tail alternation
+// (distinct FIRSTs: `is` / `in` / `==`|`!=`) captures exactly.
+
+/// `is .Variant` → `Expr.IsCheck(MISSING, name)` (retargeted by rebind_eq_expr).
+export fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.IsCheck(st.missing_node(), capval_tok_text(vcap)))
+}
+
+/// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
+export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
+}
+
+/// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a
+/// `Logical(Binary(_, Ge, s), And, Binary(_, Le, e))`. rebind_eq_expr swaps BOTH
+/// sentinels for `base` (one shared id, as the hand parser does).
+export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
+    let s = capval_to_expr(st, scap)
+    let e = capval_to_expr(st, ecap)
+    let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
+    let le = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Le, e))
+    st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
+}
+
+/// `( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a MISSING
+/// left; rebind_eq_expr retargets the spine-bottom sentinel to `base`. Reuses
+/// fold_binary_expr so the chain matches the plain `==`/`!=` fold byte-for-byte.
+export fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
+    fold_binary_expr(st, CapVal.Node(st.missing_node()), opcap, rcap)
+}
+
+/// Retarget the eq_tail partial's `Expr.Missing` subject(s) to `base` — the
+/// equality-stratum sibling of fold_postfix_expr. With no suffix (tailcap Nil)
+/// the base passes through unchanged.
+export fn rebind_eq_expr(st: PState, basecap: CapVal, tailcap: CapVal) -> ExprId {
+    let base = capval_to_expr(st, basecap)
+    match tailcap {
+        .Nil -> base
+        _ -> rebind_missing_subject(st, capval_to_expr(st, tailcap), base)
+    }
+}
+
+/// Rebuild `tail` with its `Expr.Missing` subject replaced by `base`. Dispatches
+/// on the partial's shape (is / in-list / in-range / ==-chain); the `==`-chain
+/// recurses down the left spine to the sentinel seed.
+fn rebind_missing_subject(st: PState, tail_id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(tail_id) {
+        .IsCheck(_, v) -> st.store.exprs.add_leaf(Expr.IsCheck(base, v))
+        .InCheck(_, items) -> st.store.exprs.add_leaf(Expr.InCheck(base, items))
+        .Logical(ge, op, le) -> {
+            let ge2 = rebind_bin_subject(st, ge, base)
+            let le2 = rebind_bin_subject(st, le, base)
+            st.store.exprs.add_leaf(Expr.Logical(ge2, op, le2))
+        }
+        .Binary(l, op, r) -> st.store.exprs.add_leaf(Expr.Binary(rebind_missing_subject(st, l, base), op, r))
+        _ -> base
+    }
+}
+
+/// Replace the left of a single range-comparison `Binary(_, op, r)` with `base`.
+fn rebind_bin_subject(st: PState, id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(id) {
+        .Binary(_, op, r) -> st.store.exprs.add_leaf(Expr.Binary(base, op, r))
+        _ -> id
+    }
+}
+
+/// Left-fold `l ( "|>" r )*` into the pipe desugar — the hand parse_pipe: `a |> f`
+/// → `f(a)`; `a |> f(b)` → `f(a, b)` (prepend); `a |> f(_, b)` → `f(a, b)` (the `_`
+/// placeholder takes the piped value). Each `r` is a pipe_arg (@hand(pipe_rhs),
+/// parse_or with `it`-sugar). Left-associative: `a |> f |> g` = `g(f(a))`.
+export fn fold_pipe_expr(st: PState, lcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    for rid in capval_nodes(rcap) {
+        acc = match st.store.exprs.get(rid) {
+            .Call(callee, args) -> {
+                if pipe_has_placeholder(st, args) {
+                    st.store.exprs.add_leaf(Expr.Call(callee, pipe_replace_placeholder(st, args, acc)))
+                } else {
+                    mut prepended: List<ExprId> = [acc]
+                    for a in args { prepended.push(a) }
+                    st.store.exprs.add_leaf(Expr.Call(callee, prepended))
+                }
+            }
+            _ -> st.store.exprs.add_leaf(Expr.Call(rid, [acc]))
+        }
+    }
+    acc
+}
+
+/// True iff any arg is the `_` pipe placeholder — mirrors mod.av's
+/// pipe_args_has_placeholder over the shared store.
+fn pipe_has_placeholder(st: PState, args: List<ExprId>) -> bool {
+    for a in args {
+        match st.store.exprs.get(a) {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
+        }
+    }
+    false
+}
+
+/// Replace the first `_` placeholder(s) with the piped value — mirrors mod.av's
+/// pipe_replace_placeholder.
+fn pipe_replace_placeholder(st: PState, args: List<ExprId>, repl: ExprId) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in args {
+        let is_ph = match st.store.exprs.get(a) {
+            .Ident(n) -> n == "_"
+            _ -> false
+        }
+        if is_ph { out.push(repl) } else { out.push(a) }
+    }
+    out
+}
+
+/// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce` chain
+/// (`a ?? b ?? c` = `(a ?? b) ?? c`) — the hand parser's parse_null_coalesce
+/// shape. Sibling of fold_binary_expr / fold_logical_expr.
+export fn fold_nullish_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        acc = st.store.exprs.add_leaf(Expr.NullCoalesce(acc, rs[i]))
+        i = i + 1
+    }
+    acc
 }
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Binary` chain.
@@ -1818,6 +2250,25 @@ export fn capval_nodes(v: CapVal) -> List<ExprId> {
 export fn capval_tok_text(v: CapVal) -> string {
     match v {
         .Tok(t) -> t.text
+        // A dotted type path `A.B.C` — an associated-type projection
+        // (`Self.Item`) or a module-qualified name (`core.ast.BinOp`) — captures
+        // its segments into ONE repeated `.Toks` label (`tn:IDENT ( "." tn:IDENT
+        // )*`); join them with `.` to reconstruct the flat dotted name the hand
+        // parser's parse_type_atom folds into `Named("A.B.C")`. This arm is a
+        // pure EXTENSION of the previous `_ -> ""`: no other caller passes a
+        // `.Toks` here (every other repeated capture reads through the `_list`
+        // accessors), and a `.Toks` used to collapse to "" — so nothing that
+        // works today changes.
+        .Toks(ts) -> {
+            mut out = ""
+            mut i = 0
+            for t in ts {
+                if i > 0 { out = out + "." }
+                out = out + t.text
+                i = i + 1
+            }
+            out
+        }
         _ -> ""
     }
 }

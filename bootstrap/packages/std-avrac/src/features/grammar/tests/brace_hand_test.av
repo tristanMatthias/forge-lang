@@ -1,0 +1,53 @@
+// ps3t.6.7 (parser modes, map-vs-block half) — the grammar-DSL disambiguates a
+// leading `{` into a MAP literal vs a BLOCK expression via the @hand bridge. The
+// map-vs-block decision is a one-/two-token lookahead (`{ }` or `{ "key" : … }`
+// is a map, else a block) that the hand parser does with is_map_literal — a
+// contextual parser mode the stateless token-grammar can't carry. @hand(brace_expr)
+// delegates the whole `{ … }` to parse_brace_expr (byte-identical to parse_primary's
+// `{` arm), so the DSL builds the same map / block the hand parser does.
+//
+// Runtime executor path (parse_grammar + run_grammar_expr) — no comptime/seed dep.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_expr_id}
+
+fn dsl_brace(src: string) -> string {
+    let gp = parse_grammar("expr = @hand(brace_expr)")
+    let r = run_grammar_expr(gp.grammar, src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand_brace(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_primary() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_brace(src) == hand_brace(src)
+}
+
+spec "ps3t.6.7 parser modes: DSL @hand(brace_expr) map-vs-block == hand parser" {
+    given "map literals (string key + colon)" {
+        then "single and multi-entry maps agree and are not errors" {
+            dsl_brace("{ \"k\": 1 }") != "<err>" &&
+            agree("{ \"k\": 1 }") &&
+            agree("{ \"a\": 1, \"b\": 2 }")
+        }
+    }
+    given "the empty brace is a map (is_map_literal treats { } as an empty map)" {
+        then "{ } agrees" {
+            agree("{ }")
+        }
+    }
+    given "blocks (no string-key-colon lookahead)" {
+        then "a bare-expr block and a statement block agree" {
+            dsl_brace("{ y }") != "<err>" &&
+            agree("{ y }") &&
+            agree("{ let z = 1 }")
+        }
+    }
+}

@@ -1,0 +1,59 @@
+// ps3t.6.7 (lexer modes, newline half) — the `^` same-line marker.
+//
+// A grammar item prefixed with `^` matches only if its first token is on the
+// SAME source line as the previously-consumed token — the DSL mirror of the hand
+// parser's `current_line == prev_line` postfix gate (a `.method` / `+` starting
+// on the next line ends the chain, it does not continue it). No Token struct
+// change: the line of a byte offset comes from the store's LineIndex on demand
+// (executor.sameline_ok via store.lines.to_linecol).
+//
+// Proof by contrast: the SAME `^`-marked vs unmarked grammar over `1 + 2` (one
+// line) folds identically, but over `1\n+ 2` (the `+` on the next line) the
+// `^`-marked repetition STOPS at the newline (yields just `1`) while the
+// unmarked one folds across it (yields the same tree as `1 + 2`).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.core.{render_expr_id}
+
+// `^op:"+"` — the additive repetition is same-line-gated. Operands are a `num`
+// RULE (not a bare NUMBER terminal) so they coerce to literal nodes at the rule
+// boundary — fold_binary needs node operands.
+fn marked(src: string) -> string {
+    // `^` on the REPETITION (the starred group): each iteration matches only on
+    // the same line as the previous token — the postfix-chain cutoff.
+    let gp = parse_grammar("expr = l:num ^( op:\"+\" r:num )* -> fold_binary(l, op, r)\nnum = NUMBER")
+    let r = run_grammar_expr(gp.grammar, src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+// The identical grammar WITHOUT the `^` — line-insensitive.
+fn unmarked(src: string) -> string {
+    let gp = parse_grammar("expr = l:num ( op:\"+\" r:num )* -> fold_binary(l, op, r)\nnum = NUMBER")
+    let r = run_grammar_expr(gp.grammar, src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+spec "ps3t.6.7 newline: the `^` same-line marker gates a repetition" {
+    given "a single line — the marker is a no-op" {
+        then "marked and unmarked fold `1 + 2` identically, and it is not a lone number" {
+            marked("1 + 2") != "<err>" && marked("1") != "<err>" &&
+            marked("1 + 2") == unmarked("1 + 2") &&
+            marked("1 + 2") != marked("1")
+        }
+    }
+    given "the `+` on the next line" {
+        then "the `^`-marked repetition STOPS at the newline (yields just the lone `1`)" {
+            marked("1\n+ 2") == marked("1")
+        }
+        then "the UNMARKED repetition folds across the newline (same tree as one line)" {
+            unmarked("1\n+ 2") == unmarked("1 + 2") &&
+            unmarked("1\n+ 2") != marked("1")
+        }
+    }
+    given "a lone number under either grammar renders the same (sanity)" {
+        then "marked and unmarked agree on `1`" {
+            marked("1") == unmarked("1")
+        }
+    }
+}

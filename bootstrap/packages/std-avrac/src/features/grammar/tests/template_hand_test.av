@@ -1,0 +1,76 @@
+// ps3t.6.7 (lexer modes, interpolation half) — the grammar-DSL now handles
+// interpolated strings via the @hand bridge. An interpolated `"..${e}.."` string
+// lexes to a single Tk.Template token (kind "TEMPLATE" in the DSL surface), which
+// has no plain grammar terminal; @hand(template_expr) delegates it to the hand
+// parser's parse_template_primary → desugar_template (the SAME desugar the hand
+// parser uses in parse_primary), so the DSL builds the byte-identical
+// `+`-chain of text + string(expr) fragments. This is the mode-sensitive-
+// construct pattern (like @hand(quote_expr)), the interpolation half of 6.7.
+//
+// Tested through the runtime executor (parse_grammar + run_grammar_expr) rather
+// than the compiler's own grammar blocks, so it exercises the executor's
+// @hand(template_expr) path directly with no comptime/seed dependency.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_expr_id}
+
+// The DSL's rendered expr for `src` under a grammar that accepts a plain STRING
+// or delegates an interpolated string to @hand(template_expr).
+fn dsl_expr(src: string) -> string {
+    let gp = parse_grammar("expr = STRING | @hand(template_expr)")
+    let r = run_grammar_expr(gp.grammar, src)
+    if r.had_error { return "<dsl err>" }
+    render_expr_id(r.store, r.root)
+}
+
+// The hand parser's rendered expr for the same `src` (parse_primary is where the
+// hand parser handles the Tk.Template arm).
+fn hand_expr(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_primary() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> "<hand err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    dsl_expr(src) == hand_expr(src)
+}
+
+// Build the SOURCE of an interpolated string literal WITHOUT the "${" appearing
+// contiguously in THIS file (which would interpolate here). `d` is a lone "$".
+fn interp(body: string) -> string {
+    "\"" + body + "\""
+}
+
+// NOTE: no interpolation syntax appears in ANY string literal here (not even in
+// descriptions) — the interpolated SOURCE under test is built by concatenating a
+// lone "$" with "{...}", so this file itself never triggers interpolation.
+spec "ps3t.6.7 interpolation: DSL @hand(template_expr) == hand parser" {
+    given "a lone interpolation" {
+        then "hi-x interpolation agrees and is not a DSL error" {
+            let d = "$"
+            let s = interp("hi " + d + "{x}")
+            dsl_expr(s) != "<dsl err>" && agree(s)
+        }
+    }
+    given "multiple interpolations + surrounding text" {
+        then "a-and-b interpolation agrees" {
+            let d = "$"
+            let s = interp(d + "{a} and " + d + "{b}!")
+            agree(s)
+        }
+    }
+    given "a nested-call interpolation expression" {
+        then "v-equals-f-of-y interpolation agrees" {
+            let d = "$"
+            let s = interp("v=" + d + "{f(y)}")
+            agree(s)
+        }
+    }
+    given "a PLAIN (non-interpolated) string still routes through STRING" {
+        then "plain string agrees (matched by the STRING terminal, not @hand)" {
+            agree("\"plain\"")
+        }
+    }
+}

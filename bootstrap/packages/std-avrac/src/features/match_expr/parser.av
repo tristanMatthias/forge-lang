@@ -10,6 +10,9 @@ use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, pattern_optional_p
 use core.{NodeRef, ExprId, StmtId, PatId, byte_span_none}
 use parse.{Parser, table_zip_entries}
 use core.{Tk}
+// ps3t.6.5.12 pattern-family swap-in: parse_pattern_or / parse_pattern delegate
+// to the grammar-DSL when pat_flip is set (the inverse of the @hand bridge).
+use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, avra_pat_grammar, Grammar}
 
 /// One parse of a match-arm list, surfaced both ways: `arms` is the boxed
 /// view; `refs` the arena rows backing each arm's WALKED children for the
@@ -131,7 +134,35 @@ impl Parser {
     // Parse a pattern that may be an OR of alternatives: `pat or pat or pat`.
     // Only used in normal match arms — table rows use parse_pattern directly
     // so that `|` column separators are not consumed as part of OR patterns.
+    // The DSL pattern grammar for this parser, built at most once (lex-once
+    // cache). The `??` fallback is unreachable — non-null after the guard.
+    fn dsl_pattern_grammar(self) -> Grammar {
+        if self.dsl_pat_grammar == null {
+            self.dsl_pat_grammar = avra_pat_grammar()
+        }
+        self.dsl_pat_grammar ?? avra_pat_grammar()
+    }
+
+    // Pattern-family flip entry (ps3t.6.5.12): when pat_flip is set, delegate the
+    // whole or-pattern to the DSL `pattern_or` rule (which parses atoms, `or`,
+    // and nested variant sub-patterns itself), resyncing the token cursor by byte
+    // position — the pattern-family mirror of parse_type_expr. Hand fallback on a
+    // DSL error so the flip can never regress.
     fn parse_pattern_or(self) -> Result<PatId, string> {
+        if self.pat_flip {
+            let dsl = run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
+            if !dsl.had_error {
+                while self.current_start < dsl.stop_byte && !self.is_at_end() {
+                    self.advance_token()
+                }
+                return .Ok(dsl.pat)
+            }
+            // DSL parse error → fall through to the authoritative hand parser.
+        }
+        self.parse_pattern_or_hand()
+    }
+
+    fn parse_pattern_or_hand(self) -> Result<PatId, string> {
         let left = self.parse_pattern()?
         if !self.check(Tk.KwOr) { return .Ok(left) }
         self.advance()

@@ -47,7 +47,9 @@ fn dsl_pat(src: string) -> string {
 // The hand-written parser's tree for `src`, rendered the SAME way.
 fn hand_pat(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_pattern_or() {
+    // parse_pattern_or_hand explicitly: parse_pattern_or is DSL-by-default after
+    // the ps3t.6.5.12 promotion, so the hand baseline must call the hand method.
+    match p.parse_pattern_or_hand() {
         .Ok(id) -> render_pat_id(p.store, id)
         .Err(_) -> "<parse error>"
     }

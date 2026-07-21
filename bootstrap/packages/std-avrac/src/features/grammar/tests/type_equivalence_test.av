@@ -40,7 +40,9 @@ fn dsl_type(src: string) -> string {
 // the arena'd ValueType.
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_type_expr("expected type") {
+    // parse_type_expr_hand explicitly: parse_type_expr is DSL-by-default after
+    // the ps3t.6.5.12 promotion, so the hand baseline must call the hand method.
+    match p.parse_type_expr_hand("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)

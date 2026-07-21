@@ -25,6 +25,7 @@
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
+use features.grammar.{build_rule_index}
 
 // ── The DSL token stream ──
 
@@ -204,7 +205,7 @@ fn parse_grammar_body(p: GP) -> Grammar {
     if rules.length == 0 {
         p.fail("a grammar must declare at least one rule")
     }
-    Grammar { name, rules }
+    Grammar { name, rules, rule_idx: build_rule_index(rules) }
 }
 
 // rule = NAME "=" alt
@@ -296,6 +297,14 @@ fn at_hand_primary(p: GP) -> bool {
 
 // labeled = ( NAME ":" )? postfix
 fn parse_labeled(p: GP) -> GItem {
+    // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
+    // matches only on the same source line as the previous token (the
+    // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
+    mut sameline = false
+    if p.peek().kind == "PUNCT" && p.peek().text == "^" {
+        let _ = p.advance()
+        sameline = true
+    }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
     // bare NAME primary isn't mistaken for a label.
@@ -307,7 +316,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim }
+    GItem { label, rep: base.rep, prim: base.prim, sameline }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

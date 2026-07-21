@@ -139,3 +139,28 @@ export fn list_push_copy<T>(xs: List<T>, x: T) -> List<T> {
     out
 }
 
+/// Binary search on a `List<T>` that is sorted non-decreasing in an
+/// integer `key`: return the smallest index `i` with `key(xs[i]) >=
+/// target` — the C++ `lower_bound` / insertion point (`xs.length` when
+/// every key is `< target`). O(log N), the sorted-input replacement for
+/// a linear `while i < xs.length && key(xs[i]) < target { i++ }` scan.
+///
+/// REQUIRES `xs` non-decreasing in `key`; the result is unspecified
+/// otherwise. Reusable wherever a sorted list needs a position lookup —
+/// e.g. locating a token by its source byte offset (the grammar-DSL
+/// runners' per-expression cursor seek, which was quadratic as a linear
+/// rescan-from-zero over the whole token stream).
+export fn lower_bound<T>(xs: List<T>, target: int, key: fn(T) -> int) -> int {
+    mut lo = 0
+    mut hi = xs.length
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        if key(xs[mid]) < target {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    lo
+}
+

@@ -19,11 +19,51 @@
 // ── The grammar tree ──
 
 /// A whole grammar: a name + its rules. The first rule is the start
-/// symbol (Nystrom's convention).
-export type Grammar = { name: string, rules: List<Rule> }
+/// symbol (Nystrom's convention). `rule_idx` is a precomputed
+/// name->index lookup map (build_rule_index) so rule resolution is O(1)
+/// instead of a linear scan of `rules` on every rule descent — see
+/// build_rule_index / rule_index_of below. Built ONCE at construction
+/// (the two Grammar constructors: parse_grammar_body + compose_grammars).
+export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr }
 
 /// One production `name = body`, where `body` is always an Alt.
 export type Rule = { name: string, body: GNode }
+
+// The C-side string->int hash map backing the rule index (runtime.c).
+// Redeclared here (as in core/registry.av + features/comptime) — an extern
+// decl is just a reference to the C symbol, not a definition.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_get_cstr(map: ptr, key: string) -> int
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+
+/// Build a rule-name -> index (into `rules`) lookup map, so a rule can be
+/// resolved by name in O(1) instead of lookup_rule's O(rules) linear
+/// `r.name == name` scan (which, run per rule descent, was ~5% of the
+/// grammar-DSL flip's instructions). FIRST occurrence wins — a duplicate
+/// name keeps the EARLIER rule, exactly matching the linear scan's
+/// first-match semantics, so a composed grammar (compose_grammars) that
+/// re-lists a shared rule still resolves to the head's definition.
+/// Called ONCE per Grammar at construction.
+export fn build_rule_index(rules: List<Rule>) -> ptr {
+    let m = avra_map_new_cstr()
+    mut i = 0
+    while i < rules.length {
+        let nm = rules[i].name
+        if avra_map_has_cstr(m, nm) == 0 {
+            avra_map_set_cstr(m, nm, i)
+        }
+        i = i + 1
+    }
+    m
+}
+
+/// Resolve a rule name to its index in `g.rules` via the precomputed
+/// `rule_idx` map, or -1 if absent. The O(1) core of lookup_rule.
+export fn rule_index_of(g: Grammar, name: string) -> int {
+    if avra_map_has_cstr(g.rule_idx, name) == 0 { return -1 }
+    avra_map_get_cstr(g.rule_idx, name)
+}
 
 /// The grammar body node. Kept as an enum (not a bare Alt) so the tree
 /// has an obvious recursion point and can grow node kinds later
@@ -49,6 +89,11 @@ export type GItem = {
     label: string,
     rep: GRep,
     prim: GPrim,
+    // ps3t.6.7 newline-sensitivity (the `^` marker): when true, this item matches
+    // only if its first token is on the SAME source line as the previously-
+    // consumed token — the postfix-chain / bare-return cutoff the hand parser
+    // does with `current_line == prev_line`. Default false (line-insensitive).
+    sameline: bool,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -99,7 +144,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim }
+    GItem { label: "", rep: GRep.One, prim, sameline: false }
 }
 
 /// True when a sequence has no explicit build — the executor then

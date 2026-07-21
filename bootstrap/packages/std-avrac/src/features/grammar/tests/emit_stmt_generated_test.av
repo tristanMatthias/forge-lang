@@ -19,7 +19,10 @@ spec "grammar emitter: renders the statement family's generated static parser" {
         let src = emit_all()
         src.contains("fn parse_statement(st: PState) -> CapVal") &&
         src.contains("fn parse_expression(st: PState) -> CapVal") &&
-        src.contains("fn parse_primary(st: PState) -> CapVal") &&
+        // ps3t.6.7 Step C: the expression leaf collapsed to `unary =
+        // @hand(hand_unary)` (the newline-sensitive postfix/primary layer is
+        // delegated), so parse_unary — not the retired parse_primary — is the leaf.
+        src.contains("fn parse_unary(st: PState) -> CapVal") &&
         src.contains("fn parse_logic_or(st: PState) -> CapVal")
     }
 
