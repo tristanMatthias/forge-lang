@@ -1716,6 +1716,19 @@ export fn vtype_newtype_inner(t: ValueType) -> ValueType {
     match t { .Newtype(_, inner, _) -> inner, _ -> ValueType.Unknown }
 }
 
+/// Fully peel a chain of Newtype wrappers to the underlying non-newtype type.
+/// A newtype is layout-transparent (spec Axis 1 — nominal distinction, no runtime
+/// representation change), so codegen member/builtin dispatch operates on the
+/// underlying type while the newtype identity is enforced only by typeck.
+/// Non-newtypes pass through unchanged; nested newtypes (`type A = B`, `type B =
+/// string`) unwrap to the leaf.
+export fn vtype_newtype_underlying(t: ValueType) -> ValueType {
+    match t {
+        .Newtype(_, inner, _) -> vtype_newtype_underlying(inner)
+        _ -> t
+    }
+}
+
 /// Name of a Newtype, or "" otherwise.
 export fn vtype_newtype_name(t: ValueType) -> string {
     match t { .Newtype(n, _, _) -> n, _ -> "" }
