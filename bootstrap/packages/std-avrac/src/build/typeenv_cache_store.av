@@ -1,0 +1,81 @@
+// WHY (F2 / forge-crafting-intepreters-uzs9.5.2, increment 3b-i): the on-disk
+// sidecar store for the SerTypeEnv snapshot — persist the typechecked @std env
+// so a later shard LOADS it instead of re-running collect_decls over the @std
+// stub env (~1s/shard, ~80-115s cold suite).
+//
+// Mirrors query/serialize.av's serdb on-disk tier (rule 8 — the same discipline,
+// not a parallel invention): atomic write (per-pid temp + rename inside
+// avra_selfhost_write_file_bytes — the "materialise atomically" rule), a slot
+// namespaced by compiler_version (a version bump lands in a sibling dir), and a
+// VALIDATE-ON-READ header (magic + compiler_version + the @std-stub fingerprint)
+// so a foreign, stale, or half-written blob is an honest cold MISS, never a
+// stale serve (pdme.2: serve only when whole AND stamped with the key it was
+// looked up under). The payload is increment 3a's SerTypeEnv codec.
+//
+// Unwired here: nothing calls these yet (increment 3b-iii wires them into
+// compute_typeck_env behind AVRA_F2_TYPEENV_CACHE) ⇒ the compiler is
+// byte-identical. This increment lands the store + its round-trip / miss proofs.
+
+use typeck.{SerTypeEnv}
+
+// Re-declared locally (same-signature extern redeclaration is normal — it
+// converges on one C symbol) so this file is self-contained; avra_mkdir_p in
+// particular is a core symbol not otherwise in the build module's surface.
+extern fn avra_selfhost_write_file_bytes(path: string, b: bytes) -> int
+extern fn avra_selfhost_read_file_bytes(path: string) -> bytes
+extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_mkdir_p(path: string) -> int
+
+/// The fixed magic tag every F2 type-env blob opens with (distinct from the
+/// query memo's AVRAQMEMO1). Bump the trailing digit on any SerTypeEnv codec
+/// layout change so pre-existing blobs read as a cold MISS instead of
+/// misdecoding.
+export fn f2_typeenv_magic() -> string { "AVRATYPEENV1" }
+
+/// Namespaced directory `<dir_root>/cache/typeenv/<compiler_version>/`. A
+/// version bump lands in a sibling dir, so blobs from another toolchain are
+/// never even opened.
+export fn f2_typeenv_dir(dir_root: string, compiler_version: string) -> string {
+    dir_root + "/cache/typeenv/" + compiler_version + "/"
+}
+
+/// The slot path for `key` (the @std-stub fingerprint) under the namespace.
+export fn f2_typeenv_path(dir_root: string, compiler_version: string, key: string) -> string {
+    f2_typeenv_dir(dir_root, compiler_version) + key + ".bin"
+}
+
+/// Persist `env` to its namespaced slot, ATOMICALLY, with a validate-on-read
+/// header `[magic][compiler_version][key_fp][payload]`. Returns true on success,
+/// false if the mkdir or write failed — no partial slot is ever left (the write
+/// is all-or-nothing at the rename inside avra_selfhost_write_file_bytes).
+export fn f2_typeenv_write(dir_root: string, compiler_version: string, key_fp: string, env: SerTypeEnv) -> bool {
+    let dir = f2_typeenv_dir(dir_root, compiler_version)
+    if avra_mkdir_p(dir) == 0 { return false }
+    let w = writer_new()
+    w.string(f2_typeenv_magic())
+    w.string(compiler_version)
+    w.string(key_fp)
+    sertypeenv_encode(w, env)
+    let path = dir + key_fp + ".bin"
+    avra_selfhost_write_file_bytes(path, w.finish()) != 0
+}
+
+/// Load the SerTypeEnv for `key_fp` under the `compiler_version` namespace,
+/// VALIDATING on read. Returns null (an honest cold MISS) when the file is
+/// absent (never written, or written under another toolchain namespace),
+/// empty / unreadable (a half-materialised or foreign blob), or its header
+/// disagrees — magic, compiler_version, or key_fp mismatch. Only a whole,
+/// matching blob is served (pdme.2). The header check is belt-and-suspenders
+/// atop the namespaced path: even a hand-planted mismatched blob refuses to
+/// serve.
+export fn f2_typeenv_read(dir_root: string, compiler_version: string, key_fp: string) -> SerTypeEnv? {
+    let path = f2_typeenv_path(dir_root, compiler_version, key_fp)
+    if avra_selfhost_file_exists(path) == 0 { return null }
+    let buf = avra_selfhost_read_file_bytes(path)
+    if buf.length == 0 { return null }
+    let r = reader_new(buf)
+    if r.string() != f2_typeenv_magic() { return null }
+    if r.string() != compiler_version { return null }
+    if r.string() != key_fp { return null }
+    sertypeenv_read(r)
+}

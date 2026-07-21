@@ -64,11 +64,13 @@ fn f2_read_trait_methods(r: BytesReader) -> List<TraitMethod> {
     out
 }
 
-/// Serialize a SerTypeEnv snapshot to bytes. Encodes the 9 collect_decls
-/// registries in order, each `[u32 count][entries]`, reusing the metadata.av
-/// vtype / entry-list codecs for the leaves.
-export fn sertypeenv_to_bytes(env: SerTypeEnv) -> bytes {
-    let w = writer_new()
+/// Encode a SerTypeEnv into an EXISTING writer (does not finish it) — the 9
+/// collect_decls registries in order, each `[u32 count][entries]`, reusing the
+/// metadata.av vtype / entry-list codecs for the leaves. Splitting the encoder
+/// out lets a caller prepend a header (magic / version / fp) before the payload
+/// in ONE buffer (the on-disk cache store, increment 3b). `sertypeenv_to_bytes`
+/// is the standalone-buffer convenience over this.
+export fn sertypeenv_encode(w: BytesWriter, env: SerTypeEnv) {
 
     // fns: [name][type_params][params][ret vtype][u8 is_extern]
     w.u32_le(env.fns.length)
@@ -157,7 +159,12 @@ export fn sertypeenv_to_bytes(env: SerTypeEnv) -> bytes {
         w.vtype(env.assoc_type_defs[i].concrete_vt)
         i = i + 1
     }
+}
 
+/// Serialize a SerTypeEnv snapshot to a standalone byte buffer.
+export fn sertypeenv_to_bytes(env: SerTypeEnv) -> bytes {
+    let w = writer_new()
+    sertypeenv_encode(w, env)
     w.finish()
 }
 
