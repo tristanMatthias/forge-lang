@@ -894,12 +894,14 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     bp.records_roots = 0
     bp.had_error = false
     bp.error_message = ""
-    // The @hand leaf IS the hand parser — it must NOT re-enter the statement /
-    // expression flip for its own sub-parses, or the runner recurses into
-    // itself. Force the delegate's flips off (type/pattern stay at their live
-    // defaults — those flips are already the production oracle).
-    bp.stmt_flip = false
-    bp.decl_flip = false
+    // EXPRESSION flips OFF: the procedural expression leaf owns its whole sub-tree,
+    // so a nested expression must not re-enter the expr flip. STATEMENT/DECLARATION
+    // flips are LEFT AS-IS on bp: the production delegate (ensure_hand_delegate) has
+    // them ON so a body loop re-enters the DSL (ps3t.6.7 Slice 5.1 full-program
+    // flip); the differential oracle's delegate (new_pstate) has them OFF so the
+    // oracle stays pure-hand. The `stmt_hand`/`decl_hand` dispatch below calls the
+    // *_hand entry for the CURRENT item, so bp flipping its BODIES never re-parses
+    // the same item (no infinite recursion).
     bp.expr_flip = false
     bp.expr_static = false
     // Reproduce the ORIGINAL parse context (a no-op on the fresh-parser oracle
@@ -917,14 +919,14 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "component_decl" -> bp.parse_component_decl()
         "let_stmt"       -> bp.parse_let_statement()
         "return_stmt"    -> bp.parse_return_statement()
-        // The whole statement dispatch (block, if/while/for/match/defer/
-        // errdefer/return, and their position-recorded nested bodies) —
-        // parse_statement itself, the position-faithful oracle (ps3t.6.7 G.4).
-        "stmt_hand"      -> bp.parse_statement()
-        // The whole declaration dispatch (doc/annotation/export wrapping + the
-        // decl keywords + the component-vs-expression IDENT disambiguation +
-        // the statement fall-through) — parse_declaration itself (ps3t.6.7 G.4b).
-        "decl_hand"      -> bp.parse_declaration()
+        // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
+        // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
+        // nested bodies flip, via bp's own delegate); the position-faithful oracle.
+        "stmt_hand"      -> bp.parse_statement_hand()
+        // The whole declaration dispatch (doc/annotation/export wrapping + the decl
+        // keywords + the component-vs-expression IDENT disambiguation + the
+        // statement fall-through). The *_hand entry, same recursion guard.
+        "decl_hand"      -> bp.parse_declaration_hand()
         _                -> .Err("no hand statement rule `${name}`")
     }
     // Resync the DSL token cursor past everything the hand parser consumed (its
