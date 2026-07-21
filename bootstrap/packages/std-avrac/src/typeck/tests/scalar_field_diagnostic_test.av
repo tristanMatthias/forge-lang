@@ -1,0 +1,64 @@
+// WHY: field/member access on a value scalar (`n.foo`, `n.length` on an
+// int/bool/float/sized-int) had no typeck gate, so it reached codegen and ICEd
+// (F9999 "field access on non-struct value"). This is the FIELD twin of the
+// m0fd scalar-INDEX gate (scalar_index_diagnostic_test.av): typeck now rejects a
+// value-scalar receiver with a clean F1000, matching the struct field-miss.
+// Strings/lists/maps/structs keep their members; newtypes are NOT value scalars
+// (the classifier is newtype-blind), so a newtype-over-struct still peels at
+// codegen (aujl). An F9999 from ordinary source violates the no-ICE-from-input
+// policy (spec Axis 20: F9999 = internal error, never user input).
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+// Compile a fixture and capture stderr+stdout; emit a sentinel on a clean
+// compile so the positive controls assert real success, not the mere absence
+// of an F-code.
+fn sf_out(source: string) -> string {
+    let path = "/tmp/avra_sf_field.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "field access on a scalar is a clean diagnostic, not an ICE (t-o6gy sibling)" {
+    then "int.foo is F1000, never the F9999 ICE" {
+        let out = sf_out("fn main() {\n    let n = 5\n    let _ = n.foo\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "int.length is F1000, never the F9999 ICE" {
+        let out = sf_out("fn main() {\n    let n = 5\n    let _ = n.length\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "bool.x is F1000, never the F9999 ICE" {
+        let out = sf_out("fn main() {\n    let b = true\n    let _ = b.x\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "float.x is F1000, never the F9999 ICE" {
+        let out = sf_out("fn main() {\n    let f = 1.5\n    let _ = f.x\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a sized int (u8) is gated too, not just the default int" {
+        let out = sf_out("fn main() {\n    let n: u8 = 5\n    let _ = n.foo\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "the diagnostic names what has members" {
+        let out = sf_out("fn main() {\n    let n = 5\n    let _ = n.foo\n}")
+        out.contains("strings, bytes, lists, maps, and structs")
+    }
+    then "string .length still compiles (no false F1000)" {
+        let out = sf_out("fn main() {\n    let _ = \"hi\".length\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "list .length still compiles (no false F1000)" {
+        let out = sf_out("fn main() {\n    let _ = [1, 2].length\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a real struct field still resolves (no false F1000)" {
+        let out = sf_out("type S = { a: int }\nfn main() {\n    let s = S { a: 1 }\n    let _ = s.a\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a struct field-miss is STILL a clean F1000 (unchanged)" {
+        let out = sf_out("type S = { a: int }\nfn main() {\n    let s = S { a: 1 }\n    let _ = s.b\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+}
