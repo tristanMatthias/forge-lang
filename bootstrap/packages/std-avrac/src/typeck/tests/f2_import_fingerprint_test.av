@@ -1,0 +1,57 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) — the @std IMPORT-SET key
+// discriminator. Regression guard for the warm==cold sweep bug: the cross-shard
+// sidecar was keyed on the @std UNIVERSE fp ALONE, so a snapshot from a shard
+// importing FEWER @std packages was wrongly reused by one importing MORE — the
+// seeded env then lacked decls the shard needed (the observed failure:
+// `unknown trait @std::process::Marshal`, an F1000, on the core/tests shards).
+//
+// The fix keys the sidecar additionally on f2_std_import_fingerprint(std_ids):
+// the set of "@scope.pkg" package paths the shard imports. This test pins the
+// property the fix relies on — DIFFERENT import sets get DIFFERENT keys (so a
+// snapshot is never reused across mismatched imports), and the SAME set gets the
+// SAME key (so shards with identical imports still share the snapshot).
+//
+// @std modules arrive as a TOP-LEVEL Stmt.Module("@scope", [inner_pkg…]) after
+// the resolver's package wrap (features/modules/resolver.av:1093-1099); this test
+// constructs that shape directly (typecheck_source skips module loading, so it
+// can't produce real @-modules).
+
+use @std.avrac.typeck.{f2_std_import_fingerprint}
+use @std.avrac.core.{new_node_store, build_line_index, Stmt, StmtId}
+
+spec "F2: import-set fingerprint discriminates @std package sets" {
+    then "different import sets → different keys; same set → same key" {
+        let store = new_node_store(build_line_index(""))
+        let empty: List<StmtId> = []
+
+        // import set {avrac, process}
+        let avrac1 = store.add_stmt_leaf(Stmt.Module("avrac", empty))
+        let proc1 = store.add_stmt_leaf(Stmt.Module("process", empty))
+        let outer1 = store.add_stmt_leaf(Stmt.Module("@std", [avrac1, proc1]))
+        let fp_ap = f2_std_import_fingerprint(store, [outer1])
+
+        // import set {avrac} only — a strict subset
+        let avrac2 = store.add_stmt_leaf(Stmt.Module("avrac", empty))
+        let outer2 = store.add_stmt_leaf(Stmt.Module("@std", [avrac2]))
+        let fp_a = f2_std_import_fingerprint(store, [outer2])
+
+        // import set {avrac, process} again — the same set as fp_ap
+        let avrac3 = store.add_stmt_leaf(Stmt.Module("avrac", empty))
+        let proc3 = store.add_stmt_leaf(Stmt.Module("process", empty))
+        let outer3 = store.add_stmt_leaf(Stmt.Module("@std", [avrac3, proc3]))
+        let fp_ap2 = f2_std_import_fingerprint(store, [outer3])
+
+        // The fix: {avrac,process} and {avrac} must NOT collide (else the
+        // process shard reuses the avrac-only snapshot and loses Marshal);
+        // the same set MUST collide (so identical-import shards share).
+        fp_ap != fp_a && fp_ap == fp_ap2
+    }
+
+    then "a non-empty key is produced for a real import set" {
+        let store = new_node_store(build_line_index(""))
+        let empty: List<StmtId> = []
+        let inner = store.add_stmt_leaf(Stmt.Module("avrac", empty))
+        let outer = store.add_stmt_leaf(Stmt.Module("@std", [inner]))
+        f2_std_import_fingerprint(store, [outer]).length > 0
+    }
+}

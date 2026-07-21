@@ -3425,9 +3425,11 @@ fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: strin
         // below is also set — f2_typeck_env_cached checks the flag first).
         EnvAssignment { name: "AVRA_F2_CACHE_DIR",     value: "${project_dir}/build" },
         // Forward the F2 flag to shards (the spawn uses an explicit env prefix,
-        // not full inheritance). Empty when unset ⇒ format_env_prefix drops it ⇒
-        // shards keep the today path ⇒ byte-identical; set ⇒ shards seed the
-        // @std env from the sidecar.
+        // not full inheritance). OFF by default — F2 stays dormant: the measured
+        // win is negligible (~22ms/shard @std env-collect saving; see
+        // uzs9.5.2), so the cache is not enabled. Empty when unset ⇒
+        // format_env_prefix drops it ⇒ shards keep the today path ⇒
+        // byte-identical. AVRA_F2_TYPEENV_CACHE=1 opts a run in (experimental).
         EnvAssignment { name: "AVRA_F2_TYPEENV_CACHE", value: avra_process_env_get("AVRA_F2_TYPEENV_CACHE") },
         EnvAssignment { name: "AVRA_SKIP_ENSURE_BS2",  value: "1" },
     ])
