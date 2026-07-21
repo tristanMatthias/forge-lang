@@ -147,6 +147,38 @@ export fn avra_decl_flip_grammar() -> Grammar {
     compose_grammars(gp.grammar, avra_stmt_flip_grammar())
 }
 
+/// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar: identical rules to
+/// avra_stmt_flip_grammar but WITHOUT composing the expression grammar, so
+/// `expression` in expr_stmt is an EXTERNAL reference. Emitting the STATIC parser
+/// from this (gen_decl_file.emit_decl_parser_file) produces only the statement
+/// dispatch fns (parse_statement / parse_break_stmt / parse_continue_stmt /
+/// parse_expr_stmt) and calls the already-generated `parse_expression`
+/// (gen_expr_parser.av, same `parse` module) — so the expr ladder is NOT re-emitted
+/// (which would collide fn-for-fn in the flat `parse` module). The INTERPRETER path
+/// keeps using the COMPOSED avra_stmt_flip_grammar (exec_rule must walk `expression`
+/// in-grammar); both drive the identical builders, and gen_expr_parser's
+/// parse_expression is itself proven byte-identical to the interpreter's expr walk.
+export fn avra_stmt_dispatch_grammar() -> Grammar {
+    let gp = grammar {
+  statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
+  break_stmt    = "break" -> Break()
+  continue_stmt = "continue" -> Continue()
+  expr_stmt     = e:expression -> ExprStmt(e)
+    }
+    gp.grammar
+}
+
+/// ps3t.6.7 Phase 2 — the DISPATCH-ONLY declaration grammar (the static-emit twin of
+/// avra_decl_flip_grammar): `declaration = @hand(decl_hand) | statement` composed
+/// with the dispatch-only statement grammar (expression EXTERNAL). This is what
+/// gen_decl_file emits the checked-in production declaration static parser from.
+export fn avra_decl_dispatch_grammar() -> Grammar {
+    let gp = grammar {
+  declaration = @hand(decl_hand) | statement
+    }
+    compose_grammars(gp.grammar, avra_stmt_dispatch_grammar())
+}
+
 /// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
 /// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
 /// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and

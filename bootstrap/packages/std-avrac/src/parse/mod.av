@@ -24,6 +24,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // already cycles the same way).
 use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
+use parse.static_decl_entry.{run_static_decl}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
@@ -265,6 +266,18 @@ export type Parser = {
     // — the path to promoting the expression flip on. Read once at construction,
     // settable by tests. Default OFF until proven byte-identical on the full selfhost.
     mut expr_static: bool,
+    // ps3t.6.7 Phase 2 — the STATIC declaration parser: when set (with decl_flip on),
+    // parse_declaration drives the CHECKED-IN generated static parser
+    // (parse/gen_decl_parser.av's parse_declaration, via run_static_decl) instead of
+    // the Grammar-tree interpreter (run_dsl_decl_at_shared / exec_rule). Same PState +
+    // builders + @hand leaves (run_hand_stmt) ⇒ byte-identical AST, but straight-line
+    // (no exec_rule grammar walk) — erasing the interpreter's top-level-dispatch tax.
+    // PROMOTED default-ON (proven byte-identical over the full selfhost — 915,728
+    // lines — + the corpus + the error-path suite); AVRA_PARSER_DECL_STATIC=0 routes
+    // back to the Grammar-tree interpreter (still the differential oracle). Only
+    // active when decl_flip is on (the escape hatch AVRA_PARSER_DECL_FLIP=0 disables
+    // both, dropping to the pure hand parser).
+    mut decl_static: bool,
     // ps3t.6.7 Step G slice 4 — statement-family swap-in: when true,
     // parse_statement delegates the whole statement to the grammar-DSL
     // (avra_stmt_flip_grammar: break/continue DSL-native, block + control-flow +
@@ -677,6 +690,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // generated STATIC parser as the production expression parser. Default OFF
         // until the full-selfhost byte-identity proof + perf win promote it.
         expr_static: avra_process_env_get("AVRA_PARSER_EXPR_STATIC") == "1",
+        decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
         // ps3t.6.7 Step G slice 4 — opt-in via AVRA_PARSER_STMT_FLIP=1: the
         // grammar-DSL statement parser. Default OFF until the full-selfhost
         // byte-identity proof promotes it (like type/pat_flip).
@@ -849,6 +863,10 @@ impl Parser {
         // stop byte. A DSL error falls through to the authoritative hand parser.
         if self.decl_flip {
             let modes = self.current_modes()
+            // This item's start byte — the forward-progress watermark for the error
+            // path below (a zero-width errored parse must be handed back as .Err so the
+            // caller advances, else the list loop re-parses the same token forever).
+            let item_start = self.current_start
             mut d = self.ensure_hand_delegate()
             d.copy_cursor_from(self)
             // Fresh per-item diagnostic scratch on the (single-level, pure-hand)
@@ -856,7 +874,16 @@ impl Parser {
             // back into this parser's bag on the error path below, so a reset keeps
             // the merge from re-copying prior items' diagnostics.
             d.bag = bag_new()
-            let dsl = run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
+            // ps3t.6.7 Phase 2: the STATIC generated parser (run_static_decl) when
+            // decl_static, else the Grammar-tree interpreter (run_dsl_decl_at_shared).
+            // Both share the token stream, modes, @hand delegate, store, and the
+            // error-path handling below — they differ only in HOW they drive the
+            // identical builders (straight-line generated fn vs exec_rule walk).
+            let dsl = if self.decl_static {
+                run_static_decl(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
+            } else {
+                run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
+            }
             if !dsl.had_error {
                 while d.current_start < dsl.stop_byte && !d.is_at_end() {
                     d.advance_token()
@@ -888,6 +915,18 @@ impl Parser {
                     return .Err("parse error")
                 }
                 _ -> {
+                    // No forward progress on an errored parse — hand back as .Err so
+                    // the caller's list-parser forward-progress guard advances one
+                    // token. The interpreter's expr_stmt alternation-failure yields a
+                    // bare Stmt.Error (caught above), but the STATIC parser's
+                    // parse_expr_stmt unconditionally wraps a FAILED expression as
+                    // Stmt.Expr(Error) — a zero-width error node (a stray top-level
+                    // non-keyword like `then`) that the shape check misses. Without
+                    // this, parse_statement_list_ids re-parses the same token forever.
+                    if dsl.stop_byte <= item_start {
+                        self.copy_cursor_from(d)
+                        return .Err("parse error")
+                    }
                     while d.current_start < dsl.stop_byte && !d.is_at_end() {
                         d.advance_token()
                     }
@@ -1188,6 +1227,7 @@ impl Parser {
             d.decl_flip = false
             d.expr_flip = false
             d.expr_static = false
+            d.decl_static = false
             self.hand_delegate = d
         }
         self.hand_delegate!
