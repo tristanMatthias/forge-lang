@@ -2866,6 +2866,12 @@ mode_clean_cache() {
 # level: any registry-write call/field-push whose enclosing top-level fn is
 # not in the collect-phase allowlist fails the lint.
 #
+# F2 (uzs9.5.2): the `restore_*_reg` helpers (typeenv_cache.av) also write the
+# registries, but they are collect-EQUIVALENT env construction — they REPLAY
+# the same register calls from a snapshot at env-build time (before the check
+# phase), never per-item during check — so they preserve the very invariant
+# this lint guards (check_item stays pure over the env) and are allowlisted.
+#
 # $1 (optional) = typeck dir/file to scan (defaults to the real tree; the
 # guard test points it at a temp dir with a planted violation). `tests/` is
 # excluded — fixtures legitimately embed the anti-pattern as string literals.
@@ -2882,7 +2888,7 @@ mode_check_typeck_collect_boundary() {
       }
       /(fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register)[[:space:]]*\(/ ||
       /(trait_impls|assoc_type_defs|shapes):[[:space:]]*list_push_copy[[:space:]]*\(/ {
-        if (cur !~ /^(collect_decls|collect_impl_assoc_types|rewrite_fn_ret_tys|fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register)$/) {
+        if (cur !~ /^(collect_decls|collect_impl_assoc_types|rewrite_fn_ret_tys|fn_type_reg_register|struct_type_reg_register|enum_type_reg_register|trait_registry_register|newtype_reg_register|union_alias_reg_register|restore_fn_reg|restore_struct_reg|restore_enum_reg|restore_newtype_reg|restore_union_reg|restore_trait_reg)$/) {
           printf "%s:%d: [in fn %s] %s\n", file, NR, cur, $0
         }
       }

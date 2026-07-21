@@ -1,0 +1,61 @@
+// F2 (forge-crafting-intepreters-uzs9.5.2) — the snapshot/restore machinery
+// that lets a shard LOAD the @std type-environment instead of re-deriving it
+// (typeck ~1s/shard, ~115s across a cold suite; the cross-process case of what
+// rustc .rmeta / OCaml .cmi / GHC .hi do).
+//
+// This is the FOUNDATIONAL correctness gate: snapshot_typeenv captures exactly
+// the registries collect_decls populates, and restore_typeenv rebuilds them by
+// replaying the SAME register functions collect_decls uses — so a restored env
+// is registry-identical to a recomputed one. Here we prove it end-to-end on a
+// real typechecked program: the snapshot captures the program's decls, and a
+// restore rebuilds both the ordered lists AND the lookup indexes (a broken idx
+// rebuild would make the lookup below return empty).
+
+use @std.avrac.check.{typecheck_source}
+use @std.avrac.typeck.{
+    typecheck_env, snapshot_typeenv, restore_typeenv, struct_type_lookup,
+    MacroFnOrigin,
+}
+
+fn has_struct(names: List<string>, want: string) -> bool {
+    for n in names { if n == want { return true } }
+    false
+}
+
+spec "F2: type-env snapshot/restore is lossless on a real typechecked program" {
+    then "snapshot captures the program's struct + fn decls" {
+        let r = typecheck_source(
+            "type Box = { v: int }\n" +
+            "enum Tree { Leaf(v: int), Node(l: int, r: int) }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int { let b = Box { v: 7 }\n println(string(use_box(b)))\n 0 }\n")
+        let mo: List<MacroFnOrigin> = []
+        let tc = typecheck_env(r.stmts, r.type_reg, mo, r.store)
+        let snap = snapshot_typeenv(tc)
+        // Box registered as a struct, Tree as an enum, use_box as a fn.
+        mut struct_names: List<string> = []
+        for m in snap.structs { struct_names.push(m.name) }
+        mut fn_names: List<string> = []
+        for m in snap.fns { fn_names.push(m.name) }
+        mut enum_names: List<string> = []
+        for m in snap.enums { enum_names.push(m.name) }
+        has_struct(struct_names, "Box") && has_struct(fn_names, "use_box") && has_struct(enum_names, "Tree")
+    }
+    then "restore rebuilds the registries (ord + idx) so lookups still resolve" {
+        let r = typecheck_source(
+            "type Box = { v: int }\n" +
+            "fn use_box(b: Box) -> int { b.v }\n" +
+            "fn main() -> int { let b = Box { v: 7 }\n println(string(use_box(b)))\n 0 }\n")
+        let mo: List<MacroFnOrigin> = []
+        let tc = typecheck_env(r.stmts, r.type_reg, mo, r.store)
+        let snap = snapshot_typeenv(tc)
+        let restored = restore_typeenv(tc, snap)
+        let re = snapshot_typeenv(restored)
+        // Round-trip preserves the registry sizes …
+        let sizes_match = re.structs.length == snap.structs.length
+            && re.fns.length == snap.fns.length
+        // … and the rebuilt idx map resolves a name (empty ⇒ broken idx rebuild).
+        let lookup_ok = struct_type_lookup(restored.structs, "Box").length > 0
+        sizes_match && lookup_ok
+    }
+}

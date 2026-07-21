@@ -1,0 +1,131 @@
+// WHY (F2 / forge-crafting-intepreters-uzs9.5.2): cache the typechecked @std
+// type-environment across shards instead of re-deriving it every process.
+//
+// The problem: ~110 test-shard processes each import @std; each re-runs the
+// collect/typeck phase over the identical @std stub decls to populate its type
+// registries (fns/structs/enums/…) — measured ~1s/shard, ~115s of pure
+// redundant work on a cold suite. The metadata fast-path (#877/#880) already
+// killed the re-PARSE; this kills the re-TYPECK of that same @std env.
+//
+// The approach (what every mature compiler does — rustc .rmeta, OCaml .cmi,
+// GHC .hi, Swift .swiftmodule): the ONE @std build serializes its typed
+// interface; dependents LOAD it rather than re-typechecking the dependency.
+// Avra's `meta.bin` already carries that typed interface (FnDeclEntry with a
+// resolved `ret: ValueType`, TypeDeclEntry with fields/variants/inner_vt, …).
+// So a shard can SEED its registries directly from the metadata it already
+// loads, then run collect_decls only over its OWN code.
+//
+// Byte-identity strategy: seed by calling the SAME `*_reg_register` functions
+// collect_decls uses (typeck/mod.av), fed from metadata entries instead of
+// synthesized stub AST. Identical construction code ⇒ identical registries by
+// construction — the strongest guarantee, verified end-to-end by the warm==cold
+// differential oracle (a unit compiled seeded-from-cache must emit BYTE-IDENTICAL
+// IR to one that recomputes the env). Gaps the metadata doesn't yet carry
+// (newtype opaque/friends, trait/impl assoc types) are DRIVEN OUT by that oracle
+// — each closed with a small meta.bin extension — never guessed.
+//
+// STATUS: increment 1 — reconstruction + oracle, gated OFF by default
+// (AVRA_F2_TYPEENV_CACHE unset ⇒ this path is never taken ⇒ diff-test
+// byte-identical). The flag flips ON only after the oracle is green.
+
+use core.{avra_process_env_get}
+
+/// Is the F2 typeck-env cache enabled? OFF unless AVRA_F2_TYPEENV_CACHE is set
+/// in the environment. While off, no shard ever seeds from metadata and the
+/// compiler is byte-identical to pre-F2 — the widen-then-migrate safety valve.
+export fn f2_typeenv_cache_enabled() -> bool {
+    avra_process_env_get("AVRA_F2_TYPEENV_CACHE") != ""
+}
+
+/// The snapshot of the collect_decls-populated type registries — the @std
+/// type-environment a shard re-derives every process. These are exactly the
+/// tables collect_decls builds (typeck/mod.av): the `ord` data lists of each
+/// registry (the `idx` accelerators are rebuilt on restore) plus the three
+/// plain-list registries. NOT included: `type_reg` (populated by the RESOLVER,
+/// not collect_decls, so it is reconstructed by the resolve pass that still
+/// runs over the stubs) and the transient per-check `types` scope (starts
+/// empty). Every field is plain data (strings, ValueType, the `*Meta` structs)
+/// — no ptr/fn — so it round-trips.
+export type SerTypeEnv = {
+    fns: List<FnTypeMeta>,
+    structs: List<StructTypeMeta>,
+    shapes: List<string>,
+    enums: List<EnumTypeMeta>,
+    newtypes: List<NewtypeMeta>,
+    union_aliases: List<UnionAliasMeta>,
+    traits: List<TraitRegMeta>,
+    trait_impls: List<TraitImplEntry>,
+    assoc_type_defs: List<AssocTypeEntry>,
+}
+
+/// Capture the collect_decls-populated registries of `tc` (option (b): snapshot
+/// the actual typeck output, which already carries the resolved forms + opaque
+/// flags — no re-derivation from raw decls, which is where the subtle bugs
+/// live). Reads the `ord` lists directly; the `idx` maps are derived and
+/// rebuilt on restore.
+export fn snapshot_typeenv(tc: TC) -> SerTypeEnv {
+    SerTypeEnv {
+        fns: tc.fns.ord,
+        structs: tc.structs.ord,
+        shapes: tc.shapes,
+        enums: tc.enums.ord,
+        newtypes: tc.newtypes.ord,
+        union_aliases: tc.union_aliases.ord,
+        traits: tc.traits.ord,
+        trait_impls: tc.trait_impls,
+        assoc_type_defs: tc.assoc_type_defs,
+    }
+}
+
+// Rebuild each registry by REPLAYING the register function collect_decls uses,
+// in the snapshot's insertion order — so the rebuilt registry (both `ord` and
+// the `idx` accelerator) is identical to the original by construction.
+
+fn restore_fn_reg(ms: List<FnTypeMeta>) -> FnTypeReg {
+    mut r = fn_type_reg_new()
+    for m in ms { r = fn_type_reg_register(r, m.name, m.tp, m.params, m.ret_ty, m.is_extern) }
+    r
+}
+fn restore_struct_reg(ms: List<StructTypeMeta>) -> StructTypeReg {
+    mut r = struct_type_reg_new()
+    for m in ms { r = struct_type_reg_register(r, m.name, m.tp, m.fields) }
+    r
+}
+fn restore_enum_reg(ms: List<EnumTypeMeta>) -> EnumTypeReg {
+    mut r = enum_type_reg_new()
+    for m in ms { r = enum_type_reg_register(r, m.name, m.tp, m.variants) }
+    r
+}
+fn restore_newtype_reg(ms: List<NewtypeMeta>) -> NewtypeReg {
+    mut r = newtype_reg_new()
+    for m in ms { r = newtype_reg_register(r, m.name, m.inner_vt, m.opaque, m.friends) }
+    r
+}
+fn restore_union_reg(ms: List<UnionAliasMeta>) -> UnionAliasReg {
+    mut r = union_alias_reg_new()
+    for m in ms { r = union_alias_reg_register(r, m.name, m.type_vt) }
+    r
+}
+fn restore_trait_reg(ms: List<TraitRegMeta>) -> TraitRegistry {
+    mut r = trait_registry_new()
+    for m in ms { r = trait_registry_register(r, m.name, m.methods, m.assoc_types) }
+    r
+}
+
+/// Restore a snapshot into `tc`, replacing the collect_decls registries with
+/// the reconstructed ones. `type_reg`, `types` (scope) and all per-check state
+/// are left as-is (the caller supplies a fresh/resolved TC). The result is
+/// registry-identical to a TC that ran collect_decls over the same decls.
+export fn restore_typeenv(tc: TC, ser: SerTypeEnv) -> TC {
+    tc with {
+        fns: restore_fn_reg(ser.fns),
+        structs: restore_struct_reg(ser.structs),
+        shapes: ser.shapes,
+        enums: restore_enum_reg(ser.enums),
+        newtypes: restore_newtype_reg(ser.newtypes),
+        union_aliases: restore_union_reg(ser.union_aliases),
+        traits: restore_trait_reg(ser.traits),
+        trait_impls: ser.trait_impls,
+        assoc_type_defs: ser.assoc_type_defs,
+    }
+}
