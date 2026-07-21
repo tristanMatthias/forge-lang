@@ -1,0 +1,55 @@
+// 52y0 regression guard. `quote { "hi" }` once produced an Expr.String whose
+// runtime value was the 6-char `\"hi\"` (with literal backslashes) instead of
+// the 4-char `"hi"` — a DOUBLE-ENCODING: the old `string_arg_raw` ran the
+// value through `escape_string` AND wrapped it in source-form quotes, so the
+// escape sequences survived as literal backslashes. The fix moved String
+// construction onto the plain `string_arg` (no `escape_string`), so the value
+// is quoted exactly once and its escapes decode normally.
+//
+// This guard is pure/deterministic — it renders quote-constructed String
+// values and asserts (a) the exact decoded form, and (b) the ABSENCE of the
+// spurious backslashes that were the double-encoding's signature. Inputs whose
+// decoded value contains no backslash (`hi`, `a"b`, `x<tab>y`) must therefore
+// render with no backslash at all; the old bug would have injected them.
+// (A runtime @expand round-trip was tried and rejected: the @expand'd
+// top-level statements only execute in the compiled binary, and capturing that
+// through the fixture harness proved flaky here — a pure render assertion is
+// the deterministic guard.)
+//
+// `qse_`-prefixed helpers against cross-shard collisions.
+
+use @std.avrac.core.{Expr, render_expr, new_node_store, build_line_index}
+
+@comptime
+fn qse_hi() -> Expr { return quote { "hi" } }
+@comptime
+fn qse_quote() -> Expr { return quote { "a\"b" } }
+@comptime
+fn qse_tab() -> Expr { return quote { "x\ty" } }
+
+fn qse_render(e: Expr) -> string {
+    render_expr(new_node_store(build_line_index("")), e)
+}
+
+spec "52y0: a quoted string literal is not double-encoded" {
+    then "quote { \"hi\" } renders as the 4-char \"hi\" (the exact ticket repro)" {
+        qse_render(qse_hi()) == "\"hi\""
+    }
+    then "no quoted-string case injects the spurious backslashes of the old bug" {
+        // Every decoded value here (`hi`, `a"b`, `x<tab>y`) is backslash-free,
+        // so a correct render is backslash-free; the double-encoding would have
+        // left literal `\` characters behind. This is the load-bearing check.
+        !qse_render(qse_hi()).contains("\\")
+            && !qse_render(qse_quote()).contains("\\")
+            && !qse_render(qse_tab()).contains("\\")
+    }
+    then "an embedded escaped quote decodes into the value (a\\\"b -> a\"b)" {
+        // render wraps the decoded 3-char value a\"b in quotes: `"a"b"` (5).
+        let r = qse_render(qse_quote())
+        r == "\"a\"b\"" && r.length == 5
+    }
+    then "a tab escape decodes into the value (x\\ty -> x<tab>y)" {
+        let r = qse_render(qse_tab())
+        r.contains("\t") && r.length == 5
+    }
+}
