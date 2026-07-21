@@ -4489,12 +4489,32 @@ static int64_t registry_add(pid_t pid, int stdout_fd, int stderr_fd) {
     return id;
 }
 
-static ProcessEntry* registry_get(int64_t id) {
+// Snapshot the entry for `id` under the lock — callers use the COPY, never a
+// raw pointer into the shared registry, so a concurrent add/remove on the slot
+// can't race their (possibly blocking) use of it. Returns 1 and fills *out when
+// the slot is live, 0 otherwise. The fields callers then read — pid, stdout_fd,
+// stderr_fd — are set once at registry_add and never mutated in place; alive /
+// cached_exit_code are the only mutable fields, and the one in-place update
+// goes through registry_set_reaped below.
+static int registry_snapshot(int64_t id, ProcessEntry* out) {
     pthread_mutex_lock(&process_registry_mutex);
     int slot = (int)(id % MAX_PROCESSES);
-    ProcessEntry* e = (process_registry[slot].pid != 0) ? &process_registry[slot] : NULL;
+    int found = process_registry[slot].pid != 0;
+    if (found) *out = process_registry[slot];
     pthread_mutex_unlock(&process_registry_mutex);
-    return e;
+    return found;
+}
+
+// Record a WNOHANG-reaped child's exit code (avra_process_is_alive) so a later
+// avra_process_wait returns the real status instead of -1. Locked in-place.
+static void registry_set_reaped(int64_t id, int exit_code) {
+    pthread_mutex_lock(&process_registry_mutex);
+    int slot = (int)(id % MAX_PROCESSES);
+    if (process_registry[slot].pid != 0) {
+        process_registry[slot].alive = 0;
+        process_registry[slot].cached_exit_code = exit_code;
+    }
+    pthread_mutex_unlock(&process_registry_mutex);
 }
 
 static void registry_remove(int64_t id) {
@@ -4665,14 +4685,13 @@ int64_t avra_process_spawn_bg(const char* cmd, const char* args_json, const char
 
 /// Kill a spawned process. Returns 1 on success, 0 on failure.
 int64_t avra_process_kill(int64_t handle) {
-    ProcessEntry* e = registry_get(handle);
-    if (!e || !e->alive) return 0;
-    kill(e->pid, SIGKILL);
-    waitpid(e->pid, NULL, 0);
-    close(e->stdout_fd);
-    close(e->stderr_fd);
-    e->alive = 0;
-    registry_remove(handle);
+    ProcessEntry e;
+    if (!registry_snapshot(handle, &e) || !e.alive) return 0;
+    kill(e.pid, SIGKILL);
+    waitpid(e.pid, NULL, 0);
+    close(e.stdout_fd);
+    close(e.stderr_fd);
+    registry_remove(handle);   // clears alive + pid (the old in-place e->alive=0 was redundant)
     return 1;
 }
 
@@ -4684,18 +4703,18 @@ int64_t avra_process_kill(int64_t handle) {
 /// reap fires; if still INT_MIN here, do the canonical blocking
 /// waitpid as before.
 const char* avra_process_wait(int64_t handle) {
-    ProcessEntry* e = registry_get(handle);
-    if (!e) return make_result_json("", "process not found", -1);
-    char* out_str = read_fd_all(e->stdout_fd);
-    char* err_str = read_fd_all(e->stderr_fd);
-    close(e->stdout_fd);
-    close(e->stderr_fd);
+    ProcessEntry e;
+    if (!registry_snapshot(handle, &e)) return make_result_json("", "process not found", -1);
+    char* out_str = read_fd_all(e.stdout_fd);
+    char* err_str = read_fd_all(e.stderr_fd);
+    close(e.stdout_fd);
+    close(e.stderr_fd);
     int code;
-    if (e->cached_exit_code != INT_MIN) {
-        code = e->cached_exit_code;
+    if (e.cached_exit_code != INT_MIN) {
+        code = e.cached_exit_code;
     } else {
         int status;
-        waitpid(e->pid, &status, 0);
+        waitpid(e.pid, &status, 0);
         code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     }
     registry_remove(handle);
@@ -4706,12 +4725,12 @@ const char* avra_process_wait(int64_t handle) {
 
 /// Read a line from a spawned process's stdout. Returns "\0EOF" at end.
 const char* avra_process_read_line(int64_t handle) {
-    ProcessEntry* e = registry_get(handle);
-    if (!e) return "\0EOF";
+    ProcessEntry e;
+    if (!registry_snapshot(handle, &e)) return "\0EOF";
     char buf[4096];
     size_t pos = 0;
     while (pos < sizeof(buf) - 1) {
-        ssize_t n = read(e->stdout_fd, &buf[pos], 1);
+        ssize_t n = read(e.stdout_fd, &buf[pos], 1);
         if (n <= 0) { if (pos == 0) return "\0EOF"; break; }
         if (buf[pos] == '\n') break;
         pos++;
@@ -4726,8 +4745,8 @@ const char* avra_process_read_line(int64_t handle) {
 
 /// Wait for a pattern in stdout. Returns 1 if found, 0 if timeout.
 int64_t avra_process_wait_for_output(int64_t handle, const char* pattern, int64_t timeout_ms) {
-    ProcessEntry* e = registry_get(handle);
-    if (!e) return 0;
+    ProcessEntry e;
+    if (!registry_snapshot(handle, &e)) return 0;
     struct timespec deadline;
     clock_gettime(CLOCK_MONOTONIC, &deadline);
     deadline.tv_sec += timeout_ms / 1000;
@@ -4741,13 +4760,13 @@ int64_t avra_process_wait_for_output(int64_t handle, const char* pattern, int64_
         clock_gettime(CLOCK_MONOTONIC, &now);
         if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) return 0;
 
-        struct pollfd pfd = {e->stdout_fd, POLLIN, 0};
+        struct pollfd pfd = {e.stdout_fd, POLLIN, 0};
         int64_t remaining = (deadline.tv_sec - now.tv_sec) * 1000 + (deadline.tv_nsec - now.tv_nsec) / 1000000;
         if (remaining <= 0) return 0;
         int ret = poll(&pfd, 1, (int)(remaining > 1000 ? 1000 : remaining));
         if (ret <= 0) continue;
 
-        ssize_t n = read(e->stdout_fd, &line[pos], 1);
+        ssize_t n = read(e.stdout_fd, &line[pos], 1);
         if (n <= 0) return 0;
         if (line[pos] == '\n') {
             line[pos] = '\0';
@@ -4767,13 +4786,12 @@ int64_t avra_process_wait_for_output(int64_t handle, const char* pattern, int64_
 /// silently come back as -1 — broke pool_extract_rc on completed
 /// workers in e20h's worker pool).
 int64_t avra_process_is_alive(int64_t handle) {
-    ProcessEntry* e = registry_get(handle);
-    if (!e || !e->alive) return 0;
+    ProcessEntry e;
+    if (!registry_snapshot(handle, &e) || !e.alive) return 0;
     int status;
-    pid_t result = waitpid(e->pid, &status, WNOHANG);
+    pid_t result = waitpid(e.pid, &status, WNOHANG);
     if (result == 0) return 1; // still running
-    e->alive = 0;
-    e->cached_exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    registry_set_reaped(handle, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
     return 0;
 }
 
