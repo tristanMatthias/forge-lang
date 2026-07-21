@@ -3668,7 +3668,11 @@ fn check_none_compare(tc: TC, left_id: ExprId, left: Expr, op: BinOp, l_ty: Valu
 /// placeholders all pass, so the compiler's arithmetic + generic bodies are
 /// untouched (byte-identical).
 fn arith_aggregate_operand(vt: ValueType) -> bool {
-    match vt {
+    // Peel newtypes: `type Nums = List<int>` is layout-transparent, so `n + 1`
+    // on a newtype-over-list/map hits the SAME invalid-IR path as a bare list —
+    // classify the underlying. A numeric newtype (`type MyInt = int`) peels to a
+    // non-aggregate and stays accepted.
+    match vtype_newtype_underlying(vt) {
         .List(_) -> true
         .Map(_, _) -> true
         _ -> false

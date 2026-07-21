@@ -63,4 +63,12 @@ spec "arithmetic on a list/map is a clean F1000, never invalid IR (t-fws6 c)" {
         let out = ag_out("type MyInt = int\nfn main() {\n    let n = MyInt(5)\n    let _ = n + 1\n}")
         out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
     }
+    then "newtype-over-LIST arithmetic is gated too (peels to the aggregate)" {
+        let out = ag_out("type Nums = List<int>\nfn g(n: Nums) -> int { n + 1 }\nfn main() { let _ = g(Nums([1, 2])) }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "newtype-over-MAP arithmetic is gated too" {
+        let out = ag_out("type M = Map<string, int>\nfn g(m: M) -> int { m + 1 }\nfn main() { let _ = g(M({\"a\": 1})) }")
+        out.contains("F1000") && !out.contains("F9999")
+    }
 }
