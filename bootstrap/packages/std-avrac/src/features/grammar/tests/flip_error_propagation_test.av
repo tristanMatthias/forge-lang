@@ -1,0 +1,77 @@
+// ps3t.6.7 Slice 5.4 — regression guard for the PRODUCTION flip's error-path
+// propagation. When decl_flip became the default (the grammar-DSL is the
+// production parser), a parse error discovered by the @hand delegate was
+// stranded in the DELEGATE's own diagnostic bag: the delegate does error-
+// tolerant recovery (drops a `Stmt.Error` placeholder and returns .Ok for a
+// malformed body statement), so the outer flip saw had_error=false, kept the
+// Error-bearing tree, and codegen ICE'd (F9999 "no emitter for statement kind
+// Stmt.Error"). Separately, the earlier full-program flip re-parsed the whole
+// malformed subtree at EVERY enclosing level, leaving a cascade of ORPHAN
+// `Stmt.Error` arena rows (measured: 18 for one 2-deep nested error).
+//
+// The fix: the production delegate is a SINGLE-LEVEL, pure-hand parser; on a DSL
+// error the outer flip MERGES the delegate's bag into its own + marks had_error
+// (no re-parse), returning .Err for a whole-item failure (caller recovers,
+// byte-identical) or adopting an already-recovered body error. These specs pin
+// (1) the error surfaces to parse_program_source's result (no silent ICE), (2)
+// the reserved-keyword diagnostic is a real F0001, and (3) exactly ONE Error
+// node lands in the arena for a 2-deep nested error (no orphan cascade). All go
+// through the DEFAULT parser (production flip on), so a regression re-reddens here.
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{Stmt}
+use @std.avrac.diagnostics.{bag_has_errors}
+
+/// Count `Stmt.Error` rows ANYWHERE in the arena (any depth) via the flat row
+/// list — the depth-agnostic orphan detector.
+fn store_error_nodes(source: string) -> int {
+    let parsed = parse_program_source(source)
+    mut n = 0
+    mut i = 1
+    while i <= parsed.store.stmts.count() {
+        match parsed.store.stmts.get(StmtId(i)) {
+            .Error -> { n = n + 1 }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    n
+}
+
+spec "ps3t.6.7 Slice 5.4: production flip propagates delegate parse errors" {
+    given "a reserved keyword at a binding site INSIDE a function body" {
+        then "the error surfaces on the parse result (no silent ICE-bound tree)" {
+            let parsed = parse_program_source("fn main() { let await = 1 }\n")
+            parsed.had_error == 1
+        }
+        then "the diagnostic bag actually carries the error" {
+            let parsed = parse_program_source("fn main() { let await = 1 }\n")
+            bag_has_errors(parsed.bag)
+        }
+    }
+    given "a well-formed program (the flip's success path is unaffected)" {
+        then "no error is reported and no Error node is constructed" {
+            let parsed = parse_program_source("fn main() { let a = 1\n let b = 2 }\n")
+            parsed.had_error == 0 && store_error_nodes("fn main() { let a = 1\n let b = 2 }\n") == 0
+        }
+    }
+    given "a malformed binding nested two blocks deep (inside `if` inside `fn`)" {
+        then "recovery leaves EXACTLY one Error node — no orphan cascade" {
+            store_error_nodes("fn f() {\n    if true {\n        let a = )\n        let b = 2\n    }\n}\n") == 1
+        }
+    }
+    given "a broken body statement followed by a well-formed one" {
+        then "the good statement still survives (recovery reaches the block)" {
+            let src = "fn f() {\n    let a = )\n    let b = 5\n}\n"
+            let parsed = parse_program_source(src)
+            parsed.had_error == 1 &&
+            match parsed.store.stmts.get(parsed.ids![0]) {
+                .Function(_, _, _, _, body) -> body.length == 2 &&
+                    match parsed.store.stmts.get(body[1]) {
+                        .Let(nm, _, _) -> nm == "b"
+                        _ -> false
+                    }
+                _ -> false
+            }
+        }
+    }
+}

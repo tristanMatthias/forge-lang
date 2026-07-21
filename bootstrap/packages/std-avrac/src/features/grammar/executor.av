@@ -372,6 +372,16 @@ impl PState {
         self.had_error = true
     }
 
+    /// Mark the DSL run as errored WITHOUT recording a diagnostic (ps3t.6.7
+    /// Slice 5.4). Used to mirror a @hand delegate's error STATE back onto this
+    /// PState when the delegate recovered internally (returned .Ok while its own
+    /// bag holds the diagnostic): the boolean gate makes the flip fall back to the
+    /// authoritative hand parser, which OWNS the reporting — so copying the diag
+    /// here would double-report.
+    fn note_had_error(self) {
+        self.had_error = true
+    }
+
     /// A whole-construct error placeholder (no matching alternative).
     fn error_node(self, msg: string) -> ExprId {
         self.report(msg)
@@ -935,6 +945,24 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // stale keyword token would make a following grammar item / repetition
     // reprocess it and cascade.
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    // Propagate the delegate's error STATE even when it returned .Ok (ps3t.6.7
+    // Slice 5.4). A @hand delegate that parses a body-bearing form (fn / impl /
+    // block via parse_declaration_hand → parse_statement_list_ids) does
+    // ERROR-TOLERANT recovery internally: a malformed body statement (e.g.
+    // `let await = 1` — a reserved keyword at a binding site) is rejected into the
+    // DELEGATE's bag + had_error, then RECOVERED as a `Stmt.Error` placeholder so
+    // the enclosing form still returns .Ok. Without mirroring that had_error onto
+    // `st`, the outer flip sees had_error=false, keeps the Error-bearing tree, and
+    // codegen ICEs (F9999 "no emitter for statement kind Stmt.Error"). Mirroring it
+    // makes DslStmtResult.had_error true, so the flip falls back to the
+    // authoritative hand parser — which re-parses and re-reports the real
+    // diagnostic into the OUTER parser's own bag (the diag home the flip relies
+    // on), byte-identical to the hand-only path. The diagnostic itself is NOT
+    // copied (st.diags stays the DSL's) — only the boolean gate — because the
+    // fallback owns the reporting; copying would double-report.
+    if bp.had_error {
+        st.note_had_error()
+    }
     match result {
         .Ok(id) -> id
         .Err(m) -> {
@@ -1288,6 +1316,19 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    // Propagate the delegate's error STATE even on .Ok (ps3t.6.7 Slice 5.4) — the
+    // expression-family mirror of run_hand_stmt's guard. An expression leaf can
+    // hand-parse a nested STATEMENT body (a closure body, an if-expr/match arm),
+    // and parse_statement_list_ids does error-tolerant recovery there: a malformed
+    // body statement is reported into the DELEGATE's bag + had_error, then
+    // recovered as a `Stmt.Error` placeholder so the leaf still returns .Ok.
+    // Mirroring had_error onto `st` makes the expression flip fall back to the
+    // authoritative hand parser (which re-reports into the OUTER bag) instead of
+    // keeping an Error-bearing tree that would ICE in codegen. Only the boolean
+    // gate is copied; the fallback owns the reporting.
+    if bp.had_error {
+        st.note_had_error()
+    }
     match result {
         .Ok(id) -> id
         .Err(m) -> st.error_node(m)
