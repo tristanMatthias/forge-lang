@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, Pattern, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_from_name, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_tuple_at, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
@@ -3105,21 +3105,26 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Index(obj, idx) -> {
             let o = check_expr(tc, tc.nodes.exprs.get(obj))
             let i = check_expr(o.tc, tc.nodes.exprs.get(idx))
+            // A newtype is layout-transparent (spec Axis 1) — indexing operates
+            // on the underlying container, and codegen (emit_index) peels the
+            // newtype to match. Peel here too so the gates below see the base:
+            // otherwise a newtype-over-map slips past the `.Map` reject into the
+            // codegen "indexing on non-string/list value" F9999 ICE, and a
+            // newtype-over-list yields an `.Unknown` element type. A bare type-
+            // param placeholder is `Struct("T", …)`, NOT a Newtype, so it's
+            // untouched and still falls through as before.
+            let oty = vtype_newtype_underlying(o.ty)
             // String indexing returns a string (single character)
-            if vtype_eq(o.ty, .Str) {
+            if vtype_eq(oty, .Str) {
                 return tc_er(i.tc, .Str)
             }
             // Maps and value scalars (the i64/double types) have no `[]` codegen
             // path — both would ICE as F9999 "indexing on non-string/list value".
             // typeck gates, so reject them here with a clean F1206. Strings are
             // handled above; lists and pointers fall through to the element-type
-            // path below. A type-param placeholder is `Struct("T", …)` and a
-            // newtype is its own `Newtype(…)`, so neither is a value scalar — both
-            // fall through on purpose (a newtype wrapping a list should index
-            // *through* to its base, resolved where newtype transparency is
-            // handled).
-            match o.ty {
-                .Map(_, _) -> return tc_reject_index(i.tc, o.ty, "use `.get(key)`", vtype_map_value(o.ty))
+            // path below.
+            match oty {
+                .Map(_, _) -> return tc_reject_index(i.tc, oty, "use `.get(key)`", vtype_map_value(oty))
                 // §6 layout totality (ps3t.4.9): indexing a `.Void` receiver — the
                 // common case being a value read from a fn that omits `-> Type`
                 // and returns void — has no elements; reject it cleanly here
@@ -3127,12 +3132,12 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
                 // non-string/list value" F9999 ICE. `.Unknown` is left to fall
                 // through (upstream under-determination — its own diagnostic must
                 // not be masked).
-                .Void -> return tc_reject_index(i.tc, o.ty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", .Unknown)
-                _ if vtype_is_value_scalar(o.ty) ->
-                    return tc_reject_index(i.tc, o.ty, "only strings, lists, and pointers are indexable", o.ty)
+                .Void -> return tc_reject_index(i.tc, oty, "the receiver produces no value (a function used here may omit its `-> Type` and return void)", .Unknown)
+                _ if vtype_is_value_scalar(oty) ->
+                    return tc_reject_index(i.tc, oty, "only strings, lists, and pointers are indexable", oty)
                 _ -> {}
             }
-            let elem_ty = vtype_list_elem(o.ty)
+            let elem_ty = vtype_list_elem(oty)
             tc_er(i.tc, elem_ty)
         }
         .Block(body) -> check_block(tc, body)

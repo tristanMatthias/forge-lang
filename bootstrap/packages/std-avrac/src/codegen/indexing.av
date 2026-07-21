@@ -1,6 +1,6 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
-use core.{Expr, ValueType, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full}
+use core.{Expr, VarBinding, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem, vtype_render_full, vtype_newtype_underlying}
 use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 
 /// Codegen for `obj[idx]`. Dispatches by container type:
@@ -10,7 +10,15 @@ use codegen.{Ctx, EmitValue, err_emit, ok_emit, ok_emit}
 ///   the single-character substring.
 /// Anything else is a codegen error.
 export fn emit_index(ctx: Ctx, env: List<VarBinding>, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
-    let r = ctx.emit_member(env, obj)?
+    let r0 = ctx.emit_member(env, obj)?
+    // A newtype is layout-transparent — its runtime value IS the underlying
+    // container (`type Nums = List<int>` → a list ptr), so index dispatch runs
+    // on the peeled underlying type. typeck (the `.Index` gate) peels in lockstep.
+    // Resolve through the codegen registry first so a call-returned newtype
+    // (arrives as a parser-default `.Struct`) is peeled too; a real struct
+    // resolves to a non-Newtype, leaving r0 unchanged (byte-identical).
+    let r_resolved = ctx.resolve_codegen_vtype(r0.ty)
+    let r = if r_resolved is .Newtype { r0 with { ty: vtype_newtype_underlying(r_resolved) } } else { r0 }
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
         let i_r = ctx.emit(env, idx)?
@@ -46,9 +54,19 @@ export fn emit_slice(ctx: Ctx, env: List<VarBinding>, obj: Expr, start: Expr, en
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
     let end_r = ctx.emit(env, end)?
-    if vtype_is_str(obj_r.ty) {
+    // Peel newtypes for the str-vs-list dispatch (layout-transparent); the
+    // result keeps obj_r.ty so a slice of a newtype stays that nominal type,
+    // matching typeck's `.Slice` (which returns o.ty). Resolve first so a
+    // call-returned newtype (a parser-default `.Struct`) peels too.
+    let base_ty = vtype_newtype_underlying(ctx.resolve_codegen_vtype(obj_r.ty))
+    if vtype_is_str(base_ty) {
         let result = ctx.call("avra_str_substring", [obj_r.value, start_r.value, end_r.value])
-        return ok_emit(result, ValueType.Str)
+        // Keep obj_r.ty (not bare `.Str`) so a slice of a string-NEWTYPE stays
+        // that nominal type, matching typeck's `.Slice` (returns o.ty) and the
+        // list branch below. A plain string's obj_r.ty IS `.Str`, so this is
+        // unchanged for non-newtypes; without it, `nt[0..1].raw()` typechecks as
+        // the newtype but codegen sees `.Str` and cannot dispatch `.raw()`.
+        return ok_emit(result, obj_r.ty)
     }
     let result = ctx.call("avra_array_slice", [obj_r.value, start_r.value, end_r.value])
     ok_emit(result, obj_r.ty)
