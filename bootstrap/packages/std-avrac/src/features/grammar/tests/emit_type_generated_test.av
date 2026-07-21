@@ -34,7 +34,7 @@ spec "grammar emitter: renders the type family's generated static parser" {
 
     then "named / fn / list / paren / dyn lower to their SHARED type cores" {
         let src = emit_all()
-        src.contains("mk_named_type(capval_tok_text(name), a_list.length > 0, a_list, capval_present(opt))") &&
+        src.contains("mk_named_type(capval_tok_text(CapVal.Toks(name_list)), a_list.length > 0, a_list, capval_present(opt))") &&
         src.contains("mk_fn_type(st, capval_present(lp), p_list, capval_present(r), r)") &&
         src.contains("mk_paren_type(t_list)") &&
         src.contains("CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, e)))") &&
