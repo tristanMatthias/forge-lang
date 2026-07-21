@@ -126,10 +126,11 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // box lives at the thin boundary wrapper parse_binary_pratt_g.
         let src = emit_all()
         src.contains("fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {") &&
+        src.contains("let sp_start = st.cur().pos") &&
         src.contains("mut lhs = run_hand_expr(\"hand_unary\", st)") &&
         src.contains("let lbp = binary_lbp_g(st.cur())") &&
         src.contains("let rhs = parse_binary_pratt_g_id(st, lbp + 1)") &&
-        src.contains("lhs = mk_binary(st, lhs, tx, rhs)") &&
+        src.contains("lhs = mk_binary(st, sp_start, lhs, tx, rhs)") &&
         src.contains("if x == \"*\" || x == \"/\" || x == \"%\" { return 22 }") &&
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }

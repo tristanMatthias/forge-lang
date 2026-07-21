@@ -20,6 +20,7 @@ fn binary_lbp_g(t: Token) -> int {
 }
 
 fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {
+    let sp_start = st.cur().pos
     mut lhs = run_hand_expr("hand_unary", st)
     while true {
         let lbp = binary_lbp_g(st.cur())
@@ -28,7 +29,7 @@ fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {
         if (tx == "+" || tx == "-") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }
         let _ = st.advance()
         let rhs = parse_binary_pratt_g_id(st, lbp + 1)
-        lhs = mk_binary(st, lhs, tx, rhs)
+        lhs = mk_binary(st, sp_start, lhs, tx, rhs)
     }
     lhs
 }

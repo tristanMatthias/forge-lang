@@ -228,6 +228,7 @@ fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> strin
     lbp = lbp + "    0\n}\n\n"
     let leaf_call = leaf_exprid_call(g, leaf)
     let loop = "fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {\n" +
+        "    let sp_start = st.cur().pos\n" +
         "    mut lhs = ${leaf_call}\n" +
         "    while true {\n" +
         "        let lbp = binary_lbp_g(st.cur())\n" +
@@ -236,7 +237,7 @@ fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> strin
         "        if (tx == \"+\" || tx == \"-\") && st.modes.cell_mode && st.pos > 0 && st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line != st.store.lines.to_linecol(st.cur().pos).line { break }\n" +
         "        let _ = st.advance()\n" +
         "        let rhs = parse_binary_pratt_g_id(st, lbp + 1)\n" +
-        "        lhs = mk_binary(st, lhs, tx, rhs)\n" +
+        "        lhs = mk_binary(st, sp_start, lhs, tx, rhs)\n" +
         "    }\n" +
         "    lhs\n}\n\n" +
         "fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }\n\n"

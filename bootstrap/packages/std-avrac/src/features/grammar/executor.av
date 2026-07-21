@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
@@ -2485,8 +2485,15 @@ export fn capval_tok_text(v: CapVal) -> string {
 /// build. Exported so the GENERATED expression parser can collapse the 7 chained
 /// fold rules (bitor→…→factor) into one precedence-climbing loop instead of a
 /// 7-frame descent, without importing `BinOp`/`Expr` into the generated module.
-export fn mk_binary(st: PState, lhs: ExprId, op_text: string, rhs: ExprId) -> ExprId {
-    st.store.exprs.add_leaf(Expr.Binary(lhs, binop_of(op_text), rhs))
+export fn mk_binary(st: PState, sp_start: int, lhs: ExprId, op_text: string, rhs: ExprId) -> ExprId {
+    // Stamp the SAME [start, next-token) byte span the hand `parse_binary_pratt`
+    // stamps via `alloc_at` (mod.av:1674) — `sp_start` is the byte the Pratt loop
+    // captured at ITS entry (leftmost operand's first token, reused for every
+    // left-assoc fold), and `st.cur().pos` is the next-unconsumed token's byte
+    // (== the hand parser's `self.current_start`). §14.2's bare-compound-span
+    // half, for the DSL binary ladder. add_expr(node, sp, []) mirrors alloc_at's
+    // empty-edges spanned alloc.
+    st.store.add_expr(Expr.Binary(lhs, binop_of(op_text), rhs), byte_span(sp_start, st.cur().pos), [])
 }
 
 fn binop_of(sym: string) -> BinOp {
