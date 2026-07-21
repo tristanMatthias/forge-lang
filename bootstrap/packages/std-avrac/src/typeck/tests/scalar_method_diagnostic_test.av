@@ -1,0 +1,62 @@
+// WHY: a method call on a value scalar (`n.foo()`, `n.to_string()` on an
+// int/bool/float/sized-int) had no typeck gate, so it reached codegen and ICEd
+// (F9999 "method call on non-struct/enum value"). This is the METHOD twin of the
+// scalar field gate (scalar_field_diagnostic_test.av / t-vmhy) and the m0fd
+// scalar-INDEX gate: check_method_call now rejects a value-scalar receiver with a
+// clean F1000 before the Unknown fall-through. Scalars have NO methods (str /
+// bytes / list / map / channel / newtype dispatch above); newtypes keep their
+// methods + `.raw()` (the classifier is newtype-blind), and type-param / Unknown
+// receivers still fall through for mono to re-check. An F9999 from ordinary
+// source violates the no-ICE-from-input policy (spec Axis 20). Part of t-fws6.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn sm_out(source: string) -> string {
+    let path = "/tmp/avra_sm_method.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "method call on a scalar is a clean diagnostic, not an ICE (t-fws6)" {
+    then "int.foo() is F1000, never the F9999 ICE" {
+        let out = sm_out("fn main() {\n    let n = 5\n    let _ = n.foo()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "int.to_string() is F1000 (no int methods exist), never the ICE" {
+        let out = sm_out("fn main() {\n    let n = 5\n    let _ = n.to_string()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "bool.x() is F1000, never the F9999 ICE" {
+        let out = sm_out("fn main() {\n    let b = true\n    let _ = b.x()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "float.round() is F1000, never the F9999 ICE" {
+        let out = sm_out("fn main() {\n    let f = 1.5\n    let _ = f.round()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "a sized int (u8) method call is gated too" {
+        let out = sm_out("fn main() {\n    let n: u8 = 5\n    let _ = n.foo()\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "the diagnostic explains scalars have no methods" {
+        let out = sm_out("fn main() {\n    let n = 5\n    let _ = n.foo()\n}")
+        out.contains("scalar types")
+    }
+    then "string methods still compile (no false F1000)" {
+        let out = sm_out("fn main() {\n    let _ = \"hi\".length()\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "list methods still compile (no false F1000)" {
+        let out = sm_out("fn main() {\n    mut xs = [1]\n    xs.push(2)\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "newtype `.raw()` still compiles (newtypes are not value scalars here)" {
+        let out = sm_out("type MyInt = int\nfn main() {\n    let n = MyInt(5)\n    let _ = n.raw()\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "a real struct method still resolves (no false F1000)" {
+        let out = sm_out("type P = { x: int }\nimpl P {\n    fn getx(self) -> int { self.x }\n}\nfn main() {\n    let _ = P { x: 7 }.getx()\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+}

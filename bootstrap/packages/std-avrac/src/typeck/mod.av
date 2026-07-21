@@ -4634,6 +4634,18 @@ export fn check_method_call(tc: TC, obj: Expr, method: string, args: List<ExprId
         _ -> {}
     }
 
+    // A value scalar (int/bool/float/sized-int) has NO methods — Str/Bytes/List/
+    // Map/Channel/Newtype dispatch above; a scalar reaching here is invalid.
+    // Reject cleanly instead of falling through to the `.Unknown` return, which
+    // lets it hit codegen's F9999 "method call on non-struct/enum value" ICE (the
+    // method twin of the scalar field/index gates — t-vmhy/m0fd). The classifier
+    // is newtype-blind, so a newtype (with its own methods + `.raw()`) is handled
+    // above; type-param placeholders (`.Struct("T")`) and `.Unknown` are not value
+    // scalars, so they still fall through for mono to re-check.
+    if vtype_is_value_scalar(o.ty) {
+        return tc_er(tc_report(checked_args, DiagCode.TypeMismatch,
+            "type `${vtype_render_full(o.ty)}` has no method `${method}` — scalar types (int, bool, float) have no methods"), .Unknown)
+    }
     // Fallback — return Unknown for unknown methods
     tc_er(checked_args, .Unknown)
 }
