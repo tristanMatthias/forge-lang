@@ -15,7 +15,7 @@ use features.quote_expr.{lower_quotes, report_runtime_quotes}
 use desugar.{desugar_program, inject_intrinsics}
 use features.component_decl.{expand_components}
 use features.comptime.{resolve_and_expand_program, run_comptime}
-use typeck.{typecheck_env, typecheck_program_from_env, typecheck_env_seeded, snapshot_typeenv, f2_partition_std_own, f2_typeenv_cache_enabled, TC}
+use typeck.{typecheck_env, typecheck_program_from_env, typecheck_env_seeded, snapshot_typeenv, f2_partition_std_own, f2_std_import_fingerprint, f2_typeenv_cache_enabled, TC}
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag, MacroFnOrigin}
 use codegen.{codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
@@ -124,14 +124,22 @@ fn f2_typeck_env_cached(stmts: List<StmtId>, type_reg: TypeRegistry, macro_origi
         // No imported packages to reuse — nothing to seed.
         return typecheck_env(stmts, type_reg, macro_origins, store)
     }
-    let cached = f2_typeenv_read(dir_root, key, key)
+    // Sidecar key = universe fp (namespace: compiler + @std CONTENT) × the shard's
+    // @std IMPORT SET (file key: WHICH packages). The import fp is REQUIRED for
+    // correctness: keyed on the universe fp alone, a snapshot from a shard
+    // importing FEWER @std packages was wrongly reused by one importing MORE, so
+    // the seeded env lacked decls the shard needed (e.g. @std::process::Marshal →
+    // F1000; the warm==cold sweep oracle caught it).
+    let import_fp = f2_std_import_fingerprint(store, split.std_ids)
+    let cached = f2_typeenv_read(dir_root, key, import_fp)
     if cached != null {
         typecheck_env_seeded(split.own_ids, cached!, type_reg, macro_origins, store)
     } else {
-        // First shard for this @std universe: snapshot the @std-ONLY env and
-        // write it for later shards; return today's full env for THIS compile.
+        // First shard for this (@std universe × import set): snapshot the @std-ONLY
+        // env and write it for later shards with the same imports; return today's
+        // full env for THIS compile.
         let std_env = typecheck_env(split.std_ids, type_reg, macro_origins, store)
-        let _ = f2_typeenv_write(dir_root, key, key, snapshot_typeenv(std_env))
+        let _ = f2_typeenv_write(dir_root, key, import_fp, snapshot_typeenv(std_env))
         typecheck_env(stmts, type_reg, macro_origins, store)
     }
 }

@@ -29,6 +29,7 @@
 // byte-identical). The flag flips ON only after the oracle is green.
 
 use core.{avra_process_env_get}
+use core.{content_id_for}
 
 /// Is the F2 typeck-env cache enabled? OFF unless AVRA_F2_TYPEENV_CACHE is set
 /// in the environment. While off, no shard ever seeds from metadata and the
@@ -356,4 +357,40 @@ export fn f2_partition_std_own(store: NodeStore, ids: List<StmtId>) -> StdOwnSpl
         }
     }
     StdOwnSplit { std_ids, own_ids }
+}
+
+/// F2: a cheap fingerprint of the @std IMPORT SET — the set of "@scope.pkg"
+/// package paths present in `std_ids` (the outer `@scope` module wrapping each
+/// imported package's inner module). This is the sidecar key DISCRIMINATOR: the
+/// snapshot is the @std env collected from THESE packages, so it is reusable
+/// ONLY by a shard importing the SAME package set (metadata stubs are
+/// whole-package — resolver.av:1073 "the stubs already enumerate every submodule
+/// that contributed" — and the universe fp fixes their CONTENT, so same package
+/// set ⇒ identical collected @std env). Without this the sidecar was keyed on the
+/// universe fp ALONE, so a snapshot from a shard importing FEWER @std packages
+/// was wrongly reused by one importing MORE — the seeded env then lacked e.g.
+/// `@std::process::Marshal` (an F1000 the warm==cold sweep oracle caught). Walks
+/// only the two-level module NAMES (scope outer → package inner), never decl
+/// bodies, so it stays O(packages), not O(@std size) — the collect it avoids.
+///
+/// Order-dependent by construction (the paths join in std_ids appearance order):
+/// a shard with the same package set in a different order MISSES and recomputes —
+/// correctness-safe (never a wrong HIT), and the common case (a consistent test
+/// framework import order) still shares.
+export fn f2_std_import_fingerprint(store: NodeStore, std_ids: List<StmtId>) -> string {
+    mut paths: List<string> = []
+    for id in std_ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Module(scope, body) -> {
+                for c in body {
+                    match stmt_unwrap(store, store.stmts.get(c)) {
+                        .Module(inner, _) -> { paths.push("${scope}.${inner}") }
+                        _ -> {}
+                    }
+                }
+            }
+            _ -> {}
+        }
+    }
+    string(content_id_for(paths.join("|")))
 }
