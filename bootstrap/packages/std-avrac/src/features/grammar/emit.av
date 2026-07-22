@@ -491,6 +491,18 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + "        return ${emit_ref_call(b.items[0].prim)}\n"
             out = out + "    }\n"
+        } else if is_bare_hand(b) && i == last && !has_spec {
+            // A bare `@hand` LAST branch is the UNGUARDED tail — the delegate owns
+            // every case earlier branches didn't match, INCLUDING error recovery
+            // (its own diagnostics), exactly like the single-branch `x = @hand(f)`
+            // form. Guarding it with the delegate's FIRST + a grammar error_node
+            // tail would divert a stray token (e.g. `* 5`) to a DSL error instead of
+            // the hand parser's recovery — the recovery-tree oracle's exact catch.
+            tail = "    ${emit_seq_result(g, b)}\n"
+        } else if is_bare_hand(b) {
+            out = out + "    if ${seq_first_guard(g, b, [])} {\n"
+            out = out + "        return ${emit_seq_result(g, b)}\n"
+            out = out + "    }\n"
         } else {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + emit_seq_stmts(g, b, "        ")
@@ -576,6 +588,14 @@ fn emit_spec_item(item: GItem, idx: int) -> string {
 fn is_bare_ref(seq: GSeq) -> bool {
     seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
         prim_is_ref(seq.items[0].prim) && build_is_none(seq.build)
+}
+
+/// True for `| @hand(fn)` — a lone One @hand-delegation branch (no build). As the
+/// LAST branch it is the unguarded tail (the delegate owns every unmatched case +
+/// its own error recovery), matching the single-branch `x = @hand(f)` lowering.
+fn is_bare_hand(seq: GSeq) -> bool {
+    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
+        prim_is_hand(seq.items[0].prim) && build_is_none(seq.build)
 }
 
 // ── Sequence statements (a dispatch branch's / general seq's body) ──

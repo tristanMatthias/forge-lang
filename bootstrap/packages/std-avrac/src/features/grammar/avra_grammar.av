@@ -51,7 +51,8 @@ export fn avra_expr_grammar() -> Grammar {
   shift      = l:term ( op:("<<" | ">>") r:term )* -> fold_binary(l, op, r)
   term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
-  unary      = @hand(hand_unary)
+  unary      = op:("!" | "-") operand:unary -> Unary(op, operand)
+             | @hand(hand_unary)
     }
     gp.grammar
 }

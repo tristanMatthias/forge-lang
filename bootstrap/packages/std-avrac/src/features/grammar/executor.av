@@ -2547,8 +2547,17 @@ export fn fold_binary_expr(st: PState, lcap: CapVal, opcap: CapVal, rcap: CapVal
 
 export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
     let operand = capval_to_expr(st, opndcap)
-    let sym = capval_tok_text(opcap)
-    st.store.exprs.add_leaf(Expr.Unary(unop_of(sym), operand))
+    // Stamp the SAME [op-start, next-token) byte span the hand parse_unary stamps
+    // via alloc_at(Expr.Unary, sp_start) (mod.av:1747) — sp_start there is the op
+    // token's start (self.current_start captured at parse_unary entry), which IS
+    // the op capture's Token.pos here; st.cur().pos is the next-unconsumed byte
+    // (== hand's self.current_start at the alloc). Mirrors mk_binary (add_expr with
+    // an empty-edges span) so a grammar-owned prefix Unary is byte-identical to the
+    // hand-parsed one, not span-free.
+    match opcap {
+        .Tok(t) -> st.store.add_expr(Expr.Unary(unop_of(t.text), operand), byte_span(t.pos, st.cur().pos), [])
+        _ -> st.store.exprs.add_leaf(Expr.Unary(unop_of(capval_tok_text(opcap)), operand))
+    }
 }
 
 export fn capval_toks(v: CapVal) -> List<Token> {
