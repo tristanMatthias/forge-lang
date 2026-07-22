@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -67,12 +67,11 @@ impl Parser {
             self.advance_byte()   // second /
             self.advance_byte()   // third  / or !
             if byte_at(sb, self.current) == SPACE { self.advance_byte() }   // one leading space
-            // The comment body to end-of-line is a verbatim run — ONE slice, no per-char
-            // char_at alloc (byte-identical to appending each advance_char).
+            // The comment body to end-of-line is the GENERATED verbatim run scan_to_eol
+            // (delim_run_rules, term=LF) — the run is newline-free by construction, so
+            // take_run (column += length) is byte-identical to the old advance_byte loop.
             let cstart = self.current
-            while !self.is_at_end() && byte_at(sb, self.current) != LF {
-                self.advance_byte()
-            }
+            self.take_run(scan_to_eol(sb, self.current))
             self.set_current(if is_mod { Tk.ModDocComment } else { Tk.DocComment }, self.slice(cstart, self.current))
             return
         }
@@ -355,9 +354,10 @@ impl Parser {
                 if third == SLASH || third == BANG {
                     return  // stop skipping, let advance_token handle it
                 }
-                while !self.is_at_end() && byte_at(sb, self.current) != LF {
-                    self.advance_byte()
-                }
+                // Skip the `//` line-comment body to end-of-line via the GENERATED
+                // verbatim run (scan_to_eol) — newline-free, so take_run is byte-identical
+                // to the advance_byte loop; the outer while then consumes the LF itself.
+                self.take_run(scan_to_eol(sb, self.current))
             } else if b == SLASH && byte_at(sb, self.current + 1) == STAR {
                 // Block comment with nesting: /* ... /* ... */ ... */
                 self.advance_byte()  // consume /
