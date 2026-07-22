@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_ident_run, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -157,6 +157,15 @@ impl Parser {
         self.column = self.column + 1
     }
 
+    // Consume a char-class run that ended at byte offset `end` (from a generated
+    // scan_<name>_run) — advance to `end` and bump the column by the run length.
+    // Numbers (the only caller) never span a newline, so this is exactly the net
+    // effect of the old inline `while … { self.bump() }` loop, byte-for-byte.
+    fn take_run(self, end: int) {
+        self.column = self.column + (end - self.current)
+        self.current = end
+    }
+
     // Advance one byte, tracking line/column exactly like advance_char (strings and
     // multiline strings CAN span newlines) — the raw-byte twin of advance_char with
     // no per-char char_at string allocation. Returns the consumed byte (-1 past end;
@@ -186,31 +195,31 @@ impl Parser {
             let prefix = byte_at(sb, self.current)
             if prefix == LOWER_X || prefix == UPPER_X {
                 self.bump()
-                while cc_is_hex_digit(byte_at(sb, self.current)) || byte_at(sb, self.current) == UNDERSCORE { self.bump() }
+                self.take_run(scan_hex_run(sb, self.current))
                 self.set_current(Tk.Number, self.slice(self.start, self.current))
                 return
             }
             if prefix == LOWER_B || prefix == UPPER_B {
                 self.bump()
-                while cc_is_binary_digit(byte_at(sb, self.current)) || byte_at(sb, self.current) == UNDERSCORE { self.bump() }
+                self.take_run(scan_bin_run(sb, self.current))
                 self.set_current(Tk.Number, self.slice(self.start, self.current))
                 return
             }
             if prefix == LOWER_O || prefix == UPPER_O {
                 self.bump()
-                while cc_is_octal_digit(byte_at(sb, self.current)) || byte_at(sb, self.current) == UNDERSCORE { self.bump() }
+                self.take_run(scan_oct_run(sb, self.current))
                 self.set_current(Tk.Number, self.slice(self.start, self.current))
                 return
             }
         }
 
         // Decimal integer part.
-        while cc_is_digit(byte_at(sb, self.current)) || byte_at(sb, self.current) == UNDERSCORE { self.bump() }
+        self.take_run(scan_dec_run(sb, self.current))
 
         // Float: `.` immediately followed by a digit (`1.5`; NOT `1..5` range or `1.`).
         if byte_at(sb, self.current) == DOT && cc_is_digit(byte_at(sb, self.current + 1)) {
             self.bump()
-            while cc_is_digit(byte_at(sb, self.current)) || byte_at(sb, self.current) == UNDERSCORE { self.bump() }
+            self.take_run(scan_dec_run(sb, self.current))
             self.set_current(Tk.Float, self.slice(self.start, self.current))
             return
         }

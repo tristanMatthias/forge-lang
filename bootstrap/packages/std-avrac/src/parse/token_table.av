@@ -193,21 +193,28 @@ export const KEYWORD_RULE_COUNT = 59
 
 // ── Character-CLASS RUN terminals ─────────────────────────────────
 /// One character-class RUN terminal: a maximal run of bytes each satisfying `pred`
-/// (a `cc_is_*` classifier in parse/charclass.av), scanned into `scan_<name>_run`.
-/// This is the char-class-RUN analog of `LitRule`'s fixed spellings — the
-/// declarative form of the hand lexer's `while cc_is_X(byte_at(...)) { end += 1 }`
-/// loops. `pred` names the classifier the generated loop calls; `name` names the
-/// emitted scanner. Unlike operators/keywords there is NO trie (a run is one class,
-/// not a set of spellings); the generator emits a single byte-scan loop per rule.
-export type CharRun = { name: string, pred: string }
+/// (a `cc_is_*` classifier in parse/charclass.av), OPTIONALLY also allowing the
+/// separator byte named by `sep` (a byte constant in parse/ascii.av; `""` = none).
+/// Scanned into `scan_<name>_run`. This is the char-class-RUN analog of `LitRule`'s
+/// fixed spellings — the declarative form of the hand lexer's
+/// `while cc_is_X(byte_at(...)) [|| ... == SEP] { end += 1 }` loops. `pred` names the
+/// classifier the generated loop calls; `sep` (e.g. `"UNDERSCORE"`) is the digit-group
+/// separator numbers allow; `name` names the emitted scanner. Unlike operators/keywords
+/// there is NO trie (a run is one class, not a set of spellings); the generator emits a
+/// single byte-scan loop per rule.
+export type CharRun = { name: string, pred: string, sep: string }
 
 /// The char-class RUN terminals the lexer scans, compiled to
 /// `scan_<name>_run(src, start) -> end` byte-scan loops by parse/emit_lex.av
-/// (parse/gen_run_scanner.av). The identifier CONTINUATION run is the first; the
-/// number-family digit runs (decimal/hex/binary/octal) join here as they migrate
-/// off their hand loops. Single source of truth for the lexer's char-class runs.
+/// (parse/gen_run_scanner.av). Single source of truth for the lexer's char-class runs:
+/// the identifier CONTINUATION run (no separator) and the number-family digit runs
+/// (decimal/hex/binary/octal, each allowing the `_` group separator).
 export fn char_run_rules() -> List<CharRun> {
     [
-        CharRun { name: "ident", pred: "cc_is_ident_cont" },
+        CharRun { name: "ident", pred: "cc_is_ident_cont",   sep: "" },
+        CharRun { name: "dec",   pred: "cc_is_digit",        sep: "UNDERSCORE" },
+        CharRun { name: "hex",   pred: "cc_is_hex_digit",    sep: "UNDERSCORE" },
+        CharRun { name: "bin",   pred: "cc_is_binary_digit", sep: "UNDERSCORE" },
+        CharRun { name: "oct",   pred: "cc_is_octal_digit",  sep: "UNDERSCORE" },
     ]
 }
