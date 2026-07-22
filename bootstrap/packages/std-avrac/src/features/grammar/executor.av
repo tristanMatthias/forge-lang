@@ -382,6 +382,15 @@ impl PState {
         self.had_error = true
     }
 
+    /// Roll the cursor + diagnostics + error flag back to a pre-speculation
+    /// snapshot (the node store is truncated separately by the caller via
+    /// store.truncate_to_mark). The `@try` bounded-backtracking restore.
+    fn restore_to(self, pos: int, diags_len: int, err: bool) {
+        self.pos = pos
+        self.diags = list_take(self.diags, diags_len)
+        self.had_error = err
+    }
+
     /// A whole-construct error placeholder (no matching alternative).
     fn error_node(self, msg: string) -> ExprId {
         self.report(msg)
@@ -684,18 +693,58 @@ fn branch_pred_ok(seq: GSeq, st: PState) -> bool {
     true
 }
 
+/// The first `n` elements of `xs` (for rolling `st.diags` back after a failed
+/// speculative parse — the list analogue of NodeStore.truncate_to_mark).
+fn list_take(xs: List<string>, n: int) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    for x in xs {
+        if i >= n { return out }
+        out.push(x)
+        i = i + 1
+    }
+    out
+}
+
 /// Execute an alternation: pick the first branch whose predicate gate holds AND
-/// whose FIRST matches the current token (recursive descent), execute it. No
-/// match → an Error node + diagnostic (error-tolerant).
+/// whose FIRST matches the current token (recursive descent), execute it. A
+/// `@try` branch is BOUNDED-BACKTRACKING — snapshot before, roll back + try the
+/// next branch if it fails (adds a diagnostic). No match → an Error node +
+/// diagnostic (error-tolerant), unless a speculative branch rolled back (then a
+/// clean Nil — the caller decides, and diags/had_error are already restored).
 fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> CapVal {
     match node {
         .Alt(branches) -> {
             let empty: List<string> = []
+            mut tried_spec = false
             for b in branches {
                 if branch_pred_ok(b, st) && tok_starts_seq(g, b, st.cur(), empty) {
-                    return exec_seq(g, b, st, env, multi)
+                    if b.speculative {
+                        // Snapshot the cursor + node store + diagnostics, run the
+                        // branch, and commit only if it added no diagnostic;
+                        // otherwise roll everything back and try the next branch
+                        // (the save_state/restore_state analogue for f<T>).
+                        tried_spec = true
+                        let s_pos = st.pos
+                        let s_mark = st.store.mark()
+                        let s_diags = st.diags.length
+                        let s_err = st.had_error
+                        let v = exec_seq(g, b, st, env, multi)
+                        if st.diags.length == s_diags && st.had_error == s_err {
+                            return v
+                        }
+                        st.store.truncate_to_mark(s_mark)
+                        st.restore_to(s_pos, s_diags, s_err)
+                    } else {
+                        return exec_seq(g, b, st, env, multi)
+                    }
                 }
             }
+            // No branch committed. A rolled-back speculative attempt is a clean
+            // "no match" (diags/had_error already restored) — let the caller (an
+            // enclosing alternation, a `*`/`?`, or a required position) decide;
+            // do NOT synthesise a spurious parse error.
+            if tried_spec { return CapVal.Nil }
             CapVal.Node(st.error_node("unexpected token `${st.cur().text}`"))
         }
     }

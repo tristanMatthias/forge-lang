@@ -239,7 +239,26 @@ fn parse_alt(p: GP) -> GNode {
 // the items — GRAMMAR_DSL.md §2 writes `@expect … @recover … -> e`
 // (annots before build), so parse them interleaved rather than fixing
 // a rigid build-then-annots order.
+/// True when the cursor is the `@try` branch marker — a leading, BRANCH-level
+/// speculation flag (bounded backtracking), distinct from the `@hand`/`@when`
+/// primaries and the `@expect`/`@recover` annotations.
+fn at_try_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "try"
+}
+
 fn parse_seq(p: GP) -> GSeq {
+    // A leading `@try` marks this alternative BOUNDED-BACKTRACKING (snapshot →
+    // run → roll back + try the next branch on failure). Consumed here, before
+    // the items, so it prefixes the branch rather than being an item.
+    mut speculative = false
+    if at_try_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "try"
+        speculative = true
+    }
     mut items: List<GItem> = []
     while seq_can_continue(p) {
         let before = p.pos
@@ -284,7 +303,34 @@ fn parse_seq(p: GP) -> GSeq {
             break
         }
     }
-    GSeq { items, build, annots }
+    // A `@try` branch is a bounded-speculation RECOGNIZER: emit lowers it to a
+    // snapshot → run → commit-or-rollback block whose committed value is the last
+    // item's (exec_seq's build-less `last`) and whose failure signal is a reported
+    // terminal mismatch. That lowering is faithful ONLY for a flat sequence of
+    // One-rep terminals / rule refs with no `-> build` — richer shapes (capturing
+    // builds, repetitions, groups, `@hand`) have no faithful speculative emission
+    // yet, so REJECT them here (keeping the interpreter and the generated parser in
+    // lockstep — the same @when-rejection discipline) rather than silently diverge.
+    if speculative {
+        for it in items {
+            match it.rep {
+                .One -> {}
+                _ -> p.fail("a `@try` branch item cannot take a `*`/`+`/`?` repetition (bounded speculation supports a flat terminal/ref sequence only)")
+            }
+            match it.prim {
+                .Lit(_) -> {}
+                .Named(_) -> {}
+                .Ref(_) -> {}
+                .Pred(_) -> {}
+                _ -> p.fail("a `@try` branch may contain only terminals and rule references (no groups or `@hand`)")
+            }
+        }
+        match build {
+            .None -> {}
+            _ -> p.fail("a `@try` branch cannot carry a `-> build` (bounded speculation is a recognizer; capture in the committed rule instead)")
+        }
+    }
+    GSeq { items, build, annots, speculative }
 }
 
 /// A sequence keeps taking items until a FOLLOW token: `|`, `)`, `}`,
