@@ -132,6 +132,11 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_tree("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
         agree_tree("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
         agree_tree("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        // `* 5` (a binary-operator-led expr-stmt) was the one 5c divergence — the
+        // static parse_expr_stmt now yields Stmt.Error on a failed expression, so
+        // it recovers to the same bare `(error)` as hand (folded in from the
+        // former characterisation spec once the emit-error fix landed).
+        agree_tree("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
         agree_tree("else\nfn b() -> int { 2 }")
     }
     then "malformed declarations recover to the same tree" {
@@ -180,26 +185,25 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     }
 }
 
-// The 5c lesson, made executable — the ONE corpus case where the F-code oracle is
-// BLIND. A top-level binary-operator-led expression statement (`* 5`): the static
-// generated `parse_expr_stmt` wraps the FAILED expression as
-// `.Ok(Stmt.Expr(Expr.Error))` → `(expr (* (error) 5))`, while the hand parser
-// returns `.Err` → the whole-program loop drops a bare `(error)`. Both emit the
-// SAME F-code(s), so the F-code oracle stays green — but the recovery TREES
-// diverge. This is the exact gap that blocks retiring the interpreter re-parse
-// fallback (slice 5c, commit e1a55fef "needs emit-error work"); the follow-up
-// emit-error slice makes the static parser yield `.Err` here, at which point this
-// characterisation flips and the case folds into the agreeing corpus above.
-spec "t-47hc.3: recovery-TREE oracle CHARACTERISES the known 5c divergence" {
-    then "F-codes AGREE on the stray top-level `* 5` (the oracle's blind spot)" {
+// The 5c lesson RESOLVED, pinned. A top-level binary-operator-led expression
+// statement (`* 5`) was the ONE corpus case where F-codes agreed but the recovery
+// TREES diverged: the static generated `parse_expr_stmt` wrapped the FAILED
+// expression as `.Ok(Stmt.Expr(Expr.Error))` → `(expr (* (error) 5))`, while hand
+// yielded `.Err` → a bare `(error)`. The emit-error fix (emit.av's `ExprStmt`
+// build → `Stmt.Error` when `st.had_error`) makes the static parser recover it as
+// `(error)` too — closing the exact gap that blocked retiring the interpreter
+// re-parse fallback (commit e1a55fef "needs emit-error work"). This spec pins the
+// fix so a regression that re-wraps a failed expr-stmt as `(expr (error))` trips.
+spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
+    then "F-codes agree on the stray top-level `* 5`" {
         static_raw("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") ==
             hand_oracle("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
     }
-    then "but the recovery TREES diverge: static wraps `(expr (error))`, hand drops `(error)`" {
+    then "the recovery TREES now AGREE: static yields a bare `(error)`, matching hand (not `(expr (*`)" {
         let src = "fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }"
-        !agree_tree(src) &&
-        rtree(true, src).contains("(expr (* (error) 5))") &&
-        rtree(false, src).contains("(error)") &&
+        agree_tree(src) &&
+        rtree(true, src).contains("(error)") &&
+        !rtree(true, src).contains("(expr (*") &&
         !rtree(false, src).contains("(expr (*")
     }
 }

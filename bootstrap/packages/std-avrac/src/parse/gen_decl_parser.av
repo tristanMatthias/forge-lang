@@ -40,6 +40,6 @@ fn parse_continue_stmt(st: PState) -> CapVal {
 
 fn parse_expr_stmt(st: PState) -> CapVal {
     let e = parse_expression(st)
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e))))
+    if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) } else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e)))) }
 }
 
