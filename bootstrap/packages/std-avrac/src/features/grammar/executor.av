@@ -415,7 +415,16 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, tok: Token, visited: List<string>) -
         .Ref(name) -> tok_starts_rule(g, name, tok, visited)
         .Group(inner) -> tok_starts_node(g, inner, tok, visited)
         .Hand(hf) -> hand_starts(hf, tok)
+        // A `@when` predicate is zero-width — it starts no token. It never
+        // reaches here for a LEADING position (tok_starts_seq skips it); this
+        // arm covers a non-leading predicate, which contributes no FIRST token.
+        .Pred(_) -> false
     }
+}
+
+/// True iff the primary is a `@when(flag)` zero-width mode predicate.
+fn prim_is_pred(prim: GPrim) -> bool {
+    match prim { .Pred(_) -> true  _ -> false }
 }
 
 fn tok_starts_rule(g: Grammar, name: string, tok: Token, visited: List<string>) -> bool {
@@ -443,6 +452,10 @@ fn tok_starts_node(g: Grammar, node: GNode, tok: Token, visited: List<string>) -
 /// nullable (Opt/Star) leading items.
 fn tok_starts_seq(g: Grammar, seq: GSeq, tok: Token, visited: List<string>) -> bool {
     for item in seq.items {
+        // A `@when` predicate is zero-width: it contributes no FIRST token and
+        // never stops the scan — skip past it to the next item. (Its mode gate
+        // is checked separately in branch_pred_ok, ANDed onto the branch.)
+        if prim_is_pred(item.prim) { continue }
         if tok_starts_prim(g, item.prim, tok, visited) { return true }
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
@@ -644,15 +657,42 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     }
 }
 
-/// Execute an alternation: pick the first branch whose FIRST matches the
-/// current token (recursive descent), execute it. No match → an Error
-/// node + diagnostic (error-tolerant).
+/// Read a parse-MODE flag by name off the live ExprModes (the `@when(flag)`
+/// semantics). The `allow_*` flags are int-as-bool; `cell_mode` is a real bool.
+/// An unknown flag is ungated (true) — a typo is caught byte-side because the
+/// emitted guard `modes_flag(st.modes, "flag")` shares THIS function, so the
+/// interpreter and the generated parser can never disagree on a flag's meaning.
+export fn modes_flag(modes: ExprModes, flag: string) -> bool {
+    if flag == "allow_struct_lit" { return modes.allow_struct_lit != 0 }
+    if flag == "allow_dot_postfix" { return modes.allow_dot_postfix != 0 }
+    if flag == "allow_it_sugar" { return modes.allow_it_sugar != 0 }
+    if flag == "cell_mode" { return modes.cell_mode }
+    true
+}
+
+/// True iff every `@when(flag)` predicate on the branch holds under the live
+/// modes. Predicates AND — all must hold for the branch to apply. A branch with
+/// no predicate is trivially ok. This is the executor half of `@when`; the emit
+/// half folds the same `modes_flag(...)` conjuncts into the branch guard.
+fn branch_pred_ok(seq: GSeq, st: PState) -> bool {
+    for item in seq.items {
+        match item.prim {
+            .Pred(flag) -> { if !modes_flag(st.modes, flag) { return false } }
+            _ -> {}
+        }
+    }
+    true
+}
+
+/// Execute an alternation: pick the first branch whose predicate gate holds AND
+/// whose FIRST matches the current token (recursive descent), execute it. No
+/// match → an Error node + diagnostic (error-tolerant).
 fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> CapVal {
     match node {
         .Alt(branches) -> {
             let empty: List<string> = []
             for b in branches {
-                if tok_starts_seq(g, b, st.cur(), empty) {
+                if branch_pred_ok(b, st) && tok_starts_seq(g, b, st.cur(), empty) {
                     return exec_seq(g, b, st, env, multi)
                 }
             }
@@ -774,6 +814,10 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             else if is_expr_hand(hf) { CapVal.Node(run_hand_expr(hf, st)) }
             else { CapVal.Node(run_hand(hf, st)) }
         }
+        // A `@when` predicate is zero-width — the branch gate already decided
+        // this alternative applies (branch_pred_ok in exec_node); executing the
+        // predicate itself consumes no token and yields no value.
+        .Pred(_) -> CapVal.Nil
     }
 }
 

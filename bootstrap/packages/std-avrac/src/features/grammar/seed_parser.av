@@ -276,9 +276,9 @@ fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
     if p.peek().kind == "ARROW" { return false }
     if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
-    // `@hand(...)` is a PRIMARY (item) — keep going; `@expect`/`@recover`
-    // are trailing annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) }
+    // `@hand(...)` / `@when(...)` are PRIMARIES (items) — keep going;
+    // `@expect`/`@recover` are trailing annotations — stop the item list.
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -293,6 +293,15 @@ fn at_hand_primary(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "hand"
+}
+
+/// True when the cursor is `@when` — the zero-width mode-predicate primary
+/// (t-47hc.3), distinct from `@hand` and the `@expect`/`@recover` annotations.
+fn at_when_primary(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "when"
 }
 
 // labeled = ( NAME ":" )? postfix
@@ -371,7 +380,17 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close `@hand`")
         return GPrim.Hand(hf)
     }
-    p.fail("expected a rule reference, terminal, `(`, or `@hand(fn)`")
+    // Zero-width mode predicate: `@when(flag)` gates its branch on a parse mode.
+    if at_when_primary(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "when"
+        p.expect_punct("(", "expected `(` after `@when`")
+        mut flag = ""
+        if p.peek().kind == "NAME" { flag = p.advance().text }
+        p.expect_punct(")", "expected `)` to close `@when`")
+        return GPrim.Pred(flag)
+    }
+    p.fail("expected a rule reference, terminal, `(`, `@hand(fn)`, or `@when(flag)`")
     let _ = p.advance()
     GPrim.Lit("")
 }

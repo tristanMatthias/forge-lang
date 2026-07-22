@@ -1,0 +1,54 @@
+// WHY: t-47hc.3 (Phase 2) slice 3a — the `@when(flag)` zero-width SEMANTIC
+// PREDICATE. A grammar branch gated `@when(flag)` applies only when the live
+// parse mode `flag` is set — how a rule expresses the context-sensitivity the
+// hand parser does with a mode flag (e.g. struct-lit-in-header). Proves: it
+// PARSES into a zero-width Pred item; the interpreter GATES the branch on the
+// live modes; a leading @when is zero-width to FIRST; the emitted guard carries
+// the mode read.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source, grammar_ambiguities, Grammar, GNode}
+use @std.avrac.core.{render_expr_id}
+
+// Item count of the first rule's first branch (confirms @when parses as an item).
+fn first_branch_items(g: Grammar) -> int {
+    match g.rules[0].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return -1 }
+            branches[0].items.length
+        }
+    }
+}
+
+// A rule gated on `flag`, delegating to the proven brace_expr hand leaf. Under
+// default modes the gate alone decides whether `{ }` parses (had_error).
+fn gated_errs(flag: string, src: string) -> bool {
+    let gp = parse_grammar("gated = @when(${flag}) @hand(brace_expr)")
+    run_grammar_expr(gp.grammar, src).had_error
+}
+
+spec "t-47hc.3: @when(flag) mode predicate" {
+    then "@when(flag) parses as a zero-width leading item (pred + terminal = 2 items)" {
+        first_branch_items(parse_grammar("gated = @when(allow_struct_lit) NUMBER").grammar) == 2
+    }
+    then "baseline: an ungated @hand(brace_expr) parses `{ }` without error" {
+        let gp = parse_grammar("gated = @hand(brace_expr)")
+        !run_grammar_expr(gp.grammar, "{ }").had_error
+    }
+    then "a predicate whose flag is SET takes the branch (allow_struct_lit default true)" {
+        !gated_errs("allow_struct_lit", "{ }")
+    }
+    then "a predicate whose flag is CLEAR skips the branch (allow_it_sugar default false)" {
+        // Gate fails → no branch matches → the parse errors (branch NOT taken).
+        gated_errs("allow_it_sugar", "{ }")
+    }
+    then "a leading @when is zero-width: first_seq skips it (FIRST still sees the terminal)" {
+        // `@when(f) "a" "b" | "a"`: branch 1's FIRST is `a` (pred skipped, One
+        // stops at "a"), overlapping branch 2 — the shadow is reported.
+        let gp = parse_grammar("r = @when(allow_struct_lit) \"a\" \"b\" -> Mk() | \"a\" -> Mk()")
+        let ambs = grammar_ambiguities(gp.grammar)
+        ambs.length == 1 && ambs[0].shared.length == 1 && ambs[0].shared[0] == "lit:a"
+    }
+    then "the emitted branch guard carries the mode read" {
+        let gp = parse_grammar("r = @when(allow_struct_lit) NUMBER | STRING")
+        emit_parser_source(gp.grammar).contains("allow_struct_lit")
+    }
+}

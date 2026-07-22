@@ -117,6 +117,16 @@ export enum GPrim {
     /// not in new notation. Whole-rule granularity only (no inline
     /// semantic actions — the §1 hard line holds).
     Hand(fn_name: string)
+    /// `@when(flag)` — a zero-width SEMANTIC PREDICATE (t-47hc.3). Consumes
+    /// no token; it GATES its branch on a parse MODE flag (`allow_struct_lit`,
+    /// `allow_dot_postfix`, `allow_it_sugar`, `cell_mode`), read from the live
+    /// `ExprModes` the executor already threads through `PState`. This is how a
+    /// grammar rule expresses the context-sensitivity the hand parser does with
+    /// a mode flag — e.g. `if Foo { … }`: inside a control-header the `{` is the
+    /// body, so a struct-literal alternative is gated `@when(allow_struct_lit)`.
+    /// Predicates AND (all must hold) where FIRST-token alternatives OR; a
+    /// leading `@when` is nullable (it never contributes a FIRST token).
+    Pred(mode: string)
 }
 
 /// The `-> …` build that constructs the result from captures.

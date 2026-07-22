@@ -63,6 +63,10 @@ fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
         .Ref(name) -> first_rule(g, name, visited)
         .Group(inner) -> first_node(g, inner, visited)
         .Hand(_) -> FirstSet { terms: [], opaque: true }
+        // A `@when` predicate is zero-width — it contributes NO FIRST terminal
+        // (and is not opaque: it gates the branch on a mode, it doesn't hide a
+        // hand-parsed leaf). first_seq skips it so the scan continues past it.
+        .Pred(_) -> ffs_empty()
     }
 }
 
@@ -90,9 +94,16 @@ fn first_node(g: Grammar, node: GNode, visited: List<string>) -> FirstSet {
 
 /// FIRST of a sequence — the first item's FIRST, extended through nullable
 /// (Opt/Star) leading items. EXACTLY tok_starts_seq's shape (One/Plus stop).
+fn ff_is_pred(prim: GPrim) -> bool {
+    match prim { .Pred(_) -> true  _ -> false }
+}
+
 export fn first_seq(g: Grammar, seq: GSeq, visited: List<string>) -> FirstSet {
     mut acc = ffs_empty()
     for item in seq.items {
+        // A `@when` predicate is zero-width — skip past it (contributes no FIRST
+        // terminal, never stops the scan), matching tok_starts_seq.
+        if ff_is_pred(item.prim) { continue }
         acc = ffs_union(acc, first_prim(g, item.prim, visited))
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
