@@ -13,6 +13,8 @@
 //
 // Extern decls are re-declared here (the established pattern — see core/ast.av:
 // "an extern decl is just a reference to the C symbol, not a definition").
+use parse.{LF, SPACE, TAB, CR, DIGIT_0, DIGIT_9, LOWER_A, LOWER_Z, UPPER_A, UPPER_Z, UNDERSCORE}
+
 extern fn avra_bytes_from_string(s: string) -> bytes
 extern fn avra_bytes_byte(b: bytes, idx: int) -> int
 extern fn avra_bytes_length(b: bytes) -> int
@@ -29,10 +31,10 @@ export enum CharClass { Whitespace, Newline, Digit, Alpha, Other }
 /// and the ASCII whitespace the hand lexer skips; everything else (including
 /// UTF-8 lead/continuation bytes 128..255) is `Other`.
 export fn char_class(b: int) -> CharClass {
-    if b == 10 { return .Newline }                              // \n
-    if b == 32 || b == 9 || b == 13 { return .Whitespace }      // space, tab, CR
-    if b >= 48 && b <= 57 { return .Digit }                     // 0-9
-    if (b >= 97 && b <= 122) || (b >= 65 && b <= 90) || b == 95 { return .Alpha }  // a-z A-Z _
+    if b == LF { return .Newline }
+    if b == SPACE || b == TAB || b == CR { return .Whitespace }
+    if b >= DIGIT_0 && b <= DIGIT_9 { return .Digit }                                // 0-9
+    if (b >= LOWER_A && b <= LOWER_Z) || (b >= UPPER_A && b <= UPPER_Z) || b == UNDERSCORE { return .Alpha }  // a-z A-Z _
     .Other
 }
 
