@@ -13,7 +13,7 @@
 //
 // Extern decls are re-declared here (the established pattern — see core/ast.av:
 // "an extern decl is just a reference to the C symbol, not a definition").
-use parse.{LF, SPACE, TAB, CR, DIGIT_0, DIGIT_9, LOWER_A, LOWER_Z, UPPER_A, UPPER_Z, UNDERSCORE}
+use parse.{LF, SPACE, TAB, CR, DIGIT_0, DIGIT_1, DIGIT_7, DIGIT_9, LOWER_A, LOWER_F, LOWER_Z, UPPER_A, UPPER_F, UPPER_Z, UNDERSCORE}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 extern fn avra_bytes_byte(b: bytes, idx: int) -> int
@@ -55,6 +55,22 @@ export fn cc_is_ident_cont(b: int) -> bool {
 /// True iff the byte is a decimal digit (`Digit`).
 export fn cc_is_digit(b: int) -> bool {
     match char_class(b) { .Digit -> true, _ -> false }
+}
+
+/// True iff the byte is a hex digit (`0`-`9`, `a`-`f`, `A`-`F`) — the byte-based
+/// twin of the hand lexer's p_is_hex_digit, for the `0x` number scan.
+export fn cc_is_hex_digit(b: int) -> bool {
+    cc_is_digit(b) || (b >= LOWER_A && b <= LOWER_F) || (b >= UPPER_A && b <= UPPER_F)
+}
+
+/// True iff the byte is a binary digit (`0` or `1`) — twin of p_is_binary_digit.
+export fn cc_is_binary_digit(b: int) -> bool {
+    b == DIGIT_0 || b == DIGIT_1
+}
+
+/// True iff the byte is an octal digit (`0`-`7`) — twin of p_is_octal_digit.
+export fn cc_is_octal_digit(b: int) -> bool {
+    b >= DIGIT_0 && b <= DIGIT_7
 }
 
 /// Raw byte at index `i` of an already-materialised `bytes` view — the

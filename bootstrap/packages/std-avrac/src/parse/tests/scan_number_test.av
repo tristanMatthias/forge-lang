@@ -1,0 +1,112 @@
+// WHY: t-47hc.2 (Phase 1) — CHARACTERIZES the byte-based scan_number_token
+// (parse/lexer.av) against the `lex_dump` oracle. The number scanner is the
+// family with the most branching lexical shape — base prefixes (0x/0b/0o),
+// underscore separators, float-vs-range disambiguation, and the duration
+// suffixes (Nd/Nh/Nm/Ns/Nms) that COMPUTE a millisecond lexeme rather than
+// slicing the source — so it gets its own differential spec on top of the
+// general lex_oracle. Each `then` pins a token stream (and, for durations, the
+// computed lexeme) the byte scan must reproduce; the independent proof that it
+// equals the OLD peek_char/advance_char version is the full-selfhost diff-test
+// (byte-identical IR).
+use @std.avrac.parse.{lex_dump}
+
+// The ordered token KINDS of `source` (first tab-field of each dump line).
+fn kinds(source: string) -> string {
+    let dump = lex_dump(source)
+    mut out = ""
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" {
+            if out == "" { out = nth_field(line, 0) }
+            else { out = out + " " + nth_field(line, 0) }
+            line = ""
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+// The lexeme (3rd tab-field) of the FIRST dump line of `source` — for durations
+// this is the COMPUTED millisecond value, not the source slice.
+fn first_lexeme(source: string) -> string {
+    let dump = lex_dump(source)
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" { return nth_field(line, 2) }
+        line = line + ch
+        i = i + 1
+    }
+    nth_field(line, 2)
+}
+
+// The `n`-th tab-delimited field of `line` (0-based); "" if out of range.
+fn nth_field(line: string, n: int) -> string {
+    mut field = 0
+    mut out = ""
+    mut i = 0
+    while i < line.length {
+        let ch = line.substring(i, i + 1)
+        if ch == "\t" {
+            if field == n { return out }
+            field = field + 1
+            out = ""
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    if field == n { out } else { "" }
+}
+
+spec "t-47hc.2: byte-based scan_number_token characterization" {
+    then "plain decimal integers, with underscore separators" {
+        kinds("0") == "Number Eof" &&
+        kinds("42") == "Number Eof" &&
+        kinds("1_000_000") == "Number Eof" &&
+        first_lexeme("1_000_000") == "1_000_000"
+    }
+    then "hex / binary / octal bases (lower + UPPER prefix), underscores kept" {
+        kinds("0xff") == "Number Eof" &&
+        kinds("0XFF") == "Number Eof" &&
+        kinds("0xDEAD_beef") == "Number Eof" &&
+        first_lexeme("0xDEAD_beef") == "0xDEAD_beef" &&
+        kinds("0b1010") == "Number Eof" &&
+        kinds("0B11_00") == "Number Eof" &&
+        kinds("0o17") == "Number Eof" &&
+        kinds("0O7") == "Number Eof"
+    }
+    then "float vs range vs trailing dot: `.digit` is a float, else a Dot token" {
+        kinds("3.14") == "Float Eof" &&
+        kinds("1.5") == "Float Eof" &&
+        kinds("1_0.2_5") == "Float Eof" &&
+        kinds("1..5") == "Number DotDot Number Eof" &&   // range, not float
+        kinds("1.foo") == "Number Dot Identifier Eof" &&  // `.` not followed by a digit
+        kinds("1.") == "Number Dot Eof"
+    }
+    then "duration suffixes compute a millisecond lexeme (Nd/Nh/Nm/Ns/Nms)" {
+        first_lexeme("1d") == "86400000" &&    // 1 day
+        first_lexeme("2h") == "7200000" &&     // 2 hours
+        first_lexeme("3m") == "180000" &&      // 3 minutes
+        first_lexeme("4s") == "4000" &&        // 4 seconds
+        first_lexeme("5ms") == "5" &&          // 5 milliseconds (verbatim)
+        kinds("1d") == "Number Eof"
+    }
+    then "a duration suffix only fires when NOT followed by an identifier char" {
+        // `1down` — `d` is followed by `o` (ident char), so no duration; the number
+        // stops at `1` and `down` lexes as an identifier.
+        kinds("1down") == "Number Identifier Eof" &&
+        kinds("5m2") == "Number Identifier Eof" &&    // `m` followed by digit `2`
+        kinds("5x") == "Number Identifier Eof"        // bare `x` is not a base prefix here
+    }
+    then "zero-prefixed but non-base is a plain decimal (0 then digits)" {
+        kinds("007") == "Number Eof" &&
+        kinds("0") == "Number Eof" &&
+        first_lexeme("007") == "007"
+    }
+}
