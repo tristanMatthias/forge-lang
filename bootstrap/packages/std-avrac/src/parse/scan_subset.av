@@ -12,9 +12,10 @@
 // and their longer forms: -> .. ?? ?. && || |> != == << <= <- >> >=), AND — as of
 // slice 5 — the whole `/` FAMILY: `//` line comments + `/* */` NESTED block
 // comments (both trivia), `///`/`//!` doc-comment TOKENS (DocComment/ModDocComment,
-// one leading space stripped, content to EOL), and bare `/` (Slash / division).
-// OUT of subset (later slices — they need lexer modes): string/char/template
-// literals, floats / hex / underscore / duration numbers. scan_subset returns a
+// one leading space stripped, content to EOL), and bare `/` (Slash / division);
+// AND — as of slice 6 — ASCII CHAR LITERALS (`'x'`/`'\n'` -> Number(codepoint)).
+// OUT of subset (later slices — they need lexer modes): string/template literals,
+// multi-byte char literals, floats / hex / underscore / duration numbers. scan_subset returns a
 // "<out-of-subset:...>" marker when it meets an out-of-subset construct, so the
 // differential test only compares in-subset inputs. Unused in production
 // (byte-identical; diff-test).
@@ -263,10 +264,42 @@ export fn scan_subset(source: string) -> string {
                         s.adv()
                         out = out + emit(Tk.Slash, tok_line, tok_col, "/")
                     }
+                } else if b == 39 {
+                    // Char literal `'x'` / `'\n'` -> Number(codepoint), byte-identical
+                    // to scan_char_literal (lexer.av ~295-336). IN subset: a single
+                    // ASCII byte (codepoint == byte value) or one of the fixed escapes
+                    // \n \t \r \0 \\ \'. OUT (marker): a multi-byte UTF-8 char (needs a
+                    // codepoint decode), an unknown escape, or a missing closing `'`
+                    // (the last two are invalid programs the hand lexer flags as Error).
+                    s.adv()                                        // consume opening `'`
+                    if s.at_end() { return "<out-of-subset:char-literal>" }
+                    mut code = 0
+                    let c = s.cur()
+                    if c == 92 {                                   // `\` escape
+                        s.adv()
+                        if s.at_end() { return "<out-of-subset:char-literal>" }
+                        let esc = s.cur()
+                        s.adv()
+                        if esc == 110 { code = 10 }                // \n
+                        else if esc == 116 { code = 9 }            // \t
+                        else if esc == 114 { code = 13 }           // \r
+                        else if esc == 48 { code = 0 }             // \0
+                        else if esc == 92 { code = 92 }            // \\
+                        else if esc == 39 { code = 39 }            // \'
+                        else { return "<out-of-subset:char-literal>" }   // unknown escape
+                    } else if c >= 128 {
+                        return "<out-of-subset:char-literal>"      // multi-byte UTF-8
+                    } else {
+                        code = c                                   // ASCII: codepoint == byte
+                        s.adv()
+                    }
+                    if s.at_end() || s.cur() != 39 { return "<out-of-subset:char-literal>" }
+                    s.adv()                                        // consume closing `'`
+                    out = out + emit(Tk.Number, tok_line, tok_col, string(code))
                 } else {
                     // A compound-operator lead: maximal-munch it (byte-identical
                     // to the hand lexer). `.Error` = a lead this slice doesn't
-                    // own yet (string/char quotes) — still out of subset.
+                    // own yet (string/template quotes) — still out of subset.
                     let op = scan_compound_op(s, b)
                     match op {
                         .Error -> { return "<out-of-subset:char>" }
