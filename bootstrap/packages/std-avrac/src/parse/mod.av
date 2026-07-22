@@ -30,6 +30,9 @@ use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report,
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
 extern fn avra_process_env_get(name: string) -> string
+// A byte view of the source string, built once per Parser (see the `source_bytes`
+// field) so the generated operator scanner reads raw bytes allocation-free.
+extern fn avra_bytes_from_string(s: string) -> bytes
 
 /// Output of `parse_expression_source`. `expr` is null on parse
 /// failure; consult `had_error` / `error_message` for the cause.
@@ -158,6 +161,11 @@ export type Parser = {
     // field instead of re-deriving strlen(source) each call — the fix for
     // the lexer's quadratic-per-file scan.
     source_len: int,
+    // A byte view of `source`, materialized ONCE at construction (avra_bytes_from_string).
+    // The lexer's operator scanner (scan_operator, parse/gen_operator_scanner.av) reads
+    // raw bytes through this with NO per-character string allocation — the hot-path win
+    // the byte-scanner was built for. `source` is never reassigned, so it stays valid.
+    source_bytes: bytes,
     file: string,
     mut start: int,
     mut current: int,
@@ -670,6 +678,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
     mut parser = Parser {
         source,
         source_len: source.length,
+        source_bytes: avra_bytes_from_string(source),
         file,
         start: 0,
         current: 0,
