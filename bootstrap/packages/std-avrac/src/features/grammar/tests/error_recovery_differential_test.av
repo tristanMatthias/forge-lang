@@ -19,6 +19,8 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_ids}
 
 // The occurrence-ordered F-code signature of `bs2 check <src>` under `env`.
 // Comparing the ORDERED list (duplicates preserved) captures both the error SET
@@ -93,5 +95,111 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     }
     then "a valid program produces no diagnostics under either mode (sanity)" {
         static_raw("fn ok() -> int { 1 + 2 }") == "" && hand_oracle("fn ok() -> int { 1 + 2 }") == ""
+    }
+}
+
+// ── t-47hc.3 acceptance item 3 — the RECOVERY-TREE oracle ─────────────────────
+//
+// The F-code oracle above is NECESSARY but NOT SUFFICIENT to retire the
+// interpreter re-parse fallback (the "5c lesson", commit e1a55fef): two parsers
+// can emit the SAME ordered F-codes while recovering DIFFERENT trees. This oracle
+// closes that blind spot — it compares the rendered whole-program recovery TREE
+// (the `.Ok`/`.Err` distinction surfaces as top-level rows; the recovered
+// Stmt/Expr placeholder shape rides in the same string) of the STATIC generated
+// parser (interpreter fallback OFF) against the hand oracle. In-process via the
+// parser's mode fields — no `bs2` invocation. `render_stmt_ids` is TOTAL and
+// renders the recovery placeholders distinctly (`Stmt.Error`/`Expr.Error` →
+// `(error)`, a failed expr-stmt → `(expr (error))`), so one string equality
+// captures both the outcome AND the shape.
+
+fn rtree(static_raw: bool, source: string) -> string {
+    mut p = parser_new(source)
+    // static-raw: the static generated parser with the interpreter re-parse
+    // fallback OFF (its RAW recovery tree). Otherwise the hand oracle.
+    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let r = p.parse_file_program()
+    if r.ids == null { return "<null>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+fn agree_tree(source: string) -> bool { rtree(true, source) == rtree(false, source) }
+
+spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
+    // The same category-diverse invalid corpus as the F-code oracle, now asserting
+    // the RECOVERED TREES match — a strictly stronger check. Every case here agrees
+    // at the tree level (the single known divergence is characterised separately
+    // below), so this is the green gate that grows as leaf forms migrate.
+    then "stray top-level tokens recover to the same tree" {
+        agree_tree("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
+        agree_tree("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
+        agree_tree("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        agree_tree("else\nfn b() -> int { 2 }")
+    }
+    then "malformed declarations recover to the same tree" {
+        agree_tree("fn () -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_tree("fn a( -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_tree("fn a(x: ) -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_tree("fn a() -> { 1 }\nfn b() -> int { 2 }") &&
+        agree_tree("fn a() -> int\nfn b() -> int { 2 }") &&
+        agree_tree("type T = { x: , y: int }\nfn f() -> int { 1 }") &&
+        agree_tree("type T = { x: int\nfn f() -> int { 1 }") &&
+        agree_tree("type = { x: int }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E { A, , B }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E A B }\nfn f() -> int { 1 }") &&
+        agree_tree("trait T { fn m( }\nfn f() -> int { 1 }") &&
+        agree_tree("impl for Foo { }\nfn f() -> int { 1 }")
+    }
+    then "malformed statements + expressions recover to the same tree" {
+        agree_tree("fn f() -> int {\n let x = \n return 1\n}") &&
+        agree_tree("fn f() -> int {\n let = 5\n return 1\n}") &&
+        agree_tree("fn f() -> int {\n const C\n return 1\n}") &&
+        agree_tree("fn f() -> int {\n if { return 1 }\n return 2\n}") &&
+        agree_tree("fn f() -> int {\n while return 2\n}") &&
+        agree_tree("fn f() -> int {\n for x { return 3 }\n}") &&
+        agree_tree("fn f() -> int {\n match { 1 -> 2 }\n}") &&
+        agree_tree("fn f() -> int {\n let x = 1 +\n return x\n}") &&
+        agree_tree("fn f() -> int {\n let y = (1 + 2\n return y\n}") &&
+        agree_tree("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let w = foo(1,\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let q = a.\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n return * 3\n}")
+    }
+    then "multi-error recovery builds the same tree" {
+        agree_tree("fn a() -> int { 1 + }\nfn b() -> int { 2 }\nthen\nfn c() -> int { * 3 }") &&
+        agree_tree("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }") &&
+        agree_tree("fn h() -> int {\n  if { return 1 }\n  while return 2\n  for x { return 3 }\n}")
+    }
+    then "unclosed-at-EOF constructs recover to the same tree" {
+        agree_tree("fn f() -> int {\n return 1\n") &&
+        agree_tree("fn f() -> int {\n let x = (1 + 2 * 3\n") &&
+        agree_tree("type T = {\n x: int,\n")
+    }
+    then "a valid program renders the same NON-error tree under both modes" {
+        agree_tree("fn ok() -> int { 1 + 2 }") &&
+        rtree(true, "fn ok() -> int { 1 + 2 }") != "<null>" &&
+        !rtree(true, "fn ok() -> int { 1 + 2 }").contains("(error)")
+    }
+}
+
+// The 5c lesson, made executable — the ONE corpus case where the F-code oracle is
+// BLIND. A top-level binary-operator-led expression statement (`* 5`): the static
+// generated `parse_expr_stmt` wraps the FAILED expression as
+// `.Ok(Stmt.Expr(Expr.Error))` → `(expr (* (error) 5))`, while the hand parser
+// returns `.Err` → the whole-program loop drops a bare `(error)`. Both emit the
+// SAME F-code(s), so the F-code oracle stays green — but the recovery TREES
+// diverge. This is the exact gap that blocks retiring the interpreter re-parse
+// fallback (slice 5c, commit e1a55fef "needs emit-error work"); the follow-up
+// emit-error slice makes the static parser yield `.Err` here, at which point this
+// characterisation flips and the case folds into the agreeing corpus above.
+spec "t-47hc.3: recovery-TREE oracle CHARACTERISES the known 5c divergence" {
+    then "F-codes AGREE on the stray top-level `* 5` (the oracle's blind spot)" {
+        static_raw("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") ==
+            hand_oracle("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
+    }
+    then "but the recovery TREES diverge: static wraps `(expr (error))`, hand drops `(error)`" {
+        let src = "fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }"
+        !agree_tree(src) &&
+        rtree(true, src).contains("(expr (* (error) 5))") &&
+        rtree(false, src).contains("(error)") &&
+        !rtree(false, src).contains("(expr (*")
     }
 }
