@@ -1,0 +1,106 @@
+// WHY: t-47hc.3 (Phase 2) slice 3b — `@try` BOUNDED SPECULATION. A `@try` branch
+// snapshots the cursor + node store, runs, and ROLLS BACK on failure to try the
+// next alternative — the grammar analogue of the hand parser's save_state/
+// restore_state (the f<T> generic-call vs `<` less-than decision). Without @try,
+// predictive ordered choice commits to the first FIRST-matching branch and
+// cannot fall back; with @try, a failed longer branch rewinds and a shorter
+// alternative matches. The differential (same grammar ± @try) is the proof.
+//
+// Two-sided in lockstep: the INTERPRETER (run_grammar_expr) is the oracle and the
+// EMITTER lowers the same branch to a static snapshot→run→commit-or-rollback
+// block. A `@try` branch is a flat terminal/ref recognizer (richer shapes are
+// rejected at parse time, the @when-rejection precedent) so both sides agree by
+// construction.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, Grammar, Rule}
+
+fn errs(grammar_src: string, input: string) -> bool {
+    let gp = parse_grammar(grammar_src)
+    run_grammar_expr(gp.grammar, input).had_error
+}
+
+// True iff `grammar_src` is REJECTED at parse time (GrammarParse.error is set).
+fn rejects(grammar_src: string) -> bool {
+    parse_grammar(grammar_src).error != ""
+}
+
+// Emit the named rule's generated static parse fn from `grammar_src`.
+fn emit_rule(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+spec "t-47hc.3: @try bounded speculation" {
+    then "a @try branch that fails rolls back and the next branch matches" {
+        // `1 "x"`: branch 1 (@try) tries NUMBER STRING NUMBER — matches 1 and
+        // "x", then fails on the missing 3rd NUMBER → rolls back → branch 2
+        // (NUMBER STRING) matches. No error.
+        !errs("r = @try NUMBER STRING NUMBER | NUMBER STRING", "1 \"x\"")
+    }
+    then "WITHOUT @try the same grammar commits to branch 1 and errors" {
+        // Predictive ordered choice picks branch 1 by FIRST (NUMBER), consumes 1
+        // and "x", then errors on the missing 3rd NUMBER — no fallback.
+        errs("r = NUMBER STRING NUMBER | NUMBER STRING", "1 \"x\"")
+    }
+    then "a @try branch that fully matches commits (no needless fallback)" {
+        // `1 "x" 2`: branch 1 (@try) matches NUMBER STRING NUMBER → commits.
+        !errs("r = @try NUMBER STRING NUMBER | NUMBER STRING", "1 \"x\" 2")
+    }
+}
+
+// The EMITTER lowers a `@try` branch to the SAME snapshot→run→commit-or-rollback
+// block the interpreter runs (executor.exec_node's speculative arm). Source-level
+// pins on the generated static parser so the two sides can never drift.
+spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
+    then "a @try branch emits the snapshot + commit-or-rollback machinery" {
+        let src = emit_rule("r = @try NUMBER STRING NUMBER | NUMBER STRING", "r")
+        src.contains("mut tried_spec = false") &&
+        src.contains("tried_spec = true") &&
+        src.contains("let s_mark = st.store.mark()") &&
+        src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+        src.contains("st.store.truncate_to_mark(s_mark)") &&
+        src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
+        src.contains("if tried_spec { return CapVal.Nil }")
+    }
+    then "a later terminal in a @try branch REPORTS on mismatch (the rollback signal)" {
+        // The idx>0 terminal is checked-and-reporting (not the lenient consume) so
+        // st.diags grows on a shape mismatch — the twin of exec_primary.handle_missing.
+        emit_rule("r = @try NUMBER STRING NUMBER | NUMBER STRING", "r").contains("st.report(")
+    }
+    then "a non-speculative dispatch emits NO speculation machinery" {
+        let src = emit_rule("r = NUMBER STRING NUMBER | NUMBER STRING", "r")
+        !src.contains("tried_spec") && !src.contains("truncate_to_mark")
+    }
+}
+
+// A `@try` branch is a flat One-rep terminal/ref recognizer with no build — every
+// other shape has no faithful speculative emission yet, so it is rejected at parse
+// time (both sides agree by construction).
+spec "t-47hc.3: @try well-formedness is enforced at parse time" {
+    then "a repetition inside a @try branch is rejected (`*` / `+` / `?`)" {
+        rejects("r = @try NUMBER* | STRING") &&
+        rejects("r = @try NUMBER+ | STRING") &&
+        rejects("r = @try NUMBER? | STRING")
+    }
+    then "a group inside a @try branch is rejected" {
+        rejects("r = @try ( NUMBER | STRING ) | STRING")
+    }
+    then "a @hand primary inside a @try branch is rejected" {
+        rejects("r = @try @hand(number) | STRING")
+    }
+    then "a `-> build` on a @try branch is rejected" {
+        rejects("r = @try NUMBER STRING -> Mk() | STRING")
+    }
+    then "a capture label inside a @try branch is rejected" {
+        // A label would bind() into the interpreter's CapEnv (not restored on
+        // rollback → sibling-branch leak) but is dropped by emit — reject it so the
+        // two sides can't diverge (a @try recognizer captures nothing).
+        rejects("r = @try x:NUMBER STRING | STRING") &&
+        rejects("r = @try NUMBER y:STRING | STRING")
+    }
+    then "a well-formed flat terminal/ref @try branch is accepted" {
+        !rejects("r = @try NUMBER STRING NUMBER | NUMBER STRING")
+    }
+}

@@ -76,10 +76,18 @@ export enum GNode {
 
 /// A single alternative: an ordered list of labelled postfix items,
 /// an optional build directive, and any error annotations.
+///
+/// `speculative` (the `@try` branch marker, t-47hc.3) makes this alternative
+/// BOUNDED-BACKTRACKING: the executor snapshots the cursor + node store before
+/// running it and, if it fails (adds a diagnostic), ROLLS BACK and tries the
+/// next alternative — the grammar analogue of the hand parser's
+/// save_state/restore_state (f<T> generic-call vs `<` less-than). A non-`@try`
+/// branch stays predictive (first-match, no backtracking); default false.
 export type GSeq = {
     items: List<GItem>,
     build: GBuild,
     annots: List<GAnnot>,
+    speculative: bool,
 }
 
 /// A postfix item: an optional capture label + a repetition + a

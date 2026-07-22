@@ -468,12 +468,24 @@ fn emit_fold_arg(arg: string, seed_label: string, inner: GSeq) -> string {
 /// | …`) is a FIRST-guarded dispatch to that rule. Otherwise the tail is a
 /// whole-construct error node (executor.exec_node's no-match arm).
 fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
+    // A `@try` (speculative) branch snapshots the parse state, runs, and COMMITS
+    // only if it added no diagnostic — else it rolls the cursor + node store back
+    // and falls through to the next alternative. When ANY branch is speculative
+    // the dispatch tracks `tried_spec` and, on total no-match, returns a clean
+    // CapVal.Nil (a rolled-back attempt already restored diags/had_error — the
+    // caller decides) instead of synthesising an error node. This mirrors
+    // executor.exec_node's speculative arm one-for-one so the generated parser and
+    // the interpreter agree — the same lockstep discipline as @when's mode preds.
+    let has_spec = any_speculative(branches)
     mut out = ""
+    if has_spec { out = out + "    mut tried_spec = false\n" }
     mut tail = ""
     let last = branches.length - 1
     mut i = 0
     for b in branches {
-        if is_bare_ref(b) && i == last {
+        if b.speculative {
+            out = out + emit_speculative_branch(g, b)
+        } else if is_bare_ref(b) && i == last && !has_spec {
             tail = "    ${emit_ref_call(b.items[0].prim)}\n"
         } else if is_bare_ref(b) {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
@@ -487,12 +499,77 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         }
         i = i + 1
     }
-    if tail != "" {
+    if has_spec {
+        // A speculative dispatch never has an unguarded bare-ref tail: a rolled-
+        // back attempt yields Nil, and any non-speculative fallback is a guarded
+        // branch above (matching exec_node, which FIRST-guards every branch).
+        out = out + "    if tried_spec { return CapVal.Nil }\n"
+        out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
+    } else if tail != "" {
         out = out + tail
     } else {
         out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
     }
     out
+}
+
+/// True when any branch is a `@try` speculative alternative.
+fn any_speculative(branches: List<GSeq>) -> bool {
+    for b in branches {
+        if b.speculative { return true }
+    }
+    false
+}
+
+/// Emit one `@try` branch: a FIRST-guarded block that snapshots the parse state,
+/// runs the branch body, and commits (returns) only if no diagnostic was added;
+/// otherwise it rewinds the node store + cursor + diagnostics and falls through.
+/// The twin of executor.exec_node's speculative arm. A `@try` branch is a flat
+/// terminal/ref RECOGNIZER (seed_parser enforces the shape), so the body is a
+/// straight-line sequence updating `s_last` — the value exec_seq returns for a
+/// build-less sequence (its last item) — and the committed result is `s_last`.
+fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
+    mut out = "    if ${seq_first_guard(g, b, [])} {\n"
+    out = out + "        tried_spec = true\n"
+    out = out + "        let s_pos = st.pos\n"
+    out = out + "        let s_mark = st.store.mark()\n"
+    out = out + "        let s_diags = st.diags.length\n"
+    out = out + "        let s_err = st.had_error\n"
+    out = out + "        mut s_last: CapVal = CapVal.Nil\n"
+    mut idx = 0
+    for item in b.items {
+        // A `@when` predicate is zero-width — it neither consumes a token nor
+        // advances the guard idx (the first token-bearing item stays idx 0).
+        if prim_is_pred_e(item.prim) { continue }
+        out = out + emit_spec_item(item, idx)
+        idx = idx + 1
+    }
+    out = out + "        if st.diags.length == s_diags && st.had_error == s_err {\n"
+    out = out + "            return s_last\n"
+    out = out + "        }\n"
+    out = out + "        st.store.truncate_to_mark(s_mark)\n"
+    out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    out = out + "    }\n"
+    out
+}
+
+/// One item inside a `@try` branch. A rule ref self-reports (call it — its own
+/// diagnostics grow st.diags on failure); the guard terminal (idx 0, already
+/// FIRST-matched by the enclosing `if`) is consumed unconditionally; a later
+/// terminal is checked and REPORTS on mismatch — the reported diagnostic is the
+/// speculative rollback's failure signal, the twin of exec_primary's
+/// handle_missing. Every item updates `s_last` so the committed value equals
+/// exec_seq's build-less `last`.
+fn emit_spec_item(item: GItem, idx: int) -> string {
+    if prim_is_ref(item.prim) {
+        return "        s_last = ${emit_ref_call(item.prim)}\n"
+    }
+    if idx == 0 {
+        return "        s_last = CapVal.Tok(st.advance())\n"
+    }
+    let cond = term_guard(item.prim)
+    let t = prim_lit_text(item.prim)
+    "        if ${cond} { s_last = CapVal.Tok(st.advance()) } else { st.report(\"expected `${t}`\") }\n"
 }
 
 /// True for `| otherrule` — a lone One nonterminal branch (no build).
@@ -1109,7 +1186,7 @@ fn group_inner_seq(prim: GPrim) -> GSeq {
     }
 }
 
-fn empty_seq() -> GSeq { GSeq { items: [], build: GBuild.None, annots: [] } }
+fn empty_seq() -> GSeq { GSeq { items: [], build: GBuild.None, annots: [], speculative: false } }
 
 /// A primary whose match yields a Token (a terminal or an all-terminal group)
 /// vs a node (a ref / hand rule).
