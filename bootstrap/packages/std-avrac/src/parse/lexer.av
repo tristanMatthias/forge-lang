@@ -4,6 +4,10 @@
 use core.{Tk, tk_name}
 use diagnostics.{DiagCode}
 use parse.{p_keyword_kind, parser_new}
+// The GENERATED operator/punctuation scanner (compiled from the declarative
+// operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
+// the two source-byte constants the `/` doc-comment boundary tests.
+use parse.{scan_operator, byte_at, SLASH, BANG}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -52,109 +56,45 @@ impl Parser {
             return
         }
 
+        // ── `///` / `//!` doc-comment TOKENS (a lexer MODE, not an operator) ──
+        // skip_whitespace_and_comments only STOPS at a `//` whose third byte is `/`
+        // or `!` (a doc comment) — every plain `//` line comment and `/* */` block is
+        // already consumed. So a `//` reaching here IS a doc comment; handle it before
+        // scan_operator (which would otherwise munch the lead `/` as a Slash).
+        if byte_at(self.source_bytes, self.current) == SLASH
+                && byte_at(self.source_bytes, self.current + 1) == SLASH {
+            let is_mod = byte_at(self.source_bytes, self.current + 2) == BANG   // `//!`
+            self.advance_char()   // first  /
+            self.advance_char()   // second /
+            self.advance_char()   // third  / or !
+            mut content = ""
+            if self.peek_char() == " " { self.advance_char() }   // one leading space
+            while !self.is_at_end() && self.peek_char() != "\n" {
+                content = content + self.advance_char()
+            }
+            self.set_current(if is_mod { Tk.ModDocComment } else { Tk.DocComment }, content)
+            return
+        }
+
+        // ── operators + single-char punctuation: the GENERATED maximal-munch scanner ──
+        // One trie of byte-branches (scan_operator, compiled from the declarative
+        // operator table by emit_lex.av) replaces the ~40 hand-written arms that used
+        // to live here — reading raw bytes with no per-char string alloc, munching
+        // longest-first. len 0 = the lead is not an operator (a `"`/`` ` ``/`'` quote,
+        // a digit, a letter, `$`, …); fall through to the literal/mode dispatch below.
+        let op = scan_operator(self.source_bytes, self.current)
+        if op.len > 0 {
+            let op_start = self.current
+            self.current = self.current + op.len
+            self.column = self.column + op.len   // an operator never spans a newline
+            self.set_current(op.tk, self.slice(op_start, self.current))
+            return
+        }
+
+        // ── non-operator leads: consume one char and dispatch (quotes / number / ident) ──
         let ch = self.advance_char()
 
         match ch {
-            "," -> { self.set_current(Tk.Comma, ",")        return }
-            "(" -> { self.set_current(Tk.LeftParen, "(")    return }
-            ")" -> { self.set_current(Tk.RightParen, ")")   return }
-            "{" -> { self.set_current(Tk.LeftBrace, "{")    return }
-            "}" -> { self.set_current(Tk.RightBrace, "}")   return }
-            "+" -> { self.set_current(Tk.Plus, "+")         return }
-            "*" -> { self.set_current(Tk.Star, "*")         return }
-            "/" -> {
-                // Doc comments: /// and //!
-                if self.peek_char() == "/" {
-                    let third = self.peek_next_char()
-                    if third == "/" {
-                        self.advance_char()  // consume second /
-                        self.advance_char()  // consume third /
-                        // Read content until end of line
-                        mut content = ""
-                        // Skip one leading space if present
-                        if self.peek_char() == " " { self.advance_char() }
-                        while !self.is_at_end() && self.peek_char() != "\n" {
-                            content = content + self.advance_char()
-                        }
-                        self.set_current(Tk.DocComment, content)
-                        return
-                    }
-                    if third == "!" {
-                        self.advance_char()  // consume second /
-                        self.advance_char()  // consume !
-                        mut content = ""
-                        if self.peek_char() == " " { self.advance_char() }
-                        while !self.is_at_end() && self.peek_char() != "\n" {
-                            content = content + self.advance_char()
-                        }
-                        self.set_current(Tk.ModDocComment, content)
-                        return
-                    }
-                }
-                self.set_current(Tk.Slash, "/")
-                return
-            }
-            ":" -> { self.set_current(Tk.Colon, ":")        return }
-            "@" -> { self.set_current(Tk.At, "@")           return }
-            "[" -> { self.set_current(Tk.LeftBracket, "[")  return }
-            "]" -> { self.set_current(Tk.RightBracket, "]") return }
-            "^" -> { self.set_current(Tk.Caret, "^")        return }
-            "~" -> { self.set_current(Tk.Tilde, "~")        return }
-            "%" -> { self.set_current(Tk.Percent, "%")      return }
-            "-" -> {
-                if self.match_next(">") { self.set_current(Tk.Arrow, "->") }
-                else { self.set_current(Tk.Minus, "-") }
-                return
-            }
-            "." -> {
-                if self.match_next(".") { self.set_current(Tk.DotDot, "..") }
-                else { self.set_current(Tk.Dot, ".") }
-                return
-            }
-            "?" -> {
-                match {
-                    self.match_next("?") -> self.set_current(Tk.QuestionQuestion, "??")
-                    self.match_next(".") -> self.set_current(Tk.QuestionDot, "?.")
-                    _                    -> self.set_current(Tk.Question, "?")
-                }
-                return
-            }
-            "&" -> {
-                if self.match_next("&") { self.set_current(Tk.AmpAmp, "&&") }
-                else { self.set_current(Tk.Amp, "&") }
-                return
-            }
-            "|" -> {
-                if self.match_next("|") { self.set_current(Tk.PipePipe, "||")  return }
-                if self.match_next(">") { self.set_current(Tk.PipeGt, "|>")   return }
-                self.set_current(Tk.Pipe, "|")
-                return
-            }
-            "!" -> {
-                if self.match_next("=") { self.set_current(Tk.BangEqual, "!=") }
-                else { self.set_current(Tk.Bang, "!") }
-                return
-            }
-            "=" -> {
-                if self.match_next("=") { self.set_current(Tk.EqualEqual, "==") }
-                else { self.set_current(Tk.Equal, "=") }
-                return
-            }
-            "<" -> {
-                match {
-                    self.match_next("<") -> self.set_current(Tk.Shl, "<<")
-                    self.match_next("=") -> self.set_current(Tk.LessEqual, "<=")
-                    self.match_next("-") -> self.set_current(Tk.LeftArrow, "<-")
-                    _                    -> self.set_current(Tk.Less, "<")
-                }
-                return
-            }
-            ">" -> {
-                if self.match_next(">") { self.set_current(Tk.Shr, ">>")  return }
-                if self.match_next("=") { self.set_current(Tk.GreaterEqual, ">=") }
-                else { self.set_current(Tk.Greater, ">") }
-                return
-            }
             "\"" -> { self.scan_string_token()    return }
             "`"  -> { self.scan_template_token()  return }
             "'"  -> { self.scan_char_literal()     return }
@@ -407,17 +347,6 @@ impl Parser {
             return ""
         }
         self.char_at(self.current + 1)
-    }
-
-    fn match_next(self, expected: string) -> bool {
-        if self.is_at_end() {
-            return false
-        }
-        if self.char_at(self.current) != expected {
-            return false
-        }
-        self.advance_char()
-        true
     }
 
     fn advance_char(self) -> string {
