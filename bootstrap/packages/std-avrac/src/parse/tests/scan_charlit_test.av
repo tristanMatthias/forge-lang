@@ -1,0 +1,82 @@
+// WHY: t-47hc.2 (Phase 1) — CHARACTERIZES the byte-based scan_char_literal
+// (parse/lexer.av) against the `lex_dump` oracle. A char literal lexes to a
+// Tk.Number whose lexeme is the decimal CODEPOINT. A valid char literal is ASCII,
+// so the raw byte value IS the codepoint (b == the old ch.char_code()); this spec
+// pins that mapping plus the six escapes. The independent proof it equals the OLD
+// peek_char/advance_char version is the full-selfhost diff-test (byte-identical IR).
+use @std.avrac.parse.{lex_dump}
+
+// The ordered token KINDS of `source` (first tab-field of each dump line).
+fn kinds(source: string) -> string {
+    let dump = lex_dump(source)
+    mut out = ""
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" {
+            if out == "" { out = nth_field(line, 0) }
+            else { out = out + " " + nth_field(line, 0) }
+            line = ""
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+// The lexeme (3rd tab-field) of the FIRST dump line of `source`.
+fn first_lexeme(source: string) -> string {
+    let dump = lex_dump(source)
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" { return nth_field(line, 2) }
+        line = line + ch
+        i = i + 1
+    }
+    nth_field(line, 2)
+}
+
+// The `n`-th tab-delimited field of `line` (0-based); "" if out of range.
+fn nth_field(line: string, n: int) -> string {
+    mut field = 0
+    mut out = ""
+    mut i = 0
+    while i < line.length {
+        let ch = line.substring(i, i + 1)
+        if ch == "\t" {
+            if field == n { return out }
+            field = field + 1
+            out = ""
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    if field == n { out } else { "" }
+}
+
+spec "t-47hc.2: byte-based scan_char_literal characterization" {
+    then "a plain ASCII char literal is a Number whose lexeme is the byte codepoint" {
+        kinds("'a'") == "Number Eof" &&
+        first_lexeme("'a'") == "97" &&
+        first_lexeme("'Z'") == "90" &&
+        first_lexeme("'0'") == "48" &&   // the DIGIT char, not the \0 escape
+        first_lexeme("' '") == "32"      // space
+    }
+    then "the six escapes map to their codepoints" {
+        first_lexeme("'\\n'") == "10" &&
+        first_lexeme("'\\t'") == "9" &&
+        first_lexeme("'\\r'") == "13" &&
+        first_lexeme("'\\0'") == "0" &&
+        first_lexeme("'\\\\'") == "92" &&   // '\\'  -> backslash
+        first_lexeme("'\\''") == "39"       // '\''  -> single quote
+    }
+    then "char literals lex in context (let binding / call arg)" {
+        kinds("let c = 'x'") == "KwLet Identifier Equal Number Eof" &&
+        kinds("f('y', 1)") == "Identifier LeftParen Number Comma Number RightParen Eof"
+    }
+}
