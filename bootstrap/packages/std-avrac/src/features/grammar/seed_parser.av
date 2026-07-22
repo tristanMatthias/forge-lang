@@ -252,6 +252,26 @@ fn parse_seq(p: GP) -> GSeq {
     if items.length == 0 {
         p.fail("expected at least one item in a sequence (empty alternative)")
     }
+    // `@when(flag)` predicates are LEADING branch gates: they must precede every
+    // consuming item, and a branch must have a consuming item for a predicate to
+    // gate (a predicate-only branch can never be selected — and wrapped in a
+    // repeat it would spin). Enforcing "leading" also keeps the two consumers
+    // aligned: emit's seq_first_guard folds LEADING preds, while the executor's
+    // branch_pred_ok scans ALL items — identical only when every pred is leading.
+    mut ff_consuming = 0
+    mut ff_pred_after = false
+    for it in items {
+        match it.prim {
+            .Pred(_) -> if ff_consuming > 0 { ff_pred_after = true }
+            _ -> ff_consuming = ff_consuming + 1
+        }
+    }
+    if ff_pred_after {
+        p.fail("`@when(flag)` must be a leading branch gate (before any consuming item)")
+    }
+    if ff_consuming == 0 {
+        p.fail("`@when(flag)` must gate a branch that consumes input (a predicate-only branch never matches)")
+    }
     mut build = GBuild.None
     mut annots: List<GAnnot> = []
     while true {
@@ -276,9 +296,9 @@ fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
     if p.peek().kind == "ARROW" { return false }
     if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
-    // `@hand(...)` is a PRIMARY (item) — keep going; `@expect`/`@recover`
-    // are trailing annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) }
+    // `@hand(...)` / `@when(...)` are PRIMARIES (items) — keep going;
+    // `@expect`/`@recover` are trailing annotations — stop the item list.
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -293,6 +313,15 @@ fn at_hand_primary(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "hand"
+}
+
+/// True when the cursor is `@when` — the zero-width mode-predicate primary
+/// (t-47hc.3), distinct from `@hand` and the `@expect`/`@recover` annotations.
+fn at_when_primary(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "when"
 }
 
 // labeled = ( NAME ":" )? postfix
@@ -335,6 +364,13 @@ fn parse_postfix(p: GP) -> Postfix {
         let _ = p.advance()
         rep = GRep.Opt
     }
+    // A `@when(flag)` predicate is a zero-width, One-repetition gate; a `*`/`+`/`?`
+    // suffix is meaningless and both consumers mishandle it (the interpreter never
+    // fires it; emit would `st.advance()` on a mode read). Reject it at parse time.
+    match prim {
+        .Pred(_) -> match rep { .One -> {}  _ -> p.fail("`@when(flag)` cannot take a `*`/`+`/`?` repetition suffix") }
+        _ -> {}
+    }
     Postfix { rep, prim }
 }
 
@@ -371,7 +407,18 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close `@hand`")
         return GPrim.Hand(hf)
     }
-    p.fail("expected a rule reference, terminal, `(`, or `@hand(fn)`")
+    // Zero-width mode predicate: `@when(flag)` gates its branch on a parse mode.
+    if at_when_primary(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "when"
+        p.expect_punct("(", "expected `(` after `@when`")
+        mut flag = ""
+        if p.peek().kind == "NAME" { flag = p.advance().text }
+        else { p.fail("expected a flag name in `@when(flag)`") }
+        p.expect_punct(")", "expected `)` to close `@when`")
+        return GPrim.Pred(flag)
+    }
+    p.fail("expected a rule reference, terminal, `(`, `@hand(fn)`, or `@when(flag)`")
     let _ = p.advance()
     GPrim.Lit("")
 }

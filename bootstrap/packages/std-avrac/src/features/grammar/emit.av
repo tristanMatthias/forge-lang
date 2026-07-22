@@ -541,10 +541,18 @@ fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>,
     mut out = ""
     mut idx = 0
     for item in seq.items {
+        // A `@when` predicate is zero-width: it emits no code and consumes no
+        // idx slot, so the first token-bearing item stays the guard token (idx 0).
+        if prim_is_pred_e(item.prim) { continue }
         out = out + emit_item(g, item, idx, seq.annots, ind, list_labels, opts)
         idx = idx + 1
     }
     out
+}
+
+/// True iff the primary is a `@when(flag)` zero-width mode predicate (emit side).
+fn prim_is_pred_e(prim: GPrim) -> bool {
+    match prim { .Pred(_) -> true  _ -> false }
 }
 
 /// One item. `idx == 0` is the branch's guard token (already matched by the
@@ -586,6 +594,9 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             }
             emit_node_items(g, inner, ind, list_labels, opts)
         }
+        // A `@when` predicate emits nothing (zero-width); emit_seq_items already
+        // skips it, so this is a defensive no-op for any other caller.
+        .Pred(_) -> ""
         _ -> emit_one_terminal(item, idx, annots, ind, list_labels, opts)
     }
 }
@@ -901,6 +912,10 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
         .Hand(hf) -> hand_first_guard(hf)
         .Group(inner) -> node_first_guard(g, inner, visited)
         .Ref(name) -> rule_first_guard(g, name, visited)
+        // A zero-width `@when` predicate: its guard is the mode conjunct. Reached
+        // only if a predicate is used outside a leading position (seq_first_guard
+        // folds leading ones); here it stands alone as its own gate.
+        .Pred(flag) -> pred_guard(flag)
     }
 }
 
@@ -947,17 +962,62 @@ fn node_first_guard(g: Grammar, node: GNode, visited: List<string>) -> string {
     }
 }
 
+/// The emitted guard for a `@when(flag)` mode predicate — the byte-side twin of
+/// executor.modes_flag (kept in lockstep; the differential test catches drift).
+/// `cell_mode` is a real bool; the `allow_*` flags are int-as-bool.
+fn pred_guard(flag: string) -> string {
+    if flag == "cell_mode" { return "st.modes.cell_mode" }
+    "st.modes.${flag} != 0"
+}
+
+/// AND-join predicate guards (`a && b`), dropping empties.
+fn and_join(parts: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    for p in parts {
+        if p == "" { continue }
+        if i > 0 { out = out + " && " }
+        out = out + p
+        i = i + 1
+    }
+    out
+}
+
+/// Combine a branch's `@when` predicate conjuncts (AND) with its FIRST-token
+/// disjunction (OR) — `pred && (first || …)` — matching the executor's
+/// `branch_pred_ok(b, st) && tok_starts_seq(...)`.
+fn combine_pred_guard(preds: List<string>, parts: List<string>) -> string {
+    let first = guard_join_dedup(parts)
+    if preds.length == 0 { return first }
+    // A predicate-only branch (no consuming item) NEVER matches via FIRST —
+    // mirror the executor's tok_starts_seq, which skips the Pred and returns
+    // false. Returning the mode read alone would emit an always-true guard and,
+    // wrapped in a repeat, spin forever (`while st.modes.x { }`). Such a branch
+    // is rejected at parse time anyway (parse_seq); this stays as defense.
+    if parts.length == 0 { return "false" }
+    let p = and_join(preds)
+    "${p} && (${first})"
+}
+
 fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
+    mut preds: List<string> = []
     mut parts: List<string> = []
     for item in seq.items {
-        parts.push(prim_first_guard(g, item.prim, visited))
-        match item.rep {
-            .One -> return guard_join_dedup(parts)
-            .Plus -> return guard_join_dedup(parts)
-            _ -> {}
+        match item.prim {
+            // A `@when` predicate is a zero-width AND-conjunct on the branch: it
+            // contributes no FIRST token and never stops the scan.
+            .Pred(flag) -> preds.push(pred_guard(flag))
+            _ -> {
+                parts.push(prim_first_guard(g, item.prim, visited))
+                match item.rep {
+                    .One -> return combine_pred_guard(preds, parts)
+                    .Plus -> return combine_pred_guard(preds, parts)
+                    _ -> {}
+                }
+            }
         }
     }
-    guard_join_dedup(parts)
+    combine_pred_guard(preds, parts)
 }
 
 fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
@@ -1225,6 +1285,9 @@ fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
         .Group(_) -> "Token"
         .Ref(name) -> kind_elem_type(rule_result_kind(g, name))
         .Hand(hf) -> kind_elem_type(hand_kind(hf))
+        // A zero-width `@when` predicate is never captured into a list; this
+        // arm exists only for exhaustiveness.
+        .Pred(_) -> "Token"
     }
 }
 
