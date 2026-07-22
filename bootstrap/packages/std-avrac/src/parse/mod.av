@@ -1266,6 +1266,12 @@ impl Parser {
             // tokenization cost 0454a086 flagged), the single-pipeline shape.
             d.features = self.features
             d.grammar_toks = self.grammar_tokens()
+            // Share the outer parser's source byte view too — the delegate lexes
+            // the SAME source, so re-materialising it (parser_new_with_store already
+            // ran avra_bytes_from_string on it) would duplicate the whole-source
+            // buffer for nothing, exactly the per-file waste `features`/`grammar_toks`
+            // sharing above avoids. decl_flip is default-ON, so this delegate is real.
+            d.source_bytes = self.source_bytes
             // ps3t.6.7 Slice 5.4 (promoted production flip): the delegate does NOT
             // flip its bodies — every flip toggle is OFF, so it is a SINGLE-LEVEL,
             // PURE-HAND parser. When the outer flip routes a top-level item to a
