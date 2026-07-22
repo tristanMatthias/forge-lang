@@ -28,6 +28,13 @@ use core.{Tk}
 /// length — the generator can branch on raw bytes without a codepoint decode.
 export type LitRule = { spelling: string, tk: Tk }
 
+/// The result of matching the operator/punctuation table at a source position:
+/// the token `tk` and how many bytes it consumed (`len`). `len == 0` is the
+/// no-match sentinel (the byte at that position starts no operator) — `tk` is
+/// then `Tk.Error` and callers must not consume. The generated maximal-munch
+/// scanner (parse/gen_operator_scanner.av, produced by emit_lex.av) returns this.
+export type OpMatch = { tk: Tk, len: int }
+
 /// The COMPLETE operator + single-character-punctuation table — every
 /// fixed-spelling terminal `advance_token` (parse/lexer.av) can emit, save the
 /// comment/quote LEADS (`//` `/*` `"` `'` `` ` ``) that open lexer MODES rather
