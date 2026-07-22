@@ -1,9 +1,9 @@
 // WHY: integrated lexer for the recursive-descent parser.
 // Scans source characters one at a time, producing Tk-typed tokens.
 
-use core.{Tk}
+use core.{Tk, tk_name}
 use diagnostics.{DiagCode}
-use parse.{p_keyword_kind}
+use parse.{p_keyword_kind, parser_new}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -847,5 +847,51 @@ export fn decimal_digit_value(ch: string) -> int {
         "9" -> 9
         _ -> 0
     }
+}
+
+// ── t-47hc.2 (Phase 1): the TOKEN-STREAM ORACLE ──────────────────────────────
+// The byte-identical GATE the generated DFA lexer must reproduce — the lexer
+// analog of diff-test's IR equality. `lex_dump` drives the HAND lexer over a
+// source and serialises its exact token stream; any generated lexer that emits
+// the identical dump produces the identical token stream, hence (the toolchain
+// being deterministic) the identical parse. Read-only: adds no behaviour to the
+// production lexer, so it is byte-identical (diff-test) by construction.
+
+/// Escape a lexeme so a token occupies exactly one oracle line: `\n`->`\\n`,
+/// `\t`->`\\t`, `\\`->`\\\\` (reversible). Not a hot path — only the oracle's
+/// formatting, and only string/template/doc-comment lexemes carry the special
+/// chars. Pass-through is byte-level, so multibyte UTF-8 lexemes survive intact.
+fn lex_escape(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "\n" { out = out + "\\n" }
+        else if ch == "\t" { out = out + "\\t" }
+        else if ch == "\\" { out = out + "\\\\" }
+        else { out = out + ch }
+        i = i + 1
+    }
+    out
+}
+
+/// Lex `source` with the hand lexer and return its exact token stream, one
+/// token per line as `<kind>\t<line>:<col>\t<escaped-lexeme>`, terminated by the
+/// `Eof` token. The `kind` is the total `tk_name` (core/ast.av). Deterministic
+/// and total — `parser_new` primes the first token, so the loop reads it
+/// immediately and ends after emitting `Eof`.
+export fn lex_dump(source: string) -> string {
+    mut p = parser_new(source)
+    mut out = ""
+    mut done = false
+    while !done {
+        let k = p.current_kind
+        out = out + tk_name(k) + "\t" + string(p.current_line) + ":" + string(p.current_column) + "\t" + lex_escape(p.current_lexeme) + "\n"
+        match k {
+            .Eof -> { done = true }
+            _ -> { p.advance_token() }
+        }
+    }
+    out
 }
 
