@@ -93,6 +93,14 @@ spec "grammar-DSL composed whole-program == hand parser (ps3t.6.5.11 precursor)"
             // splice inside a quote (quote_depth-gated) + bitnot outside, together.
             agree("fn f() {\n    let q = quote {\n        ~x + 1\n    }\n    return ~q\n}\n")
         }
+        then "the `not` prefix agrees (un owns not, aligned with avra_expr_grammar)" {
+            // avra_program_grammar's `un` accepts `not` (Unary(Not)), matching the
+            // production parser — the two grammar paths parse `not x` consistently.
+            // (This sketch grammar's ladder has no &&/||, so keep operands simple.)
+            agree("fn f() {\n    not x\n}\n") &&
+            agree("fn f() {\n    return not y\n}\n") &&
+            agree("fn f() {\n    not not z\n}\n")
+        }
     }
     given "multi-statement fn bodies (the statement list composes)" {
         then "several statements in sequence agree" {
