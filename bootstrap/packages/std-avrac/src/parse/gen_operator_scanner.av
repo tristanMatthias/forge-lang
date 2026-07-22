@@ -13,125 +13,125 @@ export fn scan_operator(src: bytes, pos: int) -> OpMatch {
     if b0 == BANG {
         let b1 = byte_at(src, pos + 1)
         if b1 == EQUALS {
-            return OpMatch { tk: Tk.BangEqual, len: 2 }
+            return OpMatch { tk: Tk.BangEqual, len: 2, spelling: "!=" }
         }
-        return OpMatch { tk: Tk.Bang, len: 1 }
+        return OpMatch { tk: Tk.Bang, len: 1, spelling: "!" }
     }
     if b0 == PERCENT {
-        return OpMatch { tk: Tk.Percent, len: 1 }
+        return OpMatch { tk: Tk.Percent, len: 1, spelling: "%" }
     }
     if b0 == AMP {
         let b1 = byte_at(src, pos + 1)
         if b1 == AMP {
-            return OpMatch { tk: Tk.AmpAmp, len: 2 }
+            return OpMatch { tk: Tk.AmpAmp, len: 2, spelling: "&&" }
         }
-        return OpMatch { tk: Tk.Amp, len: 1 }
+        return OpMatch { tk: Tk.Amp, len: 1, spelling: "&" }
     }
     if b0 == LPAREN {
-        return OpMatch { tk: Tk.LeftParen, len: 1 }
+        return OpMatch { tk: Tk.LeftParen, len: 1, spelling: "(" }
     }
     if b0 == RPAREN {
-        return OpMatch { tk: Tk.RightParen, len: 1 }
+        return OpMatch { tk: Tk.RightParen, len: 1, spelling: ")" }
     }
     if b0 == STAR {
-        return OpMatch { tk: Tk.Star, len: 1 }
+        return OpMatch { tk: Tk.Star, len: 1, spelling: "*" }
     }
     if b0 == PLUS {
-        return OpMatch { tk: Tk.Plus, len: 1 }
+        return OpMatch { tk: Tk.Plus, len: 1, spelling: "+" }
     }
     if b0 == COMMA {
-        return OpMatch { tk: Tk.Comma, len: 1 }
+        return OpMatch { tk: Tk.Comma, len: 1, spelling: "," }
     }
     if b0 == MINUS {
         let b1 = byte_at(src, pos + 1)
         if b1 == GREATER {
-            return OpMatch { tk: Tk.Arrow, len: 2 }
+            return OpMatch { tk: Tk.Arrow, len: 2, spelling: "->" }
         }
-        return OpMatch { tk: Tk.Minus, len: 1 }
+        return OpMatch { tk: Tk.Minus, len: 1, spelling: "-" }
     }
     if b0 == DOT {
         let b1 = byte_at(src, pos + 1)
         if b1 == DOT {
-            return OpMatch { tk: Tk.DotDot, len: 2 }
+            return OpMatch { tk: Tk.DotDot, len: 2, spelling: ".." }
         }
-        return OpMatch { tk: Tk.Dot, len: 1 }
+        return OpMatch { tk: Tk.Dot, len: 1, spelling: "." }
     }
     if b0 == SLASH {
-        return OpMatch { tk: Tk.Slash, len: 1 }
+        return OpMatch { tk: Tk.Slash, len: 1, spelling: "/" }
     }
     if b0 == COLON {
-        return OpMatch { tk: Tk.Colon, len: 1 }
+        return OpMatch { tk: Tk.Colon, len: 1, spelling: ":" }
     }
     if b0 == LESS {
         let b1 = byte_at(src, pos + 1)
         if b1 == MINUS {
-            return OpMatch { tk: Tk.LeftArrow, len: 2 }
+            return OpMatch { tk: Tk.LeftArrow, len: 2, spelling: "<-" }
         }
         if b1 == LESS {
-            return OpMatch { tk: Tk.Shl, len: 2 }
+            return OpMatch { tk: Tk.Shl, len: 2, spelling: "<<" }
         }
         if b1 == EQUALS {
-            return OpMatch { tk: Tk.LessEqual, len: 2 }
+            return OpMatch { tk: Tk.LessEqual, len: 2, spelling: "<=" }
         }
-        return OpMatch { tk: Tk.Less, len: 1 }
+        return OpMatch { tk: Tk.Less, len: 1, spelling: "<" }
     }
     if b0 == EQUALS {
         let b1 = byte_at(src, pos + 1)
         if b1 == EQUALS {
-            return OpMatch { tk: Tk.EqualEqual, len: 2 }
+            return OpMatch { tk: Tk.EqualEqual, len: 2, spelling: "==" }
         }
-        return OpMatch { tk: Tk.Equal, len: 1 }
+        return OpMatch { tk: Tk.Equal, len: 1, spelling: "=" }
     }
     if b0 == GREATER {
         let b1 = byte_at(src, pos + 1)
         if b1 == EQUALS {
-            return OpMatch { tk: Tk.GreaterEqual, len: 2 }
+            return OpMatch { tk: Tk.GreaterEqual, len: 2, spelling: ">=" }
         }
         if b1 == GREATER {
-            return OpMatch { tk: Tk.Shr, len: 2 }
+            return OpMatch { tk: Tk.Shr, len: 2, spelling: ">>" }
         }
-        return OpMatch { tk: Tk.Greater, len: 1 }
+        return OpMatch { tk: Tk.Greater, len: 1, spelling: ">" }
     }
     if b0 == QUESTION {
         let b1 = byte_at(src, pos + 1)
         if b1 == DOT {
-            return OpMatch { tk: Tk.QuestionDot, len: 2 }
+            return OpMatch { tk: Tk.QuestionDot, len: 2, spelling: "?." }
         }
         if b1 == QUESTION {
-            return OpMatch { tk: Tk.QuestionQuestion, len: 2 }
+            return OpMatch { tk: Tk.QuestionQuestion, len: 2, spelling: "??" }
         }
-        return OpMatch { tk: Tk.Question, len: 1 }
+        return OpMatch { tk: Tk.Question, len: 1, spelling: "?" }
     }
     if b0 == AT {
-        return OpMatch { tk: Tk.At, len: 1 }
+        return OpMatch { tk: Tk.At, len: 1, spelling: "@" }
     }
     if b0 == LBRACKET {
-        return OpMatch { tk: Tk.LeftBracket, len: 1 }
+        return OpMatch { tk: Tk.LeftBracket, len: 1, spelling: "[" }
     }
     if b0 == RBRACKET {
-        return OpMatch { tk: Tk.RightBracket, len: 1 }
+        return OpMatch { tk: Tk.RightBracket, len: 1, spelling: "]" }
     }
     if b0 == CARET {
-        return OpMatch { tk: Tk.Caret, len: 1 }
+        return OpMatch { tk: Tk.Caret, len: 1, spelling: "^" }
     }
     if b0 == LBRACE {
-        return OpMatch { tk: Tk.LeftBrace, len: 1 }
+        return OpMatch { tk: Tk.LeftBrace, len: 1, spelling: "{" }
     }
     if b0 == PIPE {
         let b1 = byte_at(src, pos + 1)
         if b1 == GREATER {
-            return OpMatch { tk: Tk.PipeGt, len: 2 }
+            return OpMatch { tk: Tk.PipeGt, len: 2, spelling: "|>" }
         }
         if b1 == PIPE {
-            return OpMatch { tk: Tk.PipePipe, len: 2 }
+            return OpMatch { tk: Tk.PipePipe, len: 2, spelling: "||" }
         }
-        return OpMatch { tk: Tk.Pipe, len: 1 }
+        return OpMatch { tk: Tk.Pipe, len: 1, spelling: "|" }
     }
     if b0 == RBRACE {
-        return OpMatch { tk: Tk.RightBrace, len: 1 }
+        return OpMatch { tk: Tk.RightBrace, len: 1, spelling: "}" }
     }
     if b0 == TILDE {
-        return OpMatch { tk: Tk.Tilde, len: 1 }
+        return OpMatch { tk: Tk.Tilde, len: 1, spelling: "~" }
     }
-    return OpMatch { tk: Tk.Error, len: 0 }
+    return OpMatch { tk: Tk.Error, len: 0, spelling: "" }
 }

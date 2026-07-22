@@ -84,10 +84,13 @@ impl Parser {
         // a digit, a letter, `$`, …); fall through to the literal/mode dispatch below.
         let op = scan_operator(self.source_bytes, self.current)
         if op.len > 0 {
-            let op_start = self.current
             self.current = self.current + op.len
             self.column = self.column + op.len   // an operator never spans a newline
-            self.set_current(op.tk, self.slice(op_start, self.current))
+            // `op.spelling` is a STATIC string literal from the generated scanner —
+            // an operator's source bytes always equal its canonical spelling, so this
+            // is byte-identical to slicing the source but ZERO alloc (matching the old
+            // hand arms' `set_current(Tk.Arrow, "->")` constant lexemes).
+            self.set_current(op.tk, op.spelling)
             return
         }
 
