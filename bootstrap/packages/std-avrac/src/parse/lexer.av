@@ -861,7 +861,7 @@ export fn decimal_digit_value(ch: string) -> int {
 /// `\t`->`\\t`, `\\`->`\\\\` (reversible). Not a hot path — only the oracle's
 /// formatting, and only string/template/doc-comment lexemes carry the special
 /// chars. Pass-through is byte-level, so multibyte UTF-8 lexemes survive intact.
-fn lex_escape(s: string) -> string {
+export fn lex_escape(s: string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
