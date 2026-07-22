@@ -24,16 +24,18 @@
 // differential test only compares in-subset inputs. Unused in production
 // (byte-identical; diff-test).
 use core.{Tk, tk_name, avra_char_from_hex}
-use parse.{p_keyword_kind, byte_at, char_class, cc_is_ident_cont, cc_is_digit, CharClass, lex_escape}
+use parse.{p_keyword_kind, byte_at, char_class, cc_is_ident_cont, cc_is_digit, CharClass, lex_escape, scan_operator}
 // Named ASCII byte constants (parse/ascii.av) — so branches read `== SLASH`, not
 // `== 47`. These name SOURCE BYTES, not token kinds (byte SLASH -> Tk.Slash).
+// Only the SOURCE bytes the scanner's own arms still read: the operator/
+// punctuation bytes moved to scan_operator (parse/gen_operator_scanner.av), so
+// their constants are no longer imported here — the number/string/char/comment
+// leads are all that remain.
 use parse.{
     NUL, TAB, LF, CR, SPACE, DIGIT_0, MULTIBYTE_MIN, UNDERSCORE,
     LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_N, LOWER_O, LOWER_R, LOWER_S, LOWER_T, LOWER_X,
     UPPER_B, UPPER_O, UPPER_X,
-    BANG, DQUOTE, DOLLAR, PERCENT, AMP, SQUOTE, LPAREN, RPAREN, STAR, PLUS, COMMA, MINUS,
-    DOT, SLASH, COLON, LESS, EQUALS, GREATER, QUESTION, AT, LBRACKET, BACKSLASH, RBRACKET,
-    CARET, LBRACE, PIPE, RBRACE, TILDE,
+    BANG, DQUOTE, DOLLAR, SQUOTE, STAR, DOT, SLASH, BACKSLASH, LBRACE,
 }
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -98,98 +100,12 @@ impl ScanState {
     }
 }
 
-/// The single-char-punctuation subset: byte -> its Tk, or Tk.Error for a byte
-/// that is NOT a subset punctuation (out of subset). Excludes every byte with a
-/// compound form (= < > | & ? . - / !) — those need maximal-munch (a later slice).
-fn subset_punct_tk(b: int) -> Tk {
-    if b == COMMA { return .Comma }
-    if b == LPAREN { return .LeftParen }
-    if b == RPAREN { return .RightParen }
-    if b == LBRACE { return .LeftBrace }
-    if b == RBRACE { return .RightBrace }
-    if b == LBRACKET { return .LeftBracket }
-    if b == RBRACKET { return .RightBracket }
-    if b == COLON { return .Colon }
-    if b == AT { return .At }
-    if b == TILDE { return .Tilde }
-    if b == PERCENT { return .Percent }
-    if b == CARET { return .Caret }
-    if b == PLUS { return .Plus }
-    if b == STAR { return .Star }
-    .Error
-}
-
-fn is_subset_punct(b: int) -> bool {
-    match subset_punct_tk(b) {
-        .Error -> false
-        _ -> true
-    }
-}
-
-/// Maximal-munch scan of a COMPOUND-operator lead — the DFA's longest-match,
-/// compiled to BRANCHES (not a runtime table), byte-identical to the hand
-/// lexer's scan_token operator arms (lexer.av ~104-157). `s` is positioned at
-/// the lead byte `b`; on a handled lead this consumes the lead + the longest
-/// following match and returns its Tk. On a byte that is NOT a handled lead
-/// (`/` — doc/block comments; string/char quotes; anything needing a lexer
-/// mode) it consumes NOTHING and returns `.Error`, so the caller emits the
-/// out-of-subset marker. The branch order per lead mirrors the hand lexer's
-/// exactly so the longest alternative always wins first (`<<`/`<=`/`<-` before
-/// `<`, `??`/`?.` before `?`, …). `s.cur()` past end is -1, matching no operator
-/// byte, so a lead at EOF correctly falls through to its single-char form.
-fn scan_compound_op(s: ScanState, b: int) -> Tk {
-    if b == MINUS {
-        s.adv()
-        if s.cur() == GREATER { s.adv() return .Arrow }         // ->
-        return .Minus
-    }
-    if b == DOT {
-        s.adv()
-        if s.cur() == DOT { s.adv() return .DotDot }            // ..
-        return .Dot
-    }
-    if b == QUESTION {
-        s.adv()
-        if s.cur() == QUESTION { s.adv() return .QuestionQuestion }   // ??
-        if s.cur() == DOT { s.adv() return .QuestionDot }            // ?.
-        return .Question
-    }
-    if b == AMP {
-        s.adv()
-        if s.cur() == AMP { s.adv() return .AmpAmp }            // &&
-        return .Amp
-    }
-    if b == PIPE {
-        s.adv()
-        if s.cur() == PIPE { s.adv() return .PipePipe }         // ||
-        if s.cur() == GREATER { s.adv() return .PipeGt }        // |>
-        return .Pipe
-    }
-    if b == BANG {
-        s.adv()
-        if s.cur() == EQUALS { s.adv() return .BangEqual }      // !=
-        return .Bang
-    }
-    if b == EQUALS {
-        s.adv()
-        if s.cur() == EQUALS { s.adv() return .EqualEqual }     // ==
-        return .Equal
-    }
-    if b == LESS {
-        s.adv()
-        if s.cur() == LESS { s.adv() return .Shl }              // <<
-        if s.cur() == EQUALS { s.adv() return .LessEqual }      // <=
-        if s.cur() == MINUS { s.adv() return .LeftArrow }       // <-
-        return .Less
-    }
-    if b == GREATER {
-        s.adv()
-        if s.cur() == GREATER { s.adv() return .Shr }           // >>
-        if s.cur() == EQUALS { s.adv() return .GreaterEqual }   // >=
-        return .Greater
-    }
-    .Error
-}
+// The single-char punctuation and the compound-operator maximal-munch that used
+// to live here (subset_punct_tk / is_subset_punct / scan_compound_op) are now
+// GENERATED from the declarative operator table: scan_operator
+// (parse/gen_operator_scanner.av, compiled from operator_rules() by emit_lex.av).
+// The `_` arm below calls it directly — one trie of byte-branches replaces the
+// two hand-written functions, "compile the grammar, don't interpret it."
 
 /// One dump line in the oracle's format: `<kind>\t<line>:<col>\t<escaped-lexeme>`.
 fn emit(kind: Tk, line: int, col: int, lexeme: string) -> string {
@@ -260,29 +176,20 @@ export fn scan_subset(source: string) -> string {
                 out = out + emit(Tk.Number, tok_line, tok_col, text)
             }
             _ -> {
-                if is_subset_punct(b) {
-                    // Single-char punctuation with NO compound form.
-                    s.adv()
-                    let text = source.substring(start, s.pos)
-                    out = out + emit(subset_punct_tk(b), tok_line, tok_col, text)
-                } else if b == SLASH {
-                    // `/` — a `///`/`//!` doc-comment TOKEN, or bare division. A
-                    // non-doc `//` line comment and a `/* */` block comment were
-                    // already consumed by skip_trivia, so a `/` reaching here whose
-                    // next byte is `/` MUST be a doc comment; otherwise it is Slash.
-                    if s.nxt() == SLASH {
-                        let is_mod = s.nnxt() == BANG          // `//!` -> ModDocComment
-                        s.adv()  s.adv()  s.adv()             // consume `///` / `//!`
-                        if !s.at_end() && s.cur() == SPACE { s.adv() }   // one leading space
-                        let cstart = s.pos
-                        while !s.at_end() && s.cur() != LF { s.adv() }  // content to EOL
-                        let content = source.substring(cstart, s.pos)
-                        let kind = if is_mod { Tk.ModDocComment } else { Tk.DocComment }
-                        out = out + emit(kind, tok_line, tok_col, content)
-                    } else {
-                        s.adv()
-                        out = out + emit(Tk.Slash, tok_line, tok_col, "/")
-                    }
+                if b == SLASH && s.nxt() == SLASH {
+                    // `///`/`//!` doc-comment TOKEN — a lexer MODE, not an operator.
+                    // A non-doc `//` line comment and a `/* */` block comment were
+                    // already consumed by skip_trivia, so a `/` whose next byte is `/`
+                    // reaching here MUST be a doc comment. Bare `/` (division) is an
+                    // operator and falls through to scan_operator below (-> Slash).
+                    let is_mod = s.nnxt() == BANG          // `//!` -> ModDocComment
+                    s.adv()  s.adv()  s.adv()             // consume `///` / `//!`
+                    if !s.at_end() && s.cur() == SPACE { s.adv() }   // one leading space
+                    let cstart = s.pos
+                    while !s.at_end() && s.cur() != LF { s.adv() }  // content to EOL
+                    let content = source.substring(cstart, s.pos)
+                    let kind = if is_mod { Tk.ModDocComment } else { Tk.DocComment }
+                    out = out + emit(kind, tok_line, tok_col, content)
                 } else if b == SQUOTE {
                     // Char literal `'x'` / `'\n'` -> Number(codepoint), byte-identical
                     // to scan_char_literal (lexer.av ~295-336). IN subset: a single
@@ -360,16 +267,18 @@ export fn scan_subset(source: string) -> string {
                     content = content + "\""                       // closing quote
                     out = out + emit(Tk.String, tok_line, tok_col, content)
                 } else {
-                    // A compound-operator lead: maximal-munch it (byte-identical
-                    // to the hand lexer). `.Error` = a lead this slice doesn't
-                    // own yet (template `\`` quotes, backtick) — still out of subset.
-                    let op = scan_compound_op(s, b)
-                    match op {
-                        .Error -> { return "<out-of-subset:char>" }
-                        _ -> {
-                            let text = source.substring(start, s.pos)
-                            out = out + emit(op, tok_line, tok_col, text)
-                        }
+                    // Every operator + single-char punctuation: the GENERATED
+                    // maximal-munch scanner returns the longest matching token and
+                    // its byte length. len 0 = a lead scan_operator doesn't own
+                    // (backtick template quote, `$`, …) — still out of subset.
+                    let m = scan_operator(s.bytes, s.pos)
+                    if m.len == 0 {
+                        return "<out-of-subset:char>"
+                    } else {
+                        mut k = 0
+                        while k < m.len { s.adv()  k = k + 1 }
+                        let text = source.substring(start, s.pos)
+                        out = out + emit(m.tk, tok_line, tok_col, text)
                     }
                 }
             }
