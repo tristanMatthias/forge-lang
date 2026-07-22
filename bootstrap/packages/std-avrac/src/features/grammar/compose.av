@@ -1,0 +1,80 @@
+// WHY: t-47hc.8 — the fragment COMPOSITION seam. Each language feature owns its
+// own grammar fragment (e.g. features/match_expr/grammar.av `avra_pat_grammar`);
+// this module assembles an ORDERED list of fragments into the single
+// whole-language Grammar the executor/emitter consume. `compose_fragments` is
+// the N-ary generalisation of the old pairwise `compose_grammars` (now a thin
+// 2-element wrapper), so a family grammar can REUSE shared rules from another
+// fragment instead of re-embedding them: a nonterminal reference resolves to
+// whichever fragment defines that rule after the flat merge. Order matters only
+// for the START symbol — the FIRST fragment's start rule stays the start symbol;
+// all other rules merge into one flat rule set (cross-fragment references bind
+// by name). `fragment_rule_conflicts` is the conflict detector: a rule name
+// defined by more than one fragment is a composition clash (the FIRST/FOLLOW
+// ambiguity analysis that supersets this lands in t-47hc.3 / Phase 2).
+//
+// This file holds NO language rules — only the generic assembly logic. It is the
+// counterpart of the per-feature fragment files: features contribute fragments,
+// compose.av joins them, and the engine (executor/emit) runs the result.
+use features.grammar.{Grammar, Rule, build_rule_index}
+
+/// Assemble an ordered list of grammar fragments into one Grammar. The first
+/// fragment's name + start rule lead; every fragment's rules are concatenated in
+/// order (byte-identical to a left fold of `compose_grammars`), then re-indexed.
+/// Cross-fragment nonterminal references bind by name against the merged rule
+/// set — the mechanism that lets a statement fragment reference the expression
+/// fragment's `expression` rule without re-defining it.
+export fn compose_fragments(fragments: List<Grammar>) -> Grammar {
+    mut rules: List<Rule> = []
+    mut name = ""
+    mut first = true
+    for g in fragments {
+        if first {
+            name = g.name
+            first = false
+        }
+        for r in g.rules {
+            rules.push(r)
+        }
+    }
+    Grammar { name: name, rules: rules, rule_idx: build_rule_index(rules) }
+}
+
+/// Compose two grammars — `head`'s rules first (its start rule stays the start
+/// symbol), then `tail`'s. The pairwise seam that lets a family grammar
+/// (statements, declarations, …) REUSE the shared expression rules instead of
+/// re-embedding them. Now a thin wrapper over `compose_fragments`, kept for the
+/// existing two-fragment call sites.
+export fn compose_grammars(head: Grammar, tail: Grammar) -> Grammar {
+    compose_fragments([head, tail])
+}
+
+/// Conflict detector: the rule names defined by MORE THAN ONE fragment. An empty
+/// result means the fragments compose cleanly (disjoint rule sets, the invariant
+/// every real composition upholds). A non-empty result is a composition clash —
+/// two fragments claiming the same nonterminal — surfaced so a test (or a future
+/// generation-time check) can reject it before it silently shadows a rule.
+export fn fragment_rule_conflicts(fragments: List<Grammar>) -> List<string> {
+    mut seen: List<string> = []
+    mut dups: List<string> = []
+    for g in fragments {
+        for r in g.rules {
+            if frag_name_in(seen, r.name) {
+                if !frag_name_in(dups, r.name) {
+                    dups.push(r.name)
+                }
+            } else {
+                seen.push(r.name)
+            }
+        }
+    }
+    dups
+}
+
+fn frag_name_in(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s {
+            return true
+        }
+    }
+    false
+}

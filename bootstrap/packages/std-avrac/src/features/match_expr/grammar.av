@@ -1,0 +1,41 @@
+// WHY: t-47hc.8 — MODULAR per-feature grammar fragments. The `match` feature
+// OWNS its pattern grammar HERE, colocated with its parser/codegen/resolver/
+// typeck/tests, instead of living in the central features/grammar/ monolith
+// (avra_grammar.av). This is the first proof of the epic's modularity
+// constraint: each language feature contributes its OWN grammar fragment, and a
+// composition step (features/grammar/compose.av `compose_fragments`) assembles
+// the fragments into the whole-language grammar the generator consumes. The
+// generic grammar ENGINE (executor / emit / seed_parser) stays in
+// features/grammar/; only the feature-specific RULES move here — the seam that
+// makes the eventual `language_feature match { ..., grammar { ... } }` component
+// a mechanical bundling of the parser+codegen+tests+fragment that already live
+// together in this directory.
+//
+// The fragment is authored as a `grammar { }` surface block (desugars to
+// parse_grammar(<body>), features/grammar/parser.av) — identical IR to the
+// hand-written call, so no seed cycle. Pattern builds (OrMaybe / MkVariant / …)
+// are interpreted by the shared executor keyed on the build name carried in the
+// grammar DATA, so moving the DEFINITION here does not move the engine.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
+/// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
+/// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
+/// right-associative or-patterns `a or b or c`. SELF-CONTAINED — patterns do
+/// not embed expressions, so no composition with the expression grammar. The
+/// entry `pattern_or` mirrors the hand parser's parse_pattern_or.
+export fn avra_pat_grammar() -> Grammar {
+    let gp = grammar {
+  pattern_or  = l:pattern ( "or" r:pattern_or )? -> OrMaybe(l, r)
+  pattern     = opt_present | opt_absent | variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat
+  opt_present = "let" name:IDENT -> OptPresent(name)
+  opt_absent  = ( "none" | "null" ) -> OptAbsent()
+  variant_pat = "." name:IDENT ( "(" ( binds:IDENT ( "," binds:IDENT )* | subs:variant_pat ( "," subs:pattern )* ) ")" )? -> MkVariant(name, binds, subs)
+  ident_pat   = name:IDENT ( "(" b:IDENT ")" )? -> IdentPat(name, b)
+  bool_pat    = b:("true" | "false") -> PatBool(b)
+  str_pat     = s:STRING -> PatStr(s)
+  neg_pat     = "-" n:NUMBER -> PatNegNum(n)
+  num_pat     = n:NUMBER -> PatNum(n)
+    }
+    gp.grammar
+}
