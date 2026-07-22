@@ -1,0 +1,58 @@
+// WHY: t-47hc.8 — proves the FEATURE-FRAGMENT REGISTRY: features/mod.av
+// `feature_grammar_fragments()` is the ONE place per-feature grammar fragments
+// plug in (the grammar-side mirror of `init_features`), and they assemble with
+// the shared cross-cutting base (the expression ladder + type spine) into one
+// clean, conflict-free language grammar via `compose_fragments`. These are
+// PROPERTY invariants that hold as the registry GROWS: every fragment a future
+// Phase-3 leaf migration adds must stay rule-disjoint from the base and the
+// other fragments (a clean union with a well-defined start symbol) — so this
+// spec is the gate that keeps the modular assembly honest, not a snapshot.
+use @std.avrac.features.{feature_grammar_fragments}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_type_grammar, compose_fragments, fragment_rule_conflicts, Grammar}
+
+// The shared cross-cutting base (owned by no single feature) followed by every
+// per-feature fragment the registry collects — the composer's full input.
+fn shared_plus_features() -> List<Grammar> {
+    mut all: List<Grammar> = [avra_expr_grammar(), avra_type_grammar()]
+    for g in feature_grammar_fragments() {
+        all.push(g)
+    }
+    all
+}
+
+fn total_rules(gs: List<Grammar>) -> int {
+    mut n = 0
+    for g in gs {
+        n = n + g.rules.length
+    }
+    n
+}
+
+fn has_rule(gs: List<Grammar>, name: string) -> bool {
+    for g in gs {
+        for r in g.rules {
+            if r.name == name {
+                return true
+            }
+        }
+    }
+    false
+}
+
+spec "t-47hc.8: feature grammar-fragment registry assembles cleanly" {
+    then "the feature-fragment collector is non-empty (match_expr owns patterns)" {
+        feature_grammar_fragments().length >= 1
+    }
+    then "the collector exposes the pattern fragment (pattern_or reachable)" {
+        has_rule(feature_grammar_fragments(), "pattern_or")
+    }
+    then "feature fragments are rule-disjoint from each other and the shared base" {
+        fragment_rule_conflicts(shared_plus_features()).length == 0
+    }
+    then "the assembled language grammar is a clean disjoint union led by the base" {
+        let all = shared_plus_features()
+        let c = compose_fragments(all)
+        c.rules.length == total_rules(all)
+            && c.rules[0].name == avra_expr_grammar().rules[0].name
+    }
+}
