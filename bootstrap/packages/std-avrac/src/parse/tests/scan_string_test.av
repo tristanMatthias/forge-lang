@@ -1,0 +1,111 @@
+// WHY: t-47hc.2 (Phase 1) — CHARACTERIZES the byte-based, run-sliced string family
+// (scan_string_token / scan_multiline_string / scan_raw_string in parse/lexer.av)
+// against the `lex_dump` oracle. Strings are the family where the content is
+// escape-RESOLVED and (for interpolation) verbatim-copied with brace-depth tracking,
+// so the rewrite appends whole literal RUNS via one `slice` each (walking bytes with
+// `advance_byte`, no per-char char_at alloc) instead of `content = content + ch`. Each
+// `then` pins a token kind and, where unambiguous, the resolved lexeme the byte scan
+// must reproduce; the independent proof it equals the OLD peek_char/advance_char
+// version is the full-selfhost diff-test (byte-identical IR).
+use @std.avrac.parse.{lex_dump}
+
+// The ordered token KINDS of `source` (first tab-field of each dump line).
+fn kinds(source: string) -> string {
+    let dump = lex_dump(source)
+    mut out = ""
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" {
+            if out == "" { out = nth_field(line, 0) }
+            else { out = out + " " + nth_field(line, 0) }
+            line = ""
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+// The lexeme (3rd tab-field) of the FIRST dump line of `source`.
+fn first_lexeme(source: string) -> string {
+    let dump = lex_dump(source)
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" { return nth_field(line, 2) }
+        line = line + ch
+        i = i + 1
+    }
+    nth_field(line, 2)
+}
+
+// The `n`-th tab-delimited field of `line` (0-based); "" if out of range.
+fn nth_field(line: string, n: int) -> string {
+    mut field = 0
+    mut out = ""
+    mut i = 0
+    while i < line.length {
+        let ch = line.substring(i, i + 1)
+        if ch == "\t" {
+            if field == n { return out }
+            field = field + 1
+            out = ""
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    if field == n { out } else { "" }
+}
+
+// `${` built by concat so THIS test file's own lexer doesn't interpolate the literal.
+fn dollar_brace() -> string { "$" + "{" }
+
+spec "t-47hc.2: byte-based string family characterization" {
+    then "plain + empty single-line strings are ONE String token, quotes kept" {
+        kinds("\"hello\"") == "String Eof" &&
+        first_lexeme("\"hello\"") == "\"hello\"" &&
+        kinds("\"\"") == "String Eof" &&
+        first_lexeme("\"\"") == "\"\""
+    }
+    then "escapes are resolved into the lexeme (the dump re-escapes them identically)" {
+        // resolved content: a <newline> b ; lex_escape renders it back as \n
+        kinds("\"a\\nb\"") == "String Eof" &&
+        first_lexeme("\"a\\nb\"") == "\"a\\nb\"" &&
+        first_lexeme("\"x\\ty\"") == "\"x\\ty\"" &&
+        first_lexeme("\"q\\\\r\"") == "\"q\\\\r\"" &&
+        // \x41 -> 'A' (printable, no re-escape)
+        first_lexeme("\"\\x41\"") == "\"A\"" &&
+        // unknown escape is kept literally as backslash + char (the dump re-escapes
+        // that literal backslash, so `\z` renders as `\\z`)
+        first_lexeme("\"\\z\"") == "\"\\\\z\""
+    }
+    then "a plain string with no dollar-brace stays String; interpolation makes it a Template" {
+        kinds("\"has {brace} no dollar\"") == "String Eof" &&
+        kinds("\"a" + dollar_brace() + "b}c\"") == "Template Eof" &&
+        // Template lexeme drops the leading quote (content.substring(1, ...))
+        first_lexeme("\"a" + dollar_brace() + "b}c\"") == "a" + dollar_brace() + "b}c"
+    }
+    then "interpolation tracks brace-depth + nested strings so an inner quote does not end it" {
+        // ${ f("x") } — the nested "x" (with its own quotes) must NOT terminate the outer
+        kinds("\"" + dollar_brace() + "f(\"x\")}\"") == "Template Eof" &&
+        // nested braces inside ${...}
+        kinds("\"" + dollar_brace() + "m{n}}\"") == "Template Eof"
+    }
+    then "triple-quoted multiline strings are ONE String (indent-stripped)" {
+        kinds("\"\"\"\nhi\n\"\"\"") == "String Eof" &&
+        kinds("\"\"\"one line\"\"\"") == "String Eof" &&
+        // multiline with interpolation is a Template
+        kinds("\"\"\"\nval " + dollar_brace() + "x}\n\"\"\"") == "Template Eof"
+    }
+    then "raw strings resolve NO escapes — the backslash is literal" {
+        kinds("r\"a\\nb\"") == "String Eof" &&
+        // r"a\nb": the \n is two literal chars, so the dump re-escapes the backslash
+        first_lexeme("r\"a\\nb\"") == "\"a\\\\nb\"" &&
+        kinds("r\"\"\"\nraw\n\"\"\"") == "String Eof"
+    }
+}

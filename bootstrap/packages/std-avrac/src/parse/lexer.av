@@ -9,6 +9,9 @@ use parse.{p_keyword_kind, parser_new}
 // the two source-byte constants the `/` doc-comment boundary tests.
 use parse.{scan_operator, classify_keyword, byte_at, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
+// String-family scanning: the source bytes it stops/branches on (quote, escape,
+// interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
+use parse.{LF, DQUOTE, DOLLAR, LBRACE, RBRACE, BACKSLASH, LOWER_N, LOWER_R, LOWER_T}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -137,6 +140,22 @@ impl Parser {
     fn bump(self) {
         self.current = self.current + 1
         self.column = self.column + 1
+    }
+
+    // Advance one byte, tracking line/column exactly like advance_char (strings and
+    // multiline strings CAN span newlines) — the raw-byte twin of advance_char with
+    // no per-char char_at string allocation. Returns the consumed byte (-1 past end;
+    // callers guard with is_at_end() just as they did for advance_char). LF == "\n".
+    fn advance_byte(self) -> int {
+        let b = byte_at(self.source_bytes, self.current)
+        self.current = self.current + 1
+        if b == LF {
+            self.line = self.line + 1
+            self.column = 1
+        } else {
+            self.column = self.column + 1
+        }
+        b
     }
 
     fn scan_number_token(self) {
@@ -379,83 +398,82 @@ impl Parser {
     }
 
     fn scan_string_token(self) {
+        let sb = self.source_bytes
         // Check for triple-quoted multiline string: """..."""
-        if self.peek_char() == "\"" && self.peek_next_char() == "\"" {
-            self.advance_char()
-            self.advance_char()
+        if byte_at(sb, self.current) == DQUOTE && byte_at(sb, self.current + 1) == DQUOTE {
+            self.advance_byte()
+            self.advance_byte()
             self.scan_multiline_string()
             return
         }
-        // Build the lexeme with escapes resolved. Surrounding quotes
-        // are kept so codegen.av's strip_quotes still works.
-        //
-        // If ${...} is found, the string is emitted as a "template"
-        // token instead. Inside ${}, nested "..." are tracked via
-        // brace-depth so inner quotes don't end the outer string.
+        // Build the lexeme with escapes resolved. Surrounding quotes are kept so
+        // codegen.av's strip_quotes still works. RAW-BYTE, byte-identical to the old
+        // peek_char/advance_char version, which allocated a 1-char STRING per byte:
+        // literal runs (bytes needing no transformation) are appended as ONE `slice`
+        // each, and each byte is walked with `advance_byte` (no char_at alloc). If
+        // ${...} is found the string becomes a Template; inside ${}, nested "..." are
+        // tracked by brace-depth so an inner quote doesn't end the outer string — and
+        // because that region is copied VERBATIM, it simply joins the surrounding run.
         mut content = "\""
         mut has_interpolation = false
         mut brace_depth = 0
+        mut run_start = self.current
         while !self.is_at_end() {
-            let ch = self.peek_char()
-            // Inside ${...}: track braces, skip nested strings
+            let b = byte_at(sb, self.current)
+            // Inside ${...}: track braces, skip nested strings. Advance only — the
+            // verbatim region is captured by the surrounding run's slice on exit.
             if brace_depth > 0 {
-                if ch == "\"" {
-                    content = content + ch
-                    self.advance_char()
-                    while !self.is_at_end() && self.peek_char() != "\"" {
-                        if self.peek_char() == "\\" {
-                            content = content + self.peek_char()
-                            self.advance_char()
-                        }
-                        if !self.is_at_end() {
-                            content = content + self.peek_char()
-                            self.advance_char()
-                        }
+                if b == DQUOTE {
+                    self.advance_byte()
+                    while !self.is_at_end() && byte_at(sb, self.current) != DQUOTE {
+                        if byte_at(sb, self.current) == BACKSLASH { self.advance_byte() }
+                        if !self.is_at_end() { self.advance_byte() }
                     }
-                    if !self.is_at_end() {
-                        content = content + self.peek_char()
-                        self.advance_char()
-                    }
+                    if !self.is_at_end() { self.advance_byte() }
                     continue
                 }
-                if ch == "{" { brace_depth = brace_depth + 1 }
-                if ch == "}" { brace_depth = brace_depth - 1 }
-                content = content + ch
-                self.advance_char()
+                if b == LBRACE { brace_depth = brace_depth + 1 }
+                if b == RBRACE { brace_depth = brace_depth - 1 }
+                self.advance_byte()
                 continue
             }
             // Outside ${}: check for end of string or start of interpolation
-            if ch == "\"" { break }
-            if ch == "$" && self.peek_next_char() == "{" {
+            if b == DQUOTE {
+                content = content + self.slice(run_start, self.current)
+                break
+            }
+            if b == DOLLAR && byte_at(sb, self.current + 1) == LBRACE {
+                content = content + self.slice(run_start, self.current)
                 has_interpolation = true
                 brace_depth = 1
                 content = content + "$" + "{"
-                self.advance_char()
-                self.advance_char()
+                self.advance_byte()
+                self.advance_byte()
+                run_start = self.current
                 continue
             }
-            if ch == "\\" {
-                self.advance_char()
+            if b == BACKSLASH {
+                content = content + self.slice(run_start, self.current)
+                self.advance_byte()
                 if self.is_at_end() { break }
-                let esc = self.peek_char()
-                self.advance_char()
-                match esc {
-                    "n"  -> { content = content + "\n" }
-                    "t"  -> { content = content + "\t" }
-                    "r"  -> { content = content + "\r" }
-                    "\\" -> { content = content + "\\" }
-                    "\"" -> { content = content + "\"" }
-                    "0"  -> { content = content + "\0" }
-                    "x"  -> {
-                        let hi = self.advance_char()
-                        let lo = self.advance_char()
-                        content = content + avra_char_from_hex(hi, lo)
-                    }
-                    _    -> { content = content + "\\" + esc }
+                let ep = self.current
+                let esc = self.advance_byte()
+                if esc == LOWER_N { content = content + "\n" }
+                else if esc == LOWER_T { content = content + "\t" }
+                else if esc == LOWER_R { content = content + "\r" }
+                else if esc == BACKSLASH { content = content + "\\" }
+                else if esc == DQUOTE { content = content + "\"" }
+                else if esc == DIGIT_0 { content = content + "\0" }
+                else if esc == LOWER_X {
+                    let hp = self.current
+                    self.advance_byte()
+                    self.advance_byte()
+                    content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
                 }
+                else { content = content + "\\" + self.slice(ep, ep + 1) }
+                run_start = self.current
             } else {
-                content = content + ch
-                self.advance_char()
+                self.advance_byte()
             }
         }
 
@@ -465,7 +483,7 @@ impl Parser {
             return
         }
 
-        self.advance_char()
+        self.advance_byte()
         if has_interpolation {
             // Strip leading quote, emit as template for desugaring
             self.set_current(Tk.Template, content.substring(1, content.length))
@@ -478,91 +496,87 @@ impl Parser {
     // Triple-quoted multiline string: """..."""
     // Strips common leading whitespace based on closing """ indentation.
     fn scan_multiline_string(self) {
+        let sb = self.source_bytes
         mut content = "\""
         mut has_interpolation = false
         mut brace_depth = 0
         // Skip the first newline after opening """ if present
-        if !self.is_at_end() && self.peek_char() == "\n" {
-            self.advance_char()
+        if !self.is_at_end() && byte_at(sb, self.current) == LF {
+            self.advance_byte()
         }
+        // Raw-byte + run-slicing, byte-identical to the old peek_char/advance_char
+        // loop (see scan_string_token): literal runs are one `slice` each and each byte
+        // is walked with `advance_byte` (line/column-tracking, no char_at alloc).
+        mut run_start = self.current
         while !self.is_at_end() {
-            let ch = self.peek_char()
-            // Inside ${...}: track braces, skip nested strings
+            let b = byte_at(sb, self.current)
+            // Inside ${...}: track braces, skip nested strings — advance only, the
+            // verbatim region joins the surrounding run's slice on exit.
             if brace_depth > 0 {
-                if ch == "\"" {
-                    content = content + ch
-                    self.advance_char()
-                    while !self.is_at_end() && self.peek_char() != "\"" {
-                        if self.peek_char() == "\\" {
-                            content = content + self.peek_char()
-                            self.advance_char()
-                        }
-                        if !self.is_at_end() {
-                            content = content + self.peek_char()
-                            self.advance_char()
-                        }
+                if b == DQUOTE {
+                    self.advance_byte()
+                    while !self.is_at_end() && byte_at(sb, self.current) != DQUOTE {
+                        if byte_at(sb, self.current) == BACKSLASH { self.advance_byte() }
+                        if !self.is_at_end() { self.advance_byte() }
                     }
-                    if !self.is_at_end() {
-                        content = content + self.peek_char()
-                        self.advance_char()
-                    }
+                    if !self.is_at_end() { self.advance_byte() }
                     continue
                 }
-                if ch == "{" { brace_depth = brace_depth + 1 }
-                if ch == "}" { brace_depth = brace_depth - 1 }
-                content = content + ch
-                self.advance_char()
+                if b == LBRACE { brace_depth = brace_depth + 1 }
+                if b == RBRACE { brace_depth = brace_depth - 1 }
+                self.advance_byte()
                 continue
             }
-            // Check for closing """
-            if ch == "\"" && self.peek_next_char() == "\"" {
-                // Need to check third quote
-                if self.current + 2 < self.source_len && self.char_at(self.current + 2) == "\"" {
-                    self.advance_char()
-                    self.advance_char()
-                    self.advance_char()
-                    // Strip common indentation: determine indent from what precedes closing """
-                    let stripped = multiline_strip_indent(content.substring(1, content.length))
-                    if has_interpolation {
-                        self.set_current(Tk.Template, stripped)
-                    } else {
-                        self.set_current(Tk.String, "\"" + stripped + "\"")
-                    }
-                    return
+            // Closing """ (three quotes; byte_at past end is -1, so an out-of-range
+            // third byte is not a quote — the old current+2<len bounds check).
+            if b == DQUOTE && byte_at(sb, self.current + 1) == DQUOTE && byte_at(sb, self.current + 2) == DQUOTE {
+                content = content + self.slice(run_start, self.current)
+                self.advance_byte()
+                self.advance_byte()
+                self.advance_byte()
+                // Strip common indentation: determine indent from what precedes closing """
+                let stripped = multiline_strip_indent(content.substring(1, content.length))
+                if has_interpolation {
+                    self.set_current(Tk.Template, stripped)
+                } else {
+                    self.set_current(Tk.String, "\"" + stripped + "\"")
                 }
+                return
             }
             // Interpolation
-            if ch == "$" && self.peek_next_char() == "{" {
+            if b == DOLLAR && byte_at(sb, self.current + 1) == LBRACE {
+                content = content + self.slice(run_start, self.current)
                 has_interpolation = true
                 brace_depth = 1
                 content = content + "$" + "{"
-                self.advance_char()
-                self.advance_char()
+                self.advance_byte()
+                self.advance_byte()
+                run_start = self.current
                 continue
             }
             // Escape sequences
-            if ch == "\\" {
-                self.advance_char()
+            if b == BACKSLASH {
+                content = content + self.slice(run_start, self.current)
+                self.advance_byte()
                 if self.is_at_end() { break }
-                let esc = self.peek_char()
-                self.advance_char()
-                match esc {
-                    "n"  -> { content = content + "\n" }
-                    "t"  -> { content = content + "\t" }
-                    "r"  -> { content = content + "\r" }
-                    "\\" -> { content = content + "\\" }
-                    "\"" -> { content = content + "\"" }
-                    "0"  -> { content = content + "\0" }
-                    "x"  -> {
-                        let hi = self.advance_char()
-                        let lo = self.advance_char()
-                        content = content + avra_char_from_hex(hi, lo)
-                    }
-                    _    -> { content = content + "\\" + esc }
+                let ep = self.current
+                let esc = self.advance_byte()
+                if esc == LOWER_N { content = content + "\n" }
+                else if esc == LOWER_T { content = content + "\t" }
+                else if esc == LOWER_R { content = content + "\r" }
+                else if esc == BACKSLASH { content = content + "\\" }
+                else if esc == DQUOTE { content = content + "\"" }
+                else if esc == DIGIT_0 { content = content + "\0" }
+                else if esc == LOWER_X {
+                    let hp = self.current
+                    self.advance_byte()
+                    self.advance_byte()
+                    content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
                 }
+                else { content = content + "\\" + self.slice(ep, ep + 1) }
+                run_start = self.current
             } else {
-                content = content + ch
-                self.advance_char()
+                self.advance_byte()
             }
         }
         self.report(DiagCode.UnterminatedString, "unterminated multiline string (missing closing \"\"\")")
@@ -572,54 +586,53 @@ impl Parser {
     // Raw string: r"..." or r"""..."""
     // No escape processing, no interpolation. Content is literal.
     fn scan_raw_string(self) {
+        let sb = self.source_bytes
+        // Raw strings resolve NO escapes and have NO interpolation, so the content is a
+        // verbatim source span — sliced in ONE shot (raw-byte, no per-char char_at alloc).
         // Check for raw multiline: r"""..."""
-        if self.peek_char() == "\"" && self.peek_next_char() == "\"" {
-            self.advance_char()
-            self.advance_char()
+        if byte_at(sb, self.current) == DQUOTE && byte_at(sb, self.current + 1) == DQUOTE {
+            self.advance_byte()
+            self.advance_byte()
             // Skip first newline after opening r"""
-            if !self.is_at_end() && self.peek_char() == "\n" {
-                self.advance_char()
+            if !self.is_at_end() && byte_at(sb, self.current) == LF {
+                self.advance_byte()
             }
-            mut content = ""
+            let run_start = self.current
             while !self.is_at_end() {
-                let ch = self.peek_char()
-                if ch == "\"" && self.peek_next_char() == "\"" {
-                    if self.current + 2 < self.source_len && self.char_at(self.current + 2) == "\"" {
-                        self.advance_char()
-                        self.advance_char()
-                        self.advance_char()
-                        let stripped = multiline_strip_indent(content)
-                        self.set_current(Tk.String, "\"" + stripped + "\"")
-                        return
-                    }
+                if byte_at(sb, self.current) == DQUOTE && byte_at(sb, self.current + 1) == DQUOTE && byte_at(sb, self.current + 2) == DQUOTE {
+                    let content = self.slice(run_start, self.current)
+                    self.advance_byte()
+                    self.advance_byte()
+                    self.advance_byte()
+                    let stripped = multiline_strip_indent(content)
+                    self.set_current(Tk.String, "\"" + stripped + "\"")
+                    return
                 }
-                content = content + ch
-                self.advance_char()
+                self.advance_byte()
             }
             self.report(DiagCode.UnterminatedString, "unterminated raw multiline string (missing closing r\"\"\")")
             self.set_current(Tk.Error, "")
             return
         }
         // Single-line raw string: r"..."
-        mut content = "\""
+        let run_start = self.current
         while !self.is_at_end() {
-            let ch = self.peek_char()
-            if ch == "\"" { break }
-            if ch == "\n" {
+            let b = byte_at(sb, self.current)
+            if b == DQUOTE { break }
+            if b == LF {
                 self.report(DiagCode.UnterminatedString, "unterminated raw string")
                 self.set_current(Tk.Error, "")
                 return
             }
-            content = content + ch
-            self.advance_char()
+            self.advance_byte()
         }
         if self.is_at_end() {
             self.report(DiagCode.UnterminatedString, "unterminated raw string")
             self.set_current(Tk.Error, "")
             return
         }
-        self.advance_char()  // consume closing "
-        content = content + "\""
+        let content = "\"" + self.slice(run_start, self.current) + "\""
+        self.advance_byte()  // consume closing "
         self.set_current(Tk.String, content)
     }
 
