@@ -6,16 +6,18 @@
 // branches on `char_class` and reads raw bytes via `byte_at` (no per-char string
 // allocation), tracking line/column exactly as the hand lexer's advance_char does.
 //
-// SUBSET (byte-identical here): whitespace, `//` line comments, identifiers +
-// keywords, PLAIN decimal integers, the single-char punctuation with NO compound
-// form (, ( ) { } [ ] : @ ~ % ^ + *), AND — as of slice 4 — every COMPOUND-operator
-// lead with maximal munch (`- . ? & | ! = < >` and their longer forms: -> .. ??
-// ?. && || |> != == << <= <- >> >=). OUT of subset (later slices — they need
-// lexer modes, and would diverge): strings/char/template literals, `/`
-// (division / `//` doc / block comments), floats / hex / underscore / duration
-// numbers. scan_subset returns a "<out-of-subset:...>" marker when it meets an
-// out-of-subset construct, so the differential test only compares in-subset
-// inputs. Unused in production (byte-identical; diff-test).
+// SUBSET (byte-identical here): whitespace, identifiers + keywords, PLAIN decimal
+// integers, the single-char punctuation with NO compound form (, ( ) { } [ ] : @ ~
+// % ^ + *), every COMPOUND-operator lead with maximal munch (`- . ? & | ! = < >`
+// and their longer forms: -> .. ?? ?. && || |> != == << <= <- >> >=), AND — as of
+// slice 5 — the whole `/` FAMILY: `//` line comments + `/* */` NESTED block
+// comments (both trivia), `///`/`//!` doc-comment TOKENS (DocComment/ModDocComment,
+// one leading space stripped, content to EOL), and bare `/` (Slash / division).
+// OUT of subset (later slices — they need lexer modes): string/char/template
+// literals, floats / hex / underscore / duration numbers. scan_subset returns a
+// "<out-of-subset:...>" marker when it meets an out-of-subset construct, so the
+// differential test only compares in-subset inputs. Unused in production
+// (byte-identical; diff-test).
 use core.{Tk, tk_name}
 use parse.{p_keyword_kind, byte_at, char_class, cc_is_ident_cont, cc_is_digit, CharClass, lex_escape}
 
@@ -44,27 +46,40 @@ impl ScanState {
         }
     }
 
-    /// Skip whitespace and `//` line comments, matching
-    /// skip_whitespace_and_comments for the subset. Returns false on a `///`/
-    /// `//!` doc comment (out of subset — advance_token would emit a token).
-    fn skip_trivia(self) -> bool {
+    /// Skip whitespace, `//` line comments, and `/* */` NESTED block comments —
+    /// matching skip_whitespace_and_comments exactly. STOPS (returns to the scan
+    /// loop) at a `///`/`//!` doc comment (those are TOKENS the `/` arm emits) and
+    /// at any real token. An unterminated `/*` swallows to EOF, like the hand lexer.
+    fn skip_trivia(self) {
         while !self.at_end() {
             let b = self.cur()
             if b == 32 || b == 13 || b == 9 || b == 10 {   // space, CR, tab, LF
                 self.adv()
             } else if b == 47 && self.nxt() == 47 {         // `//`
                 let third = self.nnxt()
-                if third == 47 || third == 33 {             // `///` or `//!` (doc)
-                    return false
+                if third == 47 || third == 33 {             // `///`/`//!` doc — a TOKEN
+                    return
                 }
-                while !self.at_end() && self.cur() != 10 {  // to end of line
+                while !self.at_end() && self.cur() != 10 {  // line comment to EOL
                     self.adv()
                 }
+            } else if b == 47 && self.nxt() == 42 {          // `/*` block comment
+                self.adv()   // consume /
+                self.adv()   // consume *
+                mut depth = 1
+                while depth > 0 && !self.at_end() {
+                    if self.cur() == 47 && self.nxt() == 42 {      // nested `/*`
+                        self.adv()  self.adv()  depth = depth + 1
+                    } else if self.cur() == 42 && self.nxt() == 47 { // `*/`
+                        self.adv()  self.adv()  depth = depth - 1
+                    } else {
+                        self.adv()
+                    }
+                }
             } else {
-                return true
+                return
             }
         }
-        true
     }
 }
 
@@ -174,7 +189,7 @@ export fn scan_subset(source: string) -> string {
     mut s = ScanState { src: source, bytes: avra_bytes_from_string(source), n: source.length, pos: 0, line: 1, col: 1 }
     mut out = ""
     while true {
-        if !s.skip_trivia() { return "<out-of-subset:doc-comment>" }
+        s.skip_trivia()
         let tok_line = s.line
         let tok_col = s.col
         let start = s.pos
@@ -230,10 +245,28 @@ export fn scan_subset(source: string) -> string {
                     s.adv()
                     let text = source.substring(start, s.pos)
                     out = out + emit(subset_punct_tk(b), tok_line, tok_col, text)
+                } else if b == 47 {
+                    // `/` — a `///`/`//!` doc-comment TOKEN, or bare division. A
+                    // non-doc `//` line comment and a `/* */` block comment were
+                    // already consumed by skip_trivia, so a `/` reaching here whose
+                    // next byte is `/` MUST be a doc comment; otherwise it is Slash.
+                    if s.nxt() == 47 {
+                        let is_mod = s.nnxt() == 33            // `//!` -> ModDocComment
+                        s.adv()  s.adv()  s.adv()             // consume `///` / `//!`
+                        if !s.at_end() && s.cur() == 32 { s.adv() }   // one leading space
+                        let cstart = s.pos
+                        while !s.at_end() && s.cur() != 10 { s.adv() }  // content to EOL
+                        let content = source.substring(cstart, s.pos)
+                        let kind = if is_mod { Tk.ModDocComment } else { Tk.DocComment }
+                        out = out + emit(kind, tok_line, tok_col, content)
+                    } else {
+                        s.adv()
+                        out = out + emit(Tk.Slash, tok_line, tok_col, "/")
+                    }
                 } else {
                     // A compound-operator lead: maximal-munch it (byte-identical
                     // to the hand lexer). `.Error` = a lead this slice doesn't
-                    // own yet (`/`, string/char quotes) — still out of subset.
+                    // own yet (string/char quotes) — still out of subset.
                     let op = scan_compound_op(s, b)
                     match op {
                         .Error -> { return "<out-of-subset:char>" }
