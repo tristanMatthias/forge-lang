@@ -1,0 +1,101 @@
+// WHY: t-47hc.2 (Phase 1) — CHARACTERIZES the byte-based trivia scanning
+// (skip_whitespace_and_comments + the ///·//! doc-comment scan in advance_token +
+// scan_template_token, all in parse/lexer.av) against the `lex_dump` oracle.
+// skip_whitespace_and_comments runs before EVERY token, so its old peek_char/
+// advance_char pair (a 1-char string alloc per whitespace/comment byte) was the
+// lexer's largest per-char allocator; the rewrite reads raw bytes via advance_byte
+// and slices comment bodies in one shot. Each `then` pins that whitespace and
+// line/block comments are SKIPPED (leave no token) while `///`/`//!` become doc
+// tokens; the independent proof it equals the OLD version is the full-selfhost
+// diff-test (byte-identical IR).
+use @std.avrac.parse.{lex_dump}
+
+// The ordered token KINDS of `source` (first tab-field of each dump line).
+fn kinds(source: string) -> string {
+    let dump = lex_dump(source)
+    mut out = ""
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" {
+            if out == "" { out = nth_field(line, 0) }
+            else { out = out + " " + nth_field(line, 0) }
+            line = ""
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+// The lexeme (3rd tab-field) of the FIRST dump line of `source`.
+fn first_lexeme(source: string) -> string {
+    let dump = lex_dump(source)
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" { return nth_field(line, 2) }
+        line = line + ch
+        i = i + 1
+    }
+    nth_field(line, 2)
+}
+
+// The `n`-th tab-delimited field of `line` (0-based); "" if out of range.
+fn nth_field(line: string, n: int) -> string {
+    mut field = 0
+    mut out = ""
+    mut i = 0
+    while i < line.length {
+        let ch = line.substring(i, i + 1)
+        if ch == "\t" {
+            if field == n { return out }
+            field = field + 1
+            out = ""
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    if field == n { out } else { "" }
+}
+
+spec "t-47hc.2: byte-based trivia (whitespace / comments / doc) characterization" {
+    then "whitespace (space / tab / CR / newline) is skipped, leaving only tokens" {
+        kinds("  a\t b ") == "Identifier Identifier Eof" &&
+        kinds("\n\n x \n") == "Identifier Eof" &&
+        kinds("a\r\nb") == "Identifier Identifier Eof" &&
+        // Pin the line:column fields lex_dump emits, so a regression in advance_byte's
+        // line/column accounting is caught independently of token kinds. The CRLF case
+        // matters: CR bumps the column, then the following LF resets it to a new line —
+        // `b` must land at 2:1 exactly as it would after a bare LF.
+        lex_dump("\n\n x \n") == "Identifier\t3:2\tx\nEof\t4:1\t\n" &&
+        lex_dump("a\r\nb") == "Identifier\t1:1\ta\nIdentifier\t2:1\tb\nEof\t2:2\t\n"
+    }
+    then "line comments are skipped; a `//` at end-of-input is skipped too" {
+        kinds("a // trailing\nb") == "Identifier Identifier Eof" &&
+        kinds("x // to the end") == "Identifier Eof" &&
+        kinds("// whole line\nv") == "Identifier Eof"
+    }
+    then "nested / multi-line block comments are skipped entirely" {
+        kinds("a /* one */ b") == "Identifier Identifier Eof" &&
+        kinds("a /* outer /* inner */ still */ b") == "Identifier Identifier Eof" &&
+        kinds("a /* line1\nline2 */ b") == "Identifier Identifier Eof"
+    }
+    then "doc comments /// and //! are TOKENS (not skipped), with one leading space stripped" {
+        kinds("/// doc\nfn") == "DocComment KwFn Eof" &&
+        kinds("//! mod doc\nfn") == "ModDocComment KwFn Eof" &&
+        // exactly one leading space is stripped; the rest of the line is the body
+        first_lexeme("/// hello world") == "hello world" &&
+        first_lexeme("///no space") == "no space" &&
+        first_lexeme("///  two spaces") == " two spaces"
+    }
+    then "backtick templates capture their verbatim body as a Template token" {
+        kinds("`hi there`") == "Template Eof" &&
+        first_lexeme("`hi there`") == "hi there" &&
+        first_lexeme("``") == ""
+    }
+}

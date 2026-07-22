@@ -92,6 +92,7 @@ export const LBRACKET = 91    // [
 export const BACKSLASH = 92   // \
 export const RBRACKET = 93    // ]
 export const CARET = 94       // ^
+export const BACKTICK = 96    // `  (template string delimiter)
 export const LBRACE = 123     // {
 export const PIPE = 124       // |
 export const RBRACE = 125     // }
