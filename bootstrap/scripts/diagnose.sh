@@ -1969,6 +1969,12 @@ fn main() {
 }
 AVEOF
   log "emit-regen-run: rendering the char-class run scanners via emit_lex.av"
+  # Drop any cached driver .bin so regeneration is ALWAYS fresh. The driver .av is
+  # rewritten above (bumping its mtime, which already forces run_fg to recompile),
+  # but emit_lex.av / token_table.av are NON-PRODUCTION (not in bs2's dep closure, so
+  # editing them does not rebuild $BS2) — this makes "always fresh" independent of
+  # run_fg's mtime cache, so a table edit can never silently commit a stale scanner.
+  rm -f "${driver%.av}.bin"
   run_fg "$driver" || die "emit-regen-run: driver (gen_run_scanner_file render) failed"
   [ -f "packages/std-avrac/src/parse/gen_run_scanner.av" ] || die "emit-regen-run: driver did not write gen_run_scanner.av"
   ok "emit-regen-run: parse/gen_run_scanner.av regenerated from char_run_rules()"
