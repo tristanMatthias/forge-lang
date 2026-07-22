@@ -1,0 +1,104 @@
+// WHY: t-47hc.2 (Phase 1) — the DIFFERENTIAL proof that the GENERATED maximal-munch
+// scanner (parse/gen_operator_scanner.av `scan_operator`, compiled from the operator
+// table by emit_lex.av) behaves EXACTLY like the hand lexer. token_table_test.av
+// already pins operator_rules() to the hand lexer (each spelling lexes to its
+// declared tk THROUGH lex_dump); this test pins the GENERATED scanner to that same
+// table (each spelling matches to its declared tk + byte length), so by transitivity
+// the generated branches == the hand lexer over the whole operator/punctuation set.
+// Plus the two properties the table test can't reach: maximal munch ACROSS a
+// multi-operator input, and the len-0 no-match sentinel.
+use @std.avrac.parse.{scan_operator, operator_rules, lex_dump}
+use @std.avrac.core.{Tk, tk_name}
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+
+/// Drive `scan_operator` across a PURE-operator string (no idents/numbers/strings/
+/// whitespace) and return the token-kind names it produces, space-separated — the
+/// generated scanner's own tokenisation of the whole input.
+fn scan_op_kinds(src: string) -> string {
+    let b = avra_bytes_from_string(src)
+    mut out = ""
+    mut pos = 0
+    while pos < src.length {
+        let m = scan_operator(b, pos)
+        if m.len == 0 { return out + "<nomatch>" }
+        out = out + tk_name(m.tk) + " "
+        pos = pos + m.len
+    }
+    out
+}
+
+/// The HAND lexer's kind sequence for `src`, extracted from lex_dump (the oracle):
+/// each dump line is `<kind>\t<l>:<c>\t<lexeme>`; take the kind (up to the first
+/// tab), drop the trailing Eof. The independent ground truth `scan_op_kinds` must
+/// reproduce — no hand-written goldens to get wrong.
+fn hand_op_kinds(src: string) -> string {
+    let dump = lex_dump(src)
+    mut out = ""
+    mut i = 0
+    mut line_start = 0
+    while i <= dump.length {
+        let ch = if i == dump.length { "\n" } else { dump.substring(i, i + 1) }
+        if ch == "\n" {
+            let line = dump.substring(line_start, i)
+            if line.length > 0 {
+                mut t = 0
+                while t < line.length && line.substring(t, t + 1) != "\t" { t = t + 1 }
+                let kind = line.substring(0, t)
+                if kind != "Eof" { out = out + kind + " " }
+            }
+            line_start = i + 1
+        }
+        i = i + 1
+    }
+    out
+}
+
+spec "t-47hc.2: generated scan_operator == hand lexer over the operator table" {
+    then "scan_operator matches every declared rule (tk + byte length)" {
+        let rules = operator_rules()
+        mut ok = true
+        mut i = 0
+        while i < rules.length {
+            let r = rules[i]
+            let m = scan_operator(avra_bytes_from_string(r.spelling), 0)
+            if !(m.tk == r.tk && m.len == r.spelling.length) { ok = false }
+            i = i + 1
+        }
+        ok
+    }
+    then "maximal munch in context: the longest operator wins, then the scan resumes" {
+        // ">>=" -> Shr(2) then Equal(1);  "<->" -> LeftArrow(2) then Greater(1).
+        let a = avra_bytes_from_string(">>=")
+        let m0 = scan_operator(a, 0)
+        let m2 = scan_operator(a, 2)
+        let b = avra_bytes_from_string("<->")
+        let n0 = scan_operator(b, 0)
+        let n2 = scan_operator(b, 2)
+        m0.tk == Tk.Shr && m0.len == 2 && m2.tk == Tk.Equal && m2.len == 1 &&
+        n0.tk == Tk.LeftArrow && n0.len == 2 && n2.tk == Tk.Greater && n2.len == 1
+    }
+    then "adjacent operators tokenise identically to the hand lexer (maximal munch)" {
+        // scan_op_kinds (generated) vs hand_op_kinds (lex_dump oracle) — a true
+        // differential over dense operator runs where munch boundaries matter.
+        scan_op_kinds("->..") == hand_op_kinds("->..") &&
+        scan_op_kinds("??|>") == hand_op_kinds("??|>") &&
+        scan_op_kinds("<<<-<=") == hand_op_kinds("<<<-<=") &&
+        scan_op_kinds(">>>=") == hand_op_kinds(">>>=") &&
+        scan_op_kinds("==!=") == hand_op_kinds("==!=") &&
+        scan_op_kinds("&&||") == hand_op_kinds("&&||") &&
+        scan_op_kinds("(){}[]") == hand_op_kinds("(){}[]") &&
+        // and the sanity anchor: the generated stream is non-empty + Eof-free
+        scan_op_kinds("<<<-<=") == "Shl LeftArrow LessEqual "
+    }
+    then "no-match sentinel: a non-operator byte (or EOF) yields len 0" {
+        // idents, digits, whitespace, and quote leads are not operators here.
+        scan_operator(avra_bytes_from_string("a"), 0).len == 0 &&
+        scan_operator(avra_bytes_from_string("5"), 0).len == 0 &&
+        scan_operator(avra_bytes_from_string(" "), 0).len == 0 &&
+        scan_operator(avra_bytes_from_string("\""), 0).len == 0 &&
+        scan_operator(avra_bytes_from_string("'"), 0).len == 0 &&
+        scan_operator(avra_bytes_from_string(""), 0).len == 0 &&      // EOF (byte -1)
+        scan_operator(avra_bytes_from_string("+"), 1).len == 0        // pos past the only byte
+    }
+}

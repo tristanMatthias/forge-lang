@@ -1,0 +1,150 @@
+// WHY: t-47hc.2 (Phase 1) — the GENERATOR that COMPILES the declarative operator/
+// punctuation table (token_table.av `operator_rules()`) into a maximal-munch byte
+// scanner (`scan_operator`), the lexer sibling of features/grammar/emit.av (which
+// compiles the parser Grammar into recursive descent). This is the design's core
+// rule made literal: "compile the grammar, don't interpret it — the DFA lexer EMITS
+// branches, not a runtime table." Nothing here walks `operator_rules()` at scan
+// time; it walks the table ONCE, at build time, to EMIT nested byte-branches.
+//
+// The emitted `scan_operator(src, pos)` is a TRIE of the spellings, compiled to
+// nested `if byte == N { … }`: descend into longer matches FIRST, fall back to the
+// shorter terminal only when no longer one matches — which IS maximal munch, for
+// free, from the tree shape (no length sorting at runtime, no backtracking). All
+// byte reads go through the allocation-free `byte_at`; a byte past the end reads -1
+// and matches no branch, so a lead at EOF correctly yields its single-char form.
+//
+// This module is NON-PRODUCTION (like gen_expr_file.av): imported ONLY by the
+// regenerator (diagnose.sh --emit-regen-lex) and the guard test
+// (gen_operator_scanner_regen_test.av). The GENERATED file it produces
+// (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
+// this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
+// double-expand the package — F4012).
+use parse.{operator_rules, LitRule, byte_at}
+use core.{Tk, tk_name}
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+
+// ── The build-time trie ───────────────────────────────────────────
+// One node per byte-prefix. `has_tk` marks a prefix that is itself a complete
+// spelling (a terminal); `children` are the one-byte-longer prefixes. Built once
+// per `emit_operator_scanner_source` call, thrown away after emission.
+type OpTrie = { byte: int, has_tk: bool, tk: Tk, children: List<OpTrie> }
+
+impl OpTrie {
+    /// Index of the child keyed on byte `b`, or -1. Linear over `children` — at
+    /// most a handful per node, and build-time only.
+    fn child_index(self, b: int) -> int {
+        mut i = 0
+        while i < self.children.length {
+            if self.children[i].byte == b { return i }
+            i = i + 1
+        }
+        -1
+    }
+
+    /// Insert spelling bytes `sb[0..slen)` ending in token `tk`, extending the
+    /// trie from `self` at `depth`. `self` is by-pointer, so the find-or-create
+    /// walk mutates the shared tree in place.
+    fn insert(self, sb: bytes, slen: int, depth: int, tk: Tk) {
+        if depth == slen {
+            self.has_tk = true
+            self.tk = tk
+            return
+        }
+        let b = byte_at(sb, depth)
+        mut idx = self.child_index(b)
+        if idx == -1 {
+            self.children.push(OpTrie { byte: b, has_tk: false, tk: Tk.Error, children: [] })
+            idx = self.children.length - 1
+        }
+        self.children[idx].insert(sb, slen, depth + 1, tk)
+    }
+}
+
+/// Build the operator trie from the declarative table. A fresh rootless node
+/// (byte -1, no terminal) whose children are the lead bytes.
+fn build_op_trie(rules: List<LitRule>) -> OpTrie {
+    mut root = OpTrie { byte: -1, has_tk: false, tk: Tk.Error, children: [] }
+    mut i = 0
+    while i < rules.length {
+        let r = rules[i]
+        root.insert(avra_bytes_from_string(r.spelling), r.spelling.length, 0, r.tk)
+        i = i + 1
+    }
+    root
+}
+
+/// A node's children in ASCENDING byte order — DETERMINISTIC emission (the regen
+/// guard is textual equality, so branch order must be stable across runs). Bytes
+/// are unique per node, so scanning 0..255 yields each child once, sorted.
+fn sorted_children(kids: List<OpTrie>) -> List<OpTrie> {
+    mut result: List<OpTrie> = []
+    mut b = 0
+    while b < 256 {
+        mut i = 0
+        while i < kids.length {
+            if kids[i].byte == b { result.push(kids[i]) }
+            i = i + 1
+        }
+        b = b + 1
+    }
+    result
+}
+
+/// Emit one trie node's branches at `depth` (the byte offset from the match
+/// start). LONGER matches are emitted first (descend into children before this
+/// node's own terminal), so control reaches the shorter `return` only when no
+/// longer branch fired — maximal munch from the tree shape alone.
+fn emit_op_node(node: OpTrie, depth: int, indent: string) -> string {
+    mut out = ""
+    if node.children.length > 0 {
+        let kids = sorted_children(node.children)
+        let idx_expr = if depth == 0 { "pos" } else { "pos + " + string(depth) }
+        out = out + indent + "let b" + string(depth) + " = byte_at(src, " + idx_expr + ")\n"
+        mut i = 0
+        while i < kids.length {
+            let c = kids[i]
+            out = out + indent + "if b" + string(depth) + " == " + string(c.byte) + " {\n"
+            out = out + emit_op_node(c, depth + 1, indent + "    ")
+            out = out + indent + "}\n"
+            i = i + 1
+        }
+    }
+    if node.has_tk {
+        out = out + indent + "return OpMatch { tk: Tk." + tk_name(node.tk) + ", len: " + string(depth) + " }\n"
+    }
+    out
+}
+
+/// The generated `scan_operator` function body (its doc comment + signature +
+/// the trie branches + the no-match tail). Pure text — the compiled form of
+/// `operator_rules()`.
+export fn emit_operator_scanner_source() -> string {
+    let root = build_op_trie(operator_rules())
+    "/// GENERATED maximal-munch scanner for the operator/punctuation table.\n" +
+    "/// Returns the longest matching token at `pos` and its byte length, or\n" +
+    "/// `{ Tk.Error, len: 0 }` when the byte at `pos` starts no operator.\n" +
+    "export fn scan_operator(src: bytes, pos: int) -> OpMatch {\n" +
+    emit_op_node(root, 0, "    ") +
+    "    return OpMatch { tk: Tk.Error, len: 0 }\n" +
+    "}\n"
+}
+
+/// The fixed import header of the generated module: exactly the symbols
+/// `scan_operator` references (`OpMatch` + `byte_at` from parse, `Tk` from core).
+/// RELATIVE imports — the generated file is a globbed in-package module, and an
+/// absolute `@std.avrac.` self-import double-expands the package (F4012).
+export fn gen_operator_scanner_header() -> string {
+    "// GENERATED by `bash scripts/diagnose.sh --emit-regen-lex` — DO NOT EDIT BY HAND.\n" +
+    "// Source of truth: operator_rules() in parse/token_table.av (compiled to a\n" +
+    "// maximal-munch byte-branch trie by parse/emit_lex.av). Editing the operator\n" +
+    "// table without regenerating fails parse/tests/gen_operator_scanner_regen_test.av.\n" +
+    "use parse.{OpMatch, byte_at}\n" +
+    "use core.{Tk}\n\n"
+}
+
+/// The COMPLETE text of parse/gen_operator_scanner.av: header + generated body.
+/// Both the regenerator and the guard read from HERE — one source of truth.
+export fn gen_operator_scanner_file() -> string {
+    gen_operator_scanner_header() + emit_operator_scanner_source()
+}

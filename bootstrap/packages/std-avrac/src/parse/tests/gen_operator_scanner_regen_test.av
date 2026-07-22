@@ -1,0 +1,29 @@
+// WHY: t-47hc.2 (Phase 1) — the REGEN GUARD for the checked-in operator/
+// punctuation scanner (parse/gen_operator_scanner.av). That file MUST always
+// equal gen_operator_scanner_file() = the fixed header + the trie compiled from
+// operator_rules() (emit_lex.av). Editing the operator table (token_table.av)
+// without running `bash scripts/diagnose.sh --emit-regen-lex` leaves the checked-in
+// scanner stale — and this test fails until it's regenerated + committed. The
+// lexer sibling of gen_expr_parser_regen_test.av.
+//
+// Fast + in-process: the emitter is linked via the import, so no nested compile.
+// Reads the file from the bootstrap root — the repo's test cwd (as the source
+// lints rely on).
+use @std.avrac.parse.{gen_operator_scanner_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in operator scanner stays current with operator_rules()" {
+    then "parse/gen_operator_scanner.av == gen_operator_scanner_file() (else run --emit-regen-lex)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_operator_scanner.av")
+        let expected = gen_operator_scanner_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        // A globbed in-package compiler-src module MUST import relatively: an
+        // absolute `@std.avrac.` self-import of the package being built makes the
+        // metadata lib build process the whole package a SECOND time (F4012).
+        // Guards the header emitted by gen_operator_scanner_header() directly.
+        !gen_operator_scanner_file().contains("use @std.avrac.")
+    }
+}
