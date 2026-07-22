@@ -278,6 +278,11 @@ RUN MODES
                        operator_rules() (token_table.av). Run after editing the
                        operator table; commit the result (its guard test fails
                        until you do).
+  --lexer-bench [N]    t-47hc.2 Phase 1: callgrind the current build/bs2 compiling
+                       an N-fn-pair token-dense source (default 400), reporting the
+                       total instruction count + per-symbol lexer self-costs. The
+                       perf rail — run before/after a lexer slice and compare.
+                       Dev-only (needs valgrind + python3; run make build-quick first).
   --emit-gen-check     ps3t.6.5.11 behavioural gate: render the grammar-DSL
                        parser via emit.av, then COMPILE + RUN the generated
                        source and assert it parses byte-equivalent to the hand
@@ -1907,6 +1912,70 @@ AVEOF
   ok "emit-regen-lex: parse/gen_operator_scanner.av regenerated from operator_rules()"
 }
 
+# t-47hc.2 (Phase 1) — the LEXER PERF RAIL. callgrind the CURRENT build/bs2 compiling a
+# token-dense synthetic source, reporting the total instruction count + the per-symbol
+# lexer self-costs. Run it before/after a lexer slice and compare the numbers — the
+# reusable version of the ad-hoc callgrind harness the operator slices used, so every
+# future named-terminal slice tracks Ir as the scanner grows (rule 10: centralize, and
+# the epic's "world-class perf, don't settle" directive). Dev-only: needs valgrind +
+# python3; benches whatever is in build/bs2 (run `make build-quick` first). Optional
+# arg = fn-pair count (default 400); more = more signal, longer callgrind.
+mode_lexer_bench() {
+  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
+  command -v valgrind >/dev/null 2>&1 || die "lexer-bench needs valgrind (dev-only perf tool; apt install valgrind)"
+  command -v python3 >/dev/null 2>&1 || die "lexer-bench needs python3 (fixture generation)"
+  [ -x "$BUILD_DIR/bs2" ] || die "lexer-bench: build/bs2 missing — run 'make build-quick' first (benches the current bs2)"
+  local iters="${1:-400}"
+  local dir="$BUILD_DIR/lexer_bench"
+  mkdir -p "$dir"
+  local src="$dir/tokens.av"
+  # A token-dense standalone program: operators, keywords, int+hex numbers, strings
+  # with escapes, line/block/doc comments, identifiers. All-int arithmetic + a
+  # string-returning sibling so it typechecks with no @std and no unused-var warnings.
+  # A per-run nonce (in a leading comment) forces a compile-cache MISS so callgrind
+  # measures a FULL lex+compile every run, not a cache hit. A comment is skipped by
+  # the lexer, so its Ir cost is a handful of instructions — negligible vs the total.
+  local nonce="$$-${RANDOM}-${iters}"
+  python3 - "$src" "$iters" "$nonce" <<'PY'
+import sys
+path, n, nonce = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+header = "// lexer-bench nonce %s (forces a cache miss)\n" % nonce
+tmpl = '''/// doc comment for f{i}
+fn f{i}(a: int, b: int) -> int {{
+    mut x = a + b - 1 * 2 / 3 % 4
+    x = x & 5 | 6 ^ 7 << 1 >> 1
+    let big = 0xff + 100 + 42
+    x = x + big
+    if x == a && b != 0 || x < 10 {{ x = x + 1 }} else {{ x = x - 1 }}
+    /* block comment */ x
+}}
+fn s{i}() -> string {{ "row {i}: \\t tab \\n newline \\\\ slash done" }}
+'''
+with open(path, "w") as f:
+    f.write(header)
+    for i in range(n):
+        f.write(tmpl.format(i=i))
+PY
+  local lines
+  lines=$(wc -l < "$src")
+  log "lexer-bench: $iters fn-pairs / $lines lines, token-dense (ops · keywords · int+hex · strings · comments)"
+  local cg="$dir/callgrind.out" vg="$dir/vg.log"
+  valgrind --tool=callgrind --callgrind-out-file="$cg" --cache-sim=no \
+    "$BUILD_DIR/bs2" compile "$src" --output "$dir/tokens.ll" 2>"$vg" >/dev/null \
+    || die "lexer-bench: compile under callgrind failed (see $vg)"
+  local total
+  # Take only the number AFTER "refs:" (the `==pid==` prefix also has digits), drop commas.
+  total=$(grep -m1 -E 'I +refs:' "$vg" | sed -E 's/.*refs:[[:space:]]*//; s/,//g')
+  ok "lexer-bench: TOTAL I refs = ${total}   (compile of ${lines}-line token-dense source)"
+  echo ""
+  echo "  lexer self-costs (callgrind_annotate — compare across slices):"
+  callgrind_annotate --threshold=100 "$cg" 2>/dev/null \
+    | grep -iE 'char_at_len|avra_rc_alloc|scan_operator|advance_char|bytes_from_string|substring_len|scan_number_token|scan_string_token|scan_identifier_token|skip_whitespace' \
+    | sed 's/^/    /' | head -20
+  echo ""
+  log "lexer-bench: artifacts in $dir — re-run after a lexer change and compare TOTAL + per-symbol"
+}
+
 mode_emit_gen_check() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   local dir="$BUILD_DIR/emit_gen"
@@ -3051,6 +3120,7 @@ main() {
     --emit-regen-expr)    mode_emit_regen_expr "$@" ;;
     --emit-regen-decl)    mode_emit_regen_decl "$@" ;;
     --emit-regen-lex)     mode_emit_regen_lex "$@" ;;
+    --lexer-bench)        mode_lexer_bench "$@" ;;
     --emit-gen-check)     mode_emit_gen_check "$@" ;;
     --bs2-stale-check)    mode_bs2_stale_check "$@" ;;
     --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
