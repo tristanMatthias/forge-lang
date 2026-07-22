@@ -7,7 +7,7 @@
 // adding a feature adds only its fragment; the composer joins them, no central
 // edit. The cross-MODULE compose (grammar + match_expr) is the load-bearing
 // assertion: fragments genuinely live with their owning features.
-use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_expr_grammar, Grammar, parse_grammar}
+use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_expr_grammar, avra_type_grammar, Grammar, parse_grammar}
 use @std.avrac.features.match_expr.{avra_pat_grammar}
 
 // Two tiny fragments that intentionally CLASH on a rule name (`shared`), to
@@ -39,6 +39,21 @@ spec "t-47hc.8: per-feature grammar fragments compose cross-module" {
         let p = avra_pat_grammar()
         let c = compose_fragments([e, p])
         c.rules.length == e.rules.length + p.rules.length
+    }
+    then "THREE disjoint fragments (expr + pat + type) compose to the ordered union" {
+        // Exercises the N-ary path beyond the legacy 2-fragment case: an impl
+        // that dropped fragment 3+ would pass the pair test but fail here. expr
+        // (features.grammar), pat (features.match_expr), and type (features.grammar)
+        // are rule-disjoint, so the composed rule set is exactly their sum, the
+        // FIRST fragment's start rule still leads, and there are no conflicts.
+        let e = avra_expr_grammar()
+        let p = avra_pat_grammar()
+        let t = avra_type_grammar()
+        let c = compose_fragments([e, p, t])
+        c.rules.length == e.rules.length + p.rules.length + t.rules.length
+            && c.rules[0].name == e.rules[0].name
+            && c.name == e.name
+            && fragment_rule_conflicts([e, p, t]).length == 0
     }
     then "the FIRST fragment's start rule leads the composition" {
         let e = avra_expr_grammar()
