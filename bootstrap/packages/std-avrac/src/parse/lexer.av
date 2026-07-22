@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_ident_run, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -255,17 +255,14 @@ impl Parser {
     }
 
     fn scan_identifier_token(self) {
-        // Byte-based scan of the identifier CONTINUATION (advance_token already
-        // consumed the first char). cc_is_ident_cont reads RAW BYTES — no per-char
-        // string allocation, unlike the old `p_is_alpha_numeric(peek_char())` /
-        // `advance_char()` loop, which allocated a 1-byte string PER character (~2
-        // allocs per identifier char, on the lexer's most common token). Byte-identical:
-        // cc_is_ident_cont(b) == p_is_alpha_numeric over ASCII, and an identifier is
-        // ASCII (a byte >= 128 classifies as Other, stopping both scans identically);
-        // byte_at past the end returns -1, also Other, so the loop halts at EOF.
-        mut end = self.current
-        while cc_is_ident_cont(byte_at(self.source_bytes, end)) { end = end + 1 }
-        self.column = self.column + (end - self.current)   // an identifier never spans a newline
+        // The identifier CONTINUATION run is the GENERATED scan_ident_run — the compiled
+        // form of char_run_rules() (parse/gen_run_scanner.av, from emit_lex.av): a maximal
+        // run of `cc_is_ident_cont` bytes read RAW, no per-char string allocation. Byte-
+        // identical to the old inline `while cc_is_ident_cont(byte_at(...)) { end += 1 }`
+        // loop (advance_token already consumed the first char); an identifier is ASCII and
+        // never spans a newline, so column advances by the run length.
+        let end = scan_ident_run(self.source_bytes, self.current)
+        self.column = self.column + (end - self.current)
         self.current = end
 
         // Keyword classification on the RAW BYTES via the generated exact-match trie
