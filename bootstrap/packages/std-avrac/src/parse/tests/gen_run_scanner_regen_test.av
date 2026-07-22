@@ -1,0 +1,21 @@
+// WHY: t-47hc.2 (Phase 1) — the REGEN GUARD for the checked-in char-class run
+// scanners (parse/gen_run_scanner.av). That file MUST always equal
+// gen_run_scanner_file() = the fixed header + one byte-scan loop compiled from each
+// char_run_rules() entry (emit_lex.av). Editing the run table (token_table.av)
+// without running `bash scripts/diagnose.sh --emit-regen-run` leaves the checked-in
+// scanner stale — and this test fails until it's regenerated + committed. The
+// char-class-RUN sibling of gen_operator_scanner_regen_test.av / the keyword one.
+use @std.avrac.parse.{gen_run_scanner_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in run scanners stay current with char_run_rules()" {
+    then "parse/gen_run_scanner.av == gen_run_scanner_file() (else run --emit-regen-run)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_run_scanner.av")
+        let expected = gen_run_scanner_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        !gen_run_scanner_file().contains("use @std.avrac.")
+    }
+}

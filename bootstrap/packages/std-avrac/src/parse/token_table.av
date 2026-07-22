@@ -190,3 +190,24 @@ export fn keyword_rules() -> List<LitRule> {
 /// The exact keyword count `keyword_rules` must have (token_table_test.av guard).
 /// BUMP in lockstep with keyword_rules when the reserved-word set changes.
 export const KEYWORD_RULE_COUNT = 59
+
+// ── Character-CLASS RUN terminals ─────────────────────────────────
+/// One character-class RUN terminal: a maximal run of bytes each satisfying `pred`
+/// (a `cc_is_*` classifier in parse/charclass.av), scanned into `scan_<name>_run`.
+/// This is the char-class-RUN analog of `LitRule`'s fixed spellings — the
+/// declarative form of the hand lexer's `while cc_is_X(byte_at(...)) { end += 1 }`
+/// loops. `pred` names the classifier the generated loop calls; `name` names the
+/// emitted scanner. Unlike operators/keywords there is NO trie (a run is one class,
+/// not a set of spellings); the generator emits a single byte-scan loop per rule.
+export type CharRun = { name: string, pred: string }
+
+/// The char-class RUN terminals the lexer scans, compiled to
+/// `scan_<name>_run(src, start) -> end` byte-scan loops by parse/emit_lex.av
+/// (parse/gen_run_scanner.av). The identifier CONTINUATION run is the first; the
+/// number-family digit runs (decimal/hex/binary/octal) join here as they migrate
+/// off their hand loops. Single source of truth for the lexer's char-class runs.
+export fn char_run_rules() -> List<CharRun> {
+    [
+        CharRun { name: "ident", pred: "cc_is_ident_cont" },
+    ]
+}
