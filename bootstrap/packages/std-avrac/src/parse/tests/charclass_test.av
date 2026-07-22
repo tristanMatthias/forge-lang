@@ -1,0 +1,49 @@
+// WHY: t-47hc.2 (Phase 1) — proves the DFA lexer's byte CHARACTER-CLASSIFICATION
+// (parse/charclass.av) agrees with the HAND lexer's string-based `p_is_*`
+// predicates over the same characters. The generated DFA scanner will classify
+// bytes with `char_class`; this equivalence is what lets its token stream be
+// byte-identical to the hand lexer's (validated end-to-end by the token-stream
+// oracle, lex_oracle_test.av). Also pins the allocation-free `byte_at` accessor.
+use @std.avrac.parse.{char_class, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, byte_at_str}
+use @std.avrac.parse.{p_is_digit, p_is_alpha, p_is_alpha_numeric}
+
+// For a single character `c`, the byte-based classification must agree with the
+// hand lexer's string-based predicates: digit-ness, identifier-start (alpha),
+// and identifier-continuation (alphanumeric).
+fn agrees(c: string) -> bool {
+    let code = c.char_code()
+    cc_is_digit(code) == p_is_digit(c) &&
+    cc_is_ident_start(code) == p_is_alpha(c) &&
+    cc_is_ident_cont(code) == p_is_alpha_numeric(c)
+}
+
+spec "t-47hc.2: byte char_class agrees with the hand p_is_* predicates" {
+    then "digits classify identically" {
+        agrees("0") && agrees("4") && agrees("9")
+    }
+    then "letters (both cases, at the bounds) + underscore classify as ident-start" {
+        agrees("a") && agrees("z") && agrees("A") && agrees("Z") && agrees("m") && agrees("_")
+    }
+    then "whitespace / newline are neither digit nor ident" {
+        agrees(" ") && agrees("\t") && agrees("\n")
+    }
+    then "operators and punctuation are Other (neither digit nor ident)" {
+        agrees("+") && agrees("-") && agrees(".") && agrees("(") &&
+        agrees("{") && agrees("=") && agrees("\"") && agrees("|")
+    }
+    then "direct class checks on key bytes" {
+        cc_is_ident_start(97) &&        // 'a'
+        !cc_is_ident_start(48) &&       // '0' is a digit, not ident-start
+        cc_is_ident_cont(48) &&         // '0' continues an identifier
+        cc_is_digit(48) &&              // '0'
+        !cc_is_digit(97) &&             // 'a'
+        !cc_is_ident_start(46) &&       // '.'
+        !cc_is_ident_cont(32)           // space
+    }
+    then "byte_at reads raw bytes, -1 past the end" {
+        byte_at_str("ab", 0) == 97 &&   // 'a'
+        byte_at_str("ab", 1) == 98 &&   // 'b'
+        byte_at_str("ab", 2) == -1 &&   // past end
+        byte_at_str("ab", -1) == -1     // before start
+    }
+}
