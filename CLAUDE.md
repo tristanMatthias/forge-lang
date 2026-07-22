@@ -591,6 +591,24 @@ densely scoped (`snw0`, `08ro`, `pdme.*`, `i7gw`, `05yc`). Filing parallel
 tickets (and re-diagnosing what they already document) burns a session; the
 existing ones often already hold the answer.
 
+## PR slice workflow — STACK THE PRs / merge-when-ready / rebase (t-47hc, user directive 2026-07-22)
+
+Do NOT pause between slices waiting for a merge, and do NOT bundle multiple
+slices onto one branch/PR. Each slice is its OWN branch and its OWN PR,
+**stacked**:
+
+- **Stack the PRs** — slice N+1's branch is created off slice N's branch, and
+  its PR's BASE is slice N's branch (so the PR diff shows ONLY slice N+1). The
+  bottom of the stack (`claude/avra-ps3t-6-7-grammar-flip`, the routine-tracked
+  branch) bases on integration (`feat/crafting-intepreters`). One slice per PR,
+  reviewable in isolation.
+- **Merge when ready** — PRs merge bottom-up as each goes green.
+- **Rebase** — when a lower PR merges (the merged-PR webhook fires reliably),
+  rebase the rest of the stack onto the new integration tip, re-target the next
+  PR's base to integration, and re-fetch the pinned seed.
+- Each slice still: build-quick + emit-gen-check + diff-test PREBUILT=1 + a
+  targeted test; keep CI green; never merge past a red/canceled check.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
