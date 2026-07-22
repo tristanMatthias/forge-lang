@@ -17,6 +17,8 @@ export const SPACE = 32
 
 // ── Digit / letter range bounds (char_class) ──────────────────────
 export const DIGIT_0 = 48     // '0'  (also the \0 escape char)
+export const DIGIT_1 = 49     // '1'  (binary-digit upper bound)
+export const DIGIT_7 = 55     // '7'  (octal-digit upper bound)
 export const DIGIT_9 = 57     // '9'
 export const UPPER_A = 65     // 'A'
 export const UPPER_Z = 90     // 'Z'
@@ -38,6 +40,10 @@ export const LOWER_S = 115    // 's'  (Ns duration; the s of Nms)
 export const LOWER_T = 116    // 't'  (\t escape)
 export const LOWER_X = 120    // 'x'  (0x hex prefix; \x hex escape)
 export const UPPER_B = 66     // 'B'  (0B)
+export const UPPER_C = 67     // 'C'  (hex digit)
+export const UPPER_D = 68     // 'D'  (hex digit)
+export const UPPER_E = 69     // 'E'  (hex digit)
+export const UPPER_F = 70     // 'F'  (hex-digit upper bound)
 export const UPPER_O = 79     // 'O'  (0O)
 export const UPPER_X = 88     // 'X'  (0X)
 
