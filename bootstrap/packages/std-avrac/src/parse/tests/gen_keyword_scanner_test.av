@@ -1,0 +1,68 @@
+// WHY: t-47hc.2 (Phase 1) — the DIFFERENTIAL proof that the GENERATED exact-match
+// keyword recogniser (parse/gen_keyword_scanner.av `classify_keyword`, compiled from
+// keyword_rules() by emit_lex.av) behaves correctly. It pins the generated trie to
+// the declarative table (each keyword classifies to its declared tk), proves the
+// EXACT-match boundary (`iff` is an Identifier, not `if`), the [start, end) range
+// semantics, and the reserved-word collapse. The independent proof that it equals
+// the OLD string-ladder is the full-selfhost diff-test (byte-identical IR).
+use @std.avrac.parse.{classify_keyword, keyword_rules, KEYWORD_RULE_COUNT}
+use @std.avrac.core.{Tk}
+
+extern fn avra_bytes_from_string(s: string) -> bytes
+
+/// classify a whole string as an identifier candidate.
+fn classify(s: string) -> Tk { classify_keyword(avra_bytes_from_string(s), 0, s.length) }
+
+spec "t-47hc.2: generated classify_keyword == the keyword table" {
+    then "every keyword classifies to its declared token; table is well-formed" {
+        let rules = keyword_rules()
+        mut ok = rules.length == KEYWORD_RULE_COUNT
+        mut i = 0
+        while i < rules.length {
+            if classify(rules[i].spelling) != rules[i].tk { ok = false }
+            // no duplicate spelling
+            mut j = i + 1
+            while j < rules.length {
+                if rules[i].spelling == rules[j].spelling { ok = false }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        ok
+    }
+    then "EXACT match: a keyword + extra chars, or a keyword prefix, is an Identifier" {
+        // keyword + extra (exact-match: `iff` is NOT `if`)
+        classify("iff") == Tk.Identifier &&
+        classify("lets") == Tk.Identifier &&
+        classify("returns") == Tk.Identifier &&
+        classify("matcher") == Tk.Identifier &&
+        classify("isolated_x") == Tk.Identifier &&
+        // keyword PREFIXES that are not themselves keywords
+        classify("i") == Tk.Identifier &&        // prefix of if/in/impl/is/isolated
+        classify("re") == Tk.Identifier &&       // prefix of return/ref
+        classify("cont") == Tk.Identifier &&     // prefix of continue
+        classify("wh") == Tk.Identifier &&       // prefix of where/while/when
+        // unrelated identifiers + wrong case (keywords are lowercase)
+        classify("foo") == Tk.Identifier &&
+        classify("hello_world") == Tk.Identifier &&
+        classify("If") == Tk.Identifier &&
+        classify("RETURN") == Tk.Identifier
+    }
+    then "range semantics: [start, end) bounds decide keyword-ness" {
+        // `xif`: [1,3) is "if" -> KwIf; [0,3) is "xif" -> Identifier
+        let b = avra_bytes_from_string("xif")
+        // `iffy`: [0,2) is "if" -> KwIf; [0,4) is "iffy" -> Identifier
+        let c = avra_bytes_from_string("iffy")
+        classify_keyword(b, 1, 3) == Tk.KwIf &&
+        classify_keyword(b, 0, 3) == Tk.Identifier &&
+        classify_keyword(c, 0, 2) == Tk.KwIf &&
+        classify_keyword(c, 0, 4) == Tk.Identifier
+    }
+    then "reserved future keywords collapse to KwReserved" {
+        classify("async") == Tk.KwReserved &&
+        classify("await") == Tk.KwReserved &&
+        classify("unsafe") == Tk.KwReserved &&
+        classify("borrow") == Tk.KwReserved &&
+        classify("hardware") == Tk.KwReserved
+    }
+}

@@ -25,6 +25,9 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
 use parse.static_decl_entry.{run_static_decl}
+// The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
+// p_keyword_kind is now a thin string wrapper over it.
+use parse.{classify_keyword}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
@@ -586,69 +589,14 @@ export fn parse_expression_native_probe(source: string) -> NativeParseProbe {
 /// `Tk.KwReserved` — the lexer rejects them at the use site so we
 /// reserve the name space without committing to semantics.
 export fn p_keyword_kind(text: string) -> Tk {
-    match text {
-        "and"      -> Tk.KwAnd
-        "catch"    -> Tk.KwCatch
-        "channel"  -> Tk.KwChannel
-        "const"    -> Tk.KwConst
-        "else"     -> Tk.KwElse
-        "errdefer" -> Tk.KwErrdefer
-        "false"    -> Tk.KwFalse
-        "fn"       -> Tk.KwFn
-        "if"       -> Tk.KwIf
-        "let"      -> Tk.KwLet
-        "mut"      -> Tk.KwMut
-        "not"      -> Tk.KwNot
-        "null"     -> Tk.KwNull
-        "none"     -> Tk.KwNone
-        "or"       -> Tk.KwOr
-        "return"   -> Tk.KwReturn
-        "true"     -> Tk.KwTrue
-        "for"      -> Tk.KwFor
-        "in"       -> Tk.KwIn
-        "where"    -> Tk.KwWhere
-        "while"    -> Tk.KwWhile
-        "type"     -> Tk.KwType
-        "enum"     -> Tk.KwEnum
-        "match"    -> Tk.KwMatch
-        "export"   -> Tk.KwExport
-        "use"      -> Tk.KwUse
-        "mod"      -> Tk.KwMod
-        "impl"     -> Tk.KwImpl
-        "extern"   -> Tk.KwExtern
-        "break"    -> Tk.KwBreak
-        "continue" -> Tk.KwContinue
-        "defer"    -> Tk.KwDefer
-        "dyn"      -> Tk.KwDyn
-        "trait"    -> Tk.KwTrait
-        "with"     -> Tk.KwWith
-        "when"     -> Tk.KwWhen
-        "is"       -> Tk.KwIs
-        "spec"     -> Tk.KwSpec
-        "given"    -> Tk.KwGiven
-        "then"     -> Tk.KwThen
-        "select"   -> Tk.KwSelect
-        "shape"    -> Tk.KwShape
-        "component" -> Tk.KwComponent
-        "parallel" -> Tk.KwParallel
-        "spawn"    -> Tk.KwSpawn
-        "isolated" -> Tk.KwIsolated
-        "quote"    -> Tk.KwQuote
-        // Reserved future keywords
-        "async"    -> Tk.KwReserved
-        "await"    -> Tk.KwReserved
-        "yield"    -> Tk.KwReserved
-        "move"     -> Tk.KwReserved
-        "ref"      -> Tk.KwReserved
-        "unsafe"   -> Tk.KwReserved
-        "macro"    -> Tk.KwReserved
-        "systems"  -> Tk.KwReserved
-        "bare"     -> Tk.KwReserved
-        "hardware" -> Tk.KwReserved
-        "owned"    -> Tk.KwReserved
-        "borrow"   -> Tk.KwReserved
-        _          -> Tk.Identifier
-    }
+    // Delegates to the GENERATED exact-match byte-trie (classify_keyword,
+    // parse/gen_keyword_scanner.av, compiled from keyword_rules() by emit_lex.av) —
+    // now the SINGLE source of truth for the keyword set, replacing the ~59-arm
+    // string-comparison ladder that used to live here (a strcmp against every keyword
+    // on EVERY identifier). The production lexer (scan_identifier_token) calls
+    // classify_keyword DIRECTLY on the source bytes; this string wrapper serves the
+    // remaining callers that only hold the identifier text.
+    classify_keyword(avra_bytes_from_string(text), 0, text.length)
 }
 
 /// Construct a Parser positioned on the first token of `source`.

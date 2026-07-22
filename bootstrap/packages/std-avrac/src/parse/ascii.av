@@ -41,6 +41,26 @@ export const UPPER_B = 66     // 'B'  (0B)
 export const UPPER_O = 79     // 'O'  (0O)
 export const UPPER_X = 88     // 'X'  (0X)
 
+// ── The rest of the lowercase alphabet — the KEYWORD recogniser branches on
+//    letters, so the generated classify_keyword (parse/gen_keyword_scanner.av)
+//    needs a named constant for every letter a keyword contains. Completing a–z
+//    here (a/b/d/h/m/n/o/r/s/t/x/z already above) keeps the generated branches
+//    reading `b0 == LOWER_I`, never `b0 == 105`. ──
+export const LOWER_C = 99     // 'c'
+export const LOWER_E = 101    // 'e'
+export const LOWER_F = 102    // 'f'
+export const LOWER_G = 103    // 'g'
+export const LOWER_I = 105    // 'i'
+export const LOWER_J = 106    // 'j'
+export const LOWER_K = 107    // 'k'
+export const LOWER_L = 108    // 'l'
+export const LOWER_P = 112    // 'p'
+export const LOWER_Q = 113    // 'q'
+export const LOWER_U = 117    // 'u'
+export const LOWER_V = 118    // 'v'
+export const LOWER_W = 119    // 'w'
+export const LOWER_Y = 121    // 'y'
+
 // ── Punctuation & operators (ordered by byte value) ───────────────
 export const BANG = 33        // !
 export const DQUOTE = 34      // "
@@ -72,15 +92,43 @@ export const RBRACE = 125     // }
 export const TILDE = 126      // ~
 
 // ── byte -> constant NAME (the inverse) ───────────────────────────
-/// The exported constant NAME for a punctuation/operator source byte — the
-/// inverse of the byte->value constants above (e.g. `BANG` -> "BANG"). The
-/// operator-scanner generator (emit_lex.av) uses this so its GENERATED branches
-/// read `b0 == BANG`, not `b0 == 33`: a named constant, not a magic number. Written
-/// against the CONSTANTS themselves (never a bare literal), so this table has no
-/// magic numbers either. Total over the punctuation bytes (33..126 that have a
-/// constant); returns "" for any other byte — never reached for the operator table,
-/// whose bytes are all punctuation.
+/// The exported constant NAME for a source byte — the inverse of the byte->value
+/// constants above (e.g. `BANG` -> "BANG", `LOWER_I` -> "LOWER_I"). The scanner
+/// generators (emit_lex.av) use it so GENERATED branches read `b0 == BANG` /
+/// `b0 == LOWER_I`, not `b0 == 33` / `b0 == 105`: a named constant, not a magic
+/// number. Written against the CONSTANTS themselves (never a bare literal), so this
+/// table has no magic numbers either. Total over the operator/punctuation bytes AND
+/// the lowercase alphabet (the keyword recogniser's bytes); returns "" for any other
+/// byte — never reached for the operator or keyword tables.
 export fn ascii_const_name(b: int) -> string {
+    // Lowercase alphabet (keyword recogniser).
+    if b == LOWER_A { return "LOWER_A" }
+    if b == LOWER_B { return "LOWER_B" }
+    if b == LOWER_C { return "LOWER_C" }
+    if b == LOWER_D { return "LOWER_D" }
+    if b == LOWER_E { return "LOWER_E" }
+    if b == LOWER_F { return "LOWER_F" }
+    if b == LOWER_G { return "LOWER_G" }
+    if b == LOWER_H { return "LOWER_H" }
+    if b == LOWER_I { return "LOWER_I" }
+    if b == LOWER_J { return "LOWER_J" }
+    if b == LOWER_K { return "LOWER_K" }
+    if b == LOWER_L { return "LOWER_L" }
+    if b == LOWER_M { return "LOWER_M" }
+    if b == LOWER_N { return "LOWER_N" }
+    if b == LOWER_O { return "LOWER_O" }
+    if b == LOWER_P { return "LOWER_P" }
+    if b == LOWER_Q { return "LOWER_Q" }
+    if b == LOWER_R { return "LOWER_R" }
+    if b == LOWER_S { return "LOWER_S" }
+    if b == LOWER_T { return "LOWER_T" }
+    if b == LOWER_U { return "LOWER_U" }
+    if b == LOWER_V { return "LOWER_V" }
+    if b == LOWER_W { return "LOWER_W" }
+    if b == LOWER_X { return "LOWER_X" }
+    if b == LOWER_Y { return "LOWER_Y" }
+    if b == LOWER_Z { return "LOWER_Z" }
+    // Operators & punctuation.
     if b == BANG { return "BANG" }
     if b == DQUOTE { return "DQUOTE" }
     if b == DOLLAR { return "DOLLAR" }

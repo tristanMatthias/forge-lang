@@ -1,0 +1,21 @@
+// WHY: t-47hc.2 (Phase 1) — the REGEN GUARD for the checked-in exact-match keyword
+// recogniser (parse/gen_keyword_scanner.av). That file MUST always equal
+// gen_keyword_scanner_file() = the fixed header + the trie compiled from
+// keyword_rules() (emit_lex.av). Editing the keyword table (token_table.av) without
+// running `bash scripts/diagnose.sh --emit-regen-kw` leaves the checked-in recogniser
+// stale — and this test fails until it's regenerated + committed. The keyword sibling
+// of gen_operator_scanner_regen_test.av.
+use @std.avrac.parse.{gen_keyword_scanner_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in keyword recogniser stays current with keyword_rules()" {
+    then "parse/gen_keyword_scanner.av == gen_keyword_scanner_file() (else run --emit-regen-kw)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_keyword_scanner.av")
+        let expected = gen_keyword_scanner_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        !gen_keyword_scanner_file().contains("use @std.avrac.")
+    }
+}

@@ -109,3 +109,84 @@ export fn operator_rules() -> List<LitRule> {
 /// BUMP THIS when the operator set legitimately changes, in lockstep with the hand
 /// lexer — the deliberate speed-bump that keeps this table complete.
 export const OPERATOR_RULE_COUNT = 38
+
+/// The COMPLETE keyword table — every reserved word `p_keyword_kind` recognises,
+/// as the SAME declarative `LitRule { spelling, tk }` data the operators use. This
+/// is the SOURCE OF TRUTH the exact-match keyword recogniser (classify_keyword,
+/// parse/gen_keyword_scanner.av) is compiled from by emit_lex.av — a byte-trie that
+/// replaces p_keyword_kind's ~59-arm string-comparison ladder (which strcmp'd every
+/// keyword on EVERY identifier, the lexer's most common token). Keywords are pure
+/// lowercase ASCII, so the trie branches on raw bytes with no codepoint decode.
+///
+/// Several reserved future keywords collapse to the SAME token (Tk.KwReserved); the
+/// trie handles that naturally (many terminals, one tk). Kept in lockstep with
+/// p_keyword_kind — token_table_test.av lexes every spelling through lex_dump and
+/// asserts the count, so a dropped or renamed keyword fails the suite.
+export fn keyword_rules() -> List<LitRule> {
+    [
+        LitRule { spelling: "and",      tk: Tk.KwAnd },
+        LitRule { spelling: "catch",    tk: Tk.KwCatch },
+        LitRule { spelling: "channel",  tk: Tk.KwChannel },
+        LitRule { spelling: "const",    tk: Tk.KwConst },
+        LitRule { spelling: "else",     tk: Tk.KwElse },
+        LitRule { spelling: "errdefer", tk: Tk.KwErrdefer },
+        LitRule { spelling: "false",    tk: Tk.KwFalse },
+        LitRule { spelling: "fn",       tk: Tk.KwFn },
+        LitRule { spelling: "if",       tk: Tk.KwIf },
+        LitRule { spelling: "let",      tk: Tk.KwLet },
+        LitRule { spelling: "mut",      tk: Tk.KwMut },
+        LitRule { spelling: "not",      tk: Tk.KwNot },
+        LitRule { spelling: "null",     tk: Tk.KwNull },
+        LitRule { spelling: "none",     tk: Tk.KwNone },
+        LitRule { spelling: "or",       tk: Tk.KwOr },
+        LitRule { spelling: "return",   tk: Tk.KwReturn },
+        LitRule { spelling: "true",     tk: Tk.KwTrue },
+        LitRule { spelling: "for",      tk: Tk.KwFor },
+        LitRule { spelling: "in",       tk: Tk.KwIn },
+        LitRule { spelling: "where",    tk: Tk.KwWhere },
+        LitRule { spelling: "while",    tk: Tk.KwWhile },
+        LitRule { spelling: "type",     tk: Tk.KwType },
+        LitRule { spelling: "enum",     tk: Tk.KwEnum },
+        LitRule { spelling: "match",    tk: Tk.KwMatch },
+        LitRule { spelling: "export",   tk: Tk.KwExport },
+        LitRule { spelling: "use",      tk: Tk.KwUse },
+        LitRule { spelling: "mod",      tk: Tk.KwMod },
+        LitRule { spelling: "impl",     tk: Tk.KwImpl },
+        LitRule { spelling: "extern",   tk: Tk.KwExtern },
+        LitRule { spelling: "break",    tk: Tk.KwBreak },
+        LitRule { spelling: "continue", tk: Tk.KwContinue },
+        LitRule { spelling: "defer",    tk: Tk.KwDefer },
+        LitRule { spelling: "dyn",      tk: Tk.KwDyn },
+        LitRule { spelling: "trait",    tk: Tk.KwTrait },
+        LitRule { spelling: "with",     tk: Tk.KwWith },
+        LitRule { spelling: "when",     tk: Tk.KwWhen },
+        LitRule { spelling: "is",       tk: Tk.KwIs },
+        LitRule { spelling: "spec",     tk: Tk.KwSpec },
+        LitRule { spelling: "given",    tk: Tk.KwGiven },
+        LitRule { spelling: "then",     tk: Tk.KwThen },
+        LitRule { spelling: "select",   tk: Tk.KwSelect },
+        LitRule { spelling: "shape",    tk: Tk.KwShape },
+        LitRule { spelling: "component", tk: Tk.KwComponent },
+        LitRule { spelling: "parallel", tk: Tk.KwParallel },
+        LitRule { spelling: "spawn",    tk: Tk.KwSpawn },
+        LitRule { spelling: "isolated", tk: Tk.KwIsolated },
+        LitRule { spelling: "quote",    tk: Tk.KwQuote },
+        // Reserved future keywords — all collapse to Tk.KwReserved.
+        LitRule { spelling: "async",    tk: Tk.KwReserved },
+        LitRule { spelling: "await",    tk: Tk.KwReserved },
+        LitRule { spelling: "yield",    tk: Tk.KwReserved },
+        LitRule { spelling: "move",     tk: Tk.KwReserved },
+        LitRule { spelling: "ref",      tk: Tk.KwReserved },
+        LitRule { spelling: "unsafe",   tk: Tk.KwReserved },
+        LitRule { spelling: "macro",    tk: Tk.KwReserved },
+        LitRule { spelling: "systems",  tk: Tk.KwReserved },
+        LitRule { spelling: "bare",     tk: Tk.KwReserved },
+        LitRule { spelling: "hardware", tk: Tk.KwReserved },
+        LitRule { spelling: "owned",    tk: Tk.KwReserved },
+        LitRule { spelling: "borrow",   tk: Tk.KwReserved },
+    ]
+}
+
+/// The exact keyword count `keyword_rules` must have (token_table_test.av guard).
+/// BUMP in lockstep with keyword_rules when the reserved-word set changes.
+export const KEYWORD_RULE_COUNT = 59

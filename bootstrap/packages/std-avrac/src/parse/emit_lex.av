@@ -19,7 +19,7 @@
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
-use parse.{operator_rules, LitRule, byte_at, ascii_const_name}
+use parse.{operator_rules, keyword_rules, LitRule, byte_at, ascii_const_name}
 use core.{Tk, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -136,13 +136,13 @@ export fn emit_operator_scanner_source() -> string {
     "}\n"
 }
 
-/// The comma-separated ascii CONSTANT names the generated branches reference, in
-/// ascending byte order (deduped) — the tail of the generated file's `use parse.{…}`.
-/// Every byte appearing in any spelling is a byte the trie branches on (byte[d] of
-/// some spelling == a depth-d branch), so collecting from the spellings yields
-/// exactly the branch bytes without walking the trie.
-fn op_const_import_list() -> string {
-    let rules = operator_rules()
+/// The comma-separated ascii CONSTANT names a table's generated branches reference,
+/// in ascending byte order (deduped) — the tail of the generated file's
+/// `use parse.{…}`. Every byte appearing in any spelling is a byte the trie branches
+/// on (byte[d] of some spelling == a depth-d branch), so collecting from the
+/// spellings yields exactly the branch bytes without walking the trie. Shared by the
+/// operator and keyword generators.
+fn const_import_list(rules: List<LitRule>) -> string {
     mut out = ""
     mut b = 0
     while b < 256 {
@@ -177,7 +177,7 @@ export fn gen_operator_scanner_header() -> string {
     "// Source of truth: operator_rules() in parse/token_table.av (compiled to a\n" +
     "// maximal-munch byte-branch trie by parse/emit_lex.av). Editing the operator\n" +
     "// table without regenerating fails parse/tests/gen_operator_scanner_regen_test.av.\n" +
-    "use parse.{OpMatch, byte_at, " + op_const_import_list() + "}\n" +
+    "use parse.{OpMatch, byte_at, " + const_import_list(operator_rules()) + "}\n" +
     "use core.{Tk}\n\n"
 }
 
@@ -185,4 +185,70 @@ export fn gen_operator_scanner_header() -> string {
 /// Both the regenerator and the guard read from HERE — one source of truth.
 export fn gen_operator_scanner_file() -> string {
     gen_operator_scanner_header() + emit_operator_scanner_source()
+}
+
+// ── The KEYWORD recogniser generator ──────────────────────────────
+// Same trie builder (build_op_trie) over keyword_rules(), but EXACT-MATCH instead
+// of maximal-munch: an identifier is a keyword only if its bytes spell the keyword
+// EXACTLY (`if` is KwIf but `iff` is an Identifier). So a terminal returns its Tk
+// only when the identifier ENDS exactly there (`start + depth == end`); anything
+// else — a longer identifier, or a byte that leaves the trie — falls through to
+// Tk.Identifier. The caller has already found the identifier run [start, end), so
+// byte_at never reads past it in a way that could over-match (the byte at `end` is
+// not an identifier byte, so it matches no keyword-continuation letter).
+
+/// Emit one keyword-trie node at `depth` (byte offset from the identifier start).
+/// Descend into longer keywords first, then this node's own terminal — but the
+/// terminal fires ONLY if the identifier is exactly this long.
+fn emit_kw_node(node: OpTrie, depth: int, indent: string) -> string {
+    mut out = ""
+    if node.children.length > 0 {
+        let kids = sorted_children(node.children)
+        let idx_expr = if depth == 0 { "start" } else { "start + " + string(depth) }
+        out = out + indent + "let b" + string(depth) + " = byte_at(src, " + idx_expr + ")\n"
+        mut i = 0
+        while i < kids.length {
+            let c = kids[i]
+            out = out + indent + "if b" + string(depth) + " == " + ascii_const_name(c.byte) + " {\n"
+            out = out + emit_kw_node(c, depth + 1, indent + "    ")
+            out = out + indent + "}\n"
+            i = i + 1
+        }
+    }
+    if node.has_tk {
+        // EXACT match: this is a keyword only if the identifier ends right here.
+        out = out + indent + "if start + " + string(depth) + " == end { return Tk." + tk_name(node.tk) + " }\n"
+    }
+    out
+}
+
+/// The generated `classify_keyword` body: given the identifier byte range
+/// [start, end), return its keyword Tk or Tk.Identifier. The compiled form of
+/// keyword_rules() — a byte-trie that replaces p_keyword_kind's string-comparison
+/// ladder (which strcmp'd every keyword on every identifier).
+export fn emit_keyword_scanner_source() -> string {
+    let root = build_op_trie(keyword_rules())
+    "/// GENERATED exact-match keyword recogniser for the keyword table.\n" +
+    "/// Returns the keyword `Tk` for the identifier bytes [start, end), or\n" +
+    "/// `Tk.Identifier` when they spell no keyword.\n" +
+    "export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {\n" +
+    emit_kw_node(root, 0, "    ") +
+    "    return Tk.Identifier\n" +
+    "}\n"
+}
+
+/// The import header of the generated keyword module — `byte_at`, `Tk`, and the
+/// lowercase-letter constants its branches name. RELATIVE imports (F4012).
+export fn gen_keyword_scanner_header() -> string {
+    "// GENERATED by `bash scripts/diagnose.sh --emit-regen-kw` — DO NOT EDIT BY HAND.\n" +
+    "// Source of truth: keyword_rules() in parse/token_table.av (compiled to an\n" +
+    "// exact-match byte-branch trie by parse/emit_lex.av). Editing the keyword table\n" +
+    "// without regenerating fails parse/tests/gen_keyword_scanner_regen_test.av.\n" +
+    "use parse.{byte_at, " + const_import_list(keyword_rules()) + "}\n" +
+    "use core.{Tk}\n\n"
+}
+
+/// The COMPLETE text of parse/gen_keyword_scanner.av: header + generated body.
+export fn gen_keyword_scanner_file() -> string {
+    gen_keyword_scanner_header() + emit_keyword_scanner_source()
 }
