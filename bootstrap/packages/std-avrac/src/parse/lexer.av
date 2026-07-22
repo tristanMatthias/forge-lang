@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, byte_at, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, byte_at, cc_is_ident_cont, SLASH, BANG}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -220,12 +220,25 @@ impl Parser {
     }
 
     fn scan_identifier_token(self) {
-        while p_is_alpha_numeric(self.peek_char()) {
-            self.advance_char()
-        }
+        // Byte-based scan of the identifier CONTINUATION (advance_token already
+        // consumed the first char). cc_is_ident_cont reads RAW BYTES — no per-char
+        // string allocation, unlike the old `p_is_alpha_numeric(peek_char())` /
+        // `advance_char()` loop, which allocated a 1-byte string PER character (~2
+        // allocs per identifier char, on the lexer's most common token). Byte-identical:
+        // cc_is_ident_cont(b) == p_is_alpha_numeric over ASCII, and an identifier is
+        // ASCII (a byte >= 128 classifies as Other, stopping both scans identically);
+        // byte_at past the end returns -1, also Other, so the loop halts at EOF.
+        mut end = self.current
+        while cc_is_ident_cont(byte_at(self.source_bytes, end)) { end = end + 1 }
+        self.column = self.column + (end - self.current)   // an identifier never spans a newline
+        self.current = end
 
+        // Keyword classification on the RAW BYTES via the generated exact-match trie
+        // (classify_keyword) — no string conversion, and a byte-branch tree instead
+        // of p_keyword_kind's strcmp-against-every-keyword ladder. The lexeme slice is
+        // still needed for the token text.
         let text = self.slice(self.start, self.current)
-        self.set_current(p_keyword_kind(text), text)
+        self.set_current(classify_keyword(self.source_bytes, self.start, self.current), text)
     }
 
     fn set_current(self, kind: Tk, lexeme: string) {
