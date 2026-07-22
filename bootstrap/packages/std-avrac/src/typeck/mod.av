@@ -3691,6 +3691,29 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
         return tc_er(tc_report(tc, DiagCode.TypeMismatch,
             "`${binop_str(op)}` is not valid on `${vtype_render_full(left)}` and `${vtype_render_full(right)}` — arithmetic operators need numeric operands, not lists or maps"), .Unknown)
     }
+    // String arithmetic: a string supports ONLY `+` concatenation (plus `==`,
+    // `!=`, ordering — handled below as Bool). `+` concatenates when the OTHER
+    // operand is a string OR under-determined (`.Unknown`/`.Void`) — the RHS is a
+    // string at runtime, as the compiler's own driver.write_last_inputs relies on
+    // (`"fp:" + <Unknown>`). Every other string arithmetic — `str` with
+    // `- * / %`/bitwise/shift, or `str + <known non-string>` (int/float/…) — ICEs
+    // at codegen ("a string operand pairs only with…"); reject it cleanly here
+    // (no-ICE-from-input, spec Axis 20). Newtypes are peeled so a newtype-over-
+    // string concatenates like a string. Optional operands were gated above.
+    if binop_is_arithmetic(op) {
+        let lu = vtype_newtype_underlying(left)
+        let ru = vtype_newtype_underlying(right)
+        let left_str = vtype_eq(lu, .Str)
+        let right_str = vtype_eq(ru, .Str)
+        if left_str || right_str {
+            let other = if left_str { ru } else { lu }
+            let concatenable = vtype_eq(other, .Str) || vtype_is_unknown(other) || vtype_eq(other, .Void)
+            if !(binop_str(op) == "+" && concatenable) {
+                return tc_er(tc_report(tc, DiagCode.TypeMismatch,
+                    "`${binop_str(op)}` is not valid on `${vtype_render_full(left)}` and `${vtype_render_full(right)}` — strings support only `+` concatenation (with another string), `==`, `!=`, and ordering comparisons"), .Unknown)
+            }
+        }
+    }
     match op {
         .Add -> {
             if vtype_eq(left, .Str) || vtype_eq(right, .Str) { return tc_er(tc, .Str) }

@@ -1,0 +1,66 @@
+// WHY: string-with-invalid-operand arithmetic (`"a" - "b"`, `"a" * 3`, `"a" + 1`,
+// `1 + "a"`) reached codegen and ICEd (F9999 "a string operand pairs only with
+// another string or `null`, via +, ==, !=, or an ordering comparison"). A string
+// supports ONLY `+` concatenation, `==`, `!=`, and ordering. check_binary_type now
+// rejects invalid string arithmetic with a clean F1000 (spec Axis 20: no F9999
+// from user input). The str twin of the aggregate-arithmetic gate (t-fws6 c-agg);
+// completes t-wfm9 / t-fws6(c).
+//
+// The gate is careful about `+` concat LENIENCY: `str + X` is valid when X is a
+// string OR under-determined (`.Unknown`/`.Void`) — the RHS is a string at
+// runtime, exactly as the compiler's own driver.write_last_inputs does
+// (`"fp:" + <Unknown>`). A naive "reject any str operand" gate breaks the
+// selfhost build; the positive controls below (str + str, ordering, equality)
+// pin the valid surface.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn sa_out(source: string) -> string {
+    let path = "/tmp/avra_sa_str.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+spec "invalid string arithmetic is a clean F1000, not the F9999 ICE (t-wfm9)" {
+    then "string - string is F1000, never the F9999 ICE" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" - \"b\"\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "string * int is F1000" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" * 3\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "string + int is F1000 (concat needs a string, not a number)" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" + 1\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "int + string is F1000 (operand order doesn't matter)" {
+        let out = sa_out("fn main() {\n    let _ = 1 + \"a\"\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "string / string is F1000" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" / \"b\"\n}")
+        out.contains("F1000") && !out.contains("F9999")
+    }
+    then "the diagnostic explains strings support only + concat / comparisons" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" - \"b\"\n}")
+        out.contains("only") && out.contains("concatenation")
+    }
+    then "string + string concatenation still compiles (no false F1000)" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" + \"b\"\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "string == string still compiles" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" == \"b\"\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "string ordering (<) still compiles" {
+        let out = sa_out("fn main() {\n    let _ = \"a\" < \"b\"\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+    then "int arithmetic is untouched (no false F1000)" {
+        let out = sa_out("fn main() {\n    let _ = 2 + 3 * 4\n}")
+        out.contains("__AVRA_COMPILE_OK__") && !out.contains("F1000")
+    }
+}
