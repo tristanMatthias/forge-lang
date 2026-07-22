@@ -14,12 +14,16 @@
 // comments (both trivia), `///`/`//!` doc-comment TOKENS (DocComment/ModDocComment,
 // one leading space stripped, content to EOL), and bare `/` (Slash / division);
 // AND — as of slice 6 — ASCII CHAR LITERALS (`'x'`/`'\n'` -> Number(codepoint)).
-// OUT of subset (later slices — they need lexer modes): string/template literals,
-// multi-byte char literals, floats / hex / underscore / duration numbers. scan_subset returns a
+// AND — as of slice 7 — single-line NON-interpolated STRING literals `"..."` with
+// escapes (\n \t \r \\ \" \0 \xHH; unknown escapes kept literally) -> String, the
+// lexeme carrying the escape-RESOLVED content. OUT of subset (later slices, they
+// need lexer modes): interpolated strings `${...}` (-> Template), `"""` multiline,
+// raw `r"..."`, backtick templates, multi-byte char literals, and float / hex /
+// underscore / duration numbers. scan_subset returns a
 // "<out-of-subset:...>" marker when it meets an out-of-subset construct, so the
 // differential test only compares in-subset inputs. Unused in production
 // (byte-identical; diff-test).
-use core.{Tk, tk_name}
+use core.{Tk, tk_name, avra_char_from_hex}
 use parse.{p_keyword_kind, byte_at, char_class, cc_is_ident_cont, cc_is_digit, CharClass, lex_escape}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -201,6 +205,11 @@ export fn scan_subset(source: string) -> string {
         let cls = char_class(b)
         match cls {
             .Alpha -> {
+                // A raw string `r"..."` is NOT an identifier — the hand lexer
+                // (scan_token: `ch == "r" && peek == '"'`) diverts before the ident
+                // scan. Raw strings have no escape/interpolation processing and are a
+                // later slice, so `r"` is out of subset. (`rr`/`run`/`r ` stay idents.)
+                if b == 114 && s.nxt() == 34 { return "<out-of-subset:string>" }
                 s.adv()
                 while !s.at_end() && cc_is_ident_cont(s.cur()) { s.adv() }
                 let text = source.substring(start, s.pos)
@@ -296,10 +305,54 @@ export fn scan_subset(source: string) -> string {
                     if s.at_end() || s.cur() != 39 { return "<out-of-subset:char-literal>" }
                     s.adv()                                        // consume closing `'`
                     out = out + emit(Tk.Number, tok_line, tok_col, string(code))
+                } else if b == 34 {
+                    // String literal `"..."` -> String, byte-identical to
+                    // scan_string_token (lexer.av ~435-529) for the single-line,
+                    // NON-interpolated case. The lexeme keeps the surrounding quotes
+                    // and carries the ESCAPE-RESOLVED content (\n -> a real newline,
+                    // \xHH -> that byte, ...); lex_escape re-escapes it identically for
+                    // both scanners in the dump. OUT of subset (marker): `"""` multiline,
+                    // `${` interpolation (-> Template), and an unterminated string; raw
+                    // `r"..."` is diverted at the Alpha arm. These are later slices.
+                    s.adv()                                        // consume opening `"`
+                    if s.cur() == 34 && s.nxt() == 34 { return "<out-of-subset:string>" }   // `"""`
+                    mut content = "\""                             // keep the opening quote
+                    while true {
+                        if s.at_end() { return "<out-of-subset:string>" }   // unterminated
+                        let sc = s.cur()
+                        if sc == 34 { s.adv()  break }             // closing `"`
+                        if sc == 36 && s.nxt() == 123 { return "<out-of-subset:string>" }  // `${`
+                        if sc == 92 {                              // `\` escape
+                            s.adv()
+                            if s.at_end() { return "<out-of-subset:string>" }   // trailing `\`
+                            let esc = s.cur()
+                            s.adv()
+                            if esc == 110 { content = content + "\n" }        // \n
+                            else if esc == 116 { content = content + "\t" }   // \t
+                            else if esc == 114 { content = content + "\r" }   // \r
+                            else if esc == 92 { content = content + "\\" }    // \\
+                            else if esc == 34 { content = content + "\"" }    // \"
+                            else if esc == 48 { content = content + "\0" }    // \0
+                            else if esc == 120 {                              // \xHH
+                                if s.pos + 1 >= s.n { return "<out-of-subset:string>" }
+                                let hi = source.substring(s.pos, s.pos + 1)
+                                let lo = source.substring(s.pos + 1, s.pos + 2)
+                                content = content + avra_char_from_hex(hi, lo)
+                                s.adv()  s.adv()                              // consume the 2 hex digits
+                            } else {                                          // unknown -> literal \+esc
+                                content = content + "\\" + source.substring(s.pos - 1, s.pos)
+                            }
+                        } else {
+                            content = content + source.substring(s.pos, s.pos + 1)
+                            s.adv()
+                        }
+                    }
+                    content = content + "\""                       // closing quote
+                    out = out + emit(Tk.String, tok_line, tok_col, content)
                 } else {
                     // A compound-operator lead: maximal-munch it (byte-identical
                     // to the hand lexer). `.Error` = a lead this slice doesn't
-                    // own yet (string/template quotes) — still out of subset.
+                    // own yet (template `\`` quotes, backtick) — still out of subset.
                     let op = scan_compound_op(s, b)
                     match op {
                         .Error -> { return "<out-of-subset:char>" }
