@@ -21,10 +21,13 @@ use features.grammar.{parse_grammar, Grammar, compose_grammars}
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
 /// comparison → additive → multiplicative), folding left-associatively via the
-/// build helpers. The PROCEDURAL leaf — prefix unary ops, `with`/splice, the
-/// newline-sensitive postfix chain, and every primary form — delegates wholesale
-/// to the hand parser via `@hand(hand_unary)` (→ `parse_unary`). That leaf is NOT
-/// expressible in the stateless token-grammar byte-identically: `parse_call`'s
+/// build helpers, AND the `!`/`-` prefix-unary operators directly — the `unary`
+/// rule owns them via the `Unary` build (Phase 3a leaf migration, Option B). The
+/// REST of the PROCEDURAL leaf — the other prefix forms (`~`/`not`, `with`/splice),
+/// the newline-sensitive postfix chain, and every primary form — still delegates to
+/// the hand parser via `@hand(hand_unary)` (→ `parse_unary`, retained as the
+/// differential oracle). That remaining leaf is NOT expressible in the stateless
+/// token-grammar byte-identically: `parse_call`'s
 /// postfix loop is newline-sensitive (`.UpperIdent`/`[`/`(` on a new line = a new
 /// statement) and mode-stateful (`allow_struct_lit`, `allow_dot_postfix`,
 /// `allow_it_sugar`, `quote_depth`), so the @hand escape hatch (GRAMMAR_DSL.md §5)

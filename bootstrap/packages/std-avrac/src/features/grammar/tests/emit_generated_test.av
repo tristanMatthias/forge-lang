@@ -119,18 +119,20 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
     }
 
-    then "the Pratt loop climbs precedence ExprId-internal (slice 2: no CapVal box)" {
-        // parse_binary_pratt_g_id returns ExprId directly: the leaf is the @hand
-        // delegation called RAW (run_hand_expr → ExprId, no box), the recursion is
-        // ExprId→ExprId (no CapVal.Node/capval_to_expr round-trip), left-assoc via
-        // rbp = lbp+1, one Expr.Binary per operator via mk_binary; binary_lbp_g maps
-        // each operator's Tk to its level (factor ops *,/,% → 22; ps3t.6.7 perf: the
-        // precedence table is Tk-dispatched too). The ONE CapVal box lives at the
+    then "the Pratt loop climbs precedence ExprId-internal (leaf via parse_unary)" {
+        // parse_binary_pratt_g_id returns ExprId directly: the leaf is the grammar
+        // `unary` rule parse_unary(st) (Phase 3a: it OWNS the !/- prefix ops and
+        // delegates the rest to @hand(hand_unary)), unboxed via capval_to_expr — an
+        // IR-NEUTRAL CapVal round-trip (diff-test stays byte-identical; the box is
+        // optimised away). The recursion is ExprId→ExprId, left-assoc via rbp =
+        // lbp+1, one Expr.Binary per operator via mk_binary; binary_lbp_g maps each
+        // operator's Tk to its level (factor ops *,/,% → 22; ps3t.6.7 perf: the
+        // precedence table is Tk-dispatched too). The outer CapVal box lives at the
         // thin boundary wrapper parse_binary_pratt_g.
         let src = emit_all()
         src.contains("fn parse_binary_pratt_g_id(st: PState, min_bp: int) -> ExprId {") &&
         src.contains("let sp_start = st.cur().pos") &&
-        src.contains("mut lhs = run_hand_expr(\"hand_unary\", st)") &&
+        src.contains("mut lhs = capval_to_expr(st, parse_unary(st))") &&
         src.contains("let lbp = binary_lbp_g(st.cur())") &&
         src.contains("let rhs = parse_binary_pratt_g_id(st, lbp + 1)") &&
         src.contains("lhs = mk_binary(st, sp_start, lhs, tx, rhs)") &&
@@ -138,13 +140,18 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` is a bare @hand(hand_unary) delegation" {
-        // ps3t.6.7 Step C: unary/postfix/primary collapse to ONE @hand rule — a
-        // single-branch rule, so it lowers to the bare tail call (no FIRST-guard
-        // / error tail; those belong to multi-branch dispatch). The whole
-        // newline-sensitive leaf is delegated to the hand parser via run_hand_expr.
+    then "the procedural leaf `unary` owns !/- and delegates the rest to @hand(hand_unary)" {
+        // Phase 3a (Option B): the `unary` rule now OWNS the !/- prefix ops directly
+        // (unary_expr build) and delegates every other prefix/postfix/primary form
+        // to the hand parser via @hand(hand_unary) — the UNGUARDED tail. A bare
+        // @hand LAST branch is the catch-all (is_bare_hand): hand_unary owns the
+        // rest INCLUDING its own error recovery, so there is no FIRST-guard / grammar
+        // error tail (a guarded tail would divert a stray operator to a DSL error
+        // instead of the hand parser's recovery — the recovery-tree oracle's catch).
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
+        src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus {") &&
+        src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
         src.contains("CapVal.Node(run_hand_expr(\"hand_unary\", st))")
     }
 
