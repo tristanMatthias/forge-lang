@@ -7,13 +7,15 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, byte_at, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, cc_is_hex_digit, cc_is_binary_digit, cc_is_octal_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
 use parse.{LF, DQUOTE, DOLLAR, LBRACE, RBRACE, BACKSLASH, LOWER_N, LOWER_R, LOWER_T}
 // Trivia scanning (whitespace + line/block/doc comments) + the backtick template.
 use parse.{SPACE, CR, TAB, STAR, BACKTICK}
+// The lead-byte dispatch + char literals: the quote/char-literal delimiter.
+use parse.{SQUOTE}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -93,33 +95,38 @@ impl Parser {
             return
         }
 
-        // ── non-operator leads: consume one char and dispatch (quotes / number / ident) ──
-        let ch = self.advance_char()
+        // ── non-operator leads: consume one BYTE and dispatch (quotes / number / ident) ──
+        // Raw-byte, byte-identical to the old `let ch = advance_char()` + match: the lead
+        // byte is read via byte_at (no char_at alloc) and dispatched on named constants.
+        // cc_is_digit(b) == p_is_digit and cc_is_ident_start(b) == p_is_alpha over the
+        // lead byte, and the `r"` raw-string peek stays byte-based too.
+        let sb = self.source_bytes
+        let b = byte_at(sb, self.current)
+        self.advance_byte()
 
-        match ch {
-            "\"" -> { self.scan_string_token()    return }
-            "`"  -> { self.scan_template_token()  return }
-            "'"  -> { self.scan_char_literal()     return }
-            _ -> {}
-        }
+        if b == DQUOTE { self.scan_string_token()    return }
+        if b == BACKTICK { self.scan_template_token()  return }
+        if b == SQUOTE { self.scan_char_literal()     return }
 
-        if p_is_digit(ch) {
+        if cc_is_digit(b) {
             self.scan_number_token()
             return
         }
 
         // Raw string: r"..." or r"""..."""
-        if ch == "r" && self.peek_char() == "\"" {
-            self.advance_char()  // consume opening '"'
+        if b == LOWER_R && byte_at(sb, self.current) == DQUOTE {
+            self.advance_byte()  // consume opening '"'
             self.scan_raw_string()
             return
         }
 
-        if p_is_alpha(ch) {
+        if cc_is_ident_start(b) {
             self.scan_identifier_token()
             return
         }
 
+        // Unexpected character: the lead byte is the token, at self.start.
+        let ch = self.slice(self.start, self.start + 1)
         self.set_error("unexpected character `${ch}`")
         self.set_current(Tk.Error, ch)
     }
@@ -277,45 +284,50 @@ impl Parser {
     // Scan a character literal: 'x' or '\n' etc.
     // Produces a Tk.Number with the Unicode codepoint value.
     fn scan_char_literal(self) {
+        // Raw-byte, byte-identical to the old peek_char/advance_char version. A valid
+        // char literal is ASCII, where the byte value IS the codepoint (b == ch.char_code());
+        // a multi-byte lead makes the closing-quote check fail — an Error either way, so the
+        // codepoint on that path is never observed. Escapes match the escape byte (an
+        // if/else-if chain, since a match would bind a bare const pattern).
         if self.is_at_end() {
             self.report(DiagCode.SyntaxError, "unterminated character literal")
             self.set_current(Tk.Error, "")
             return
         }
-        let ch = self.peek_char()
+        let sb = self.source_bytes
+        let b = byte_at(sb, self.current)
         mut code_point = 0
-        if ch == "\\" {
+        if b == BACKSLASH {
             // Escape sequence
-            self.advance_char()
+            self.advance_byte()
             if self.is_at_end() {
                 self.report(DiagCode.SyntaxError, "unterminated character literal")
                 self.set_current(Tk.Error, "")
                 return
             }
-            let esc = self.advance_char()
-            match esc {
-                "n"  -> { code_point = 10 }
-                "t"  -> { code_point = 9 }
-                "r"  -> { code_point = 13 }
-                "0"  -> { code_point = 0 }
-                "\\" -> { code_point = 92 }
-                "'"  -> { code_point = 39 }
-                _    -> {
-                    self.report(DiagCode.SyntaxError, "unknown escape in character literal: \\${esc}")
-                    self.set_current(Tk.Error, "")
-                    return
-                }
+            let ep = self.current
+            let esc = self.advance_byte()
+            if esc == LOWER_N { code_point = 10 }
+            else if esc == LOWER_T { code_point = 9 }
+            else if esc == LOWER_R { code_point = 13 }
+            else if esc == DIGIT_0 { code_point = 0 }
+            else if esc == BACKSLASH { code_point = 92 }
+            else if esc == SQUOTE { code_point = 39 }
+            else {
+                self.report(DiagCode.SyntaxError, "unknown escape in character literal: \\" + self.slice(ep, ep + 1))
+                self.set_current(Tk.Error, "")
+                return
             }
         } else {
-            code_point = ch.char_code()
-            self.advance_char()
+            code_point = b
+            self.advance_byte()
         }
-        if self.is_at_end() || self.peek_char() != "'" {
+        if self.is_at_end() || byte_at(sb, self.current) != SQUOTE {
             self.report(DiagCode.SyntaxError, "unterminated character literal, expected closing '")
             self.set_current(Tk.Error, "")
             return
         }
-        self.advance_char()  // consume closing '
+        self.advance_byte()  // consume closing '
         self.set_current(Tk.Number, string(code_point))
     }
 
@@ -383,31 +395,10 @@ impl Parser {
         self.current >= self.source_len
     }
 
-    fn peek_char(self) -> string {
-        if self.current >= self.source_len {
-            return ""
-        }
-        self.char_at(self.current)
-    }
-
-    fn peek_next_char(self) -> string {
-        if self.current + 1 >= self.source_len {
-            return ""
-        }
-        self.char_at(self.current + 1)
-    }
-
-    fn advance_char(self) -> string {
-        let ch = self.char_at(self.current)
-        self.current = self.current + 1
-        if ch == "\n" {
-            self.line = self.line + 1
-            self.column = 1
-        } else {
-            self.column = self.column + 1
-        }
-        ch
-    }
+    // NOTE: the string-returning char accessors peek_char / peek_next_char /
+    // advance_char were retired once the whole lexer went byte-based — every scan
+    // path now reads raw bytes via byte_at + advance_byte (no per-char char_at string
+    // alloc). char_at itself stays: the parser's lookahead (parse/mod.av) still uses it.
 
     fn scan_string_token(self) {
         let sb = self.source_bytes
