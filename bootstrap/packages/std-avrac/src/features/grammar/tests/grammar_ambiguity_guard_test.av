@@ -1,0 +1,43 @@
+// WHY: t-47hc.3 (Phase 2) slice 2 — the FIRST/FIRST ambiguity REGRESSION GUARD
+// over the REAL grammars. Slice 1 (first_follow.av) built the analysis; this
+// asserts every production grammar is UNAMBIGUOUS at the FIRST-set level (no
+// alternative silently shadows a sibling on a shared lead token — the PEG
+// ordered-choice hazard). All the gnarly disambiguation the grammar genuinely
+// needs is behind `@hand`, which the analysis treats as OPAQUE (not a concrete
+// overlap), so a clean result here means "the CFG structure the grammar exposes
+// is LL(1)". This is the safety net the Phase-3 leaf migrations ride: when a
+// migration replaces an `@hand` leaf with real alternatives, any FIRST overlap
+// it introduces trips THIS guard instead of silently shadowing a branch at
+// runtime. (Not in the compile path → byte-identical.)
+use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+
+// True iff `g` has no FIRST/FIRST ambiguity; on failure the report is printed so
+// the shadowed rule/branches/tokens are visible in the test log.
+fn is_unambiguous(g: Grammar) -> bool {
+    let ambs = grammar_ambiguities(g)
+    if ambs.length > 0 { eprintln(render_ambiguities(g, ambs)) }
+    ambs.length == 0
+}
+
+spec "t-47hc.3: the production grammars are FIRST/FIRST unambiguous" {
+    then "the expression ladder has no silently-shadowed alternatives" {
+        is_unambiguous(avra_expr_grammar())
+    }
+    then "the statement grammar is unambiguous" {
+        is_unambiguous(avra_stmt_grammar())
+    }
+    then "the type grammar is unambiguous" {
+        is_unambiguous(avra_type_grammar())
+    }
+    then "the declaration flip + dispatch grammars are unambiguous" {
+        // Evaluate BOTH before combining: is_unambiguous prints the report on
+        // failure, so a short-circuit && would suppress the second grammar's
+        // diagnostics when the first is ambiguous.
+        let flip_ok = is_unambiguous(avra_decl_flip_grammar())
+        let dispatch_ok = is_unambiguous(avra_decl_dispatch_grammar())
+        flip_ok && dispatch_ok
+    }
+    then "the whole-program grammar is unambiguous" {
+        is_unambiguous(avra_program_grammar())
+    }
+}
