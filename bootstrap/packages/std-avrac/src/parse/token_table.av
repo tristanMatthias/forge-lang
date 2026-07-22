@@ -218,3 +218,22 @@ export fn char_run_rules() -> List<CharRun> {
         CharRun { name: "oct",   pred: "cc_is_octal_digit",  sep: "UNDERSCORE" },
     ]
 }
+
+// A DELIMITED run is the complement of a char-class run: instead of scanning WHILE a
+// class holds, it scans UNTIL a terminator byte (or EOF). `term` is a byte-const name
+// (parse/ascii.av). The generated `scan_<name>(src, start) -> end` returns the exclusive
+// end offset of the verbatim region `[start, term|EOF)`. The caller owns line/column;
+// a delim rule is wired only where the region is newline-free by construction (an
+// EOL-terminated run cannot contain the LF it stops at), so the caller's take_run
+// (column += length, line unchanged) is byte-identical to the old advance_byte loop.
+export type DelimRun = { name: string, term: string }
+
+/// The delimited RUN terminals the lexer scans, compiled to `scan_<name>(src, start) ->
+/// end` byte-scan-until loops by parse/emit_lex.av (parse/gen_run_scanner.av). Single
+/// source of truth: the to-end-of-line verbatim runs — the `///`/`//!` doc-comment body
+/// and the `//` line-comment body, both scanning to the next LF (newline-free runs).
+export fn delim_run_rules() -> List<DelimRun> {
+    [
+        DelimRun { name: "to_eol", term: "LF" },
+    ]
+}
