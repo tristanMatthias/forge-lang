@@ -67,7 +67,13 @@ spec "t-47hc.2: byte-based trivia (whitespace / comments / doc) characterization
     then "whitespace (space / tab / CR / newline) is skipped, leaving only tokens" {
         kinds("  a\t b ") == "Identifier Identifier Eof" &&
         kinds("\n\n x \n") == "Identifier Eof" &&
-        kinds("a\r\nb") == "Identifier Identifier Eof"
+        kinds("a\r\nb") == "Identifier Identifier Eof" &&
+        // Pin the line:column fields lex_dump emits, so a regression in advance_byte's
+        // line/column accounting is caught independently of token kinds. The CRLF case
+        // matters: CR bumps the column, then the following LF resets it to a new line —
+        // `b` must land at 2:1 exactly as it would after a bare LF.
+        lex_dump("\n\n x \n") == "Identifier\t3:2\tx\nEof\t4:1\t\n" &&
+        lex_dump("a\r\nb") == "Identifier\t1:1\ta\nIdentifier\t2:1\tb\nEof\t2:2\t\n"
     }
     then "line comments are skipped; a `//` at end-of-input is skipped too" {
         kinds("a // trailing\nb") == "Identifier Identifier Eof" &&
