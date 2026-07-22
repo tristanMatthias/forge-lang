@@ -820,7 +820,16 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "Continue" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))"
         "ReturnEmpty" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))"
         "Return" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, ${args[0]}))))"
-        "ExprStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ${args[0]}))))"
+        // A statement-position expression that FAILED (st.had_error set by
+        // parse_expression's report/error_node) recovers as a bare Stmt.Error —
+        // the twin of the hand parser's `parse_expression()?` yielding .Err (the
+        // whole-program loop then synchronises identically via parse_declaration's
+        // .Error arm). Without this the static parser wraps the failed expression
+        // as Stmt.Expr(Expr.Error), diverging from hand's recovery tree (the 5c
+        // gap the recovery-TREE oracle characterises). had_error is per-item fresh
+        // (run_static_snode_at_shared builds a clean PState), so an absolute check
+        // == "THIS expression failed" — no earlier-error false positive.
+        "ExprStmt" -> "if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) } else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ${args[0]})))) }"
         // ── Pattern builds (target: Pattern) — conditional on optional/list
         //    captures, mirroring executor.apply_build one-to-one. ──
         "OrMaybe" -> "match ${args[1]} { .Nil -> ${args[0]}  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, ${args[0]}), capval_to_pat(st, ${args[1]})))) }"
