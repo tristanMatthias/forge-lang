@@ -74,9 +74,24 @@ spec "t-47hc.2: token-stream oracle characterizes the hand lexer" {
         kinds("a & b") == "Identifier Amp Identifier Eof" &&
         kinds("a < b") == "Identifier Less Identifier Eof"
     }
-    then "string interpolation stays a SINGLE String token at the lexer layer" {
-        kinds("\"hi {name}!\"") == "String Eof" &&
-        kinds("\"plain\"") == "String Eof"
+    then "interpolation (dollar-brace) is a single Template token; a plain string is String" {
+        // dollar-brace (lexer.av:483) triggers interpolation -> Template; no `$`
+        // means a plain String. The dollar-brace is split across the concat so
+        // the compiler lexing THIS file doesn't itself interpolate the literal.
+        kinds("\"hi $" + "{name}!\"") == "Template Eof" &&
+        kinds("\"plain\"") == "String Eof" &&
+        kinds("\"has {brace} no dollar\"") == "String Eof"
+    }
+    then "exact dump preserves positions AND escaped lexemes (not just kinds)" {
+        // The full `<kind>\t<line>:<col>\t<escaped-lexeme>` lines — `kinds` above
+        // discards positions and escaping, so a regression in column tracking or
+        // in lex_escape would slip past it. These pin: multi-token columns, a
+        // newline advancing the line, and tab / backslash / UTF-8 lexemes.
+        lex_dump("a == b") == "Identifier\t1:1\ta\nEqualEqual\t1:3\t==\nIdentifier\t1:6\tb\nEof\t1:7\t\n" &&
+        lex_dump("x\ny") == "Identifier\t1:1\tx\nIdentifier\t2:1\ty\nEof\t2:2\t\n" &&
+        lex_dump("\"a\\tb\"") == "String\t1:1\t\"a\\tb\"\nEof\t1:7\t\n" &&
+        lex_dump("\"a\\\\b\"") == "String\t1:1\t\"a\\\\b\"\nEof\t1:7\t\n" &&
+        lex_dump("\"café\"") == "String\t1:1\t\"café\"\nEof\t1:8\t\n"
     }
     then "doc comments are their own token; `//` line comments are skipped" {
         kinds("/// doc\nfn f") == "DocComment KwFn Identifier Eof" &&
