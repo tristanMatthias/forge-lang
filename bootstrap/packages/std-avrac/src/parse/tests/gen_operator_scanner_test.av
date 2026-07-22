@@ -55,14 +55,16 @@ fn hand_op_kinds(src: string) -> string {
 }
 
 spec "t-47hc.2: generated scan_operator == hand lexer over the operator table" {
-    then "scan_operator matches every declared rule (tk + byte length)" {
+    then "scan_operator matches every declared rule (tk + byte length + spelling)" {
         let rules = operator_rules()
         mut ok = true
         mut i = 0
         while i < rules.length {
             let r = rules[i]
             let m = scan_operator(avra_bytes_from_string(r.spelling), 0)
-            if !(m.tk == r.tk && m.len == r.spelling.length) { ok = false }
+            // spelling is the STATIC lexeme the caller uses — it must equal the
+            // rule's own spelling (== the source bytes it matched).
+            if !(m.tk == r.tk && m.len == r.spelling.length && m.spelling == r.spelling) { ok = false }
             i = i + 1
         }
         ok

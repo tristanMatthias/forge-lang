@@ -29,11 +29,15 @@ use core.{Tk}
 export type LitRule = { spelling: string, tk: Tk }
 
 /// The result of matching the operator/punctuation table at a source position:
-/// the token `tk` and how many bytes it consumed (`len`). `len == 0` is the
-/// no-match sentinel (the byte at that position starts no operator) — `tk` is
-/// then `Tk.Error` and callers must not consume. The generated maximal-munch
-/// scanner (parse/gen_operator_scanner.av, produced by emit_lex.av) returns this.
-export type OpMatch = { tk: Tk, len: int }
+/// the token `tk`, how many bytes it consumed (`len`), and the token's canonical
+/// `spelling` — a STATIC string literal in the generated scanner, so a caller uses
+/// it as the lexeme with ZERO allocation (an operator's source bytes always equal
+/// its canonical spelling, so this is byte-identical to slicing the source, but
+/// free — matching the hand lexer's old `set_current(Tk.Arrow, "->")` constants).
+/// `len == 0` is the no-match sentinel (the byte starts no operator) — `tk` is then
+/// `Tk.Error`, `spelling` is `""`, and callers must not consume. Produced by the
+/// generated maximal-munch scanner (parse/gen_operator_scanner.av, from emit_lex.av).
+export type OpMatch = { tk: Tk, len: int, spelling: string }
 
 /// The COMPLETE operator + single-character-punctuation table — every
 /// fixed-spelling terminal `advance_token` (parse/lexer.av) can emit, save the
