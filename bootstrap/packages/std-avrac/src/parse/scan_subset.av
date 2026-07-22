@@ -7,13 +7,15 @@
 // allocation), tracking line/column exactly as the hand lexer's advance_char does.
 //
 // SUBSET (byte-identical here): whitespace, `//` line comments, identifiers +
-// keywords, PLAIN decimal integers, and the single-char punctuation with NO
-// compound form (, ( ) { } [ ] : @ ~ % ^ + *). OUT of subset (later slices — they
-// need lexer modes or maximal-munch, and would diverge): strings, doc/block
-// comments, floats / hex / underscore numbers, and every compound-operator lead
-// (= < > | & ? . - / !). scan_subset returns a "<out-of-subset:...>" marker when
-// it meets an out-of-subset construct, so the differential test only compares
-// in-subset inputs. Unused in production (byte-identical; diff-test).
+// keywords, PLAIN decimal integers, the single-char punctuation with NO compound
+// form (, ( ) { } [ ] : @ ~ % ^ + *), AND — as of slice 4 — every COMPOUND-operator
+// lead with maximal munch (`- . ? & | ! = < >` and their longer forms: -> .. ??
+// ?. && || |> != == << <= <- >> >=). OUT of subset (later slices — they need
+// lexer modes, and would diverge): strings/char/template literals, `/`
+// (division / `//` doc / block comments), floats / hex / underscore / duration
+// numbers. scan_subset returns a "<out-of-subset:...>" marker when it meets an
+// out-of-subset construct, so the differential test only compares in-subset
+// inputs. Unused in production (byte-identical; diff-test).
 use core.{Tk, tk_name}
 use parse.{p_keyword_kind, byte_at, char_class, cc_is_ident_cont, cc_is_digit, CharClass, lex_escape}
 
@@ -94,6 +96,71 @@ fn is_subset_punct(b: int) -> bool {
     }
 }
 
+/// Maximal-munch scan of a COMPOUND-operator lead — the DFA's longest-match,
+/// compiled to BRANCHES (not a runtime table), byte-identical to the hand
+/// lexer's scan_token operator arms (lexer.av ~104-157). `s` is positioned at
+/// the lead byte `b`; on a handled lead this consumes the lead + the longest
+/// following match and returns its Tk. On a byte that is NOT a handled lead
+/// (`/` — doc/block comments; string/char quotes; anything needing a lexer
+/// mode) it consumes NOTHING and returns `.Error`, so the caller emits the
+/// out-of-subset marker. The branch order per lead mirrors the hand lexer's
+/// exactly so the longest alternative always wins first (`<<`/`<=`/`<-` before
+/// `<`, `??`/`?.` before `?`, …). `s.cur()` past end is -1, matching no operator
+/// byte, so a lead at EOF correctly falls through to its single-char form.
+fn scan_compound_op(s: ScanState, b: int) -> Tk {
+    if b == 45 {                                        // -
+        s.adv()
+        if s.cur() == 62 { s.adv() return .Arrow }      // ->
+        return .Minus
+    }
+    if b == 46 {                                        // .
+        s.adv()
+        if s.cur() == 46 { s.adv() return .DotDot }     // ..
+        return .Dot
+    }
+    if b == 63 {                                        // ?
+        s.adv()
+        if s.cur() == 63 { s.adv() return .QuestionQuestion }   // ??
+        if s.cur() == 46 { s.adv() return .QuestionDot }        // ?.
+        return .Question
+    }
+    if b == 38 {                                        // &
+        s.adv()
+        if s.cur() == 38 { s.adv() return .AmpAmp }     // &&
+        return .Amp
+    }
+    if b == 124 {                                       // |
+        s.adv()
+        if s.cur() == 124 { s.adv() return .PipePipe }  // ||
+        if s.cur() == 62 { s.adv() return .PipeGt }     // |>
+        return .Pipe
+    }
+    if b == 33 {                                        // !
+        s.adv()
+        if s.cur() == 61 { s.adv() return .BangEqual }  // !=
+        return .Bang
+    }
+    if b == 61 {                                        // =
+        s.adv()
+        if s.cur() == 61 { s.adv() return .EqualEqual } // ==
+        return .Equal
+    }
+    if b == 60 {                                        // <
+        s.adv()
+        if s.cur() == 60 { s.adv() return .Shl }        // <<
+        if s.cur() == 61 { s.adv() return .LessEqual }  // <=
+        if s.cur() == 45 { s.adv() return .LeftArrow }  // <-
+        return .Less
+    }
+    if b == 62 {                                        // >
+        s.adv()
+        if s.cur() == 62 { s.adv() return .Shr }        // >>
+        if s.cur() == 61 { s.adv() return .GreaterEqual }   // >=
+        return .Greater
+    }
+    .Error
+}
+
 /// One dump line in the oracle's format: `<kind>\t<line>:<col>\t<escaped-lexeme>`.
 fn emit(kind: Tk, line: int, col: int, lexeme: string) -> string {
     tk_name(kind) + "\t" + string(line) + ":" + string(col) + "\t" + lex_escape(lexeme) + "\n"
@@ -158,10 +225,24 @@ export fn scan_subset(source: string) -> string {
                 out = out + emit(Tk.Number, tok_line, tok_col, text)
             }
             _ -> {
-                if !is_subset_punct(b) { return "<out-of-subset:char>" }
-                s.adv()
-                let text = source.substring(start, s.pos)
-                out = out + emit(subset_punct_tk(b), tok_line, tok_col, text)
+                if is_subset_punct(b) {
+                    // Single-char punctuation with NO compound form.
+                    s.adv()
+                    let text = source.substring(start, s.pos)
+                    out = out + emit(subset_punct_tk(b), tok_line, tok_col, text)
+                } else {
+                    // A compound-operator lead: maximal-munch it (byte-identical
+                    // to the hand lexer). `.Error` = a lead this slice doesn't
+                    // own yet (`/`, string/char quotes) — still out of subset.
+                    let op = scan_compound_op(s, b)
+                    match op {
+                        .Error -> { return "<out-of-subset:char>" }
+                        _ -> {
+                            let text = source.substring(start, s.pos)
+                            out = out + emit(op, tok_line, tok_col, text)
+                        }
+                    }
+                }
             }
         }
     }
