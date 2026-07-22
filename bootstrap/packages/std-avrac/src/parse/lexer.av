@@ -12,6 +12,8 @@ use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
 use parse.{LF, DQUOTE, DOLLAR, LBRACE, RBRACE, BACKSLASH, LOWER_N, LOWER_R, LOWER_T}
+// Trivia scanning (whitespace + line/block/doc comments) + the backtick template.
+use parse.{SPACE, CR, TAB, STAR, BACKTICK}
 
 /// True iff `ch` is an ASCII decimal digit (`0`-`9`).
 export fn p_is_digit(ch: string) -> bool {
@@ -57,16 +59,19 @@ impl Parser {
         // scan_operator (which would otherwise munch the lead `/` as a Slash).
         if byte_at(self.source_bytes, self.current) == SLASH
                 && byte_at(self.source_bytes, self.current + 1) == SLASH {
-            let is_mod = byte_at(self.source_bytes, self.current + 2) == BANG   // `//!`
-            self.advance_char()   // first  /
-            self.advance_char()   // second /
-            self.advance_char()   // third  / or !
-            mut content = ""
-            if self.peek_char() == " " { self.advance_char() }   // one leading space
-            while !self.is_at_end() && self.peek_char() != "\n" {
-                content = content + self.advance_char()
+            let sb = self.source_bytes
+            let is_mod = byte_at(sb, self.current + 2) == BANG   // `//!`
+            self.advance_byte()   // first  /
+            self.advance_byte()   // second /
+            self.advance_byte()   // third  / or !
+            if byte_at(sb, self.current) == SPACE { self.advance_byte() }   // one leading space
+            // The comment body to end-of-line is a verbatim run — ONE slice, no per-char
+            // char_at alloc (byte-identical to appending each advance_char).
+            let cstart = self.current
+            while !self.is_at_end() && byte_at(sb, self.current) != LF {
+                self.advance_byte()
             }
-            self.set_current(if is_mod { Tk.ModDocComment } else { Tk.DocComment }, content)
+            self.set_current(if is_mod { Tk.ModDocComment } else { Tk.DocComment }, self.slice(cstart, self.current))
             return
         }
 
@@ -120,17 +125,20 @@ impl Parser {
     }
 
     fn scan_template_token(self) {
-        mut content = ""
-        while !self.is_at_end() && self.peek_char() != "`" {
-            content = content + self.peek_char()
-            self.advance_char()
+        // Backtick template: content up to the closing `` ` `` is verbatim (no escapes,
+        // no interpolation) — ONE slice, no per-char char_at alloc.
+        let sb = self.source_bytes
+        let cstart = self.current
+        while !self.is_at_end() && byte_at(sb, self.current) != BACKTICK {
+            self.advance_byte()
         }
         if self.is_at_end() {
             self.report(DiagCode.UnterminatedTemplate, "unterminated template string")
             self.set_current(Tk.Error, "")
             return
         }
-        self.advance_char()
+        let content = self.slice(cstart, self.current)
+        self.advance_byte()
         self.set_current(Tk.Template, content)
     }
 
@@ -312,39 +320,43 @@ impl Parser {
     }
 
     fn skip_whitespace_and_comments(self) {
+        // Raw-byte trivia skip — runs before EVERY token, so the old peek_char/
+        // advance_char pair (a 1-char string alloc per whitespace/comment byte, on the
+        // whitespace-dense source) was the lexer's single largest per-char allocator.
+        // advance_byte reads the byte via byte_at and tracks line/column identically.
+        let sb = self.source_bytes
         while !self.is_at_end() {
-            let ch = self.peek_char()
-            if ch in [" ", "\r", "\t", "\n"] {
-                self.advance_char()
-            } else if ch == "/" && self.peek_next_char() == "/" {
-                // Check for doc comments: /// and //!
-                // These are NOT skipped — they become tokens.
-                if self.current + 2 < self.source_len {
-                    let third = self.char_at(self.current + 2)
-                    if third == "/" || third == "!" {
-                        return  // stop skipping, let advance_token handle it
-                    }
+            let b = byte_at(sb, self.current)
+            if b == SPACE || b == CR || b == TAB || b == LF {
+                self.advance_byte()
+            } else if b == SLASH && byte_at(sb, self.current + 1) == SLASH {
+                // Doc comments /// and //! are NOT skipped — they become tokens.
+                // (byte_at past end is -1, so an out-of-range third byte never matches —
+                // the old current+2<len bounds check.)
+                let third = byte_at(sb, self.current + 2)
+                if third == SLASH || third == BANG {
+                    return  // stop skipping, let advance_token handle it
                 }
-                while !self.is_at_end() && self.peek_char() != "\n" {
-                    self.advance_char()
+                while !self.is_at_end() && byte_at(sb, self.current) != LF {
+                    self.advance_byte()
                 }
-            } else if ch == "/" && self.peek_next_char() == "*" {
+            } else if b == SLASH && byte_at(sb, self.current + 1) == STAR {
                 // Block comment with nesting: /* ... /* ... */ ... */
-                self.advance_char()  // consume /
-                self.advance_char()  // consume *
+                self.advance_byte()  // consume /
+                self.advance_byte()  // consume *
                 mut depth = 1
                 while depth > 0 && !self.is_at_end() {
-                    let bc = self.peek_char()
-                    if bc == "/" && self.peek_next_char() == "*" {
-                        self.advance_char()
-                        self.advance_char()
+                    let bc = byte_at(sb, self.current)
+                    if bc == SLASH && byte_at(sb, self.current + 1) == STAR {
+                        self.advance_byte()
+                        self.advance_byte()
                         depth = depth + 1
-                    } else if bc == "*" && self.peek_next_char() == "/" {
-                        self.advance_char()
-                        self.advance_char()
+                    } else if bc == STAR && byte_at(sb, self.current + 1) == SLASH {
+                        self.advance_byte()
+                        self.advance_byte()
                         depth = depth - 1
                     } else {
-                        self.advance_char()
+                        self.advance_byte()
                     }
                 }
             } else {
