@@ -1,0 +1,174 @@
+// WHY: t-47hc.3 (Phase 2) slice 1 — FIRST-set materialisation + ambiguity
+// analysis over the Grammar AST. The executor already has FIRST as a MEMBERSHIP
+// predicate (`tok_starts_seq`, executor.av) used for ordered-choice branch
+// selection — but ordered choice is SILENT: when two alternatives of a rule
+// share a FIRST token, the executor just takes the first one, and a grammar
+// author never learns the second branch is shadowed (the PEG ordered-choice
+// hazard the epic calls out — "kills PEG silent ordered-choice"). This module
+// MATERIALISES the FIRST set (as a token-id set, not a per-token test) so two
+// branches' FIRST sets can be INTERSECTED, and reports every rule whose
+// alternatives overlap. It is a gen-time DIAGNOSTIC: it changes no generated
+// code (diff-test byte-identical) — it is the safety net Phase-3 leaf migrations
+// ride, catching a newly-added alternative that a sibling already shadows.
+//
+// FIRST semantics MIRROR the executor's `tok_starts_seq` EXACTLY (so the
+// analysis matches the parser's real branch selection): a sequence's FIRST is
+// its first item's FIRST, extended through any NULLABLE (Opt/Star) leading
+// items; a One/Plus item is non-nullable and stops the FIRST there. Rule refs
+// are cycle-guarded (a re-visited rule contributes nothing, matching
+// tok_starts_rule's `list_has(visited,name) -> false`). `@hand(fn)` primaries
+// are OPAQUE — their FIRST is a hand predicate the CFG can't see — so they mark
+// the set opaque and are NOT reported as concrete overlaps (soundness: no false
+// positives; a follow-up can surface hand-vs-hand overlaps once hand FIRST-sets
+// are declared).
+//
+// Terminal ids are PREFIXED so a literal terminal and a named terminal never
+// alias: `lit:<text>` for GPrim.Lit("+"), `tok:<kind>` for GPrim.Named("NUMBER").
+
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, rule_index_of}
+
+/// A materialised FIRST set: the concrete terminal ids that can begin a form,
+/// plus `opaque` = "this form also admits an @hand(fn) leaf whose FIRST the CFG
+/// cannot enumerate" (so an empty-`terms` opaque set is NOT the empty language).
+export type FirstSet = { terms: List<string>, opaque: bool }
+
+/// A detected ambiguity: two alternatives (`i` before `j`, 0-based) of `rule`
+/// share the FIRST terminals in `shared` — the executor's ordered choice will
+/// ALWAYS take branch `i`, silently shadowing branch `j` on those tokens.
+export type GAmbiguity = { rule: string, i: int, j: int, shared: List<string> }
+
+fn ffs_has(xs: List<string>, s: string) -> bool {
+    for x in xs { if x == s { return true } }
+    false
+}
+
+/// Union `b` into `a` (dedup terms, OR opaque). Returns a fresh set.
+fn ffs_union(a: FirstSet, b: FirstSet) -> FirstSet {
+    mut terms: List<string> = []
+    for x in a.terms { terms.push(x) }
+    for x in b.terms { if !ffs_has(terms, x) { terms.push(x) } }
+    FirstSet { terms, opaque: a.opaque || b.opaque }
+}
+
+fn ffs_empty() -> FirstSet {
+    FirstSet { terms: [], opaque: false }
+}
+
+/// FIRST of a primary. Cycle-guarded through `visited` (rule names on the
+/// current descent), mirroring tok_starts_rule's cycle guard.
+fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
+    match prim {
+        .Lit(t) -> FirstSet { terms: ["lit:" + t], opaque: false }
+        .Named(k) -> FirstSet { terms: ["tok:" + k], opaque: false }
+        .Ref(name) -> first_rule(g, name, visited)
+        .Group(inner) -> first_node(g, inner, visited)
+        .Hand(_) -> FirstSet { terms: [], opaque: true }
+    }
+}
+
+fn first_rule(g: Grammar, name: string, visited: List<string>) -> FirstSet {
+    if ffs_has(visited, name) { return ffs_empty() }   // cycle guard
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    let r = ff_lookup_rule(g, name)
+    if r.name == "" { return ffs_empty() }
+    first_node(g, r.body, v2)
+}
+
+fn first_node(g: Grammar, node: GNode, visited: List<string>) -> FirstSet {
+    match node {
+        .Alt(branches) -> {
+            mut acc = ffs_empty()
+            for b in branches {
+                acc = ffs_union(acc, first_seq(g, b, visited))
+            }
+            acc
+        }
+    }
+}
+
+/// FIRST of a sequence — the first item's FIRST, extended through nullable
+/// (Opt/Star) leading items. EXACTLY tok_starts_seq's shape (One/Plus stop).
+export fn first_seq(g: Grammar, seq: GSeq, visited: List<string>) -> FirstSet {
+    mut acc = ffs_empty()
+    for item in seq.items {
+        acc = ffs_union(acc, first_prim(g, item.prim, visited))
+        // A One/Plus item is non-nullable — FIRST stops here.
+        match item.rep {
+            .One -> return acc
+            .Plus -> return acc
+            _ -> {}   // Opt/Star are nullable — fold in the next item's FIRST too
+        }
+    }
+    acc
+}
+
+// Local rule lookup — O(1) via the Grammar's precomputed name->index map (same
+// as executor.av's lookup_rule; duplicated here to keep this module's imports
+// to the AST alone, since lookup_rule is executor-private).
+fn ff_lookup_rule(g: Grammar, name: string) -> Rule {
+    let idx = rule_index_of(g, name)
+    if idx >= 0 { return g.rules[idx] }
+    Rule { name: "", body: GNode.Alt([]) }
+}
+
+/// The concrete FIRST terminals shared by two alternatives (empty = disjoint).
+/// @hand opacity is NOT counted as a shared terminal (soundness: no false
+/// positives; concrete-terminal overlap only).
+fn shared_terms(a: FirstSet, b: FirstSet) -> List<string> {
+    mut out: List<string> = []
+    for x in a.terms { if ffs_has(b.terms, x) { out.push(x) } }
+    out
+}
+
+/// Every FIRST/FIRST ambiguity in the grammar: for each rule's alternation, any
+/// two branches (i<j) whose materialised FIRST sets share a concrete terminal.
+/// Order-preserving (rules in declaration order, then branch pairs (i,j)).
+export fn grammar_ambiguities(g: Grammar) -> List<GAmbiguity> {
+    mut out: List<GAmbiguity> = []
+    for r in g.rules {
+        match r.body {
+            .Alt(branches) -> {
+                // Materialise each branch's FIRST once (visited seeds with the
+                // rule itself so a directly self-recursive branch is cycle-cut).
+                mut firsts: List<FirstSet> = []
+                for b in branches {
+                    firsts.push(first_seq(g, b, [r.name]))
+                }
+                mut i = 0
+                while i < firsts.length {
+                    mut j = i + 1
+                    while j < firsts.length {
+                        let sh = shared_terms(firsts[i], firsts[j])
+                        if sh.length > 0 {
+                            out.push(GAmbiguity { rule: r.name, i, j, shared: sh })
+                        }
+                        j = j + 1
+                    }
+                    i = i + 1
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Human-readable one-line-per-ambiguity report (empty string = none). Used by
+/// the diagnose.sh --grammar-ambiguities mode and the spec test.
+export fn render_ambiguities(g: Grammar, ambs: List<GAmbiguity>) -> string {
+    if ambs.length == 0 { return "" }
+    mut out = ""
+    for a in ambs {
+        mut toks = ""
+        mut k = 0
+        for t in a.shared {
+            if k > 0 { toks = toks + ", " }
+            toks = toks + t
+            k = k + 1
+        }
+        out = out + g.name + "." + a.rule + ": branch " + string(a.i)
+            + " shadows branch " + string(a.j) + " on { " + toks + " }\n"
+    }
+    out
+}

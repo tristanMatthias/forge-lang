@@ -1,0 +1,56 @@
+// WHY: t-47hc.3 (Phase 2) slice 1 — proves the FIRST-set ambiguity analysis
+// (features/grammar/first_follow.av). The executor picks alternatives by
+// ORDERED first-match (executor.av tok_starts_seq); when two branches share a
+// FIRST token the second is silently shadowed — the PEG hazard. grammar_
+// ambiguities() materialises each branch's FIRST set (mirroring tok_starts_seq's
+// nullable-leader extension) and reports the overlaps. These specs pin the
+// behaviour on synthetic grammars whose FIRST structure is known exactly:
+// direct shared-lead overlap, a disjoint clean grammar, and the nullable-leader
+// extension (an optional first item folds the next item's FIRST in).
+use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, Grammar, GAmbiguity, parse_grammar}
+
+// Two alternatives of `start` both begin with the literal `a`: ordered choice
+// silently shadows the second branch on an `a` lead.
+fn ambiguous_grammar() -> Grammar {
+    let g = grammar {
+  start = "a" "x" -> Mk() | "a" "y" -> Mk()
+    }
+    g.grammar
+}
+
+// Disjoint FIRST — `a` vs `b`, no shadowing.
+fn clean_grammar() -> Grammar {
+    let g = grammar {
+  start = "a" -> Mk() | "b" -> Mk()
+    }
+    g.grammar
+}
+
+// Branch 1 leads with an OPTIONAL `x`, so (nullable leader) its FIRST extends
+// through to `y`; branch 2 is `y`. They overlap on `y` — exactly the executor's
+// tok_starts_seq nullable-extension, which a naive first-token-only check misses.
+fn nullable_grammar() -> Grammar {
+    let g = grammar {
+  start = "x"? "y" -> Mk() | "y" -> Mk()
+    }
+    g.grammar
+}
+
+spec "t-47hc.3: FIRST-set ambiguity analysis" {
+    then "direct FIRST/FIRST overlap on a shared literal lead is detected" {
+        let ambs = grammar_ambiguities(ambiguous_grammar())
+        ambs.length == 1 && ambs[0].rule == "start" && ambs[0].i == 0 && ambs[0].j == 1
+            && ambs[0].shared.length == 1 && ambs[0].shared[0] == "lit:a"
+    }
+    then "disjoint alternatives report NO ambiguity" {
+        grammar_ambiguities(clean_grammar()).length == 0
+    }
+    then "a nullable leading item extends FIRST into the next item (overlap on `y`)" {
+        let ambs = grammar_ambiguities(nullable_grammar())
+        ambs.length == 1 && ambs[0].shared.length == 1 && ambs[0].shared[0] == "lit:y"
+    }
+    then "render is empty for a clean grammar, non-empty for an ambiguous one" {
+        render_ambiguities(clean_grammar(), grammar_ambiguities(clean_grammar())) == ""
+            && render_ambiguities(ambiguous_grammar(), grammar_ambiguities(ambiguous_grammar())).length > 0
+    }
+}
