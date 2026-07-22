@@ -989,8 +989,13 @@ fn and_join(parts: List<string>) -> string {
 fn combine_pred_guard(preds: List<string>, parts: List<string>) -> string {
     let first = guard_join_dedup(parts)
     if preds.length == 0 { return first }
+    // A predicate-only branch (no consuming item) NEVER matches via FIRST —
+    // mirror the executor's tok_starts_seq, which skips the Pred and returns
+    // false. Returning the mode read alone would emit an always-true guard and,
+    // wrapped in a repeat, spin forever (`while st.modes.x { }`). Such a branch
+    // is rejected at parse time anyway (parse_seq); this stays as defense.
+    if parts.length == 0 { return "false" }
     let p = and_join(preds)
-    if parts.length == 0 { return p }          // predicate-only (all-nullable) branch
     "${p} && (${first})"
 }
 

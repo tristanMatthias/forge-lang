@@ -25,6 +25,11 @@ fn gated_errs(flag: string, src: string) -> bool {
     run_grammar_expr(gp.grammar, src).had_error
 }
 
+// True iff `grammar_src` is REJECTED at parse time (GrammarParse.error is set).
+fn rejects(grammar_src: string) -> bool {
+    parse_grammar(grammar_src).error != ""
+}
+
 spec "t-47hc.3: @when(flag) mode predicate" {
     then "@when(flag) parses as a zero-width leading item (pred + terminal = 2 items)" {
         first_branch_items(parse_grammar("gated = @when(allow_struct_lit) NUMBER").grammar) == 2
@@ -50,5 +55,27 @@ spec "t-47hc.3: @when(flag) mode predicate" {
     then "the emitted branch guard carries the mode read" {
         let gp = parse_grammar("r = @when(allow_struct_lit) NUMBER | STRING")
         emit_parser_source(gp.grammar).contains("allow_struct_lit")
+    }
+}
+
+// @when is a LEADING, One-repetition, flagged gate on a CONSUMING branch — every
+// other shape is rejected at parse time so the interpreter and the generated
+// parser can never diverge (and a predicate-only repeat can't spin). Regressions
+// for the three issues CodeRabbit found on #954.
+spec "t-47hc.3: @when(flag) well-formedness is enforced at parse time" {
+    then "a non-leading @when is rejected (must precede every consuming item)" {
+        rejects("r = \"a\" @when(flag) \"b\"")
+    }
+    then "a repetition suffix on @when is rejected (`*` / `+` / `?`)" {
+        rejects("r = @when(flag)* \"a\"") && rejects("r = @when(flag)? \"a\"") && rejects("r = @when(flag)+ \"a\"")
+    }
+    then "a missing flag name is rejected" {
+        rejects("r = @when() \"a\"")
+    }
+    then "a predicate-only branch is rejected (never matches; a repeat would spin)" {
+        rejects("r = @when(flag)") && rejects("r = ( @when(flag) )* \"a\"")
+    }
+    then "a well-formed leading @when on a consuming branch is accepted" {
+        !rejects("r = @when(allow_struct_lit) NUMBER | STRING")
     }
 }

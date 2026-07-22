@@ -252,6 +252,26 @@ fn parse_seq(p: GP) -> GSeq {
     if items.length == 0 {
         p.fail("expected at least one item in a sequence (empty alternative)")
     }
+    // `@when(flag)` predicates are LEADING branch gates: they must precede every
+    // consuming item, and a branch must have a consuming item for a predicate to
+    // gate (a predicate-only branch can never be selected — and wrapped in a
+    // repeat it would spin). Enforcing "leading" also keeps the two consumers
+    // aligned: emit's seq_first_guard folds LEADING preds, while the executor's
+    // branch_pred_ok scans ALL items — identical only when every pred is leading.
+    mut ff_consuming = 0
+    mut ff_pred_after = false
+    for it in items {
+        match it.prim {
+            .Pred(_) -> if ff_consuming > 0 { ff_pred_after = true }
+            _ -> ff_consuming = ff_consuming + 1
+        }
+    }
+    if ff_pred_after {
+        p.fail("`@when(flag)` must be a leading branch gate (before any consuming item)")
+    }
+    if ff_consuming == 0 {
+        p.fail("`@when(flag)` must gate a branch that consumes input (a predicate-only branch never matches)")
+    }
     mut build = GBuild.None
     mut annots: List<GAnnot> = []
     while true {
@@ -344,6 +364,13 @@ fn parse_postfix(p: GP) -> Postfix {
         let _ = p.advance()
         rep = GRep.Opt
     }
+    // A `@when(flag)` predicate is a zero-width, One-repetition gate; a `*`/`+`/`?`
+    // suffix is meaningless and both consumers mishandle it (the interpreter never
+    // fires it; emit would `st.advance()` on a mode read). Reject it at parse time.
+    match prim {
+        .Pred(_) -> match rep { .One -> {}  _ -> p.fail("`@when(flag)` cannot take a `*`/`+`/`?` repetition suffix") }
+        _ -> {}
+    }
     Postfix { rep, prim }
 }
 
@@ -387,6 +414,7 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct("(", "expected `(` after `@when`")
         mut flag = ""
         if p.peek().kind == "NAME" { flag = p.advance().text }
+        else { p.fail("expected a flag name in `@when(flag)`") }
         p.expect_punct(")", "expected `)` to close `@when`")
         return GPrim.Pred(flag)
     }
