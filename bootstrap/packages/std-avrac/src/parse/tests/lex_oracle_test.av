@@ -1,0 +1,103 @@
+// WHY: t-47hc.2 (Phase 1) — CHARACTERIZES the hand lexer's token stream via the
+// `lex_dump` oracle on the genuinely tricky cases: maximal munch (`==` is one
+// token, not two `=`; `..` is a range, not two dots; `iff` is an identifier,
+// not the keyword `if`), range-vs-float (`1..5` vs `1.5`), compound operators,
+// string handling (interpolation stays ONE `String` token at the lexer layer),
+// and doc comments. This PINS the byte-identical target the generated DFA lexer
+// (Phase 1) must reproduce — a divergence in either lexer changes a dump line.
+// The oracle itself is proven byte-identical (read-only over the production
+// lexer; diff-test), so this spec is a stable behavioural contract, not a
+// snapshot that churns.
+use @std.avrac.parse.{lex_dump}
+
+// The ordered token KINDS of `source` — the first tab-field (tk_name) of each
+// dump line, space-joined, no trailing space. Position/lexeme-agnostic so the
+// assertion pins classification + maximal-munch, not column arithmetic.
+fn kinds(source: string) -> string {
+    let dump = lex_dump(source)
+    mut out = ""
+    mut line = ""
+    mut i = 0
+    while i < dump.length {
+        let ch = dump.substring(i, i + 1)
+        if ch == "\n" {
+            if out == "" { out = first_field(line) }
+            else { out = out + " " + first_field(line) }
+            line = ""
+        } else {
+            line = line + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+// The substring of `line` before its first tab (the tk_name).
+fn first_field(line: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < line.length {
+        let ch = line.substring(i, i + 1)
+        if ch == "\t" { return out }
+        out = out + ch
+        i = i + 1
+    }
+    out
+}
+
+spec "t-47hc.2: token-stream oracle characterizes the hand lexer" {
+    then "maximal munch: `==` is ONE token, `=` alone stays Equal" {
+        kinds("a == b") == "Identifier EqualEqual Identifier Eof" &&
+        kinds("x = 1") == "Identifier Equal Number Eof"
+    }
+    then "range `..` vs float `.` : `1..5` is Number DotDot Number, `1.5` is Float" {
+        kinds("1..5") == "Number DotDot Number Eof" &&
+        kinds("1.5") == "Float Eof" &&
+        kinds("a.b") == "Identifier Dot Identifier Eof"
+    }
+    then "keyword vs identifier by maximal munch: `if` is KwIf, `iff` is Identifier" {
+        kinds("if x") == "KwIf Identifier Eof" &&
+        kinds("iff x") == "Identifier Identifier Eof" &&
+        kinds("fn f") == "KwFn Identifier Eof"
+    }
+    then "compound operators lex as single tokens" {
+        kinds("a <= b") == "Identifier LessEqual Identifier Eof" &&
+        kinds("a >> b") == "Identifier Shr Identifier Eof" &&
+        kinds("a && b") == "Identifier AmpAmp Identifier Eof" &&
+        kinds("a |> b") == "Identifier PipeGt Identifier Eof" &&
+        kinds("x ?? y") == "Identifier QuestionQuestion Identifier Eof" &&
+        kinds("x?.y") == "Identifier QuestionDot Identifier Eof" &&
+        kinds("f() -> int") == "Identifier LeftParen RightParen Arrow Identifier Eof"
+    }
+    then "single `|`/`&`/`<`/`>` are NOT greedily merged past their pair" {
+        kinds("a | b") == "Identifier Pipe Identifier Eof" &&
+        kinds("a & b") == "Identifier Amp Identifier Eof" &&
+        kinds("a < b") == "Identifier Less Identifier Eof"
+    }
+    then "interpolation (dollar-brace) is a single Template token; a plain string is String" {
+        // dollar-brace (lexer.av:483) triggers interpolation -> Template; no `$`
+        // means a plain String. The dollar-brace is split across the concat so
+        // the compiler lexing THIS file doesn't itself interpolate the literal.
+        kinds("\"hi $" + "{name}!\"") == "Template Eof" &&
+        kinds("\"plain\"") == "String Eof" &&
+        kinds("\"has {brace} no dollar\"") == "String Eof"
+    }
+    then "exact dump preserves positions AND escaped lexemes (not just kinds)" {
+        // The full `<kind>\t<line>:<col>\t<escaped-lexeme>` lines — `kinds` above
+        // discards positions and escaping, so a regression in column tracking or
+        // in lex_escape would slip past it. These pin: multi-token columns, a
+        // newline advancing the line, and tab / backslash / UTF-8 lexemes.
+        lex_dump("a == b") == "Identifier\t1:1\ta\nEqualEqual\t1:3\t==\nIdentifier\t1:6\tb\nEof\t1:7\t\n" &&
+        lex_dump("x\ny") == "Identifier\t1:1\tx\nIdentifier\t2:1\ty\nEof\t2:2\t\n" &&
+        lex_dump("\"a\\tb\"") == "String\t1:1\t\"a\\tb\"\nEof\t1:7\t\n" &&
+        lex_dump("\"a\\\\b\"") == "String\t1:1\t\"a\\\\b\"\nEof\t1:7\t\n" &&
+        lex_dump("\"café\"") == "String\t1:1\t\"café\"\nEof\t1:8\t\n"
+    }
+    then "doc comments are their own token; `//` line comments are skipped" {
+        kinds("/// doc\nfn f") == "DocComment KwFn Identifier Eof" &&
+        kinds("a // trailing\nb") == "Identifier Identifier Eof"
+    }
+    then "an empty source is just Eof" {
+        kinds("") == "Eof"
+    }
+}
