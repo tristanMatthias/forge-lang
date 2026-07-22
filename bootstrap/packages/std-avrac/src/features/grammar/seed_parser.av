@@ -313,6 +313,16 @@ fn parse_seq(p: GP) -> GSeq {
     // lockstep — the same @when-rejection discipline) rather than silently diverge.
     if speculative {
         for it in items {
+            // A capture label is pure liability in a `@try` recognizer: the
+            // interpreter's exec_seq bind()s it into the shared CapEnv (which
+            // exec_node's rollback does NOT restore → a stale binding could leak to
+            // a sibling branch), while emit_spec_item drops it entirely (no label
+            // assignment) — so a labelled @try item diverges on BOTH rollback and
+            // commit. Reject it (the build is already rejected below; capture in the
+            // committed rule instead), closing both gaps by construction.
+            if it.label != "" {
+                p.fail("a `@try` branch item cannot bind a capture label (bounded speculation is a pure recognizer; capture in the committed rule instead)")
+            }
             match it.rep {
                 .One -> {}
                 _ -> p.fail("a `@try` branch item cannot take a `*`/`+`/`?` repetition (bounded speculation supports a flat terminal/ref sequence only)")

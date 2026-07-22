@@ -93,6 +93,13 @@ spec "t-47hc.3: @try well-formedness is enforced at parse time" {
     then "a `-> build` on a @try branch is rejected" {
         rejects("r = @try NUMBER STRING -> Mk() | STRING")
     }
+    then "a capture label inside a @try branch is rejected" {
+        // A label would bind() into the interpreter's CapEnv (not restored on
+        // rollback → sibling-branch leak) but is dropped by emit — reject it so the
+        // two sides can't diverge (a @try recognizer captures nothing).
+        rejects("r = @try x:NUMBER STRING | STRING") &&
+        rejects("r = @try NUMBER y:STRING | STRING")
+    }
     then "a well-formed flat terminal/ref @try branch is accepted" {
         !rejects("r = @try NUMBER STRING NUMBER | NUMBER STRING")
     }
