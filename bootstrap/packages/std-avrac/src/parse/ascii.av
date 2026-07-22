@@ -70,3 +70,44 @@ export const LBRACE = 123     // {
 export const PIPE = 124       // |
 export const RBRACE = 125     // }
 export const TILDE = 126      // ~
+
+// ── byte -> constant NAME (the inverse) ───────────────────────────
+/// The exported constant NAME for a punctuation/operator source byte — the
+/// inverse of the byte->value constants above (e.g. `BANG` -> "BANG"). The
+/// operator-scanner generator (emit_lex.av) uses this so its GENERATED branches
+/// read `b0 == BANG`, not `b0 == 33`: a named constant, not a magic number. Written
+/// against the CONSTANTS themselves (never a bare literal), so this table has no
+/// magic numbers either. Total over the punctuation bytes (33..126 that have a
+/// constant); returns "" for any other byte — never reached for the operator table,
+/// whose bytes are all punctuation.
+export fn ascii_const_name(b: int) -> string {
+    if b == BANG { return "BANG" }
+    if b == DQUOTE { return "DQUOTE" }
+    if b == DOLLAR { return "DOLLAR" }
+    if b == PERCENT { return "PERCENT" }
+    if b == AMP { return "AMP" }
+    if b == SQUOTE { return "SQUOTE" }
+    if b == LPAREN { return "LPAREN" }
+    if b == RPAREN { return "RPAREN" }
+    if b == STAR { return "STAR" }
+    if b == PLUS { return "PLUS" }
+    if b == COMMA { return "COMMA" }
+    if b == MINUS { return "MINUS" }
+    if b == DOT { return "DOT" }
+    if b == SLASH { return "SLASH" }
+    if b == COLON { return "COLON" }
+    if b == LESS { return "LESS" }
+    if b == EQUALS { return "EQUALS" }
+    if b == GREATER { return "GREATER" }
+    if b == QUESTION { return "QUESTION" }
+    if b == AT { return "AT" }
+    if b == LBRACKET { return "LBRACKET" }
+    if b == BACKSLASH { return "BACKSLASH" }
+    if b == RBRACKET { return "RBRACKET" }
+    if b == CARET { return "CARET" }
+    if b == LBRACE { return "LBRACE" }
+    if b == PIPE { return "PIPE" }
+    if b == RBRACE { return "RBRACE" }
+    if b == TILDE { return "TILDE" }
+    ""
+}
