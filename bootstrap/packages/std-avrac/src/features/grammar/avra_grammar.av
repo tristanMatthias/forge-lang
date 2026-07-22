@@ -16,7 +16,7 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar, Rule, build_rule_index}
+use features.grammar.{parse_grammar, Grammar, compose_grammars}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -54,18 +54,6 @@ export fn avra_expr_grammar() -> Grammar {
   unary      = @hand(hand_unary)
     }
     gp.grammar
-}
-
-/// Compose two grammars at the rule-value level: `head`'s rules first (so its
-/// start rule stays the start symbol), then `tail`'s. This is the seam that
-/// lets a family grammar (statements, patterns, …) REUSE the shared expression
-/// rules instead of re-embedding them (rule 8) — a nonterminal reference like
-/// `expression` in `head` resolves to `tail`'s `expression` rule after merging.
-fn compose_grammars(head: Grammar, tail: Grammar) -> Grammar {
-    mut rules: List<Rule> = []
-    for r in head.rules { rules.push(r) }
-    for r in tail.rules { rules.push(r) }
-    Grammar { name: head.name, rules, rule_idx: build_rule_index(rules) }
 }
 
 /// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return
@@ -179,27 +167,11 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
     compose_grammars(gp.grammar, avra_stmt_dispatch_grammar())
 }
 
-/// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
-/// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
-/// bound variants `.None` / `.Ok(x, y)`, nested variants `.Some(.Ok(x))`, and
-/// right-associative or-patterns `a or b or c`. SELF-CONTAINED — patterns do
-/// not embed expressions, so no composition with the expression grammar. The
-/// entry `pattern_or` mirrors the hand parser's parse_pattern_or.
-export fn avra_pat_grammar() -> Grammar {
-    let gp = grammar {
-  pattern_or  = l:pattern ( "or" r:pattern_or )? -> OrMaybe(l, r)
-  pattern     = opt_present | opt_absent | variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat
-  opt_present = "let" name:IDENT -> OptPresent(name)
-  opt_absent  = ( "none" | "null" ) -> OptAbsent()
-  variant_pat = "." name:IDENT ( "(" ( binds:IDENT ( "," binds:IDENT )* | subs:variant_pat ( "," subs:pattern )* ) ")" )? -> MkVariant(name, binds, subs)
-  ident_pat   = name:IDENT ( "(" b:IDENT ")" )? -> IdentPat(name, b)
-  bool_pat    = b:("true" | "false") -> PatBool(b)
-  str_pat     = s:STRING -> PatStr(s)
-  neg_pat     = "-" n:NUMBER -> PatNegNum(n)
-  num_pat     = n:NUMBER -> PatNum(n)
-    }
-    gp.grammar
-}
+// The §2 match-pattern family (`avra_pat_grammar`) now lives with its owning
+// feature at features/match_expr/grammar.av (t-47hc.8 modular fragments) — the
+// `match` feature owns its pattern syntax. It composes cleanly here via
+// `compose_fragments` (compose.av) if ever needed, but patterns are
+// self-contained (they embed no expressions), so no composition is required.
 
 /// The §2 type-expression family (ps3t.6.5.6): union types `A | B`, `fn`
 /// types, `dyn T`, list `[T]`, tuple/paren `(A, B)`, and named types with

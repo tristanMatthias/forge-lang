@@ -12,7 +12,9 @@ use parse.{Parser, table_zip_entries}
 use core.{Tk}
 // ps3t.6.5.12 pattern-family swap-in: parse_pattern_or / parse_pattern delegate
 // to the grammar-DSL when pat_flip is set (the inverse of the @hand bridge).
-use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, avra_pat_grammar, Grammar}
+use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, Grammar}
+// t-47hc.8: the pattern grammar fragment is owned by THIS feature (grammar.av).
+use features.match_expr.{avra_pat_grammar}
 
 /// One parse of a match-arm list, surfaced both ways: `arms` is the boxed
 /// view; `refs` the arena rows backing each arm's WALKED children for the

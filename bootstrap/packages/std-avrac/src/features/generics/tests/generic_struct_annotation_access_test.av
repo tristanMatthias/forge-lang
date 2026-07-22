@@ -64,10 +64,16 @@ fn compile_out(source: string) -> string {
 // The reclassification only rescues an Enum-FORM name that is a REGISTERED
 // struct. A genuine non-struct (a scalar, a real enum) must still be rejected —
 // the fallback must not start accepting field access on anything.
+//
+// NOTE: the SCALAR path (int, here) is now a clean typeck F1000 as of #920
+// (t-vmhy — "field/member access on a value scalar is a clean F1000"), so it
+// no longer falls through to the codegen F9999 "non-struct value" ICE and the
+// assertion matches the F1000 wording. The ENUM path below still reaches the
+// codegen non-struct message (that value form hasn't been reclassified yet).
 spec "field access still rejects genuine non-struct values" {
     then "field access on an int still errors" {
         let out = compile_out("${ENTRY} { let x = 5  let y = x.val }")
-        out.contains("non-struct value")
+        out.contains("has no field or member")
     }
     then "field access on a real enum value still errors" {
         let out = compile_out("enum Color { Red, Green }

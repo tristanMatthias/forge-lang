@@ -1884,7 +1884,8 @@ mode_emit_gen_check() {
 // the canonical expression grammar and writes a runnable module: the emitted
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_pat_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source}
+use @std.avrac.features.match_expr.{avra_pat_grammar}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 fn imports_block() -> string {
