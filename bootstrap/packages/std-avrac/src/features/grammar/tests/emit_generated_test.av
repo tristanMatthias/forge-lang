@@ -140,17 +140,23 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns !/- and delegates the rest to @hand(hand_unary)" {
-        // Phase 3a (Option B): the `unary` rule now OWNS the !/- prefix ops directly
-        // (unary_expr build) and delegates every other prefix/postfix/primary form
-        // to the hand parser via @hand(hand_unary) — the UNGUARDED tail. A bare
-        // @hand LAST branch is the catch-all (is_bare_hand): hand_unary owns the
+    then "the procedural leaf `unary` owns ! - not and delegates the rest to @hand(hand_unary)" {
+        // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
+        // directly (unary_expr build) and delegates every other postfix/primary/with/
+        // splice form to the hand parser via @hand(hand_unary) — the UNGUARDED tail.
+        // A bare @hand LAST branch is the catch-all (is_bare_hand): hand_unary owns the
         // rest INCLUDING its own error recovery, so there is no FIRST-guard / grammar
         // error tail (a guarded tail would divert a stray operator to a DSL error
         // instead of the hand parser's recovery — the recovery-tree oracle's catch).
+        // `not` renders as a `.text` compare (keyword spelling, like and/or). `~` is
+        // deliberately NOT owned: it is the quote SPLICE at quote_depth>0, and the
+        // static parser DOES run inside a quote body (parse_quote re-enters parse_
+        // expression), so a grammar-owned `~` would misparse splice-in-quote — it stays
+        // with @hand(hand_unary), which reads quote_depth.
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
-        src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus {") &&
+        src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
+        !src.contains("Tk.Tilde") &&
         src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
         src.contains("CapVal.Node(run_hand_expr(\"hand_unary\", st))")
     }

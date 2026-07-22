@@ -2652,6 +2652,7 @@ fn binop_of(sym: string) -> BinOp {
 
 fn unop_of(sym: string) -> UnOp {
     if sym == "!" { return UnOp.Not }
+    if sym == "not" { return UnOp.Not }
     if sym == "~" { return UnOp.BitNot }
     UnOp.Neg
 }
