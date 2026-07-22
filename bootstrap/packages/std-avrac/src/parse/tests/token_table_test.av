@@ -1,0 +1,75 @@
+// WHY: t-47hc.2 (Phase 1) — proves the DECLARATIVE operator/punctuation table
+// (token_table.av) is FAITHFUL to the hand lexer, THROUGH the same `lex_dump`
+// oracle the byte-scanner uses. Every `LitRule { spelling, tk }` must satisfy:
+// lexing `spelling` alone yields EXACTLY the token `tk` (then Eof) — so the
+// generator (a later slice) can compile these rules into a maximal-munch scanner
+// and trust each `">>" = Shr` binding is the hand lexer's actual behaviour, not a
+// transcription guess. This is the miniature of the same byte-identity contract
+// scan_subset_test.av holds, but for the SOURCE-OF-TRUTH table rather than a
+// generated scanner: get the table right here, and the generator is provably
+// correct by construction.
+use @std.avrac.parse.{operator_rules, lex_dump, OPERATOR_RULE_COUNT}
+use @std.avrac.core.{tk_name}
+
+// The oracle dump for lexing `spelling` in isolation: its single token at 1:1,
+// then Eof at column `spelling.length + 1`. Built from the SAME format `lex_dump`
+// emits (`<kind>\t<line>:<col>\t<lexeme>\n`); operator spellings contain no
+// escape-worthy byte, so the lexeme is verbatim. A DISAGREEMENT (wrong tk, or the
+// hand lexer splitting `>>` into two tokens — which would add a third dump line)
+// fails the `==`.
+fn single_token_dump(kind_name: string, spelling: string) -> string {
+    kind_name + "\t1:1\t" + spelling + "\nEof\t1:" + string(spelling.length + 1) + "\t\n"
+}
+
+spec "t-47hc.2: declarative operator/punctuation token table == hand lexer" {
+    then "each rule's spelling lexes standalone to exactly its declared token" {
+        let rules = operator_rules()
+        mut ok = true
+        mut i = 0
+        while i < rules.length {
+            let r = rules[i]
+            if lex_dump(r.spelling) != single_token_dump(tk_name(r.tk), r.spelling) {
+                ok = false
+            }
+            i = i + 1
+        }
+        ok
+    }
+    then "space-separated, the whole table lexes to exactly its tokens in order" {
+        // Context-independence + full coverage in one shot: join every spelling
+        // with a single space (which always breaks munching) and assert the hand
+        // lexer reproduces the table verbatim, tracking columns as it goes.
+        let rules = operator_rules()
+        mut src = ""
+        mut expected = ""
+        mut col = 1
+        mut i = 0
+        while i < rules.length {
+            let r = rules[i]
+            if i > 0 {
+                src = src + " "
+                col = col + 1
+            }
+            src = src + r.spelling
+            expected = expected + tk_name(r.tk) + "\t1:" + string(col) + "\t" + r.spelling + "\n"
+            col = col + r.spelling.length
+            i = i + 1
+        }
+        expected = expected + "Eof\t1:" + string(col) + "\t\n"
+        lex_dump(src) == expected
+    }
+    then "table is well-formed: exact count, no duplicate spellings" {
+        let rules = operator_rules()
+        mut ok = rules.length == OPERATOR_RULE_COUNT
+        mut i = 0
+        while i < rules.length {
+            mut j = i + 1
+            while j < rules.length {
+                if rules[i].spelling == rules[j].spelling { ok = false }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        ok
+    }
+}

@@ -1,0 +1,100 @@
+// WHY: t-47hc.2 (Phase 1) — the DECLARATIVE operator/punctuation lexical grammar.
+// This is the concrete form of "just say `">>" = Shr`": every fixed-spelling
+// terminal the lexer recognises, as DATA (`LitRule { spelling, tk }`), instead of
+// the hand lexer's ~40 open-coded `set_current(Tk.Shr, ">>")` arms
+// (parse/lexer.av advance_token) + scan_subset's `scan_compound_op`/`subset_punct_tk`
+// branches. It is the single SOURCE OF TRUTH for the spelling<->token binding, which
+// is currently DUPLICATED at every `set_current` call and again in the byte-scanner.
+//
+// This file is DATA, not the runtime scanner — it does NOT walk a table per byte
+// (the "interpret a table" anti-pattern the design forbids: "the DFA lexer EMITS
+// branches not a runtime table"). A later slice's GENERATOR reads these rules and
+// COMPILES them into a maximal-munch branch tree (the scan_compound_op shape),
+// exactly as features/grammar/emit.av compiles the parser Grammar into recursive
+// descent. "Compile the grammar, don't interpret it" — this is the grammar; the
+// generator is the compile.
+//
+// MAXIMAL MUNCH is a SEMANTIC the generator enforces by grouping rules per lead
+// byte and trying them LONGEST-FIRST (`>>`/`>=` before `>`), so the `spelling`
+// SET here is order-independent — the rules are listed longest-first per family
+// only for human readability. token_table_test.av proves every rule is faithful to
+// the hand lexer (each spelling lexes to exactly its declared token) THROUGH the
+// same `lex_dump` oracle the byte-scanner uses.
+use core.{Tk}
+
+/// One fixed-spelling terminal: the exact source text `spelling` lexes to token
+/// kind `tk`. The declarative `">>" = Tk.Shr` binding. `spelling` is pure ASCII
+/// (every operator/punctuation byte is < 128), so its byte length == its char
+/// length — the generator can branch on raw bytes without a codepoint decode.
+export type LitRule = { spelling: string, tk: Tk }
+
+/// The COMPLETE operator + single-character-punctuation table — every
+/// fixed-spelling terminal `advance_token` (parse/lexer.av) can emit, save the
+/// comment/quote LEADS (`//` `/*` `"` `'` `` ` ``) that open lexer MODES rather
+/// than a fixed token (those are a later slice). Grouped by lead byte, longest
+/// form first so the maximal-munch intent reads off the page; the generator
+/// re-derives that order by sorting on spelling length, so entries may appear in
+/// any order without changing behaviour.
+///
+/// Kept in lockstep with the hand lexer's arms — token_table_test.av fails the
+/// moment a rule here disagrees with `lex_dump`, and asserts the count so a
+/// dropped or stray rule can't slip through.
+export fn operator_rules() -> List<LitRule> {
+    [
+        // ── `-` family ──
+        LitRule { spelling: "->", tk: Tk.Arrow },
+        LitRule { spelling: "-",  tk: Tk.Minus },
+        // ── `.` family ──
+        LitRule { spelling: "..", tk: Tk.DotDot },
+        LitRule { spelling: ".",  tk: Tk.Dot },
+        // ── `?` family ──
+        LitRule { spelling: "??", tk: Tk.QuestionQuestion },
+        LitRule { spelling: "?.", tk: Tk.QuestionDot },
+        LitRule { spelling: "?",  tk: Tk.Question },
+        // ── `&` family ──
+        LitRule { spelling: "&&", tk: Tk.AmpAmp },
+        LitRule { spelling: "&",  tk: Tk.Amp },
+        // ── `|` family ──
+        LitRule { spelling: "||", tk: Tk.PipePipe },
+        LitRule { spelling: "|>", tk: Tk.PipeGt },
+        LitRule { spelling: "|",  tk: Tk.Pipe },
+        // ── `!` family ──
+        LitRule { spelling: "!=", tk: Tk.BangEqual },
+        LitRule { spelling: "!",  tk: Tk.Bang },
+        // ── `=` family ──
+        LitRule { spelling: "==", tk: Tk.EqualEqual },
+        LitRule { spelling: "=",  tk: Tk.Equal },
+        // ── `<` family ──
+        LitRule { spelling: "<<", tk: Tk.Shl },
+        LitRule { spelling: "<=", tk: Tk.LessEqual },
+        LitRule { spelling: "<-", tk: Tk.LeftArrow },
+        LitRule { spelling: "<",  tk: Tk.Less },
+        // ── `>` family ──
+        LitRule { spelling: ">>", tk: Tk.Shr },
+        LitRule { spelling: ">=", tk: Tk.GreaterEqual },
+        LitRule { spelling: ">",  tk: Tk.Greater },
+        // ── `/` (bare division only; the `//`/`/*` comment leads open modes) ──
+        LitRule { spelling: "/",  tk: Tk.Slash },
+        // ── single-character punctuation with NO compound form ──
+        LitRule { spelling: ",",  tk: Tk.Comma },
+        LitRule { spelling: "(",  tk: Tk.LeftParen },
+        LitRule { spelling: ")",  tk: Tk.RightParen },
+        LitRule { spelling: "{",  tk: Tk.LeftBrace },
+        LitRule { spelling: "}",  tk: Tk.RightBrace },
+        LitRule { spelling: "[",  tk: Tk.LeftBracket },
+        LitRule { spelling: "]",  tk: Tk.RightBracket },
+        LitRule { spelling: "+",  tk: Tk.Plus },
+        LitRule { spelling: "*",  tk: Tk.Star },
+        LitRule { spelling: ":",  tk: Tk.Colon },
+        LitRule { spelling: "@",  tk: Tk.At },
+        LitRule { spelling: "^",  tk: Tk.Caret },
+        LitRule { spelling: "~",  tk: Tk.Tilde },
+        LitRule { spelling: "%",  tk: Tk.Percent },
+    ]
+}
+
+/// The exact rule count `operator_rules` must have — a truncation/stray-entry
+/// guard (token_table_test.av asserts `operator_rules().length == OPERATOR_RULE_COUNT`).
+/// BUMP THIS when the operator set legitimately changes, in lockstep with the hand
+/// lexer — the deliberate speed-bump that keeps this table complete.
+export const OPERATOR_RULE_COUNT = 38

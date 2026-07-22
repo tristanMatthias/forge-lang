@@ -315,7 +315,7 @@ export fn scan_subset(source: string) -> string {
                     if s.at_end() || s.cur() != SQUOTE { return "<out-of-subset:char-literal>" }
                     s.adv()                                        // consume closing `'`
                     out = out + emit(Tk.Number, tok_line, tok_col, string(code))
-                } else if b == 34 {
+                } else if b == DQUOTE {
                     // String literal `"..."` -> String, byte-identical to
                     // scan_string_token (lexer.av ~435-529) for the single-line,
                     // NON-interpolated case. The lexeme keeps the surrounding quotes
