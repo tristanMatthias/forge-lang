@@ -60,7 +60,7 @@ spec "t-47hc.3.1: captured non-first terminal in a repetition validates" {
     // input; the emitted SOURCE is the faithful proof that the fix validates.)
     then "the captured non-first terminal is a GUARDED push with a report (not a bare advance)" {
         let src = emit_rule("r = a:NUMBER ( \",\" b:STRING )*", "r")
-        src.contains("if st.cur().kind == \"STRING\" { b_list.push(st.advance()) } else {") &&
+        src.contains("if st.cur().tk == Tk.String { b_list.push(st.advance()) } else {") &&
         src.contains("st.report(")
     }
     then "the idx==0 loop-guard terminal (`,`) stays an unconditional consume" {
