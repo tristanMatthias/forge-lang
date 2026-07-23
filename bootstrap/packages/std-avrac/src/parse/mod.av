@@ -2288,6 +2288,83 @@ impl Parser {
         .Ok(self.alloc_at(Expr.ListLit(elements.ids), sp_start))
     }
 
+    // The `(…)` grouping / tuple / lambda primary (Phase 3a-9): extracted from
+    // parse_primary so the grammar can own the `(` FIRST via @hand(paren_expr).
+    // Disambiguates grouping vs tuple (trailing `,`) vs lambda (trailing `->`),
+    // with typed-lambda param detection (peek_after_ident_is_colon) and
+    // allow_dot_postfix toggling — all internal to this hand method, so the
+    // grammar only routes the `(` and needs no new mode/speculation primitive.
+    fn parse_paren_expr(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        self.advance()
+        let saved = self.allow_dot_postfix
+        self.allow_dot_postfix = true
+        // Empty parens: () → could be empty tuple or zero-arg lambda
+        if self.check(Tk.RightParen) {
+            self.allow_dot_postfix = saved
+            self.advance()
+            // () -> expr  is a zero-arg lambda
+            if self.check(Tk.Arrow) {
+                self.advance()
+                let body = self.parse_lambda_body()?
+                let empty_ps: List<ParamEntry> = []
+                return .Ok(self.alloc_at(Expr.Lambda(empty_ps, body), sp_start))
+            }
+            let empty: List<ExprId> = []
+            return .Ok(self.alloc_at(Expr.Tuple(empty), sp_start))
+        }
+        // Typed lambda: (x: int, y: string) -> body
+        // Detect by peeking: if current is identifier and next non-ws is ':'
+        if self.check(Tk.Identifier) && self.peek_after_ident_is_colon() {
+            self.allow_dot_postfix = saved
+            let params = self.parse_param_list()?
+            if !self.consume(Tk.RightParen, "expected `)` after typed parameters") {
+                return .Err("parse error")
+            }
+            if !self.consume(Tk.Arrow, "expected `->` after typed lambda parameters") {
+                return .Err("parse error")
+            }
+            let body = self.parse_lambda_body()?
+            return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
+        }
+        let expr_opt = self.parse_expression()
+        self.allow_dot_postfix = saved
+        let expr = expr_opt?
+        // (a, b, ...) — comma after first: tuple or multi-param lambda
+        if self.check(Tk.Comma) {
+            self.advance()
+            let rest = self.parse_tuple_rest()?
+            if !self.consume(Tk.RightParen, "expected `)` after tuple") {
+                return .Err("parse error")
+            }
+            // (a, b) -> expr  is a lambda — the param exprs are consumed
+            // as names (scalar ParamEntry data); their parsed rows orphan.
+            if self.check(Tk.Arrow) {
+                self.advance()
+                mut combined_ids: List<ExprId> = [expr]
+                for tid in rest.ids { combined_ids.push(tid) }
+                let params = exprs_to_params(self.store, combined_ids)
+                let body = self.parse_lambda_body()?
+                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
+            }
+            mut tuple_ids: List<ExprId> = [expr]
+            for tid in rest.ids { tuple_ids.push(tid) }
+            return .Ok(self.alloc_at(Expr.Tuple(tuple_ids), sp_start))
+        }
+        if !self.consume(Tk.RightParen, "expected `)` after expression") {
+            return .Err("parse error")
+        }
+        // (x) -> expr  is a single-param lambda
+        if self.check(Tk.Arrow) {
+            self.advance()
+            let one: List<ExprId> = [expr]
+            let params = exprs_to_params(self.store, one)
+            let body = self.parse_lambda_body()?
+            return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
+        }
+        .Ok(self.alloc_at(Expr.Grouping(expr), sp_start))
+    }
+
     fn parse_primary(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
         // Fully-qualified name `@pkg::mod::name` in expression position —
@@ -2404,73 +2481,7 @@ impl Parser {
         }
 
         if self.check(Tk.LeftParen) {
-            self.advance()
-            let saved = self.allow_dot_postfix
-            self.allow_dot_postfix = true
-            // Empty parens: () → could be empty tuple or zero-arg lambda
-            if self.check(Tk.RightParen) {
-                self.allow_dot_postfix = saved
-                self.advance()
-                // () -> expr  is a zero-arg lambda
-                if self.check(Tk.Arrow) {
-                    self.advance()
-                    let body = self.parse_lambda_body()?
-                    let empty_ps: List<ParamEntry> = []
-                    return .Ok(self.alloc_at(Expr.Lambda(empty_ps, body), sp_start))
-                }
-                let empty: List<ExprId> = []
-                return .Ok(self.alloc_at(Expr.Tuple(empty), sp_start))
-            }
-            // Typed lambda: (x: int, y: string) -> body
-            // Detect by peeking: if current is identifier and next non-ws is ':'
-            if self.check(Tk.Identifier) && self.peek_after_ident_is_colon() {
-                self.allow_dot_postfix = saved
-                let params = self.parse_param_list()?
-                if !self.consume(Tk.RightParen, "expected `)` after typed parameters") {
-                    return .Err("parse error")
-                }
-                if !self.consume(Tk.Arrow, "expected `->` after typed lambda parameters") {
-                    return .Err("parse error")
-                }
-                let body = self.parse_lambda_body()?
-                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
-            }
-            let expr_opt = self.parse_expression()
-            self.allow_dot_postfix = saved
-            let expr = expr_opt?
-            // (a, b, ...) — comma after first: tuple or multi-param lambda
-            if self.check(Tk.Comma) {
-                self.advance()
-                let rest = self.parse_tuple_rest()?
-                if !self.consume(Tk.RightParen, "expected `)` after tuple") {
-                    return .Err("parse error")
-                }
-                // (a, b) -> expr  is a lambda — the param exprs are consumed
-                // as names (scalar ParamEntry data); their parsed rows orphan.
-                if self.check(Tk.Arrow) {
-                    self.advance()
-                    mut combined_ids: List<ExprId> = [expr]
-                    for tid in rest.ids { combined_ids.push(tid) }
-                    let params = exprs_to_params(self.store, combined_ids)
-                    let body = self.parse_lambda_body()?
-                    return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
-                }
-                mut tuple_ids: List<ExprId> = [expr]
-                for tid in rest.ids { tuple_ids.push(tid) }
-                return .Ok(self.alloc_at(Expr.Tuple(tuple_ids), sp_start))
-            }
-            if !self.consume(Tk.RightParen, "expected `)` after expression") {
-                return .Err("parse error")
-            }
-            // (x) -> expr  is a single-param lambda
-            if self.check(Tk.Arrow) {
-                self.advance()
-                let one: List<ExprId> = [expr]
-                let params = exprs_to_params(self.store, one)
-                let body = self.parse_lambda_body()?
-                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
-            }
-            return .Ok(self.alloc_at(Expr.Grouping(expr), sp_start))
+            return self.parse_paren_expr()
         }
 
         // List literal: [expr, expr, ...]
