@@ -611,15 +611,32 @@ fn is_bare_hand(seq: GSeq) -> bool {
         prim_is_hand(seq.items[0].prim) && build_is_none(seq.build)
 }
 
-/// True for a branch whose FIRST item is a One `@hand` delegate — the catch-all
-/// tail shape, a SUPERSET of is_bare_hand: the bare form (`| @hand(f)`) AND a
-/// `@hand`-BASE with trailing postfix folds (`base:@hand(call_leaf) ( s:@hand(
-/// with_suffix) )* -> fold_with`). As the LAST dispatch branch it emits UNGUARDED
-/// (emit_dispatch): the leading @hand owns error recovery, and the trailing items
-/// only post-process its result — so a stray token still reaches the hand parser's
+/// True for a branch whose FIRST item is a One `@hand` delegate AND whose remaining
+/// items are all NULLABLE (Star/Opt) postfix folds — the catch-all tail shape, a
+/// SUPERSET of is_bare_hand: the bare form (`| @hand(f)`) AND a `@hand`-BASE with
+/// trailing NULLABLE postfix folds (`base:@hand(call_leaf) ( s:@hand(with_suffix)
+/// )* -> fold_with`). As the LAST dispatch branch it emits UNGUARDED (emit_dispatch):
+/// the leading @hand owns error recovery, and the nullable trailing items only
+/// post-process its result — so a stray token still reaches the hand parser's
 /// recovery, not a DSL error node (the recovery-tree oracle's invariant).
+///
+/// A REQUIRED trailing item (One/Plus) after the leading @hand would make the branch
+/// a genuine sequence whose @hand must NOT run on tokens outside its FIRST set (that
+/// would bypass dispatch and diverge from executor.exec_node) — so such a branch is
+/// NOT a leading-hand tail; it must be FIRST-guarded like any other. Only nullable
+/// (Star/Opt) trailing items qualify.
 fn is_leading_hand(seq: GSeq) -> bool {
-    seq.items.length >= 1 && rep_is_one(seq.items[0].rep) && prim_is_hand(seq.items[0].prim)
+    if seq.items.length == 0 || !rep_is_one(seq.items[0].rep) || !prim_is_hand(seq.items[0].prim) {
+        return false
+    }
+    mut i = 1
+    while i < seq.items.length {
+        if rep_is_one(seq.items[i].rep) || rep_is_plus(seq.items[i].rep) {
+            return false
+        }
+        i = i + 1
+    }
+    true
 }
 
 // ── Sequence statements (a dispatch branch's / general seq's body) ──
