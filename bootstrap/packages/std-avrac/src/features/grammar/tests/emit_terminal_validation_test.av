@@ -1,0 +1,74 @@
+// WHY: t-47hc.3.1 — the emitter's mandatory-terminal validation must be COMPLETE.
+// The strict-by-default emit (report on a missing mandatory non-first terminal)
+// has to cover EVERY terminal form the interpreter's exec_primary/handle_missing
+// covers, not just the top-level scalar case — otherwise the emit and the
+// interpreter oracle drift on malformed input. CodeRabbit (PR #968) found two
+// latent gaps the first cut missed:
+//   (1) a mandatory non-first terminal GROUP `("a" | "b")` lowered via term_guard,
+//       which returns `false` for a group → an always-failing check that REJECTS
+//       valid input (worse than the old lenient no-op);
+//   (2) a captured non-first terminal inside a repetition/optional
+//       (`( "," x:IDENT )*`) still advanced unconditionally, consuming the wrong
+//       token without reporting when absent.
+// The fix routes the guard through prim_first_guard (a group → its FIRST
+// disjunction) and applies the idx>0 validation to the list/optional capture
+// paths too. These forms are LATENT in today's production grammars, so this
+// fixture grammar is the only place that exercises them — the guard that they
+// stay in lockstep with the interpreter as future leaves migrate.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
+
+fn errs(gsrc: string, input: string) -> bool {
+    let gp = parse_grammar(gsrc)
+    run_grammar_expr(gp.grammar, input).had_error
+}
+
+fn emit_rule(gsrc: string, rule: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+spec "t-47hc.3.1: mandatory non-first terminal GROUP validates via its FIRST-set" {
+    // `r = NUMBER ("a" | "b")` — the group is a mandatory (One-rep) non-first
+    // terminal. Its emitted guard must be the group's FIRST disjunction, NOT the
+    // bogus always-failing `false` term_guard returns for a group.
+    then "the emitted guard is the group's FIRST disjunction, not `false`" {
+        let src = emit_rule("r = NUMBER ( \"a\" | \"b\" )", "r")
+        !src.contains("if false") &&
+        src.contains("st.cur().text == \"a\"") &&
+        src.contains("st.cur().text == \"b\"") &&
+        src.contains("st.report(")
+    }
+    then "the interpreter accepts a valid group token and the emit guard admits it" {
+        // Interpreter oracle: `1 a` and `1 b` are valid, `1 c` is a missing group.
+        !errs("r = NUMBER ( \"a\" | \"b\" )", "1 a") &&
+        !errs("r = NUMBER ( \"a\" | \"b\" )", "1 b")
+    }
+    then "a missing group token is an error under the interpreter oracle" {
+        errs("r = NUMBER ( \"a\" | \"b\" )", "1 c")
+    }
+}
+
+spec "t-47hc.3.1: captured non-first terminal in a repetition validates" {
+    // `r = a:NUMBER ("," b:STRING)*` — `b` is captured inside the `*` repetition at
+    // idx>0 (after the `,` guard). Its emitted push must be guarded + reporting, not
+    // an unconditional advance that would consume the following token when absent.
+    // (The interpreter differential can't test this directly — a capture-only rule
+    // with no `-> build` produces no Expr for run_grammar_expr, which errors on any
+    // input; the emitted SOURCE is the faithful proof that the fix validates.)
+    then "the captured non-first terminal is a GUARDED push with a report (not a bare advance)" {
+        let src = emit_rule("r = a:NUMBER ( \",\" b:STRING )*", "r")
+        src.contains("if st.cur().kind == \"STRING\" { b_list.push(st.advance()) } else {") &&
+        src.contains("st.report(")
+    }
+    then "the idx==0 loop-guard terminal (`,`) stays an unconditional consume" {
+        // The `,` guard (idx==0 in the repetition body) is proved by the `while`
+        // FIRST, so it must NOT gain a redundant else/report — it stays a bare
+        // `let _ = st.advance()`.
+        let src = emit_rule("r = a:NUMBER ( \",\" b:STRING )*", "r")
+        src.contains("while ") &&
+        src.contains("let _ = st.advance()")
+    }
+}

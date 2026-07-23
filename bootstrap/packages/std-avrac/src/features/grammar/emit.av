@@ -753,53 +753,69 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
         // via emit_node_items (an if/else-if dispatch for a multi-branch one).
         .Group(inner) -> {
             if prim_yields_token(item.prim) {
-                return emit_one_terminal(item, idx, annots, ind, list_labels, opts)
+                return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
             }
             emit_node_items(g, inner, ind, list_labels, opts)
         }
         // A `@when` predicate emits nothing (zero-width); emit_seq_items already
         // skips it, so this is a defensive no-op for any other caller.
         .Pred(_) -> ""
-        _ -> emit_one_terminal(item, idx, annots, ind, list_labels, opts)
+        _ -> emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
     }
 }
 
-/// A One terminal (Lit / Named / a terminal group). A repetition-captured
-/// label pushes the token; an optional-scalar assigns; the guard token (idx 0)
-/// is consumed unconditionally (its FIRST already proved it). A later MANDATORY
-/// terminal (labeled or not) is VALIDATED strict-by-default — matching the
-/// interpreter's exec_primary/handle_missing — and st.reports on a mismatch
+/// A One terminal (Lit / Named / a terminal group). The guard token (idx 0) is
+/// consumed unconditionally in every capture form (its FIRST already proved it).
+/// A later (idx > 0) MANDATORY terminal — scalar, list-captured, optional-captured,
+/// OR a terminal-alternation group — is VALIDATED strict-by-default, matching the
+/// interpreter's exec_primary/handle_missing: it st.reports on a mismatch
 /// (→ had_error → the authoritative hand fallback); @expect swaps the message,
-/// @recover synchronises.
-fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+/// @recover synchronises. The guard is `prim_first_guard` (not `term_guard`) so a
+/// mandatory `("a" | "b")` group emits its FIRST disjunction rather than a bogus
+/// always-failing `false`.
+fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    // The primary's FIRST-set guard. For .Lit/.Named this is the SAME single-token
+    // compare `term_guard` produced (byte-identical); for a terminal-alternation
+    // .Group it is the FIRST disjunction (`term_guard` returned `false` for a group
+    // — an always-failing check that rejected valid input; this is the fix).
+    let cond = prim_first_guard(g, item.prim, [])
+    let t = prim_lit_text(item.prim)
+    let exp = expect_for(annots, t)
+    // The message is DISCARDED on the production fallback (only had_error matters),
+    // so a plain `expected <t>` (no backticks) is deterministic; a group has no
+    // single lexeme (t == "") → a generic label.
+    let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected ${t}" }
+    let sync = recover_target(annots)
+
+    // A repetition-captured terminal (`( … x:IDENT … )*`). idx==0 is the loop guard
+    // (the enclosing `while` FIRST proved it) → unconditional push; a non-first
+    // captured terminal validates first — the sibling of the executor's per-item
+    // exec_primary inside a repetition (strict there too).
     if str_in(list_labels, item.label) {
-        return "${ind}${item.label}_list.push(st.advance())\n"
+        if idx == 0 { return "${ind}${item.label}_list.push(st.advance())\n" }
+        mut o = "${ind}if ${cond} { ${item.label}_list.push(st.advance()) } else {\n"
+        o = o + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + "${ind}}\n"
+        return o
     }
+    // An optional-captured scalar terminal — same idx discipline.
     if str_in(opts, item.label) {
-        return "${ind}${item.label} = CapVal.Tok(st.advance())\n"
+        if idx == 0 { return "${ind}${item.label} = CapVal.Tok(st.advance())\n" }
+        mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(st.advance()) } else {\n"
+        o = o + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + "${ind}}\n"
+        return o
     }
     if idx == 0 {
         if item.label == "" { return "${ind}let _ = st.advance()\n" }
         return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
     }
-    // A MANDATORY non-first terminal. The grammar requires this token here, so —
-    // matching the interpreter's exec_primary (handle_missing ALWAYS reports on a
-    // missing terminal, labeled or not; executor.av) — VALIDATE the kind/text and
-    // st.report on a mismatch. That report sets had_error on the (sandboxed) PState;
-    // the production runner (parse_expression / decl_static) then DISCARDS the DSL
-    // result and re-parses with the authoritative hand oracle, so the recovery TREE
-    // matches hand byte-for-byte. @expect swaps the message; @recover adds a
-    // synchronize. BYTE-IDENTICAL on VALID input: the token is present, the `if`
-    // branch is taken, the `else` is dead — and on a mismatch the cursor does NOT
-    // advance either way (the lenient form never advanced on mismatch either), so the
-    // built tree is identical; only had_error flips (→ the fallback). The report
-    // message is DISCARDED on the fallback (only had_error matters), so a plain
-    // `expected <t>` — no backticks to escape — is deterministic and sufficient.
-    let t = prim_lit_text(item.prim)
-    let cond = term_guard(item.prim)
-    let exp = expect_for(annots, t)
-    let msg = if exp.found { exp.msg } else { "expected ${t}" }
-    let sync = recover_target(annots)
+    // A MANDATORY non-first SCALAR terminal. BYTE-IDENTICAL on VALID input: the
+    // token is present, the `if` is taken, the `else` is dead; and on a mismatch the
+    // cursor does not advance either way, so the built tree is identical — only
+    // had_error flips (→ the fallback, which re-parses with the hand oracle).
     if item.label != "" {
         // Bind the label to the current token in the else so downstream
         // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
