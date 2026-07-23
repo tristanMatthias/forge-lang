@@ -140,25 +140,32 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns ! - not and delegates the rest to @hand(hand_unary)" {
+    then "the procedural leaf `unary` owns ! - not + the `with` postfix, delegating the rest to @hand" {
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
-        // directly (unary_expr build) and delegates every other postfix/primary/with/
-        // splice form to the hand parser via @hand(hand_unary) — the UNGUARDED tail.
-        // A bare @hand LAST branch is the catch-all (is_bare_hand): hand_unary owns the
-        // rest INCLUDING its own error recovery, so there is no FIRST-guard / grammar
-        // error tail (a guarded tail would divert a stray operator to a DSL error
-        // instead of the hand parser's recovery — the recovery-tree oracle's catch).
-        // `not` renders as a `.text` compare (keyword spelling, like and/or). `~` is
-        // deliberately NOT owned: it is the quote SPLICE at quote_depth>0, and the
-        // static parser DOES run inside a quote body (parse_quote re-enters parse_
-        // expression), so a grammar-owned `~` would misparse splice-in-quote — it stays
-        // with @hand(hand_unary), which reads quote_depth.
+        // directly (unary_expr build). Phase 3a-3 additionally gives it the `with`
+        // POSTFIX: the non-prefix branch is `base:@hand(call_leaf) ( s:@hand(with_
+        // suffix) )* -> fold_with(base, s)`. call_leaf (→ parse_unary_leaf) is the
+        // splice/prefix + postfix-chain base (parse_unary WITHOUT the `with` loop);
+        // the grammar folds each `with { … }` (partial with_suffix) over it via
+        // fold_with_expr, stamping the hand `[base-start, next-token)` span (sp_start
+        // captured at branch entry). `not` renders as a `.text` compare (keyword
+        // spelling, like and/or). `~` is deliberately NOT owned: it is the quote
+        // SPLICE at quote_depth>0, and the static parser DOES run inside a quote body
+        // (parse_quote re-enters parse_expression), so a grammar-owned `~` would
+        // misparse splice-in-quote — it stays with @hand(call_leaf), which reads
+        // quote_depth (parse_call/parse_primary can't parse `~` at all).
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
         src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
         !src.contains("Tk.Tilde") &&
         src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
-        src.contains("CapVal.Node(run_hand_expr(\"hand_unary\", st))")
+        // The `with` branch is the LAST alternative = the unguarded fallthrough tail
+        // (matching hand's unconditional parse_call() after the prefix check); call_leaf
+        // owns error recovery for non-expr tokens, so there is NO FIRST-guard here.
+        src.contains("let base = CapVal.Node(run_hand_expr(\"call_leaf\", st))") &&
+        src.contains("while st.cur().text == \"with\" {") &&
+        src.contains("s_list.push(capval_to_expr(st, CapVal.Node(run_hand_expr(\"with_suffix\", st))))") &&
+        src.contains("CapVal.Node(fold_with_expr(st, sp_start, base, CapVal.Nodes(s_list)))")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {

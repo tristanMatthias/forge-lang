@@ -17,8 +17,8 @@ use features.grammar.{avra_expr_grammar, emit_parser_source_ex}
 /// features.grammar builders + core types the generated body references. An extra
 /// import is only an F9002 warning, but a MISSING one is a hard undefined-symbol
 /// error — keep this in lockstep with the build helpers avra_expr_grammar's rules
-/// name (mk_assign / fold_pipe / fold_nullish / fold_logical / rebind_eq / mk_is /
-/// mk_inlist / mk_inrange / mk_eqchain, plus the Pratt prelude's mk_binary +
+/// name (mk_assign / fold_pipe / fold_with / fold_nullish / fold_logical / rebind_eq /
+/// mk_is / mk_inlist / mk_inrange / mk_eqchain, plus the Pratt prelude's mk_binary +
 /// @hand run_hand_expr + the tok_starts_expr_leaf FIRST-guard).
 export fn gen_expr_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.`
@@ -32,7 +32,7 @@ export fn gen_expr_parser_header() -> string {
     "// This is the PRODUCTION expression parser under AVRA_PARSER_EXPR_STATIC=1 (ps3t.6.7\n" +
     "// Step G); parse/tests/gen_expr_parser_regen_test.av asserts it equals\n" +
     "// emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_expr, run_hand_expr, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf}\n" +
+    "use features.grammar.{Token, CapVal, PState, capval_to_expr, run_hand_expr, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf}\n" +
     "use core.{ExprId, Tk}\n\n"
 }
 

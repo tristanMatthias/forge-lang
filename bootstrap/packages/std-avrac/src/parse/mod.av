@@ -1709,6 +1709,39 @@ impl Parser {
     }
 
     fn parse_unary(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        mut eid = self.parse_unary_leaf()?
+        // `expr with { field: value, ... }` — functional struct update (chainable).
+        // The production grammar's `unary` rule now OWNS this loop (fold_with_expr,
+        // over `parse_with_suffix`); parse_unary stays the differential oracle
+        // (Phase 3a Option B) and its behaviour is unchanged — the loop is byte-
+        // identical, just factored above `parse_unary_leaf`.
+        while self.check(Tk.KwWith) {
+            self.advance()
+            if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
+                return .Err("parse error")
+            }
+            let parsed = self.parse_field_init_list()?
+            if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
+                return .Err("parse error")
+            }
+            // B-final F4: With.obj is a walker-opaque ExprId and the override
+            // values are opaque value_ids — a leaf, like StructLit/Block.
+            eid = self.alloc_at(Expr.With(eid, parsed.inits), sp_start)
+        }
+        .Ok(eid)
+    }
+
+    /// The `call_leaf` delegate (@hand): `parse_unary` WITHOUT the trailing `with`
+    /// loop — the splice / prefix-unary layer over the newline-sensitive postfix
+    /// chain (`parse_call`). The production grammar's `unary` rule folds the `with`
+    /// postfix over THIS base (fold_with_expr), so the leaf must NOT consume `with`
+    /// itself. It KEEPS the `~` splice + `! - ~ not` prefix ops (`parse_call` /
+    /// `parse_primary` cannot parse `~`), so `~`/splice-in-quote stay byte-identical
+    /// (they route here, never grammar-owned). The prefix/splice recursions still
+    /// re-enter the FULL `parse_unary`, so `~x with { }` binds the `with` to the
+    /// inner operand (`Unary(BitNot, With(x, …))`) exactly as before.
+    fn parse_unary_leaf(self) -> Result<ExprId, string> {
         // Splice `~target` inside a quote body — overloads the `~`
         // token. Splice is greedy: `~f(x)` parses as
         // `Splice(Call(f, [x]))`, splicing the entire call. Users
@@ -1746,23 +1779,28 @@ impl Parser {
             let right = self.parse_unary()?
             return .Ok(self.alloc_at(Expr.Unary(op, right), sp_start))
         }
+        self.parse_call()
+    }
 
-        mut eid = self.parse_call()?
-        // `expr with { field: value, ... }` — functional struct update (chainable)
-        while self.check(Tk.KwWith) {
-            self.advance()
-            if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
-                return .Err("parse error")
-            }
-            let parsed = self.parse_field_init_list()?
-            if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
-                return .Err("parse error")
-            }
-            // B-final F4: With.obj is a walker-opaque ExprId and the override
-            // values are opaque value_ids — a leaf, like StructLit/Block.
-            eid = self.alloc_at(Expr.With(eid, parsed.inits), sp_start)
+    /// The `with_suffix` delegate (@hand): consume ONE `with { <field-init-list> }`
+    /// and return a PARTIAL `Expr.With` whose receiver is a placeholder (fold_with_expr
+    /// rebinds it to the accumulated base). Its body matches the `parse_unary` with-loop
+    /// step exactly (same `parse_field_init_list`, same two consumes). The partial node's
+    /// span records `[with-start, next-token)`, so its `.hi` IS the per-iteration end
+    /// byte the hand loop's `alloc_at(Expr.With(…), sp_start)` stamps — fold_with_expr
+    /// reads it to reproduce each `With`'s `[base-start, next-token)` span precisely,
+    /// even for a chained `a with { } with { }`.
+    fn parse_with_suffix(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        self.advance()  // consume `with`
+        if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
+            return .Err("parse error")
         }
-        .Ok(eid)
+        let parsed = self.parse_field_init_list()?
+        if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
+            return .Err("parse error")
+        }
+        .Ok(self.alloc_at(Expr.With(self.alloc_leaf(Expr.Missing), parsed.inits), sp_start))
     }
 
     // Peek at the source character immediately after the current

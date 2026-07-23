@@ -437,7 +437,7 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 /// fold_postfix / mk_is / etc. are excluded.
 fn build_uses_sp_start(name: string) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
-        name == "mk_assign" || name == "rebind_eq"
+        name == "fold_with" || name == "mk_assign" || name == "rebind_eq"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -491,20 +491,33 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + "        return ${emit_ref_call(b.items[0].prim)}\n"
             out = out + "    }\n"
-        } else if is_bare_hand(b) && i == last && !has_spec {
-            // A bare `@hand` LAST branch is the UNGUARDED tail — the delegate owns
+        } else if is_leading_hand(b) && i == last && !has_spec {
+            // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
             // every case earlier branches didn't match, INCLUDING error recovery
             // (its own diagnostics), exactly like the single-branch `x = @hand(f)`
             // form. Guarding it with the delegate's FIRST + a grammar error_node
             // tail would divert a stray token (e.g. `* 5`) to a DSL error instead of
             // the hand parser's recovery — the recovery-tree oracle's exact catch.
-            tail = "    ${emit_seq_result(g, b)}\n"
+            // Covers both a BARE `@hand` tail (`| @hand(hand_unary)`) and a `@hand`-
+            // BASE tail with trailing postfix folds (`base:@hand(call_leaf) ( … )* ->
+            // fold_with`): the trailing items only post-process the base, and never
+            // consume the stray token, so recovery still flows through the leading
+            // @hand. The sp_start prelude + item statements emit exactly as the
+            // guarded general branch below, minus the `if`-guard and error tail.
+            let sp_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+            tail = sp_pre + emit_seq_stmts(g, b, "    ") + "    ${emit_seq_result(g, b)}\n"
         } else if is_bare_hand(b) {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + "        return ${emit_seq_result(g, b)}\n"
             out = out + "    }\n"
         } else {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
+            // A span-stamping build (e.g. fold_with) captures the rule-entry byte
+            // FIRST — before any item (the leftmost operand) is parsed. In a dispatch
+            // branch the guard is FALSE-when-not-taken (no token consumed), so the
+            // branch entry byte == the rule entry byte, exactly as emit_single_branch /
+            // emit_fold capture it for the single-branch case.
+            if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
             out = out + emit_seq_stmts(g, b, "        ")
             out = out + "        return ${emit_seq_result(g, b)}\n"
             out = out + "    }\n"
@@ -598,6 +611,17 @@ fn is_bare_hand(seq: GSeq) -> bool {
         prim_is_hand(seq.items[0].prim) && build_is_none(seq.build)
 }
 
+/// True for a branch whose FIRST item is a One `@hand` delegate — the catch-all
+/// tail shape, a SUPERSET of is_bare_hand: the bare form (`| @hand(f)`) AND a
+/// `@hand`-BASE with trailing postfix folds (`base:@hand(call_leaf) ( s:@hand(
+/// with_suffix) )* -> fold_with`). As the LAST dispatch branch it emits UNGUARDED
+/// (emit_dispatch): the leading @hand owns error recovery, and the trailing items
+/// only post-process its result — so a stray token still reaches the hand parser's
+/// recovery, not a DSL error node (the recovery-tree oracle's invariant).
+fn is_leading_hand(seq: GSeq) -> bool {
+    seq.items.length >= 1 && rep_is_one(seq.items[0].rep) && prim_is_hand(seq.items[0].prim)
+}
+
 // ── Sequence statements (a dispatch branch's / general seq's body) ──
 
 /// The statement lines for a sequence: list accumulators declared once at the
@@ -677,6 +701,13 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             "${ind}let ${item.label} = parse_${name}(st)\n"
         }
         .Hand(hf) -> {
+            // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)
+            // accumulates into the branch's list (the emit twin of the .Ref list
+            // case, and of the executor's bind→append_node). run_hand_* yields a
+            // raw id boxed by emit_hand_result; coerce it back to the list element.
+            if str_in(list_labels, item.label) {
+                return "${ind}${item.label}_list.push(${kind_coerce(hand_kind(hf))}(st, ${emit_hand_result(hf)}))\n"
+            }
             if str_in(opts, item.label) { return "${ind}${item.label} = ${emit_hand_result(hf)}\n" }
             if item.label == "" { return "${ind}let _ = ${emit_hand_result(hf)}\n" }
             "${ind}let ${item.label} = ${emit_hand_result(hf)}\n"
@@ -823,6 +854,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
         "mk_assign" -> "CapVal.Node(mk_assign_expr(st, sp_start, ${args[0]}, ${args[1]}))"
         "fold_pipe" -> "CapVal.Node(fold_pipe_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
+        // The `with` postfix fold (Phase 3a-3): `base` is a scalar CapVal, `s` a
+        // repetition list of PARTIAL `with_suffix` nodes; fold_with_expr rebinds
+        // each onto the accumulated base with the per-step span.
+        "fold_with" -> "CapVal.Node(fold_with_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         // The is/in/==-chain equality suffix (ps3t.6.7 Step C). mk_inlist's `a`
         // and mk_eqchain's `op`/`r` are repetition captures (list accumulators).
         "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, sp_start, ${args[0]}, ${args[1]}))"
@@ -934,7 +969,7 @@ fn is_stmt_hand_name(n: string) -> bool {
     n == "stmt_hand" || n == "decl_hand"
 }
 fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
-fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "pipe_rhs" }
+fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "call_leaf" || n == "with_suffix" || n == "pipe_rhs" }
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -1042,6 +1077,10 @@ fn hand_first_guard(hf: string) -> string {
     // tok_starts_expr_leaf) — the emitted static parser calls it directly, so
     // the FIRST-set has ONE source of truth across both consumers (rule 8).
     if hf == "hand_unary" { return "tok_starts_expr_leaf(st.cur())" }
+    // The `with`-base leaf shares that same FIRST (parse_unary_leaf); a `with { … }`
+    // postfix step's FIRST is the `with` keyword (a keyword — text compare, like `not`).
+    if hf == "call_leaf" { return "tok_starts_expr_leaf(st.cur())" }
+    if hf == "with_suffix" { return "st.cur().text == \"with\"" }
     if hf == "pipe_rhs" { return "tok_starts_expr_leaf(st.cur())" }
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch FIRST
     // sets, mirroring executor.hand_starts("stmt_hand" / "decl_hand") exactly so
@@ -1297,7 +1336,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
