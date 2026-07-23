@@ -89,8 +89,8 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("~a * ~b") && agree("~(a + b)")
         }
     }
-    given "literal-base postfix chains (Phase 3a-7: grammar-owned NUMBER/STRING/BOOL/null/none base + seeding)" {
-        then "string/number/bool/null/none literals thread into the postfix + `with` loop identically to hand" {
+    given "literal-base postfix chains (Phase 3a-7: grammar-owned NUMBER/STRING/BOOL/null/none/.Variant base + seeding)" {
+        then "string/number/bool/null/none/.Variant literals thread into the postfix + `with` loop identically to hand" {
             // The grammar now OWNS NUMBER/STRING as the postfix-loop BASE (before the
             // @hand tail). This exercises the exec_seq base-seeding hook: a grammar-built
             // literal base must seed st.postfix_base so the first postfix_suffix wraps it,
@@ -106,7 +106,11 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("true with { x: 1 }") &&
             // null/none literal base (slice 3: grammar-owned via string terminal → Expr.None)
             agree("null") && agree("none") && agree("null ?? 1") &&
-            agree("none ?? x") && agree("null.foo") && agree("null == none")
+            agree("none ?? x") && agree("null.foo") && agree("null == none") &&
+            // .Variant enum-ctor base (slice 4: grammar-owned variant_ctor rule → mk_enum_ctor)
+            agree(".None") && agree(".Some(1)") && agree(".Pair(1, 2)") &&
+            agree(".Some(1).foo") && agree(".Ok(x) ?? y") && agree(".Wrap(.Inner(x))") &&
+            agree(".Point(1, 2).x") && agree(".Some(a + 1)")
         }
     }
     given "string literals and mixed nesting" {

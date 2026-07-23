@@ -437,7 +437,8 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 /// fold_postfix / mk_is / etc. are excluded.
 fn build_uses_sp_start(name: string) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
-        name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq"
+        name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
+        name == "mk_enum_ctor"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -922,6 +923,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
         "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
+        // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
+        // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒
+        // nullary). sp_start = the `.` byte, spanned like the hand alloc_at.
+        "mk_enum_ctor" -> "CapVal.Node(mk_enum_ctor_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "mk_eqchain" -> "CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
         "Grouping" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, ${args[0]}))))"
@@ -1404,7 +1409,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,

@@ -88,7 +88,9 @@ export fn avra_expr_grammar() -> Grammar {
              | b:STRING ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | b:BOOL ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | b:("null" | "none") ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
+             | base:variant_ctor ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
+  variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
     }
     gp.grammar
 }

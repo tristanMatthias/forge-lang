@@ -1676,6 +1676,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
+        "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
         "Grouping" if args.length == 1 -> {
             // Preserve the parenthesisation node so the produced AST matches
@@ -2500,6 +2501,19 @@ export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
     let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
     let le = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Le, e))
     st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
+}
+
+/// Build a contextual enum constructor `.Variant` / `.Variant(args)` (Phase 3a-7
+/// slice 4). Matches hand parse_primary's `Expr.EnumCtor("", variant, args)` — the
+/// EMPTY enum name is the contextual marker (the enum is inferred from the expected
+/// type). `vcap` is the variant IDENT; `acap` is the optional args list (Nil ⇒ empty
+/// nullary ctor). Spanned `[sp_start, next-token)` exactly like the hand `alloc_at`
+/// (sp_start = the `.` byte); sp_start < 0 is the interpreter's span-free sentinel.
+export fn mk_enum_ctor_expr(st: PState, sp_start: int, vcap: CapVal, acap: CapVal) -> ExprId {
+    let variant = capval_tok_text(vcap)
+    let args = capval_to_node_list(acap)
+    let sp = byte_span(sp_start, st.cur().pos)
+    st.store.add_expr(Expr.EnumCtor("", variant, args), sp, [])
 }
 
 /// `( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a MISSING
