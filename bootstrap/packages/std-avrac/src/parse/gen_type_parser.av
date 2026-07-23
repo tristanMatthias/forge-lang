@@ -3,7 +3,7 @@
 // This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4
 // Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals
 // emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type}
+use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_dyn_type}
 use core.{TypeExpr, Tk}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -33,7 +33,10 @@ fn parse_type_atom(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftParen {
         return parse_paren_type(st)
     }
-    parse_named_type(st)
+    if st.cur().tk == Tk.Identifier {
+        return parse_named_type(st)
+    }
+    CapVal.Node(st.error_node("expected an expression"))
 }
 
 fn parse_fn_type(st: PState) -> CapVal {
@@ -62,12 +65,16 @@ fn parse_fn_type(st: PState) -> CapVal {
 }
 
 fn parse_dyn_type(st: PState) -> CapVal {
+    mut opt: CapVal = CapVal.Nil
     let _ = st.advance()
     let t = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
         st.report("expected IDENT")
         CapVal.Tok(st.cur())
     }
-    CapVal.TExpr(TypeExpr.Named(capval_tok_text(t)))
+    if st.cur().tk == Tk.Question {
+        opt = CapVal.Tok(st.advance())
+    }
+    mk_dyn_type(capval_tok_text(t), capval_present(opt))
 }
 
 fn parse_list_type(st: PState) -> CapVal {
@@ -113,7 +120,7 @@ fn parse_named_type(st: PState) -> CapVal {
             let _ = st.advance()
             a_list.push(capval_to_texpr(st, parse_type_expr(st)))
         }
-        if st.cur().tk == Tk.Greater { let _ = st.advance() } else {
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
             st.report("expected >")
         }
     }

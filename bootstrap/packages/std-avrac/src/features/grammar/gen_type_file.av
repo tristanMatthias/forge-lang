@@ -31,7 +31,7 @@ export fn gen_type_parser_header() -> string {
     "// This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4\n" +
     "// Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals\n" +
     "// emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type}\n" +
+    "use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
     "use core.{TypeExpr, Tk}\n\n"
 }
 

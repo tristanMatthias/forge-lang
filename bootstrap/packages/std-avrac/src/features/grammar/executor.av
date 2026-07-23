@@ -1833,7 +1833,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
         "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
-        "TyDyn" if args.length == 1 -> CapVal.TExpr(TypeExpr.Named(capval_tok_text(env.get(args[0]))))
+        "TyDyn" if args.length == 2 -> mk_dyn_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
         "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
         // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
         // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
@@ -2156,6 +2156,18 @@ export fn fold_type_union(st: PState, l: CapVal, rs: List<TypeExpr>) -> CapVal {
 /// branch.
 export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
     mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
+    if is_opt { base = TypeExpr.Optional(base) }
+    CapVal.TExpr(base)
+}
+
+/// A `dyn Trait` type — the TyDyn build's core. Matches the hand parser
+/// (parse_type_atom's `dyn` branch, mod.av): `dyn Trait` → TypeExpr.Named(trait) (the
+/// hand parser drops the dyn-ness to a bare Named — there is no distinct dyn
+/// TypeExpr variant), and the NULLABLE `dyn Trait?` → TypeExpr.Optional(Named). The
+/// `?` suffix is what the earlier `-> TyDyn(t)` build dropped (nullable dyn parsed as
+/// non-nullable, leaving `?` for the caller); threading `is_opt` restores parity.
+export fn mk_dyn_type(nm: string, is_opt: bool) -> CapVal {
+    mut base = TypeExpr.Named(nm)
     if is_opt { base = TypeExpr.Optional(base) }
     CapVal.TExpr(base)
 }

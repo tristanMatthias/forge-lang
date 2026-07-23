@@ -486,7 +486,14 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     for b in branches {
         if b.speculative {
             out = out + emit_speculative_branch(g, b)
-        } else if is_bare_ref(b) && i == last && !has_spec {
+        } else if is_bare_ref(b) && i == last && !has_spec && rule_self_validates(g, prim_ref_name(b.items[0].prim), []) {
+            // UNGUARDED catch-all tail — ONLY when the referenced rule reaches an
+            // `@hand` delegate that owns recovery (unary's `| postfix`, statement's
+            // `| expr_stmt`). A pure-native last ref (`type_atom … | named_type`) falls
+            // to the FIRST-guarded branch below + the no-match error tail, so a
+            // non-FIRST token sets had_error (⇒ the caller's hand fallback fires)
+            // instead of being swallowed into a bogus node — matching the interpreter,
+            // which FIRST-guards every branch (the type error-recovery oracle's catch).
             tail = "    ${emit_ref_call(b.items[0].prim)}\n"
         } else if is_bare_ref(b) {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
@@ -778,8 +785,18 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // compare `term_guard` produced (byte-identical); for a terminal-alternation
     // .Group it is the FIRST disjunction (`term_guard` returned `false` for a group
     // — an always-failing check that rejected valid input; this is the fix).
-    let cond = prim_first_guard(g, item.prim, [])
     let t = prim_lit_text(item.prim)
+    let base_cond = prim_first_guard(g, item.prim, [])
+    // A ">" terminal (the generic-arg-list close) ALSO matches ">>" (Tk.Shr) and
+    // splits it — consuming ONE ">" and leaving the second in-slot for the enclosing
+    // generic's own close — the emit mirror of the interpreter's exec split_gt
+    // (executor.av) and the hand parser's maybe_split_shr. Without it, List<List<T>> /
+    // Map<K, List<V>> (the pervasive nested-generic close) errors on the merged ">>"
+    // and re-parses through the hand fallback instead of natively. `adv` is the
+    // token-consuming expression (split-aware for ">", a plain advance otherwise);
+    // `cond` widens the ">" FIRST guard to accept the ">>" slot.
+    let cond = if t == ">" { "(" + base_cond + " || st.cur().text == \">>\")" } else { base_cond }
+    let adv = if t == ">" { "(if st.cur().text == \">>\" { st.split_gt() } else { st.advance() })" } else { "st.advance()" }
     let exp = expect_for(annots, t)
     // The message is DISCARDED on the production fallback (only had_error matters),
     // so a plain `expected <t>` (no backticks) is deterministic; a group has no
@@ -792,8 +809,8 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // captured terminal validates first — the sibling of the executor's per-item
     // exec_primary inside a repetition (strict there too).
     if str_in(list_labels, item.label) {
-        if idx == 0 { return "${ind}${item.label}_list.push(st.advance())\n" }
-        mut o = "${ind}if ${cond} { ${item.label}_list.push(st.advance()) } else {\n"
+        if idx == 0 { return "${ind}${item.label}_list.push(${adv})\n" }
+        mut o = "${ind}if ${cond} { ${item.label}_list.push(${adv}) } else {\n"
         o = o + "${ind}    st.report(\"${msg}\")\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + "${ind}}\n"
@@ -801,16 +818,16 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     }
     // An optional-captured scalar terminal — same idx discipline.
     if str_in(opts, item.label) {
-        if idx == 0 { return "${ind}${item.label} = CapVal.Tok(st.advance())\n" }
-        mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(st.advance()) } else {\n"
+        if idx == 0 { return "${ind}${item.label} = CapVal.Tok(${adv})\n" }
+        mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(${adv}) } else {\n"
         o = o + "${ind}    st.report(\"${msg}\")\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + "${ind}}\n"
         return o
     }
     if idx == 0 {
-        if item.label == "" { return "${ind}let _ = st.advance()\n" }
-        return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
+        if item.label == "" { return "${ind}let _ = ${adv}\n" }
+        return "${ind}let ${item.label} = CapVal.Tok(${adv})\n"
     }
     // A MANDATORY non-first SCALAR terminal. BYTE-IDENTICAL on VALID input: the
     // token is present, the `if` is taken, the `else` is dead; and on a mismatch the
@@ -819,14 +836,14 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     if item.label != "" {
         // Bind the label to the current token in the else so downstream
         // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
-        mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(st.advance()) } else {\n"
+        mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(${adv}) } else {\n"
         outl = outl + "${ind}    st.report(\"${msg}\")\n"
         if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
         outl = outl + "${ind}    CapVal.Tok(st.cur())\n"
         outl = outl + "${ind}}\n"
         return outl
     }
-    mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
+    mut out = "${ind}if ${cond} { let _ = ${adv} } else {\n"
     out = out + "${ind}    st.report(\"${msg}\")\n"
     if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
     out = out + "${ind}}\n"
@@ -1009,7 +1026,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkNamed" -> "mk_named_type(capval_tok_text(CapVal.Toks(${args[0]}_list)), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
         "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
         "TyParen" -> "mk_paren_type(${args[0]}_list)"
-        "TyDyn" -> "CapVal.TExpr(TypeExpr.Named(capval_tok_text(${args[0]})))"
+        "TyDyn" -> "mk_dyn_type(capval_tok_text(${args[0]}), capval_present(${args[1]}))"
         "MkFn" -> "mk_fn_type(st, capval_present(${args[0]}), ${args[1]}_list, capval_present(${args[2]}), ${args[2]})"
         // ── Control-flow + declaration builds (target: Stmt / component CapVals)
         //    — delegate to the SHARED constructor cores (executor.apply_build's
@@ -1465,6 +1482,61 @@ fn prim_is_hand(prim: GPrim) -> bool {
 
 fn hand_name(prim: GPrim) -> string {
     match prim { .Hand(hf) -> hf  _ -> "" }
+}
+
+/// Does rule `name` SELF-VALIDATE — i.e. when invoked on a token OUTSIDE its FIRST
+/// set, does it set `had_error` (rather than blindly consuming into a bogus node)?
+/// This decides whether the LAST bare-ref branch of a dispatch may be the UNGUARDED
+/// catch-all tail: a self-validating rule can (unary's `| postfix`, statement's
+/// `| expr_stmt` — the delegate recovers), a non-self-validating one must be
+/// FIRST-guarded with the no-match error node instead (type_atom's `| named_type`:
+/// unguarded it would swallow `,`/`?`/`=` into a bogus TypeExpr.Named WITHOUT
+/// had_error, so the caller's hand fallback never fires and recovery diverges from
+/// the interpreter, which FIRST-guards EVERY branch — the type recovery-oracle catch).
+///
+/// The cases, mirroring what emit_dispatch itself produces:
+///  - EXTERNAL ref (not a rule in THIS grammar, e.g. expr_stmt's `expression` →
+///    the separately-generated parse_expression): self-validates (that generated
+///    delegate reports its own errors). Returned as TRUE so the emit keeps the ref an
+///    unguarded tail — guarding it would emit `if <FIRST=false> { … }`, dead code.
+///  - MULTI-BRANCH dispatch: ALWAYS self-validates — emit_dispatch gives it either an
+///    error-node tail or a self-validating catch-all, so an unmatched token sets
+///    had_error either way.
+///  - SINGLE sequence: self-validates iff its LEADING primary does — `@hand` (the
+///    delegate reports) or another self-validating rule; a leading TERMINAL does not
+///    (linear sequences emit the first terminal UNGUARDED, assuming the caller's
+///    dispatch guaranteed it — false for an unguarded fallthrough).
+fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool {
+    if str_in(visited, name) { return false }
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    let idx = rule_index_of(g, name)
+    if idx < 0 { return true }
+    match g.rules[idx].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return false }
+            if branches.length > 1 { return true }
+            if branches[0].items.length == 0 { return false }
+            prim_self_validates(g, branches[0].items[0].prim, v2)
+        }
+    }
+}
+
+fn prim_self_validates(g: Grammar, prim: GPrim, visited: List<string>) -> bool {
+    match prim {
+        .Hand(_) -> true
+        .Ref(nm) -> rule_self_validates(g, nm, visited)
+        .Group(inner) -> match inner {
+            .Alt(brs) -> {
+                if brs.length == 0 { return false }
+                if brs.length > 1 { return true }
+                if brs[0].items.length == 0 { return false }
+                prim_self_validates(g, brs[0].items[0].prim, visited)
+            }
+        }
+        _ -> false
+    }
 }
 
 fn rep_is_one(rep: GRep) -> bool { match rep { .One -> true  _ -> false } }

@@ -2188,7 +2188,7 @@ fn pat_harness_block() -> string {
 }
 
 fn type_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_texpr, capval_to_texpr_list, capval_present, capval_tok_text, run_hand, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_texpr, capval_to_texpr_list, capval_present, capval_tok_text, run_hand, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
     "use @std.avrac.core.{TypeExpr, NodeStore, render_type_id, type_expr_to_vtype}\n\n"
 }
@@ -2222,7 +2222,9 @@ fn type_harness_block() -> string {
     "        agree(\"int | string\") && agree(\"int | string | bool\") && agree(\"List<int> | string\") &&\n" +
     "        agree(\"fn(int) -> bool\") && agree(\"fn(int, string) -> Foo\") && agree(\"fn() -> int\") &&\n" +
     "        agree(\"fn -> int\") && agree(\"fn\") && agree(\"fn(int) -> bool | string\") &&\n" +
-    "        agree(\"dyn Display\") && agree(\"dyn Iterator\")\n" +
+    "        agree(\"dyn Display\") && agree(\"dyn Iterator\") && agree(\"dyn Display?\") &&\n" +
+    "        agree(\"List<List<int>>\") && agree(\"Map<string, List<int>>\") &&\n" +
+    "        agree(\"List<List<List<int>>>\") && agree(\"Result<List<int>, Map<string, int>>\")\n" +
     "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
     "}\n"
 }
