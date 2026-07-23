@@ -1,0 +1,34 @@
+// WHY: t-47hc.4.4 Phase 3d — the REGEN GUARD for the checked-in production type
+// static parser (parse/gen_type_parser.av). That file MUST always equal
+// emit_type_parser_file() = the fixed import header + emit_parser_source_ex(
+// avra_type_flip_grammar(), true). Editing the type grammar (avra_grammar.av) without
+// running `bash scripts/diagnose.sh --emit-regen-type` leaves the checked-in parser
+// stale (silently parsing the OLD grammar in production under
+// AVRA_PARSER_TYPE_STATIC=1) — and this test fails until it's regenerated + committed.
+//
+// Fast + in-process: the emitter is already linked via the import, so no nested
+// compile. Reads the file from the bootstrap root — the repo's test cwd. The
+// BEHAVIOURAL proof that the emitted text parses byte-equivalent to the hand parser is
+// diagnose.sh --emit-gen-check plus the full-selfhost differential under
+// AVRA_PARSER_TYPE_STATIC=1 (the default). Sibling of gen_expr_parser_regen_test /
+// gen_decl_parser_regen_test.
+
+use @std.avrac.features.grammar.{emit_type_parser_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in production type static parser stays current with the type grammar" {
+    then "parse/gen_type_parser.av == emit_type_parser_file() (else run --emit-regen-type)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_type_parser.av")
+        let expected = emit_type_parser_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        // A globbed in-package compiler-src module MUST import relatively: an absolute
+        // `@std.avrac.` self-import of the package being built makes the metadata lib
+        // build's module graph process the whole package a SECOND time — every
+        // @derive/@expand type double-expands (F4012). This guards the header emitted
+        // by gen_type_parser_header() directly.
+        !emit_type_parser_file().contains("use @std.avrac.")
+    }
+}

@@ -1248,6 +1248,25 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
+/// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
+/// `run_dsl_type_at_shared` (null delegate, `src` threaded so the `@hand(qualified_type)`
+/// leaf reconstructs its `@pkg::T` parse), but drives the CHECKED-IN generated static
+/// type parser (parse/gen_type_parser.av's `parse_type_expr`, passed in as `parse` so
+/// this module needs no import back into `parse`) instead of the Grammar-tree
+/// interpreter (`exec_rule`). Same builders, same PState, same `@hand` leaf ⇒
+/// byte-identical TypeExpr to both the interpreter flip AND the hand parser, at
+/// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
+export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    let te = capval_to_texpr(st, parse(st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
 /// in the caller's shared `store` — patterns are arena-backed, unlike types),
 /// the stop byte for cursor resync, and the error channel.

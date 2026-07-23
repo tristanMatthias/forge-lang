@@ -243,6 +243,29 @@ export fn avra_type_grammar() -> Grammar {
     gp.grammar
 }
 
+/// The PRODUCTION type-expression grammar (t-47hc.4.4 Phase 3d — the static
+/// type-parser source). IDENTICAL to `avra_type_grammar()` above EXCEPT `type_atom`
+/// leads with `@hand(qualified_type)` — the `@pkg::T` qualified-type form the
+/// whole-program grammar (avra_program_grammar, type_atom line ~286) delegates to
+/// the hand parser. This is the family-ISOLATED production view (the sibling of
+/// avra_stmt_flip_grammar / avra_decl_flip_grammar): a self-contained grammar the
+/// generated static type parser (parse/gen_type_parser.av, via run_static_type) is
+/// emitted from, byte-identical to the whole-program grammar's type path (same
+/// rules) and to the hand parser (diff-test-gated). `avra_type_grammar()` stays the
+/// isolated NO-@hand view the emit-gen-check differential uses unchanged.
+export fn avra_type_flip_grammar() -> Grammar {
+    let gp = grammar {
+  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+  type_atom  = @hand(qualified_type) | fn_type | dyn_type | list_type | paren_type | named_type
+  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
+  dyn_type   = "dyn" t:IDENT -> TyDyn(t)
+  list_type  = "[" e:type_expr "]" -> TyList(e)
+  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
+  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+    }
+    gp.grammar
+}
+
 /// The UNIFIED whole-program Avra grammar (ps3t.6.5.7 / the 6.5.11 composed
 /// slice): declarations on top, folding into a `program`, with one canonical
 /// version of each shared rule (declarations + their sub-structure, the
