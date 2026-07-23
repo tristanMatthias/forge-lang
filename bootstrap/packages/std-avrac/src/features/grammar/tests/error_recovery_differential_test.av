@@ -207,3 +207,43 @@ spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
         !rtree(false, src).contains("(expr (*")
     }
 }
+
+// ── t-47hc.3.1 — mandatory mid-rule TERMINAL VALIDATION (strict-by-default emit) ──
+//
+// The generated expression parser now st.reports on a MISSING mandatory mid-rule
+// terminal — matching the interpreter's exec_primary/handle_missing (already
+// strict) and the hand parser's own consume(...) calls (mod.av:1595-1631):
+//   • `is .Variant`  → the `.` and the variant IDENT
+//   • `in [ … ]`     → the closing `]`
+//   • `in a .. b`    → the `..`
+//   • `.Variant(args)` → the variant IDENT and the closing `)`
+// Previously the emit lowered these to a bare unvalidated advance, so a malformed
+// constructor was silently consumed WITHOUT had_error → the DSL-error→hand fallback
+// (parse_expression) never engaged → the recovered TREE could diverge from hand
+// even when the F-code matched (CodeRabbit PR #967, Major). With validation, the
+// report sets had_error → parse_expression re-parses with the authoritative hand
+// oracle, so the F-codes AND the recovered trees match hand byte-for-byte. This
+// spec pins that parity over the exact malformed-constructor corpus the ticket
+// names (`.`, `.(1)`, `.Some(1`, unclosed `[`, missing `..`).
+spec "t-47hc.3.1: malformed mandatory-terminal constructors recover == hand" {
+    then "malformed enum-ctor / is-check constructors: F-codes agree" {
+        agree("fn f() -> int {\n let x = .\n return 0\n}") &&
+        agree("fn f() -> int {\n let x = .(1)\n return 0\n}") &&
+        agree("fn f() -> int {\n let x = .Some(1\n return 0\n}") &&
+        agree("fn f() -> int {\n let b = x is Foo\n return 0\n}") &&
+        agree("fn f() -> int {\n let b = x is .\n return 0\n}")
+    }
+    then "malformed in-membership constructors: F-codes agree" {
+        agree("fn f() -> int {\n let b = x in [1, 2\n return 0\n}") &&
+        agree("fn f() -> int {\n let b = x in 1 2\n return 0\n}")
+    }
+    then "the recovered TREES agree with hand (strictly stronger than F-codes)" {
+        agree_tree("fn f() -> int {\n let x = .\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let x = .(1)\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let x = .Some(1\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let b = x is Foo\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let b = x is .\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let b = x in [1, 2\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let b = x in 1 2\n return 0\n}")
+    }
+}

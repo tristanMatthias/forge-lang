@@ -765,10 +765,12 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
 }
 
 /// A One terminal (Lit / Named / a terminal group). A repetition-captured
-/// label pushes the token; an optional-scalar assigns; a mandatory scalar
-/// `let`s; the guard token (idx 0) is consumed unconditionally; a later
-/// unlabelled terminal is checked — @expect swaps the message and @recover
-/// synchronises, else a lenient consume.
+/// label pushes the token; an optional-scalar assigns; the guard token (idx 0)
+/// is consumed unconditionally (its FIRST already proved it). A later MANDATORY
+/// terminal (labeled or not) is VALIDATED strict-by-default — matching the
+/// interpreter's exec_primary/handle_missing — and st.reports on a mismatch
+/// (→ had_error → the authoritative hand fallback); @expect swaps the message,
+/// @recover synchronises.
 fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     if str_in(list_labels, item.label) {
         return "${ind}${item.label}_list.push(st.advance())\n"
@@ -780,21 +782,39 @@ fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string, l
         if item.label == "" { return "${ind}let _ = st.advance()\n" }
         return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
     }
-    if item.label != "" {
-        return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
-    }
+    // A MANDATORY non-first terminal. The grammar requires this token here, so —
+    // matching the interpreter's exec_primary (handle_missing ALWAYS reports on a
+    // missing terminal, labeled or not; executor.av) — VALIDATE the kind/text and
+    // st.report on a mismatch. That report sets had_error on the (sandboxed) PState;
+    // the production runner (parse_expression / decl_static) then DISCARDS the DSL
+    // result and re-parses with the authoritative hand oracle, so the recovery TREE
+    // matches hand byte-for-byte. @expect swaps the message; @recover adds a
+    // synchronize. BYTE-IDENTICAL on VALID input: the token is present, the `if`
+    // branch is taken, the `else` is dead — and on a mismatch the cursor does NOT
+    // advance either way (the lenient form never advanced on mismatch either), so the
+    // built tree is identical; only had_error flips (→ the fallback). The report
+    // message is DISCARDED on the fallback (only had_error matters), so a plain
+    // `expected <t>` — no backticks to escape — is deterministic and sufficient.
     let t = prim_lit_text(item.prim)
     let cond = term_guard(item.prim)
     let exp = expect_for(annots, t)
-    if exp.found {
-        mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
-        out = out + "${ind}    st.report(\"${exp.msg}\")\n"
-        let sync = recover_target(annots)
-        if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
-        out = out + "${ind}}\n"
-        return out
+    let msg = if exp.found { exp.msg } else { "expected ${t}" }
+    let sync = recover_target(annots)
+    if item.label != "" {
+        // Bind the label to the current token in the else so downstream
+        // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
+        mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(st.advance()) } else {\n"
+        outl = outl + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
+        outl = outl + "${ind}    CapVal.Tok(st.cur())\n"
+        outl = outl + "${ind}}\n"
+        return outl
     }
-    "${ind}if ${cond} { let _ = st.advance() }\n"
+    mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
+    out = out + "${ind}    st.report(\"${msg}\")\n"
+    if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
+    out = out + "${ind}}\n"
+    out
 }
 
 /// An optional group `( … )?` → an if guarded by the group's FIRST. The
