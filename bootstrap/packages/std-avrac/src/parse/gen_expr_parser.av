@@ -120,7 +120,7 @@ fn parse_eq_tail(st: PState) -> CapVal {
         if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
             st.report("expected .")
         }
-        let v = if st.cur().kind == "IDENT" { CapVal.Tok(st.advance()) } else {
+        let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
             st.report("expected IDENT")
             CapVal.Tok(st.cur())
         }
@@ -147,7 +147,7 @@ fn parse_in_rhs(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBracket {
         mut a_list: List<ExprId> = []
         let _ = st.advance()
-        if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.cur().kind == "NUMBER" || st.cur().kind == "STRING" || st.cur().kind == "BOOL" || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().kind == "TEMPLATE" || st.cur().kind == "IDENT" || tok_starts_expr_leaf(st.cur()) {
+        if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || st.cur().tk == Tk.Identifier || tok_starts_expr_leaf(st.cur()) {
             a_list.push(capval_to_expr(st, parse_expression(st)))
             while st.cur().tk == Tk.Comma {
                 let _ = st.advance()
@@ -159,7 +159,7 @@ fn parse_in_rhs(st: PState) -> CapVal {
         }
         return CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(a_list)))
     }
-    if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.cur().kind == "NUMBER" || st.cur().kind == "STRING" || st.cur().kind == "BOOL" || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().kind == "TEMPLATE" || st.cur().kind == "IDENT" || tok_starts_expr_leaf(st.cur()) {
+    if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || st.cur().tk == Tk.Identifier || tok_starts_expr_leaf(st.cur()) {
         let s = parse_bitor(st)
         if st.cur().tk == Tk.DotDot { let _ = st.advance() } else {
             st.report("expected ..")
@@ -195,7 +195,7 @@ fn parse_unary(st: PState) -> CapVal {
         let operand = parse_unary(st)
         return CapVal.Node(unary_expr(st, op, operand))
     }
-    if st.cur().kind == "NUMBER" {
+    if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -213,7 +213,7 @@ fn parse_unary(st: PState) -> CapVal {
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
-    if st.cur().kind == "STRING" {
+    if st.cur().tk == Tk.String {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -231,7 +231,7 @@ fn parse_unary(st: PState) -> CapVal {
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
-    if st.cur().kind == "BOOL" {
+    if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -472,7 +472,7 @@ fn parse_unary(st: PState) -> CapVal {
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
-    if st.cur().kind == "TEMPLATE" {
+    if st.cur().tk == Tk.Template {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -489,7 +489,7 @@ fn parse_unary(st: PState) -> CapVal {
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
-    if st.cur().kind == "IDENT" {
+    if st.cur().tk == Tk.Identifier {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -527,13 +527,13 @@ fn parse_variant_ctor(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut a_list: List<ExprId> = []
     let _ = st.advance()
-    let v = if st.cur().kind == "IDENT" { CapVal.Tok(st.advance()) } else {
+    let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
         st.report("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
-        if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.cur().kind == "NUMBER" || st.cur().kind == "STRING" || st.cur().kind == "BOOL" || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().kind == "TEMPLATE" || st.cur().kind == "IDENT" || tok_starts_expr_leaf(st.cur()) {
+        if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || st.cur().text == "match" || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || st.cur().tk == Tk.Identifier || tok_starts_expr_leaf(st.cur()) {
             a_list.push(capval_to_expr(st, parse_expression(st)))
             while st.cur().tk == Tk.Comma {
                 let _ = st.advance()

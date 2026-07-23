@@ -26,10 +26,10 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
     then "the pattern dispatch guards the leading forms and delegates" {
         let src = emit_all()
         // ps3t.6.7 perf: the `.` (variant) guard dispatches on the Tk enum (tk_guard);
-        // the STRING named terminal still matches by kind.
+        // the STRING named terminal now dispatches on the Tk enum too (t-47hc.4.1.9).
         src.contains("if st.cur().tk == Tk.Dot {") &&
         src.contains("return parse_variant_pat(st)") &&
-        src.contains("if st.cur().kind == \"STRING\" {")
+        src.contains("if st.cur().tk == Tk.String {")
     }
 
     then "the or-pattern is a conditional build over the optional right side" {

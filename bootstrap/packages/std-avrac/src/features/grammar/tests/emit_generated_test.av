@@ -168,9 +168,11 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // The token base is captured (`let b = CapVal.Tok(st.advance())`) then the
         // postfix loop is SEEDED off it (`st.seed_postfix(capval_to_expr(st, b), sp_start)`)
         // so the grammar-built base threads into postfix_step exactly like the @hand base.
-        src.contains("if st.cur().kind == \"NUMBER\" {") &&
-        src.contains("if st.cur().kind == \"STRING\" {") &&
-        src.contains("if st.cur().kind == \"BOOL\" {") &&
+        // t-47hc.4.1.9: named-terminal FIRST guards lower to `Tk` enum compares
+        // (NUMBER/BOOL are many-to-one → parenthesised disjunctions).
+        src.contains("if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {") &&
+        src.contains("if st.cur().tk == Tk.String {") &&
+        src.contains("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") &&
         // null/none are keyword tokens (no distinct grammar kind), matched by text.
         src.contains("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
         src.contains("let b = CapVal.Tok(st.advance())") &&
@@ -199,7 +201,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // order here too so a generator-order regression fails loudly at this layer.
         // Check the first (BOOL), and the last two guarded branches (null/none, then the
         // .Variant enum-ctor) all precede the tail.
-        src.index_of("if st.cur().kind == \"BOOL\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
+        src.index_of("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
         src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
         src.index_of("let base = parse_variant_ctor(st)") < src.index_of("run_hand_expr(\"primary_base\", st)")
     }

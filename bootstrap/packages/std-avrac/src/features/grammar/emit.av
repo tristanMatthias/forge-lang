@@ -1145,10 +1145,32 @@ fn tk_guard(text: string) -> string {
     "st.cur().tk == Tk.${v}"
 }
 
+/// Emit a NAMED-terminal guard (IDENT / NUMBER / STRING / BOOL / TEMPLATE / …)
+/// as a `Tk`-enum compare instead of the `.kind` string compare — t-47hc.4.1.9,
+/// the perf payoff for the whole expr-leaf migration's accumulated FIRST guards.
+/// BYTE-IDENTICAL by construction: each returned disjunction matches EXACTLY the
+/// `Tk` set `tk_to_grammar_kind` (real_lex.av) folds into that kind string, so a
+/// token selects the same branch either way. NUMBER (Number|Float) and BOOL
+/// (KwTrue|KwFalse) are the two many-to-one kinds → parenthesised disjunctions
+/// (safe when inlined into a larger `||` FIRST chain). Any kind outside the known
+/// vocabulary keeps the `.kind` string compare (defensive; the set is closed).
+fn named_tk_guard(tok: string) -> string {
+    if tok == "IDENT"    { return "st.cur().tk == Tk.Identifier" }
+    if tok == "NUMBER"   { return "(st.cur().tk == Tk.Number || st.cur().tk == Tk.Float)" }
+    if tok == "STRING"   { return "st.cur().tk == Tk.String" }
+    if tok == "BOOL"     { return "(st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse)" }
+    if tok == "TEMPLATE" { return "st.cur().tk == Tk.Template" }
+    if tok == "EOF"      { return "st.cur().tk == Tk.Eof" }
+    if tok == "DOC"      { return "st.cur().tk == Tk.DocComment" }
+    if tok == "MODDOC"   { return "st.cur().tk == Tk.ModDocComment" }
+    if tok == "ERROR"    { return "st.cur().tk == Tk.Error" }
+    "st.cur().kind == \"${tok}\""
+}
+
 fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
     match prim {
         .Lit(t) -> tk_guard(t)
-        .Named(tok) -> "st.cur().kind == \"${tok}\""
+        .Named(tok) -> named_tk_guard(tok)
         .Hand(hf) -> hand_first_guard(hf)
         .Group(inner) -> node_first_guard(g, inner, visited)
         .Ref(name) -> rule_first_guard(g, name, visited)
@@ -1161,8 +1183,8 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
 
 /// Mirrors executor.hand_starts as a guard expression.
 fn hand_first_guard(hf: string) -> string {
-    if hf == "ident" { return "st.cur().kind == \"IDENT\"" }
-    if hf == "number" { return "st.cur().kind == \"NUMBER\"" }
+    if hf == "ident" { return named_tk_guard("IDENT") }
+    if hf == "number" { return named_tk_guard("NUMBER") }
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
@@ -1181,10 +1203,10 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "list_expr" { return tk_guard("[") }
     if hf == "qualified_expr" { return tk_guard("@") }
     if hf == "paren_expr" { return tk_guard("(") }
-    if hf == "ident_primary" { return "st.cur().kind == \"IDENT\"" }
-    if hf == "template_expr" { return "st.cur().kind == \"TEMPLATE\"" }
+    if hf == "ident_primary" { return named_tk_guard("IDENT") }
+    if hf == "template_expr" { return named_tk_guard("TEMPLATE") }
     if hf == "brace_expr" { return tk_guard("{") }
-    if hf == "ident_expr" { return "st.cur().kind == \"IDENT\" || ${tk_guard("@")}" }
+    if hf == "ident_expr" { return "${named_tk_guard("IDENT")} || ${tk_guard("@")}" }
     if hf == "more_primary" { return "${tk_guard(".")} || ${tk_guard("[")}" }
     // The leaf's FIRST is the shared exported predicate (executor's
     // tok_starts_expr_leaf) — the emitted static parser calls it directly, so
@@ -1420,11 +1442,11 @@ fn prim_lit_text(prim: GPrim) -> string {
 }
 
 /// A single terminal's guard (no rule crossing) — a literal on `.text`, a
-/// named terminal on `.kind`.
+/// named terminal on the `Tk` enum (t-47hc.4.1.9).
 fn term_guard(prim: GPrim) -> string {
     match prim {
         .Lit(t) -> tk_guard(t)
-        .Named(tok) -> "st.cur().kind == \"${tok}\""
+        .Named(tok) -> named_tk_guard(tok)
         _ -> "false"
     }
 }
