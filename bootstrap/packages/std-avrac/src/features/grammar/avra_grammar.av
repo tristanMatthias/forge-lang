@@ -75,6 +75,8 @@ export fn avra_expr_grammar() -> Grammar {
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
              | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
+             | b:NUMBER ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
+             | b:STRING ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
     }
     gp.grammar
