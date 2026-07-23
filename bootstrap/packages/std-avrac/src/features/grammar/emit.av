@@ -1159,6 +1159,10 @@ fn node_first_guard(g: Grammar, node: GNode, visited: List<string>) -> string {
 /// `cell_mode` is a real bool; the `allow_*` flags are int-as-bool.
 fn pred_guard(flag: string) -> string {
     if flag == "cell_mode" { return "st.modes.cell_mode" }
+    // `at_quote_top` = NOT inside a quote body — quote_depth is a COUNTER (not an
+    // int-as-bool), so it needs its own guard (== 0), the byte-side twin of
+    // executor.modes_flag's at_quote_top case. Gates the grammar-owned `~` bitnot.
+    if flag == "at_quote_top" { return "st.modes.quote_depth == 0" }
     "st.modes.${flag} != 0"
 }
 
