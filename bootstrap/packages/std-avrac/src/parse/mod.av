@@ -2365,6 +2365,52 @@ impl Parser {
         .Ok(self.alloc_at(Expr.Grouping(expr), sp_start))
     }
 
+    // The identifier-led primary (Phase 3a-8): bare `Ident`, `Ident { … }` struct
+    // literal (@allow_struct_lit), `table { … }` / `table<Row> { … }` table literal
+    // (peek_is_table_row_type char-lookahead), `kw { … }` feature-keyword dispatch
+    // (lookup_expr_parser registry), and tagged template. Extracted from parse_primary
+    // so the grammar owns the IDENT FIRST via @hand(ident_primary); all the IDENT-led
+    // disambiguation stays inside this hand method (no grammar mechanism needed).
+    fn parse_ident_expr(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        let name = self.current_lexeme
+        self.advance()
+        // Table literal: `table { ... }` / typed `table<Row> { ... }` — checked
+        // BEFORE struct-lit (both start ident+{); `table<...>` is a table only when
+        // the `<` leads `Ident > {` (else it's a comparison on a var named `table`).
+        if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
+            return self.parse_table_literal()
+        }
+        // Registered `kw { … }` feature construct (grammar / sql / regex): dispatch
+        // to the feature's parse_expr (owns the block). sp_start is the keyword start
+        // so the node span begins at the keyword. Gated on allow_struct_lit + placed
+        // BEFORE struct-lit so `grammar {` never falls through to a StructLit.
+        if self.allow_struct_lit && self.check(Tk.LeftBrace) {
+            let ekw_raw = lookup_expr_parser(self.features, name)
+            if ekw_raw != null {
+                let handler: fn(Parser, int) -> Result<ExprId, string> = ekw_raw!
+                return handler(self, sp_start)
+            }
+        }
+        if self.allow_struct_lit && self.check(Tk.LeftBrace) {
+            self.advance()
+            let parsed = self.parse_field_init_list()?
+            if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
+                return .Err("parse error")
+            }
+            return .Ok(self.alloc_at(Expr.StructLit(name, parsed.inits), sp_start))
+        }
+        // Tagged template: `tag`…`  → tag(desugar_template(raw))
+        if self.check(Tk.Template) {
+            let raw = self.current_lexeme
+            self.advance()
+            let template_id = self.desugar_template(raw)?
+            let tag_callee = self.alloc_leaf(Expr.Ident(name))
+            return .Ok(self.alloc_at(Expr.Call(tag_callee, [template_id]), sp_start))
+        }
+        .Ok(self.alloc_leaf(Expr.Ident(name)))
+    }
+
     fn parse_primary(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
         // Fully-qualified name `@pkg::mod::name` in expression position —
@@ -2434,50 +2480,7 @@ impl Parser {
         }
 
         if self.check(Tk.Identifier) {
-            let name = self.current_lexeme
-            self.advance()
-            // Table literal: `table { ... }` or typed `table<Row> { ... }`.
-            // Must check BEFORE struct literal since both start with ident + {.
-            // `table {` is always a table literal. `table<...>` is one only
-            // when the `<` is followed by `Ident > {` — otherwise it's a
-            // comparison on a variable named `table` (e.g. `table < 10`).
-            if name == "table" && (self.check(Tk.LeftBrace) || (self.check(Tk.Less) && self.peek_is_table_row_type())) {
-                return self.parse_table_literal()
-            }
-            // Registered `kw { … }` expression construct (grammar / future
-            // sql, regex, …): dispatch to the feature's `parse_expr`, which
-            // owns the block. Positioned at `{` (the keyword identifier is
-            // already consumed), so `sp_start` — the keyword's start offset —
-            // is passed explicitly so the generated node's byte span begins
-            // at the keyword, not the `{`. Gated on allow_struct_lit like
-            // struct literals so a brace in a control-flow header (`if x {`)
-            // is never mis-read as a block, and placed BEFORE the struct-lit
-            // branch so `grammar {` never falls through to a StructLit.
-            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
-                let ekw_raw = lookup_expr_parser(self.features, name)
-                if ekw_raw != null {
-                    let handler: fn(Parser, int) -> Result<ExprId, string> = ekw_raw!
-                    return handler(self, sp_start)
-                }
-            }
-            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
-                self.advance()
-                let parsed = self.parse_field_init_list()?
-                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
-                    return .Err("parse error")
-                }
-                return .Ok(self.alloc_at(Expr.StructLit(name, parsed.inits), sp_start))
-            }
-            // Tagged template: `tag`template with ${expr}`
-            // Desugars to: tag(desugar_template(raw))
-            if self.check(Tk.Template) {
-                let raw = self.current_lexeme
-                self.advance()
-                let template_id = self.desugar_template(raw)?
-                let tag_callee = self.alloc_leaf(Expr.Ident(name))
-                return .Ok(self.alloc_at(Expr.Call(tag_callee, [template_id]), sp_start))
-            }
-            return .Ok(self.alloc_leaf(Expr.Ident(name)))
+            return self.parse_ident_expr()
         }
 
         if self.check(Tk.LeftParen) {
