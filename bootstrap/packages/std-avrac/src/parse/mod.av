@@ -288,6 +288,14 @@ export type Parser = {
     // (the isolated pattern grammar — the program grammar carries no pattern
     // rules yet) lazily, once, exactly like `dsl_grammar`.
     mut pat_flip: bool,
+    // t-47hc.4.4 Phase 3d (pattern half): when true, parse_pattern_or drives the
+    // CHECKED-IN generated static pattern parser (parse/gen_pat_parser.av's
+    // parse_pattern_or, via run_static_pat) instead of the Grammar-tree interpreter
+    // (run_dsl_pattern_at_shared). Straight-line speed, byte-identical to both the
+    // interpreter flip AND the hand parser (diff-test-gated). PROMOTED default-ON
+    // (sibling of type_static); `AVRA_PARSER_PAT_STATIC=0` falls back to the
+    // interpreter (pat_flip), then hand.
+    mut pat_static: bool,
     mut dsl_pat_grammar: Grammar?,
     // ps3t.6.7 expression-family swap-in: when true, parse_expression delegates
     // the whole expression to the grammar-DSL (avra_expr_grammar's full ladder —
@@ -687,6 +695,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         grammar_toks: [],
         dsl_grammar: null,
         pat_flip: avra_process_env_get("AVRA_PARSER_PAT_FLIP") != "0",
+        pat_static: avra_process_env_get("AVRA_PARSER_PAT_STATIC") != "0",
         dsl_pat_grammar: null,
         // Default OFF (opt-in via AVRA_PARSER_EXPR_FLIP=1) until the full-selfhost
         // byte-identity proof promotes it — unlike type/pat_flip, which are on.
@@ -1276,6 +1285,7 @@ impl Parser {
             d.expr_static = false
             d.decl_static = false
             d.type_static = false
+            d.pat_static = false
             self.hand_delegate = d
         }
         self.hand_delegate!

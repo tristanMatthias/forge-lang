@@ -1,0 +1,22 @@
+// WHY: t-47hc.4.4 Phase 3d (pattern half) — the production boundary binding the
+// CHECKED-IN generated pattern static parser (parse.gen_pat_parser's `parse_pattern_or`)
+// to the shared-token runner (run_static_pat_at_shared). Kept as a THIN, separate module
+// so the match_expr parser imports ONE clearly-named runner (`run_static_pat`) instead of
+// the generated module's free `parse_pattern_or`, which would shadow the Parser method of
+// the same name. This is the only place the generated module is imported, so the emitter
+// (emit.av) stays out of the production graph entirely — match_expr/parser.av →
+// static_pat_entry → gen_pat_parser → grammar pattern-builders, never → emit.av. Sibling
+// of static_expr_entry / static_decl_entry / static_type_entry.
+
+use parse.gen_pat_parser.{parse_pattern_or}
+use features.grammar.{run_static_pat_at_shared, Token, PState, CapVal, DslPatResult}
+use core.{NodeStore}
+
+/// Drive the generated static pattern parser (the `pattern_or` root — atoms, `or`, and
+/// nested variant sub-patterns) over the shared token stream at `start_byte`, into the
+/// caller-owned `store` — the static sibling of run_dsl_pattern_at_shared (the Grammar-
+/// tree interpreter). Same builders, same PState ⇒ byte-identical PatId to both the
+/// interpreter flip AND the hand parser, at straight-line speed.
+export fn run_static_pat(toks: List<Token>, start_byte: int, src: string, store: NodeStore) -> DslPatResult {
+    run_static_pat_at_shared(toks, start_byte, src, store, parse_pattern_or)
+}
