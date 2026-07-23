@@ -931,6 +931,14 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
     if name == "quote_expr" { return tok.text == "quote" }
+    // The keyword-led expression primaries (Phase 3a-11): each FIRST is its
+    // leading keyword, routed to the feature's hand parser via run_hand_expr.
+    if name == "match_expr" { return tok.text == "match" }
+    if name == "if_expr" { return tok.text == "if" }
+    if name == "spawn_expr" { return tok.text == "spawn" }
+    if name == "channel_expr" { return tok.text == "channel" }
+    if name == "isolated_expr" { return tok.text == "isolated" }
+    if name == "when_expr" { return tok.text == "when" }
     // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
     if name == "template_expr" { return tok.kind == "TEMPLATE" }
     // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
@@ -1381,7 +1389,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1412,6 +1420,16 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// (→ StmtId) and `run_hand_type` (→ TypeExpr): the `@hand` delegation now spans
 /// all three live node kinds. `parse_quote` tracks `quote_depth` internally, so
 /// a `~` splice in the quote body is decided identically to the oracle parse.
+/// True iff an @hand expression rule produces a POSTFIX-CHAIN BASE that the
+/// grammar's `( postfix_suffix )*` loop then wraps — so run_hand_expr must seed
+/// st.postfix_base from its result (emit skips the seed for @hand bases, so the
+/// base self-seeds here, exactly as `primary_base` does). primary_base + every
+/// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
+/// postfix_suffix / with_suffix does NOT.
+fn hand_seeds_postfix(name: string) -> bool {
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "quote_expr"
+}
+
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // Split preconditions so each reports its OWN cause (a bad rule name vs a
     // missing source), and rely solely on error_node — which reports the
@@ -1471,6 +1489,15 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     bp.postfix_sp_start = st.postfix_sp_start
     let result = match name {
         "quote_expr"    -> bp.parse_quote()
+        // Keyword-led expression primaries (Phase 3a-11) — the grammar's `unary`
+        // rule dispatches each keyword FIRST to its feature parser, the same call
+        // parse_primary's `if check(Kw) -> parse_<kw>_expression()` chain makes.
+        "match_expr"    -> bp.parse_match_expression()
+        "if_expr"       -> bp.parse_if_expression()
+        "spawn_expr"    -> bp.parse_spawn_expression()
+        "channel_expr"  -> bp.parse_channel_expression()
+        "isolated_expr" -> bp.parse_isolated_expression()
+        "when_expr"     -> bp.parse_when_expression()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()
         "ident_expr"    -> bp.parse_primary()
@@ -1506,7 +1533,7 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // the NEXT ( postfix_suffix )* iteration — and the interpreter's fresh-parser
     // path — sees it. Threaded via PState so both the shared-delegate production
     // path and the equivalence-test path carry the base across the grammar loop.
-    if name == "primary_base" {
+    if hand_seeds_postfix(name) {
         match result {
             .Ok(id) -> st.seed_postfix(id, start_byte)
             .Err(_) -> {}
