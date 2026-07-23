@@ -1286,6 +1286,12 @@ impl Parser {
             d.decl_static = false
             d.type_static = false
             d.pat_static = false
+            // The delegate is the pure-hand differential ORACLE for @hand leaves —
+            // disable pat_flip too so nested match patterns parse via parse_pattern_or_hand
+            // directly, not the Grammar-tree interpreter (byte-identical, but the interpreter
+            // on the oracle path is pointless: on failure it falls to the same hand parser).
+            // Matches expr_flip/decl_flip/stmt_flip already being off here.
+            d.pat_flip = false
             self.hand_delegate = d
         }
         self.hand_delegate!
