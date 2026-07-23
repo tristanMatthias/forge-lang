@@ -1617,6 +1617,10 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
     if t.kind == "NUMBER" { return st.store.intern_expr_leaf(Expr.Number(t.text)) }
     if t.kind == "STRING" { return st.store.intern_expr_leaf(Expr.String(t.text)) }
     if t.kind == "BOOL" { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
+    // `null` / `none` are keyword tokens (Tk.KwNull/KwNone → the generic "KW" grammar
+    // kind), so they match by tk here rather than kind — byte-identical to hand
+    // parse_primary's `Tk.KwNull|KwNone -> alloc_leaf(Expr.None)` (the absence literal).
+    if t.tk == Tk.KwNull || t.tk == Tk.KwNone { return st.store.intern_expr_leaf(Expr.None) }
     st.store.intern_expr_leaf(Expr.Ident(t.text))
 }
 
