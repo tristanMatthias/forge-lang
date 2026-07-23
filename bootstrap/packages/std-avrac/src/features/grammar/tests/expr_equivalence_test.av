@@ -89,8 +89,8 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("~a * ~b") && agree("~(a + b)")
         }
     }
-    given "literal-base postfix chains (Phase 3a-7: grammar-owned NUMBER/STRING base + seeding)" {
-        then "string/number literals thread into the postfix + `with` loop identically to hand" {
+    given "literal-base postfix chains (Phase 3a-7: grammar-owned NUMBER/STRING/BOOL base + seeding)" {
+        then "string/number/bool literals thread into the postfix + `with` loop identically to hand" {
             // The grammar now OWNS NUMBER/STRING as the postfix-loop BASE (before the
             // @hand tail). This exercises the exec_seq base-seeding hook: a grammar-built
             // literal base must seed st.postfix_base so the first postfix_suffix wraps it,
@@ -99,7 +99,11 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("\"hi\".length") && agree("\"a\"[0]") && agree("\"x\".foo(1)") &&
             agree("\"a\".b.c") && agree("\"p\" with { x: 1 }") &&
             agree("5?") && agree("5!") && agree("42[0]") &&
-            agree("1 + 1") && agree("\"a\" + \"a\"")
+            agree("1 + 1") && agree("\"a\" + \"a\"") &&
+            // bool literal base (slice 2: grammar-owned BOOL → literal_node)
+            agree("true") && agree("false") && agree("true && false") &&
+            agree("true.foo") && agree("false == true") && agree("!true") &&
+            agree("true with { x: 1 }")
         }
     }
     given "string literals and mixed nesting" {
