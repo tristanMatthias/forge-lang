@@ -79,6 +79,18 @@ export type ArgListIds = {
     ids: List<ExprId>,
 }
 
+/// One iteration of the postfix chain (`postfix_step`, the shared loop body of
+/// `parse_call`). `rid` is the arena id after this step; `progressed` = the loop
+/// should run again (a suffix was consumed and more may follow). A STOPPING step
+/// (entry guard not matched, generic-call speculation failed, or a `!`-only tail
+/// that reaches the non-postfix arm) still returns its accumulated `rid` — the
+/// caller adopts `rid` BEFORE checking `progressed`, so the `!`-wrapped result of
+/// the trailing non-postfix arm (`a!` at EOF) is never dropped.
+export type PostfixStep = {
+    rid: ExprId,
+    progressed: bool,
+}
+
 /// One parse of a struct-literal field-init list. `inits` are the parsed
 /// field initializers with shorthand expanded; each carries its value's
 /// arena id in `value_id`.
@@ -1850,193 +1862,216 @@ impl Parser {
         expr_is_upper_ident(result)
     }
 
-    fn parse_call(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let primary_id = self.parse_primary()?
-
-        // Dual cursor through the postfix loop: `rid` is the arena id of the
-        // expression built so far, `result` its boxed payload (the loop's
-        // shape dispatch — dot_is_postfix, is_callable, is_method — reads the
-        // boxed node). Every wrap reassigns both.
-        mut rid = primary_id
-        mut result = self.expr_of(primary_id)
-        // If [ appears on a DIFFERENT line than the previous token,
-        // it's a new statement (list literal), not postfix indexing.
-        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
-            // Force-unwrap `expr!` is a no-op pass-through since we
-            // don't track nullability in the value tag.
-            while self.check(Tk.Bang) {
-                self.advance()
-                // Call(Ident($force_unwrap), [subject]) — fresh callee leaf,
-                // the subject rides in the flipped Call's id fields (leaf row).
-                let fu_callee = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
-                result = Expr.Call(fu_callee, [rid])
-                rid = self.alloc_at(result, sp_start)
-            }
-            // Error propagation: `expr?` — if null, return .Err("parse error")
-            // from the enclosing function.
-            if self.check(Tk.Question) {
-                self.advance()
-                result = Expr.Try(rid)
-                rid = self.alloc_at(result, sp_start)
-                continue
-            }
-            // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
-            let catch_line = self.current_line
-            let catch_col = self.current_column
-            if self.check(Tk.KwCatch) {
-                self.advance()
-                mut binding = ""
-                if self.check(Tk.LeftParen) {
-                    self.advance()
-                    binding = self.consume_identifier("expected error binding name after `catch (`")?
-                    if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return .Err("parse error") }
-                }
-                if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return .Err("parse error") }
-                let saved_dot = self.allow_dot_postfix
-                self.allow_dot_postfix = true
-                let body_stmts = self.parse_statement_list_ids(true)?
-                self.allow_dot_postfix = saved_dot
-                if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
-                let handler = Expr.Block(body_stmts.ids)
-                let handler_id = self.alloc_leaf(handler)
-                // Flipped Catch.inner/.body are ExprId scalars (walker-opaque) — the
-                // node holds both arena ids directly, so the Catch row is a leaf.
-                result = Expr.Catch(rid, binding, handler_id, catch_line, catch_col)
-                rid = self.alloc_at(result, sp_start)
-                continue
-            }
-            // Optional chaining `expr?.field` / `expr?.method(args)`.
-            //   `?.field`  keeps the `OptionalChain` AST node — a clean node
-            //              macros/`quote` can see — codegen'd via the shared
-            //              field accessor (emit_field_on_value).
-            //   `?.method(args)` has no AST node (one would need a seed cycle),
-            //              so it desugars to the if-let shape, applying an
-            //              ORDINARY method call to the force-unwrapped receiver:
-            //              `{ let $t = recv; if $t != none { $t!.m(args) } else none }`.
-            //              Both routes ultimately reuse the normal access codegen.
-            if self.check(Tk.QuestionDot) {
-                self.advance()
-                let field = self.consume_field_name("expected field name after `?.`")?
-                if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
-                    self.advance()
-                    let saved_it = self.allow_it_sugar
-                    self.allow_it_sugar = true
-                    let parsed = self.parse_arg_list_ids()?
-                    self.allow_it_sugar = saved_it
-                    if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
-                    result = Expr.OptionalMethodCall(rid, field, parsed.ids)
-                    rid = self.alloc_at(result, sp_start)
-                } else {
-                    result = Expr.OptionalChain(rid, field)
-                    rid = self.alloc_at(result, sp_start)
-                }
-            } else if self.check(Tk.LeftBracket) {
-                self.advance()
-                let idx = self.parse_expression()?
-                // Slice: list[start..end]
-                if self.check(Tk.DotDot) {
-                    self.advance()
-                    let end = self.parse_expression()?
-                    if !self.consume(Tk.RightBracket, "expected `]` after slice") {
-                        return .Err("parse error")
-                    }
-                    result = Expr.Slice(rid, idx, end)
-                    rid = self.alloc_at(result, sp_start)
-                    continue
-                }
-                if !self.consume(Tk.RightBracket, "expected `]` after index") {
-                    return .Err("parse error")
-                }
-                result = Expr.Index(rid, idx)
-                rid = self.alloc_at(result, sp_start)
-            } else if self.check(Tk.Less) && is_callable(result) {
-                // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
-                match self.try_parse_generic_call(rid) {
-                    .Ok(g) -> {
-                        rid = g
-                        result = self.expr_of(g)
-                        continue
-                    }
-                    .Err(_) -> {}
-                }
-                return .Ok(rid)
-            } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
-                return .Ok(rid)
-            } else {
+    /// ONE iteration of the postfix chain — the shared loop body of `parse_call`,
+    /// factored out so the production grammar's `unary` rule can own the postfix
+    /// loop structure while delegating each suffix to this exact hand code (Phase
+    /// 3a, t-47hc.4.1.1). `rid_in` is the accumulated base; `sp_start` the chain's
+    /// start byte (the constant `lo` for every suffix's `[lo, next-token)` span).
+    /// The entry guard is the former `while` condition on the CURRENT token; every
+    /// arm is verbatim from the old monolithic loop. Returns `progressed:false` for
+    /// the three former loop-exit paths (guard not matched, generic-call `.Err`, the
+    /// trailing non-postfix arm) and `progressed:true` for every consuming arm (a
+    /// former `continue` or fall-through back to the loop top). `result` is
+    /// recomputed from `rid_in` each call — identical to the old threaded `result`,
+    /// since the guards read only the variant + name, which survive the arena
+    /// round-trip.
+    fn postfix_step(self, rid_in: ExprId, sp_start: int) -> Result<PostfixStep, string> {
+        mut rid = rid_in
+        mut result = self.expr_of(rid_in)
+        // Entry guard = the former postfix `while` condition on the current token.
+        // If [ appears on a DIFFERENT line than the previous token, it's a new
+        // statement (list literal), not postfix indexing.
+        if !((self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result) && (!self.cell_mode || self.current_line == self.prev_line)) || (self.check(Tk.Bang) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch)) {
+            return .Ok(PostfixStep { rid: rid, progressed: false })
+        }
+        // Force-unwrap `expr!` is a no-op pass-through since we
+        // don't track nullability in the value tag.
+        while self.check(Tk.Bang) {
+            self.advance()
+            // Call(Ident($force_unwrap), [subject]) — fresh callee leaf,
+            // the subject rides in the flipped Call's id fields (leaf row).
+            let fu_callee = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+            result = Expr.Call(fu_callee, [rid])
+            rid = self.alloc_at(result, sp_start)
+        }
+        // Error propagation: `expr?` — if null, return .Err("parse error")
+        // from the enclosing function.
+        if self.check(Tk.Question) {
+            self.advance()
+            result = Expr.Try(rid)
+            rid = self.alloc_at(result, sp_start)
+            return .Ok(PostfixStep { rid: rid, progressed: true })
+        }
+        // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
+        let catch_line = self.current_line
+        let catch_col = self.current_column
+        if self.check(Tk.KwCatch) {
+            self.advance()
+            mut binding = ""
             if self.check(Tk.LeftParen) {
                 self.advance()
-                // Enable `it` sugar for method calls (obj.method(it * 2))
-                // but not for regular function calls (to prevent
-                // double-wrapping in `f(it)` inside `.map(f(it))`).
+                binding = self.consume_identifier("expected error binding name after `catch (`")?
+                if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return .Err("parse error") }
+            }
+            if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return .Err("parse error") }
+            let saved_dot = self.allow_dot_postfix
+            self.allow_dot_postfix = true
+            let body_stmts = self.parse_statement_list_ids(true)?
+            self.allow_dot_postfix = saved_dot
+            if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return .Err("parse error") }
+            let handler = Expr.Block(body_stmts.ids)
+            let handler_id = self.alloc_leaf(handler)
+            // Flipped Catch.inner/.body are ExprId scalars (walker-opaque) — the
+            // node holds both arena ids directly, so the Catch row is a leaf.
+            result = Expr.Catch(rid, binding, handler_id, catch_line, catch_col)
+            rid = self.alloc_at(result, sp_start)
+            return .Ok(PostfixStep { rid: rid, progressed: true })
+        }
+        // Optional chaining `expr?.field` / `expr?.method(args)`.
+        //   `?.field`  keeps the `OptionalChain` AST node — a clean node
+        //              macros/`quote` can see — codegen'd via the shared
+        //              field accessor (emit_field_on_value).
+        //   `?.method(args)` has no AST node (one would need a seed cycle),
+        //              so it desugars to the if-let shape, applying an
+        //              ORDINARY method call to the force-unwrapped receiver:
+        //              `{ let $t = recv; if $t != none { $t!.m(args) } else none }`.
+        //              Both routes ultimately reuse the normal access codegen.
+        if self.check(Tk.QuestionDot) {
+            self.advance()
+            let field = self.consume_field_name("expected field name after `?.`")?
+            if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
+                self.advance()
                 let saved_it = self.allow_it_sugar
-                let is_method = match result {
-                    .FieldAccess(_, _) -> true
-                    _ -> false
-                }
-                // Enable it sugar for method calls OR if already enabled (e.g. pipe RHS)
-                self.allow_it_sugar = is_method || saved_it
+                self.allow_it_sugar = true
                 let parsed = self.parse_arg_list_ids()?
                 self.allow_it_sugar = saved_it
+                if !self.consume(Tk.RightParen, "expected `)` after arguments") { return .Err("parse error") }
+                result = Expr.OptionalMethodCall(rid, field, parsed.ids)
+                rid = self.alloc_at(result, sp_start)
+            } else {
+                result = Expr.OptionalChain(rid, field)
+                rid = self.alloc_at(result, sp_start)
+            }
+        } else if self.check(Tk.LeftBracket) {
+            self.advance()
+            let idx = self.parse_expression()?
+            // Slice: list[start..end]
+            if self.check(Tk.DotDot) {
+                self.advance()
+                let end = self.parse_expression()?
+                if !self.consume(Tk.RightBracket, "expected `]` after slice") {
+                    return .Err("parse error")
+                }
+                result = Expr.Slice(rid, idx, end)
+                rid = self.alloc_at(result, sp_start)
+                return .Ok(PostfixStep { rid: rid, progressed: true })
+            }
+            if !self.consume(Tk.RightBracket, "expected `]` after index") {
+                return .Err("parse error")
+            }
+            result = Expr.Index(rid, idx)
+            rid = self.alloc_at(result, sp_start)
+        } else if self.check(Tk.Less) && is_callable(result) {
+            // Explicit type args: `f<int>(x)` — speculative parse with backtracking.
+            match self.try_parse_generic_call(rid) {
+                .Ok(g) -> {
+                    rid = g
+                    return .Ok(PostfixStep { rid: rid, progressed: true })
+                }
+                .Err(_) -> {}
+            }
+            return .Ok(PostfixStep { rid: rid, progressed: false })
+        } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
+            return .Ok(PostfixStep { rid: rid, progressed: false })
+        } else {
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            // Enable `it` sugar for method calls (obj.method(it * 2))
+            // but not for regular function calls (to prevent
+            // double-wrapping in `f(it)` inside `.map(f(it))`).
+            let saved_it = self.allow_it_sugar
+            let is_method = match result {
+                .FieldAccess(_, _) -> true
+                _ -> false
+            }
+            // Enable it sugar for method calls OR if already enabled (e.g. pipe RHS)
+            self.allow_it_sugar = is_method || saved_it
+            let parsed = self.parse_arg_list_ids()?
+            self.allow_it_sugar = saved_it
+            if !self.consume(Tk.RightParen, "expected `)` after arguments") {
+                return .Err("parse error")
+            }
+            result = Expr.Call(rid, parsed.ids)
+            rid = self.alloc_at(result, sp_start)
+        } else {
+            self.advance()
+            // Tuple index: `t.0`, `t.1` — number after dot
+            if self.check(Tk.Number) {
+                let idx_text = self.current_lexeme
+                self.advance()
+                result = Expr.TupleIndex(rid, int(idx_text))
+                rid = self.alloc_at(result, sp_start)
+                return .Ok(PostfixStep { rid: rid, progressed: true })
+            }
+            let field = self.consume_field_name("expected field name after `.`")?
+            // Detect enum constructor: `Type.Variant(args)`. We
+            // distinguish from method calls by requiring the
+            // head Ident to start with an uppercase letter
+            // Avra convention: types are PascalCase).
+            let type_name = match result {
+                .Ident(n) -> {
+                    if p_starts_with_upper(n) {
+                        n
+                    } else {
+                        ""
+                    }
+                }
+                // A fully-qualified type head `@pkg::mod::Type.Variant(args)`
+                // is an enum constructor too — the renderer emits resolved
+                // enum ctors this way so a shipped @comptime body round-trips
+                // with its enum type intact (pqc9/znl0). Without this the
+                // reconstructed value carries an empty enum_type and fails to
+                // decode back into a Stmt/Expr. Gated on a PascalCase LAST
+                // segment, mirroring the bare-Ident rule — a lowercase last
+                // segment (`@pkg::mod::a_const.method(args)`) is a method
+                // call on a qualified value, not an enum construction.
+                .QualifiedIdent(n) -> if p_qualified_last_upper(n) { n } else { "" }
+                _ -> ""
+            }
+            if type_name != "" && self.check(Tk.LeftParen) {
+                self.advance()
+                let parsed = self.parse_arg_list_ids()?
                 if !self.consume(Tk.RightParen, "expected `)` after arguments") {
                     return .Err("parse error")
                 }
-                result = Expr.Call(rid, parsed.ids)
+                // The arg ids ride verbatim in the flipped payload; the
+                // ctor node itself is a leaf (its children ARE the id
+                // fields, so the arena records no edges).
+                result = Expr.EnumCtor(type_name, field, parsed.ids)
                 rid = self.alloc_at(result, sp_start)
             } else {
-                self.advance()
-                // Tuple index: `t.0`, `t.1` — number after dot
-                if self.check(Tk.Number) {
-                    let idx_text = self.current_lexeme
-                    self.advance()
-                    result = Expr.TupleIndex(rid, int(idx_text))
-                    rid = self.alloc_at(result, sp_start)
-                    continue
-                }
-                let field = self.consume_field_name("expected field name after `.`")?
-                // Detect enum constructor: `Type.Variant(args)`. We
-                // distinguish from method calls by requiring the
-                // head Ident to start with an uppercase letter
-                // Avra convention: types are PascalCase).
-                let type_name = match result {
-                    .Ident(n) -> {
-                        if p_starts_with_upper(n) {
-                            n
-                        } else {
-                            ""
-                        }
-                    }
-                    // A fully-qualified type head `@pkg::mod::Type.Variant(args)`
-                    // is an enum constructor too — the renderer emits resolved
-                    // enum ctors this way so a shipped @comptime body round-trips
-                    // with its enum type intact (pqc9/znl0). Without this the
-                    // reconstructed value carries an empty enum_type and fails to
-                    // decode back into a Stmt/Expr. Gated on a PascalCase LAST
-                    // segment, mirroring the bare-Ident rule — a lowercase last
-                    // segment (`@pkg::mod::a_const.method(args)`) is a method
-                    // call on a qualified value, not an enum construction.
-                    .QualifiedIdent(n) -> if p_qualified_last_upper(n) { n } else { "" }
-                    _ -> ""
-                }
-                if type_name != "" && self.check(Tk.LeftParen) {
-                    self.advance()
-                    let parsed = self.parse_arg_list_ids()?
-                    if !self.consume(Tk.RightParen, "expected `)` after arguments") {
-                        return .Err("parse error")
-                    }
-                    // The arg ids ride verbatim in the flipped payload; the
-                    // ctor node itself is a leaf (its children ARE the id
-                    // fields, so the arena records no edges).
-                    result = Expr.EnumCtor(type_name, field, parsed.ids)
-                    rid = self.alloc_at(result, sp_start)
-                } else {
-                    result = Expr.FieldAccess(rid, field)
-                    rid = self.alloc_at(result, sp_start)
-                }
-            }
+                result = Expr.FieldAccess(rid, field)
+                rid = self.alloc_at(result, sp_start)
             }
         }
+        }
+        .Ok(PostfixStep { rid: rid, progressed: true })
+    }
 
+    fn parse_call(self) -> Result<ExprId, string> {
+        let sp_start = self.current_start
+        // The postfix chain's dual cursor now lives in `postfix_step`, which runs
+        // ONE suffix per call over the accumulated `rid` (the production grammar's
+        // `unary` rule folds the same steps — Phase 3a). The primary is the chain
+        // base; `sp_start` (its start byte) is the constant span `lo`.
+        mut rid = self.parse_primary()?
+        while true {
+            let s = self.postfix_step(rid, sp_start)?
+            // Adopt `rid` BEFORE the progress check so a stopping step that still
+            // wrapped the base (the trailing `a!`-at-EOF arm) keeps its result.
+            rid = s.rid
+            if !s.progressed { break }
+        }
         .Ok(rid)
     }
 
