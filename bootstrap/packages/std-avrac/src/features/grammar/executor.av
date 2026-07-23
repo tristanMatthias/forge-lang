@@ -340,7 +340,7 @@ export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, modes: ExprModes, file: string, hand_delegate: Parser? }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, hand_delegate: Parser? }
 
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
@@ -380,6 +380,19 @@ impl PState {
     /// here would double-report.
     fn note_had_error(self) {
         self.had_error = true
+    }
+
+    /// Phase 3a base-threading (self-ptr mutators): `seed_postfix` records the
+    /// primary base + the chain's start byte (`@hand(primary_base)` result);
+    /// `set_postfix_base` updates the accumulator after each `postfix_suffix` step.
+    /// Via self-ptr so both the shared-delegate production path and the fresh-parser
+    /// interpreter path carry the base across the grammar's ( postfix_suffix )* loop.
+    fn seed_postfix(self, base: ExprId, sp: int) {
+        self.postfix_base = base
+        self.postfix_sp_start = sp
+    }
+    fn set_postfix_base(self, base: ExprId) {
+        self.postfix_base = base
     }
 
     /// Roll the cursor + diagnostics + error flag back to a pre-speculation
@@ -511,7 +524,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: d }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: d }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -537,7 +550,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -572,7 +585,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -596,7 +609,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -629,7 +642,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// path) so a `@hand` type rule (`@pkg::T` → `run_hand_type` → parse_type_atom)
 /// can delegate over the original source (ps3t.6.5.10).
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -908,6 +921,14 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
     // The `with`-base leaf shares the same leaf FIRST (parse_unary_leaf).
     if name == "call_leaf" { return tok_starts_expr_leaf(tok) }
+    // The Phase-3a primary base shares the leaf FIRST (parse_primary_base).
+    if name == "primary_base" { return tok_starts_expr_leaf(tok) }
+    // A postfix suffix's FIRST is the postfix-op set (`. ( [ ! ? ?. < catch`) — a
+    // SUPERSET of postfix_step's precise entry guard (which adds sameline/mode/base
+    // checks). The grammar `( )*` loop enters on any of these, postfix_step then
+    // decides precisely, and the no-progress break exits when it consumes nothing
+    // (byte-identical to parse_call's `while` guard being false).
+    if name == "postfix_suffix" { return tok.text == "." || tok.text == "(" || tok.text == "[" || tok.text == "!" || tok.text == "?" || tok.text == "?." || tok.text == "<" || tok.text == "catch" }
     // A `with { … }` postfix step's FIRST is the `with` keyword.
     if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
@@ -1175,7 +1196,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1200,7 +1221,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1224,7 +1245,7 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1244,7 +1265,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
 /// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
     let expr = capval_to_expr(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1267,7 +1288,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1315,7 +1336,7 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1333,7 +1354,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "with_suffix" || name == "pipe_rhs"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1416,6 +1437,11 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     bp.expr_flip = false
     bp.expr_static = false
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    // Phase 3a base-threading: seed the delegate's postfix accumulator from PState so
+    // parse_postfix_suffix runs its step on the grammar-threaded base. Harmless for
+    // every other name — only parse_postfix_suffix reads bp.postfix_base.
+    bp.postfix_base = st.postfix_base
+    bp.postfix_sp_start = st.postfix_sp_start
     let result = match name {
         "quote_expr"    -> bp.parse_quote()
         "template_expr" -> bp.parse_template_primary()
@@ -1433,6 +1459,11 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // parse_call: the `~` splice/BitNot prefix (parse_call can't parse `~`) must
         // stay here so splice-in-quote stays byte-identical.
         "call_leaf"     -> bp.parse_unary_leaf()
+        // Phase 3a: the primary base (splice/prefix + parse_primary, NO postfix
+        // chain) and ONE postfix step over the threaded base. The grammar's `unary`
+        // rule owns the postfix loop as `( postfix_suffix )*` over `primary_base`.
+        "primary_base"   -> bp.parse_primary_base()
+        "postfix_suffix" -> bp.parse_postfix_suffix()
         // One `with { … }` postfix step → a PARTIAL Expr.With (placeholder receiver,
         // rebound by fold_with_expr). The partial's span carries this step's end byte.
         "with_suffix"   -> bp.parse_with_suffix()
@@ -1442,6 +1473,20 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
+    // Phase 3a base-threading (write-back): primary_base seeds the postfix
+    // accumulator on PState (sp_start = the base's start byte, the chain's constant
+    // span `lo`); each postfix_suffix step updated bp.postfix_base, copied back so
+    // the NEXT ( postfix_suffix )* iteration — and the interpreter's fresh-parser
+    // path — sees it. Threaded via PState so both the shared-delegate production
+    // path and the equivalence-test path carry the base across the grammar loop.
+    if name == "primary_base" {
+        match result {
+            .Ok(id) -> st.seed_postfix(id, start_byte)
+            .Err(_) -> {}
+        }
+    } else if name == "postfix_suffix" {
+        st.set_postfix_base(bp.postfix_base)
+    }
     // Propagate the delegate's error STATE even on .Ok (ps3t.6.7 Slice 5.4) — the
     // expression-family mirror of run_hand_stmt's guard. An expression leaf can
     // hand-parse a nested STATEMENT body (a closure body, an if-expr/match arm),
@@ -1590,6 +1635,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "fold_pipe" if args.length == 2 -> CapVal.Node(fold_pipe_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "fold_with" if args.length == 2 -> CapVal.Node(fold_with_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
+        "fold_postfix_with" if args.length == 3 -> CapVal.Node(fold_postfix_with_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
@@ -2511,6 +2557,24 @@ export fn fold_pipe_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) 
 export fn fold_with_expr(st: PState, sp_start: int, baseCap: CapVal, suffixesCap: CapVal) -> ExprId {
     mut acc = capval_to_expr(st, baseCap)
     for s in capval_nodes(suffixesCap) {
+        acc = rebind_with(st, sp_start, acc, s)
+    }
+    acc
+}
+
+/// The Phase-3a postfix+with fold: the grammar's `unary` rule collects the primary
+/// base, the postfix-chain steps, and the `with` suffixes, and this picks the final
+/// node. Each `postfix_suffix` returns the FULLY-accumulated base after that step
+/// (postfix_step wraps the running `rid`), so the LAST postfix node IS the complete
+/// postfix-chain result — already precisely spanned by postfix_step's `alloc_at`, so
+/// there is NO re-span here. `pCap` empty ⇒ no postfix ⇒ the base passes through.
+/// The `with` suffixes then fold over it via rebind_with exactly as fold_with_expr
+/// does (sp_start = the chain start; sp_start < 0 = the interpreter's span-free
+/// oracle path, like the sibling folds).
+export fn fold_postfix_with_expr(st: PState, sp_start: int, baseCap: CapVal, pCap: CapVal, sCap: CapVal) -> ExprId {
+    let ps = capval_nodes(pCap)
+    mut acc = if ps.length == 0 { capval_to_expr(st, baseCap) } else { ps[ps.length - 1] }
+    for s in capval_nodes(sCap) {
         acc = rebind_with(st, sp_start, acc, s)
     }
     acc
