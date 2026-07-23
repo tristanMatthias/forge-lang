@@ -117,8 +117,13 @@ fn parse_equality(st: PState) -> CapVal {
 fn parse_eq_tail(st: PState) -> CapVal {
     if st.cur().text == "is" {
         let _ = st.advance()
-        if st.cur().tk == Tk.Dot { let _ = st.advance() }
-        let v = CapVal.Tok(st.advance())
+        if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
+            st.report("expected .")
+        }
+        let v = if st.cur().kind == "IDENT" { CapVal.Tok(st.advance()) } else {
+            st.report("expected IDENT")
+            CapVal.Tok(st.cur())
+        }
         return CapVal.Node(mk_is_expr(st, v))
     }
     if st.cur().text == "in" {
@@ -149,12 +154,16 @@ fn parse_in_rhs(st: PState) -> CapVal {
                 a_list.push(capval_to_expr(st, parse_expression(st)))
             }
         }
-        if st.cur().tk == Tk.RightBracket { let _ = st.advance() }
+        if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
+            st.report("expected ]")
+        }
         return CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(a_list)))
     }
     if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.cur().kind == "NUMBER" || st.cur().kind == "STRING" || st.cur().kind == "BOOL" || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || tok_starts_expr_leaf(st.cur()) {
         let s = parse_bitor(st)
-        if st.cur().tk == Tk.DotDot { let _ = st.advance() }
+        if st.cur().tk == Tk.DotDot { let _ = st.advance() } else {
+            st.report("expected ..")
+        }
         let e = parse_bitor(st)
         return CapVal.Node(mk_inrange_expr(st, s, e))
     }
@@ -297,7 +306,10 @@ fn parse_variant_ctor(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut a_list: List<ExprId> = []
     let _ = st.advance()
-    let v = CapVal.Tok(st.advance())
+    let v = if st.cur().kind == "IDENT" { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
         if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.cur().kind == "NUMBER" || st.cur().kind == "STRING" || st.cur().kind == "BOOL" || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || tok_starts_expr_leaf(st.cur()) {
@@ -307,7 +319,9 @@ fn parse_variant_ctor(st: PState) -> CapVal {
                 a_list.push(capval_to_expr(st, parse_expression(st)))
             }
         }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected )")
+        }
     }
     CapVal.Node(mk_enum_ctor_expr(st, sp_start, v, CapVal.Nodes(a_list)))
 }

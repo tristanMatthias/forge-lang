@@ -753,48 +753,84 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
         // via emit_node_items (an if/else-if dispatch for a multi-branch one).
         .Group(inner) -> {
             if prim_yields_token(item.prim) {
-                return emit_one_terminal(item, idx, annots, ind, list_labels, opts)
+                return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
             }
             emit_node_items(g, inner, ind, list_labels, opts)
         }
         // A `@when` predicate emits nothing (zero-width); emit_seq_items already
         // skips it, so this is a defensive no-op for any other caller.
         .Pred(_) -> ""
-        _ -> emit_one_terminal(item, idx, annots, ind, list_labels, opts)
+        _ -> emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
     }
 }
 
-/// A One terminal (Lit / Named / a terminal group). A repetition-captured
-/// label pushes the token; an optional-scalar assigns; a mandatory scalar
-/// `let`s; the guard token (idx 0) is consumed unconditionally; a later
-/// unlabelled terminal is checked — @expect swaps the message and @recover
-/// synchronises, else a lenient consume.
-fn emit_one_terminal(item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+/// A One terminal (Lit / Named / a terminal group). The guard token (idx 0) is
+/// consumed unconditionally in every capture form (its FIRST already proved it).
+/// A later (idx > 0) MANDATORY terminal — scalar, list-captured, optional-captured,
+/// OR a terminal-alternation group — is VALIDATED strict-by-default, matching the
+/// interpreter's exec_primary/handle_missing: it st.reports on a mismatch
+/// (→ had_error → the authoritative hand fallback); @expect swaps the message,
+/// @recover synchronises. The guard is `prim_first_guard` (not `term_guard`) so a
+/// mandatory `("a" | "b")` group emits its FIRST disjunction rather than a bogus
+/// always-failing `false`.
+fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    // The primary's FIRST-set guard. For .Lit/.Named this is the SAME single-token
+    // compare `term_guard` produced (byte-identical); for a terminal-alternation
+    // .Group it is the FIRST disjunction (`term_guard` returned `false` for a group
+    // — an always-failing check that rejected valid input; this is the fix).
+    let cond = prim_first_guard(g, item.prim, [])
+    let t = prim_lit_text(item.prim)
+    let exp = expect_for(annots, t)
+    // The message is DISCARDED on the production fallback (only had_error matters),
+    // so a plain `expected <t>` (no backticks) is deterministic; a group has no
+    // single lexeme (t == "") → a generic label.
+    let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected ${t}" }
+    let sync = recover_target(annots)
+
+    // A repetition-captured terminal (`( … x:IDENT … )*`). idx==0 is the loop guard
+    // (the enclosing `while` FIRST proved it) → unconditional push; a non-first
+    // captured terminal validates first — the sibling of the executor's per-item
+    // exec_primary inside a repetition (strict there too).
     if str_in(list_labels, item.label) {
-        return "${ind}${item.label}_list.push(st.advance())\n"
+        if idx == 0 { return "${ind}${item.label}_list.push(st.advance())\n" }
+        mut o = "${ind}if ${cond} { ${item.label}_list.push(st.advance()) } else {\n"
+        o = o + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + "${ind}}\n"
+        return o
     }
+    // An optional-captured scalar terminal — same idx discipline.
     if str_in(opts, item.label) {
-        return "${ind}${item.label} = CapVal.Tok(st.advance())\n"
+        if idx == 0 { return "${ind}${item.label} = CapVal.Tok(st.advance())\n" }
+        mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(st.advance()) } else {\n"
+        o = o + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + "${ind}}\n"
+        return o
     }
     if idx == 0 {
         if item.label == "" { return "${ind}let _ = st.advance()\n" }
         return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
     }
+    // A MANDATORY non-first SCALAR terminal. BYTE-IDENTICAL on VALID input: the
+    // token is present, the `if` is taken, the `else` is dead; and on a mismatch the
+    // cursor does not advance either way, so the built tree is identical — only
+    // had_error flips (→ the fallback, which re-parses with the hand oracle).
     if item.label != "" {
-        return "${ind}let ${item.label} = CapVal.Tok(st.advance())\n"
+        // Bind the label to the current token in the else so downstream
+        // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
+        mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(st.advance()) } else {\n"
+        outl = outl + "${ind}    st.report(\"${msg}\")\n"
+        if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
+        outl = outl + "${ind}    CapVal.Tok(st.cur())\n"
+        outl = outl + "${ind}}\n"
+        return outl
     }
-    let t = prim_lit_text(item.prim)
-    let cond = term_guard(item.prim)
-    let exp = expect_for(annots, t)
-    if exp.found {
-        mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
-        out = out + "${ind}    st.report(\"${exp.msg}\")\n"
-        let sync = recover_target(annots)
-        if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
-        out = out + "${ind}}\n"
-        return out
-    }
-    "${ind}if ${cond} { let _ = st.advance() }\n"
+    mut out = "${ind}if ${cond} { let _ = st.advance() } else {\n"
+    out = out + "${ind}    st.report(\"${msg}\")\n"
+    if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
+    out = out + "${ind}}\n"
+    out
 }
 
 /// An optional group `( … )?` → an if guarded by the group's FIRST. The
