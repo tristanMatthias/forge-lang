@@ -1,0 +1,47 @@
+// WHY: t-47hc.10 SPIKE — compiler-inserted backtracking on a repetition, proving
+// the ONE capability the current predictive-LL engine lacks (the @hand root cause).
+//
+// The trailing-comma paradox: in `list = "[" ( NUMBER ( "," NUMBER )* ","? )? "]"`,
+// the `( "," NUMBER )*` loop, on the TRAILING comma, greedily consumes the `,` then
+// requires a NUMBER — which fails at `]`. A predictive `*` cannot un-consume the
+// `,`, so the trailing `","?` never fires and the list ERRORS. Every real language
+// with trailing commas (lists, args, tuples) is @hand today for exactly this reason.
+//
+// The fix is NOT new machinery: it is the `@try` snapshot quad (store mark + cursor
+// + diags + had_error) applied PER-ITERATION in exec_repeat. On a partial match
+// (body added a diagnostic) the iteration rolls back and the loop stops, leaving the
+// `,` for the following `","?`. The author writes plain grammar; the ENGINE handles
+// the backtrack. This is the differential proof that the capability works.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+
+fn errs(grammar_src: string, input: string) -> bool {
+    let gp = parse_grammar(grammar_src)
+    run_grammar_expr(gp.grammar, input).had_error
+}
+
+// A trailing-comma-tolerant list, written as PLAIN grammar — no @try, no @hand.
+const LIST: string = "list = \"[\" ( NUMBER ( \",\" NUMBER )* \",\"? )? \"]\""
+
+spec "t-47hc.10 spike: backtracking `*` dissolves the trailing comma" {
+    then "a plain multi-element list parses" {
+        !errs(LIST, "[ 1 , 2 , 3 ]")
+    }
+    then "a single-element list parses" {
+        !errs(LIST, "[ 1 ]")
+    }
+    then "an empty list parses" {
+        !errs(LIST, "[ ]")
+    }
+    then "a TRAILING-COMMA list parses (the capability the engine lacked)" {
+        !errs(LIST, "[ 1 , 2 , ]")
+    }
+    then "a single-element trailing comma parses" {
+        !errs(LIST, "[ 1 , ]")
+    }
+    then "a DOUBLE/leading comma still errors — no over-acceptance" {
+        errs(LIST, "[ 1 , , 2 ]")
+    }
+    then "an unterminated list still errors" {
+        errs(LIST, "[ 1 , 2")
+    }
+}

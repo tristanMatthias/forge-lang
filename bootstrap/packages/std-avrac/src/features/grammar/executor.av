@@ -859,14 +859,66 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
 /// The `*` loop body shared by Star and Plus: keep taking the primary
 /// while the current token starts it, binding into list captures.
 /// Bounded — a non-consuming iteration breaks the loop.
+/// t-47hc.10: does a repetition ROLL BACK a partial iteration? Only when its
+/// body is a SEPARATOR-LED group — `( SEP … )*` / `( SEP … )+` whose first
+/// element is a terminal. In that shape a partial match (the SEP is consumed,
+/// then the rest of the group fails) means the SEP is a DANGLING SEPARATOR that
+/// belongs to the FOLLOW-set (the trailing-comma / trailing-`.` case), so rolling
+/// it back and stopping the loop is correct. A bare `item*` — a ref like
+/// `declaration*`, or a lone terminal — has no such danglable prefix: a partial
+/// failure there is a REAL error that MUST surface (else a malformed declaration
+/// inside a top-level `declaration*` is silently swallowed), so it does NOT
+/// backtrack. This is the structural signature of the FIRST/FOLLOW conflict the
+/// production engine will derive from a computed FOLLOW set (not built yet —
+/// first_follow.av is FIRST-only); the shape check is its sound approximation for
+/// the separated-list case.
+fn repeat_backtracks(prim: GPrim) -> bool {
+    match prim {
+        .Group(inner) -> match inner {
+            .Alt(branches) -> {
+                if branches.length == 0 { return false }
+                if branches[0].items.length == 0 { return false }
+                match branches[0].items[0].prim {
+                    .Lit(_) -> true
+                    .Named(_) -> true
+                    _ -> false
+                }
+            }
+        }
+        _ -> false
+    }
+}
+
 fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
     let empty: List<string> = []
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop.
+    let bt = repeat_backtracks(item.prim)
     while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
         let before = st.pos
-        let v = exec_primary(g, item.prim, st, env, true, annots)
-        bind(env, item.label, v, true)
+        if bt {
+            // COMPILER-INSERTED backtracking (t-47hc.10) on a separator-led
+            // repetition: snapshot the `@try` quad (store mark + cursor + diags +
+            // had_error); on a PARTIAL iteration (dangling separator consumed,
+            // then the body failed → a new diagnostic) roll the whole iteration
+            // back and STOP, so a following `SEP?` / terminator takes the
+            // separator. The check PRECEDES bind() so a rolled-back store never
+            // leaves a dangling capture. This dissolves the trailing-comma paradox
+            // without needing a hand-placed @try.
+            let s_mark = st.store.mark()
+            let s_diags = st.diags.length
+            let s_err = st.had_error
+            let v = exec_primary(g, item.prim, st, env, true, annots)
+            if st.diags.length != s_diags || st.had_error != s_err {
+                st.store.truncate_to_mark(s_mark)
+                st.restore_to(before, s_diags, s_err)
+                return
+            }
+            bind(env, item.label, v, true)
+        } else {
+            let v = exec_primary(g, item.prim, st, env, true, annots)
+            bind(env, item.label, v, true)
+        }
         if st.pos == before { return }
     }
 }
