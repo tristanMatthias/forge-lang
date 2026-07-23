@@ -140,7 +140,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL/null/none literals + the postfix chain + `with`, delegating other leaves to @hand" {
+    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL/null/none/.Variant literals + the postfix chain + `with`, delegating other leaves to @hand" {
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
         // directly (unary_expr build). Phase 3a-4 gives the grammar the POSTFIX CHAIN
         // + the `with` postfix: the non-prefix branch is
@@ -176,6 +176,13 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let b = CapVal.Tok(st.advance())") &&
         src.contains("st.seed_postfix(capval_to_expr(st, b), sp_start)") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
+        // Phase 3a-7 slice 4: the contextual enum ctor `.Variant`/`.Variant(args)` is a
+        // grammar-owned RULE (variant_ctor) captured as the postfix-loop base — a `Tk.Dot`-
+        // guarded branch before the @hand tail. The rule fn parses `.`, the variant IDENT,
+        // and an optional args list, building Expr.EnumCtor via mk_enum_ctor_expr.
+        src.contains("fn parse_variant_ctor(st: PState) -> CapVal {") &&
+        src.contains("let base = parse_variant_ctor(st)") &&
+        src.contains("CapVal.Node(mk_enum_ctor_expr(st, sp_start, v, CapVal.Nodes(a_list)))") &&
         // The non-prefix branch is the unguarded fallthrough tail (leading @hand
         // primary_base owns error recovery, so NO FIRST-guard on the branch). The
         // postfix loop's FIRST-set is Tk-dispatched with a no-progress break.
@@ -190,9 +197,11 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // fallback, else the guarded branches would be unreachable (the fallback tail
         // matches anything). gen_expr_parser_regen pins the exact file, but assert the
         // order here too so a generator-order regression fails loudly at this layer.
-        // Check BOTH the first (BOOL) and last (null/none) literal branch precede the tail.
+        // Check the first (BOOL), and the last two guarded branches (null/none, then the
+        // .Variant enum-ctor) all precede the tail.
         src.index_of("if st.cur().kind == \"BOOL\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
-        src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("run_hand_expr(\"primary_base\", st)")
+        src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
+        src.index_of("let base = parse_variant_ctor(st)") < src.index_of("run_hand_expr(\"primary_base\", st)")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
