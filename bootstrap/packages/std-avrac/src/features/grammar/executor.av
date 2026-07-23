@@ -1833,6 +1833,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
         "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
+        "TyDyn" if args.length == 1 -> mk_dyn_type(capval_tok_text(env.get(args[0])), false)
         "TyDyn" if args.length == 2 -> mk_dyn_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
         "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
         // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
