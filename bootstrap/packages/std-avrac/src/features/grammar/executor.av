@@ -689,6 +689,11 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     if flag == "allow_dot_postfix" { return modes.allow_dot_postfix != 0 }
     if flag == "allow_it_sugar" { return modes.allow_it_sugar != 0 }
     if flag == "cell_mode" { return modes.cell_mode }
+    // `at_quote_top` = NOT inside a quote body (quote_depth == 0). Gates the
+    // grammar-owned `~` bitnot: at quote_depth > 0 `~` is the quote SPLICE
+    // operator (hand parse_leaf_common), and the production static parser DOES
+    // run inside quote bodies, so a grammar-owned `~` must fire ONLY at depth 0.
+    if flag == "at_quote_top" { return modes.quote_depth == 0 }
     true
 }
 

@@ -36,12 +36,14 @@ use features.grammar.{parse_grammar, Grammar, compose_grammars}
 /// final postfix node then folds the `with` suffixes over it, each rebuilt with the
 /// hand `alloc_at`'s `[base-start, next-token)` span. `primary_base` (→ `parse_primary_
 /// base` = `parse_leaf_common(false)`) is the splice/prefix + `parse_primary` base
-/// WITHOUT the postfix loop. `~` is deliberately NOT in the prefix guard: it is the
-/// quote SPLICE at `quote_depth > 0`, and the production static parser DOES run inside a
-/// `quote` body (hand `parse_quote` bumps `quote_depth` then re-enters `parse_expression`,
-/// which stays on the static path), so a grammar-owned prefix `~` would misparse splice-
-/// in-quote as `BitNot`. `~`/splice therefore live INSIDE `primary_base`
-/// (`parse_leaf_common` reads `quote_depth`), never the grammar's declarative surface.
+/// WITHOUT the postfix loop. `~` is CONTEXT-OVERLOADED: at `quote_depth == 0` it is the
+/// bitwise-NOT prefix, grammar-owned via a `@when(at_quote_top)` branch (Phase 3a-5) →
+/// `Unary(BitNot, …)`; at `quote_depth > 0` it is the quote SPLICE, and the production
+/// static parser DOES run inside a `quote` body (hand `parse_quote` bumps `quote_depth`
+/// then re-enters `parse_expression`, which stays on the static path), so the `@when`
+/// fails there and `~`/splice falls through to `@hand(primary_base)` (`parse_leaf_common`
+/// reads `quote_depth`). `@when(at_quote_top)` (`modes_flag`/`pred_guard`, executor+emit
+/// lockstep) is the grammar-native mode gate (#954) that makes the split byte-identical.
 /// `parse_unary` / `parse_call` / `parse_primary` are retained as the differential oracle
 /// (Option B — no deletion). That leaf is NOT expressible in the stateless
 /// token-grammar byte-identically: `parse_call`'s
@@ -72,6 +74,7 @@ export fn avra_expr_grammar() -> Grammar {
   term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
+             | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
     }
     gp.grammar

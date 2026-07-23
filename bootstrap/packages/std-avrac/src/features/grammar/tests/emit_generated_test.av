@@ -152,13 +152,15 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // postfix_step's precise guard) with a no-progress break (postfix_step can consume
         // nothing). fold_postfix_with_expr takes the final postfix node then folds the
         // `with` suffixes over it, stamping the hand `[base-start, next-token)` span. `not`
-        // renders as a `.text` compare (keyword spelling). `~` is deliberately NOT in the
-        // prefix guard: it is the quote SPLICE at quote_depth>0, handled INSIDE primary_base
-        // (parse_leaf_common reads quote_depth), so the prefix guard has NO Tk.Tilde.
+        // renders as a `.text` compare (keyword spelling). `~` bitnot is grammar-owned
+        // (Phase 3a-5) via a SEPARATE @when(at_quote_top) branch — the guard is
+        // `st.modes.quote_depth == 0 && Tk.Tilde` — so at quote_depth>0 (where `~` is the
+        // quote SPLICE) it falls through to @hand(primary_base). This is the FIRST @when
+        // use in the production expression grammar (grammar-native mode gating, #954).
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
         src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
-        !src.contains("Tk.Tilde") &&
+        src.contains("if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {") &&
         src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
         // The non-prefix branch is the unguarded fallthrough tail (leading @hand
         // primary_base owns error recovery, so NO FIRST-guard on the branch). The

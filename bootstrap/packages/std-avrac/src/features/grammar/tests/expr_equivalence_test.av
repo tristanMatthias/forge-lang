@@ -78,12 +78,15 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
         then "the `not` keyword prefix (Phase 3a: grammar-owned) agrees" {
             // `not` joins `!`/`-` as a grammar-owned prefix op (unary rule). `not`
             // is NOT dogfooded in compiler src/, so the selfhost diff-test never
-            // exercises it — this equivalence check is the real guard. (`~` is NOT
-            // grammar-owned: it is overloaded as the quote splice at quote_depth>0,
-            // so it stays @hand; the `~b` case above exercises the @hand path.)
+            // exercises it — this equivalence check is the real guard. `~` bitnot at
+            // quote_depth==0 is ALSO grammar-owned now (Phase 3a-5, @when(at_quote_top));
+            // the `~b`/`~a * ~b`/`~(a + b)` cases exercise the grammar branch, while the
+            // SPLICE path (`~` at quote_depth>0) is guarded by composed_program_test's
+            // splice-in-quote case (falls through to @hand there).
             agree("not x") && agree("not not x") &&
             agree("not a && b") && agree("not a || b") &&
-            agree("not (a == b)") && agree("not ~a")
+            agree("not (a == b)") && agree("not ~a") &&
+            agree("~a * ~b") && agree("~(a + b)")
         }
     }
     given "string literals and mixed nesting" {
