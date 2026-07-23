@@ -144,10 +144,17 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a.map(f).filter(g)")
         }
     }
-    given "struct-update `with` (parse_unary with-loop, via the @hand leaf)" {
-        then "single and chained struct updates agree" {
+    given "struct-update `with` (Phase 3a-3: grammar-owned fold_with over the leaf)" {
+        then "single, multi-field, and chained struct updates agree" {
             agree("a with { x: 1 }") && agree("p with { x: 1, y: 2 }") &&
             agree("a with { x: 1 } with { y: 2 }")
+        }
+        then "`with` folds OVER the postfix-chain base (call / field), not under it" {
+            // The base is the whole call_leaf (parse_call) result: `f(x)` / `a.b`
+            // parse fully, THEN `with` wraps the completed base. `f(x) with {a:1}` is
+            // `With(Call(f,[x]), {a:1})`, not `Call(f, [x with {a:1}])`.
+            agree("f(x) with { a: 1 }") && agree("a.b with { c: 2 }") &&
+            agree("f(x) with { a: 1 } with { b: 2 }") && agree("a.b.c with { d: 3 }")
         }
     }
     // ── ps3t.6.7 Step C: the DSL-owned infix layers ABOVE the operator ladder.

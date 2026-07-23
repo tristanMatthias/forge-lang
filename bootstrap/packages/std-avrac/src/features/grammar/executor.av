@@ -906,6 +906,10 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
     // shared exported predicate, mirrored by emit's hand_first_guard.
     if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
+    // The `with`-base leaf shares the same leaf FIRST (parse_unary_leaf).
+    if name == "call_leaf" { return tok_starts_expr_leaf(tok) }
+    // A `with { … }` postfix step's FIRST is the `with` keyword.
+    if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
     if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
     // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
@@ -1329,7 +1333,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "pipe_rhs"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "with_suffix" || name == "pipe_rhs"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1423,6 +1427,15 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // parse_unary → parse_call → parse_primary). The DSL owns only the
         // declarative binary/infix ladder ABOVE this (ps3t.6.7 Step C).
         "hand_unary"    -> bp.parse_unary()
+        // The `with`-BASE leaf (Phase 3a-3): `parse_unary` WITHOUT the `with` loop —
+        // splice/prefix + postfix chain + primary. The grammar's `unary` rule folds
+        // the `with` postfix over this via `with_suffix` + fold_with_expr. NOT
+        // parse_call: the `~` splice/BitNot prefix (parse_call can't parse `~`) must
+        // stay here so splice-in-quote stays byte-identical.
+        "call_leaf"     -> bp.parse_unary_leaf()
+        // One `with { … }` postfix step → a PARTIAL Expr.With (placeholder receiver,
+        // rebound by fold_with_expr). The partial's span carries this step's end byte.
+        "with_suffix"   -> bp.parse_with_suffix()
         // The RHS of a `|>` step — a parse_or-level expr with `it`-sugar on, so
         // the DSL pipe stratum's operands match parse_pipe byte-for-byte.
         "pipe_rhs"      -> bp.parse_pipe_rhs()
@@ -1576,6 +1589,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "fold_nullish" if args.length == 3 -> CapVal.Node(fold_nullish_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         "mk_assign" if args.length == 2 -> CapVal.Node(mk_assign_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "fold_pipe" if args.length == 2 -> CapVal.Node(fold_pipe_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
+        "fold_with" if args.length == 2 -> CapVal.Node(fold_with_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
@@ -2483,6 +2497,34 @@ export fn fold_pipe_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) 
         }
     }
     acc
+}
+
+/// Left-fold the `with` POSTFIX (Phase 3a-3): rebind each PARTIAL `with_suffix`
+/// (`Expr.With(placeholder, overrides)`) onto the accumulated base, stamping the
+/// hand `parse_unary` with-loop's `[base-start, next-token)` span per step — the
+/// twin of fold_pipe_expr/fold_nullish_expr's sp_start threading. Each partial's OWN
+/// span `.hi` is exactly that iteration's end byte (parse_with_suffix stamps `[with-
+/// start, next-token)`), so a chained `a with { } with { }` gets precise per-`With`
+/// spans, not one shared hi. With no suffix the base passes through unchanged (byte-
+/// identical to a plain `parse_call` result). sp_start < 0 is the interpreter's span-
+/// free path (the differential oracle), exactly like the sibling folds.
+export fn fold_with_expr(st: PState, sp_start: int, baseCap: CapVal, suffixesCap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, baseCap)
+    for s in capval_nodes(suffixesCap) {
+        acc = rebind_with(st, sp_start, acc, s)
+    }
+    acc
+}
+
+/// Rebuild a partial `Expr.With(_, overrides)` with `recv` as the receiver, spanned
+/// `[sp_start, <this suffix's end byte>)` — the suffix's own `.hi`, which parse_with_
+/// suffix set to the byte past its `}` (== the hand with-loop's `self.current_start`
+/// at its `alloc_at`). A non-With suffix (never produced) passes `recv` through.
+fn rebind_with(st: PState, sp_start: int, recv: ExprId, suffix: ExprId) -> ExprId {
+    match st.store.exprs.get(suffix) {
+        .With(_, overrides) -> st.store.add_expr(Expr.With(recv, overrides), byte_span(sp_start, st.store.exprs.span_of(suffix).hi), [])
+        _ -> recv
+    }
 }
 
 /// True iff any arg is the `_` pipe placeholder — mirrors mod.av's
