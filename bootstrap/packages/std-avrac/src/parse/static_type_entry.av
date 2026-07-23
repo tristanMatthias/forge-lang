@@ -1,0 +1,22 @@
+// WHY: t-47hc.4.4 Phase 3d — the production boundary binding the CHECKED-IN generated
+// type static parser (parse.gen_type_parser's `parse_type_expr`) to the shared-token
+// runner (run_static_type_at_shared). Kept as a THIN, separate module so parse/mod.av
+// imports ONE clearly-named runner (`run_static_type`) instead of the generated
+// module's free `parse_type_expr`, which would shadow the Parser method of the same
+// name. This is the only place the generated module is imported, so the emitter
+// (emit.av) stays out of the production graph entirely — mod.av → static_type_entry →
+// gen_type_parser → grammar type-builders, never → emit.av. Sibling of
+// static_expr_entry / static_decl_entry.
+
+use parse.gen_type_parser.{parse_type_expr}
+use features.grammar.{run_static_type_at_shared, Token, PState, CapVal, DslTypeResult}
+use core.{NodeStore}
+
+/// Drive the generated static type parser over the shared token stream at
+/// `start_byte`, into the caller-owned `store` — the static sibling of
+/// run_dsl_type_at_shared (the Grammar-tree interpreter). Same builders, same PState,
+/// same `@hand(qualified_type)` leaf ⇒ byte-identical TypeExpr to both the interpreter
+/// flip AND the hand parser, at straight-line speed.
+export fn run_static_type(toks: List<Token>, start_byte: int, src: string, store: NodeStore) -> DslTypeResult {
+    run_static_type_at_shared(toks, start_byte, src, store, parse_type_expr)
+}

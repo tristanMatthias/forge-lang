@@ -25,6 +25,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
 use parse.static_decl_entry.{run_static_decl}
+use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
 use parse.{classify_keyword}
@@ -258,6 +259,13 @@ export type Parser = {
     // (781232 lines) + the difftest corpus. `AVRA_PARSER_TYPE_FLIP=0` restores
     // the hand path as a debug escape hatch.
     mut type_flip: bool,
+    // t-47hc.4.4 Phase 3d: when true, parse_type_expr drives the CHECKED-IN generated
+    // static type parser (parse/gen_type_parser.av's parse_type_expr, via
+    // run_static_type) instead of the Grammar-tree interpreter (run_dsl_type_at_shared).
+    // Straight-line speed, byte-identical to both the interpreter flip AND the hand
+    // parser (diff-test-gated). PROMOTED default-ON (sibling of expr_static/decl_static);
+    // `AVRA_PARSER_TYPE_STATIC=0` falls back to the interpreter (type_flip), then hand.
+    mut type_static: bool,
     // ps3t.6.5.12 lex-once cache (Step D): the grammar-DSL token list for THIS
     // parser's source, lexed at most once (lazily, via `grammar_tokens`) and
     // reused across every type-flip delegation. Empty = not lexed yet (lex_real
@@ -675,6 +683,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         store,
         records_roots: 1,
         type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") != "0",
+        type_static: avra_process_env_get("AVRA_PARSER_TYPE_STATIC") != "0",
         grammar_toks: [],
         dsl_grammar: null,
         pat_flip: avra_process_env_get("AVRA_PARSER_PAT_FLIP") != "0",
@@ -1266,6 +1275,7 @@ impl Parser {
             d.expr_flip = false
             d.expr_static = false
             d.decl_static = false
+            d.type_static = false
             self.hand_delegate = d
         }
         self.hand_delegate!
@@ -3036,8 +3046,16 @@ impl Parser {
     }
 
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
-        if self.type_flip {
-            let dsl = run_dsl_type_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
+        if self.type_static || self.type_flip {
+            // t-47hc.4.4 Phase 3d: the STATIC generated type parser (run_static_type)
+            // when type_static, else the Grammar-tree interpreter (run_dsl_type_at_shared).
+            // Both share the token stream + store + resync below — they differ only in HOW
+            // they drive the identical type-builders, so the DslTypeResult is byte-identical.
+            let dsl = if self.type_static {
+                run_static_type(self.grammar_tokens(), self.current_start, self.source, self.store)
+            } else {
+                run_dsl_type_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
+            }
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.is_at_end() {
                     // Nested-generic close: the DSL splits a `>>` (Tk.Shr) into two

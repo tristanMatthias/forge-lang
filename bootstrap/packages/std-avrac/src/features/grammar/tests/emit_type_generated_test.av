@@ -38,6 +38,8 @@ spec "grammar emitter: renders the type family's generated static parser" {
         src.contains("mk_fn_type(st, capval_present(lp), p_list, capval_present(r), r)") &&
         src.contains("mk_paren_type(t_list)") &&
         src.contains("CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, e)))") &&
-        src.contains("CapVal.TExpr(TypeExpr.Named(capval_tok_text(t)))")
+        // dyn Trait / dyn Trait? — the SHARED mk_dyn_type core (t-47hc.4.4): `dyn X` →
+        // Named(X), the nullable `dyn X?` → Optional(Named), matching the hand parser.
+        src.contains("mk_dyn_type(capval_tok_text(t), capval_present(opt))")
     }
 }
