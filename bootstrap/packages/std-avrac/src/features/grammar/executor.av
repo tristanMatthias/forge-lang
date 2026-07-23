@@ -939,6 +939,10 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "channel_expr" { return tok.text == "channel" }
     if name == "isolated_expr" { return tok.text == "isolated" }
     if name == "when_expr" { return tok.text == "when" }
+    // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
+    // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
+    if name == "list_expr" { return tok.text == "[" }
+    if name == "qualified_expr" { return tok.text == "@" }
     // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
     if name == "template_expr" { return tok.kind == "TEMPLATE" }
     // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
@@ -1389,7 +1393,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1427,7 +1431,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "quote_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr"
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1498,6 +1502,8 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "channel_expr"  -> bp.parse_channel_expression()
         "isolated_expr" -> bp.parse_isolated_expression()
         "when_expr"     -> bp.parse_when_expression()
+        "list_expr"     -> bp.parse_list_expr()
+        "qualified_expr" -> bp.parse_qualified_expr()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()
         "ident_expr"    -> bp.parse_primary()
