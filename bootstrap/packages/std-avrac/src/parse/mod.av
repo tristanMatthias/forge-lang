@@ -218,6 +218,16 @@ export type Parser = {
     // by context — outside a quote, it stays the bitwise-NOT prefix.
     mut quote_depth: int,
     mut current_start: int,   // byte offset where current token started
+    // Base-threading for the grammar-owned postfix chain (Phase 3a,
+    // t-47hc.4.1.1). The grammar's `unary` rule folds `( @hand(postfix_suffix) )*`
+    // over the primary base: `@hand(primary_base)` writes the base here, and each
+    // `postfix_suffix` runs ONE `postfix_step` on it and writes the updated base
+    // back. Unused on the pure-hand path (`parse_call` passes rid/sp_start to
+    // `postfix_step` directly); only the grammar delegate reads them. NOT part of
+    // ParserState save/restore — the base flows as a `postfix_step` local, and
+    // `try_parse_generic_call`'s own save/restore nests inside `postfix_step`.
+    mut postfix_base: ExprId,
+    mut postfix_sp_start: int,
     // Monotonic counter for hygienic temp names in parser desugars
     // (`if let` / `let-else` / `match` present-bind). Use `self.fresh(tag)`
     // to mint a guaranteed-unique `__<tag>_<n>` — collision-proof under
@@ -657,6 +667,8 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         allow_it_sugar: false,
         quote_depth: 0,
         current_start: 0,
+        postfix_base: ExprId(0),
+        postfix_sp_start: 0,
         gensym_seq: 0,
         bag: bag_new(),
         features: build_registry(),
@@ -1744,16 +1756,20 @@ impl Parser {
         .Ok(eid)
     }
 
-    /// The `call_leaf` delegate (@hand): `parse_unary` WITHOUT the trailing `with`
-    /// loop — the splice / prefix-unary layer over the newline-sensitive postfix
-    /// chain (`parse_call`). The production grammar's `unary` rule folds the `with`
-    /// postfix over THIS base (fold_with_expr), so the leaf must NOT consume `with`
-    /// itself. It KEEPS the `~` splice + `! - ~ not` prefix ops (`parse_call` /
-    /// `parse_primary` cannot parse `~`), so `~`/splice-in-quote stay byte-identical
-    /// (they route here, never grammar-owned). The prefix/splice recursions still
-    /// re-enter the FULL `parse_unary`, so `~x with { }` binds the `with` to the
-    /// inner operand (`Unary(BitNot, With(x, …))`) exactly as before.
-    fn parse_unary_leaf(self) -> Result<ExprId, string> {
+    /// The shared expression-leaf body (@hand): the `~` splice + `! - ~ not`
+    /// prefix layer, then EITHER the full postfix chain (`with_postfix = true`, via
+    /// `parse_call`) or just the primary (`with_postfix = false`, via
+    /// `parse_primary`). `parse_call` / `parse_primary` cannot parse `~`, so the
+    /// splice/bitnot handling MUST live here — `~`/splice-in-quote route through
+    /// this leaf, never the grammar, and stay byte-identical. The prefix/splice
+    /// branches recurse the FULL `parse_unary`, so `~x.f` / `-x!` bind their postfix
+    /// inside the recursion exactly as before; the `with_postfix` split only affects
+    /// the fall-through (a bare primary). Two thin @hand delegates wrap it:
+    /// `parse_unary_leaf` (=true, the `call_leaf` seam — `parse_unary` WITHOUT the
+    /// `with` loop) and `parse_primary_base` (=false, the Phase-3a base the grammar
+    /// folds the postfix loop over). The production grammar's `unary` rule folds the
+    /// postfix chain + `with` over the base, so this leaf must NOT consume `with`.
+    fn parse_leaf_common(self, with_postfix: bool) -> Result<ExprId, string> {
         // Splice `~target` inside a quote body — overloads the `~`
         // token. Splice is greedy: `~f(x)` parses as
         // `Splice(Call(f, [x]))`, splicing the entire call. Users
@@ -1791,7 +1807,33 @@ impl Parser {
             let right = self.parse_unary()?
             return .Ok(self.alloc_at(Expr.Unary(op, right), sp_start))
         }
-        self.parse_call()
+        if with_postfix { self.parse_call() } else { self.parse_primary() }
+    }
+
+    /// The `call_leaf` @hand delegate: the full leaf WITH the postfix chain
+    /// (`parse_unary` minus the `with` loop). Unchanged seam for the pre-Phase-3a
+    /// grammar path.
+    fn parse_unary_leaf(self) -> Result<ExprId, string> {
+        self.parse_leaf_common(true)
+    }
+
+    /// The `primary_base` @hand delegate (Phase 3a): the leaf WITHOUT the postfix
+    /// chain — splice/prefix + `parse_primary` only. The grammar's `unary` rule owns
+    /// the postfix loop as `( @hand(postfix_suffix) )*` over THIS base.
+    fn parse_primary_base(self) -> Result<ExprId, string> {
+        self.parse_leaf_common(false)
+    }
+
+    /// The `postfix_suffix` @hand delegate (Phase 3a): ONE `postfix_step` over the
+    /// grammar-threaded accumulated base (`self.postfix_base`, seeded by
+    /// `primary_base` and updated per step by `run_hand_expr`). A no-progress step
+    /// (guard not matched / generic-call speculation failed) returns the base
+    /// UNCHANGED and consumes nothing, so the grammar `( )*` loop's no-progress
+    /// break ends the chain — byte-identical to `parse_call`'s `while` exit.
+    fn parse_postfix_suffix(self) -> Result<ExprId, string> {
+        let s = self.postfix_step(self.postfix_base, self.postfix_sp_start)?
+        self.postfix_base = s.rid
+        .Ok(s.rid)
     }
 
     /// The `with_suffix` delegate (@hand): consume ONE `with { <field-init-list> }`

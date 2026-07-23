@@ -140,32 +140,36 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns ! - not + the `with` postfix, delegating the rest to @hand" {
+    then "the procedural leaf `unary` owns ! - not + the postfix chain + `with`, delegating leaves to @hand" {
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
-        // directly (unary_expr build). Phase 3a-3 additionally gives it the `with`
-        // POSTFIX: the non-prefix branch is `base:@hand(call_leaf) ( s:@hand(with_
-        // suffix) )* -> fold_with(base, s)`. call_leaf (→ parse_unary_leaf) is the
-        // splice/prefix + postfix-chain base (parse_unary WITHOUT the `with` loop);
-        // the grammar folds each `with { … }` (partial with_suffix) over it via
-        // fold_with_expr, stamping the hand `[base-start, next-token)` span (sp_start
-        // captured at branch entry). `not` renders as a `.text` compare (keyword
-        // spelling, like and/or). `~` is deliberately NOT owned: it is the quote
-        // SPLICE at quote_depth>0, and the static parser DOES run inside a quote body
-        // (parse_quote re-enters parse_expression), so a grammar-owned `~` would
-        // misparse splice-in-quote — it stays with @hand(call_leaf), which reads
-        // quote_depth (parse_call/parse_primary can't parse `~` at all).
+        // directly (unary_expr build). Phase 3a-4 gives the grammar the POSTFIX CHAIN
+        // + the `with` postfix: the non-prefix branch is
+        // `base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )*
+        //  -> fold_postfix_with(base, p, s)`. primary_base (→ parse_primary_base) is the
+        // splice/prefix + parse_primary base WITHOUT the postfix loop; the grammar owns
+        // the postfix loop as `( postfix_suffix )*` — each step runs ONE postfix_step over
+        // the base threaded on PState, guarded by the postfix FIRST-set (a SUPERSET of
+        // postfix_step's precise guard) with a no-progress break (postfix_step can consume
+        // nothing). fold_postfix_with_expr takes the final postfix node then folds the
+        // `with` suffixes over it, stamping the hand `[base-start, next-token)` span. `not`
+        // renders as a `.text` compare (keyword spelling). `~` is deliberately NOT in the
+        // prefix guard: it is the quote SPLICE at quote_depth>0, handled INSIDE primary_base
+        // (parse_leaf_common reads quote_depth), so the prefix guard has NO Tk.Tilde.
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
         src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
         !src.contains("Tk.Tilde") &&
         src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
-        // The `with` branch is the LAST alternative = the unguarded fallthrough tail
-        // (matching hand's unconditional parse_call() after the prefix check); call_leaf
-        // owns error recovery for non-expr tokens, so there is NO FIRST-guard here.
-        src.contains("let base = CapVal.Node(run_hand_expr(\"call_leaf\", st))") &&
+        // The non-prefix branch is the unguarded fallthrough tail (leading @hand
+        // primary_base owns error recovery, so NO FIRST-guard on the branch). The
+        // postfix loop's FIRST-set is Tk-dispatched with a no-progress break.
+        src.contains("let base = CapVal.Node(run_hand_expr(\"primary_base\", st))") &&
+        src.contains("while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == \"catch\" {") &&
+        src.contains("p_list.push(capval_to_expr(st, CapVal.Node(run_hand_expr(\"postfix_suffix\", st))))") &&
+        src.contains("if st.pos == __rep_before { break }") &&
         src.contains("while st.cur().text == \"with\" {") &&
         src.contains("s_list.push(capval_to_expr(st, CapVal.Node(run_hand_expr(\"with_suffix\", st))))") &&
-        src.contains("CapVal.Node(fold_with_expr(st, sp_start, base, CapVal.Nodes(s_list)))")
+        src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {

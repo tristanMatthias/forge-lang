@@ -24,23 +24,26 @@ use features.grammar.{parse_grammar, Grammar, compose_grammars}
 /// build helpers, AND the `!` `-` `not` prefix-unary operators directly, via the
 /// `Unary` build (Phase 3a leaf migration, Option B). `not` is safe to own here
 /// because it has NO context overload — it is logical `Not` at every quote depth.
-/// Phase 3a-3 additionally gives the grammar the `with` POSTFIX (`expr with { … }`,
-/// chainable): `unary`'s non-prefix branch is `base:@hand(call_leaf) ( s:@hand(
-/// with_suffix) )* -> fold_with(base, s)` — the `with` loop is a SEPARATE outer loop
-/// over the completed `call_leaf` base (it binds looser than the postfix chain and
-/// does not interleave), so it slices cleanly. `call_leaf` (→ `parse_unary_leaf`) is
-/// `parse_unary` WITHOUT that loop, and `fold_with` rebuilds each `Expr.With(base, …)`
-/// with the hand `alloc_at`'s `[base-start, next-token)` span (the partial `with_suffix`
-/// node carries the per-step end byte). `~` is deliberately NOT owned: it is overloaded
-/// as the quote SPLICE operator at `quote_depth > 0` (hand `parse_unary_leaf`, gated on
-/// `quote_depth > 0`), and the production static parser DOES run inside a `quote` body
-/// (hand `parse_quote` bumps `quote_depth` then re-enters `parse_expression`, which stays
-/// on the static path), so a grammar-owned `~` would misparse splice-in-quote as `BitNot`.
-/// `~`/splice therefore stay with `@hand(call_leaf)` (which reads `quote_depth`) until a
-/// `@when`-gated slice can own them only at depth 0. The REST of the PROCEDURAL leaf —
-/// `~`/splice, the newline-sensitive postfix chain, and every primary form — delegates to
-/// the hand parser via `@hand(call_leaf)` (→ `parse_unary_leaf`; `parse_unary` retained
-/// as the differential oracle). That remaining leaf is NOT expressible in the stateless
+/// Phase 3a-4 gives the grammar the POSTFIX CHAIN + the `with` postfix: `unary`'s
+/// non-prefix branch is
+/// `base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )*
+///  -> fold_postfix_with(base, p, s)`. The grammar OWNS the postfix loop as
+/// `( postfix_suffix )*`: each `postfix_suffix` (→ `parse_postfix_suffix`) runs ONE
+/// hand `postfix_step` over the base threaded on PState (`postfix_base`), so the 8
+/// interleaving forms (call / `[index]` / `?` / `!` / `?.` / dot / generic-call /
+/// `catch`) share the hand loop body byte-for-byte; a step that consumes nothing ends
+/// the chain (the emitted loop's no-progress break). `fold_postfix_with` takes the
+/// final postfix node then folds the `with` suffixes over it, each rebuilt with the
+/// hand `alloc_at`'s `[base-start, next-token)` span. `primary_base` (→ `parse_primary_
+/// base` = `parse_leaf_common(false)`) is the splice/prefix + `parse_primary` base
+/// WITHOUT the postfix loop. `~` is deliberately NOT in the prefix guard: it is the
+/// quote SPLICE at `quote_depth > 0`, and the production static parser DOES run inside a
+/// `quote` body (hand `parse_quote` bumps `quote_depth` then re-enters `parse_expression`,
+/// which stays on the static path), so a grammar-owned prefix `~` would misparse splice-
+/// in-quote as `BitNot`. `~`/splice therefore live INSIDE `primary_base`
+/// (`parse_leaf_common` reads `quote_depth`), never the grammar's declarative surface.
+/// `parse_unary` / `parse_call` / `parse_primary` are retained as the differential oracle
+/// (Option B — no deletion). That leaf is NOT expressible in the stateless
 /// token-grammar byte-identically: `parse_call`'s
 /// postfix loop is newline-sensitive (`.UpperIdent`/`[`/`(` on a new line = a new
 /// statement) and mode-stateful (`allow_struct_lit`, `allow_dot_postfix`,
@@ -69,7 +72,7 @@ export fn avra_expr_grammar() -> Grammar {
   term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
-             | base:@hand(call_leaf) ( s:@hand(with_suffix) )* -> fold_with(base, s)
+             | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
     }
     gp.grammar
 }
