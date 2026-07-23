@@ -45,12 +45,14 @@ use features.grammar.{parse_grammar, Grammar, compose_grammars}
 /// reads `quote_depth`). `@when(at_quote_top)` (`modes_flag`/`pred_guard`, executor+emit
 /// lockstep) is the grammar-native mode gate (#954) that makes the split byte-identical.
 /// Phase 3a-7 gives the grammar the single-token LITERAL primaries as the postfix-loop
-/// BASE: `b:NUMBER` / `b:STRING` / `b:BOOL` branches sit BEFORE the `@hand(primary_base)`
-/// tail (each `b:<KIND> ( postfix_suffix )* ( with_suffix )* -> fold_postfix_with(b,p,s)`),
-/// so `is_leading_hand` stays true and `@hand` still owns error recovery. The token base
-/// is seeded into the postfix loop via `seed_postfix` (exec_seq / emit lockstep) and built
-/// by `literal_node` (interning, matching hand `alloc_leaf`). `Tk.Float` projects to the
-/// `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER` branch owns floats too.
+/// BASE: `b:NUMBER` / `b:STRING` / `b:BOOL` / `b:("null"|"none")` branches sit BEFORE the
+/// `@hand(primary_base)` tail (each `b:<lit> ( postfix_suffix )* ( with_suffix )* ->
+/// fold_postfix_with(b,p,s)`), so `is_leading_hand` stays true and `@hand` still owns error
+/// recovery. The token base is seeded into the postfix loop via `seed_postfix` (exec_seq /
+/// emit lockstep) and built by `literal_node` (interning, matching hand `alloc_leaf`).
+/// `Tk.Float` projects to the `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER`
+/// branch owns floats too; `null`/`none` are keyword tokens (no distinct grammar kind) so
+/// they use a string-alternation terminal and `literal_node` builds `Expr.None` by `tk`.
 /// `parse_unary` / `parse_call` / `parse_primary` are retained as the differential oracle
 /// (Option B — no deletion). That leaf is NOT expressible in the stateless
 /// token-grammar byte-identically: `parse_call`'s
@@ -85,6 +87,7 @@ export fn avra_expr_grammar() -> Grammar {
              | b:NUMBER ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | b:STRING ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | b:BOOL ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
+             | b:("null" | "none") ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(b, p, s)
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
     }
     gp.grammar

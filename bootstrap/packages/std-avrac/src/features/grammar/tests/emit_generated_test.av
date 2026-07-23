@@ -140,7 +140,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL literals + the postfix chain + `with`, delegating other leaves to @hand" {
+    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL/null/none literals + the postfix chain + `with`, delegating other leaves to @hand" {
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
         // directly (unary_expr build). Phase 3a-4 gives the grammar the POSTFIX CHAIN
         // + the `with` postfix: the non-prefix branch is
@@ -162,15 +162,17 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
         src.contains("if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {") &&
         src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
-        // Phase 3a-7: NUMBER + STRING (slice 1) + BOOL (slice 2) literal primaries
-        // are grammar-owned via branches BEFORE the @hand(primary_base) tail — each a
-        // `b:<KIND> ( postfix_suffix )* ( with_suffix )* -> fold_postfix_with(b,p,s)`.
+        // Phase 3a-7: NUMBER + STRING (slice 1) + BOOL (slice 2) + null/none (slice 3)
+        // literal primaries are grammar-owned via branches BEFORE the @hand(primary_base)
+        // tail — each a `b:<lit> ( postfix_suffix )* ( with_suffix )* -> fold_postfix_with(b,p,s)`.
         // The token base is captured (`let b = CapVal.Tok(st.advance())`) then the
         // postfix loop is SEEDED off it (`st.seed_postfix(capval_to_expr(st, b), sp_start)`)
         // so the grammar-built base threads into postfix_step exactly like the @hand base.
         src.contains("if st.cur().kind == \"NUMBER\" {") &&
         src.contains("if st.cur().kind == \"STRING\" {") &&
         src.contains("if st.cur().kind == \"BOOL\" {") &&
+        // null/none are keyword tokens (no distinct grammar kind), matched by text.
+        src.contains("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
         src.contains("let b = CapVal.Tok(st.advance())") &&
         src.contains("st.seed_postfix(capval_to_expr(st, b), sp_start)") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
@@ -188,7 +190,9 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // fallback, else the guarded branches would be unreachable (the fallback tail
         // matches anything). gen_expr_parser_regen pins the exact file, but assert the
         // order here too so a generator-order regression fails loudly at this layer.
-        src.index_of("if st.cur().kind == \"BOOL\" {") < src.index_of("run_hand_expr(\"primary_base\", st)")
+        // Check BOTH the first (BOOL) and last (null/none) literal branch precede the tail.
+        src.index_of("if st.cur().kind == \"BOOL\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
+        src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("run_hand_expr(\"primary_base\", st)")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
