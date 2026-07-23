@@ -771,10 +771,23 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
 /// Execute one alternative: run each item (threading the shared env),
 /// then apply the build.
 fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapVal {
+    // Phase 3a base-threading (executor twin of the emit seed): a fold_postfix_with
+    // seq's item 0 is the postfix-chain BASE; seed st.postfix_base from it AFTER it
+    // parses and BEFORE the ( postfix_suffix )* repetition, so each postfix_step wraps
+    // the right base — whether the base is @hand(primary_base) (redundant: run_hand_expr
+    // already seeded the same id + start_byte) or a grammar-BUILT literal (the ONLY path
+    // that otherwise leaves st.postfix_base stale). sp_start = the base's start byte.
+    let seeds_postfix = seq_seeds_postfix(seq)
+    let sp_start = st.cur().pos
     mut last = CapVal.Nil
     mut count = 0
     for item in seq.items {
         last = exec_item(g, item, st, env, multi, seq.annots)
+        // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
+        // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
+        if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
+            st.seed_postfix(capval_to_expr(st, last), sp_start)
+        }
         count = count + 1
     }
     match seq.build {
@@ -784,6 +797,15 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
         .None -> last
         .Var(name) -> env.get(name)
         .Call(name, args) -> apply_build(g, name, args, env, st)
+    }
+}
+
+/// True iff a sequence's build is `fold_postfix_with` — its item 0 is the postfix-chain
+/// BASE that must seed st.postfix_base before the ( postfix_suffix )* repetition runs.
+fn seq_seeds_postfix(seq: GSeq) -> bool {
+    match seq.build {
+        .Call(name, _) -> name == "fold_postfix_with"
+        _ -> false
     }
 }
 
@@ -1587,10 +1609,15 @@ export fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
 }
 
 export fn literal_node(st: PState, t: Token) -> ExprId {
-    if t.kind == "NUMBER" { return st.store.exprs.add_leaf(Expr.Number(t.text)) }
-    if t.kind == "STRING" { return st.store.exprs.add_leaf(Expr.String(t.text)) }
-    if t.kind == "BOOL" { return st.store.exprs.add_leaf(Expr.Bool(t.text)) }
-    st.store.exprs.add_leaf(Expr.Ident(t.text))
+    // INTERN (hash-cons) to match the hand parser's alloc_leaf (parse_primary), so
+    // repeat literals/idents share ONE arena row byte-for-byte (§14.4) — a bare
+    // grammar terminal (NUMBER/STRING/…) must produce the SAME id the hand parser
+    // does or two `5`s diverge. `store.intern_expr_leaf` is `store.exprs.add_leaf`'s
+    // interning twin (arena.av); non-eligible content falls through to add_leaf inside.
+    if t.kind == "NUMBER" { return st.store.intern_expr_leaf(Expr.Number(t.text)) }
+    if t.kind == "STRING" { return st.store.intern_expr_leaf(Expr.String(t.text)) }
+    if t.kind == "BOOL" { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
+    st.store.intern_expr_leaf(Expr.Ident(t.text))
 }
 
 /// Apply a build helper / node constructor, returning a `CapVal` so the

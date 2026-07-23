@@ -675,7 +675,17 @@ fn is_lone_primary_result(seq: GSeq) -> bool {
 
 /// The per-item lines (no list declarations — those are hoisted by the
 /// enclosing emit_seq_stmts so a nested group shares the branch's lists).
+/// True iff a sequence's build is `fold_postfix_with` (emit twin of executor.
+/// seq_seeds_postfix) — its item 0 is the postfix-chain BASE.
+fn seq_seeds_postfix_e(seq: GSeq) -> bool {
+    match seq.build {
+        .Call(name, _) -> name == "fold_postfix_with"
+        _ -> false
+    }
+}
+
 fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    let seeds_postfix = seq_seeds_postfix_e(seq)
     mut out = ""
     mut idx = 0
     for item in seq.items {
@@ -683,6 +693,13 @@ fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>,
         // idx slot, so the first token-bearing item stays the guard token (idx 0).
         if prim_is_pred_e(item.prim) { continue }
         out = out + emit_item(g, item, idx, seq.annots, ind, list_labels, opts)
+        // Phase 3a base-threading (twin of exec_seq's hook): after a grammar-BUILT base
+        // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
+        // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
+        // itself inside run_hand_expr, so it is skipped (no redundant seed on the hot path).
+        if seeds_postfix && idx == 0 && !prim_is_hand(item.prim) {
+            out = out + "${ind}st.seed_postfix(capval_to_expr(st, ${item.label}), sp_start)\n"
+        }
         idx = idx + 1
     }
     out
