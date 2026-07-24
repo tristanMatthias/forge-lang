@@ -438,7 +438,11 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 fn build_uses_sp_start(name: string) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
-        name == "mk_enum_ctor"
+        name == "mk_enum_ctor" ||
+        // Statement control-flow builds thread the rule-entry byte so the generated
+        // static parser records per-statement SrcPos byte-identical to the hand
+        // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
+        name == "Block" || name == "While" || name == "If" || name == "ForLoop"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -1048,10 +1052,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         //    — delegate to the SHARED constructor cores (executor.apply_build's
         //    exact twins). ${args[N]}_list names a rep/list capture; a bare arg
         //    is a scalar or opt-scalar CapVal. ──
-        "Block" -> "mk_block(st, ${args[0]}_list)"
-        "While" -> "mk_while(st, ${args[0]}, ${args[1]})"
-        "If" -> "mk_if(st, ${args[0]}, ${args[1]}, ${args[2]})"
-        "ForLoop" -> "mk_for_loop(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
+        "Block" -> "mk_block(st, sp_start, ${args[0]}_list)"
+        "While" -> "mk_while(st, sp_start, ${args[0]}, ${args[1]})"
+        "If" -> "mk_if(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
+        "ForLoop" -> "mk_for_loop(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
