@@ -289,14 +289,17 @@ fn parse_seq(p: GP) -> GSeq {
     for it in items {
         match it.prim {
             .Pred(_) -> if ff_consuming > 0 { ff_pred_after = true }
+            // `@peek` is the same zero-width leading gate as `@when` (same leading-only
+            // rule so emit's seq_first_guard and the executor's branch_pred_ok agree).
+            .Peek(_) -> if ff_consuming > 0 { ff_pred_after = true }
             _ -> ff_consuming = ff_consuming + 1
         }
     }
     if ff_pred_after {
-        p.fail("`@when(flag)` must be a leading branch gate (before any consuming item)")
+        p.fail("`@when`/`@peek` must be a leading branch gate (before any consuming item)")
     }
     if ff_consuming == 0 {
-        p.fail("`@when(flag)` must gate a branch that consumes input (a predicate-only branch never matches)")
+        p.fail("`@when`/`@peek` must gate a branch that consumes input (a predicate-only branch never matches)")
     }
     mut build = GBuild.None
     mut annots: List<GAnnot> = []
@@ -337,6 +340,7 @@ fn parse_seq(p: GP) -> GSeq {
                 .Named(_) -> {}
                 .Ref(_) -> {}
                 .Pred(_) -> {}
+                .Peek(_) -> {}
                 _ -> p.fail("a `@try` branch may contain only terminals and rule references (no groups or `@hand`)")
             }
         }
@@ -390,7 +394,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_off_marker(p) || at_on_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -414,6 +418,25 @@ fn at_when_primary(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "when"
+}
+
+/// True when the cursor is `@peek` — the zero-width LOOKAHEAD-predicate primary
+/// (t-47hc paren prep), the token-stream sibling of `@when`.
+fn at_peek_primary(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "peek"
+}
+
+/// The lookahead conditions a `@peek(cond)` marker may name — the single source of
+/// truth for the @peek cond SET, consulted by parse_primary (a typo is rejected at
+/// parse time). Kept in lockstep with executor.lookahead_ok (which maps each name to
+/// a token test) and emit.peek_guard (which emits the equivalent generated guard) — a
+/// new cond is added in all three. `ident_colon`: the current token is an IDENT and the
+/// next is `:` — the hand parse_paren_expr's `peek_after_ident_is_colon` (typed lambda).
+export fn peek_cond_supported(cond: string) -> bool {
+    cond == "ident_colon"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -535,6 +558,7 @@ fn prim_is_hand_or_pred(prim: GPrim) -> bool {
     match prim {
         .Hand(_) -> true
         .Pred(_) -> true
+        .Peek(_) -> true
         _ -> false
     }
 }
@@ -640,6 +664,7 @@ fn parse_postfix(p: GP) -> Postfix {
     // fires it; emit would `st.advance()` on a mode read). Reject it at parse time.
     match prim {
         .Pred(_) -> match rep { .One -> {}  _ -> p.fail("`@when(flag)` cannot take a `*`/`+`/`?` repetition suffix") }
+        .Peek(_) -> match rep { .One -> {}  _ -> p.fail("`@peek(cond)` cannot take a `*`/`+`/`?` repetition suffix") }
         _ -> {}
     }
     Postfix { rep, prim }
@@ -689,7 +714,25 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close `@when`")
         return GPrim.Pred(flag)
     }
-    p.fail("expected a rule reference, terminal, `(`, `@hand(fn)`, or `@when(flag)`")
+    // Zero-width LOOKAHEAD predicate: `@peek(cond)` gates its branch on an upcoming-token
+    // test (executor.lookahead_ok). STRICT `@ peek ( NAME )`; the cond NAME is validated
+    // against peek_cond_supported (a typo is a HARD error, never a silent no-op that
+    // generates a dead guard — the raw name is interpolated into emitted source).
+    if at_peek_primary(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "peek"
+        p.expect_punct("(", "expected `(` after `@peek`")
+        mut cond = ""
+        if p.peek().kind == "NAME" {
+            let c = p.advance().text
+            if peek_cond_supported(c) { cond = c }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon)") }
+        }
+        else { p.fail("expected a cond name in `@peek(cond)`") }
+        p.expect_punct(")", "expected `)` to close `@peek`")
+        return GPrim.Peek(cond)
+    }
+    p.fail("expected a rule reference, terminal, `(`, `@hand(fn)`, `@when(flag)`, or `@peek(cond)`")
     let _ = p.advance()
     GPrim.Lit("")
 }
