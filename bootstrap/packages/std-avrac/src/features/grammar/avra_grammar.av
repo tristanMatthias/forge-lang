@@ -152,9 +152,10 @@ export fn avra_stmt_grammar() -> Grammar {
 /// to expr_stmt (which would mis-parse them as expressions).
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
+  while_stmt    = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand) -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(gp.grammar, avra_expr_grammar())

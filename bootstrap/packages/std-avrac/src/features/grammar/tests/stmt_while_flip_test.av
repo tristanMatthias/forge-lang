@@ -1,0 +1,57 @@
+// t-47hc.13 S1 — grammar-native `while` on the PRODUCTION stmt-flip path.
+//
+// while_stmt = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand)
+//              -> While(c, body)
+//
+// Differential parity (the stmt_flip_dispatch_test pattern): for every while form
+// the FLIP path (p.stmt_flip=true → run_dsl_stmt_at_shared over avra_stmt_flip_grammar,
+// now with while_stmt) and the HAND path (parse_statement_hand → parse_while_statement)
+// must build the SAME Stmt, rendered through the TOTAL render_stmt_id (no golden
+// strings). The make-or-break case is `while foo { }`: the hand parser sets
+// allow_struct_lit=false in the condition, so `foo` is a bare ident and `{ }` is the
+// body — NOT a struct literal `foo {}`. @off(allow_struct_lit) must reproduce that
+// through the expression's @hand(brace_expr) delegate, or the two diverge.
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn flip_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    p.stmt_flip = true
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_stmt(src) == hand_stmt(src)
+}
+
+spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-flip)" {
+    then "plain while forms agree (basic wiring)" {
+        agree("while 1 { break }") &&
+        agree("while 1 < 2 { continue }") &&
+        agree("while 1 { break continue }") &&
+        agree("while 1 { }")
+    }
+    then "the make-or-break: `while foo { }` — @off(allow_struct_lit) disables the struct literal" {
+        // If @off propagates to @hand(brace_expr), `foo` is an ident and `{ }` the body,
+        // matching the hand parser's allow_struct_lit=false. If it's a no-op, flip reads
+        // `foo { }` as a struct literal and diverges.
+        agree("while foo { }") &&
+        agree("while foo { break }") &&
+        agree("while x { y }")
+    }
+    then "nested while (body via @hand(stmt_hand) = parse_statement) agrees" {
+        agree("while 1 { while 2 { break } }") &&
+        agree("while a { if 1 { break } }")
+    }
+}
