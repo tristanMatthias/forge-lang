@@ -41,6 +41,12 @@ const CHAIN_SL: string = "chain = xs:num ^( \".\" xs:num )* -> mk_inlist(xs)\nnu
 const CHAIN_PLAIN: string = "chain = xs:num ( \".\" xs:num )* -> mk_inlist(xs)\nnum = NUMBER"
 // A `^`-marked OPTIONAL (exercises emit_opt, not just emit_repeat_group).
 const OPT_SL: string = "chain = xs:num ^( \".\" xs:num )? -> mk_inlist(xs)\nnum = NUMBER"
+// A `^` repetition whose separator has a MULTI-ALTERNATIVE FIRST (`.` | `?`) — the
+// case that actually exercises `same_line_wrap`'s parenthesization. The guard MUST
+// emit `(<a> || <b>) && (st.pos == 0 || …)`; without the parens it would be
+// `<a> || <b> && …`, which (since `&&` binds tighter than `||`) drops the sameline
+// gate for the first alternative — a silent cross-line over-acceptance.
+const MULTI_SL: string = "chain = xs:num ^( ( \".\" | \"?\" ) xs:num )* -> mk_inlist(xs)\nnum = NUMBER"
 
 spec "t-47hc.11: emit honors the `^` same-line marker (executor↔emit lockstep)" {
     then "a `^` repetition emits the sameline conjunct in its while-guard" {
@@ -76,5 +82,33 @@ spec "t-47hc.11: the `^` oracle semantics the emit mirrors" {
     }
     then "the count is a real observable — one element differs from three" {
         elem_count(CHAIN_SL, "1") != elem_count(CHAIN_SL, "1 . 2 . 3")
+    }
+}
+
+// The parenthesization is the one subtle part of same_line_wrap: a multi-alternative
+// separator FIRST (`.` | `?`) must be wrapped so `&&` binds over the WHOLE disjunction,
+// not just its last term. The interpreter can't exhibit the bug (its FIRST test and
+// sameline_ok are separate calls), so the EMITTED SOURCE is the true proof — the guard
+// must close the disjunction with `)` and only THEN `&& (st.pos == 0 || …)`.
+spec "t-47hc.11: multi-alternative FIRST is parenthesized before the sameline `&&`" {
+    then "the emitted guard wraps the disjunction: `) && (st.pos == 0 ||`" {
+        let src = emit_rule(MULTI_SL, "chain")
+        // the `)` is same_line_wrap's close of `(<guard>)`; the `&& (st.pos == 0` is the
+        // sameline conjunct — together they prove `(a || b) && (sameline)`, not `a || b && …`
+        src.contains(") && (st.pos == 0 ||")
+    }
+    then "both separator alternatives are inside that guarded disjunction" {
+        // emit lowers a literal that maps to a Tk to the enum compare (emit.av:1178),
+        // so `.`/`?` are `Tk.Dot`/`Tk.Question` — both must be in the wrapped guard.
+        let src = emit_rule(MULTI_SL, "chain")
+        src.contains("Tk.Question") && src.contains("Tk.Dot")
+    }
+    then "a same-line multi-separator chain collects every element" {
+        elem_count(MULTI_SL, "1 . 2 ? 3") == 3
+    }
+    then "a cross-line separator (the FIRST alternative) stops the loop — the precedence-sensitive case" {
+        // the third element's `.` (the FIRST alt) is on a new line; a dropped-paren guard
+        // would keep going (a || …), the correct guard stops. Interpreter oracle == 2.
+        elem_count(MULTI_SL, "1 . 2\n. 3") == 2
     }
 }
