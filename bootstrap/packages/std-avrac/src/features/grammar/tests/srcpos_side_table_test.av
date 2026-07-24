@@ -1,0 +1,62 @@
+// WHY: t-47hc.12 — the SrcPos side-table capability. The hand parser records a
+// per-statement source position (parse/mod.av parse_statement_list_ids →
+// store.stmts.record_pos(sid, SrcPos{line,col,file})), which the grammar statement
+// builds did NOT — so a grammar-native statement rebuild dropped positions and
+// diverged on diagnostics. That is the blocker for the whole statement/decl @hand
+// cluster (block/if/while/for + the statement-containing expr primaries). The
+// control-flow builds (Block/While/If/ForLoop) now thread the rule-entry byte
+// (sp_start) through add_stmt_at: the GENERATED static parser passes the real byte
+// and records the position; the INTERPRETER passes `0 - 1` (span-free — the
+// differential oracle records no positions, exactly like the expr fold builds).
+//
+// This tests the MECHANISM directly (mk_block with a real vs span-free sp_start),
+// because the interpreter path is span-free by design and won't exercise recording,
+// and there is no in-test compile+run of a generated parser. Byte-identical for
+// production: statements are still @hand (avra_stmt_flip_grammar), so no production
+// generated parser calls these builds (gen_decl_parser.av regen stays byte-identical).
+use @std.avrac.features.grammar.{new_pstate, mk_block, CapVal}
+use @std.avrac.core.{StmtId}
+
+// "line:col" of the SrcPos mk_block stamped for the byte `sp_start`.
+fn block_pos(src: string, sp_start: int) -> string {
+    mut st = new_pstate(src)
+    let empty: List<StmtId> = []
+    match mk_block(st, sp_start, empty) {
+        .SNode(id) -> {
+            let p = st.store.stmts.pos_of(id)
+            "${p.line}:${p.col}"
+        }
+        _ -> "no-snode"
+    }
+}
+
+// Just the recorded line (0 = the "no position" sentinel — nothing recorded).
+fn block_pos_line(src: string, sp_start: int) -> int {
+    mut st = new_pstate(src)
+    let empty: List<StmtId> = []
+    match mk_block(st, sp_start, empty) {
+        .SNode(id) -> st.store.stmts.pos_of(id).line
+        _ -> 0 - 99
+    }
+}
+
+// "aa\n  bb": line_starts = [0, 3]; byte 5 = 'b' on line 2, col 3.
+const SRC: string = "aa\n  bb"
+
+spec "t-47hc.12: control-flow builds stamp SrcPos at the rule-entry byte" {
+    then "a real sp_start records the byte's (line, col) — matching to_linecol" {
+        block_pos(SRC, 5) == "2:3"
+    }
+    then "byte 0 records line 1, col 1" {
+        block_pos(SRC, 0) == "1:1"
+    }
+    then "a byte on line 1 records line 1 at the right column" {
+        block_pos(SRC, 1) == "1:2"
+    }
+    then "sp_start = -1 records NO position (the span-free interpreter oracle)" {
+        block_pos_line(SRC, 0 - 1) == 0
+    }
+    then "the recorded position is a real observable — a line-2 byte differs from a line-1 byte" {
+        block_pos(SRC, 5) != block_pos(SRC, 0)
+    }
+}

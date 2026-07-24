@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
@@ -1779,10 +1779,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    delegates to the SHARED constructor core (mk_block / mk_while /
         //    mk_if / mk_for_loop), so apply_build and the generated static
         //    whole-program parser build byte-identical trees. ──
-        "Block" if args.length == 1 -> mk_block(st, capval_to_stmt_list(env.get(args[0])))
-        "While" if args.length == 2 -> mk_while(st, env.get(args[0]), env.get(args[1]))
-        "If" if args.length == 3 -> mk_if(st, env.get(args[0]), env.get(args[1]), env.get(args[2]))
-        "ForLoop" if args.length == 4 -> mk_for_loop(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
+        // sp_start = 0 - 1 (span-free): the interpreter is the differential oracle and
+        // records no positions, exactly like the fold builds above; the GENERATED static
+        // parser passes the real rule-entry sp_start (emit) so its per-statement SrcPos
+        // side-table matches the hand parser's parse_statement_list_ids. (t-47hc.12)
+        "Block" if args.length == 1 -> mk_block(st, 0 - 1, capval_to_stmt_list(env.get(args[0])))
+        "While" if args.length == 2 -> mk_while(st, 0 - 1, env.get(args[0]), env.get(args[1]))
+        "If" if args.length == 3 -> mk_if(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        "ForLoop" if args.length == 4 -> mk_for_loop(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
         "OrMaybe" if args.length == 2 -> {
             // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
@@ -2232,19 +2236,36 @@ export fn capval_to_variant(st: PState, v: CapVal) -> Variant {
 }
 
 /// `{ stmt* }` → a brace block (the `Block` build's core).
-export fn mk_block(st: PState, body: List<StmtId>) -> CapVal {
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Block(body)))
+/// Stamp a built statement into the store WITH its source position — the grammar
+/// twin of parse_statement_list_ids' record_pos (parse/mod.av). `sp_start` is the
+/// statement rule's entry byte: the GENERATED static parser threads the real byte
+/// (so its per-statement positions match the hand parser), the INTERPRETER passes
+/// `0 - 1` (span-free — it is the differential oracle and records no positions,
+/// exactly like the expr fold builds). to_linecol maps the byte to (line, col) via
+/// the store's LineIndex; record_pos itself no-ops on a non-positive line, so a
+/// `-1` start is a clean skip. (t-47hc.12 — the SrcPos side-table capability.)
+fn add_stmt_at(st: PState, s: Stmt, sp_start: int) -> CapVal {
+    let id = st.store.stmts.add_leaf(s)
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(sp_start)
+        st.store.stmts.record_pos(id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    CapVal.SNode(id)
+}
+
+export fn mk_block(st: PState, sp_start: int, body: List<StmtId>) -> CapVal {
+    add_stmt_at(st, Stmt.Block(body), sp_start)
 }
 
 /// `while cond body` (the `While` build's core).
-export fn mk_while(st: PState, cond: CapVal, body: CapVal) -> CapVal {
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.While(capval_to_expr(st, cond), capval_to_stmt(st, body))))
+export fn mk_while(st: PState, sp_start: int, cond: CapVal, body: CapVal) -> CapVal {
+    add_stmt_at(st, Stmt.While(capval_to_expr(st, cond), capval_to_stmt(st, body)), sp_start)
 }
 
 /// `if cond then ( "else" else )?` (the `If` build's core). An absent else is a
 /// null else_branch; a present else (a block or a nested if for `else if`) is an
 /// SNode.
-export fn mk_if(st: PState, cond: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
+export fn mk_if(st: PState, sp_start: int, cond: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
     let c = capval_to_expr(st, cond)
     let then_s = capval_to_stmt(st, then_cv)
     mut else_opt: StmtId? = none
@@ -2252,20 +2273,20 @@ export fn mk_if(st: PState, cond: CapVal, then_cv: CapVal, else_cv: CapVal) -> C
         .SNode(eid) -> else_opt = eid
         _ -> {}
     }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.If(c, then_s, else_opt)))
+    add_stmt_at(st, Stmt.If(c, then_s, else_opt), sp_start)
 }
 
 /// `for v in lo ( ".." hi )? body` (the `ForLoop` build's core). A present `..`
 /// picks the integer-range `For`, absent the collection `ForIn`.
-export fn mk_for_loop(st: PState, var_cv: CapVal, lo_cv: CapVal, hi_cv: CapVal, body_cv: CapVal) -> CapVal {
+export fn mk_for_loop(st: PState, sp_start: int, var_cv: CapVal, lo_cv: CapVal, hi_cv: CapVal, body_cv: CapVal) -> CapVal {
     let var = capval_tok_text(var_cv)
     let lo = capval_to_expr(st, lo_cv)
     let body = capval_to_stmt(st, body_cv)
     match hi_cv {
-        .Nil -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ForIn(var, lo, body)))
+        .Nil -> add_stmt_at(st, Stmt.ForIn(var, lo, body), sp_start)
         _ -> {
             let hi = capval_to_expr(st, hi_cv)
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.For(var, lo, hi, body)))
+            add_stmt_at(st, Stmt.For(var, lo, hi, body), sp_start)
         }
     }
 }
