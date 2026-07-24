@@ -13,6 +13,7 @@ use core.{Tk}
 // ps3t.6.5.12 pattern-family swap-in: parse_pattern_or / parse_pattern delegate
 // to the grammar-DSL when pat_flip is set (the inverse of the @hand bridge).
 use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, Grammar}
+use parse.{run_static_pat}
 // t-47hc.8: the pattern grammar fragment is owned by THIS feature (grammar.av).
 use features.match_expr.{avra_pat_grammar}
 
@@ -151,8 +152,16 @@ impl Parser {
     // position — the pattern-family mirror of parse_type_expr. Hand fallback on a
     // DSL error so the flip can never regress.
     fn parse_pattern_or(self) -> Result<PatId, string> {
-        if self.pat_flip {
-            let dsl = run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
+        if self.pat_static || self.pat_flip {
+            // t-47hc.4.4 Phase 3d: the STATIC generated pattern parser (run_static_pat)
+            // when pat_static, else the Grammar-tree interpreter (run_dsl_pattern_at_shared).
+            // Both share the token stream + store + resync below — they differ only in HOW
+            // they drive the identical pattern-builders, so the DslPatResult is byte-identical.
+            let dsl = if self.pat_static {
+                run_static_pat(self.grammar_tokens(), self.current_start, self.source, self.store)
+            } else {
+                run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
+            }
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.is_at_end() {
                     self.advance_token()

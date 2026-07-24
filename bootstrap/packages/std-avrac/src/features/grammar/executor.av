@@ -1452,6 +1452,24 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
+/// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
+/// PState setup to `run_dsl_pattern_at_shared` (null delegate — the pattern grammar has
+/// NO @hand), but drives the CHECKED-IN generated static parser (parse/gen_pat_parser.av's
+/// `parse_pattern_or`, passed in as `parse`) instead of the Grammar-tree interpreter
+/// (`exec_rule`). Same builders, same PState ⇒ byte-identical PatId (arena-backed, valid
+/// in the caller's shared `store`) to both the interpreter flip AND the hand parser, at
+/// straight-line speed.
+export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
+    let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    let pat = capval_to_pat(st, parse(st))
+    mut diag = ""
+    if st.had_error && st.diags.length > 0 {
+        diag = st.diags[0]
+    }
+    DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+}
+
 /// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
 /// VALID in the caller's shared `store` — expressions are arena-backed, like
 /// patterns), the stop byte for cursor resync, and the error channel.
