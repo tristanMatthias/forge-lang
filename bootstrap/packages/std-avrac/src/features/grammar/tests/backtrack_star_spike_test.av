@@ -19,8 +19,30 @@ fn errs(grammar_src: string, input: string) -> bool {
     run_grammar_expr(gp.grammar, input).had_error
 }
 
+// Count the ELEMENTS the grammar collected into the built list node. A stray
+// capture surviving a rolled-back iteration shows up as an extra element.
+// `mk_inlist(xs)` builds `Expr.InCheck(_, items)`, so `items.length` is the
+// collected count — and `0 - 1` if the build wasn't applied, which makes the
+// assertions self-revealing rather than vacuous.
+fn elem_count(grammar_src: string, input: string) -> int {
+    let gp = parse_grammar(grammar_src)
+    let r = run_grammar_expr(gp.grammar, input)
+    match r.store.exprs.get(r.root) {
+        .InCheck(_, items) -> items.length
+        _ -> 0 - 1
+    }
+}
+
 // A trailing-comma-tolerant list, written as PLAIN grammar — no @try, no @hand.
 const LIST: string = "list = \"[\" ( NUMBER ( \",\" NUMBER )* \",\"? )? \"]\""
+
+// The CAPTURED form, mirroring the real `in_rhs` list (avra_grammar.av) which
+// collects element NODES via a rule ref (`mk_inlist` reads a node list) — plus
+// the trailing `","?` this slice enables. A partial trailing iteration binds a
+// stray element into `xs` unless the rollback restores the capture env, so the
+// collected count is the observable for the reviewer's finding. `num` wraps a
+// NUMBER as a literal node.
+const LIST_CAP: string = "list = \"[\" ( xs:num ( \",\" xs:num )* \",\"? )? \"]\" -> mk_inlist(xs)\nnum = NUMBER"
 
 spec "t-47hc.10 spike: backtracking `*` dissolves the trailing comma" {
     then "a plain multi-element list parses" {
@@ -43,5 +65,24 @@ spec "t-47hc.10 spike: backtracking `*` dissolves the trailing comma" {
     }
     then "an unterminated list still errors" {
         errs(LIST, "[ 1 , 2")
+    }
+}
+
+// The reviewer's finding (CodeRabbit, PR #976): a CAPTURED separator-led loop
+// must roll back the capture env on a partial iteration — else the trailing
+// comma leaves a stray element bound into `xs`. Proof: the trailing-comma list
+// must build the IDENTICAL node to the plain list (same elements, no stray).
+spec "t-47hc.10 spike: captured backtracking rolls back the capture env (no stray element)" {
+    then "a captured TRAILING-comma list collects exactly 2 elements — no stray from the rolled-back iteration" {
+        elem_count(LIST_CAP, "[ 1 , 2 , ]") == 2
+    }
+    then "the plain 2-element list collects 2 (baseline)" {
+        elem_count(LIST_CAP, "[ 1 , 2 ]") == 2
+    }
+    then "the count is a real observable — a 1-element list differs from a 2-element list" {
+        elem_count(LIST_CAP, "[ 1 ]") != elem_count(LIST_CAP, "[ 1 , 2 ]")
+    }
+    then "the captured trailing-comma list still parses without error" {
+        !errs(LIST_CAP, "[ 1 , 2 , ]")
     }
 }

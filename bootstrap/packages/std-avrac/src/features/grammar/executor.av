@@ -114,6 +114,14 @@ impl CapEnv {
         CapVal.Nil
     }
 
+    /// Restore the whole capture list to a prior snapshot (t-47hc.10 backtracking
+    /// rollback). append_tok/set_scalar are copy-on-write — each REASSIGNS
+    /// self.caps — so a value captured before an iteration is a stable snapshot
+    /// this can reinstate, undoing any inner binds a rolled-back iteration made.
+    fn restore_caps(self, saved: List<Cap>) {
+        self.caps = saved
+    }
+
     fn set_scalar(self, name: string, v: CapVal) {
         mut out: List<Cap> = []
         mut found = false
@@ -876,7 +884,13 @@ fn repeat_backtracks(prim: GPrim) -> bool {
     match prim {
         .Group(inner) -> match inner {
             .Alt(branches) -> {
-                if branches.length == 0 { return false }
+                // Exactly ONE branch: a multi-branch group `( "," X | decl )*` can
+                // execute a branch OTHER than branches[0] at runtime, so keying
+                // eligibility off branches[0]'s leading terminal would enable
+                // rollback for the whole loop and wrongly swallow a partial failure
+                // in the non-separator branch. Only a single separator-led branch
+                // has an unambiguous dangling-separator rollback point.
+                if branches.length != 1 { return false }
                 if branches[0].items.length == 0 { return false }
                 match branches[0].items[0].prim {
                     .Lit(_) -> true
@@ -898,20 +912,33 @@ fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GA
         let before = st.pos
         if bt {
             // COMPILER-INSERTED backtracking (t-47hc.10) on a separator-led
-            // repetition: snapshot the `@try` quad (store mark + cursor + diags +
-            // had_error); on a PARTIAL iteration (dangling separator consumed,
-            // then the body failed → a new diagnostic) roll the whole iteration
-            // back and STOP, so a following `SEP?` / terminator takes the
-            // separator. The check PRECEDES bind() so a rolled-back store never
-            // leaves a dangling capture. This dissolves the trailing-comma paradox
-            // without needing a hand-placed @try.
+            // repetition. Snapshot the parser state a partial iteration can mutate
+            // — store (mark), cursor, diags, had_error, the capture env (bind/
+            // set_scalar are copy-on-write, each REASSIGNS env.caps, so aliasing it
+            // is a stable snapshot), and the postfix base — then run the body. On a
+            // PARTIAL match (dangling separator consumed, then the body failed → a
+            // new diagnostic) restore ALL of it and STOP the loop, so a following
+            // `SEP?` / terminator takes the separator. The rollback is TRANSACTIONAL
+            // over every state a normal captured separator-led body touches — the
+            // env.caps leak (an inner `x:NUMBER` surviving a failed iteration) is
+            // closed here. The two states restore CANNOT rewind are the
+            // interpreter-only `split_gt` in-place `>>` edit and a @hand delegate's
+            // own cursor; both are reachable only when a body consumes via those and
+            // THEN fails — i.e. on already-malformed input that errors either way.
+            // The check PRECEDES bind() so a rolled-back store leaves no dangling
+            // capture. Dissolves the trailing-comma paradox with no hand-placed @try.
             let s_mark = st.store.mark()
             let s_diags = st.diags.length
             let s_err = st.had_error
+            let s_caps = env.caps
+            let s_pbase = st.postfix_base
+            let s_psp = st.postfix_sp_start
             let v = exec_primary(g, item.prim, st, env, true, annots)
             if st.diags.length != s_diags || st.had_error != s_err {
                 st.store.truncate_to_mark(s_mark)
                 st.restore_to(before, s_diags, s_err)
+                env.restore_caps(s_caps)
+                st.seed_postfix(s_pbase, s_psp)
                 return
             }
             bind(env, item.label, v, true)
