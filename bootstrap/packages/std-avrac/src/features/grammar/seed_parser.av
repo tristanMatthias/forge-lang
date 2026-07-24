@@ -320,16 +320,14 @@ fn parse_seq(p: GP) -> GSeq {
     // lockstep — the same @when-rejection discipline) rather than silently diverge.
     if speculative {
         for it in items {
-            // A capture label is pure liability in a `@try` recognizer: the
-            // interpreter's exec_seq bind()s it into the shared CapEnv (which
-            // exec_node's rollback does NOT restore → a stale binding could leak to
-            // a sibling branch), while emit_spec_item drops it entirely (no label
-            // assignment) — so a labelled @try item diverges on BOTH rollback and
-            // commit. Reject it (the build is already rejected below; capture in the
-            // committed rule instead), closing both gaps by construction.
-            if it.label != "" {
-                p.fail("a `@try` branch item cannot bind a capture label (bounded speculation is a pure recognizer; capture in the committed rule instead)")
-            }
+            // GAP3 @try-with-builds (t-47hc.13): a `@try` branch MAY now bind capture
+            // labels and carry a `-> build`. Byte-identity across rollback is closed
+            // on BOTH sides — the interpreter's exec_node snapshots+restores env.caps
+            // around the speculative exec_seq (so a rolled-back branch's bindings can't
+            // leak to a sibling), and emit_spec_item assigns each label to a LOCAL
+            // `let` (auto-scoped, so the emit side never leaks). A build is applied on
+            // commit by exec_seq (interpreter) / emit_speculative_branch (generated),
+            // the same emit_call_build/apply_build the committed-rule path uses.
             match it.rep {
                 .One -> {}
                 _ -> p.fail("a `@try` branch item cannot take a `*`/`+`/`?` repetition (bounded speculation supports a flat terminal/ref sequence only)")
@@ -341,10 +339,6 @@ fn parse_seq(p: GP) -> GSeq {
                 .Pred(_) -> {}
                 _ -> p.fail("a `@try` branch may contain only terminals and rule references (no groups or `@hand`)")
             }
-        }
-        match build {
-            .None -> {}
-            _ -> p.fail("a `@try` branch cannot carry a `-> build` (bounded speculation is a recognizer; capture in the committed rule instead)")
         }
     }
     GSeq { items, build, annots, speculative }

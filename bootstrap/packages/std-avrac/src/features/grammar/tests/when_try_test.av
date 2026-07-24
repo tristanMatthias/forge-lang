@@ -75,9 +75,10 @@ spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
     }
 }
 
-// A `@try` branch is a flat One-rep terminal/ref recognizer with no build — every
-// other shape has no faithful speculative emission yet, so it is rejected at parse
-// time (both sides agree by construction).
+// A `@try` branch is a flat One-rep terminal/ref sequence that MAY bind capture
+// labels and carry a `-> build` (GAP3 @try-with-builds, t-47hc.13). Repetitions,
+// groups, and `@hand` primaries still have no faithful speculative emission, so
+// they stay rejected at parse time (both sides agree by construction).
 spec "t-47hc.3: @try well-formedness is enforced at parse time" {
     then "a repetition inside a @try branch is rejected (`*` / `+` / `?`)" {
         rejects("r = @try NUMBER* | STRING") &&
@@ -90,17 +91,38 @@ spec "t-47hc.3: @try well-formedness is enforced at parse time" {
     then "a @hand primary inside a @try branch is rejected" {
         rejects("r = @try @hand(number) | STRING")
     }
-    then "a `-> build` on a @try branch is rejected" {
-        rejects("r = @try NUMBER STRING -> Mk() | STRING")
-    }
-    then "a capture label inside a @try branch is rejected" {
-        // A label would bind() into the interpreter's CapEnv (not restored on
-        // rollback → sibling-branch leak) but is dropped by emit — reject it so the
-        // two sides can't diverge (a @try recognizer captures nothing).
-        rejects("r = @try x:NUMBER STRING | STRING") &&
-        rejects("r = @try NUMBER y:STRING | STRING")
-    }
     then "a well-formed flat terminal/ref @try branch is accepted" {
         !rejects("r = @try NUMBER STRING NUMBER | NUMBER STRING")
+    }
+}
+
+// GAP3 @try-with-builds (t-47hc.13): a @try branch may now bind labels + apply a
+// build on commit. Byte-identity across rollback is closed on both sides — the
+// interpreter snapshots/restores env.caps around the speculative exec_seq, and emit
+// binds each label as an auto-scoped local. Build-less @try stays byte-identical
+// (the incumbent `s_last` path), proven by the differential tests above + emit-gen-check.
+spec "t-47hc.13: @try-with-builds — labels + build now accepted (GAP3)" {
+    then "a `-> build` on a @try branch is now ACCEPTED" {
+        !rejects("r = @try o:\"-\" v:NUMBER -> Unary(o, v) | NUMBER")
+    }
+    then "capture labels inside a @try branch are now ACCEPTED" {
+        !rejects("r = @try x:NUMBER STRING | STRING") &&
+        !rejects("r = @try NUMBER y:STRING | STRING")
+    }
+    then "the emitted @try branch binds each label to an auto-scoped local" {
+        let src = emit_rule("r = @try o:\"-\" v:NUMBER -> Unary(o, v) | NUMBER", "r")
+        src.contains("let o = ") && src.contains("let v = ")
+    }
+    then "the emitted @try branch applies the build on commit (not the build-less s_last)" {
+        // Unary lowers via emit_call_build's `unary_expr(...)` — the committed value is
+        // the BUILD, reading the labels bound above, not the recognizer's `s_last`.
+        let src = emit_rule("r = @try o:\"-\" v:NUMBER -> Unary(o, v) | NUMBER", "r")
+        src.contains("unary_expr(")
+    }
+    then "the interpreter's @try-with-build rolls back cleanly (no env leak)" {
+        // `- 5 x`: branch 1 (@try `-` NUMBER STRING? no) — use a 3-item @try whose
+        // 3rd terminal fails so it ROLLS BACK, then branch 2 matches. The label
+        // bindings from the failed branch must not corrupt branch 2's parse.
+        !errs("r = @try o:\"-\" a:NUMBER b:NUMBER -> Foo(o, a, b) | \"-\" NUMBER", "- 5")
     }
 }
