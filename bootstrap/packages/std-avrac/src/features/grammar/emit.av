@@ -334,9 +334,9 @@ fn emit_ref_result(item: GItem, ind: string, as_return: bool) -> string {
         return "${ind}${ret}${call}\n"
     }
     "${ind}let __m = st.modes\n" +
-        "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +
+        "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
         "${ind}let __r = ${call}\n" +
-        "${ind}st.modes = __m\n" +
+        "${ind}st.set_modes(__m)\n" +
         "${ind}${ret}__r\n"
 }
 
@@ -771,9 +771,9 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // generated parsers stay byte-identical.
     if item.mode_off != "" {
         return "${ind}let __modes_${idx} = st.modes\n" +
-            "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +
+            "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
             inner +
-            "${ind}st.modes = __modes_${idx}\n"
+            "${ind}st.set_modes(__modes_${idx})\n"
     }
     inner
 }
