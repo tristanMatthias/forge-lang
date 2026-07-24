@@ -318,7 +318,18 @@ fn emit_rule_body(g: Grammar, node: GNode) -> string {
 ///   general sequence               → item statements then the build as the tail
 fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
     if is_passthrough(seq) {
-        return "    ${emit_ref_call(seq.items[0].prim)}\n"
+        let call = emit_ref_call(seq.items[0].prim)
+        // A `@off(flag)` on the lone-ref passthrough must still set/restore the
+        // mode around the sub-parse (the executor honors it via exec_item, which
+        // the passthrough fast-path would otherwise bypass — a lockstep hole).
+        if seq.items[0].mode_off != "" {
+            return "    let __m = st.modes\n" +
+                "    st.modes = modes_with_flag_off(st.modes, \"${seq.items[0].mode_off}\")\n" +
+                "    let __r = ${call}\n" +
+                "    st.modes = __m\n" +
+                "    __r\n"
+        }
+        return "    ${call}\n"
     }
     if is_fold(seq) {
         return emit_fold(g, seq)
@@ -726,6 +737,22 @@ fn prim_is_pred_e(prim: GPrim) -> bool {
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
 fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    let inner = emit_item_body(g, item, idx, annots, ind, list_labels, opts)
+    // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
+    // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
+    // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
+    // unique per sequence position. Empty mode_off (every production grammar today)
+    // returns the item's code unchanged → generated parsers stay byte-identical.
+    if item.mode_off != "" {
+        return "${ind}let __modes_${idx} = st.modes\n" +
+            "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +
+            inner +
+            "${ind}st.modes = __modes_${idx}\n"
+    }
+    inner
+}
+
+fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.rep {
         .One -> emit_one(g, item, idx, annots, ind, list_labels, opts)
         .Opt -> emit_opt(g, item, ind, list_labels, opts)

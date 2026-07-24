@@ -352,9 +352,10 @@ fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
     if p.peek().kind == "ARROW" { return false }
     if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
-    // `@hand(...)` / `@when(...)` are PRIMARIES (items) — keep going;
-    // `@expect`/`@recover` are trailing annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) }
+    // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
+    // leading item MARKER — keep going; `@expect`/`@recover` are trailing
+    // annotations — stop the item list.
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_off_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -380,6 +381,17 @@ fn at_when_primary(p: GP) -> bool {
     nxt.kind == "NAME" && nxt.text == "when"
 }
 
+/// True when the cursor is `@off` — the leading mode-SET item marker (t-47hc),
+/// distinct from the `@hand`/`@when` primaries and the `@expect`/`@recover`
+/// annotations. It prefixes the item it scopes, so seq_can_continue must treat
+/// it as an item-start (else the item-list loop stops before it).
+fn at_off_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "off"
+}
+
 // labeled = ( NAME ":" )? postfix
 fn parse_labeled(p: GP) -> GItem {
     // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
@@ -389,6 +401,19 @@ fn parse_labeled(p: GP) -> GItem {
     if p.peek().kind == "PUNCT" && p.peek().text == "^" {
         let _ = p.advance()
         sameline = true
+    }
+    // t-47hc mode-SET marker `@off(flag)`: turn an ExprModes flag OFF for this
+    // item's sub-parse (the `while foo {` struct-literal disambiguation the hand
+    // parser does with `allow_struct_lit = false`). Distinguished from the
+    // `@hand`/`@when`/`@try` primaries by the second token being `off` (they are
+    // parsed later as the primary / branch marker). Grammar: `@` `off` `(` NAME `)`.
+    mut mode_off = ""
+    if p.peek().kind == "PUNCT" && p.peek().text == "@" && p.pos + 1 < p.toks.length && p.toks[p.pos + 1].text == "off" {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "off"
+        if p.peek().text == "(" { let _ = p.advance() }
+        mode_off = p.advance().text   // the flag NAME
+        if p.peek().text == ")" { let _ = p.advance() }
     }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
@@ -401,7 +426,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

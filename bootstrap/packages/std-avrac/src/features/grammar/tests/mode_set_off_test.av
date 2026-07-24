@@ -1,0 +1,70 @@
+// WHY: t-47hc — the `@off(flag)` mode-SET grammar marker, the write-twin of
+// `@when`'s mode READ. It turns an ExprModes flag OFF for the DURATION of an
+// item's sub-parse, then restores — the grammar-native form of the hand parser's
+// `saved = allow_struct_lit; allow_struct_lit = false; parse_expression(); … =
+// saved` around a control-header condition (the `while foo {` struct-literal-vs-
+// body disambiguation). It is the prerequisite the while/if/for @hand-leaf
+// deletions were BLOCKED on (parse_while_statement sets exactly this mode).
+//
+// Opt-in and dormant: no production grammar uses `@off` yet (the only marker in
+// avra_grammar.av is `^`), so the generated parsers regen byte-identical — this
+// is a capability slice, not a behaviour change. Executor (push_mode_off/
+// restore_modes) and emit BOTH route through modes_with_flag_off, so they can't
+// disagree — the same lockstep discipline `@when` has via modes_flag.
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, new_pstate, modes_with_flag_off, default_expr_modes, modes_flag}
+
+fn emit_rule(gsrc: string, rule: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+// `r`'s single item is `@off(allow_struct_lit) g`; `r2` is the same WITHOUT @off.
+const R_OFF: string = "r = @off(allow_struct_lit) g\ng = \"x\""
+const R_PLAIN: string = "r = g\ng = \"x\""
+
+spec "t-47hc: @off(flag) sets the mode for the sub-parse (executor push/restore)" {
+    then "push_mode_off turns the named flag OFF, restore_modes brings it back" {
+        mut st = new_pstate("x")
+        // default: allow_struct_lit ON
+        let before = modes_flag(st.modes, "allow_struct_lit")
+        let saved = st.push_mode_off("allow_struct_lit")
+        let during = modes_flag(st.modes, "allow_struct_lit")   // OFF now
+        st.restore_modes(saved)
+        let after = modes_flag(st.modes, "allow_struct_lit")     // restored ON
+        before && !during && after
+    }
+    then "push_mode_off leaves OTHER flags untouched" {
+        mut st = new_pstate("x")
+        let _ = st.push_mode_off("allow_struct_lit")
+        // allow_dot_postfix is default-on and must stay on
+        modes_flag(st.modes, "allow_dot_postfix")
+    }
+}
+
+spec "t-47hc: @off(flag) — the shared modes_with_flag_off helper" {
+    then "clears ONLY the named flag" {
+        let m = modes_with_flag_off(default_expr_modes(), "allow_struct_lit")
+        !modes_flag(m, "allow_struct_lit") && modes_flag(m, "allow_dot_postfix")
+    }
+    then "an unknown flag is a no-op (typo-safe, both sides share this fn)" {
+        let m = modes_with_flag_off(default_expr_modes(), "nonsense")
+        modes_flag(m, "allow_struct_lit")
+    }
+}
+
+spec "t-47hc: @off(flag) — emit lockstep (the generated parser sets/restores too)" {
+    then "the emitted rule saves modes, clears the flag via modes_with_flag_off, restores" {
+        let src = emit_rule(R_OFF, "r")
+        // the set (modes_with_flag_off on the named flag) + a save + a restore
+        src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.modes = __m")
+    }
+    then "WITHOUT @off, no mode save/set is emitted — byte-identical for production grammars" {
+        let src = emit_rule(R_PLAIN, "r")
+        !src.contains("modes_with_flag_off") && !src.contains("st.modes =")
+    }
+}

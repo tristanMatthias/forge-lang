@@ -102,6 +102,13 @@ export type GItem = {
     // consumed token — the postfix-chain / bare-return cutoff the hand parser
     // does with `current_line == prev_line`. Default false (line-insensitive).
     sameline: bool,
+    // t-47hc mode-SET marker (`@off(flag)`): the name of an ExprModes flag to
+    // turn OFF for the DURATION of this item's sub-parse, then restore — the
+    // executor+emit twin of the hand parser's `saved = allow_struct_lit;
+    // allow_struct_lit = false; … = saved` around a control-header condition
+    // (the `while foo {` struct-literal-vs-body disambiguation). Empty = no set
+    // (every item today). The write-side complement of `@when`'s modes_flag READ.
+    mode_off: string,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -162,7 +169,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then
