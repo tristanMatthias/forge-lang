@@ -799,9 +799,10 @@ fn emit_seq_items(g: Grammar, seq: GSeq, ind: string, list_labels: List<string>,
     out
 }
 
-/// True iff the primary is a `@when(flag)` zero-width mode predicate (emit side).
+/// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read
+/// OR `@peek(cond)` token lookahead. Both emit no per-item body (the guard is folded).
 fn prim_is_pred_e(prim: GPrim) -> bool {
-    match prim { .Pred(_) -> true  _ -> false }
+    match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
 }
 
 /// One item. `idx == 0` is the branch's guard token (already matched by the
@@ -879,9 +880,10 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             }
             emit_node_items(g, inner, ind, list_labels, opts)
         }
-        // A `@when` predicate emits nothing (zero-width); emit_seq_items already
+        // A `@when`/`@peek` predicate emits nothing (zero-width); emit_seq_items already
         // skips it, so this is a defensive no-op for any other caller.
         .Pred(_) -> ""
+        .Peek(_) -> ""
         _ -> emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
     }
 }
@@ -1408,6 +1410,8 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
         // only if a predicate is used outside a leading position (seq_first_guard
         // folds leading ones); here it stands alone as its own gate.
         .Pred(flag) -> pred_guard(flag)
+        // `@peek` is the same shape — its guard is the lookahead conjunct (peek_guard).
+        .Peek(cond) -> peek_guard(cond)
     }
 }
 
@@ -1490,6 +1494,14 @@ fn pred_guard(flag: string) -> string {
     "st.modes.${flag} != 0"
 }
 
+/// The `@peek(cond)` guard expression — the emit twin of pred_guard, but a LOOKAHEAD
+/// conjunct. Emits a call to the SAME executor.lookahead_ok the interpreter's
+/// branch_pred_ok uses, so the generated parser and interpreter can never disagree on a
+/// cond's meaning (the discipline modes_flag gives @when, applied to the token side).
+fn peek_guard(cond: string) -> string {
+    "lookahead_ok(\"${cond}\", st)"
+}
+
 /// AND-join predicate guards (`a && b`), dropping empties.
 fn and_join(parts: List<string>) -> string {
     mut out = ""
@@ -1527,6 +1539,8 @@ fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             // A `@when` predicate is a zero-width AND-conjunct on the branch: it
             // contributes no FIRST token and never stops the scan.
             .Pred(flag) -> preds.push(pred_guard(flag))
+            // `@peek` is the same zero-width AND-conjunct, via the lookahead guard.
+            .Peek(cond) -> preds.push(peek_guard(cond))
             _ -> {
                 parts.push(prim_first_guard(g, item.prim, visited))
                 match item.rep {
@@ -1860,9 +1874,10 @@ fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
         .Group(_) -> "Token"
         .Ref(name) -> kind_elem_type(rule_result_kind(g, name))
         .Hand(hf) -> kind_elem_type(hand_kind(hf))
-        // A zero-width `@when` predicate is never captured into a list; this
-        // arm exists only for exhaustiveness.
+        // A zero-width `@when`/`@peek` predicate is never captured into a list; these
+        // arms exist only for exhaustiveness.
         .Pred(_) -> "Token"
+        .Peek(_) -> "Token"
     }
 }
 

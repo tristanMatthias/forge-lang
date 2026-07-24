@@ -71,6 +71,7 @@ fn render_prim(p: GPrim) -> string {
         .Group(inner) -> "( ${render_node(inner)} )"
         .Hand(hf) -> "@hand(${hf})"
         .Pred(m) -> "@when(${m})"
+        .Peek(c) -> "@peek(${c})"
     }
 }
 

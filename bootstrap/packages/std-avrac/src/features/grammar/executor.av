@@ -508,12 +508,15 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, tok: Token, visited: List<string>) -
         // reaches here for a LEADING position (tok_starts_seq skips it); this
         // arm covers a non-leading predicate, which contributes no FIRST token.
         .Pred(_) -> false
+        // `@peek` is the same zero-width shape — starts no token.
+        .Peek(_) -> false
     }
 }
 
-/// True iff the primary is a `@when(flag)` zero-width mode predicate.
+/// True iff the primary is a zero-width predicate — a `@when(flag)` mode read OR a
+/// `@peek(cond)` token lookahead. Both are skipped by tok_starts_seq's leading scan.
 fn prim_is_pred(prim: GPrim) -> bool {
-    match prim { .Pred(_) -> true  _ -> false }
+    match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
 }
 
 fn tok_starts_rule(g: Grammar, name: string, tok: Token, visited: List<string>) -> bool {
@@ -764,6 +767,25 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     true
 }
 
+/// Evaluate a `@peek(cond)` LOOKAHEAD predicate against the live token stream — the
+/// token-stream twin of modes_flag. Shared by the executor (branch_pred_ok) AND, via
+/// emit.peek_guard emitting the SAME `lookahead_ok(...)` call, the generated parser, so
+/// the two can never disagree. Kept in lockstep with seed_parser.peek_cond_supported.
+///   ident_colon — the current token is an IDENT and the NEXT token is `:` (PUNCT). The
+///     hand parse_paren_expr's peek_after_ident_is_colon: a typed lambda `(x: …) -> …`
+///     vs a grouping/tuple. (The current-is-IDENT half is redundant with the branch's
+///     own IDENT FIRST token, but included so the predicate fully mirrors the hand check
+///     and is correct in any position.) An unknown cond is ungated (true) — a typo is
+///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
+export fn lookahead_ok(cond: string, st: PState) -> bool {
+    if cond == "ident_colon" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == ":"
+    }
+    true
+}
+
 /// The WRITE twin of modes_flag: a copy of `modes` with the named flag turned OFF.
 /// The `@off(flag)` mode-SET marker's core, shared by the executor (push_mode_off)
 /// AND the emitted parser (emit lockstep), so the two can never disagree — the
@@ -799,6 +821,9 @@ fn branch_pred_ok(seq: GSeq, st: PState) -> bool {
     for item in seq.items {
         match item.prim {
             .Pred(flag) -> { if !modes_flag(st.modes, flag) { return false } }
+            // `@peek(cond)` gates on an upcoming-token test rather than a mode — the
+            // token-stream sibling; emit folds the equivalent guard (peek_guard).
+            .Peek(cond) -> { if !lookahead_ok(cond, st) { return false } }
             _ -> {}
         }
     }
@@ -1031,6 +1056,9 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // this alternative applies (branch_pred_ok in exec_node); executing the
         // predicate itself consumes no token and yields no value.
         .Pred(_) -> CapVal.Nil
+        // `@peek` is the same zero-width shape — the gate already ran (branch_pred_ok);
+        // executing it consumes no token and yields no value.
+        .Peek(_) -> CapVal.Nil
     }
 }
 

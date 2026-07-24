@@ -1,0 +1,85 @@
+// WHY: t-47hc (paren_expr flip prep) — the `@peek(cond)` LOOKAHEAD predicate, the
+// token-stream sibling of `@when(flag)`. Where `@when` gates a branch on an ExprModes
+// flag, `@peek` gates it on an upcoming-token test (executor.lookahead_ok). This is how
+// a grammar expresses the hand parser's fixed-lookahead disambiguations — specifically
+// parse_paren_expr's `peek_after_ident_is_colon()`, which distinguishes a typed lambda
+// `(x: int) -> …` from a grouping/tuple by peeking past the first IDENT for a `:`.
+//
+// DORMANT: no production grammar uses `@peek` yet, so generated parsers regen byte-
+// identical (emit-gen-check GENPASS). Executor (branch_pred_ok → lookahead_ok) and emit
+// (peek_guard emits the SAME lookahead_ok call) route through one shared function, so
+// the interpreter and the generated parser can't disagree — the lockstep discipline
+// `@when` has via modes_flag. This pins: parse + validation, interpreter branch-gating,
+// and the emitted guard.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, new_pstate, lookahead_ok, peek_cond_supported}
+use @std.avrac.core.{render_expr_id}
+
+fn run_render(grammar_src: string, input: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+fn emit_rule(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+fn perr(gsrc: string) -> string { parse_grammar(gsrc).error }
+
+// Two IDENT-led branches; branch 1 is gated by `@peek(ident_colon)`. On `foo: bar` the
+// lookahead holds → branch 1 fires (consumes `foo : bar`, wraps foo in Grouping); on a
+// bare `foo` it fails → branch 1 is skipped and branch 2 (bare ident) fires. The distinct
+// results (`(group foo)` vs `foo`) prove @peek gates branch selection, not just FIRST.
+fn peek_g() -> string { "r = @peek(ident_colon) x:@hand(ident) \":\" @hand(ident) -> Grouping(x)\n  | x:@hand(ident) -> x" }
+
+spec "t-47hc: @peek(ident_colon) — parse-time acceptance + validation" {
+    then "a valid @peek is accepted" {
+        perr(peek_g()) == ""
+    }
+    then "an unknown cond is a HARD error (not a silent dead guard)" {
+        perr("r = @peek(nonsense) x:@hand(ident) -> x") != ""
+    }
+    then "the parentheses are required — `@peek cond` without `(` fails" {
+        perr("r = @peek ident_colon x:@hand(ident) -> x") != ""
+    }
+    then "peek_cond_supported accepts ident_colon, rejects a typo and empty" {
+        peek_cond_supported("ident_colon") && !peek_cond_supported("ident_coln") && !peek_cond_supported("")
+    }
+}
+
+spec "t-47hc: @peek(ident_colon) — lookahead_ok token test (shared eval)" {
+    then "lookahead_ok holds when current is IDENT and next is `:`" {
+        mut st = new_pstate("foo : bar")
+        lookahead_ok("ident_colon", st)
+    }
+    then "lookahead_ok fails on a bare IDENT (no following `:`)" {
+        mut st = new_pstate("foo")
+        !lookahead_ok("ident_colon", st)
+    }
+    then "lookahead_ok fails when current is not an IDENT" {
+        mut st = new_pstate("123 : bar")
+        !lookahead_ok("ident_colon", st)
+    }
+}
+
+spec "t-47hc: @peek(ident_colon) — interpreter gates branch selection" {
+    then "the @peek branch fires when the lookahead holds (`foo: bar` -> Grouping)" {
+        run_render(peek_g(), "foo : bar") == "(group foo)"
+    }
+    then "the @peek branch is skipped when the lookahead fails (`foo` -> bare ident)" {
+        run_render(peek_g(), "foo") == "foo"
+    }
+}
+
+spec "t-47hc: @peek(ident_colon) — emit folds the lookahead guard" {
+    then "the emitted branch guard calls the shared lookahead_ok (emit↔exec lockstep)" {
+        emit_rule(peek_g(), "r").contains("lookahead_ok(\"ident_colon\", st)")
+    }
+    then "WITHOUT @peek, no lookahead_ok is emitted — byte-identical for grammars not using it" {
+        !emit_rule("r = x:@hand(ident) -> x", "r").contains("lookahead_ok(")
+    }
+}

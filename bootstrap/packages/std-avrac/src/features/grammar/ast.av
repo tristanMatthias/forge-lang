@@ -148,6 +148,15 @@ export enum GPrim {
     /// Predicates AND (all must hold) where FIRST-token alternatives OR; a
     /// leading `@when` is nullable (it never contributes a FIRST token).
     Pred(mode: string)
+    /// `@peek(cond)` — a zero-width LOOKAHEAD SEMANTIC PREDICATE (t-47hc paren prep).
+    /// The token-stream sibling of `@when`: same zero-width / nullable / AND-gating /
+    /// no-repetition shape, but instead of reading an `ExprModes` flag it inspects the
+    /// upcoming TOKENS. This is how a grammar expresses the hand parser's fixed-lookahead
+    /// disambiguations — e.g. `parse_paren_expr`'s `peek_after_ident_is_colon()`, which
+    /// distinguishes a typed lambda `(x: int) -> …` from a grouping/tuple by peeking past
+    /// the first IDENT for a `:`. `cond` names the lookahead check (validated against
+    /// seed_parser.peek_cond_supported; executor.lookahead_ok maps it to a token test).
+    Peek(cond: string)
 }
 
 /// The `-> …` build that constructs the result from captures.
