@@ -60,8 +60,11 @@ spec "t-47hc.10 spike: backtracking `*` dissolves the trailing comma" {
     then "a single-element trailing comma parses" {
         !errs(LIST, "[ 1 , ]")
     }
-    then "a DOUBLE/leading comma still errors — no over-acceptance" {
+    then "a DOUBLE comma still errors — no over-acceptance" {
         errs(LIST, "[ 1 , , 2 ]")
+    }
+    then "a LEADING comma still errors — no over-acceptance" {
+        errs(LIST, "[ , 1 ]")
     }
     then "an unterminated list still errors" {
         errs(LIST, "[ 1 , 2")
