@@ -109,6 +109,12 @@ export type GItem = {
     // (the `while foo {` struct-literal-vs-body disambiguation). Empty = no set
     // (every item today). The write-side complement of `@when`'s modes_flag READ.
     mode_off: string,
+    // t-47hc mode-SET marker (`@on(flag)`): the SET-ON twin of `mode_off` — the name
+    // of an ExprModes flag to turn ON for the duration of this item's sub-parse, then
+    // restore. Mirrors the hand parser's `saved = allow_dot_postfix; allow_dot_postfix
+    // = true; … = saved` (parse_paren_expr re-enables dot-postfix inside `(...)`).
+    // Empty = no set. mode_off and mode_on are mutually exclusive on one item.
+    mode_on: string,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -169,7 +175,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then

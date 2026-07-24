@@ -167,11 +167,11 @@ export fn parse_grammar(src: string) -> GrammarParse {
     let toks = scan_grammar(src)
     mut p = GP { toks, pos: 0, error: "" }
     let g = parse_grammar_body(p)
-    // Validate `@off(flag)` marker POSITIONS after the tree is built (the fold/@try
-    // shape is structural) — only when the parse itself was clean, so a syntax
-    // error isn't masked by a position error on a half-built tree.
+    // Validate `@off(flag)`/`@on(flag)` mode-SET marker POSITIONS after the tree is
+    // built (the fold/@try shape is structural) — only when the parse itself was
+    // clean, so a syntax error isn't masked by a position error on a half-built tree.
     if p.error == "" {
-        let oe = validate_off_markers(g)
+        let oe = validate_mode_markers(g)
         if oe != "" { p.error = oe }
     }
     GrammarParse { grammar: g, error: p.error }
@@ -390,7 +390,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_off_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_off_marker(p) || at_on_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -431,6 +431,14 @@ export fn off_flag_supported(flag: string) -> bool {
         flag == "allow_it_sugar" || flag == "cell_mode"
 }
 
+/// The parse-MODE flags a `@on(flag)` marker (GItem.mode_on) may turn ON — the
+/// SET-ON twin of off_flag_supported (the same settable ExprModes bools). Kept in
+/// lockstep with executor.modes_with_flag_on (a new @on-able flag is added in both).
+export fn on_flag_supported(flag: string) -> bool {
+    flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
+        flag == "allow_it_sugar" || flag == "cell_mode"
+}
+
 /// True when the cursor is `@off` — the leading mode-SET item marker (t-47hc),
 /// distinct from the `@hand`/`@when` primaries and the `@expect`/`@recover`
 /// annotations. It prefixes the item it scopes, so seq_can_continue must treat
@@ -442,50 +450,64 @@ fn at_off_marker(p: GP) -> bool {
     nxt.kind == "NAME" && nxt.text == "off"
 }
 
-// ── @off marker POSITION validation (t-47hc) ──
+/// True when the cursor is `@on` — the SET-ON twin of at_off_marker. Same item-start
+/// role, so seq_can_continue must treat it as an item-start too.
+fn at_on_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "on"
+}
 
-/// Reject `@off(flag)` in any position the GENERATED parser can't honor identically
-/// to the executor. The executor runs EVERY item through exec_item (so it honors
-/// @off everywhere), but emit has specialised paths that BYPASS emit_item — emit_fold
-/// (a fold branch's seed + accumulators) and emit_speculative_branch (a `@try`
-/// branch's items) — and inlines structural `( … )` groups with a per-sequence
-/// item index that RESTARTS when nested (so two nested @off items would emit a
-/// colliding `__modes_N` binding). So @off is supported ONLY on a DIRECT item of a
-/// TOP-LEVEL, non-`@try`, non-fold rule branch, and never on a `@hand`/`@when`
+// ── @off / @on mode-SET marker POSITION validation (t-47hc) ──
+
+/// Reject `@off(flag)`/`@on(flag)` in any position the GENERATED parser can't honor
+/// identically to the executor. The executor runs EVERY item through exec_item (so it
+/// honors the marker everywhere), but emit has specialised paths that BYPASS emit_item
+/// — emit_fold (a fold branch's seed + accumulators) and emit_speculative_branch (a
+/// `@try` branch's items) — and inlines structural `( … )` groups with a per-sequence
+/// item index that RESTARTS when nested (so two nested mode markers would emit a
+/// colliding `__modes_N` binding). So a mode marker is supported ONLY on a DIRECT item
+/// of a TOP-LEVEL, non-`@try`, non-fold rule branch, and never on a `@hand`/`@when`
 /// primary. Everything else is a HARD grammar error — keeping the executor and the
 /// generated parser in lockstep (BOTH reject the same grammars) instead of silently
 /// diverging. Runs after the tree is built (the fold/@try shape is structural).
 /// Returns "" when clean.
-fn validate_off_markers(g: Grammar) -> string {
+fn validate_mode_markers(g: Grammar) -> string {
     for rule in g.rules {
-        let e = check_off_node(rule.body, true, rule.name)
+        let e = check_mode_node(rule.body, true, rule.name)
         if e != "" { return e }
     }
     ""
 }
 
-fn check_off_node(node: GNode, top: bool, rule: string) -> string {
+fn check_mode_node(node: GNode, top: bool, rule: string) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
-                // @off on a DIRECT item is honored only on a top-level, non-@try,
+                // @off/@on on a DIRECT item is honored only on a top-level, non-@try,
                 // non-fold branch (the general emit_seq_items / passthrough path).
                 let branch_ok = top && !b.speculative && !branch_is_expr_fold(b)
                 for item in b.items {
-                    if item.mode_off != "" {
+                    // The two mode-SET markers are mutually exclusive on one item
+                    // (enforced at parse), share identical emit/exec positions, so
+                    // validate whichever is present with the same rule.
+                    let mk = if item.mode_off != "" { "@off" } else { "@on" }
+                    let fl = if item.mode_off != "" { item.mode_off } else { item.mode_on }
+                    if item.mode_off != "" || item.mode_on != "" {
                         if !branch_ok {
-                            return "`@off(${item.mode_off})` is only allowed on a direct item of a top-level, non-`@try`, non-fold branch (rule `${rule}`)"
+                            return "`${mk}(${fl})` is only allowed on a direct item of a top-level, non-`@try`, non-fold branch (rule `${rule}`)"
                         }
                         if prim_is_hand_or_pred(item.prim) {
-                            return "`@off(${item.mode_off})` cannot wrap a `@hand`/`@when` primary (rule `${rule}`)"
+                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when` primary (rule `${rule}`)"
                         }
                     }
-                    // A structural group is a NESTED sequence — @off inside it is
-                    // not a top-level item (inlined with a restarting idx), so recurse
+                    // A structural group is a NESTED sequence — a mode marker inside it
+                    // is not a top-level item (inlined with a restarting idx), so recurse
                     // with top=false to reject it.
                     match item.prim {
                         .Group(inner) -> {
-                            let e = check_off_node(inner, false, rule)
+                            let e = check_mode_node(inner, false, rule)
                             if e != "" { return e }
                         }
                         _ -> {}
@@ -555,6 +577,34 @@ fn parse_labeled(p: GP) -> GItem {
         }
         p.expect_punct(")", "expected `)` to close `@off(flag)`")
     }
+    // t-47hc mode-SET marker `@on(flag)`: the SET-ON twin of `@off` — turn a settable
+    // ExprModes flag ON for this item's sub-parse (parse_paren_expr re-enables
+    // allow_dot_postfix inside `(...)`). Same STRICT grammar `@` `on` `(` NAME `)`,
+    // validated against on_flag_supported. mode_off and mode_on can't both be set.
+    mut mode_on = ""
+    if at_on_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "on"
+        p.expect_punct("(", "expected `(` after `@on`")
+        if p.peek().kind == "NAME" {
+            let fl = p.advance().text
+            if on_flag_supported(fl) {
+                mode_on = fl
+            } else {
+                p.fail("unknown `@on` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
+            }
+        } else {
+            p.fail("expected a flag name in `@on(flag)`")
+        }
+        p.expect_punct(")", "expected `)` to close `@on(flag)`")
+    }
+    // Enforce the mutual-exclusion invariant the comments assert: emit_item /
+    // exec_item honour mode_off FIRST and would silently drop a co-present
+    // mode_on, so reject `@off(x) @on(y)` on one item as a hard parse error
+    // rather than generate a dead mode-set.
+    if mode_off != "" && mode_on != "" {
+        p.fail("`@off` and `@on` cannot both apply to one item")
+    }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
     // bare NAME primary isn't mistaken for a label.
@@ -566,7 +616,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

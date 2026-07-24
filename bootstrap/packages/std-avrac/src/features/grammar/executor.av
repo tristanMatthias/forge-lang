@@ -428,6 +428,13 @@ impl PState {
         self.modes = modes_with_flag_off(self.modes, flag)
         saved
     }
+    /// The `@on(flag)` SET-ON twin of push_mode_off: save modes, turn the flag ON,
+    /// return the saved modes for restore_modes.
+    fn push_mode_on(self, flag: string) -> ExprModes {
+        let saved = self.modes
+        self.modes = modes_with_flag_on(self.modes, flag)
+        saved
+    }
     /// Restore modes saved by push_mode_off (`… = saved`).
     fn restore_modes(self, saved: ExprModes) {
         self.modes = saved
@@ -774,6 +781,16 @@ export fn modes_with_flag_off(modes: ExprModes, flag: string) -> ExprModes {
     modes
 }
 
+/// The `@on(flag)` SET-ON twin of modes_with_flag_off — turns the named settable
+/// ExprModes flag TRUE. Kept in lockstep with seed_parser.on_flag_supported.
+export fn modes_with_flag_on(modes: ExprModes, flag: string) -> ExprModes {
+    if flag == "allow_struct_lit" { return modes with { allow_struct_lit: true } }
+    if flag == "allow_dot_postfix" { return modes with { allow_dot_postfix: true } }
+    if flag == "allow_it_sugar" { return modes with { allow_it_sugar: true } }
+    if flag == "cell_mode" { return modes with { cell_mode: true } }
+    modes
+}
+
 /// True iff every `@when(flag)` predicate on the branch holds under the live
 /// modes. Predicates AND — all must hold for the branch to apply. A branch with
 /// no predicate is trivially ok. This is the executor half of `@when`; the emit
@@ -918,6 +935,14 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // condition. Empty mode_off (every item today) is a zero-cost passthrough.
     if item.mode_off != "" {
         let saved = st.push_mode_off(item.mode_off)
+        let r = exec_item_body(g, item, st, env, multi, annots)
+        st.restore_modes(saved)
+        return r
+    }
+    // `@on(flag)` mode-SET marker: the SET-ON twin — set the flag ON for the item's
+    // sub-parse, then restore (parse_paren_expr's `allow_dot_postfix = true`).
+    if item.mode_on != "" {
+        let saved = st.push_mode_on(item.mode_on)
         let r = exec_item_body(g, item, st, env, multi, annots)
         st.restore_modes(saved)
         return r
