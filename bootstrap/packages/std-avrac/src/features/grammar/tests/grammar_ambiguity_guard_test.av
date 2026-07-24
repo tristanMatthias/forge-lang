@@ -69,6 +69,14 @@ spec "t-47hc.16: a @peek-led branch does not shadow a same-FIRST sibling" {
         let gp = parse_grammar("r = @peek(lparen_ident_colon) \"(\" IDENT \":\" IDENT | \"(\" \")\"")
         gp.error == "" && grammar_ambiguities(gp.grammar).length == 0
     }
+    then "a @when-led branch likewise does not shadow a same-FIRST sibling" {
+        // @when(flag) is the mode-READ predicate twin of @peek (token-lookahead): both
+        // are zero-width and conditionally-committing, so seq_is_pred_led exempts BOTH
+        // (ff_is_pred covers .Pred and .Peek). `at_quote_top` is the read predicate the
+        // production `unary` grammar already gates its `~` branch on.
+        let gp = parse_grammar("r = @when(at_quote_top) \"(\" IDENT | \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 0
+    }
     then "CONTROL: two PLAIN branches both leading `(` ARE still flagged (the guard is intact)" {
         let gp = parse_grammar("r = \"(\" \")\" | \"(\" IDENT")
         gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
