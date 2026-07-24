@@ -391,6 +391,16 @@ impl PState {
         self.had_error = false
     }
 
+    /// Replace the parse modes (self-ptr mutator) — the emit twin of the executor's
+    /// @off save/clear/restore, so a GENERATED parser (immutable `st` param) can push
+    /// and restore modes around a control-flow header condition. A direct
+    /// `st.modes = …` field-write does NOT compile on the generated fn's immutable
+    /// `st`, so the @off emit MUST route through this (exactly like st.advance()/
+    /// st.report()/st.clear_error()).
+    fn set_modes(self, m: ExprModes) {
+        self.modes = m
+    }
+
     /// Phase 3a base-threading (self-ptr mutators): `seed_postfix` records the
     /// primary base + the chain's start byte (`@hand(primary_base)` result);
     /// `set_postfix_base` updates the accumulator after each `postfix_suffix` step.
