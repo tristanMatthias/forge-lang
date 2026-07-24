@@ -59,4 +59,15 @@ spec "grammar emitter: renders the whole-program generated static parser" {
         src.contains("CapVal.TExpr(run_hand_type(\"qualified_type\", st))") &&
         src.contains("CapVal.Node(run_hand_expr(\"quote_expr\", st))")
     }
+
+    // t-47hc: the SIMPLE identifier leaf was migrated off the @hand escape hatch.
+    // The unified grammar's `primary` now uses a native `IDENT` terminal (built via
+    // literal_node — the SAME leaf path as NUMBER/STRING), so the whole-program
+    // parser no longer routes a bare identifier through the hand parser. Proven
+    // byte-identical by diagnose.sh --emit-gen-check (whole-program GENPASS) — the
+    // rendered identifier AST is unchanged; only the leaf's provenance is native.
+    then "identifiers parse NATIVELY — @hand(ident) is deleted from the unified grammar" {
+        let src = emit_all()
+        !src.contains("run_hand_expr(\"ident\", st)")
+    }
 }
