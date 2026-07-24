@@ -303,6 +303,28 @@ too — no flag needed.
   proves the source *builds* from the seed; diff-test proves it *behaves*
   identically.
 
+### The grammar EXECUTOR is the production parser — do NOT bolt backtracking onto it (t-47hc)
+
+A hard-won architectural rule from the abandoned PR #976. The grammar
+**executor** (`packages/std-avrac/src/features/grammar/executor.av`,
+`exec_rule`/`exec_repeat`) is NOT just an interpreter oracle for the
+grammar-DSL tests — it is ALSO the **live production parser** for the type
+family (`type_flip` → `run_dsl_type_at_shared`). So ANY behavioural change
+to `exec_*` — adding compiler-inserted backtracking (`mark`/`restore` per
+repetition), changing capture-env rollback, anything — **changes the IR the
+real compiler emits, and is non-byte-identical BY CONSTRUCTION.** diff-test
+(rightly) rejects it. This is why #976's "add backtracking to the executor"
+approach was a dead end: it could never be byte-identical, because the thing
+it modified is on the production path. **The correct shape** (the t-47hc.10
+greenfield direction): build the new backtracking engine as a **separate
+module** that owns its own parser, validate it standalone against the
+executor oracle from COLD builds, and only swap it onto the production path
+in a deliberate, `intended-ir-change`-labelled step — never by mutating the
+shared executor in place. Before changing anything under
+`features/grammar/executor.av`, check whether `type_flip` still routes
+through it; if it does, your change is a production-parser change, not a
+test-only one.
+
 ## CRITICAL RULE: Test cycle hygiene
 
 The full `make test` is ~60s warm (19s suite + selfhost check; cold
@@ -471,6 +493,13 @@ spawning, so a stale artifact can no longer mask a crashed child (the old
 **On a ≤16GB Claude-Code-Web container, `make test` doesn't just OOM — it takes the whole container down** (three restarts in one 2026-07-12 session, all mid-suite). The pattern that survives is now a first-class mode: **`make sweep`** (= `diagnose.sh --sweep`) — one sequential `bs2 test <dir>` per test directory, per-dir logs + `.ok` resume markers under `build/sweep/` (a kill resumes at the failing dir instead of restarting), loud failure at the first red dir (no later dir masks an earlier one), and a suite-wide tally on green. `FRESH=1` (or `--fresh`) drops the markers; extra args scope it to specific dirs. This is the sanctioned full-suite runner on a small box; pair it with `make selfhost` for the full `make test` equivalent.
 
 Do NOT rebuild `bs2` (or clear caches) while a sweep is running; the runner re-invokes `./build/bs2` per compile and a mid-sweep rebuild silently invalidates the run.
+
+**The memory watchdog — WRAP EVERY HEAVY RUN (`make guarded` / `diagnose.sh --guarded`, t-lqzr).** `make sweep` covers the full *test* suite, but the two heaviest runs — **`make diff-test`** (TWO concurrent whole-compiler selfhost compiles) and any **cold `make build` / `make test`** — have repeatedly OOM-killed the *whole container*, not just the command (multiple restarts across sessions; the box is simply too small for the peak, there is NO code bug to chase). The durable fix is a watchdog that caps the blast radius: it polls `MemAvailable` every ~0.4s and, below a floor, SIGKILLs the heavy procs (`bs2`/`llc`/`cc1plus`/`clang`/`cc1`) so the *compile* dies and the container lives. **Rules for the small box:**
+- **Never run `make diff-test`, a cold `make build`/`make test`, or a parallel `bs2 test <dir>` UNGUARDED.** Wrap them: `make guarded CMD="make diff-test" FLOOR=5500` (or `bash scripts/diagnose.sh --guarded 5500 -- make diff-test`). `--guarded` also forces `AVRA_TEST_JOBS=1`, starts the watchdog, runs the command, and ALWAYS tears the watchdog down. `5500` is the proven floor here.
+- **For iterating on tests, use single-file runs** (`./build/bs2 test tests/<one>_test.av`), not a whole-dir fan-out. `bs2 test <dir>` runs `jobs=5` parallel shards — a memory spike. Set `AVRA_TEST_JOBS=1` if you must run a dir, and guard it.
+- The raw watchdog is `diagnose.sh --memguard [FLOOR]` (background it yourself and `kill` it, or just use `--guarded`). Trips are logged to `build/memguard/log`, so an OOM death is diagnosable after the fact. `DIFF_TEST_JOBS` only controls corpus fan-out — it does NOT reduce the two hard-coded-concurrent selfhost compiles, so diff-test ALWAYS needs the watchdog, not just a lower jobs count.
+
+**A local `diff-test` PASS is UNTRUSTWORTHY unless the compiler was built COLD — CI is the authority.** `make diff-test PREBUILT=1` (and any local run against a warm `build/bs2`) reuses caches / the metadata fast-path that can MASK real compiler breakage — a warm build can be green while the cold build CI runs is broken (the same trap CLAUDE.md notes for `build-quick`). This bit hard on the abandoned PR #976: a local hermetic PASS was declared a "flake" when CI diverged; CI diverged *again identically* — it was never a flake, the local run was a false pass. **Before trusting a diff-test locally, build cold** (`make clean` first, or run the hermetic `make diff-test` with no `PREBUILT`), and treat CI's cold result as the source of truth. Do NOT relabel a CI diff-test divergence as a flake without cold-reproducing it locally first.
 
 **Sweep-first COMMITS on a small box.** The pre-commit hook's parallel per-file suite OOMs when it runs COLD — and any compiler-source edit (comments included) changes source fingerprints, so every shard compile goes cold. The commit pattern that survives: `make build-quick && make sweep FRESH=1` first (sequential, restart-resumable), THEN `git commit` — the hook's suite replays the sweep-warmed fixture captures at low load (a warm gate is ~2-3 min). Doc/test-only commits (no compiler source) skip the sweep. Also check `du -sh /tmp/build` when disk runs low: fixtures compiling with cwd=/tmp leak a compile cache; `make cache-gc` now reaches it (t-2qn0 — `--prune-tmp-scratch` sweeps `/tmp/avra_*` + `/tmp/build`; the residual cwd=/tmp compile foot-gun is t-wrgc).
 
