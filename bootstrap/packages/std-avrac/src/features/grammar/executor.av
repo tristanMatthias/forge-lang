@@ -432,6 +432,28 @@ impl PState {
         while !self.at_end() && self.cur().text != tok { let _ = self.advance() }
         if self.cur().text == tok { let _ = self.advance() }
     }
+
+    /// Statement-boundary synchronize — the PState twin of the hand parser's
+    /// no-arg `Parser.synchronize` (parse/mod.av:3658): advance until a statement
+    /// LEAD keyword or `}`, WITHOUT consuming it. Matches by `Tk` (NOT text) so a
+    /// string/ident token whose text spells a keyword can't wrongly halt the scan —
+    /// byte-identical to the hand boundary set (fn/let/const/mut/type/enum/impl/if/
+    /// while/for/match/return/extern/trait/defer/spec/given/then/select + RightBrace;
+    /// errdefer and break/continue are deliberately NOT boundaries). Dormant: wired
+    /// in when the generated block statement-list-with-recovery loop lands (t-47hc.13).
+    fn synchronize_stmt(self) {
+        while !self.at_end() {
+            let k = self.cur().tk
+            if k == Tk.KwFn || k == Tk.KwLet || k == Tk.KwConst || k == Tk.KwMut ||
+                k == Tk.KwType || k == Tk.KwEnum || k == Tk.KwImpl || k == Tk.KwIf ||
+                k == Tk.KwWhile || k == Tk.KwFor || k == Tk.KwMatch || k == Tk.KwReturn ||
+                k == Tk.KwExtern || k == Tk.KwTrait || k == Tk.KwDefer || k == Tk.KwSpec ||
+                k == Tk.KwGiven || k == Tk.KwThen || k == Tk.KwSelect || k == Tk.RightBrace {
+                return
+            }
+            let _ = self.advance()
+        }
+    }
 }
 
 // ── FIRST-set membership (branch selection + repetition guards) ──
