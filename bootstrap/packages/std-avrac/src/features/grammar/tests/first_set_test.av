@@ -53,4 +53,13 @@ spec "t-47hc.3: FIRST-set ambiguity analysis" {
         render_ambiguities(clean_grammar(), grammar_ambiguities(clean_grammar())) == ""
             && render_ambiguities(ambiguous_grammar(), grammar_ambiguities(ambiguous_grammar())).length > 0
     }
+    then "a @try (speculative) earlier branch does NOT silently shadow a later FIRST-overlap" {
+        // Both branches lead with `[`, but branch 0 is `@try`: it snapshots, runs, and
+        // ROLLS BACK on failure, so branch 1 is still reachable — NOT a shadow. The guard
+        // skips the pair. Removing the `@try` restores the ordinary same-lead shadow
+        // (branch 0 commits on `[`). This is what lets the production list_expr flip
+        // (`@try "[" list_comp "]"` vs `"[" … "]"`) pass the FIRST/FIRST guard.
+        grammar_ambiguities(parse_grammar("start = @try \"[\" NUMBER \"]\" | \"[\" NUMBER NUMBER \"]\"").grammar).length == 0
+            && grammar_ambiguities(parse_grammar("start = \"[\" NUMBER \"]\" | \"[\" NUMBER NUMBER \"]\"").grammar).length == 1
+    }
 }

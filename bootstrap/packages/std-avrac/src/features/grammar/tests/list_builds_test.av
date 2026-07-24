@@ -1,0 +1,81 @@
+// WHY: t-47hc.4 (Phase 3 prep) — DORMANT `[ … ]` list-literal + comprehension BUILDS
+// (mk_list_lit / mk_list_comp), proven here via test grammars BEFORE they are spent to
+// nativize @hand(list_expr) in avra_expr_grammar. The builds are referenced by NO
+// production grammar yet, so emit-gen-check + diff-test stay byte-identical (the #988
+// dormant-primitive discipline: build the primitive, prove it, spend it later). Both
+// sides are exercised: the INTERPRETER (run_grammar_expr) builds the real
+// Expr.ListLit / Expr.ListComp (render-checked), and the EMITTER (emit_rule_fn) lowers
+// the same build to a mk_list_lit / mk_list_comp call in the generated static parser.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, Grammar, Rule}
+use @std.avrac.core.{render_expr_id}
+
+// Parse `grammar_src`, run rule 0 over `input`, render the resulting expression.
+fn run_render(grammar_src: string, input: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+// Emit the named rule's generated static parse fn from `grammar_src`.
+fn emit_rule(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// The list-literal grammar: `[` optional-comma-list `]` -> MkListLit — mirrors mk_inlist's
+// `a` accumulator (scalar->list promotion via append_node, which accumulates only NODE
+// captures), so empty/single/multi are uniform (Nil -> []). Elements are a node-producing
+// sub-rule (`paren` -> Grouping) because append_node collects Expr NODES, not bare
+// terminal tokens — exactly as the real list_expr's `a:expression` yields Expr nodes.
+fn lit_g() -> string { "r = \"[\" ( a:paren ( \",\" a:paren )* )? \"]\" -> MkListLit(a)\n paren = \"(\" e:NUMBER \")\" -> Grouping(e)" }
+// The comprehension grammar (no filter): `[ body for v in coll ]`. MkListComp is built
+// in the `cbody` SUB-RULE entered AFTER `[`, so its rule-entry sp_start anchors at the
+// BODY expression — matching the hand parse_list_elements (span @ first element, NOT the
+// `[`). The outer `r` consumes the brackets and passes cbody's node through (`-> x`),
+// exactly the two-level shape the production list_expr flip needs (ListLit @ `[` in the
+// outer rule, ListComp @ body in the inner). MkListLit keeps its `[` anchor (rule `r`).
+fn comp_g() -> string { "r = \"[\" x:cbody \"]\" -> x\n cbody = b:NUMBER \"for\" v:IDENT \"in\" c:IDENT -> MkListComp(b, v, c)" }
+// With the optional `if` filter — arity-4 MkListComp, `f` an optional-scalar (Nil absent).
+fn comp_f_g() -> string { "r = \"[\" x:cbody \"]\" -> x\n cbody = b:NUMBER \"for\" v:IDENT \"in\" c:IDENT ( \"if\" f:NUMBER )? -> MkListComp(b, v, c, f)" }
+
+spec "t-47hc.4: DORMANT list-literal build (mk_list_lit)" {
+    then "a multi-element list builds Expr.ListLit in source order" {
+        run_render(lit_g(), "[(1), (2), (3)]") == "(list ((group 1), (group 2), (group 3)))"
+    }
+    then "an empty list builds an empty Expr.ListLit" {
+        run_render(lit_g(), "[]") == "(list ())"
+    }
+    then "a single-element list builds a one-element Expr.ListLit" {
+        run_render(lit_g(), "[(5)]") == "(list ((group 5)))"
+    }
+    then "the emitter lowers MkListLit to a mk_list_lit call" {
+        emit_rule(lit_g(), "r").contains("mk_list_lit(")
+    }
+}
+
+spec "t-47hc.4: DORMANT list-comprehension build (mk_list_comp)" {
+    then "a comprehension builds Expr.ListComp with body/var/collection" {
+        run_render(comp_g(), "[1 for x in xs]") == "(list-comp 1 for x in xs)"
+    }
+    then "the comprehension carries no filter when the `if` clause is absent" {
+        !run_render(comp_g(), "[1 for x in xs]").contains(" if ")
+    }
+    then "the optional `if` filter is threaded when present (arity-4)" {
+        run_render(comp_f_g(), "[1 for x in xs if 0]") == "(list-comp 1 for x in xs if 0)"
+    }
+    then "the arity-4 grammar omits the filter when the `if` clause is absent" {
+        run_render(comp_f_g(), "[1 for x in xs]") == "(list-comp 1 for x in xs)"
+    }
+    then "the emitter lowers MkListComp to a mk_list_comp call" {
+        emit_rule(comp_g(), "cbody").contains("mk_list_comp(")
+    }
+    then "MkListComp is span-anchored at the BODY (its sub-rule entry after `[`), not `[`" {
+        // cbody is entered AFTER `[` (the outer `r` consumed it), so cbody's rule-entry
+        // `let sp_start = st.cur().pos` is the BODY byte — the hand parse_list_elements
+        // anchor (span @ first element). The `[`-anchored MkListLit stays in rule `r`.
+        emit_rule(comp_g(), "cbody").contains("let sp_start = st.cur().pos")
+    }
+}

@@ -469,6 +469,8 @@ fn build_uses_sp_start(name: string) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
         name == "mk_enum_ctor" ||
+        // `[ … ]` list literal + comprehension span the `[` byte (t-47hc.4, DORMANT).
+        name == "MkListLit" || name == "MkListComp" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -1151,6 +1153,15 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, sp_start, ${args[0]}, ${args[1]}))"
         "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
         "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
+        // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; see executor
+        // mk_list_lit/mk_list_comp). `a` is the comma-list repetition accumulator (like
+        // mk_inlist's), spanned at sp_start (the `[` byte). MkListComp's body/v/coll are
+        // scalars; the optional `filt` (arity 4) is Nil when the `( if … )?` is absent.
+        "MkListLit" -> "CapVal.Node(mk_list_lit(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
+        "MkListComp" -> {
+            let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
+            "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
+        }
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
         // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒
@@ -1732,7 +1743,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,

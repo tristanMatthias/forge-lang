@@ -149,6 +149,19 @@ export fn grammar_ambiguities(g: Grammar) -> List<GAmbiguity> {
                 }
                 mut i = 0
                 while i < firsts.length {
+                    // A speculative (`@try`) branch i is bounded backtracking: on a
+                    // FIRST-overlap with a LATER branch it does NOT silently shadow it —
+                    // it snapshots, runs, and ROLLS BACK on failure, so branch j is still
+                    // reachable. The ordered-choice shadow hazard this guard catches only
+                    // applies to a NON-speculative branch i that COMMITS on the shared
+                    // lead token. So skip pairs whose earlier branch is `@try` — the
+                    // overlap is INTENTIONAL (e.g. the production `list_expr`'s
+                    // `@try "[" list_comp "]"` vs `"[" … "]"`, both leading with `[`).
+                    // A non-speculative branch i shadowing a later j is STILL flagged.
+                    if branches[i].speculative {
+                        i = i + 1
+                        continue
+                    }
                     mut j = i + 1
                     while j < firsts.length {
                         let sh = shared_terms(firsts[i], firsts[j])

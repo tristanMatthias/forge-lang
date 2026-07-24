@@ -264,3 +264,32 @@ spec "t-47hc.3.1: malformed mandatory-terminal constructors recover == hand" {
         agree_tree("fn f() -> int {\n let b = x in 1 2\n return 0\n}")
     }
 }
+
+// t-47hc.4.5: the grammar-native `list_expr` (@try comprehension branch + list branch,
+// replacing @hand(list_expr)) recovers from malformed list literals AND comprehensions
+// byte-identically to the hand parse_list_expr / parse_list_elements — the flip's error-
+// path parity (diff-test only covers VALID programs). A failed comprehension @try rolls
+// back so the list branch / enclosing recovery reports; these lock that the recovered
+// F-codes AND trees match hand.
+spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
+    then "malformed list literals REPORT and agree (unclosed, stray/missing comma)" {
+        agree_error("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let z = [1,,2]\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let z = [1 2]\n return 0\n}")
+    }
+    then "malformed comprehensions REPORT and agree (missing var / collection)" {
+        agree_error("fn f() -> int {\n let z = [a for]\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let z = [a for x]\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let z = [a for x in]\n return 0\n}")
+    }
+    then "the recovered TREES agree with hand (strictly stronger than F-codes)" {
+        agree_tree("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let z = [1,,2]\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let z = [a for]\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let z = [a for x in]\n return 0\n}")
+    }
+    then "well-formed list + comprehension produce NO diagnostics under either mode" {
+        agree("fn f() -> int {\n let z = [1, 2, 3]\n let w = [x for x in z]\n return 0\n}") &&
+        static_raw("fn f() -> int {\n let z = [1, 2, 3]\n let w = [x for x in z]\n return 0\n}") == ""
+    }
+}
