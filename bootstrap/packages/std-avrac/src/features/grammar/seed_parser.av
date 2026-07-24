@@ -320,16 +320,14 @@ fn parse_seq(p: GP) -> GSeq {
     // lockstep — the same @when-rejection discipline) rather than silently diverge.
     if speculative {
         for it in items {
-            // A capture label is pure liability in a `@try` recognizer: the
-            // interpreter's exec_seq bind()s it into the shared CapEnv (which
-            // exec_node's rollback does NOT restore → a stale binding could leak to
-            // a sibling branch), while emit_spec_item drops it entirely (no label
-            // assignment) — so a labelled @try item diverges on BOTH rollback and
-            // commit. Reject it (the build is already rejected below; capture in the
-            // committed rule instead), closing both gaps by construction.
-            if it.label != "" {
-                p.fail("a `@try` branch item cannot bind a capture label (bounded speculation is a pure recognizer; capture in the committed rule instead)")
-            }
+            // GAP3 @try-with-builds (t-47hc.13): a `@try` branch MAY now bind capture
+            // labels and carry a `-> build`. Byte-identity across rollback is closed
+            // on BOTH sides — the interpreter's exec_node snapshots+restores env.caps
+            // around the speculative exec_seq (so a rolled-back branch's bindings can't
+            // leak to a sibling), and emit_spec_item assigns each label to a LOCAL
+            // `let` (auto-scoped, so the emit side never leaks). A build is applied on
+            // commit by exec_seq (interpreter) / emit_speculative_branch (generated),
+            // the same emit_call_build/apply_build the committed-rule path uses.
             match it.rep {
                 .One -> {}
                 _ -> p.fail("a `@try` branch item cannot take a `*`/`+`/`?` repetition (bounded speculation supports a flat terminal/ref sequence only)")
@@ -342,12 +340,42 @@ fn parse_seq(p: GP) -> GSeq {
                 _ -> p.fail("a `@try` branch may contain only terminals and rule references (no groups or `@hand`)")
             }
         }
-        match build {
-            .None -> {}
-            _ -> p.fail("a `@try` branch cannot carry a `-> build` (bounded speculation is a recognizer; capture in the committed rule instead)")
+        // A bound label becomes an auto-scoped `let <label>` local in the generated
+        // speculative branch (emit_spec_item). It must not (a) collide with the branch
+        // scaffolding (`s_pos`/`s_mark`/`s_diags`/`s_err`/`s_last`/`sp_start`/`tried_spec`)
+        // nor (b) repeat within the branch — `let x` twice won't compile. The interpreter
+        // would silently last-wins a duplicate (set_scalar) and never see the scaffolding,
+        // so both sides diverge unless we REJECT here (the same lockstep discipline).
+        mut seen_labels: List<string> = []
+        for lab_it in items {
+            if lab_it.label == "" { continue }
+            if try_label_reserved(lab_it.label) {
+                p.fail("a `@try` branch label cannot be a reserved name (`s_pos`/`s_mark`/`s_diags`/`s_err`/`s_last`/`sp_start`/`tried_spec`) — it would collide with the speculative branch scaffolding")
+            }
+            if str_in_seq(seen_labels, lab_it.label) {
+                p.fail("a `@try` branch cannot bind the label `${lab_it.label}` twice — each label becomes a distinct generated local")
+            }
+            seen_labels.push(lab_it.label)
         }
     }
     GSeq { items, build, annots, speculative }
+}
+
+/// True iff `name` is a local the generated speculative branch already binds
+/// (emit_speculative_branch's snapshot scaffolding + span byte). A `@try` label
+/// colliding with one of these would shadow/redeclare it in the emitted block.
+fn try_label_reserved(name: string) -> bool {
+    name == "s_pos" || name == "s_mark" || name == "s_diags" || name == "s_err" ||
+        name == "s_last" || name == "sp_start" || name == "tried_spec"
+}
+
+/// Membership test over a `List<string>` (seed_parser-local; emit.av's `str_in`
+/// is module-private there).
+fn str_in_seq(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s { return true }
+    }
+    false
 }
 
 /// A sequence keeps taking items until a FOLLOW token: `|`, `)`, `}`,

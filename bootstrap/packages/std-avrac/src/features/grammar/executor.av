@@ -114,6 +114,13 @@ impl CapEnv {
         CapVal.Nil
     }
 
+    /// Restore the whole capture list (self-ptr mutator, like set_scalar) — the
+    /// GAP3 @try-with-builds rollback: reset env.caps to a pre-attempt snapshot so a
+    /// rolled-back speculative branch's label bindings don't leak to a sibling.
+    fn restore_caps(self, caps: List<Cap>) {
+        self.caps = caps
+    }
+
     fn set_scalar(self, name: string, v: CapVal) {
         mut out: List<Cap> = []
         mut found = false
@@ -817,10 +824,18 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
+                        // GAP3 @try-with-builds: snapshot the capture env so a
+                        // rolled-back speculative branch's label bindings (now
+                        // permitted, to feed a `-> build`) cannot leak to a sibling.
+                        // bind()/set_scalar/append_* reassign env.caps to a fresh
+                        // list, so the old reference is an immutable snapshot; the
+                        // emit side never leaks (labels are auto-scoped locals).
+                        let s_caps = env.caps
                         let v = exec_seq(g, b, st, env, multi)
                         if st.diags.length == s_diags && st.had_error == s_err {
                             return v
                         }
+                        env.restore_caps(s_caps)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
                     } else {

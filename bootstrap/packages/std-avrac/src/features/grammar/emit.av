@@ -605,6 +605,13 @@ fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
     out = out + "        mut s_last: CapVal = CapVal.Nil\n"
+    // A span-stamping build (`mk_assign`/`fold_logical`/`Block`/…) reads `sp_start`,
+    // the rule-entry byte — the twin of the non-speculative branch's prelude
+    // (emit_single_branch / the guarded dispatch branch). Capture it at branch entry
+    // (the guard FIRST-matched but consumed nothing, so `st.cur().pos` == the rule
+    // entry byte), BEFORE any item parses. A build that never spans (or a build-less
+    // @try) omits it — byte-identical to the incumbent recognizer.
+    if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
     mut idx = 0
     for item in b.items {
         // A `@when` predicate is zero-width — it neither consumes a token nor
@@ -614,7 +621,15 @@ fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
         idx = idx + 1
     }
     out = out + "        if st.diags.length == s_diags && st.had_error == s_err {\n"
-    out = out + "            return s_last\n"
+    // GAP3 @try-with-builds: on commit, apply the branch's `-> build` (reading the
+    // labels bound as locals above) exactly like emit_seq_result — the twin of the
+    // interpreter's exec_seq applying the build inside the speculative attempt. A
+    // build-less branch commits `s_last` (the incumbent, byte-identical shape).
+    match b.build {
+        .None -> out = out + "            return s_last\n"
+        .Var(name) -> out = out + "            return ${name}\n"
+        .Call(name, args) -> out = out + "            return ${emit_call_build(name, args)}\n"
+    }
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
@@ -630,15 +645,35 @@ fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
 /// handle_missing. Every item updates `s_last` so the committed value equals
 /// exec_seq's build-less `last`.
 fn emit_spec_item(item: GItem, idx: int) -> string {
+    // GAP3 @try-with-builds: a labeled item binds a LOCAL `let <label>` (auto-scoped,
+    // so a rolled-back branch never leaks — the emit twin of the interpreter's
+    // env.caps snapshot/restore) that the branch's `-> build` reads on commit. The
+    // value ALSO feeds `s_last` so a build-less @try (the incumbent shape) is
+    // byte-identical. `spec_bind` centralises "assign to `<label>` if labeled".
     if prim_is_ref(item.prim) {
-        return "        s_last = ${emit_ref_call(item.prim)}\n"
+        return spec_bind(item.label, emit_ref_call(item.prim))
     }
     if idx == 0 {
-        return "        s_last = CapVal.Tok(st.advance())\n"
+        return spec_bind(item.label, "CapVal.Tok(st.advance())")
     }
     let cond = term_guard(item.prim)
     let t = prim_lit_text(item.prim)
+    if item.label != "" {
+        // A checked terminal that binds a label must bind it on BOTH the match and
+        // the mismatch path so the build never reads an unbound local (the mismatch
+        // reports → the speculative branch rolls back, but the local must still exist).
+        return "        let ${item.label} = if ${cond} { CapVal.Tok(st.advance()) } else { st.report(\"expected `${t}`\"); CapVal.Tok(st.cur()) }\n" +
+            "        s_last = ${item.label}\n"
+    }
     "        if ${cond} { s_last = CapVal.Tok(st.advance()) } else { st.report(\"expected `${t}`\") }\n"
+}
+
+/// Bind a @try item's value: to a local `let <label>` (feeding the branch's build)
+/// AND to `s_last` when labeled; to `s_last` alone when not — so a build-less @try
+/// branch emits exactly the incumbent `s_last = <value>` (byte-identical).
+fn spec_bind(label: string, value: string) -> string {
+    if label == "" { return "        s_last = ${value}\n" }
+    "        let ${label} = ${value}\n        s_last = ${label}\n"
 }
 
 /// True for `| otherrule` — a lone One nonterminal branch (no build).
