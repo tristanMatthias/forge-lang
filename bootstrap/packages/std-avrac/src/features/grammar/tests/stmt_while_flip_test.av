@@ -50,7 +50,7 @@ spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-f
         agree("while foo { break }") &&
         agree("while x { y }")
     }
-    then "nested while (body via @hand(stmt_hand) = parse_statement) agrees" {
+    then "nested while (body via @hand(braced_body), inner stmts re-parsed) agrees" {
         agree("while 1 { while 2 { break } }") &&
         agree("while a { if 1 { break } }")
     }
@@ -83,5 +83,48 @@ spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)
         agree("for x in coll { }") &&
         agree("for i in a..b { break }") &&
         agree("for x in xs { for y in ys { break } }")
+    }
+}
+
+// The BODY-PARITY regression (the CodeRabbit finding on PR #981): a control-flow
+// HEADER requires a `{`-block body. The hand parsers gate it (`if !check(LeftBrace)
+// { report ExpectedBlock; Err }`); the `@hand(braced_body)` delegate reproduces
+// that gate. If the body were `@hand(stmt_hand)` (unrestricted parse_statement),
+// the flip would ACCEPT a bare-statement body the hand parser REJECTS — a genuine
+// non-byte-identical divergence. With the SHARED `<err>` sentinel, a mutual
+// rejection registers as agreement; on the buggy `stmt_hand` body the flip would
+// render a While/If/For (≠ `<err>`) while hand yields `<err>`, so these FAIL.
+spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the braced_body gate)" {
+    then "`while c <bare-stmt>` — no `{`, both reject" {
+        agree("while foo break") &&
+        agree("while 1 break") &&
+        agree("while 1 < 2 continue") &&
+        agree("while x y")
+    }
+    then "`if c <bare-stmt>` — the if-THEN is `{`-gated, both reject" {
+        agree("if foo break") &&
+        agree("if 1 break") &&
+        agree("if 1 continue")
+    }
+    then "`for … <bare-stmt>` — range and collection bodies both `{`-gated, both reject" {
+        agree("for x in coll break") &&
+        agree("for i in 0..5 break") &&
+        agree("for i in a..b continue")
+    }
+}
+
+// The ELSE branch is NOT over-restricted: the hand parser's else is an
+// unrestricted `parse_statement()` (accepts `else if`, `else { }`, AND a bare
+// `else <stmt>`), so the grammar keeps it `@hand(stmt_hand)`. These agreements
+// prove the gate lives on the THEN branch only.
+spec "t-47hc.13 S1: the if-ELSE stays unrestricted (parse_statement, not braced)" {
+    then "a bare `else <stmt>` is accepted by BOTH (else is ungated)" {
+        agree("if 1 { } else break") &&
+        agree("if 1 { break } else continue") &&
+        agree("if foo { } else break")
+    }
+    then "`else if` chains and `else { }` blocks still agree" {
+        agree("if 1 { } else if 2 { } else break") &&
+        agree("if 1 { break } else { continue }")
     }
 }

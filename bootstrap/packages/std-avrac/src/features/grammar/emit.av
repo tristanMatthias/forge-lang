@@ -1155,7 +1155,9 @@ fn is_stmt_hand_name(n: string) -> bool {
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
-    n == "stmt_hand" || n == "decl_hand"
+    n == "stmt_hand" || n == "decl_hand" ||
+    // t-47hc.13 — the `{`-gated control-flow body delegate (parse_braced_body).
+    n == "braced_body"
 }
 fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
 fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "call_leaf" || n == "primary_base" || n == "postfix_suffix" || n == "with_suffix" || n == "pipe_rhs" || n == "match_expr" || n == "if_expr" || n == "spawn_expr" || n == "channel_expr" || n == "isolated_expr" || n == "when_expr" || n == "qualified_expr" || n == "list_expr" || n == "paren_expr" || n == "ident_primary" }
@@ -1323,6 +1325,10 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
     }
+    // t-47hc.13 — a control-flow body's FIRST is `{` (mirrors executor.hand_starts
+    // "braced_body"). Only ever a REQUIRED item, so this guard is for lockstep, not
+    // branch selection — but kept in sync so a future emitted grammar routes it right.
+    if hf == "braced_body" { return tk_guard("{") }
     "false"
 }
 
