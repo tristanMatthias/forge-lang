@@ -1,0 +1,59 @@
+// WHY: t-47hc GAP-3 — the emitter's @try speculative branch now handles the FULL item
+// vocabulary (list accumulators, `@on`/`@off` mode items, `@hand` leaves, groups/opt/star),
+// not just the flat terminal/ref recognizer the incumbent (list_expr) uses. This guards
+// that a COMPLEX @try branch lowers to correct generated code: `mut <label>_list` declared,
+// `@on` wrapped in set_modes save/restore, `@hand` dispatched via run_hand_expr, the build
+// reading the accumulator, and the snapshot/rollback scaffold. DORMANT: no production
+// grammar uses a complex @try yet (the paren spend will), so gen_*_parser.av regen
+// byte-identical (emit-gen-check GENPASS) — the flat path (spec_branch_is_flat true) is
+// unchanged. The BEHAVIORAL spec the emitter matches is proven by the executor: the same
+// paren_tail grammar renders all 10 paren forms byte-correct via run_grammar_expr.
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn}
+
+// A complex @try grammar: paren_tail's untyped-lambda + tuple arms exercise every feature
+// the flat @try emitter could not: a `( @on(...) a:expression ( "," a:expression )* )?`
+// optional GROUP with a mode-set + a list ACCUMULATOR, a mandatory `@hand(lambda_body)`,
+// and a build reading the accumulator.
+fn tail_g() -> string {
+    "grammar PT {\n" +
+    "  paren_tail = @try ( @on(allow_dot_postfix) a:expression ( \",\" a:expression )* )? \")\" \"->\" lb:@hand(lambda_body) -> MkLambda(a, lb)\n" +
+    "             | @try @on(allow_dot_postfix) a:expression ( \",\" a:expression )+ ( \",\" )? \")\" -> MkTuple(a)\n" +
+    "             | @on(allow_dot_postfix) e:expression \")\" -> Grouping(e)\n" +
+    "  expression = @hand(ident)\n" +
+    "}"
+}
+
+fn emit_tail() -> string {
+    let gp = parse_grammar(tail_g())
+    for gr in gp.grammar.rules {
+        if gr.name == "paren_tail" { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
+    then "the repetition label's list accumulator is DECLARED (was undefined before the extension)" {
+        emit_tail().contains("mut a_list: List<ExprId> = []")
+    }
+    then "the @on(allow_dot_postfix) mode item is wrapped in a set_modes save/restore" {
+        let s = emit_tail()
+        s.contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") && s.contains("st.set_modes(__modes_")
+    }
+    then "the @hand(lambda_body) leaf dispatches via run_hand_expr (NOT the broken `if false`)" {
+        let s = emit_tail()
+        s.contains("run_hand_expr(\"lambda_body\", st)") && !s.contains("if false")
+    }
+    then "the untyped-lambda build reads the accumulator via CapVal.Nodes(a_list)" {
+        emit_tail().contains("mk_lambda(st, sp_start, CapVal.Nodes(a_list)")
+    }
+    then "the tuple arm builds mk_tuple over the same accumulator" {
+        emit_tail().contains("mk_tuple(st, sp_start, CapVal.Nodes(a_list))")
+    }
+    then "each speculative branch keeps the snapshot/rollback scaffold" {
+        let s = emit_tail()
+        s.contains("let s_mark = st.store.mark()") && s.contains("st.store.truncate_to_mark(s_mark)") && s.contains("st.restore_to(s_pos, s_diags, s_err)")
+    }
+    then "the accumulator loop consumes the comma separators" {
+        emit_tail().contains("while st.cur().tk == Tk.Comma")
+    }
+}

@@ -617,11 +617,78 @@ fn any_speculative(branches: List<GSeq>) -> bool {
 /// Emit one `@try` branch: a FIRST-guarded block that snapshots the parse state,
 /// runs the branch body, and commits (returns) only if no diagnostic was added;
 /// otherwise it rewinds the node store + cursor + diagnostics and falls through.
-/// The twin of executor.exec_node's speculative arm. A `@try` branch is a flat
-/// terminal/ref RECOGNIZER (seed_parser enforces the shape), so the body is a
-/// straight-line sequence updating `s_last` — the value exec_seq returns for a
-/// build-less sequence (its last item) — and the committed result is `s_last`.
+/// The twin of executor.exec_node's speculative arm.
+///
+/// TWO shapes (both roll back on a reported diagnostic — identical snapshot/commit
+/// scaffold): a FLAT terminal/ref recognizer (`emit_speculative_branch_flat`, the
+/// incumbent — list_expr's `@try "[" list_comp "]" -> cb`) and a RICH sequence
+/// (`emit_speculative_branch_rich`) with groups / repetitions (`_list` accumulators)
+/// / `@hand` / `@on`-`@off` mode items — the twin of exec_node's speculative arm over
+/// exec_seq's FULL item vocabulary. Dispatch on `spec_branch_is_flat` so an existing
+/// flat @try emits BYTE-IDENTICALLY (the rich path is dormant until a grammar uses a
+/// complex @try branch — e.g. the paren spend's paren_tail).
 fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
+    if spec_branch_is_flat(b) { return emit_speculative_branch_flat(g, b) }
+    emit_speculative_branch_rich(g, b)
+}
+
+/// A @try branch is FLAT when every token-bearing item is a One-rep terminal or rule
+/// ref with NO mode marker — the incumbent recognizer shape the flat emitter's
+/// straight-line `s_last` body handles. A repetition (Opt/Star/Plus → `_list`
+/// accumulator), a group, a `@hand` leaf, or an `@on`/`@off` mode item needs the rich
+/// emitter (it reuses emit_seq_stmts). Zero-width predicates (`@when`/`@peek`) are
+/// skipped by BOTH emitters, so they don't force the rich path.
+fn spec_branch_is_flat(seq: GSeq) -> bool {
+    for item in seq.items {
+        if prim_is_pred_e(item.prim) { continue }
+        if item.mode_off != "" || item.mode_on != "" { return false }
+        if !rep_is_one(item.rep) { return false }
+        match item.prim {
+            .Lit(_) -> {}
+            .Named(_) -> {}
+            .Ref(_) -> {}
+            _ -> return false
+        }
+    }
+    true
+}
+
+/// The RICH speculative branch: the snapshot/commit/rollback scaffold wrapping
+/// emit_seq_stmts (the SAME per-item emitter the non-speculative path uses — list
+/// accumulators, opt-scalars, `@on`/`@off`, `@hand`, groups) + emit_seq_result (the
+/// branch's `-> build` reading those bound labels on commit). A later-item MISMATCH
+/// reports a diagnostic (emit_one's checked terminal / a failed sub-rule), which grows
+/// st.diags → the commit guard fails → truncate_to_mark + restore rolls back and the
+/// next alternative is tried. Labels are `let`/`mut` locals inside the `{ }` block, so
+/// a rolled-back branch's bindings never leak (the emit twin of exec_node's env.caps
+/// snapshot). EMIT-ONLY: the executor already handles complex @try (exec_node's
+/// speculative arm over exec_seq), so no executor change accompanies this.
+fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
+    mut out = "    if ${seq_first_guard(g, b, [])} {\n"
+    out = out + "        tried_spec = true\n"
+    out = out + "        let s_pos = st.pos\n"
+    out = out + "        let s_mark = st.store.mark()\n"
+    out = out + "        let s_diags = st.diags.length\n"
+    out = out + "        let s_err = st.had_error\n"
+    // Same span prelude as the flat path / the non-speculative branch: a span-stamping
+    // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
+    if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
+    out = out + emit_seq_stmts(g, b, "        ")
+    out = out + "        if st.diags.length == s_diags && st.had_error == s_err {\n"
+    out = out + "            return ${emit_seq_result(g, b)}\n"
+    out = out + "        }\n"
+    out = out + "        st.store.truncate_to_mark(s_mark)\n"
+    out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    out = out + "    }\n"
+    out
+}
+
+/// The FLAT speculative branch (incumbent): a straight-line terminal/ref recognizer
+/// whose body updates `s_last` (exec_seq's build-less return = its last item) and whose
+/// `-> build` reads any labeled locals on commit. Unchanged from the original
+/// emit_speculative_branch — kept so an existing flat @try (list_expr) regens
+/// byte-identically.
+fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
     out = out + "        tried_spec = true\n"
     out = out + "        let s_pos = st.pos\n"
