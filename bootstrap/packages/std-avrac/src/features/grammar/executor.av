@@ -1832,6 +1832,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
+        // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
+        // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
+        "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
+        "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
+        "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
@@ -2691,6 +2696,34 @@ export fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
 /// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
 export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
     st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
+}
+
+/// `[ a, b, … ]` list literal (t-47hc.4 list_lit flip — DORMANT builds, proven by a
+/// test grammar; not yet wired into avra_expr_grammar). The `acap` comma-list capture
+/// (`( a:expression ( "," a:expression )* )?`, scalar→list promotion via append_node)
+/// becomes the element list; empty/single/multi are uniform (Nil → []). Spanned
+/// [sp_start, next-token) exactly like the hand parse_list_expr alloc_at(Expr.ListLit,
+/// sp_start) (mod.av:2286/2298) — sp_start is the `[` byte (emit) or 0-1 span-free
+/// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
+export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
+    st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `[ body for v in collection ( if filter )? ]` comprehension (t-47hc.4 — DORMANT).
+/// The twin of the hand parse_list_elements' `Expr.ListComp(expr_id, var_name,
+/// collection_id, filter)` (list_lit/parser.av). body/collection/filter are ExprId
+/// scalars + a nullable filter — all walker-opaque, so the comp is a leaf row (empty
+/// edges). `filt_cv` is Nil when the `( if … )?` clause is absent (→ filter none),
+/// else the parsed filter expression. Spanned [sp_start, next-token); the hand parser
+/// anchors sp_start at the FIRST ELEMENT (the byte after `[`), which the eventual @try/
+/// left-factored spend supplies as the sub-rule / branch entry byte.
+export fn mk_list_comp(st: PState, sp_start: int, body: ExprId, variable: string, collection: ExprId, filt_cv: CapVal) -> ExprId {
+    mut filter: ExprId? = none
+    match filt_cv {
+        .Nil -> {}
+        _ -> filter = capval_to_expr(st, filt_cv)
+    }
+    st.store.add_expr(Expr.ListComp(body, variable, collection, filter), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a
