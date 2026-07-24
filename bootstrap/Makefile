@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep cache-gc clean-cache cache-stats
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep guarded cache-gc clean-cache cache-stats
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -152,6 +152,17 @@ quick:
 # resumes at the failing dir). FRESH=1 drops the markers first.
 sweep:
 	@$(DIAG) --sweep $(if $(FRESH),--fresh)
+
+# Run any heavy command under the OOM memory watchdog — the ≤16GB-box
+# safety wrapper. The watchdog SIGKILLs bs2/llc/etc if free memory drops
+# below FLOOR MB (default 3500; FLOOR= overrides), so a runaway build/test
+# dies instead of OOM-restarting the WHOLE CONTAINER. Also forces
+# AVRA_TEST_JOBS=1. CMD= is the command to guard. See CLAUDE.md
+# "OOM safety — testing on the small box".
+#   make guarded CMD="make diff-test"
+#   make guarded CMD="./build/bs2 test tests/foo_test.av" FLOOR=5500
+guarded:
+	@$(DIAG) --guarded $(if $(FLOOR),$(FLOOR)) -- $(CMD)
 
 # Repo-wide cache GC: prune cold entries (mtime == last use; hits refresh
 # it) from the bootstrap root AND every package cache. DAYS= overrides the
