@@ -41,11 +41,15 @@ fn parse_block(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut stmts_list: List<StmtId> = []
     let _ = st.advance()
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        st.clear_error()
         let __cv = parse_statement(st)
         if st.had_error {
+            __any_err = true
             st.synchronize_stmt()
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
@@ -60,6 +64,7 @@ fn parse_block(st: PState) -> CapVal {
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         stmts_list.push(__sid)
     }
+    if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")
     }
