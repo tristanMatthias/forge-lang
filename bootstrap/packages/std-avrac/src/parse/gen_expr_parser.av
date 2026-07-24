@@ -134,6 +134,7 @@ fn parse_eq_tail(st: PState) -> CapVal {
     if st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
         mut op_list: List<Token> = []
         mut r_list: List<ExprId> = []
+        if !(st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual) { st.report("expected at least one repetition") }
         while st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
             op_list.push(st.advance())
             r_list.push(capval_to_expr(st, parse_bitor(st)))

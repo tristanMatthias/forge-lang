@@ -1158,20 +1158,33 @@ fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<str
             }
         }
         .Group(inner) -> {
+            // `+` (Plus) requires ≥1 repetition. emit_repeat_group otherwise lowers Star
+            // and Plus IDENTICALLY (a plain `while`, 0+), diverging from the executor,
+            // whose exec_item_body forces a first `.Plus` iteration. That divergence is
+            // latent for a NON-speculative Plus — it is entered only when its FIRST holds
+            // (the dispatch/optional guard), so ≥1 is guaranteed and `req` never fires
+            // (byte-identical, e.g. eq_tail's `( op r )+`). But inside a `@try` branch a
+            // 0-match Plus would wrongly COMMIT instead of rolling back — so require the
+            // first here: reporting a diagnostic when the FIRST is absent grows st.diags,
+            // which the speculative commit-guard reads to roll back (the emit twin of the
+            // forced first iteration). Message text is irrelevant: it never surfaces —
+            // non-spec never fires it, spec discards it on rollback (truncate/restore).
+            let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) { st.report(\"expected at least one repetition\") }\n"  _ -> "" }
             if group_is_single_hand(inner) {
-                "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     "${ind}    let __rep_before = st.pos\n" +
                     emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                     "${ind}    if st.pos == __rep_before { break }\n" +
                     "${ind}}\n"
             } else {
-                "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                     "${ind}}\n"
             }
         }
         _ -> {
-            "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
+            let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, prim_first_guard(g, item.prim, []))}) { st.report(\"expected at least one repetition\") }\n"  _ -> "" }
+            req + "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
         }
     }
 }

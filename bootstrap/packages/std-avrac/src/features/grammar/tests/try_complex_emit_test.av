@@ -56,4 +56,15 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
     then "the accumulator loop consumes the comma separators" {
         emit_tail().contains("while st.cur().tk == Tk.Comma")
     }
+    // CodeRabbit #995: a `+` (Plus) repetition inside a @try branch MUST enforce ≥1, or a
+    // 0-match Plus wrongly COMMITS the speculative branch (e.g. `(x)` committing the tuple
+    // arm's `( "," a:expression )+` with zero commas instead of rolling back to Grouping).
+    // emit_repeat_group now emits a required-first check for .Plus — reporting a diagnostic
+    // when the FIRST is absent grows st.diags → the speculative commit-guard rolls back. The
+    // tuple arm's `( "," a:expression )+` is the Plus here (byte-identical for a non-spec
+    // Plus like eq_tail, which is entered only when its FIRST holds so the check never fires).
+    then "a `+` repetition emits a required-first check so a 0-match Plus rolls back (not commits)" {
+        let s = emit_tail()
+        s.contains("if !(st.cur().tk == Tk.Comma) { st.report(\"expected at least one repetition\") }")
+    }
 }
