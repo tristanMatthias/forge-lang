@@ -3718,7 +3718,17 @@ export fn monomorphize(ids: List<StmtId>, trait_impls: List<TraitImplEntry>, sto
 
     let rewritten = rewrite_stmt_ids(ids, regs, mopped.all_insts)
     let rewritten_specs = rewrite_stmt_ids(mopped.all_specs, regs, mopped.all_insts)
-    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: mopped.bag }
+    // t-47hc.14 — CANONICALISE the specialization order by a CONTENT key (the
+    // mangled decl name) so emission is a pure function of content, not of the
+    // discovery order (which threads through typeck state whose iteration is
+    // layout-sensitive → the same source emits a different type table across two
+    // behaviour-identical compiler binaries, a spurious diff-test divergence).
+    // LLVM prints named struct types in first-reference order == function-emission
+    // order == this spec order, so a stable spec order stabilises the type table.
+    // Only the SPECS are sorted; the original program (`rewritten`) is untouched,
+    // preserving user-function order + top-level let/const/mut init order.
+    let sorted_specs = sort_specs_canonical(regs.store, rewritten_specs)
+    MonoResult { stmts: prepend_stmts(sorted_specs, rewritten), bag: mopped.bag }
 }
 
 /// Declared-type instantiation mop-up (ps3t.3.11 Part 2 / ps3t.3.12). Iterates a
@@ -3809,6 +3819,119 @@ fn prepend_stmts(prefix: List<StmtId>, rest: List<StmtId>) -> List<StmtId> {
     mut j = 0
     while j < rest.length {
         out.push(rest[j])
+        j = j + 1
+    }
+    out
+}
+
+// ── Deterministic specialization ordering (t-47hc.14) ──────────────────────
+//
+// The monomorphizer discovers instantiations in an order that is insertion-
+// STABLE within one compiler binary but VARIES across behaviour-identical
+// binaries (discovery threads through typeck state whose iteration is sensitive
+// to allocation/hash layout, which differs between two builds of the compiler).
+// LLVM prints named struct types in first-reference order, which follows
+// function-emission order, which follows this spec order — so the emitted type
+// table reorders across binaries even for identical input, a spurious
+// `diff-test` divergence (the migration's recurring blocker). Fix: sort the
+// specs by a CONTENT key (the mangled decl name — a pure function of the base +
+// type-args, identical across binaries) so emission order is content-determined.
+//
+// SAFE because specs are pure DECLARATIONS (specialised fns / type / enum decls,
+// no top-level init side effects) and codegen declares them TWO-PASS (every name
+// is forward-declared before any body or reference — declare_structs /
+// declare_functions in codegen/setup.av), so intra-spec dependencies are
+// order-independent. Only the specs are reordered; the original program keeps its
+// source order (top-level init order preserved).
+
+/// A specialization paired with its precomputed sort key — computing the key
+/// once (a store read) rather than on every merge comparison.
+type SpecKey = { key: string, sid: StmtId }
+
+/// Codepoint at byte index `i` — the proven slice-one-char idiom (the one-arg
+/// `char_code(i)` form does NOT index by position; see features/grammar/chars.av).
+fn mono_code_at(s: string, i: int) -> int { s.substring(i, i + 1).char_code() }
+
+/// Lexicographic byte order on two (ASCII) mangled names — a TOTAL order that is
+/// a pure function of the strings, so identical across compiler binaries.
+fn mangled_before(a: string, b: string) -> bool {
+    let na = a.length
+    let nb = b.length
+    mut i = 0
+    while i < na && i < nb {
+        let ca = mono_code_at(a, i)
+        let cb = mono_code_at(b, i)
+        if ca != cb { return ca < cb }
+        i = i + 1
+    }
+    na < nb
+}
+
+/// The mangled decl name of a specialization — its stable sort key. Every spec
+/// `generate_specializations` emits is a `Function` / `TypeDecl` / `EnumDecl`
+/// (impl methods arrive `Annotated`-wrapped; `stmt_unwrap` peels them). Mangled
+/// names are unique across specs by construction (the `ambig` set module-
+/// qualifies cross-module collisions), so the key is a total order with no ties.
+/// The `""` fallback is unreachable given those emitters.
+fn spec_sort_key(store: NodeStore, sid: StmtId) -> string {
+    match stmt_unwrap(store, store.stmts.get(sid)) {
+        .Function(name, _, _, _, _) -> name
+        .TypeDecl(name, _, _) -> name
+        .EnumDecl(name, _, _) -> name
+        .ShapeDecl(name, _) -> name
+        _ -> ""
+    }
+}
+
+/// Stable merge sort of specs by mangled name — O(n log n), deterministic.
+fn merge_sort_specs(xs: List<SpecKey>) -> List<SpecKey> {
+    let n = xs.length
+    if n <= 1 { return xs }
+    let mid = n / 2
+    mut left: List<SpecKey> = []
+    mut right: List<SpecKey> = []
+    mut i = 0
+    while i < n {
+        if i < mid { left.push(xs[i]) } else { right.push(xs[i]) }
+        i = i + 1
+    }
+    merge_spec_runs(merge_sort_specs(left), merge_sort_specs(right))
+}
+
+/// Merge two sorted runs, STABLY (a tie keeps the left run's element, which
+/// preceded the right's in the input).
+fn merge_spec_runs(a: List<SpecKey>, b: List<SpecKey>) -> List<SpecKey> {
+    mut out: List<SpecKey> = []
+    mut i = 0
+    mut j = 0
+    while i < a.length && j < b.length {
+        if mangled_before(b[j].key, a[i].key) {
+            out.push(b[j])
+            j = j + 1
+        } else {
+            out.push(a[i])
+            i = i + 1
+        }
+    }
+    while i < a.length { out.push(a[i])  i = i + 1 }
+    while j < b.length { out.push(b[j])  j = j + 1 }
+    out
+}
+
+/// Canonicalise a specialization list into a content-stable order (sorted by
+/// mangled decl name). Idempotent, and identical across compiler binaries.
+fn sort_specs_canonical(store: NodeStore, specs: List<StmtId>) -> List<StmtId> {
+    mut keyed: List<SpecKey> = []
+    mut i = 0
+    while i < specs.length {
+        keyed.push(SpecKey { key: spec_sort_key(store, specs[i]), sid: specs[i] })
+        i = i + 1
+    }
+    let sorted = merge_sort_specs(keyed)
+    mut out: List<StmtId> = []
+    mut j = 0
+    while j < sorted.length {
+        out.push(sorted[j].sid)
         j = j + 1
     }
     out

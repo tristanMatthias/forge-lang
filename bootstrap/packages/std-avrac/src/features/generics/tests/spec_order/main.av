@@ -1,0 +1,10 @@
+// Fixture for spec_order_determinism_test (t-47hc.14). Two generic fns USED in
+// reverse-alphabetical order: discovery order is zeta, alpha; the canonical
+// mono sort must emit alpha_id before zeta_id (sorted by mangled name).
+fn zeta_id<T>(x: T) -> T { x }
+fn alpha_id<T>(x: T) -> T { x }
+
+fn main() {
+    println(string(zeta_id(1)))
+    println(string(alpha_id(2)))
+}
