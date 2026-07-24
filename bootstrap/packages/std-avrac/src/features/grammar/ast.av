@@ -190,16 +190,3 @@ export fn grep_is_multi(r: GRep) -> bool {
         _ -> false
     }
 }
-
-/// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
-/// exactly the SETTABLE ExprModes bools (executor.av). This is the single source
-/// of truth for the @off flag SET: the seed parser validates every `@off(NAME)`
-/// against it and rejects anything else at parse time, so a typo (`allow_strct_lit`)
-/// or the READ-only `@when` predicate `at_quote_top` (which is derived from
-/// `quote_depth`, not a settable bool) is a HARD grammar error, never a silent
-/// no-op. `executor.modes_with_flag_off` maps exactly these names to their fields —
-/// the two lists MUST stay in lockstep (a new @off-able flag is added in both).
-export fn off_flag_supported(flag: string) -> bool {
-    flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
-        flag == "allow_it_sugar" || flag == "cell_mode"
-}

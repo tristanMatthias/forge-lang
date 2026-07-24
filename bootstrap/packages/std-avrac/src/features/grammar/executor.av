@@ -713,8 +713,8 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 /// The `@off(flag)` mode-SET marker's core, shared by the executor (push_mode_off)
 /// AND the emitted parser (emit lockstep), so the two can never disagree — the
 /// same discipline modes_flag gives @when. The mapped names MUST match
-/// `ast.off_flag_supported` (the single source of truth for the @off flag SET),
-/// which the seed parser enforces: an unsupported flag (typo, or the READ-only
+/// `seed_parser.off_flag_supported` (the single source of truth for the @off flag
+/// SET), which the seed parser enforces: an unsupported flag (typo, or the READ-only
 /// `at_quote_top` predicate) is REJECTED at parse time, so the trailing
 /// `modes` fall-through here is an unreachable-by-contract defensive default,
 /// never a silent no-op on a live grammar.

@@ -23,7 +23,7 @@
 //   annot    = "@expect" "(" STRING "," STRING ")"
 //            | "@recover" "(" "sync_to" ":" STRING ")"
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, off_flag_supported}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
 
@@ -386,6 +386,21 @@ fn at_when_primary(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "when"
+}
+
+/// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
+/// exactly the SETTABLE ExprModes bools (executor.av). The single source of truth
+/// for the @off flag SET, consulted by parse_labeled: every `@off(NAME)` is
+/// validated against it and anything else is rejected at parse time, so a typo
+/// (`allow_strct_lit`) or the READ-only `@when` predicate `at_quote_top` (derived
+/// from `quote_depth`, not a settable bool) is a HARD grammar error, never a silent
+/// no-op. `executor.modes_with_flag_off` maps exactly these names to their fields —
+/// the two lists MUST stay in lockstep (a new @off-able flag is added in both).
+/// Lives here (with its only consumer) rather than in the universally-imported
+/// core ast.av, keeping the core module's export surface minimal.
+export fn off_flag_supported(flag: string) -> bool {
+    flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
+        flag == "allow_it_sugar" || flag == "cell_mode"
 }
 
 /// True when the cursor is `@off` — the leading mode-SET item marker (t-47hc),
