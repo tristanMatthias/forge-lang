@@ -45,6 +45,17 @@ spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a 
         src.contains("if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }") &&
         src.contains("let __e = st.store.stmts.add_leaf(Stmt.Error)") &&
         src.contains("st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })") &&
-        src.contains("st.had_error = false")
+        src.contains("st.clear_error()")
+    }
+
+    // had_error is a SINGLE flag reused across children (the block reuses one PState),
+    // so a pre-loop error (e.g. an if/for/while header condition) must NOT misclassify
+    // the first body statement, and must NOT be lost. Capture `__pre_err`, clear per
+    // child (fresh detection), propagate `__any_err` at loop exit via note_had_error.
+    then "a pre-loop (condition) error is captured, not reused per-child, and restored" {
+        let src = emit_flip()
+        src.contains("let __pre_err = st.had_error") &&
+        src.contains("mut __any_err = __pre_err") &&
+        src.contains("if __any_err { st.note_had_error() }")
     }
 }

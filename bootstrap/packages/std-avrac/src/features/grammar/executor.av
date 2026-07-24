@@ -382,6 +382,15 @@ impl PState {
         self.had_error = true
     }
 
+    /// Clear the had_error FLAG (leaving the diagnostics in `diags` intact). A
+    /// self-ptr mutator (not a direct `st.had_error = false`) so it works on the
+    /// immutable `st` param of a generated parse fn, exactly like st.advance()/
+    /// st.report(). The statement-list recovery loop clears the flag per child so
+    /// `if st.had_error` detects only THIS child's failure.
+    fn clear_error(self) {
+        self.had_error = false
+    }
+
     /// Phase 3a base-threading (self-ptr mutators): `seed_postfix` records the
     /// primary base + the chain's start byte (`@hand(primary_base)` result);
     /// `set_postfix_base` updates the accumulator after each `postfix_suffix` step.
