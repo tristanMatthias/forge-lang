@@ -21,9 +21,13 @@ extern fn avra_shell_exec(cmd: string) -> string
 
 spec "t-47hc.14: monomorphized specializations emit in canonical (sorted) order" {
     then "alpha_id__int is emitted before zeta_id__int despite reverse use order" {
+        // rm the target first + fail on a non-zero compile so a stale IR from a
+        // prior run can't be inspected (avra_shell_exec exposes stdout, not the
+        // pclose status — a failed compile must NOT falsely read SORTED).
         let out = avra_shell_exec(
-            "./build/bs2 compile packages/std-avrac/src/features/generics/tests/spec_order/main.av " +
-            "--output /tmp/avra_spec_order_det.ll >/dev/null 2>&1; " +
+            "rm -f /tmp/avra_spec_order_det.ll; " +
+            "if ! ./build/bs2 compile packages/std-avrac/src/features/generics/tests/spec_order/main.av " +
+            "--output /tmp/avra_spec_order_det.ll >/dev/null 2>&1; then echo COMPILE_FAILED; exit 1; fi; " +
             "a=$(grep -n 'define .*@alpha_id__int(' /tmp/avra_spec_order_det.ll | head -1 | cut -d: -f1); " +
             "z=$(grep -n 'define .*@zeta_id__int(' /tmp/avra_spec_order_det.ll | head -1 | cut -d: -f1); " +
             "if [ -n \"$a\" ] && [ -n \"$z\" ] && [ \"$a\" -lt \"$z\" ]; then echo SORTED; else echo UNSORTED; fi")
