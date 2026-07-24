@@ -359,7 +359,7 @@ export fn avra_program_grammar() -> Grammar {
   postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)
   suffix      = "." sn:IDENT -> field_suffix(sn)
               | "(" ( ca:expression ( "," ca:expression )* )? ")" -> call_suffix(ca)
-  primary     = NUMBER | STRING | "true" | "false" | @hand(quote_expr) | @hand(ident)
+  primary     = NUMBER | STRING | "true" | "false" | @hand(quote_expr) | IDENT
     }
     gp.grammar
 }
