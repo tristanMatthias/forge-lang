@@ -1851,13 +1851,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // newline-sensitive case — `return\n<expr>` where the value sits on the
         // NEXT line (the hand parser's `current_line != prev_line` guard) — is a
         // lexer-mode disambiguation for the gnarly-5% catalogue (ps3t.6.5.10).
-        "MkReturn" if args.length == 1 -> {
-            if capval_present(env.get(args[0])) {
-                CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
-            } else {
-                CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
-            }
-        }
+        "MkReturn" if args.length == 1 -> mk_return_opt(st, env.get(args[0]))
         "ExprStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
         // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) — each arm
         //    delegates to the SHARED constructor core (mk_block / mk_while /
@@ -2372,6 +2366,22 @@ export fn mk_for_loop(st: PState, sp_start: int, var_cv: CapVal, lo_cv: CapVal, 
             let hi = capval_to_expr(st, hi_cv)
             add_stmt_at(st, Stmt.For(var, lo, hi, body), sp_start)
         }
+    }
+}
+
+/// `return ^( value )?` (the `MkReturn` build's core). An ABSENT same-line value
+/// (`val_cv == Nil`) is a bare `Stmt.ReturnEmpty`; a PRESENT value is
+/// `Stmt.Return(value)`. The `^`-gated optional (same-line) + its FIRST guard
+/// (which rejects `}` / Eof — not expression starts) together reproduce the hand
+/// parser's `current_kind in [RightBrace, Eof] || current_line != prev_line` test.
+/// Uses a fresh `add_leaf` (no interning, no sp_start) to match the hand's
+/// `alloc_stmt_leaf`. The SHARED core so apply_build (interpreter) and the
+/// generated static parser build byte-identical trees.
+export fn mk_return_opt(st: PState, val_cv: CapVal) -> CapVal {
+    if capval_present(val_cv) {
+        CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, val_cv))))
+    } else {
+        CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
     }
 }
 

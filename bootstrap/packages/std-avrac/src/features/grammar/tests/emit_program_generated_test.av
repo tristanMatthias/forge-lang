@@ -54,7 +54,8 @@ spec "grammar emitter: renders the whole-program generated static parser" {
 
     then "the gnarly-5% forms delegate via the @hand dispatch" {
         let src = emit_all()
-        src.contains("return CapVal.SNode(run_hand_stmt(\"return_stmt\", st))") &&
+        // return_stmt migrated off @hand (see the native-return guard below); let_stmt,
+        // qualified_type, and quote_expr remain the current @hand escape-hatch leaves.
         src.contains("return CapVal.SNode(run_hand_stmt(\"let_stmt\", st))") &&
         src.contains("CapVal.TExpr(run_hand_type(\"qualified_type\", st))") &&
         src.contains("CapVal.Node(run_hand_expr(\"quote_expr\", st))")
@@ -69,5 +70,17 @@ spec "grammar emitter: renders the whole-program generated static parser" {
     then "identifiers parse NATIVELY — @hand(ident) is deleted from the unified grammar" {
         let src = emit_all()
         !src.contains("run_hand_expr(\"ident\", st)")
+    }
+
+    // t-47hc: the `return` statement was migrated off @hand. `return_stmt = "return"
+    // ^( rv:expression )? -> MkReturn(rv)` — the `^`-gated optional (same-line) + its
+    // FIRST guard (rejecting `}`/Eof) reproduce the hand parser's newline-sensitive
+    // ReturnEmpty-vs-Return decision, and the shared mk_return_opt core builds the
+    // conditional. Proven byte-identical by diagnose.sh --emit-gen-check.
+    then "return parses NATIVELY via mk_return_opt — @hand(return_stmt) is deleted" {
+        let src = emit_all()
+        src.contains("fn parse_return_stmt(st: PState) -> CapVal") &&
+        src.contains("mk_return_opt(st, rv)") &&
+        !src.contains("run_hand_stmt(\"return_stmt\", st)")
     }
 }
