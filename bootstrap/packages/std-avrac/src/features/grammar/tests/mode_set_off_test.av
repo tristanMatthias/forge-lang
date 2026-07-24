@@ -121,6 +121,17 @@ spec "t-47hc: @off(flag) — emit lockstep + scope-safety + byte-identity" {
         src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
         src.contains("modes_with_flag_off(st.modes, \"allow_dot_postfix\")")
     }
+    then "@off on a bare-ref branch in a MULTI-branch dispatch is honored (not dropped)" {
+        // `r = @off(allow_struct_lit) a | b` — a 2-branch dispatch whose first branch
+        // is a lone ref with @off. emit_dispatch's is_bare_ref shortcut bypasses
+        // emit_item, so it must reproduce the save/clear/restore itself (via the
+        // shared emit_ref_result) — the executor honors it (exec_seq→exec_item), and
+        // dropping it would be the exact lockstep divergence this primitive prevents.
+        let src = emit_rule("r = @off(allow_struct_lit) a | b\na = \"x\"\nb = \"y\"", "r")
+        src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.modes = __m")
+    }
     then "WITHOUT @off, no mode save/set is emitted — byte-identical for production grammars" {
         let src = emit_rule(R_PLAIN, "r")
         !src.contains("modes_with_flag_off") && !src.contains("st.modes =")
