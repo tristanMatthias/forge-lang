@@ -31,10 +31,15 @@ fn emit_rule(grammar_src: string, rule: string) -> string {
 // sub-rule (`paren` -> Grouping) because append_node collects Expr NODES, not bare
 // terminal tokens — exactly as the real list_expr's `a:expression` yields Expr nodes.
 fn lit_g() -> string { "r = \"[\" ( a:paren ( \",\" a:paren )* )? \"]\" -> MkListLit(a)\n paren = \"(\" e:NUMBER \")\" -> Grouping(e)" }
-// The comprehension grammar (no filter): `[ body for v in coll ]` -> MkListComp.
-fn comp_g() -> string { "r = \"[\" b:NUMBER \"for\" v:IDENT \"in\" c:IDENT \"]\" -> MkListComp(b, v, c)" }
+// The comprehension grammar (no filter): `[ body for v in coll ]`. MkListComp is built
+// in the `cbody` SUB-RULE entered AFTER `[`, so its rule-entry sp_start anchors at the
+// BODY expression — matching the hand parse_list_elements (span @ first element, NOT the
+// `[`). The outer `r` consumes the brackets and passes cbody's node through (`-> x`),
+// exactly the two-level shape the production list_expr flip needs (ListLit @ `[` in the
+// outer rule, ListComp @ body in the inner). MkListLit keeps its `[` anchor (rule `r`).
+fn comp_g() -> string { "r = \"[\" x:cbody \"]\" -> x\n cbody = b:NUMBER \"for\" v:IDENT \"in\" c:IDENT -> MkListComp(b, v, c)" }
 // With the optional `if` filter — arity-4 MkListComp, `f` an optional-scalar (Nil absent).
-fn comp_f_g() -> string { "r = \"[\" b:NUMBER \"for\" v:IDENT \"in\" c:IDENT ( \"if\" f:NUMBER )? \"]\" -> MkListComp(b, v, c, f)" }
+fn comp_f_g() -> string { "r = \"[\" x:cbody \"]\" -> x\n cbody = b:NUMBER \"for\" v:IDENT \"in\" c:IDENT ( \"if\" f:NUMBER )? -> MkListComp(b, v, c, f)" }
 
 spec "t-47hc.4: DORMANT list-literal build (mk_list_lit)" {
     then "a multi-element list builds Expr.ListLit in source order" {
@@ -65,6 +70,12 @@ spec "t-47hc.4: DORMANT list-comprehension build (mk_list_comp)" {
         run_render(comp_f_g(), "[1 for x in xs]") == "(list-comp 1 for x in xs)"
     }
     then "the emitter lowers MkListComp to a mk_list_comp call" {
-        emit_rule(comp_g(), "r").contains("mk_list_comp(")
+        emit_rule(comp_g(), "cbody").contains("mk_list_comp(")
+    }
+    then "MkListComp is span-anchored at the BODY (its sub-rule entry after `[`), not `[`" {
+        // cbody is entered AFTER `[` (the outer `r` consumed it), so cbody's rule-entry
+        // `let sp_start = st.cur().pos` is the BODY byte — the hand parse_list_elements
+        // anchor (span @ first element). The `[`-anchored MkListLit stays in rule `r`.
+        emit_rule(comp_g(), "cbody").contains("let sp_start = st.cur().pos")
     }
 }

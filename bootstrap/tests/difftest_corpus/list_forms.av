@@ -1,0 +1,21 @@
+// WHY: diff-test corpus — list-literal edge cases the grammar-native `list_expr`
+// (t-47hc.4.5, replacing @hand(list_expr)) must codegen byte-identically to the hand
+// parser: empty `[]`, single, multi, a TRAILING COMMA `[a, b,]`, and nested lists. The
+// selfhost pass exercises ordinary list literals densely, but trailing-comma + nested
+// forms surface here against ~15 lines instead of the 590k-line selfhost IR. List
+// COMPREHENSIONS parse to Expr.ListComp but have no codegen yet, so their byte-identity
+// is covered by the emit-gen-check AST differential, not this run. No @std, no spec.
+fn nth(xs: List<int>, i: int) -> int { xs[i] }
+
+fn main() {
+    let a = [1, 2, 3]
+    let b = [1, 2, 3,]
+    let empty: List<int> = []
+    let single = [42]
+    let nested = [[1, 2], [3, 4]]
+    mut sum = 0
+    for v in a { sum = sum + v }
+    for v in b { sum = sum + v }
+    sum = sum + single[0] + nth(nested[0], 1) + empty.length
+    println(string(sum))
+}
