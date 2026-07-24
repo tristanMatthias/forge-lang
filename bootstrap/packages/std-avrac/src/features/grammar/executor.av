@@ -1946,6 +1946,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `( e )` grouping OR `()` empty tuple (t-47hc paren spend). args[0] = the OPT-SCALAR
         // grouping expr — env.get yields CapVal.Nil when absent → Tuple([]), else Grouping(e).
         "MkGroupOrEmpty" if args.length == 1 -> CapVal.Node(mk_group_or_empty(st, 0 - 1, env.get(args[0])))
+        // `( first, rest… )` tuple built from a SCALAR first + a REST list (t-47hc paren
+        // spend). args[0] = the mandatory-comma-preceded first element, args[1] = the rest.
+        "MkTupleFR" if args.length == 2 -> CapVal.Node(mk_tuple_fr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
@@ -2884,6 +2887,24 @@ export fn mk_group_or_empty(st: PState, sp_start: int, e: CapVal) -> ExprId {
         .Nil -> st.store.add_expr(Expr.Tuple([]), byte_span(sp_start, st.cur().pos), [])
         _ -> st.store.add_expr(Expr.Grouping(capval_to_expr(st, e)), byte_span(sp_start, st.cur().pos), [])
     }
+}
+
+/// `( a, b, … )` tuple from a FIRST element + a REST list (t-47hc paren spend). Distinct
+/// from mk_tuple, which takes a single accumulated list: the paren tuple branch
+/// `"(" @on first:expression ( "," ( @on rest:expression )? )+ ")"` keeps the FIRST element
+/// as a SCALAR capture (`first`) and the remainder as a list (`rest`), then PREPENDS. This
+/// sidesteps the executor capture pitfall a single-list `MkTuple(a)` hits here — a TOP-LEVEL
+/// One `a` mixed with a nested list `a` drops the first element when the nested repetition
+/// matches 0 times (e.g. `(x,)`). The `+` enforces the mandatory tuple comma (so `(x)` rolls
+/// back to grouping via the #995 Plus-in-@try guard) and the nested `( rest )?` tolerates a
+/// trailing comma with no element after it. Building Tuple([first] + rest) is byte-identical
+/// to the hand parse_paren_expr's `[expr] ++ parse_tuple_rest` (mod.av:2354/2360), covering
+/// `(x,)` / `(x,y)` / `(x,y,)` / `(x,y,z)` uniformly. sp_start = the `(` byte; `[]` edges
+/// match alloc_at.
+export fn mk_tuple_fr(st: PState, sp_start: int, first: CapVal, rest_cap: CapVal) -> ExprId {
+    mut ids: List<ExprId> = [capval_to_expr(st, first)]
+    for id in capval_to_node_list(rest_cap) { ids.push(id) }
+    st.store.add_expr(Expr.Tuple(ids), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `( x: T, y: U ) -> body` TYPED lambda (t-47hc paren_expr flip prep — DORMANT). The

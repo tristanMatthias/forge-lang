@@ -496,6 +496,7 @@ fn build_uses_sp_start(name: string) -> bool {
         // `( e )` grouping / `()` empty tuple spans sp_start = the `(` byte (t-47hc paren
         // spend) — its owning paren_expr rule enters at `(`, like the tuple/lambda builds.
         name == "MkGroupOrEmpty" ||
+        name == "MkTupleFR" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -892,13 +893,14 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
-    // safe as a plain per-position name because seed_parser.validate_mode_markers
-    // restricts @off/@on to a DIRECT item of a top-level, non-@try, non-fold branch:
-    // each dispatch branch emits in its own `{ }` block (emit_dispatch), and within
-    // a branch `idx` is unique — so two @off items can never emit a colliding
-    // `__modes_N` in one scope (the nested-group case is rejected at parse). Empty
-    // mode_off (every production grammar today) returns the item's code unchanged →
-    // generated parsers stay byte-identical.
+    // safe as a plain per-position name because within ONE emit_seq_items call `idx`
+    // is unique, and a NESTED group's items emit inside their own `{ }` block (the
+    // `if`/`while` scaffolding of emit_opt/emit_repeat_group) where a `let __modes_N`
+    // legally SHADOWS any same-idx outer binding — a same-scope collision is
+    // impossible. (Post-#995 validate_mode_markers ALLOWS @try + nested-group markers;
+    // this per-item wrap is exactly what makes that sound.) Empty mode_off (every
+    // production grammar today) returns the item's code unchanged → generated parsers
+    // stay byte-identical.
     if item.mode_off != "" {
         return "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
@@ -1289,6 +1291,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `mut <e>: CapVal = CapVal.Nil` local, NOT a `_list` accumulator), passed as-is so
         // mk_group_or_empty reads Nil→Tuple([]) / else→Grouping(e).
         "MkGroupOrEmpty" -> "CapVal.Node(mk_group_or_empty(st, sp_start, ${args[0]}))"
+        // `( first, rest… )` tuple — args[0] is the SCALAR first element (a `let <first>` local),
+        // args[1] the REST list accumulator (`<rest>_list`); mk_tuple_fr prepends first.
+        "MkTupleFR" -> "CapVal.Node(mk_tuple_fr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
             "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
