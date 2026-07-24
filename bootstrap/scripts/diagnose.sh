@@ -376,6 +376,22 @@ DIFF & ANALYSIS
                        at the first red dir; a re-run resumes there.
                        --fresh drops the markers. This is the sanctioned
                        way to run the full suite on a ≤16GB box.
+  --guarded [FLOOR_MB] -- <cmd...>
+                       RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
+                       Starts the memory watchdog (--memguard), runs <cmd>,
+                       and ALWAYS tears the watchdog down. Also forces
+                       AVRA_TEST_JOBS=1 (overridable). Use this for
+                       diff-test / bs2 test / cold builds so a memory spike
+                       kills the compile, NOT the whole container.
+                       e.g. --guarded 5500 -- make diff-test
+  --memguard [FLOOR_MB]
+                       The raw memory watchdog (default FLOOR 3500MB; 5500
+                       proven). Polls MemAvailable every ~0.4s; SIGKILLs
+                       bs2/llc/cc1plus/clang/cc1 when free memory drops
+                       below FLOOR, so an OOM takes out the runaway compile
+                       instead of OOM-restarting the container. Foreground
+                       loop — background it and kill it yourself, or (better)
+                       use --guarded. Trips logged to build/memguard/log.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2854,6 +2870,91 @@ mode_sweep() {
   ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
 }
 
+# ── OOM safety on the ≤16GB Claude-Code-Web container ────────────────────
+# t-lqzr: the memory WATCHDOG, promoted from the session scratchpad (rule
+# 10: dev tooling lives here, never a throwaway /tmp script that dies with
+# the container). The problem it solves is concrete and RECURRING: a heavy
+# run — `bs2 test <dir>` fanning out parallel shards, `make diff-test`'s
+# TWO concurrent whole-compiler selfhost compiles, a cold `make test` —
+# spikes RSS past the box's ceiling, and the OOM killer takes down the
+# WHOLE CONTAINER (three restarts in one 2026-07-12 session; more since),
+# not just the offending command. There is no code bug to fix — the box is
+# just too small for these peaks — so the durable answer is to cap the
+# blast radius: kill the runaway compile, keep the container alive.
+#
+# mode_memguard polls system AVAILABLE memory (`free -m`, MemAvailable)
+# every ~0.4s; when it drops below FLOOR MB it SIGKILLs the heavy
+# compiler/test processes (bs2, llc, cc1plus, clang, cc1). The parent
+# build/test then sees a failed child and aborts LOUDLY — a failed command
+# is recoverable; a dead container is not. It writes trip records to
+# build/memguard/log so an OOM death is diagnosable after the fact.
+#
+# This is a foreground loop, meant to be backgrounded (`... --memguard 5500
+# & GUARD=$!; ...; kill $GUARD`) or — far better — driven by --guarded,
+# which starts it, runs your command, and ALWAYS tears it down. Prefer
+# --guarded so a watchdog is never left orphaned.
+#
+# Usage: --memguard [FLOOR_MB]   (default 3500; 5500 is the proven value)
+mode_memguard() {
+  local floor="${1:-3500}"
+  local dir="${AVRA_MEMGUARD_DIR:-$BUILD_DIR/memguard}"
+  mkdir -p "$dir"
+  local logf="$dir/log"
+  echo "${BASHPID:-$$}" > "$dir/pid"
+  printf '%s memguard START floor=%sMB pid=%s\n' "$(date +%T)" "$floor" "${BASHPID:-$$}" >> "$logf"
+  # A clean shutdown (SIGTERM from --guarded's teardown, or a manual kill).
+  trap 'rm -f "$dir/pid"; exit 0' TERM INT
+  while true; do
+    local avail
+    avail="$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')"
+    if [ -n "$avail" ] && [ "$avail" -lt "$floor" ]; then
+      printf '%s TRIP avail=%sMB < %sMB — SIGKILL bs2/llc/cc1plus/clang/cc1\n' \
+        "$(date +%T)" "$avail" "$floor" >> "$logf"
+      pkill -9 -x bs2      2>/dev/null
+      pkill -9 -x llc      2>/dev/null
+      pkill -9 -x cc1plus  2>/dev/null
+      pkill -9 -x clang    2>/dev/null
+      pkill -9 -x cc1      2>/dev/null
+    fi
+    sleep 0.4
+  done
+}
+
+# The RECOMMENDED way to run ANY heavy build/test on the small box: wrap it
+# in the watchdog, guaranteed torn down when the command finishes (or is
+# interrupted). Also forces single-concurrency test execution
+# (AVRA_TEST_JOBS=1, the other half of the OOM fix — overridable) so
+# `bs2 test` can't fan out parallel shards under the wrapper. Returns the
+# command's OWN exit status; on a non-zero exit it points at the trip log
+# so an OOM kill is unambiguous.
+#
+# Usage: --guarded [FLOOR_MB] -- <command> [args...]
+#   diagnose.sh --guarded 5500 -- make diff-test
+#   diagnose.sh --guarded -- ./build/bs2 test tests/foo_test.av
+mode_guarded() {
+  local floor=3500
+  # An optional leading FLOOR before the mandatory `--` separator.
+  if [ "${1:-}" != "--" ] && [ $# -ge 1 ]; then floor="$1"; shift; fi
+  [ "${1:-}" = "--" ] && shift
+  [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
+  export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
+  mode_memguard "$floor" &
+  local guard=$!
+  # Reap the watchdog however the command (or this script) exits.
+  trap 'kill "$guard" 2>/dev/null' EXIT INT TERM
+  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS — running: $*"
+  "$@"
+  local rc=$?
+  kill "$guard" 2>/dev/null
+  trap - EXIT INT TERM
+  if [ "$rc" -ne 0 ]; then
+    err "[guarded] command exited $rc — if OOM-killed, build/memguard/log has the TRIP line"
+  else
+    ok "[guarded] command completed cleanly (no container OOM-restart)"
+  fi
+  return $rc
+}
+
 # pdme.7: CONCURRENCY fuzz — the parallel sibling of --cache-fuzz.
 # Each round mutates the dep package, computes a reference IR via one
 # cache-bypassed compile, then fans out J CONCURRENT cached compiles of
@@ -3263,6 +3364,8 @@ main() {
     --slot-fuzz)          mode_slot_fuzz "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
+    --memguard)           mode_memguard "$@" ;;
+    --guarded)            mode_guarded "$@" ;;
     --prune-tmp-scratch)  mode_prune_tmp_scratch "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
     --cache-stats)        mode_cache_stats "$@" ;;
