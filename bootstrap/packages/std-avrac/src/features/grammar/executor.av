@@ -1128,6 +1128,14 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
     if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
+    // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
+    // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
+    // exactly tok_starts_expr_leaf (which includes `{`). Registered so an Opt/Star/Alt
+    // use of `@hand(lambda_body)` selects correctly; the paren flip's mandatory
+    // `"->" b:@hand(lambda_body)` never consults it, but the registration must be
+    // complete (byte-side twin: emit.av hand_first_guard). DORMANT: no live grammar
+    // references it, so this branch is never queried on the production type_flip path.
+    if name == "lambda_body" { return tok_starts_expr_leaf(tok) }
     // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
     // map-literal statement, disambiguated inside parse_statement) plus the
     // statement KEYWORDS parse_statement routes to feature parsers. `break` /
