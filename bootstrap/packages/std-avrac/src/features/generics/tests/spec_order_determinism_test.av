@@ -1,0 +1,36 @@
+// WHY: t-47hc.14 — the monomorphizer CANONICALISES specialization order by the
+// mangled decl name (mono.av `sort_specs_canonical`) so the emitted IR is a pure
+// function of content, NOT of the discovery order. Discovery threads through
+// typeck state whose iteration is sensitive to the compiler binary's allocation/
+// hash layout, so two BEHAVIOUR-IDENTICAL compiler binaries used to emit the same
+// program's monomorphized type table in a DIFFERENT order — a spurious `diff-test`
+// byte-identity divergence that recurred on every grammar-migration slice (window/
+// seed-train/rc all green; only diff-test red, a pure type-decl reorder).
+//
+// LLVM prints named struct types in first-reference order == function-emission
+// order == this spec order, so a content-stable spec order stabilises the type
+// table across binaries. This guards the OBSERVABLE effect: `zeta_id` is USED
+// before `alpha_id` (discovery order zeta, alpha), but the specializations must
+// emit in SORTED order (alpha_id__int BEFORE zeta_id__int). Remove the sort and
+// discovery/use order wins (zeta first) → this fails.
+//
+// Not covered by diff-test locally (the flake only manifests across two
+// differently-laid-out binaries, i.e. CI's OLD-vs-NEW selfhost); this asserts the
+// sort is APPLIED, which is the mechanism that makes emission layout-invariant.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "t-47hc.14: monomorphized specializations emit in canonical (sorted) order" {
+    then "alpha_id__int is emitted before zeta_id__int despite reverse use order" {
+        // rm the target first + fail on a non-zero compile so a stale IR from a
+        // prior run can't be inspected (avra_shell_exec exposes stdout, not the
+        // pclose status — a failed compile must NOT falsely read SORTED).
+        let out = avra_shell_exec(
+            "rm -f /tmp/avra_spec_order_det.ll; " +
+            "if ! ./build/bs2 compile packages/std-avrac/src/features/generics/tests/spec_order/main.av " +
+            "--output /tmp/avra_spec_order_det.ll >/dev/null 2>&1; then echo COMPILE_FAILED; exit 1; fi; " +
+            "a=$(grep -n 'define .*@alpha_id__int(' /tmp/avra_spec_order_det.ll | head -1 | cut -d: -f1); " +
+            "z=$(grep -n 'define .*@zeta_id__int(' /tmp/avra_spec_order_det.ll | head -1 | cut -d: -f1); " +
+            "if [ -n \"$a\" ] && [ -n \"$z\" ] && [ \"$a\" -lt \"$z\" ]; then echo SORTED; else echo UNSORTED; fi")
+        out.contains("SORTED")
+    }
+}
