@@ -136,21 +136,33 @@ export fn avra_stmt_grammar() -> Grammar {
 ///   * `if_stmt` / `for_stmt` / `while_stmt` — grammar-native control-flow
 ///     HEADERS. The `@off(allow_struct_lit)` marker reproduces the hand parsers'
 ///     save/clear/restore around the condition (the `while foo {` struct-literal-
-///     vs-body disambiguation); the BODY is `@hand(braced_body)`, the `{`-GATED
-///     block delegate (parse_braced_body) — NOT the unrestricted `@hand(stmt_hand)`,
-///     which would wrongly accept a bare-statement body (`while c break`) the hand
-///     header parsers reject with ExpectedBlock. The if-then is gated (braced_body);
-///     the if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
+///     vs-body disambiguation); the BODY is the grammar-native `block` rule
+///     (`"{" statement* "}" -> Block`) — a `{`-required block, so a bare-statement
+///     body (`while c break`) is a parse error, exactly as the hand header parsers
+///     reject it (they require `{` before `parse_statement`). The inner `statement*`
+///     dispatches each body statement through this same grammar (feature/hand forms
+///     via `@hand(stmt_hand)`), so a nested `{` map-vs-block is still resolved by
+///     parse_statement_hand's is_stmt_map_literal. The if-then uses `block`; the
+///     if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
 ///     unrestricted `parse_statement()` (accepts `else if …`, `else { … }`, and a
 ///     bare `else <stmt>`).
+///
+///     POSITION NOTE (why this is the FLIP grammar, not yet the production emit):
+///     the native `block`'s inner `statement*` builds its children WITHOUT the
+///     per-child `record_pos` that parse_statement_list_ids stamps on a hand-parsed
+///     block body — so a statement nested inside a native block carries NO SrcPos
+///     side-table entry here. That is byte-identical on THIS path because the
+///     stmt-flip differential compares STRUCTURE (render_stmt_id, position-free) and
+///     stmt-flip is OFF in production; it is precisely why the STATIC production
+///     emit (avra_stmt_dispatch_grammar) keeps if/for/while/block on `@hand` — a
+///     native block on the position-SENSITIVE static path would drop those entries
+///     and diverge. A SrcPos-threading native block, then mirrored into the dispatch
+///     grammar, is the production-flip slice (an `intended-ir-change`).
 ///   * `@hand(stmt_hand)` — every OTHER nested-statement-containing / feature-parser
-///     form (block, `match`/`defer`/`errdefer`/`return`), delegated wholesale to
-///     parse_statement. These MUST stay @hand: their nested body statements get
-///     per-statement SrcPos entries only through parse_statement_list_ids'
-///     record_pos, which the stateless grammar actions do not write — so a
-///     DSL-native rebuild would drop those side-table positions and diverge.
-///     `return` is additionally newline-sensitive, and `{` is the block-vs-map-
-///     literal ambiguity parse_statement resolves internally.
+///     form (a standalone `{ … }` block statement, `match`/`defer`/`errdefer`/
+///     `return`) — the un-migrated frontier, delegated wholesale to parse_statement.
+///     `return` is additionally newline-sensitive, and a leading `{` is the
+///     block-vs-map-literal ambiguity parse_statement resolves internally.
 ///   * `expr_stmt` — the fall-through expression statement, over the SAME
 ///     shared expression grammar (byte-identical to parse_expression), then
 ///     wrapped as Stmt.Expr exactly as the hand parser does.
@@ -162,11 +174,12 @@ export fn avra_stmt_grammar() -> Grammar {
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
+  block         = "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:@hand(braced_body) ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
-  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:@hand(braced_body) -> ForLoop(v, lo, hi, body)
-  while_stmt    = "while" @off(allow_struct_lit) c:expression body:@hand(braced_body) -> While(c, body)
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
@@ -199,17 +212,30 @@ export fn avra_decl_flip_grammar() -> Grammar {
     compose_grammars(gp.grammar, avra_stmt_flip_grammar())
 }
 
-/// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar: identical rules to
-/// avra_stmt_flip_grammar but WITHOUT composing the expression grammar, so
-/// `expression` in expr_stmt is an EXTERNAL reference. Emitting the STATIC parser
-/// from this (gen_decl_file.emit_decl_parser_file) produces only the statement
-/// dispatch fns (parse_statement / parse_break_stmt / parse_continue_stmt /
-/// parse_expr_stmt) and calls the already-generated `parse_expression`
-/// (gen_expr_parser.av, same `parse` module) — so the expr ladder is NOT re-emitted
-/// (which would collide fn-for-fn in the flat `parse` module). The INTERPRETER path
-/// keeps using the COMPOSED avra_stmt_flip_grammar (exec_rule must walk `expression`
-/// in-grammar); both drive the identical builders, and gen_expr_parser's
-/// parse_expression is itself proven byte-identical to the interpreter's expr walk.
+/// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar the STATIC production
+/// parser is emitted from (gen_decl_file.emit_decl_parser_file). It shares
+/// avra_stmt_flip_grammar's dispatch SHAPE (break/continue/expr_stmt leaves, same
+/// alternation order + FIRST-set) but WITHOUT composing the expression grammar, so
+/// `expression` in expr_stmt is an EXTERNAL reference: emitting from this produces
+/// only the statement dispatch fns (parse_statement / parse_break_stmt /
+/// parse_continue_stmt / parse_expr_stmt) and calls the already-generated
+/// `parse_expression` (gen_expr_parser.av, same `parse` module) — so the expr ladder
+/// is NOT re-emitted (which would collide fn-for-fn in the flat `parse` module). The
+/// INTERPRETER path keeps using the COMPOSED avra_stmt_flip_grammar (exec_rule must
+/// walk `expression` in-grammar); both drive the identical builders, and
+/// gen_expr_parser's parse_expression is itself proven byte-identical to the
+/// interpreter's expr walk.
+///
+/// INTENTIONAL LAG vs the flip grammar (t-47hc.13): avra_stmt_flip_grammar has gone
+/// grammar-native for `if`/`for`/`while` + a native `block` rule, but this dispatch
+/// grammar deliberately keeps those control-flow forms on `@hand(stmt_hand)`. The
+/// flip grammar's differential oracle is STRUCTURAL (render_stmt_id, position-free),
+/// so a native `block` whose inner `statement*` skips parse_statement_list_ids'
+/// per-child `record_pos` is byte-identical THERE; the STATIC production path is
+/// position-SENSITIVE, so dropping those SrcPos side-table entries would be a real
+/// divergence diff-test rejects. Migrating if/for/while/block here (a native `block`
+/// that threads each child's SrcPos) is the production-flip slice — an
+/// `intended-ir-change`, landed separately — not this dormant grammar step.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
