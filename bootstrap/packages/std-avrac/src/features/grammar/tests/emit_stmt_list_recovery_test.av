@@ -1,0 +1,50 @@
+// t-47hc.13 — STEP 2/3 of the production control-flow flip: emit.av renders a
+// statement-list-WITH-RECOVERY loop for a labeled bare-ref `*` over a STATEMENT
+// rule (a block's `stmts:statement*`), the generated twin of the hand parser's
+// parse_statement_list_ids (parse/mod.av:821).
+//
+// avra_stmt_flip_grammar() carries the `block = "{" stmts:statement* "}" -> Block`
+// rule (landed #983), so emitting IT exercises emit_stmt_list_loop. This is a
+// STRUCTURAL guard on the emitter — proving the loop shape is byte-identical to
+// parse_statement_list_ids (loop-until-`}`/EOF, per-child SrcPos via to_linecol,
+// panic-mode synchronize_stmt + positioned Stmt.Error on a failed child). It is
+// DORMANT: the PRODUCTION static parser (gen_decl_parser) is emitted from
+// avra_stmt_dispatch_grammar, which has NO block rule, so this changes no
+// production emit (diagnose.sh --emit-gen-check stays GENPASS). The BEHAVIOURAL
+// byte-identity proof lands at STEP 4 (the recovery-tree oracle over the real
+// static parser once block/if/for/while mirror into the dispatch grammar).
+use @std.avrac.features.grammar.{avra_stmt_flip_grammar, emit_parser_source}
+
+fn emit_flip() -> string {
+    emit_parser_source(avra_stmt_flip_grammar())
+}
+
+spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a block" {
+    then "the block body loops until `}`/EOF (the hand parse_statement_list_ids stop condition)" {
+        let src = emit_flip()
+        // The generated parse_block collects `stmts:statement*` — NOT the interpreter's
+        // FIRST-guard loop, but a loop-until-`}` that mirrors the hand recovery loop.
+        src.contains("if st.at_end() || st.cur().text == \"}\" { break }") &&
+        src.contains("let __cv = parse_statement(st)")
+    }
+
+    then "per-child SrcPos is recorded from the entry byte (the add_stmt_at twin)" {
+        let src = emit_flip()
+        src.contains("let __sp = st.cur().pos") &&
+        src.contains("let __sid = capval_to_stmt(st, __cv)") &&
+        src.contains("let __lc = st.store.lines.to_linecol(__sp)") &&
+        src.contains("st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })") &&
+        src.contains("stmts_list.push(__sid)")
+    }
+
+    then "a failed child triggers panic-mode resync + a positioned Stmt.Error placeholder" {
+        let src = emit_flip()
+        src.contains("if st.had_error {") &&
+        src.contains("st.synchronize_stmt()") &&
+        // forward-progress guard: a zero-width errored parse must still advance.
+        src.contains("if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }") &&
+        src.contains("let __e = st.store.stmts.add_leaf(Stmt.Error)") &&
+        src.contains("st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })") &&
+        src.contains("st.had_error = false")
+    }
+}
