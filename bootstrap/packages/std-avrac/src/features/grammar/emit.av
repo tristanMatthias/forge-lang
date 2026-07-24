@@ -478,7 +478,11 @@ fn build_uses_sp_start(name: string) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
         name == "mk_enum_ctor" ||
-        // `[ … ]` list literal + comprehension span the `[` byte (t-47hc.4, DORMANT).
+        // `[ … ]` list literal + comprehension capture sp_start at their OWNING RULE's
+        // entry byte (t-47hc.4, DORMANT). That anchor is the `[` for MkListLit (built in
+        // list_expr, rule entry = `[`) but the BODY's first byte for MkListComp (built in
+        // the list_comp sub-rule, entered AFTER `[` is consumed) — the two-level span
+        // asymmetry matching hand parse_list_expr (@ `[`) vs parse_list_elements (@ body).
         name == "MkListLit" || name == "MkListComp" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
@@ -1172,8 +1176,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
         // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; see executor
         // mk_list_lit/mk_list_comp). `a` is the comma-list repetition accumulator (like
-        // mk_inlist's), spanned at sp_start (the `[` byte). MkListComp's body/v/coll are
-        // scalars; the optional `filt` (arity 4) is Nil when the `( if … )?` is absent.
+        // mk_inlist's). Both span at sp_start = their OWNING RULE's entry byte: the `[`
+        // for MkListLit (built in list_expr), but the BODY's first byte for MkListComp
+        // (built in the list_comp sub-rule entered after `[`). MkListComp's body/v/coll
+        // are scalars; the optional `filt` (arity 4) is Nil when the `( if … )?` is absent.
         "MkListLit" -> "CapVal.Node(mk_list_lit(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
