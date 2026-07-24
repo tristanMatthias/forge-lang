@@ -330,6 +330,15 @@ fn emit_rule_body(g: Grammar, node: GNode) -> string {
 fn emit_ref_result(item: GItem, ind: string, as_return: bool) -> string {
     let call = emit_ref_call(item.prim)
     let ret = if as_return { "return " } else { "" }
+    if item.mode_on != "" {
+        // The SET-ON twin of the mode_off branch below (mutually exclusive per
+        // GItem): re-enable the flag around the sub-parse, then restore.
+        return "${ind}let __m = st.modes\n" +
+            "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n" +
+            "${ind}let __r = ${call}\n" +
+            "${ind}st.set_modes(__m)\n" +
+            "${ind}${ret}__r\n"
+    }
     if item.mode_off == "" {
         return "${ind}${ret}${call}\n"
     }
@@ -799,8 +808,8 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
-    // safe as a plain per-position name because seed_parser.validate_off_markers
-    // restricts @off to a DIRECT item of a top-level, non-@try, non-fold branch:
+    // safe as a plain per-position name because seed_parser.validate_mode_markers
+    // restricts @off/@on to a DIRECT item of a top-level, non-@try, non-fold branch:
     // each dispatch branch emits in its own `{ }` block (emit_dispatch), and within
     // a branch `idx` is unique — so two @off items can never emit a colliding
     // `__modes_N` in one scope (the nested-group case is rejected at parse). Empty
@@ -809,6 +818,14 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     if item.mode_off != "" {
         return "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
+            inner +
+            "${ind}st.set_modes(__modes_${idx})\n"
+    }
+    // `@on(flag)` mode-SET marker: the SET-ON twin — save modes, set the flag ON via
+    // modes_with_flag_on (the SAME fn the executor calls), emit the item, restore.
+    if item.mode_on != "" {
+        return "${ind}let __modes_${idx} = st.modes\n" +
+            "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n" +
             inner +
             "${ind}st.set_modes(__modes_${idx})\n"
     }

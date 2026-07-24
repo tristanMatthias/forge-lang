@@ -1,0 +1,149 @@
+// WHY: t-47hc — the `@on(flag)` mode-SET grammar marker, the SET-ON twin of
+// `@off`. It turns an ExprModes flag ON for the DURATION of an item's sub-parse,
+// then restores — the grammar-native form of the hand parser's `saved =
+// allow_dot_postfix; allow_dot_postfix = true; parse_expression(); … = saved`
+// (parse_paren_expr re-enables dot-postfix inside `(...)`). It is a prerequisite
+// the paren_expr @hand-leaf deletion is BLOCKED on (parse_paren_expr sets exactly
+// this mode).
+//
+// Opt-in and dormant: no production grammar uses `@on` yet (the only marker in
+// avra_grammar.av is `^`), so the generated parsers regen byte-identical — this
+// is a capability slice, not a behaviour change. Executor (push_mode_on/
+// restore_modes) and emit BOTH route through modes_with_flag_on, so they can't
+// disagree — the same lockstep discipline `@off` has via modes_with_flag_off.
+//
+// This file also pins the marker's HARD CONTRACT (so the primitive is robust
+// before its first consumer, the paren migration):
+//   1. STRICT syntax `@on` `(` NAME `)` — malformed forms are a parse error.
+//   2. The flag NAME is validated against on_flag_supported (a typo, or the
+//      READ-only `at_quote_top` predicate, is rejected — never a silent no-op).
+//   3. POSITION: @on is honored ONLY on a direct item of a top-level, non-`@try`,
+//      non-fold branch (never nested in a group / on a @hand/@when primary) — the
+//      SAME positions @off is, and for the same emit/exec lockstep reason.
+//   4. @off and @on are MUTUALLY EXCLUSIVE on one item (emit honors mode_off
+//      first and would silently drop a co-present mode_on).
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, new_pstate, modes_with_flag_on, default_expr_modes, modes_flag, on_flag_supported}
+
+fn emit_rule(gsrc: string, rule: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+/// The parse error for a grammar string ("" == accepted).
+fn perr(gsrc: string) -> string {
+    parse_grammar(gsrc).error
+}
+
+// `r`'s single item is `@on(allow_it_sugar) g`; `r2` is the same WITHOUT @on.
+// allow_it_sugar is default-OFF, so @on flips it (unlike allow_struct_lit which
+// starts on) — proving @on genuinely SETS rather than no-ops on an already-on flag.
+const R_ON: string = "r = @on(allow_it_sugar) g\ng = \"x\""
+const R_PLAIN: string = "r = g\ng = \"x\""
+
+spec "t-47hc: @on(flag) sets the mode for the sub-parse (executor push/restore)" {
+    then "push_mode_on turns the named flag ON, restore_modes brings it back" {
+        mut st = new_pstate("x")
+        // default: allow_it_sugar OFF
+        let before = modes_flag(st.modes, "allow_it_sugar")
+        let saved = st.push_mode_on("allow_it_sugar")
+        let during = modes_flag(st.modes, "allow_it_sugar")   // ON now
+        st.restore_modes(saved)
+        let after = modes_flag(st.modes, "allow_it_sugar")     // restored OFF
+        !before && during && !after
+    }
+    then "push_mode_on leaves OTHER flags untouched" {
+        mut st = new_pstate("x")
+        let _ = st.push_mode_on("allow_it_sugar")
+        // allow_dot_postfix is default-on and must stay on
+        modes_flag(st.modes, "allow_dot_postfix")
+    }
+}
+
+spec "t-47hc: @on(flag) — the shared modes_with_flag_on helper + on_flag_supported gate" {
+    then "modes_with_flag_on sets ONLY the named flag" {
+        let m = modes_with_flag_on(default_expr_modes(), "allow_it_sugar")
+        modes_flag(m, "allow_it_sugar") && modes_flag(m, "allow_dot_postfix")
+    }
+    then "on_flag_supported accepts the four settable ExprModes bools" {
+        on_flag_supported("allow_struct_lit") && on_flag_supported("allow_dot_postfix") &&
+            on_flag_supported("allow_it_sugar") && on_flag_supported("cell_mode")
+    }
+    then "on_flag_supported REJECTS a typo and the read-only at_quote_top predicate" {
+        !on_flag_supported("allow_dot_postfx") && !on_flag_supported("at_quote_top") &&
+            !on_flag_supported("")
+    }
+}
+
+spec "t-47hc: @on(flag) — STRICT syntax + flag validation (parse-time rejection)" {
+    then "a valid top-level @on is accepted" {
+        perr(R_ON) == ""
+    }
+    then "an unknown flag is a HARD error (not a silent no-op)" {
+        perr("r = @on(nonsense) g\ng = \"x\"") != ""
+    }
+    then "the read-only at_quote_top predicate is rejected as an @on target" {
+        perr("r = @on(at_quote_top) g\ng = \"x\"") != ""
+    }
+    then "the parentheses are required — `@on flag` without `(` fails" {
+        perr("r = @on allow_it_sugar g\ng = \"x\"") != ""
+    }
+    then "a non-NAME flag (`@on(\"x\")`) fails" {
+        perr("r = @on(\"x\") g\ng = \"x\"") != ""
+    }
+}
+
+spec "t-47hc: @on(flag) — POSITION validation (reject where emit can't honor it)" {
+    then "@on nested inside a `( … )` group is rejected (inlined, restarting idx)" {
+        perr("r = ( @on(allow_it_sugar) g )\ng = \"x\"") != ""
+    }
+    then "@on on a `@try` branch item is rejected (emit_speculative bypasses emit_item)" {
+        perr("r = @try @on(allow_it_sugar) a | b\na = \"x\"\nb = \"y\"") != ""
+    }
+    then "@on on a fold-build branch is rejected (emit_fold bypasses emit_item)" {
+        perr("r = @on(allow_it_sugar) l:num -> fold_binary(l)\nnum = NUMBER") != ""
+    }
+    then "@on cannot wrap a @hand primary (the delegate owns its own modes)" {
+        perr("r = @on(allow_it_sugar) @hand(foo)\ng = \"x\"") != ""
+    }
+}
+
+spec "t-47hc: @on(flag) — mutual exclusion with @off" {
+    then "@off and @on on ONE item is a hard parse error (emit drops the second)" {
+        perr("r = @off(allow_struct_lit) @on(allow_it_sugar) g\ng = \"x\"") != ""
+    }
+}
+
+spec "t-47hc: @on(flag) — emit lockstep + scope-safety + byte-identity" {
+    then "the emitted rule saves modes, sets the flag via modes_with_flag_on, restores" {
+        // R_ON is a lone-ref passthrough → emit_ref_result (`__m`/`__r`), same as
+        // the @off passthrough shape.
+        let src = emit_rule(R_ON, "r")
+        src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.set_modes(__m)")
+    }
+    then "two @on items in one rule emit DISTINCT __modes bindings (scope-safe)" {
+        let src = emit_rule("r = @on(allow_it_sugar) a @on(allow_dot_postfix) b -> Pair(a, b)\na = \"x\"\nb = \"y\"", "r")
+        src.contains("__modes_0") && src.contains("__modes_1") &&
+        src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+        src.contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")")
+    }
+    then "@on on a bare-ref branch in a MULTI-branch dispatch is honored (not dropped)" {
+        // `r = @on(allow_it_sugar) a | b` — a 2-branch dispatch whose first branch
+        // is a lone ref with @on. emit_dispatch's is_bare_ref shortcut bypasses
+        // emit_item, so it must reproduce the save/set/restore itself (via the shared
+        // emit_ref_result) — the executor honors it (exec_seq→exec_item), and dropping
+        // it would be the exact lockstep divergence this primitive prevents.
+        let src = emit_rule("r = @on(allow_it_sugar) a | b\na = \"x\"\nb = \"y\"", "r")
+        src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.set_modes(__m)")
+    }
+    then "WITHOUT @on, no mode save/set is emitted — byte-identical for production grammars" {
+        let src = emit_rule(R_PLAIN, "r")
+        !src.contains("modes_with_flag_on") && !src.contains("st.set_modes")
+    }
+}
