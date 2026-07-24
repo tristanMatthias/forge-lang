@@ -1128,6 +1128,14 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
     if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
+    // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
+    // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
+    // exactly tok_starts_expr_leaf (which includes `{`). Registered so an Opt/Star/Alt
+    // use of `@hand(lambda_body)` selects correctly; the paren flip's mandatory
+    // `"->" b:@hand(lambda_body)` never consults it, but the registration must be
+    // complete (byte-side twin: emit.av hand_first_guard). DORMANT: no live grammar
+    // references it, so this branch is never queried on the production type_flip path.
+    if name == "lambda_body" { return tok_starts_expr_leaf(tok) }
     // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
     // map-literal statement, disambiguated inside parse_statement) plus the
     // statement KEYWORDS parse_statement routes to feature parsers. `break` /
@@ -1568,7 +1576,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1680,6 +1688,12 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "list_expr"     -> bp.parse_list_expr()
         "qualified_expr" -> bp.parse_qualified_expr()
         "paren_expr"    -> bp.parse_paren_expr()
+        // The lambda BODY (t-47hc paren_expr flip prep — DORMANT delegate). parse_lambda_body
+        // (closures/parser.av) = a block `{ … }` (parse_block_expression → Expr.Block over a
+        // statement list) OR a bare expression. Block-as-expression is not grammar-native
+        // (couples to the statement machinery), so the paren flip's lambda body delegates
+        // here rather than re-expressing it — the deliberate @hand(lambda_body) leaf.
+        "lambda_body"   -> bp.parse_lambda_body()
         "ident_primary" -> bp.parse_ident_expr()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()
@@ -1894,6 +1908,10 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `( … ) -> body` untyped lambda (t-47hc paren prep — DORMANT; interpreter oracle,
         // sp_start = 0 - 1 span-free). args[0] = the param-name capture, args[1] = the body.
         "MkLambda" if args.length == 2 -> CapVal.Node(mk_lambda(st, 0 - 1, env.get(args[0]), capval_to_expr(st, env.get(args[1]))))
+        // `( x: T, … ) -> body` typed lambda (t-47hc paren prep — DORMANT; interpreter
+        // oracle, sp_start = 0 - 1). args[0] = the PENTRY-list capture (MkParam-built),
+        // args[1] = the body. capval_to_pentry_list is the same converter MkFnDecl uses.
+        "MkLambdaTyped" if args.length == 2 -> CapVal.Node(mk_lambda_typed(st, 0 - 1, capval_to_pentry_list(env.get(args[0])), capval_to_expr(st, env.get(args[1]))))
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
@@ -2814,6 +2832,20 @@ fn lambda_exprs_to_params(st: PState, ids: List<ExprId>) -> List<ParamEntry> {
 /// identical. The TYPED `(x: int) ->` path is a separate primitive (parse_param_list).
 export fn mk_lambda(st: PState, sp_start: int, params_cap: CapVal, body: ExprId) -> ExprId {
     let params = lambda_exprs_to_params(st, capval_to_node_list(params_cap))
+    st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `( x: T, y: U ) -> body` TYPED lambda (t-47hc paren_expr flip prep — DORMANT). The
+/// TYPED twin of mk_lambda: its params come from PENTRIES (name:type pairs built by the
+/// existing MkParam via the grammar-native `param = pname:IDENT ( ":" pt:type_expr )?`
+/// rule) rather than from bare Ident exprs, so it takes a `List<ParamEntry>` directly —
+/// the same capval_to_pentry_list contract MkFnDecl / MkMethod use. Mirrors the hand
+/// parse_paren_expr's typed-lambda alloc_at(Expr.Lambda(params, body), sp_start)
+/// (mod.av:2338), where params come from parse_param_list. sp_start = the `(` byte
+/// (emit) or 0-1 span-free (interpreter oracle); `[]` edges match alloc_at, byte-
+/// identical. The UNTYPED `(x) ->` path is mk_lambda; the two are distinguished at the
+/// grammar level (@peek(ident_colon) picks the typed branch), never here.
+export fn mk_lambda_typed(st: PState, sp_start: int, params: List<ParamEntry>, body: ExprId) -> ExprId {
     st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
 }
 

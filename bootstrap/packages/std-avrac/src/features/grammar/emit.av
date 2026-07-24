@@ -490,6 +490,9 @@ fn build_uses_sp_start(name: string) -> bool {
         // `( … ) -> body` untyped lambda spans sp_start = the `(` byte (t-47hc paren prep,
         // DORMANT) — same owning-rule-entry anchor as the tuple.
         name == "MkLambda" ||
+        // `( x: T, … ) -> body` typed lambda spans sp_start = the `(` byte (t-47hc paren
+        // prep, DORMANT) — same owning-rule-entry anchor as the untyped lambda / tuple.
+        name == "MkLambdaTyped" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -1195,6 +1198,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `( … ) -> body` untyped lambda (t-47hc paren prep — DORMANT). args[0] = the
         // param-name comma-list accumulator, args[1] = the body scalar (→ ExprId).
         "MkLambda" -> "CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(${args[0]}_list), capval_to_expr(st, ${args[1]})))"
+        // `( x: T, … ) -> body` typed lambda (t-47hc paren prep — DORMANT). args[0] = the
+        // PENTRY-list accumulator (MkParam-built, already typed List<ParamEntry> in the
+        // generated parser — passed directly like MkFnDecl), args[1] = the body scalar.
+        "MkLambdaTyped" -> "CapVal.Node(mk_lambda_typed(st, sp_start, ${args[0]}_list, capval_to_expr(st, ${args[1]})))"
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
             "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
@@ -1312,7 +1319,7 @@ fn is_stmt_hand_name(n: string) -> bool {
     n == "stmt_hand" || n == "decl_hand"
 }
 fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
-fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "call_leaf" || n == "primary_base" || n == "postfix_suffix" || n == "with_suffix" || n == "pipe_rhs" || n == "match_expr" || n == "if_expr" || n == "spawn_expr" || n == "channel_expr" || n == "isolated_expr" || n == "when_expr" || n == "qualified_expr" || n == "list_expr" || n == "paren_expr" || n == "ident_primary" }
+fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "call_leaf" || n == "primary_base" || n == "postfix_suffix" || n == "with_suffix" || n == "pipe_rhs" || n == "match_expr" || n == "if_expr" || n == "spawn_expr" || n == "channel_expr" || n == "isolated_expr" || n == "when_expr" || n == "qualified_expr" || n == "list_expr" || n == "paren_expr" || n == "lambda_body" || n == "ident_primary" }
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -1469,6 +1476,10 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "postfix_suffix" { return "${tk_guard(".")} || ${tk_guard("(")} || ${tk_guard("[")} || ${tk_guard("!")} || ${tk_guard("?")} || ${tk_guard("?.")} || ${tk_guard("<")} || ${tk_guard("catch")}" }
     if hf == "with_suffix" { return "st.cur().text == \"with\"" }
     if hf == "pipe_rhs" { return "tok_starts_expr_leaf(st.cur())" }
+    // The lambda body's FIRST is the same leaf FIRST (`{` block ∪ FIRST(expression)) —
+    // byte-side twin of executor.hand_starts("lambda_body"). t-47hc paren flip prep,
+    // DORMANT (no live grammar references @hand(lambda_body), so unemitted today).
+    if hf == "lambda_body" { return "tok_starts_expr_leaf(st.cur())" }
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch FIRST
     // sets, mirroring executor.hand_starts("stmt_hand" / "decl_hand") exactly so
     // the generated static parser routes to run_hand_stmt on the same tokens the
@@ -1792,7 +1803,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "MkLambda" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,

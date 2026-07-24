@@ -1,0 +1,91 @@
+// WHY: t-47hc (paren_expr flip prep) — the DORMANT TYPED-lambda BUILD (mk_lambda_typed),
+// the last expression-side build primitive for the paren_expr @hand-leaf deletion. It is
+// the TYPED twin of mk_lambda (#992): its params come from PENTRIES (name:type pairs built
+// by the existing grammar-native `param = pname:IDENT ( ":" pt:type_expr )?` rule + MkParam)
+// rather than from bare Ident exprs, so it takes a List<ParamEntry> directly — the same
+// capval_to_pentry_list contract MkFnDecl / MkMethod use. Mirrors the hand parse_paren_expr's
+// typed-lambda alloc_at(Expr.Lambda(params, body), sp_start) (mod.av:2338).
+//
+// Uses the SAME full type-family grammar decl_fn_test drives MkFnDecl with (param + type_expr
+// + type_atom + named_type + …), so the pentry accumulation is the production-proven path —
+// this is the FIRST expr-context build to consume a PENTRY accumulator (all prior pentry
+// consumers were stmt/decl builds), so it also proves the interpreter handles an expr-context
+// pentry build. DORMANT: no production grammar uses it, so generated parsers regen byte-
+// identical (emit-gen-check GENPASS).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
+use @std.avrac.core.{render_expr_id}
+
+// A start rule `r` that builds a TYPED lambda `( params ) -> body`, plus the full type family
+// (copied from decl_fn_test so pentry accumulation is the production path) + a small expression
+// subset for the body.
+fn lamt_grammar_src() -> string {
+    "grammar LamT {\n" +
+    "  r          = \"(\" ( params:param ( \",\" params:param )* )? \")\" \"->\" b:expression -> MkLambdaTyped(params, b)\n" +
+    "  param      = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    // ── type family ──
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type   = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  list_type  = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression subset (body) ──
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "             | \"(\" e:expression \")\" -> Grouping(e)\n" +
+    "}"
+}
+
+fn run_render(input: string) -> string {
+    let gp = parse_grammar(lamt_grammar_src())
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+fn emit_r() -> string {
+    let gp = parse_grammar(lamt_grammar_src())
+    for gr in gp.grammar.rules {
+        if gr.name == "r" { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+spec "t-47hc: DORMANT typed-lambda build (mk_lambda_typed) — interpreter builds Expr.Lambda from pentries" {
+    then "a zero-param lambda builds an empty-param Expr.Lambda" {
+        run_render("() -> 9") == "(lambda () 9)"
+    }
+    then "a single untyped-param lambda builds a one-param Expr.Lambda (int default, per MkParam)" {
+        // MkParam defaults an un-annotated param to `int` (matching parse_param_list), so a
+        // bare `x` renders `x:int` — exactly as decl_fn_test's MkFnDecl `fn f(x)` → `(x:int)`.
+        run_render("(x) -> 7") == "(lambda (x:int) 7)"
+    }
+    then "a multi untyped-param lambda builds params in source order (int defaults)" {
+        run_render("(x, y) -> 5") == "(lambda (x:int, y:int) 5)"
+    }
+    then "TYPED params carry their annotation through the pentry path" {
+        run_render("(a: int, b: string) -> 1") == "(lambda (a:int, b:string) 1)"
+    }
+    then "a mix of typed and untyped params round-trips (untyped→int default)" {
+        run_render("(x, y: string) -> 0") == "(lambda (x:int, y:string) 0)"
+    }
+}
+
+spec "t-47hc: DORMANT typed-lambda build (mk_lambda_typed) — emitter lowers to a mk_lambda_typed call" {
+    then "the emitter lowers MkLambdaTyped to a mk_lambda_typed call spanned at sp_start" {
+        let src = emit_r()
+        src.contains("mk_lambda_typed(st, sp_start,") && src.contains("let sp_start = st.cur().pos")
+    }
+    then "the emitted MkLambdaTyped passes the pentry accumulator (params_list) + body via capval_to_expr" {
+        let src = emit_r()
+        src.contains("params_list") && src.contains("capval_to_expr(st,")
+    }
+    then "it lowers to mk_lambda_typed, distinct from the untyped mk_lambda" {
+        emit_r().contains("mk_lambda_typed(")
+    }
+}
