@@ -1,0 +1,62 @@
+// WHY: t-47hc (paren_expr flip prep) — the DORMANT untyped-lambda BUILD (mk_lambda),
+// proven here via a test grammar BEFORE it is spent to nativize the lambda branches of
+// @hand(paren_expr). The build is referenced by NO production grammar yet, so
+// emit-gen-check + diff-test stay byte-identical (the #988 dormant-primitive discipline:
+// build the primitive, prove it, spend it later). Both sides are exercised: the
+// INTERPRETER (run_grammar_expr) builds the real Expr.Lambda (render-checked), and the
+// EMITTER (emit_rule_fn) lowers the same build to a mk_lambda call in the generated
+// static parser.
+//
+// mk_lambda mirrors the hand parse_paren_expr's alloc_at(Expr.Lambda(exprs_to_params(
+// ids), body), sp_start) (mod.av:2321/2358/2373): the param names come from PARSED exprs
+// (bare Ident nodes — `(x)` is ambiguous with `(expr)` grouping until the `->` is seen),
+// converted by the replicated lambda_exprs_to_params; the body is the lambda body expr.
+// This pins the `(` span anchor + the name-extraction. The TYPED `(x: int) ->` path is a
+// separate primitive (parse_param_list) — NOT covered here.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
+use @std.avrac.core.{render_expr_id}
+
+// Parse `grammar_src`, run rule 0 over `input`, render the resulting expression.
+fn run_render(grammar_src: string, input: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+// Emit the named rule's generated static parse fn from `grammar_src`.
+fn emit_rule(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// The untyped-lambda grammar: `( p, p, … ) -> body` -> MkLambda. Params are `@hand(ident)`
+// (a bare Expr.Ident node, exactly what the real paren_expr's `expression` yields for a
+// bare `x`), so lambda_exprs_to_params extracts real names; the body is `@hand(number)`.
+// The optional-comma-list makes 0/1/N params uniform (Nil -> []).
+fn lam_g() -> string { "r = \"(\" ( p:@hand(ident) ( \",\" p:@hand(ident) )* )? \")\" \"->\" b:@hand(number) -> MkLambda(p, b)" }
+
+spec "t-47hc: DORMANT lambda build (mk_lambda) — interpreter builds Expr.Lambda" {
+    then "a multi-param lambda builds Expr.Lambda with names in source order" {
+        run_render(lam_g(), "(x, y) -> 5") == "(lambda (x, y) 5)"
+    }
+    then "a single-param lambda builds a one-param Expr.Lambda" {
+        run_render(lam_g(), "(a) -> 7") == "(lambda (a) 7)"
+    }
+    then "a zero-param lambda builds an empty-param Expr.Lambda" {
+        run_render(lam_g(), "() -> 9") == "(lambda () 9)"
+    }
+}
+
+spec "t-47hc: DORMANT lambda build (mk_lambda) — emitter lowers to a mk_lambda call" {
+    then "the emitter lowers MkLambda to a mk_lambda call spanned at sp_start" {
+        let src = emit_rule(lam_g(), "r")
+        src.contains("mk_lambda(st, sp_start,") && src.contains("let sp_start = st.cur().pos")
+    }
+    then "the emitted MkLambda passes the param accumulator (p_list) and the body via capval_to_expr" {
+        let src = emit_rule(lam_g(), "r")
+        src.contains("CapVal.Nodes(p_list)") && src.contains("capval_to_expr(st,")
+    }
+}

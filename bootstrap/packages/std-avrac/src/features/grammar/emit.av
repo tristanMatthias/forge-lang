@@ -487,6 +487,9 @@ fn build_uses_sp_start(name: string) -> bool {
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
         name == "MkTuple" ||
+        // `( … ) -> body` untyped lambda spans sp_start = the `(` byte (t-47hc paren prep,
+        // DORMANT) — same owning-rule-entry anchor as the tuple.
+        name == "MkLambda" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -1187,6 +1190,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT). Structural twin of MkListLit:
         // `a` is the comma-list accumulator, spanned at sp_start = the owning rule's `(`.
         "MkTuple" -> "CapVal.Node(mk_tuple(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
+        // `( … ) -> body` untyped lambda (t-47hc paren prep — DORMANT). args[0] = the
+        // param-name comma-list accumulator, args[1] = the body scalar (→ ExprId).
+        "MkLambda" -> "CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(${args[0]}_list), capval_to_expr(st, ${args[1]})))"
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
             "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
@@ -1772,7 +1778,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "MkLambda" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
