@@ -334,7 +334,8 @@ export fn avra_program_grammar() -> Grammar {
   assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
   method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
   impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
-  statement   = @hand(return_stmt) | @hand(let_stmt) | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  statement   = return_stmt | @hand(let_stmt) | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
   block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
   while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
   if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)
