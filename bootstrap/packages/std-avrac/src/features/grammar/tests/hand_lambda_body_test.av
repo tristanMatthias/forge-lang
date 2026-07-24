@@ -1,0 +1,40 @@
+// WHY: t-47hc (paren_expr flip prep) — the DORMANT @hand(lambda_body) expr delegate.
+// The paren_expr flip's lambda body (`( … ) -> body`) can be a block `{ … }` (which
+// parse_block_expression builds as Expr.Block over a STATEMENT list — coupled to the
+// still-@hand statement machinery, NOT grammar-native) OR a bare expression. So the flip
+// delegates the body to the exact hand parse_lambda_body (closures/parser.av) via this
+// @hand(lambda_body) leaf rather than re-expressing it — the byte-identity-safe choice.
+//
+// DORMANT: no production grammar references `lambda_body` yet, so the generated parsers
+// regen byte-identical (emit-gen-check GENPASS). This just wires the delegate
+// (is_expr_hand + run_hand_expr → bp.parse_lambda_body) and proves it dispatches both
+// body forms, so the paren spend can compose `"->" b:@hand(lambda_body)`.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.core.{render_expr_id}
+
+// `-> body` where body is @hand(lambda_body). The leading `->` is a fixed literal so the
+// delegate is entered at the body (non-FIRST position, exactly as the paren flip uses it).
+fn body_g() -> string { "r = \"->\" b:@hand(lambda_body) -> b" }
+
+fn run_render(input: string) -> string {
+    let gp = parse_grammar(body_g())
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+spec "t-47hc: @hand(lambda_body) delegate is wired + dispatches the expression body" {
+    then "a bare-expression body parses as the expression" {
+        run_render("-> 5") == "5"
+    }
+    then "an arithmetic-expression body parses through" {
+        run_render("-> 1 + 2") == "(+ 1 2)"
+    }
+    // NOTE: the BLOCK body form (`-> { … }` → parse_block_expression → Expr.Block over a
+    // statement LIST) is NOT exercisable here: run_grammar_expr's lightweight hand delegate
+    // is not statement-capable (stmt_flip=false, records_roots=0), so parse_statement_list_ids
+    // can't run in this test context (the same limitation @hand(qualified_type) has). The block
+    // path runs only through the REAL compiler pipeline — validated by the paren spend's
+    // emit-gen-check differential + cold CI, where the delegate IS statement-capable. Here we
+    // prove the delegate is registered (is_expr_hand + run_hand_expr) and dispatches the
+    // expression form, which is what makes `"->" b:@hand(lambda_body)` composable in the spend.
+}

@@ -1568,7 +1568,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1680,6 +1680,12 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "list_expr"     -> bp.parse_list_expr()
         "qualified_expr" -> bp.parse_qualified_expr()
         "paren_expr"    -> bp.parse_paren_expr()
+        // The lambda BODY (t-47hc paren_expr flip prep — DORMANT delegate). parse_lambda_body
+        // (closures/parser.av) = a block `{ … }` (parse_block_expression → Expr.Block over a
+        // statement list) OR a bare expression. Block-as-expression is not grammar-native
+        // (couples to the statement machinery), so the paren flip's lambda body delegates
+        // here rather than re-expressing it — the deliberate @hand(lambda_body) leaf.
+        "lambda_body"   -> bp.parse_lambda_body()
         "ident_primary" -> bp.parse_ident_expr()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()
