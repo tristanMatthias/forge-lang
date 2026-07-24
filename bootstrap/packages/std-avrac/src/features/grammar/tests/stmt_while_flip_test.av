@@ -1,0 +1,130 @@
+// t-47hc.13 S1 — grammar-native `while` on the PRODUCTION stmt-flip path.
+//
+// while_stmt = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand)
+//              -> While(c, body)
+//
+// Differential parity (the stmt_flip_dispatch_test pattern): for every while form
+// the FLIP path (p.stmt_flip=true → run_dsl_stmt_at_shared over avra_stmt_flip_grammar,
+// now with while_stmt) and the HAND path (parse_statement_hand → parse_while_statement)
+// must build the SAME Stmt, rendered through the TOTAL render_stmt_id (no golden
+// strings). The make-or-break case is `while foo { }`: the hand parser sets
+// allow_struct_lit=false in the condition, so `foo` is a bare ident and `{ }` is the
+// body — NOT a struct literal `foo {}`. @off(allow_struct_lit) must reproduce that
+// through the expression's @hand(brace_expr) delegate, or the two diverge.
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+fn flip_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    p.stmt_flip = true
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn hand_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    flip_stmt(src) == hand_stmt(src)
+}
+
+spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-flip)" {
+    then "plain while forms agree (basic wiring)" {
+        agree("while 1 { break }") &&
+        agree("while 1 < 2 { continue }") &&
+        agree("while 1 { break continue }") &&
+        agree("while 1 { }")
+    }
+    then "the make-or-break: `while foo { }` — @off(allow_struct_lit) disables the struct literal" {
+        // If @off propagates to @hand(brace_expr), `foo` is an ident and `{ }` the body,
+        // matching the hand parser's allow_struct_lit=false. If it's a no-op, flip reads
+        // `foo { }` as a struct literal and diverges.
+        agree("while foo { }") &&
+        agree("while foo { break }") &&
+        agree("while x { y }")
+    }
+    then "nested while (body via @hand(braced_body), inner stmts re-parsed) agrees" {
+        agree("while 1 { while 2 { break } }") &&
+        agree("while a { if 1 { break } }")
+    }
+}
+
+spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" {
+    then "if without else, with else, else-if chains" {
+        agree("if 1 { break }") &&
+        agree("if 1 { break } else { continue }") &&
+        agree("if 1 { break } else if 2 { continue }") &&
+        agree("if 1 { break } else if 2 { continue } else { break }") &&
+        agree("if 1 < 2 { break }")
+    }
+    then "the make-or-break: `if foo { }` — @off disables the struct literal in the head" {
+        agree("if foo { }") &&
+        agree("if foo { break } else { continue }") &&
+        agree("if x { y }")
+    }
+}
+
+spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)" {
+    then "integer range + collection forms" {
+        agree("for i in 0..5 { break }") &&
+        agree("for i in 0..10 { break continue }") &&
+        agree("for x in coll { break }") &&
+        agree("for item in items { continue }") &&
+        agree("for i in 1..2 { }")
+    }
+    then "the make-or-break: `for x in coll { }` and `for i in a..b { }` — @off on head expressions" {
+        agree("for x in coll { }") &&
+        agree("for i in a..b { break }") &&
+        agree("for x in xs { for y in ys { break } }")
+    }
+}
+
+// The BODY-PARITY regression (the CodeRabbit finding on PR #981): a control-flow
+// HEADER requires a `{`-block body. The hand parsers gate it (`if !check(LeftBrace)
+// { report ExpectedBlock; Err }`); the `@hand(braced_body)` delegate reproduces
+// that gate. If the body were `@hand(stmt_hand)` (unrestricted parse_statement),
+// the flip would ACCEPT a bare-statement body the hand parser REJECTS — a genuine
+// non-byte-identical divergence. With the SHARED `<err>` sentinel, a mutual
+// rejection registers as agreement; on the buggy `stmt_hand` body the flip would
+// render a While/If/For (≠ `<err>`) while hand yields `<err>`, so these FAIL.
+spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the braced_body gate)" {
+    then "`while c <bare-stmt>` — no `{`, both reject" {
+        agree("while foo break") &&
+        agree("while 1 break") &&
+        agree("while 1 < 2 continue") &&
+        agree("while x y")
+    }
+    then "`if c <bare-stmt>` — the if-THEN is `{`-gated, both reject" {
+        agree("if foo break") &&
+        agree("if 1 break") &&
+        agree("if 1 continue")
+    }
+    then "`for … <bare-stmt>` — range and collection bodies both `{`-gated, both reject" {
+        agree("for x in coll break") &&
+        agree("for i in 0..5 break") &&
+        agree("for i in a..b continue")
+    }
+}
+
+// The ELSE branch is NOT over-restricted: the hand parser's else is an
+// unrestricted `parse_statement()` (accepts `else if`, `else { }`, AND a bare
+// `else <stmt>`), so the grammar keeps it `@hand(stmt_hand)`. These agreements
+// prove the gate lives on the THEN branch only.
+spec "t-47hc.13 S1: the if-ELSE stays unrestricted (parse_statement, not braced)" {
+    then "a bare `else <stmt>` is accepted by BOTH (else is ungated)" {
+        agree("if 1 { } else break") &&
+        agree("if 1 { break } else continue") &&
+        agree("if foo { } else break")
+    }
+    then "`else if` chains and `else { }` blocks still agree" {
+        agree("if 1 { } else if 2 { } else break") &&
+        agree("if 1 { break } else { continue }")
+    }
+}

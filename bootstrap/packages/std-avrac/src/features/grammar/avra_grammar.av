@@ -133,28 +133,40 @@ export fn avra_stmt_grammar() -> Grammar {
 ///   * `break` / `continue` — trivial DSL-native leaves (a single position-
 ///     free Stmt.Break / Stmt.Continue; the outer parse_statement_list_ids
 ///     records their SrcPos, exactly as for the hand parser).
-///   * `@hand(stmt_hand)` — EVERY nested-statement-containing / feature-parser
-///     form (block, `if`/`while`/`for`/`match`/`defer`/`errdefer`/`return`),
-///     delegated wholesale to parse_statement. These MUST stay @hand: their
-///     nested body statements get per-statement SrcPos entries only through
-///     parse_statement_list_ids' record_pos, which the stateless grammar
-///     actions (mk_block / mk_if / mk_while / mk_for_loop) do not write —
-///     so a DSL-native rebuild would drop those side-table positions and
-///     diverge. `return` is additionally newline-sensitive, and `{` is the
-///     block-vs-map-literal ambiguity parse_statement resolves internally.
+///   * `if_stmt` / `for_stmt` / `while_stmt` — grammar-native control-flow
+///     HEADERS. The `@off(allow_struct_lit)` marker reproduces the hand parsers'
+///     save/clear/restore around the condition (the `while foo {` struct-literal-
+///     vs-body disambiguation); the BODY is `@hand(braced_body)`, the `{`-GATED
+///     block delegate (parse_braced_body) — NOT the unrestricted `@hand(stmt_hand)`,
+///     which would wrongly accept a bare-statement body (`while c break`) the hand
+///     header parsers reject with ExpectedBlock. The if-then is gated (braced_body);
+///     the if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
+///     unrestricted `parse_statement()` (accepts `else if …`, `else { … }`, and a
+///     bare `else <stmt>`).
+///   * `@hand(stmt_hand)` — every OTHER nested-statement-containing / feature-parser
+///     form (block, `match`/`defer`/`errdefer`/`return`), delegated wholesale to
+///     parse_statement. These MUST stay @hand: their nested body statements get
+///     per-statement SrcPos entries only through parse_statement_list_ids'
+///     record_pos, which the stateless grammar actions do not write — so a
+///     DSL-native rebuild would drop those side-table positions and diverge.
+///     `return` is additionally newline-sensitive, and `{` is the block-vs-map-
+///     literal ambiguity parse_statement resolves internally.
 ///   * `expr_stmt` — the fall-through expression statement, over the SAME
 ///     shared expression grammar (byte-identical to parse_expression), then
 ///     wrapped as Stmt.Expr exactly as the hand parser does.
 ///
-/// The alternation order (break/continue, then @hand, then expr_stmt) matches
-/// parse_statement's dispatch order; `hand_starts("stmt_hand")` is the exact
-/// FIRST-set (`{` + the stmt keywords) so `if`/`match` route to @hand and never
-/// to expr_stmt (which would mis-parse them as expressions).
+/// The alternation order (break/continue, the control-flow headers, then @hand,
+/// then expr_stmt) matches parse_statement's dispatch order; `hand_starts("stmt_hand")`
+/// is the exact FIRST-set (`{` + the stmt keywords) so `match` routes to @hand and
+/// never to expr_stmt (which would mis-parse it as an expression).
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:@hand(braced_body) ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:@hand(braced_body) -> ForLoop(v, lo, hi, body)
+  while_stmt    = "while" @off(allow_struct_lit) c:expression body:@hand(braced_body) -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
