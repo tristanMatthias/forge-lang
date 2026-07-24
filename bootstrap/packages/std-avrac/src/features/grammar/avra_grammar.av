@@ -226,21 +226,31 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// gen_expr_parser's parse_expression is itself proven byte-identical to the
 /// interpreter's expr walk.
 ///
-/// INTENTIONAL LAG vs the flip grammar (t-47hc.13): avra_stmt_flip_grammar has gone
-/// grammar-native for `if`/`for`/`while` + a native `block` rule, but this dispatch
-/// grammar deliberately keeps those control-flow forms on `@hand(stmt_hand)`. The
-/// flip grammar's differential oracle is STRUCTURAL (render_stmt_id, position-free),
-/// so a native `block` whose inner `statement*` skips parse_statement_list_ids'
-/// per-child `record_pos` is byte-identical THERE; the STATIC production path is
-/// position-SENSITIVE, so dropping those SrcPos side-table entries would be a real
-/// divergence diff-test rejects. Migrating if/for/while/block here (a native `block`
-/// that threads each child's SrcPos) is the production-flip slice — an
-/// `intended-ir-change`, landed separately — not this dormant grammar step.
+/// PRODUCTION CONTROL-FLOW FLIP (t-47hc.13 STEP 4): mirrors avra_stmt_flip_grammar's
+/// grammar-native `if`/`for`/`while` + native `block` — the STATIC production parser
+/// now parses control-flow ITSELF instead of delegating to `@hand(stmt_hand)`. The
+/// block's inner `statement*` emits the statement-list-with-recovery loop
+/// (emit_stmt_list_loop, #984): loop-until-`}`/EOF, per-child SrcPos via to_linecol,
+/// panic-mode `synchronize_stmt` + a positioned `Stmt.Error` on a failed child — the
+/// generated twin of parse_statement_list_ids, so the per-child positions the
+/// position-SENSITIVE static path needs are recorded byte-identically. The
+/// `@off(allow_struct_lit)` headers reproduce the hand parsers' struct-literal
+/// disambiguation (emit twin: modes save / clear via modes_with_flag_off / restore).
+/// A top-level `{` block statement (block-vs-map ambiguity, is_stmt_map_literal) +
+/// match/defer/errdefer/return STAY on `@hand(stmt_hand)`; the if-ELSE stays
+/// `@hand(stmt_hand)` (ungated). This is an `intended-ir-change`: the generated
+/// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
+/// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
+/// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
+  block         = "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     gp.grammar
