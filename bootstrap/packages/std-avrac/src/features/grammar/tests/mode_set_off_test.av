@@ -1,0 +1,139 @@
+// WHY: t-47hc — the `@off(flag)` mode-SET grammar marker, the write-twin of
+// `@when`'s mode READ. It turns an ExprModes flag OFF for the DURATION of an
+// item's sub-parse, then restores — the grammar-native form of the hand parser's
+// `saved = allow_struct_lit; allow_struct_lit = false; parse_expression(); … =
+// saved` around a control-header condition (the `while foo {` struct-literal-vs-
+// body disambiguation). It is the prerequisite the while/if/for @hand-leaf
+// deletions were BLOCKED on (parse_while_statement sets exactly this mode).
+//
+// Opt-in and dormant: no production grammar uses `@off` yet (the only marker in
+// avra_grammar.av is `^`), so the generated parsers regen byte-identical — this
+// is a capability slice, not a behaviour change. Executor (push_mode_off/
+// restore_modes) and emit BOTH route through modes_with_flag_off, so they can't
+// disagree — the same lockstep discipline `@when` has via modes_flag.
+//
+// This file also pins the marker's HARD CONTRACT (so the primitive is robust
+// before its first consumer, the while migration):
+//   1. STRICT syntax `@off` `(` NAME `)` — malformed forms are a parse error.
+//   2. The flag NAME is validated against off_flag_supported (a typo, or the
+//      READ-only `at_quote_top` predicate, is rejected — never a silent no-op).
+//   3. POSITION: @off is honored ONLY on a direct item of a top-level, non-`@try`,
+//      non-fold branch (never nested in a group / on a @hand/@when primary). Those
+//      are exactly the positions where the executor and the GENERATED parser honor
+//      it identically; everywhere else emit would silently diverge, so it's a hard
+//      error — keeping executor and generated parser in lockstep.
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, new_pstate, modes_with_flag_off, default_expr_modes, modes_flag, off_flag_supported}
+
+fn emit_rule(gsrc: string, rule: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+/// The parse error for a grammar string ("" == accepted).
+fn perr(gsrc: string) -> string {
+    parse_grammar(gsrc).error
+}
+
+// `r`'s single item is `@off(allow_struct_lit) g`; `r2` is the same WITHOUT @off.
+const R_OFF: string = "r = @off(allow_struct_lit) g\ng = \"x\""
+const R_PLAIN: string = "r = g\ng = \"x\""
+
+spec "t-47hc: @off(flag) sets the mode for the sub-parse (executor push/restore)" {
+    then "push_mode_off turns the named flag OFF, restore_modes brings it back" {
+        mut st = new_pstate("x")
+        // default: allow_struct_lit ON
+        let before = modes_flag(st.modes, "allow_struct_lit")
+        let saved = st.push_mode_off("allow_struct_lit")
+        let during = modes_flag(st.modes, "allow_struct_lit")   // OFF now
+        st.restore_modes(saved)
+        let after = modes_flag(st.modes, "allow_struct_lit")     // restored ON
+        before && !during && after
+    }
+    then "push_mode_off leaves OTHER flags untouched" {
+        mut st = new_pstate("x")
+        let _ = st.push_mode_off("allow_struct_lit")
+        // allow_dot_postfix is default-on and must stay on
+        modes_flag(st.modes, "allow_dot_postfix")
+    }
+}
+
+spec "t-47hc: @off(flag) — the shared modes_with_flag_off helper + off_flag_supported gate" {
+    then "modes_with_flag_off clears ONLY the named flag" {
+        let m = modes_with_flag_off(default_expr_modes(), "allow_struct_lit")
+        !modes_flag(m, "allow_struct_lit") && modes_flag(m, "allow_dot_postfix")
+    }
+    then "off_flag_supported accepts the four settable ExprModes bools" {
+        off_flag_supported("allow_struct_lit") && off_flag_supported("allow_dot_postfix") &&
+            off_flag_supported("allow_it_sugar") && off_flag_supported("cell_mode")
+    }
+    then "off_flag_supported REJECTS a typo and the read-only at_quote_top predicate" {
+        !off_flag_supported("allow_strct_lit") && !off_flag_supported("at_quote_top") &&
+            !off_flag_supported("")
+    }
+}
+
+spec "t-47hc: @off(flag) — STRICT syntax + flag validation (parse-time rejection)" {
+    then "a valid top-level @off is accepted" {
+        perr(R_OFF) == ""
+    }
+    then "an unknown flag is a HARD error (not a silent no-op)" {
+        perr("r = @off(nonsense) g\ng = \"x\"") != ""
+    }
+    then "the read-only at_quote_top predicate is rejected as an @off target" {
+        perr("r = @off(at_quote_top) g\ng = \"x\"") != ""
+    }
+    then "the parentheses are required — `@off flag` without `(` fails" {
+        perr("r = @off allow_struct_lit g\ng = \"x\"") != ""
+    }
+    then "a non-NAME flag (`@off(\"x\")`) fails" {
+        perr("r = @off(\"x\") g\ng = \"x\"") != ""
+    }
+}
+
+spec "t-47hc: @off(flag) — POSITION validation (reject where emit can't honor it)" {
+    then "@off nested inside a `( … )` group is rejected (inlined, restarting idx)" {
+        perr("r = ( @off(allow_struct_lit) g )\ng = \"x\"") != ""
+    }
+    then "@off on a `@try` branch item is rejected (emit_speculative bypasses emit_item)" {
+        perr("r = @try @off(allow_struct_lit) a | b\na = \"x\"\nb = \"y\"") != ""
+    }
+    then "@off on a fold-build branch is rejected (emit_fold bypasses emit_item)" {
+        perr("r = @off(allow_struct_lit) l:num -> fold_binary(l)\nnum = NUMBER") != ""
+    }
+    then "@off cannot wrap a @hand primary (the delegate owns its own modes)" {
+        perr("r = @off(allow_struct_lit) @hand(foo)\ng = \"x\"") != ""
+    }
+}
+
+spec "t-47hc: @off(flag) — emit lockstep + scope-safety + byte-identity" {
+    then "the emitted rule saves modes, clears the flag via modes_with_flag_off, restores" {
+        let src = emit_rule(R_OFF, "r")
+        src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.modes = __m")
+    }
+    then "two @off items in one rule emit DISTINCT __modes bindings (scope-safe)" {
+        let src = emit_rule("r = @off(allow_struct_lit) a @off(allow_dot_postfix) b -> Pair(a, b)\na = \"x\"\nb = \"y\"", "r")
+        src.contains("__modes_0") && src.contains("__modes_1") &&
+        src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
+        src.contains("modes_with_flag_off(st.modes, \"allow_dot_postfix\")")
+    }
+    then "@off on a bare-ref branch in a MULTI-branch dispatch is honored (not dropped)" {
+        // `r = @off(allow_struct_lit) a | b` — a 2-branch dispatch whose first branch
+        // is a lone ref with @off. emit_dispatch's is_bare_ref shortcut bypasses
+        // emit_item, so it must reproduce the save/clear/restore itself (via the
+        // shared emit_ref_result) — the executor honors it (exec_seq→exec_item), and
+        // dropping it would be the exact lockstep divergence this primitive prevents.
+        let src = emit_rule("r = @off(allow_struct_lit) a | b\na = \"x\"\nb = \"y\"", "r")
+        src.contains("modes_with_flag_off(st.modes, \"allow_struct_lit\")") &&
+        src.contains("let __m = st.modes") &&
+        src.contains("st.modes = __m")
+    }
+    then "WITHOUT @off, no mode save/set is emitted — byte-identical for production grammars" {
+        let src = emit_rule(R_PLAIN, "r")
+        !src.contains("modes_with_flag_off") && !src.contains("st.modes =")
+    }
+}

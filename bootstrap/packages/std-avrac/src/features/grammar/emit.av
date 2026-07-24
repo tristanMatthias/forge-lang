@@ -316,9 +316,39 @@ fn emit_rule_body(g: Grammar, node: GNode) -> string {
 ///   pass-through (`a = b`)         → `parse_b(st)`
 ///   fold (`l:X ( … )* -> Build`)   → seed + accumulator loop + build
 ///   general sequence               → item statements then the build as the tail
+/// Emit a lone-ref result, honoring an `@off(flag)` marker on the item: save
+/// modes, clear the flag via modes_with_flag_off (the SAME fn the executor calls),
+/// run the ref, restore. The SHARED core of every emit path that consumes a lone
+/// ref by BYPASSING emit_item — the single-branch passthrough AND emit_dispatch's
+/// two `is_bare_ref` shortcuts (guarded + catch-all tail) — all of which must
+/// reproduce exec_item's @off handling themselves (exec_seq runs the branch's item
+/// through exec_item, so the executor honors @off on a bare-ref dispatch branch;
+/// emit must match or it's the lockstep hole this whole primitive prevents).
+/// `as_return` prefixes `return ` (dispatch arms return; a single-branch tail is a
+/// bare expression). Empty mode_off (every production grammar) → the plain call,
+/// byte-identical.
+fn emit_ref_result(item: GItem, ind: string, as_return: bool) -> string {
+    let call = emit_ref_call(item.prim)
+    let ret = if as_return { "return " } else { "" }
+    if item.mode_off == "" {
+        return "${ind}${ret}${call}\n"
+    }
+    "${ind}let __m = st.modes\n" +
+        "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +
+        "${ind}let __r = ${call}\n" +
+        "${ind}st.modes = __m\n" +
+        "${ind}${ret}__r\n"
+}
+
 fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
     if is_passthrough(seq) {
-        return "    ${emit_ref_call(seq.items[0].prim)}\n"
+        // A `@off(flag)` on the lone-ref passthrough must still set/restore the mode
+        // around the sub-parse (exec_item honors it; the passthrough fast-path would
+        // otherwise bypass it). Shared with emit_dispatch's bare-ref shortcuts.
+        return emit_ref_result(seq.items[0], "    ", false)
+    }
+    if is_fold(seq) {
+        return emit_fold(g, seq)
     }
     if is_fold(seq) {
         return emit_fold(g, seq)
@@ -498,10 +528,12 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // non-FIRST token sets had_error (⇒ the caller's hand fallback fires)
             // instead of being swallowed into a bogus node — matching the interpreter,
             // which FIRST-guards every branch (the type error-recovery oracle's catch).
-            tail = "    ${emit_ref_call(b.items[0].prim)}\n"
+            // emit_ref_result honors a `@off(flag)` on the bare ref (exec_item does),
+            // reproducing the passthrough's save/clear/restore in this shortcut path.
+            tail = emit_ref_result(b.items[0], "    ", false)
         } else if is_bare_ref(b) {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
-            out = out + "        return ${emit_ref_call(b.items[0].prim)}\n"
+            out = out + emit_ref_result(b.items[0], "        ", true)
             out = out + "    }\n"
         } else if is_leading_hand(b) && i == last && !has_spec {
             // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
@@ -726,6 +758,27 @@ fn prim_is_pred_e(prim: GPrim) -> bool {
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
 fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    let inner = emit_item_body(g, item, idx, annots, ind, list_labels, opts)
+    // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
+    // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
+    // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
+    // safe as a plain per-position name because seed_parser.validate_off_markers
+    // restricts @off to a DIRECT item of a top-level, non-@try, non-fold branch:
+    // each dispatch branch emits in its own `{ }` block (emit_dispatch), and within
+    // a branch `idx` is unique — so two @off items can never emit a colliding
+    // `__modes_N` in one scope (the nested-group case is rejected at parse). Empty
+    // mode_off (every production grammar today) returns the item's code unchanged →
+    // generated parsers stay byte-identical.
+    if item.mode_off != "" {
+        return "${ind}let __modes_${idx} = st.modes\n" +
+            "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +
+            inner +
+            "${ind}st.modes = __modes_${idx}\n"
+    }
+    inner
+}
+
+fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.rep {
         .One -> emit_one(g, item, idx, annots, ind, list_labels, opts)
         .Opt -> emit_opt(g, item, ind, list_labels, opts)

@@ -394,6 +394,18 @@ impl PState {
     fn set_postfix_base(self, base: ExprId) {
         self.postfix_base = base
     }
+    /// The `@off(flag)` mode-SET marker's set half: save the current modes, clear
+    /// the named flag, return the SAVED modes for restore_modes. The executor twin
+    /// of the hand parser's `saved = allow_struct_lit; allow_struct_lit = false`.
+    fn push_mode_off(self, flag: string) -> ExprModes {
+        let saved = self.modes
+        self.modes = modes_with_flag_off(self.modes, flag)
+        saved
+    }
+    /// Restore modes saved by push_mode_off (`… = saved`).
+    fn restore_modes(self, saved: ExprModes) {
+        self.modes = saved
+    }
 
     /// Roll the cursor + diagnostics + error flag back to a pre-speculation
     /// snapshot (the node store is truncated separately by the caller via
@@ -697,6 +709,23 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     true
 }
 
+/// The WRITE twin of modes_flag: a copy of `modes` with the named flag turned OFF.
+/// The `@off(flag)` mode-SET marker's core, shared by the executor (push_mode_off)
+/// AND the emitted parser (emit lockstep), so the two can never disagree — the
+/// same discipline modes_flag gives @when. The mapped names MUST match
+/// `seed_parser.off_flag_supported` (the single source of truth for the @off flag
+/// SET), which the seed parser enforces: an unsupported flag (typo, or the READ-only
+/// `at_quote_top` predicate) is REJECTED at parse time, so the trailing
+/// `modes` fall-through here is an unreachable-by-contract defensive default,
+/// never a silent no-op on a live grammar.
+export fn modes_with_flag_off(modes: ExprModes, flag: string) -> ExprModes {
+    if flag == "allow_struct_lit" { return modes with { allow_struct_lit: false } }
+    if flag == "allow_dot_postfix" { return modes with { allow_dot_postfix: false } }
+    if flag == "allow_it_sugar" { return modes with { allow_it_sugar: false } }
+    if flag == "cell_mode" { return modes with { cell_mode: false } }
+    modes
+}
+
 /// True iff every `@when(flag)` predicate on the branch holds under the live
 /// modes. Predicates AND — all must hold for the branch to apply. A branch with
 /// no predicate is trivially ok. This is the executor half of `@when`; the emit
@@ -827,6 +856,20 @@ fn sameline_ok(st: PState, item: GItem) -> bool {
 /// Execute one postfix item, honouring its repetition, and bind its
 /// capture (scalar in a normal position, list-append inside `*`/`+`).
 fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
+    // `@off(flag)` mode-SET marker: set the flag OFF for the DURATION of this
+    // item's sub-parse (all reps + the .Opt FIRST-check), then restore — the
+    // executor twin of the hand parser's save/set/restore around a control-header
+    // condition. Empty mode_off (every item today) is a zero-cost passthrough.
+    if item.mode_off != "" {
+        let saved = st.push_mode_off(item.mode_off)
+        let r = exec_item_body(g, item, st, env, multi, annots)
+        st.restore_modes(saved)
+        return r
+    }
+    exec_item_body(g, item, st, env, multi, annots)
+}
+
+fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
     let empty: List<string> = []
     match item.rep {
         .One -> {
