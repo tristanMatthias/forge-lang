@@ -9,7 +9,7 @@
 // migration replaces an `@hand` leaf with real alternatives, any FIRST overlap
 // it introduces trips THIS guard instead of silently shadowing a branch at
 // runtime. (Not in the compile path → byte-identical.)
-use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar, parse_grammar}
 
 // The ONE intended ordered-choice shadow the guard tolerates: `in_rhs`'s membership
 // branch 0 (`"[" … "]"`) legitimately takes precedence over its range branch 1
@@ -55,5 +55,22 @@ spec "t-47hc.3: the production grammars are FIRST/FIRST unambiguous" {
     }
     then "the whole-program grammar is unambiguous" {
         is_unambiguous(avra_program_grammar())
+    }
+}
+
+// t-47hc.16 (paren-flip prep): grammar_ambiguities exempts a PREDICATE-LED branch
+// (`@peek`/`@when` first item) from the shadow check, exactly like a `@try` branch — a
+// zero-width predicate commits CONDITIONALLY, so it does not silently shadow a later
+// same-FIRST sibling. This is the shape the flipped `paren_expr` needs: its
+// `@peek(lparen_ident_colon) "(" …` typed-lambda branch shares FIRST `{(}` with the
+// `@try "(" …` / `"(" …` siblings, but the peek only takes it when `( IDENT :` holds.
+spec "t-47hc.16: a @peek-led branch does not shadow a same-FIRST sibling" {
+    then "two branches both leading `(`, branch 0 @peek-gated, are NOT flagged ambiguous" {
+        let gp = parse_grammar("r = @peek(lparen_ident_colon) \"(\" IDENT \":\" IDENT | \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 0
+    }
+    then "CONTROL: two PLAIN branches both leading `(` ARE still flagged (the guard is intact)" {
+        let gp = parse_grammar("r = \"(\" \")\" | \"(\" IDENT")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
     }
 }

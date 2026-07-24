@@ -101,6 +101,14 @@ fn ff_is_pred(prim: GPrim) -> bool {
     match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
 }
 
+/// True iff a branch LEADS with a zero-width predicate (`@peek`/`@when`) — its first
+/// item gates the branch on a lookahead/mode condition rather than consuming a token.
+/// Such a branch is conditionally-committing (grammar_ambiguities skips it as a shadow
+/// source, like `@try`): if the predicate fails, a later same-FIRST branch is reachable.
+fn seq_is_pred_led(seq: GSeq) -> bool {
+    seq.items.length > 0 && ff_is_pred(seq.items[0].prim)
+}
+
 export fn first_seq(g: Grammar, seq: GSeq, visited: List<string>) -> FirstSet {
     mut acc = ffs_empty()
     for item in seq.items {
@@ -161,7 +169,17 @@ export fn grammar_ambiguities(g: Grammar) -> List<GAmbiguity> {
                     // overlap is INTENTIONAL (e.g. the production `list_expr`'s
                     // `@try "[" list_comp "]"` vs `"[" … "]"`, both leading with `[`).
                     // A non-speculative branch i shadowing a later j is STILL flagged.
-                    if branches[i].speculative {
+                    //
+                    // A PREDICATE-LED branch (`@peek(cond)` token-lookahead / `@when(flag)`
+                    // mode-read as its first item) is likewise conditionally-committing: the
+                    // zero-width predicate is skipped in first_seq, so the branch's FIRST is
+                    // the token AFTER it (e.g. the production `paren_expr`'s
+                    // `@peek(lparen_ident_colon) "(" …` has FIRST `{ ( }`, shared with its
+                    // `@try "(" …` / `"(" …` siblings). But the branch is only TAKEN when the
+                    // predicate holds — if it fails, control falls through to a later branch,
+                    // so branch i does NOT unconditionally shadow branch j. The discriminating
+                    // predicate is the author's contract (as with `@try`'s rollback). Skip it.
+                    if branches[i].speculative || seq_is_pred_led(branches[i]) {
                         i = i + 1
                         continue
                     }
