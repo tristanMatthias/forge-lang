@@ -605,6 +605,13 @@ fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
     out = out + "        mut s_last: CapVal = CapVal.Nil\n"
+    // A span-stamping build (`mk_assign`/`fold_logical`/`Block`/…) reads `sp_start`,
+    // the rule-entry byte — the twin of the non-speculative branch's prelude
+    // (emit_single_branch / the guarded dispatch branch). Capture it at branch entry
+    // (the guard FIRST-matched but consumed nothing, so `st.cur().pos` == the rule
+    // entry byte), BEFORE any item parses. A build that never spans (or a build-less
+    // @try) omits it — byte-identical to the incumbent recognizer.
+    if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
     mut idx = 0
     for item in b.items {
         // A `@when` predicate is zero-width — it neither consumes a token nor

@@ -94,6 +94,22 @@ spec "t-47hc.3: @try well-formedness is enforced at parse time" {
     then "a well-formed flat terminal/ref @try branch is accepted" {
         !rejects("r = @try NUMBER STRING NUMBER | NUMBER STRING")
     }
+    then "a @try label colliding with the branch scaffolding is rejected" {
+        // Each label lowers to an auto-scoped `let <label>` in the emitted branch;
+        // one named after the scaffolding (`s_last`/`sp_start`/`tried_spec`/…) would
+        // shadow/redeclare it, so it is rejected at parse time (both sides agree).
+        rejects("r = @try s_last:NUMBER STRING | STRING") &&
+        rejects("r = @try sp_start:NUMBER STRING | STRING") &&
+        rejects("r = @try tried_spec:NUMBER STRING | STRING")
+    }
+    then "a @try branch binding the same label twice is rejected" {
+        // `let x` twice won't compile in the generated branch; the interpreter would
+        // silently last-wins it — REJECT so emit and interp stay in lockstep.
+        rejects("r = @try x:NUMBER x:STRING | STRING")
+    }
+    then "distinct labels + a non-reserved name stay accepted" {
+        !rejects("r = @try a:NUMBER b:STRING | STRING")
+    }
 }
 
 // GAP3 @try-with-builds (t-47hc.13): a @try branch may now bind labels + apply a
@@ -120,9 +136,14 @@ spec "t-47hc.13: @try-with-builds — labels + build now accepted (GAP3)" {
         src.contains("unary_expr(")
     }
     then "the interpreter's @try-with-build rolls back cleanly (no env leak)" {
-        // `- 5 x`: branch 1 (@try `-` NUMBER STRING? no) — use a 3-item @try whose
-        // 3rd terminal fails so it ROLLS BACK, then branch 2 matches. The label
-        // bindings from the failed branch must not corrupt branch 2's parse.
-        !errs("r = @try o:\"-\" a:NUMBER b:NUMBER -> Foo(o, a, b) | \"-\" NUMBER", "- 5")
+        // `1`: branch 1 (@try `stale:NUMBER STRING`) binds stale=1, then FAILS on the
+        // missing STRING → rolls back. Branch 2 (`NUMBER -> stale`) matches and its
+        // build reads `stale` — a capture ONLY the failed branch bound. WITH
+        // env.restore_caps the binding is gone, so the build reads Nil →
+        // capval_to_expr → error_node → had_error (errs == true). WITHOUT restore the
+        // leaked `1` would satisfy the build with no error (errs == false). So this
+        // asserts the ERROR is observed, which holds IFF the rollback restored the
+        // capture env — the discriminating twin the previous (unread-capture) test lacked.
+        errs("r = @try stale:NUMBER STRING | NUMBER -> stale", "1")
     }
 }
