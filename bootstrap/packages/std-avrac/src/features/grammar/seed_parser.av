@@ -436,7 +436,10 @@ fn at_peek_primary(p: GP) -> bool {
 /// new cond is added in all three. `ident_colon`: the current token is an IDENT and the
 /// next is `:` — the hand parse_paren_expr's `peek_after_ident_is_colon` (typed lambda).
 export fn peek_cond_supported(cond: string) -> bool {
-    cond == "ident_colon"
+    // `lparen_ident_colon`: the position-0 twin of `ident_colon` — cur is `(`, the next
+    // token an IDENT, the one after `:` (the TYPED-LAMBDA opener, checked from before `(`
+    // so the paren rule spans from the `(` byte). See executor.lookahead_ok.
+    cond == "ident_colon" || cond == "lparen_ident_colon"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -726,7 +729,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

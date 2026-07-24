@@ -493,6 +493,9 @@ fn build_uses_sp_start(name: string) -> bool {
         // `( x: T, … ) -> body` typed lambda spans sp_start = the `(` byte (t-47hc paren
         // prep, DORMANT) — same owning-rule-entry anchor as the untyped lambda / tuple.
         name == "MkLambdaTyped" ||
+        // `( e )` grouping / `()` empty tuple spans sp_start = the `(` byte (t-47hc paren
+        // spend) — its owning paren_expr rule enters at `(`, like the tuple/lambda builds.
+        name == "MkGroupOrEmpty" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -1282,6 +1285,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // PENTRY-list accumulator (MkParam-built, already typed List<ParamEntry> in the
         // generated parser — passed directly like MkFnDecl), args[1] = the body scalar.
         "MkLambdaTyped" -> "CapVal.Node(mk_lambda_typed(st, sp_start, ${args[0]}_list, capval_to_expr(st, ${args[1]})))"
+        // `( e )` grouping OR `()` empty tuple — args[0] is the OPT-SCALAR grouping expr (a
+        // `mut <e>: CapVal = CapVal.Nil` local, NOT a `_list` accumulator), passed as-is so
+        // mk_group_or_empty reads Nil→Tuple([]) / else→Grouping(e).
+        "MkGroupOrEmpty" -> "CapVal.Node(mk_group_or_empty(st, sp_start, ${args[0]}))"
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
             "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"

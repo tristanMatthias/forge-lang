@@ -783,6 +783,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == ":"
     }
+    // `( IDENT :` — the TYPED-LAMBDA paren opener, checked from BEFORE `(` (at the branch
+    // entry, cur == `(`), so `paren_expr` can be an unfactored `@peek(lparen_ident_colon)
+    // "(" param … ` whose builds SPAN from the `(` byte (mirroring the hand parse_paren_expr,
+    // whose Tuple/Grouping/Lambda alloc_at anchors at `(`). It is the position-0 twin of
+    // `ident_colon` (which the hand's peek_after_ident_is_colon checks AFTER consuming `(`):
+    // cur is `(`, the NEXT token an IDENT, the one after that `:`. Byte-identical to the hand
+    // modulo the `::` edge (a `( x :: y )` grouping — same edge `ident_colon` already carries).
+    if cond == "lparen_ident_colon" {
+        if st.cur().text != "(" { return false }
+        if st.pos + 2 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        return st.toks[st.pos + 2].text == ":"
+    }
     true
 }
 
@@ -1930,6 +1943,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // oracle, sp_start = 0 - 1). args[0] = the PENTRY-list capture (MkParam-built),
         // args[1] = the body. capval_to_pentry_list is the same converter MkFnDecl uses.
         "MkLambdaTyped" if args.length == 2 -> CapVal.Node(mk_lambda_typed(st, 0 - 1, capval_to_pentry_list(env.get(args[0])), capval_to_expr(st, env.get(args[1]))))
+        // `( e )` grouping OR `()` empty tuple (t-47hc paren spend). args[0] = the OPT-SCALAR
+        // grouping expr — env.get yields CapVal.Nil when absent → Tuple([]), else Grouping(e).
+        "MkGroupOrEmpty" if args.length == 1 -> CapVal.Node(mk_group_or_empty(st, 0 - 1, env.get(args[0])))
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
@@ -2851,6 +2867,23 @@ fn lambda_exprs_to_params(st: PState, ids: List<ExprId>) -> List<ParamEntry> {
 export fn mk_lambda(st: PState, sp_start: int, params_cap: CapVal, body: ExprId) -> ExprId {
     let params = lambda_exprs_to_params(st, capval_to_node_list(params_cap))
     st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `( expr )` grouping OR `()` empty tuple (t-47hc paren spend). The paren_tail's final
+/// branch `( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)` captures `e`
+/// as an OPT-SCALAR — `CapVal.Nil` when the optional expression is absent. Mirrors the hand
+/// parse_paren_expr's two no-comma-no-arrow outcomes: `()` → `alloc_at(Expr.Tuple([]),
+/// sp_start)` (mod.av:2324) and `(x)` → `alloc_at(Expr.Grouping(x), sp_start)` (mod.av:2375).
+/// This is the empty/grouping twin the EMITTER needs: `MkTuple(a)` cannot build the empty
+/// tuple because the emitter only declares `<label>_list` for a repetition-captured label,
+/// so a build reading an UNCAPTURED `a` references an undeclared `a_list` — the empty case
+/// routes here on the opt-scalar `e` instead. sp_start = the `(` byte (emit) or 0-1 span-free
+/// (interpreter oracle); `[]` edges match alloc_at for every compound node (byte-identical).
+export fn mk_group_or_empty(st: PState, sp_start: int, e: CapVal) -> ExprId {
+    match e {
+        .Nil -> st.store.add_expr(Expr.Tuple([]), byte_span(sp_start, st.cur().pos), [])
+        _ -> st.store.add_expr(Expr.Grouping(capval_to_expr(st, e)), byte_span(sp_start, st.cur().pos), [])
+    }
 }
 
 /// `( x: T, y: U ) -> body` TYPED lambda (t-47hc paren_expr flip prep — DORMANT). The

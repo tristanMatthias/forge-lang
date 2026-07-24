@@ -1,0 +1,106 @@
+// WHY: t-47hc paren spend — the last two DORMANT primitives, proven together on the
+// non-factored paren grammar (the shape the spend flips avra_expr_grammar to):
+//   (1) @peek(lparen_ident_colon) — the position-0 twin of @peek(ident_colon): checks
+//       `( IDENT :` from BEFORE `(`, so the typed-lambda branch is a LEADING guard of an
+//       UNFACTORED paren_expr (every branch opens with `"("`), letting the builds span from
+//       the `(` byte (mirroring the hand parse_paren_expr's alloc_at @ `(`). Factoring into a
+//       paren_tail sub-rule would span from AFTER `(` — a latent diagnostic divergence the
+//       span-blind main gates (diff-test IR / GENPASS) wouldn't catch.
+//   (2) MkGroupOrEmpty — the empty-tuple / grouping build the EMITTER needs: `MkTuple(a)`
+//       can't build `()` (the emitter only declares `a_list` for a repetition-captured label),
+//       so `"(" ( @on e:expression )? ")" -> MkGroupOrEmpty(e)` routes the opt-scalar e:
+//       Nil → Tuple([]), else → Grouping(e).
+//
+// The tuple's first element must be under a repetition (list-label) so it accumulates — a
+// top-level One `a` mixed with a nested list `a` drops the first (the `( "," a )+` form here
+// accumulates correctly). NOTE the TRAILING-COMMA 1-/2-tuple (`(x,)`, `(x,y,)`) is a
+// spend-time grammar-STRUCTURE follow-up (a `*` matching 0 doesn't accumulate the top-level
+// element) — orthogonal to these two primitives, which are correct. DORMANT: avra_expr_grammar
+// still has @hand(paren_expr) → regen byte-identical (emit-gen-check GENPASS). Structural proof
+// via the interpreter (sp_start = 0-1, span-free); spans validated by cold CI at the spend.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
+use @std.avrac.core.{render_expr_id}
+
+fn paren_g() -> string {
+    "grammar P {\n" +
+    "  r          = paren_expr\n" +
+    "  paren_expr = @peek(lparen_ident_colon) \"(\" ps:param ( \",\" ps:param )* \")\" \"->\" lb:@hand(lambda_body) -> MkLambdaTyped(ps, lb)\n" +
+    "             | @try \"(\" ( @on(allow_dot_postfix) a:expression ( \",\" a:expression )* )? \")\" \"->\" lb:@hand(lambda_body) -> MkLambda(a, lb)\n" +
+    "             | @try \"(\" @on(allow_dot_postfix) a:expression ( \",\" a:expression )+ \")\" -> MkTuple(a)\n" +
+    "             | \"(\" ( @on(allow_dot_postfix) e:expression )? \")\" -> MkGroupOrEmpty(e)\n" +
+    // ── type family (typed-lambda params) ──
+    "  param      = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
+    "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
+    "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
+    "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
+    "  dyn_type   = \"dyn\" dt:IDENT ( opt:\"?\" )? -> TyDyn(dt, opt)\n" +
+    "  list_type  = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
+    "  paren_type = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
+    "  named_type = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +
+    // ── expression subset ──
+    "  expression = equality\n" +
+    "  equality   = l:comparison ( op:(\"!=\" | \"==\") r:comparison )* -> fold_binary(l, op, r)\n" +
+    "  comparison = l:term ( op:(\"<\" | \"<=\" | \">\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
+    "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
+    "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
+    "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "}"
+}
+
+fn rr(input: string) -> string {
+    let gp = parse_grammar(paren_g())
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+spec "t-47hc paren spend: lparen_ident_colon + MkGroupOrEmpty drive the paren disambiguation" {
+    then "() builds an empty tuple (MkGroupOrEmpty on a Nil opt-scalar)" {
+        rr("()") == "(tuple ())"
+    }
+    then "(x) builds a grouping (MkGroupOrEmpty on a present opt-scalar)" {
+        rr("(x)") == "(group x)"
+    }
+    then "(1 + 2) groups an arithmetic expression" {
+        rr("(1 + 2)") == "(group (+ 1 2))"
+    }
+    then "(a: int, b: string) -> 1 selects the typed-lambda branch via @peek(lparen_ident_colon)" {
+        rr("(a: int, b: string) -> 1") == "(lambda (a:int, b:string) 1)"
+    }
+    then "(x: int) -> 7 — single typed param" {
+        rr("(x: int) -> 7") == "(lambda (x:int) 7)"
+    }
+    then "(1, 2) builds a 2-tuple (the first element accumulates under the `+`)" {
+        rr("(1, 2)") == "(tuple (1, 2))"
+    }
+    then "(1, 2, 3) builds a 3-tuple" {
+        rr("(1, 2, 3)") == "(tuple (1, 2, 3))"
+    }
+    then "(a, b) -> 3 builds an untyped lambda" {
+        rr("(a, b) -> 3") == "(lambda (a, b) 3)"
+    }
+    then "(x) -> 7 — single untyped-param lambda" {
+        rr("(x) -> 7") == "(lambda (x) 7)"
+    }
+    then "() -> 9 builds a zero-arg lambda" {
+        rr("() -> 9") == "(lambda () 9)"
+    }
+}
+
+fn emit_paren() -> string {
+    let gp = parse_grammar(paren_g())
+    for gr in gp.grammar.rules {
+        if gr.name == "paren_expr" { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+spec "t-47hc paren spend: the emitter lowers both primitives correctly (spend-ready)" {
+    then "MkGroupOrEmpty lowers to a mk_group_or_empty call spanned at sp_start (build_uses_sp_start)" {
+        let s = emit_paren()
+        s.contains("mk_group_or_empty(st, sp_start,") && s.contains("let sp_start = st.cur().pos")
+    }
+    then "@peek(lparen_ident_colon) lowers to the shared lookahead_ok guard" {
+        emit_paren().contains("lookahead_ok(\"lparen_ident_colon\", st)")
+    }
+}
