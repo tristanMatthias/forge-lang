@@ -1,0 +1,80 @@
+// WHY: t-47hc.11 — the grammar's `^` same-line marker must be honored by the
+// GENERATED static parser, not just the interpreter. The executor gates a
+// `^`-marked optional / repetition on `sameline_ok` (executor.av): a cross-line
+// token ends the optional/loop (the postfix-chain newline cutoff). But `emit.av`
+// previously emitted the FIRST guard WITHOUT the sameline conjunct, so a `^` rule
+// would parse DIFFERENTLY under the generated parser than under the interpreter —
+// a latent executor↔emit lockstep bug. It is dormant today (the only `^` in
+// avra_grammar.av is the bitxor OPERATOR; no production grammar uses the marker),
+// so completing the lockstep is BYTE-IDENTICAL for every existing grammar
+// (`same_line_wrap` returns the guard unchanged when `!item.sameline`). This makes
+// `^` a real, spendable capability for the postfix-chain leaf migration (GAP 2).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
+
+fn emit_rule(gsrc: string, rule: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == rule { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+// Count the elements `mk_inlist` collected into the built `Expr.InCheck(_, items)`
+// node — the observable for "how far did the `^` repetition get". A cross-line
+// separator stops the loop early, so fewer elements land in the list.
+fn elem_count(gsrc: string, input: string) -> int {
+    let gp = parse_grammar(gsrc)
+    let r = run_grammar_expr(gp.grammar, input)
+    match r.store.exprs.get(r.root) {
+        .InCheck(_, items) -> items.length
+        _ -> 0 - 1
+    }
+}
+
+// A `^`-marked separator repetition: the `^( "." xs:num )*` loop continues only
+// while the "." sits on the SAME source line as the previous token. The `^`
+// precedes the GROUP so it marks the repetition ITEM (parse_labeled attaches `^`
+// to the item it leads; on the inner `.One` "." it would be ignored, since
+// exec_item only gates .Opt/.Star/.Plus on sameline_ok).
+const CHAIN_SL: string = "chain = xs:num ^( \".\" xs:num )* -> mk_inlist(xs)\nnum = NUMBER"
+// The identical grammar WITHOUT the `^` marker — the byte-identity baseline.
+const CHAIN_PLAIN: string = "chain = xs:num ( \".\" xs:num )* -> mk_inlist(xs)\nnum = NUMBER"
+// A `^`-marked OPTIONAL (exercises emit_opt, not just emit_repeat_group).
+const OPT_SL: string = "chain = xs:num ^( \".\" xs:num )? -> mk_inlist(xs)\nnum = NUMBER"
+
+spec "t-47hc.11: emit honors the `^` same-line marker (executor↔emit lockstep)" {
+    then "a `^` repetition emits the sameline conjunct in its while-guard" {
+        let src = emit_rule(CHAIN_SL, "chain")
+        // the exact LineIndex comparison sameline_ok runs, ANDed onto the FIRST guard
+        src.contains("st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line")
+    }
+    then "the `^` guard is paren-wrapped with the st.pos==0 base case (correct && / || precedence)" {
+        let src = emit_rule(CHAIN_SL, "chain")
+        src.contains("(st.pos == 0 ||")
+    }
+    then "a `^` OPTIONAL emits the sameline conjunct too (emit_opt path)" {
+        let src = emit_rule(OPT_SL, "chain")
+        src.contains("st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line")
+    }
+    then "WITHOUT `^`, no sameline conjunct is emitted — byte-identical for production grammars" {
+        let src = emit_rule(CHAIN_PLAIN, "chain")
+        !src.contains("to_linecol") && !src.contains("st.pos == 0 ||")
+    }
+}
+
+spec "t-47hc.11: the `^` oracle semantics the emit mirrors" {
+    then "a same-line chain collects every element" {
+        elem_count(CHAIN_SL, "1 . 2 . 3") == 3
+    }
+    then "a CROSS-line separator stops the `^` repetition early" {
+        // the third element's `.` is on a new line → the loop stops after `1 . 2`
+        elem_count(CHAIN_SL, "1 . 2\n. 3") == 2
+    }
+    then "WITHOUT `^`, the same cross-line input keeps going (the marker is what gates it)" {
+        // plain `*` is not newline-sensitive → all three collected
+        elem_count(CHAIN_PLAIN, "1 . 2\n. 3") == 3
+    }
+    then "the count is a real observable — one element differs from three" {
+        elem_count(CHAIN_SL, "1") != elem_count(CHAIN_SL, "1 . 2 . 3")
+    }
+}

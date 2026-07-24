@@ -850,17 +850,33 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     out
 }
 
+/// The emit twin of the executor's `sameline_ok` (executor.av): a `^`-marked
+/// item's newline gate, folded into the enclosing `if`/`while` FIRST guard. When
+/// the item is NOT `^`-marked (every production grammar today — the only `^` in
+/// avra_grammar.av is the bitxor operator) it returns the guard UNCHANGED, so the
+/// generated parsers regen byte-identical. When marked it WRAPS the guard in
+/// parens (so `&&` binds over the whole FIRST disjunction, not just its last `||`
+/// term) and ANDs the exact LineIndex comparison `sameline_ok` runs: the current
+/// token must sit on the same source line as the previously-consumed one, else
+/// the optional/repetition stops (the cross-line postfix cutoff). This closes the
+/// latent lockstep gap where a `^` rule would parse differently under the
+/// generated static parser than under the interpreter.
+fn same_line_wrap(item: GItem, guard: string) -> string {
+    if !item.sameline { return guard }
+    "(" + guard + ") && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)"
+}
+
 /// An optional group `( … )?` → an if guarded by the group's FIRST. The
 /// group's captures accumulate into the branch's already-declared lists.
 fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.prim {
         .Group(inner) -> {
-            "${ind}if ${node_first_guard(g, inner, [])} {\n" +
+            "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                 emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                 "${ind}}\n"
         }
         _ -> {
-            "${ind}if ${prim_first_guard(g, item.prim, [])} { let _ = st.advance() }\n"
+            "${ind}if ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
         }
     }
 }
@@ -882,19 +898,19 @@ fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<str
     match item.prim {
         .Group(inner) -> {
             if group_is_single_hand(inner) {
-                "${ind}while ${node_first_guard(g, inner, [])} {\n" +
+                "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     "${ind}    let __rep_before = st.pos\n" +
                     emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                     "${ind}    if st.pos == __rep_before { break }\n" +
                     "${ind}}\n"
             } else {
-                "${ind}while ${node_first_guard(g, inner, [])} {\n" +
+                "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     emit_node_items(g, inner, ind + "    ", list_labels, opts) +
                     "${ind}}\n"
             }
         }
         _ -> {
-            "${ind}while ${prim_first_guard(g, item.prim, [])} { let _ = st.advance() }\n"
+            "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
         }
     }
 }
