@@ -1352,27 +1352,6 @@ impl Parser {
         .Ok(self.alloc_stmt_leaf(Stmt.Expr(eid)))
     }
 
-    /// A control-flow BODY: the `{`-gated block a `while`/`if`-then/`for` header
-    /// requires. This is the `@hand(braced_body)` delegate — the write-restricted
-    /// sibling of `@hand(stmt_hand)`. The header hand parsers all share the exact
-    /// shape `if !check(LeftBrace) { report ExpectedBlock; Err } else <the block>`,
-    /// so a bare-statement body (`while c break`, `if c break`) is a PARSE ERROR,
-    /// not a silently-accepted body. `stmt_hand` (unrestricted `parse_statement`)
-    /// would wrongly accept those — the exact hand/flip parity hole this closes.
-    /// Past the gate it is byte-identical to `stmt_hand`: `parse_statement_hand`
-    /// at `{` builds the same `Stmt.Block` (the header parsers' `parse_statement()`
-    /// reduces to `parse_statement_hand()` on the flip-off oracle). The specific
-    /// per-construct message ("after while condition" / …) is the hand parser's:
-    /// on a rejected body the flip's own diagnostic is discarded and `parse_statement`
-    /// re-reports through the authoritative hand fallback.
-    fn parse_braced_body(self) -> Result<StmtId, string> {
-        if !self.check(Tk.LeftBrace) {
-            self.report(DiagCode.ExpectedBlock, "expected `{`")
-            return .Err("parse error")
-        }
-        self.parse_statement_hand()
-    }
-
     /// B1: the expression chain flows typed ids end-to-end; the parsed
     /// expression's whole subtree is in the arena and this returns its root id.
     fn parse_expression(self) -> Result<ExprId, string> {

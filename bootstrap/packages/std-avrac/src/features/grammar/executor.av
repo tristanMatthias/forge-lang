@@ -1031,11 +1031,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
         return t == "{" || t == "if" || t == "while" || t == "for" ||
                t == "match" || t == "defer" || t == "errdefer" || t == "return"
     }
-    // ps3t.6.7 / t-47hc.13 — a control-flow BODY delegate: FIRST is `{` (it
-    // REQUIRES a block; a non-`{` token is the ExpectedBlock error, not a match).
-    // It appears only as a REQUIRED item (`body:@hand(braced_body)`), so this
-    // FIRST is consulted for robustness/lockstep, never for branch selection.
-    if name == "braced_body" { return tok.text == "{" }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
     // tokens parse_declaration handles itself (doc-comment wrapping, `@`
     // annotation OR a qualified `@pkg::T` it forwards, `export`, every decl
@@ -1071,10 +1066,7 @@ fn is_stmt_hand(name: string) -> bool {
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
-    name == "stmt_hand" || name == "decl_hand" ||
-    // t-47hc.13 — the `{`-gated control-flow BODY delegate (parse_braced_body),
-    // the write-restricted sibling of stmt_hand for while/if-then/for headers.
-    name == "braced_body"
+    name == "stmt_hand" || name == "decl_hand"
 }
 
 /// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
@@ -1145,10 +1137,6 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
         // nested bodies flip, via bp's own delegate); the position-faithful oracle.
         "stmt_hand"      -> bp.parse_statement_hand()
-        // t-47hc.13 — a `{`-gated control-flow body: reject a non-`{` body (the
-        // ExpectedBlock error the header hand parsers raise), else the block via
-        // parse_statement_hand (byte-identical to stmt_hand past the gate).
-        "braced_body"    -> bp.parse_braced_body()
         // The whole declaration dispatch (doc/annotation/export wrapping + the decl
         // keywords + the component-vs-expression IDENT disambiguation + the
         // statement fall-through). The *_hand entry, same recursion guard.

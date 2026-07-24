@@ -136,11 +136,14 @@ export fn avra_stmt_grammar() -> Grammar {
 ///   * `if_stmt` / `for_stmt` / `while_stmt` — grammar-native control-flow
 ///     HEADERS. The `@off(allow_struct_lit)` marker reproduces the hand parsers'
 ///     save/clear/restore around the condition (the `while foo {` struct-literal-
-///     vs-body disambiguation); the BODY is `@hand(braced_body)`, the `{`-GATED
-///     block delegate (parse_braced_body) — NOT the unrestricted `@hand(stmt_hand)`,
-///     which would wrongly accept a bare-statement body (`while c break`) the hand
-///     header parsers reject with ExpectedBlock. The if-then is gated (braced_body);
-///     the if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
+///     vs-body disambiguation); the BODY is the grammar-native `block` rule
+///     (`"{" statement* "}" -> Block`) — a `{`-required block, so a bare-statement
+///     body (`while c break`) is a parse error, exactly as the hand header parsers
+///     reject it (they require `{` before `parse_statement`). The inner `statement*`
+///     dispatches each body statement through this same grammar (feature/hand forms
+///     via `@hand(stmt_hand)`), so a nested `{` map-vs-block is still resolved by
+///     parse_statement_hand's is_stmt_map_literal. The if-then uses `block`; the
+///     if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
 ///     unrestricted `parse_statement()` (accepts `else if …`, `else { … }`, and a
 ///     bare `else <stmt>`).
 ///   * `@hand(stmt_hand)` — every OTHER nested-statement-containing / feature-parser
@@ -162,11 +165,12 @@ export fn avra_stmt_grammar() -> Grammar {
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
+  block         = "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:@hand(braced_body) ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
-  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:@hand(braced_body) -> ForLoop(v, lo, hi, body)
-  while_stmt    = "while" @off(allow_struct_lit) c:expression body:@hand(braced_body) -> While(c, body)
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(gp.grammar, avra_expr_grammar())
