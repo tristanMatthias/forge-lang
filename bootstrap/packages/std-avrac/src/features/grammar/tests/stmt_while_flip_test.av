@@ -55,3 +55,33 @@ spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-f
         agree("while a { if 1 { break } }")
     }
 }
+
+spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" {
+    then "if without else, with else, else-if chains" {
+        agree("if 1 { break }") &&
+        agree("if 1 { break } else { continue }") &&
+        agree("if 1 { break } else if 2 { continue }") &&
+        agree("if 1 { break } else if 2 { continue } else { break }") &&
+        agree("if 1 < 2 { break }")
+    }
+    then "the make-or-break: `if foo { }` — @off disables the struct literal in the head" {
+        agree("if foo { }") &&
+        agree("if foo { break } else { continue }") &&
+        agree("if x { y }")
+    }
+}
+
+spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)" {
+    then "integer range + collection forms" {
+        agree("for i in 0..5 { break }") &&
+        agree("for i in 0..10 { break continue }") &&
+        agree("for x in coll { break }") &&
+        agree("for item in items { continue }") &&
+        agree("for i in 1..2 { }")
+    }
+    then "the make-or-break: `for x in coll { }` and `for i in a..b { }` — @off on head expressions" {
+        agree("for x in coll { }") &&
+        agree("for i in a..b { break }") &&
+        agree("for x in xs { for y in ys { break } }")
+    }
+}
