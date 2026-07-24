@@ -951,8 +951,76 @@ fn group_is_single_hand(node: GNode) -> bool {
     }
 }
 
+/// The generated twin of the hand parser's `parse_statement_list_ids`
+/// (parse/mod.av:821): a labeled bare-ref `*`/`+` over a STATEMENT rule — a
+/// block's `stmts:statement*` — parses statements until `}`/EOF, records each
+/// child's SrcPos (entry byte → to_linecol, the add_stmt_at twin), and on a
+/// failed child runs panic-mode resync (`synchronize_stmt`) + a positioned
+/// `Stmt.Error` placeholder, byte-identical to the hand recovery. Unlike the
+/// interpreter's `exec_repeat` (a span-free FIRST-guard loop with no recovery),
+/// this mirrors the HAND loop directly — the generated static parser owns the
+/// block's statement-list recovery. No other emitted grammar uses this shape
+/// today, so wiring it into emit_repeat_group is additive (emit-gen-check proves
+/// existing grammars are byte-identical). (t-47hc.13 — the control-flow flip.)
+fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
+    // had_error is a SINGLE PState flag reused across children (unlike the single-
+    // statement flip path, which gets a fresh PState per statement). So we CAPTURE
+    // any pre-loop error (e.g. from an if/for/while header condition parsed before
+    // this block) into `__pre_err`, then CLEAR before each child parse so `if
+    // st.had_error` detects only THIS child's failure (never the leaked condition
+    // error misclassifying the first body statement). `__any_err` accumulates
+    // pre-loop | per-child failures and is RESTORED to the flag at loop exit, so a
+    // condition/body error stays visible to the caller — the diagnostics themselves
+    // live in `diags` (clear_error touches only the flag), matching the hand
+    // parser's monotonic had_error over parse_statement_list_ids.
+    "${ind}let __pre_err = st.had_error\n" +
+        "${ind}mut __any_err = __pre_err\n" +
+        "${ind}while true {\n" +
+        "${ind}    if st.at_end() || st.cur().text == \"}\" { break }\n" +
+        "${ind}    let __sp = st.cur().pos\n" +
+        "${ind}    st.clear_error()\n" +
+        "${ind}    let __cv = parse_${name}(st)\n" +
+        "${ind}    if st.had_error {\n" +
+        "${ind}        __any_err = true\n" +
+        "${ind}        st.synchronize_stmt()\n" +
+        "${ind}        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }\n" +
+        "${ind}        let __elc = st.store.lines.to_linecol(__sp)\n" +
+        "${ind}        let __e = st.store.stmts.add_leaf(Stmt.Error)\n" +
+        "${ind}        st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })\n" +
+        "${ind}        ${label}_list.push(__e)\n" +
+        "${ind}        st.clear_error()\n" +
+        "${ind}        continue\n" +
+        "${ind}    }\n" +
+        "${ind}    let __sid = capval_to_stmt(st, __cv)\n" +
+        "${ind}    let __lc = st.store.lines.to_linecol(__sp)\n" +
+        "${ind}    st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })\n" +
+        "${ind}    ${label}_list.push(__sid)\n" +
+        "${ind}}\n" +
+        "${ind}if __any_err { st.note_had_error() }\n"
+}
+
 fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<string>, opts: List<string>) -> string {
     match item.prim {
+        // A labeled bare-ref `*`/`+` over a STATEMENT rule → the statement-list-with-
+        // recovery loop (emit_stmt_list_loop). Non-matching refs keep the pre-existing
+        // discard behaviour (byte-identical to the old `_` arm that caught `.Ref`).
+        .Ref(name) -> {
+            if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
+                emit_stmt_list_loop(name, item.label, ind)
+            } else if item.label != "" && str_in(list_labels, item.label) {
+                // A labeled bare-ref `*`/`+` over a NON-statement rule: its `<label>_list`
+                // accumulator is declared but the discard loop below would never populate
+                // it → silent data loss. Unreachable today (only block's `stmts:statement*`
+                // uses this shape), so FAIL LOUD at generation (the generated file won't
+                // compile, naming the unsupported construct) instead of dropping captures.
+                // A future author wanting `xs:rule*` should wrap it in `( … )*` (the .Group
+                // path) or add an accumulation branch for that result kind here.
+                "${ind}// GRAMMAR ERROR: labeled bare-ref `${item.label}:${name}*` over a non-statement rule is unsupported — wrap in `( … )*` or extend emit_repeat_group\n" +
+                    "${ind}let _ = emit_unsupported_labeled_bare_ref_star\n"
+            } else {
+                "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
+            }
+        }
         .Group(inner) -> {
             if group_is_single_hand(inner) {
                 "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
