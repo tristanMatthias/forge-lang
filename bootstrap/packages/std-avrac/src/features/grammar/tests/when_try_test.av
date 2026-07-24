@@ -8,9 +8,9 @@
 //
 // Two-sided in lockstep: the INTERPRETER (run_grammar_expr) is the oracle and the
 // EMITTER lowers the same branch to a static snapshot→run→commit-or-rollback
-// block. A `@try` branch is a flat terminal/ref recognizer (richer shapes are
-// rejected at parse time, the @when-rejection precedent) so both sides agree by
-// construction.
+// block. Post-#995 a `@try` branch handles the full item vocabulary (repetitions,
+// groups, mode markers, `@hand`) via emit_speculative_branch_rich — the rich path
+// reuses emit_seq_stmts, so both sides agree by construction.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, Grammar, Rule}
 
 fn errs(grammar_src: string, input: string) -> bool {
@@ -75,23 +75,29 @@ spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
     }
 }
 
-// A `@try` branch is a flat One-rep terminal/ref sequence that MAY bind capture
-// labels and carry a `-> build` (GAP3 @try-with-builds, t-47hc.13). Repetitions,
-// groups, and `@hand` primaries still have no faithful speculative emission, so
-// they stay rejected at parse time (both sides agree by construction).
-spec "t-47hc.3: @try well-formedness is enforced at parse time" {
-    then "a repetition inside a @try branch is rejected (`*` / `+` / `?`)" {
-        rejects("r = @try NUMBER* | STRING") &&
-        rejects("r = @try NUMBER+ | STRING") &&
-        rejects("r = @try NUMBER? | STRING")
+// Post-#995 (t-47hc GAP-3) a `@try` branch handles the FULL item vocabulary — capture
+// labels, a `-> build`, repetitions (list accumulators), groups/opt, `@on`/`@off` mode
+// items, and `@hand` leaves — via the emitter's rich speculative path
+// (emit_speculative_branch_rich, reusing emit_seq_stmts) and the interpreter's exec_seq.
+// So NO branch SHAPE is rejected anymore; the only residual @try-specific rules are the
+// LABEL constraints below (a bound label becomes a generated local). The flat path is a
+// fast case of the same lowering, not a different capability.
+spec "t-47hc.3: @try admits the full item vocabulary (post-#995 rich lowering)" {
+    then "a repetition inside a @try branch is ACCEPTED (`*` / `+` / `?`), lowered via emit_item" {
+        !rejects("r = @try NUMBER* | STRING") &&
+        !rejects("r = @try NUMBER+ | STRING") &&
+        !rejects("r = @try NUMBER? | STRING") &&
+        // the Plus lowers to the #995 required-first guard so a 0-match rolls back
+        emit_rule("r = @try NUMBER+ | STRING", "r").contains("expected at least one repetition")
     }
-    then "a group inside a @try branch is rejected" {
-        rejects("r = @try ( NUMBER | STRING ) | STRING")
+    then "a group inside a @try branch is ACCEPTED (emit_node_items inlines the dispatch)" {
+        !rejects("r = @try ( NUMBER | STRING ) | STRING")
     }
-    then "a @hand primary inside a @try branch is rejected" {
-        rejects("r = @try @hand(number) | STRING")
+    then "a @hand primary inside a @try branch is ACCEPTED and dispatches via run_hand" {
+        !rejects("r = @try @hand(number) | STRING") &&
+        emit_rule("r = @try @hand(number) | STRING", "r").contains("run_hand")
     }
-    then "a well-formed flat terminal/ref @try branch is accepted" {
+    then "a well-formed flat terminal/ref @try branch is accepted (the fast path)" {
         !rejects("r = @try NUMBER STRING NUMBER | NUMBER STRING")
     }
     then "a @try label colliding with the branch scaffolding is rejected" {

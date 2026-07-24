@@ -17,9 +17,11 @@
 //   1. STRICT syntax `@on` `(` NAME `)` — malformed forms are a parse error.
 //   2. The flag NAME is validated against on_flag_supported (a typo, or the
 //      READ-only `at_quote_top` predicate, is rejected — never a silent no-op).
-//   3. POSITION: @on is honored ONLY on a direct item of a top-level, non-`@try`,
-//      non-fold branch (never nested in a group / on a @hand/@when primary) — the
-//      SAME positions @off is, and for the same emit/exec lockstep reason.
+//   3. POSITION: @on is honored on any item whose emit routes through emit_item —
+//      top-level, a `@try` branch (emit_speculative_branch_rich, post-#995), OR nested
+//      in a group (emit_node_items). It is REJECTED only where emit CAN'T honor it: an
+//      expr-fold branch (emit_fold bypasses emit_item) or wrapping a @hand/@when/@peek
+//      primary. The SAME positions @off is, and for the same emit/exec lockstep reason.
 //   4. @off and @on are MUTUALLY EXCLUSIVE on one item (emit honors mode_off
 //      first and would silently drop a co-present mode_on).
 use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, new_pstate, modes_with_flag_on, default_expr_modes, modes_flag, on_flag_supported}
@@ -95,14 +97,21 @@ spec "t-47hc: @on(flag) — STRICT syntax + flag validation (parse-time rejectio
     }
 }
 
-spec "t-47hc: @on(flag) — POSITION validation (reject where emit can't honor it)" {
-    then "@on nested inside a `( … )` group is rejected (inlined, restarting idx)" {
-        perr("r = ( @on(allow_it_sugar) g )\ng = \"x\"") != ""
+spec "t-47hc: @on(flag) — POSITION validation (accepted where emit HONORS it, rejected where it can't)" {
+    // Post-#995 (t-47hc GAP-3) the rich emitter path routes @try + nested-group items
+    // through emit_item, so their mode markers ARE honored — no longer rejected. These
+    // assert BOTH acceptance (perr == "") AND that the emit actually contains the
+    // mode-set (proving it's honored, not silently accepted-then-dropped — the lockstep
+    // the rejection used to protect).
+    then "@on nested inside a `( … )` group is ACCEPTED and emitted (emit_node_items → emit_item)" {
+        let g = "r = ( @on(allow_it_sugar) g )\ng = \"x\""
+        perr(g) == "" && emit_rule(g, "r").contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
     }
-    then "@on on a `@try` branch item is rejected (emit_speculative bypasses emit_item)" {
-        perr("r = @try @on(allow_it_sugar) a | b\na = \"x\"\nb = \"y\"") != ""
+    then "@on on a `@try` branch item is ACCEPTED and emitted (emit_speculative_branch_rich reuses emit_item)" {
+        let g = "r = @try @on(allow_it_sugar) a | b\na = \"x\"\nb = \"y\""
+        perr(g) == "" && emit_rule(g, "r").contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
     }
-    then "@on on a fold-build branch is rejected (emit_fold bypasses emit_item)" {
+    then "@on on a fold-build branch is STILL rejected (emit_fold bypasses emit_item)" {
         perr("r = @on(allow_it_sugar) l:num -> fold_binary(l)\nnum = NUMBER") != ""
     }
     then "@on cannot wrap a @hand primary (the delegate owns its own modes)" {

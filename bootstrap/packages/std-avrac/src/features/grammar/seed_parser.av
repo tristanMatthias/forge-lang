@@ -314,36 +314,18 @@ fn parse_seq(p: GP) -> GSeq {
         }
     }
     // A `@try` branch is a bounded-speculation RECOGNIZER: emit lowers it to a
-    // snapshot → run → commit-or-rollback block whose committed value is the last
-    // item's (exec_seq's build-less `last`) and whose failure signal is a reported
-    // terminal mismatch. That lowering is faithful ONLY for a flat sequence of
-    // One-rep terminals / rule refs with no `-> build` — richer shapes (capturing
-    // builds, repetitions, groups, `@hand`) have no faithful speculative emission
-    // yet, so REJECT them here (keeping the interpreter and the generated parser in
-    // lockstep — the same @when-rejection discipline) rather than silently diverge.
+    // snapshot → run → commit-or-rollback block. Post-#995 (t-47hc GAP-3) that lowering
+    // is faithful for the FULL item vocabulary — capturing builds, repetitions (list
+    // accumulators), groups/opt, `@on`/`@off` mode items, and `@hand` leaves — via the
+    // emitter's rich speculative path (emit_speculative_branch_rich, which reuses
+    // emit_seq_stmts + emit_seq_result inside the rollback scaffold) and the interpreter's
+    // exec_seq (which snapshots+restores env.caps across the speculative run so a
+    // rolled-back branch's bindings can't leak to a sibling). So NO branch SHAPE is
+    // rejected here anymore; the only residual @try-specific rules are the label
+    // constraints below (a bound label becomes a generated local, so it must not collide
+    // with the branch scaffolding nor repeat within the branch — the same lockstep
+    // discipline, now narrowed from "shape" to "labels").
     if speculative {
-        for it in items {
-            // GAP3 @try-with-builds (t-47hc.13): a `@try` branch MAY now bind capture
-            // labels and carry a `-> build`. Byte-identity across rollback is closed
-            // on BOTH sides — the interpreter's exec_node snapshots+restores env.caps
-            // around the speculative exec_seq (so a rolled-back branch's bindings can't
-            // leak to a sibling), and emit_spec_item assigns each label to a LOCAL
-            // `let` (auto-scoped, so the emit side never leaks). A build is applied on
-            // commit by exec_seq (interpreter) / emit_speculative_branch (generated),
-            // the same emit_call_build/apply_build the committed-rule path uses.
-            match it.rep {
-                .One -> {}
-                _ -> p.fail("a `@try` branch item cannot take a `*`/`+`/`?` repetition (bounded speculation supports a flat terminal/ref sequence only)")
-            }
-            match it.prim {
-                .Lit(_) -> {}
-                .Named(_) -> {}
-                .Ref(_) -> {}
-                .Pred(_) -> {}
-                .Peek(_) -> {}
-                _ -> p.fail("a `@try` branch may contain only terminals and rule references (no groups or `@hand`)")
-            }
-        }
         // A bound label becomes an auto-scoped `let <label>` local in the generated
         // speculative branch (emit_spec_item). It must not (a) collide with the branch
         // scaffolding (`s_pos`/`s_mark`/`s_diags`/`s_err`/`s_last`/`sp_start`/`tried_spec`)
@@ -436,7 +418,10 @@ fn at_peek_primary(p: GP) -> bool {
 /// new cond is added in all three. `ident_colon`: the current token is an IDENT and the
 /// next is `:` — the hand parse_paren_expr's `peek_after_ident_is_colon` (typed lambda).
 export fn peek_cond_supported(cond: string) -> bool {
-    cond == "ident_colon"
+    // `lparen_ident_colon`: the position-0 twin of `ident_colon` — cur is `(`, the next
+    // token an IDENT, the one after `:` (the TYPED-LAMBDA opener, checked from before `(`
+    // so the paren rule spans from the `(` byte). See executor.lookahead_ok.
+    cond == "ident_colon" || cond == "lparen_ident_colon"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -498,19 +483,34 @@ fn at_on_marker(p: GP) -> bool {
 /// Returns "" when clean.
 fn validate_mode_markers(g: Grammar) -> string {
     for rule in g.rules {
-        let e = check_mode_node(rule.body, true, rule.name)
+        let e = check_mode_node(rule.body, rule.name, false)
         if e != "" { return e }
     }
     ""
 }
 
-fn check_mode_node(node: GNode, top: bool, rule: string) -> string {
+/// Validate `@off`/`@on` mode-SET marker POSITIONS. Post-#995 (t-47hc GAP-3) a mode
+/// marker is HONORED on every emit path that routes through emit_item — the general
+/// dispatch (emit_seq_items), a `@try` branch (emit_speculative_branch_rich reuses
+/// emit_seq_stmts → emit_seq_items → emit_item), AND inside a nested group (emit_opt /
+/// emit_repeat_group → emit_node_items → emit_seq_items → emit_item, recursively). The
+/// executor's exec_item wraps every item's sub-parse in push/restore identically. So
+/// `@try` and nested-group markers are NO LONGER rejected. Two restrictions remain, both
+/// real correctness gates, threaded down via `in_fold`:
+///   (1) an EXPR-FOLD branch (fold_binary/…): emit_fold bypasses emit_item entirely, so a
+///       mode marker anywhere inside it would be silently DROPPED from the generated parser
+///       (a divergence the span-blind gates wouldn't catch) — reject it.
+///   (2) a marker wrapping a `@hand`/`@when`/`@peek` primary: @hand manages its own parser
+///       modes and @when/@peek are zero-width — a mode-set around them is meaningless.
+fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
-                // @off/@on on a DIRECT item is honored only on a top-level, non-@try,
-                // non-fold branch (the general emit_seq_items / passthrough path).
-                let branch_ok = top && !b.speculative && !branch_is_expr_fold(b)
+                // `in_fold` carries the enclosing branch's fold context DOWN through groups:
+                // a group inside a fold branch also takes the fold emit path, so its markers
+                // are dropped too. A group's OWN inner branches almost always build `.None`,
+                // so branch_is_expr_fold(inner) is false — the outer context is what matters.
+                let this_fold = in_fold || branch_is_expr_fold(b)
                 for item in b.items {
                     // The two mode-SET markers are mutually exclusive on one item
                     // (enforced at parse), share identical emit/exec positions, so
@@ -518,19 +518,19 @@ fn check_mode_node(node: GNode, top: bool, rule: string) -> string {
                     let mk = if item.mode_off != "" { "@off" } else { "@on" }
                     let fl = if item.mode_off != "" { item.mode_off } else { item.mode_on }
                     if item.mode_off != "" || item.mode_on != "" {
-                        if !branch_ok {
-                            return "`${mk}(${fl})` is only allowed on a direct item of a top-level, non-`@try`, non-fold branch (rule `${rule}`)"
+                        if this_fold {
+                            return "`${mk}(${fl})` cannot appear on (or inside a group of) an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the mode set"
                         }
                         if prim_is_hand_or_pred(item.prim) {
-                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when` primary (rule `${rule}`)"
+                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek` primary (rule `${rule}`)"
                         }
                     }
-                    // A structural group is a NESTED sequence — a mode marker inside it
-                    // is not a top-level item (inlined with a restarting idx), so recurse
-                    // with top=false to reject it.
+                    // A structural group is a NESTED sequence: recurse to validate its
+                    // markers too (now ALLOWED unless we're inside a fold branch), carrying
+                    // the fold context so a fold-branch group is still rejected.
                     match item.prim {
                         .Group(inner) -> {
-                            let e = check_mode_node(inner, false, rule)
+                            let e = check_mode_node(inner, rule, this_fold)
                             if e != "" { return e }
                         }
                         _ -> {}
@@ -726,7 +726,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")
