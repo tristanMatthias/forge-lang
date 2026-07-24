@@ -23,7 +23,7 @@
 //   annot    = "@expect" "(" STRING "," STRING ")"
 //            | "@recover" "(" "sync_to" ":" STRING ")"
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, off_flag_supported}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
 
@@ -167,6 +167,13 @@ export fn parse_grammar(src: string) -> GrammarParse {
     let toks = scan_grammar(src)
     mut p = GP { toks, pos: 0, error: "" }
     let g = parse_grammar_body(p)
+    // Validate `@off(flag)` marker POSITIONS after the tree is built (the fold/@try
+    // shape is structural) — only when the parse itself was clean, so a syntax
+    // error isn't masked by a position error on a half-built tree.
+    if p.error == "" {
+        let oe = validate_off_markers(g)
+        if oe != "" { p.error = oe }
+    }
     GrammarParse { grammar: g, error: p.error }
 }
 
@@ -392,6 +399,81 @@ fn at_off_marker(p: GP) -> bool {
     nxt.kind == "NAME" && nxt.text == "off"
 }
 
+// ── @off marker POSITION validation (t-47hc) ──
+
+/// Reject `@off(flag)` in any position the GENERATED parser can't honor identically
+/// to the executor. The executor runs EVERY item through exec_item (so it honors
+/// @off everywhere), but emit has specialised paths that BYPASS emit_item — emit_fold
+/// (a fold branch's seed + accumulators) and emit_speculative_branch (a `@try`
+/// branch's items) — and inlines structural `( … )` groups with a per-sequence
+/// item index that RESTARTS when nested (so two nested @off items would emit a
+/// colliding `__modes_N` binding). So @off is supported ONLY on a DIRECT item of a
+/// TOP-LEVEL, non-`@try`, non-fold rule branch, and never on a `@hand`/`@when`
+/// primary. Everything else is a HARD grammar error — keeping the executor and the
+/// generated parser in lockstep (BOTH reject the same grammars) instead of silently
+/// diverging. Runs after the tree is built (the fold/@try shape is structural).
+/// Returns "" when clean.
+fn validate_off_markers(g: Grammar) -> string {
+    for rule in g.rules {
+        let e = check_off_node(rule.body, true, rule.name)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn check_off_node(node: GNode, top: bool, rule: string) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                // @off on a DIRECT item is honored only on a top-level, non-@try,
+                // non-fold branch (the general emit_seq_items / passthrough path).
+                let branch_ok = top && !b.speculative && !branch_is_expr_fold(b)
+                for item in b.items {
+                    if item.mode_off != "" {
+                        if !branch_ok {
+                            return "`@off(${item.mode_off})` is only allowed on a direct item of a top-level, non-`@try`, non-fold branch (rule `${rule}`)"
+                        }
+                        if prim_is_hand_or_pred(item.prim) {
+                            return "`@off(${item.mode_off})` cannot wrap a `@hand`/`@when` primary (rule `${rule}`)"
+                        }
+                    }
+                    // A structural group is a NESTED sequence — @off inside it is
+                    // not a top-level item (inlined with a restarting idx), so recurse
+                    // with top=false to reject it.
+                    match item.prim {
+                        .Group(inner) -> {
+                            let e = check_off_node(inner, false, rule)
+                            if e != "" { return e }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    ""
+}
+
+/// True iff a branch's build is one of the legacy expr-fold helpers that take the
+/// SPECIALISED emit_fold path (which bypasses emit_item, so a @off on such a branch
+/// would be dropped from the generated parser). Mirrors emit.av `build_is_expr_fold`.
+fn branch_is_expr_fold(b: GSeq) -> bool {
+    match b.build {
+        .Call(name, _) -> name == "fold_binary" || name == "fold_logical" || name == "fold_nullish" || name == "fold_postfix"
+        _ -> false
+    }
+}
+
+/// True for the primaries a @off marker must not wrap: a `@hand` delegate (manages
+/// its own parser modes) and a `@when` predicate (zero-width, consumes nothing).
+fn prim_is_hand_or_pred(prim: GPrim) -> bool {
+    match prim {
+        .Hand(_) -> true
+        .Pred(_) -> true
+        _ -> false
+    }
+}
+
 // labeled = ( NAME ":" )? postfix
 fn parse_labeled(p: GP) -> GItem {
     // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
@@ -402,18 +484,33 @@ fn parse_labeled(p: GP) -> GItem {
         let _ = p.advance()
         sameline = true
     }
-    // t-47hc mode-SET marker `@off(flag)`: turn an ExprModes flag OFF for this
-    // item's sub-parse (the `while foo {` struct-literal disambiguation the hand
-    // parser does with `allow_struct_lit = false`). Distinguished from the
-    // `@hand`/`@when`/`@try` primaries by the second token being `off` (they are
-    // parsed later as the primary / branch marker). Grammar: `@` `off` `(` NAME `)`.
+    // t-47hc mode-SET marker `@off(flag)`: turn a settable ExprModes flag OFF for
+    // this item's sub-parse (the `while foo {` struct-literal disambiguation the
+    // hand parser does with `allow_struct_lit = false`). Distinguished from the
+    // `@hand`/`@when`/`@try` primaries by the second token being `off` (parsed
+    // later as the primary / branch marker). STRICT grammar: `@` `off` `(` NAME `)`
+    // — the parens are required and the flag NAME is validated against
+    // off_flag_supported. The raw NAME is interpolated into emitted source
+    // (modes_with_flag_off(st.modes, "<NAME>")), so a typo or the READ-only
+    // `at_quote_top` predicate must be a hard error here, not a silent no-op that
+    // generates a dead mode-set. Malformed forms (missing `(`/`)`, non-NAME flag)
+    // fail via p.fail rather than being accepted verbatim.
     mut mode_off = ""
-    if p.peek().kind == "PUNCT" && p.peek().text == "@" && p.pos + 1 < p.toks.length && p.toks[p.pos + 1].text == "off" {
+    if at_off_marker(p) {
         let _ = p.advance()   // "@"
         let _ = p.advance()   // "off"
-        if p.peek().text == "(" { let _ = p.advance() }
-        mode_off = p.advance().text   // the flag NAME
-        if p.peek().text == ")" { let _ = p.advance() }
+        p.expect_punct("(", "expected `(` after `@off`")
+        if p.peek().kind == "NAME" {
+            let fl = p.advance().text
+            if off_flag_supported(fl) {
+                mode_off = fl
+            } else {
+                p.fail("unknown `@off` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
+            }
+        } else {
+            p.fail("expected a flag name in `@off(flag)`")
+        }
+        p.expect_punct(")", "expected `)` to close `@off(flag)`")
     }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a

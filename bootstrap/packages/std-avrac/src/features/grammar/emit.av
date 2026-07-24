@@ -741,8 +741,13 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
-    // unique per sequence position. Empty mode_off (every production grammar today)
-    // returns the item's code unchanged → generated parsers stay byte-identical.
+    // safe as a plain per-position name because seed_parser.validate_off_markers
+    // restricts @off to a DIRECT item of a top-level, non-@try, non-fold branch:
+    // each dispatch branch emits in its own `{ }` block (emit_dispatch), and within
+    // a branch `idx` is unique — so two @off items can never emit a colliding
+    // `__modes_N` in one scope (the nested-group case is rejected at parse). Empty
+    // mode_off (every production grammar today) returns the item's code unchanged →
+    // generated parsers stay byte-identical.
     if item.mode_off != "" {
         return "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.modes = modes_with_flag_off(st.modes, \"${item.mode_off}\")\n" +

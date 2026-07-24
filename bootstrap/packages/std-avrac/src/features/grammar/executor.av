@@ -712,8 +712,12 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 /// The WRITE twin of modes_flag: a copy of `modes` with the named flag turned OFF.
 /// The `@off(flag)` mode-SET marker's core, shared by the executor (push_mode_off)
 /// AND the emitted parser (emit lockstep), so the two can never disagree — the
-/// same discipline modes_flag gives @when. An unknown flag returns modes unchanged
-/// (a no-op; a typo is caught byte-side because BOTH sides call THIS one function).
+/// same discipline modes_flag gives @when. The mapped names MUST match
+/// `ast.off_flag_supported` (the single source of truth for the @off flag SET),
+/// which the seed parser enforces: an unsupported flag (typo, or the READ-only
+/// `at_quote_top` predicate) is REJECTED at parse time, so the trailing
+/// `modes` fall-through here is an unreachable-by-contract defensive default,
+/// never a silent no-op on a live grammar.
 export fn modes_with_flag_off(modes: ExprModes, flag: string) -> ExprModes {
     if flag == "allow_struct_lit" { return modes with { allow_struct_lit: false } }
     if flag == "allow_dot_postfix" { return modes with { allow_dot_postfix: false } }
