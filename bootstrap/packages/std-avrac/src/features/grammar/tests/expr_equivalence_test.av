@@ -160,6 +160,13 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("when { true -> 1 }")
         }
     }
+    given "channel construction (grammar-native keyword primary)" {
+        then "unbounded, bounded, and nested element types agree" {
+            dsl("channel<int>()") != "<err>" &&
+            agree("channel<int>()") && agree("channel<int>(4)") &&
+            agree("channel<List<int>>(n)")
+        }
+    }
     given "the newline-sensitive / stateful postfix chain (parse_call)" {
         then "generic-call, optional-chain, try, catch, slice, await, method chains agree" {
             agree("f<int>()") && agree("f<int>(x)") && agree("g<A, B>(x, y)") &&

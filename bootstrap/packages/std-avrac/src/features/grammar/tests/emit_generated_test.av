@@ -91,6 +91,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
     }
 
+    then "the channel keyword primary is generated, not a hand delegate" {
+        let src = emit_all()
+        src.contains("fn parse_channel_expr(st: PState) -> CapVal {") &&
+        src.contains("let base = parse_channel_expr(st)") &&
+        src.contains("mk_channel(st, sp_start, elem, cap)") &&
+        !src.contains("run_hand_expr(\"channel_expr\", st)")
+    }
+
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
         let src = emit_all()
         src.contains("while st.cur().tk == Tk.QuestionQuestion {") &&
