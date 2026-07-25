@@ -101,6 +101,24 @@ fn ff_is_pred(prim: GPrim) -> bool {
     match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
 }
 
+/// True iff a branch LEADS with a `@peek(cond)` TOKEN-LOOKAHEAD predicate. `@peek`
+/// inspects the upcoming INPUT, so it partitions the input space: it takes the branch
+/// only for inputs the lookahead accepts, leaving the rest to a later same-FIRST branch —
+/// genuine LL(k) disambiguation, NOT a silent shadow (grammar_ambiguities skips it as a
+/// shadow source, like `@try`).
+///
+/// A `@when(flag)` MODE predicate is deliberately NOT exempt: the flag is ambient parse
+/// state, uncorrelated with the input token, so on the shared FIRST token BOTH branches
+/// are token-level candidates (the mode merely picks one) — a real overlap the check
+/// still reports (guard: when_predicate_test.av's `@when(f) "a" "b" | "a"` shadow).
+fn seq_is_peek_led(seq: GSeq) -> bool {
+    if seq.items.length == 0 { return false }
+    match seq.items[0].prim {
+        .Peek(_) -> true
+        _ -> false
+    }
+}
+
 export fn first_seq(g: Grammar, seq: GSeq, visited: List<string>) -> FirstSet {
     mut acc = ffs_empty()
     for item in seq.items {
@@ -161,7 +179,18 @@ export fn grammar_ambiguities(g: Grammar) -> List<GAmbiguity> {
                     // overlap is INTENTIONAL (e.g. the production `list_expr`'s
                     // `@try "[" list_comp "]"` vs `"[" … "]"`, both leading with `[`).
                     // A non-speculative branch i shadowing a later j is STILL flagged.
-                    if branches[i].speculative {
+                    //
+                    // A `@peek(cond)`-LED branch is likewise not a silent shadow: `@peek` is
+                    // a zero-width TOKEN-LOOKAHEAD (skipped in first_seq, so the branch's FIRST
+                    // is the token AFTER it — e.g. the production `paren_expr`'s
+                    // `@peek(lparen_ident_colon) "(" …` has FIRST `{ ( }`, shared with its
+                    // `@try "(" …` / `"(" …` siblings). Because the peek inspects the INPUT, it
+                    // partitions the input space: branch i is taken only for inputs the
+                    // lookahead accepts, and everything else falls through to a later branch —
+                    // genuine LL(k) disambiguation, the author's contract (as with `@try`'s
+                    // rollback). A `@when(flag)` MODE-read is NOT exempt (it is uncorrelated
+                    // with the token, so the token-level overlap is real — still reported).
+                    if branches[i].speculative || seq_is_peek_led(branches[i]) {
                         i = i + 1
                         continue
                     }

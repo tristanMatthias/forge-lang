@@ -9,7 +9,7 @@
 // migration replaces an `@hand` leaf with real alternatives, any FIRST overlap
 // it introduces trips THIS guard instead of silently shadowing a branch at
 // runtime. (Not in the compile path → byte-identical.)
-use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar, parse_grammar}
 
 // The ONE intended ordered-choice shadow the guard tolerates: `in_rhs`'s membership
 // branch 0 (`"[" … "]"`) legitimately takes precedence over its range branch 1
@@ -55,5 +55,32 @@ spec "t-47hc.3: the production grammars are FIRST/FIRST unambiguous" {
     }
     then "the whole-program grammar is unambiguous" {
         is_unambiguous(avra_program_grammar())
+    }
+}
+
+// t-47hc.16 (paren-flip prep): grammar_ambiguities exempts a `@peek(cond)`-LED branch
+// from the shadow check, like a `@try` branch. `@peek` is a zero-width TOKEN-LOOKAHEAD, so
+// it partitions the INPUT — it takes the branch only for inputs the lookahead accepts,
+// leaving the rest to a later same-FIRST branch (genuine LL(k) disambiguation, not a silent
+// shadow). This is the shape the flipped `paren_expr` needs: its
+// `@peek(lparen_ident_colon) "(" …` typed-lambda branch shares FIRST `{(}` with the
+// `@try "(" …` / `"(" …` siblings, but the peek only takes it when `( IDENT :` holds.
+// A `@when(flag)` MODE-read is NOT exempt (the flag is uncorrelated with the token, so the
+// token-level overlap is real) — contrasted below and pinned by when_predicate_test.
+spec "t-47hc.16: a @peek-led branch does not shadow (but a @when-led branch still does)" {
+    then "two branches both leading `(`, branch 0 @peek-gated, are NOT flagged ambiguous" {
+        let gp = parse_grammar("r = @peek(lparen_ident_colon) \"(\" IDENT \":\" IDENT | \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 0
+    }
+    then "a @when-led branch is NOT exempt — the mode-read token overlap is STILL flagged" {
+        // Contrast with @peek: @when reads a parse MODE flag, uncorrelated with the input
+        // token, so BOTH branches match the shared `(` at the token level (the mode merely
+        // picks one) — a real overlap the check reports (seq_is_peek_led matches only .Peek).
+        let gp = parse_grammar("r = @when(at_quote_top) \"(\" IDENT | \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
+    }
+    then "CONTROL: two PLAIN branches both leading `(` ARE still flagged (the guard is intact)" {
+        let gp = parse_grammar("r = \"(\" \")\" | \"(\" IDENT")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
     }
 }
