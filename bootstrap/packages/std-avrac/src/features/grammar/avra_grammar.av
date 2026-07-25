@@ -17,6 +17,7 @@
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
 use features.grammar.{parse_grammar, Grammar, compose_grammars}
+use features.match_expr.{avra_pat_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -152,13 +153,15 @@ export fn avra_expr_dispatch_grammar() -> Grammar {
 /// const, match) join this block as their slices land (§2.5).
 export fn avra_stmt_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt
+  statement     = break_stmt | continue_stmt | match_stmt | return_stmt | expr_stmt
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
+  match_stmt    = "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
+  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   return_stmt   = "return" e:expression -> Return(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    compose_grammars(gp.grammar, avra_expr_grammar())
+    compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
@@ -194,9 +197,12 @@ export fn avra_stmt_grammar() -> Grammar {
 ///     native block on the position-SENSITIVE static path would drop those entries
 ///     and diverge. A SrcPos-threading native block, then mirrored into the dispatch
 ///     grammar, is the production-flip slice (an `intended-ir-change`).
+///   * `match_stmt` — the ordinary subject/pattern/guard/expression-body form is
+///     grammar-native. Its bounded `@try` rolls back to `@hand(match_stmt_edge)`
+///     only for the distinct subjectless/table/bare-return/quote-splice paths.
 ///   * `@hand(stmt_hand)` — every OTHER nested-statement-containing / feature-parser
-///     form (a standalone `{ … }` block statement, `match`/`defer`/`errdefer`/
-///     `return`) — the un-migrated frontier, delegated wholesale to parse_statement.
+///     form (a standalone `{ … }` block statement, `defer`/`errdefer`/`return`) —
+///     the un-migrated frontier, delegated wholesale to parse_statement.
 ///     `return` is additionally newline-sensitive, and a leading `{` is the
 ///     block-vs-map-literal ambiguity parse_statement resolves internally.
 ///   * `expr_stmt` — the fall-through expression statement, over the SAME
@@ -209,7 +215,7 @@ export fn avra_stmt_grammar() -> Grammar {
 /// never to expr_stmt (which would mis-parse it as an expression).
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | @hand(stmt_hand) | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
@@ -217,9 +223,12 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
                 | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
+  match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
+                | @hand(match_stmt_edge)
+  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    compose_grammars(gp.grammar, avra_expr_grammar())
+    compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
@@ -274,14 +283,15 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// `@off(allow_struct_lit)` headers reproduce the hand parsers' struct-literal
 /// disambiguation (emit twin: modes save / clear via modes_with_flag_off / restore).
 /// A top-level `{` block statement (block-vs-map ambiguity, is_stmt_map_literal) +
-/// match/defer/errdefer/return STAY on `@hand(stmt_hand)`; the if-ELSE stays
-/// `@hand(stmt_hand)` (ungated). This is an `intended-ir-change`: the generated
+/// defer/errdefer/return STAY on `@hand(stmt_hand)`; match's ordinary form is
+/// native with a narrow edge oracle, and the if-ELSE stays `@hand(stmt_hand)`.
+/// This is an `intended-ir-change`: the generated
 /// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
 /// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | @hand(stmt_hand) | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
@@ -289,6 +299,9 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
   for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
                 | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
+  match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
+                | @hand(match_stmt_edge)
+  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     gp.grammar

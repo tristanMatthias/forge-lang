@@ -1382,6 +1382,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "While" -> "mk_while(st, sp_start, ${args[0]}, ${args[1]})"
         "If" -> "mk_if(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "ForLoop" -> "mk_for_loop(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
+        "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
+        "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
@@ -1424,7 +1426,8 @@ fn emit_hand_result(hf: string) -> string {
 // is_expr_hand (kept local — file-private there; the classes are small and
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
-    n == "component_decl" || n == "let_stmt" || n == "return_stmt" || n == "for_stmt_edge" ||
+    n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
+    n == "for_stmt_edge" || n == "match_stmt_edge" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1554,6 +1557,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
     if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
+    if hf == "match_stmt_edge" { return "st.cur().text == \"match\"" }
     if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
@@ -1598,7 +1602,7 @@ fn hand_first_guard(hf: string) -> string {
     // the generated static parser routes to run_hand_stmt on the same tokens the
     // interpreter flip does (byte-identical dispatch).
     if hf == "stmt_hand" {
-        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
+        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
     }
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
@@ -1696,7 +1700,10 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
     for x in visited { v2.push(x) }
     v2.push(name)
     let r = emit_lookup_rule(g, name)
-    if r.name == "" { return "false" }
+    if r.name == "" {
+        if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
+        return "false"
+    }
     node_first_guard(g, r.body, v2)
 }
 
@@ -1917,7 +1924,8 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 
 fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
-    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" { return "stmt" }
+    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkMatch" { return "stmt" }
+    if bn == "MkArm" { return "arm" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
@@ -1931,7 +1939,7 @@ fn build_kind(bn: string) -> string {
 }
 
 fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" || hf == "for_stmt_edge" { return "stmt" }
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" || hf == "for_stmt_edge" || hf == "match_stmt_edge" { return "stmt" }
     if hf == "qualified_type" { return "type" }
     "expr"
 }
@@ -1986,6 +1994,7 @@ fn kind_coerce(kind: string) -> string {
     if kind == "pentry" { return "capval_to_pentry" }
     if kind == "field" { return "capval_to_field" }
     if kind == "variant" { return "capval_to_variant" }
+    if kind == "arm" { return "capval_to_arm" }
     "capval_to_expr"
 }
 
@@ -1997,6 +2006,7 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "pentry" { return "ParamEntry" }
     if kind == "field" { return "FieldEntry" }
     if kind == "variant" { return "Variant" }
+    if kind == "arm" { return "MatchArm" }
     "ExprId"
 }
 

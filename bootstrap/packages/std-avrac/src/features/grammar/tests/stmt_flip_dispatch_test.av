@@ -8,8 +8,8 @@
 // AVRA_PARSER_STMT_FLIP at construction but is a plain `mut bool` a test can set
 // directly — exercising the flip path with no process-env dependency (the
 // full-selfhost flip proof is memory-heavy and lives in the promotion step; this
-// pins the dispatch + fallback wiring + the break/continue/@hand(stmt_hand)/
-// expr_stmt routing).
+// pins the dispatch + fallback wiring + the break/continue/native-match/
+// @hand(stmt_hand)/expr_stmt routing).
 //
 // Parity = same tree AND same accept/reject: for every VALID statement form the
 // flip path (DSL) and the hand path (parse_statement_hand — called explicitly so
@@ -54,14 +54,19 @@ spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)
             agree("break") && agree("continue")
         }
     }
-    given "the @hand(stmt_hand) control-flow forms (if/while/for/match/defer/errdefer/return)" {
+    given "the grammar-native control-flow forms (if/while/for/ordinary match)" {
         then "each keyword statement agrees" {
             agree("if a { b }") &&
             agree("if a { b } else { c }") &&
             agree("while a { b }") &&
             agree("for i in 0..n { s }") &&
             agree("for x in xs { s }") &&
-            agree("match n { 0 -> a\n _ -> b }") &&
+            agree("match n { 0 -> a\n _ -> b }")
+        }
+    }
+    given "the residual statement edge oracles" {
+        then "subjectless/table match and defer/errdefer/return still agree" {
+            agree("match { ok -> a\n _ -> b }") &&
             agree("defer { cleanup }") &&
             agree("errdefer { cleanup }") &&
             agree("return v")
