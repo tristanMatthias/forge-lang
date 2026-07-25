@@ -80,12 +80,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
     }
 
-    then "the pipe stratum folds `|>` with @hand(pipe_rhs) operands" {
+    then "the pipe stratum folds `|>` with native logic_or operands under it-sugar mode" {
         // `pipe = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)` with
-        // `pipe_arg = @hand(pipe_rhs)` (parse_or + it-sugar). The `|>` guard is Tk-dispatched.
+        // `pipe_arg = @on(allow_it_sugar) logic_or`. The `|>` guard is Tk-dispatched.
         let src = emit_all()
         src.contains("while st.cur().tk == Tk.PipeGt {") &&
-        src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
+        src.contains("parse_logic_or(st)") &&
+        src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+        !src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
         src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
     }
 
