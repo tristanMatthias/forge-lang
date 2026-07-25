@@ -99,6 +99,16 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("run_hand_expr(\"channel_expr\", st)")
     }
 
+    then "subjectless when arms and their default are generated, not hand delegated" {
+        let src = emit_all()
+        src.contains("fn parse_when_expr(st: PState) -> CapVal {") &&
+        src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
+        src.contains("mk_when_arm(st, cond, body)") &&
+        src.contains("mk_when_default(st, body)") &&
+        src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))") &&
+        !src.contains("run_hand_expr(\"when_expr\", st)")
+    }
+
     then "lambda expression bodies recurse through the grammar; only block bodies use the edge oracle" {
         let src = emit_all()
         src.contains("fn parse_lambda_body(st: PState) -> CapVal {") &&

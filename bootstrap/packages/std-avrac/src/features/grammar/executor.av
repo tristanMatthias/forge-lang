@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
@@ -70,6 +70,11 @@ export enum CapVal {
     // rule accumulates `Arms`, which a `Match` build folds into Stmt.Match.
     Arm(a: MatchArm)
     Arms(xs: List<MatchArm>)
+    // A subjectless `when` arm + repetition list. Unlike MatchArm, WhenArm
+    // carries only an optional condition id and a body id; Expr.When is
+    // walker-opaque, so these ids deliberately do not become arena edges.
+    WArm(a: WhenArm)
+    WArms(xs: List<WhenArm>)
     // A built PARAMETER ENTRY + a parallel list of them (declaration family,
     // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
     // (defaulting to Int, the hand parser's parse_param_list default); a `*`
@@ -236,6 +241,21 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.Arms(xs))
+    }
+
+    // Subjectless-when-arm accumulator, parallel to append_arm.
+    fn append_warm(self, name: string, a: WhenArm) {
+        let existing = self.get(name)
+        mut xs: List<WhenArm> = []
+        match existing {
+            .WArms(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .WArm(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(a)
+        self.set_scalar(name, CapVal.WArms(xs))
     }
 
     // Parameter-list accumulator (declaration family, ps3t.6.5.7): a `*` over
@@ -1177,7 +1197,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "if_expr" { return tok.text == "if" }
     if name == "spawn_expr" { return tok.text == "spawn" }
     if name == "isolated_expr" { return tok.text == "isolated" }
-    if name == "when_expr" { return tok.text == "when" }
     // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
     // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
     if name == "list_expr" { return tok.text == "[" }
@@ -1634,7 +1653,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1671,7 +1690,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "when_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1740,7 +1759,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "if_expr"       -> bp.parse_if_expression()
         "spawn_expr"    -> bp.parse_spawn_expression()
         "isolated_expr" -> bp.parse_isolated_expression()
-        "when_expr"     -> bp.parse_when_expression()
         "list_expr"     -> bp.parse_list_expr()
         "qualified_expr" -> bp.parse_qualified_expr()
         "paren_expr"    -> bp.parse_paren_expr()
@@ -1862,6 +1880,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .PNode(id) -> env.append_pnode(label, id)
             .TExpr(te) -> env.append_texpr(label, te)
             .Arm(a) -> env.append_arm(label, a)
+            .WArm(a) -> env.append_warm(label, a)
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
             .Var(v) -> env.append_var(label, v)
@@ -1975,6 +1994,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
+        "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
+        "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
+        "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
@@ -2431,6 +2453,48 @@ export fn mk_channel(st: PState, sp_start: int, elem_cv: CapVal, cap_cv: CapVal)
         byte_span(sp_start, st.cur().pos),
         [NodeRef.TypeRef(elem_id)]
     ))
+}
+
+/// One conditional arm of a subjectless `when` expression.
+export fn mk_when_arm(st: PState, cond_cv: CapVal, body_cv: CapVal) -> CapVal {
+    CapVal.WArm(WhenArm {
+        cond_id: capval_to_expr(st, cond_cv),
+        body_id: capval_to_expr(st, body_cv)
+    })
+}
+
+/// The `_` / `else` arm of a subjectless `when` expression.
+export fn mk_when_default(st: PState, body_cv: CapVal) -> CapVal {
+    CapVal.WArm(WhenArm { cond_id: none, body_id: capval_to_expr(st, body_cv) })
+}
+
+/// Fold grammar-built when arms into the walker-opaque Expr.When leaf.
+export fn mk_when(st: PState, sp_start: int, arms_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.When(capval_to_when_arm_list(arms_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// A repeated `when_arm` capture is WArms for many, WArm for one, Nil for none.
+export fn capval_to_when_arm_list(v: CapVal) -> List<WhenArm> {
+    match v {
+        .WArms(xs) -> xs
+        .WArm(a) -> [a]
+        _ -> []
+    }
+}
+
+/// Coerce one generated arm result for a repeated when-arm capture.
+export fn capval_to_when_arm(st: PState, v: CapVal) -> WhenArm {
+    match v {
+        .WArm(a) -> a
+        _ -> {
+            st.report("expected a when arm")
+            WhenArm { cond_id: none, body_id: st.error_node("expected a when arm") }
+        }
+    }
 }
 
 /// A `dyn Trait` type — the TyDyn build's core. Matches the hand parser
