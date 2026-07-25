@@ -216,7 +216,8 @@ export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
-  stmt_block    = @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
+  stmt_block    = @try @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
+                | @hand(block_stmt_edge)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
@@ -297,7 +298,8 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
-  stmt_block    = @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
+  stmt_block    = @try @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
+                | @hand(block_stmt_edge)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)

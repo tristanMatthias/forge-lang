@@ -1154,6 +1154,10 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The residual match-statement edge oracle (subjectless/table/bare-return/
     // quote-splice arms) is intentionally narrower than the generic stmt leaf.
     if name == "match_stmt_edge" { return tok.text == "match" }
+    // Native statement blocks own ordinary bodies. If a body contains a
+    // declaration (for example an inline module's component), @try rolls back
+    // and this narrow edge oracle lets the hand block parser preserve it.
+    if name == "block_stmt_edge" { return tok.text == "{" }
     // A qualified-type hand rule's FIRST is the `@` package marker.
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
@@ -1254,7 +1258,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
     name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
-    name == "for_stmt_edge" || name == "match_stmt_edge" ||
+    name == "for_stmt_edge" || name == "match_stmt_edge" || name == "block_stmt_edge" ||
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
@@ -1328,6 +1332,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "return_stmt"    -> bp.parse_return_statement()
         "for_stmt_edge"  -> bp.parse_for_statement()
         "match_stmt_edge" -> bp.parse_match_statement()
+        "block_stmt_edge" -> bp.parse_statement_hand()
         // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
         // nested bodies flip, via bp's own delegate); the position-faithful oracle.

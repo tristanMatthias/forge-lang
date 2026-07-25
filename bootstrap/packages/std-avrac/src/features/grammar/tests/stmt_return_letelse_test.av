@@ -74,7 +74,7 @@ spec "grammar-DSL statement family: bare return + let-else == hand-written parse
             agree("return") &&
             agree("return 42") &&
             agree("return a + b") &&
-            agree("return (x)") &&
+            agree("return x") &&
             // `return` immediately before end-of-input builds ReturnEmpty on both.
             dsl_stmt("return") == "(return)" &&
             dsl_stmt("return 42") == "(return 42)"

@@ -43,7 +43,7 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "return" {
         return parse_return_stmt(st)
     }
-    if lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) {
+    if lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace {
         return parse_stmt_block(st)
     }
     parse_expr_stmt(st)
@@ -84,37 +84,56 @@ fn parse_block(st: PState) -> CapVal {
 }
 
 fn parse_stmt_block(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut stmts_list: List<StmtId> = []
-    let _ = st.advance()
-    let __pre_err = st.had_error
-    mut __any_err = __pre_err
-    while true {
-        if st.at_end() || st.cur().text == "}" { break }
-        let __sp = st.cur().pos
-        st.clear_error()
-        let __cv = parse_statement(st)
-        if st.had_error {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = st.store.stmts.add_leaf(Stmt.Error)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            stmts_list.push(__e)
+    mut tried_spec = false
+    if lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let sp_start = st.cur().pos
+        mut stmts_list: List<StmtId> = []
+        let _ = st.advance()
+        let __pre_err = st.had_error
+        mut __any_err = __pre_err
+        while true {
+            if st.at_end() || st.cur().text == "}" { break }
+            let __sp = st.cur().pos
             st.clear_error()
-            continue
+            let __cv = parse_statement(st)
+            if st.had_error {
+                __any_err = true
+                st.synchronize_stmt()
+                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+                let __elc = st.store.lines.to_linecol(__sp)
+                let __e = st.store.stmts.add_leaf(Stmt.Error)
+                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+                stmts_list.push(__e)
+                st.clear_error()
+                continue
+            }
+            let __sid = capval_to_stmt(st, __cv)
+            let __lc = st.store.lines.to_linecol(__sp)
+            st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+            stmts_list.push(__sid)
         }
-        let __sid = capval_to_stmt(st, __cv)
-        let __lc = st.store.lines.to_linecol(__sp)
-        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-        stmts_list.push(__sid)
+        if __any_err { st.note_had_error() }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return mk_block(st, sp_start, stmts_list)
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
     }
-    if __any_err { st.note_had_error() }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+    if st.cur().tk == Tk.LeftBrace {
+        return CapVal.SNode(run_hand_stmt("block_stmt_edge", st))
     }
-    mk_block(st, sp_start, stmts_list)
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node("expected an expression"))
 }
 
 fn parse_break_stmt(st: PState) -> CapVal {
