@@ -805,9 +805,20 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 ///     hand parse_paren_expr's peek_after_ident_is_colon: a typed lambda `(x: …) -> …`
 ///     vs a grouping/tuple. (The current-is-IDENT half is redundant with the branch's
 ///     own IDENT FIRST token, but included so the predicate fully mirrors the hand check
-///     and is correct in any position.) An unknown cond is ungated (true) — a typo is
+///     and is correct in any position.)
+///   stmt_block — the current token is `{` and the next two tokens are not STRING `:`;
+///     the statement-position twin of Parser.is_stmt_map_literal.
+/// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
 export fn lookahead_ok(cond: string, st: PState) -> bool {
+    // Statement-position brace disambiguation, the token-level twin of
+    // Parser.is_stmt_map_literal: only a string-keyed `{ "key": ... }` is a map
+    // expression here. Empty braces and every other leading token are blocks.
+    if cond == "stmt_block" {
+        if st.cur().text != "{" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        return !(st.toks[st.pos + 1].kind == "STRING" && st.toks[st.pos + 2].text == ":")
+    }
     if cond == "ident_colon" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -1209,8 +1220,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // stmt_keyword set (if/while/for/match/defer/errdefer/return) exactly.
     if name == "stmt_hand" {
         let t = tok.text
-        return t == "{" || t == "if" || t == "while" ||
-               t == "defer" || t == "errdefer" || t == "return"
+        return t == "{" || t == "if" || t == "while" || t == "return"
     }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
     // tokens parse_declaration handles itself (doc-comment wrapping, `@`

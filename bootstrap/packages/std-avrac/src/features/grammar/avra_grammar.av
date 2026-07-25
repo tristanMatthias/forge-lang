@@ -153,12 +153,14 @@ export fn avra_expr_dispatch_grammar() -> Grammar {
 /// const, match) join this block as their slices land (§2.5).
 export fn avra_stmt_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | match_stmt | return_stmt | expr_stmt
+  statement     = break_stmt | continue_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | expr_stmt
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   match_stmt    = "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
-  return_stmt   = "return" e:expression -> Return(e)
+  defer_stmt    = "defer" e:expression -> MkDefer(e)
+  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
+  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
@@ -179,9 +181,9 @@ export fn avra_stmt_grammar() -> Grammar {
 ///     (`"{" statement* "}" -> Block`) — a `{`-required block, so a bare-statement
 ///     body (`while c break`) is a parse error, exactly as the hand header parsers
 ///     reject it (they require `{` before `parse_statement`). The inner `statement*`
-///     dispatches each body statement through this same grammar (feature/hand forms
-///     via `@hand(stmt_hand)`), so a nested `{` map-vs-block is still resolved by
-///     parse_statement_hand's is_stmt_map_literal. The if-then uses `block`; the
+///     dispatches each body statement through this same grammar. A standalone block
+///     is lookahead-gated: string-keyed map literals route into `expr_stmt`, while
+///     `{}` and ordinary statement blocks remain blocks. The if-then uses `block`; the
 ///     if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
 ///     unrestricted `parse_statement()` (accepts `else if …`, `else { … }`, and a
 ///     bare `else <stmt>`).
@@ -200,23 +202,21 @@ export fn avra_stmt_grammar() -> Grammar {
 ///   * `match_stmt` — the ordinary subject/pattern/guard/expression-body form is
 ///     grammar-native. Its bounded `@try` rolls back to `@hand(match_stmt_edge)`
 ///     only for the distinct subjectless/table/bare-return/quote-splice paths.
-///   * `@hand(stmt_hand)` — every OTHER nested-statement-containing / feature-parser
-///     form (a standalone `{ … }` block statement, `defer`/`errdefer`/`return`) —
-///     the un-migrated frontier, delegated wholesale to parse_statement.
-///     `return` is additionally newline-sensitive, and a leading `{` is the
-///     block-vs-map-literal ambiguity parse_statement resolves internally.
+///   * `return_stmt` — native and newline-sensitive: its optional expression uses
+///     `^` so a value on the next line is not consumed as the return operand.
+///   * `stmt_block` — native standalone blocks, gated by `@peek(stmt_block)` so
+///     string-keyed map literals retain the expression path.
 ///   * `expr_stmt` — the fall-through expression statement, over the SAME
 ///     shared expression grammar (byte-identical to parse_expression), then
 ///     wrapped as Stmt.Expr exactly as the hand parser does.
 ///
-/// The alternation order (break/continue, the control-flow headers, then @hand,
-/// then expr_stmt) matches parse_statement's dispatch order; `hand_starts("stmt_hand")`
-/// is the exact FIRST-set (`{` + the stmt keywords) so `match` routes to @hand and
-/// never to expr_stmt (which would mis-parse it as an expression).
+/// The alternation order (break/continue, the control-flow headers, return/block,
+/// then expr_stmt) matches parse_statement's dispatch order.
 export fn avra_stmt_flip_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
+  stmt_block    = @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
@@ -226,6 +226,9 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+  defer_stmt    = "defer" e:expression -> MkDefer(e)
+  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
+  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
@@ -282,17 +285,19 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// position-SENSITIVE static path needs are recorded byte-identically. The
 /// `@off(allow_struct_lit)` headers reproduce the hand parsers' struct-literal
 /// disambiguation (emit twin: modes save / clear via modes_with_flag_off / restore).
-/// A top-level `{` block statement (block-vs-map ambiguity, is_stmt_map_literal) +
-/// defer/errdefer/return STAY on `@hand(stmt_hand)`; match's ordinary form is
-/// native with a narrow edge oracle, and the if-ELSE stays `@hand(stmt_hand)`.
+/// A top-level `{` is lookahead-routed to a native block or to the expression path
+/// for a string-keyed map literal; defer/errdefer/return are native. Match's
+/// ordinary form is native with a narrow edge oracle, and the if-ELSE stays
+/// `@hand(stmt_hand)`.
 /// This is an `intended-ir-change`: the generated
 /// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
 /// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | @hand(stmt_hand) | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
+  stmt_block    = @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
@@ -302,6 +307,9 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
   match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+  defer_stmt    = "defer" e:expression -> MkDefer(e)
+  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
+  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     gp.grammar
@@ -395,8 +403,10 @@ export fn avra_program_grammar() -> Grammar {
   assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
   method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
   impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
-  statement   = return_stmt | @hand(let_stmt) | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
+  defer_stmt  = "defer" de:expression -> MkDefer(de)
+  errdefer_stmt = "errdefer" ee:expression -> MkErrdefer(ee)
   block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
   while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
   if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)

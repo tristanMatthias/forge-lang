@@ -5,8 +5,9 @@
 // parse_paren_expr's `peek_after_ident_is_colon()`, which distinguishes a typed lambda
 // `(x: int) -> …` from a grouping/tuple by peeking past the first IDENT for a `:`.
 //
-// DORMANT: no production grammar uses `@peek` yet, so generated parsers regen byte-
-// identical (emit-gen-check GENPASS). Executor (branch_pred_ok → lookahead_ok) and emit
+// Production also uses `@peek(stmt_block)` to distinguish a standalone block from a
+// string-keyed map expression at statement position. Executor (branch_pred_ok →
+// lookahead_ok) and emit
 // (peek_guard emits the SAME lookahead_ok call) route through one shared function, so
 // the interpreter and the generated parser can't disagree — the lockstep discipline
 // `@when` has via modes_flag. This pins: parse + validation, interpreter branch-gating,
@@ -46,8 +47,21 @@ spec "t-47hc: @peek(ident_colon) — parse-time acceptance + validation" {
     then "the parentheses are required — `@peek cond` without `(` fails" {
         perr("r = @peek ident_colon x:@hand(ident) -> x") != ""
     }
-    then "peek_cond_supported accepts ident_colon, rejects a typo and empty" {
-        peek_cond_supported("ident_colon") && !peek_cond_supported("ident_coln") && !peek_cond_supported("")
+    then "peek_cond_supported accepts the known conditions, rejects a typo and empty" {
+        peek_cond_supported("ident_colon") && peek_cond_supported("stmt_block") &&
+        !peek_cond_supported("ident_coln") && !peek_cond_supported("")
+    }
+}
+
+spec "t-47hc: @peek(stmt_block) — statement brace disambiguation" {
+    then "ordinary and empty braces are blocks" {
+        mut ordinary = new_pstate("{ value }")
+        mut empty = new_pstate("{}")
+        lookahead_ok("stmt_block", ordinary) && lookahead_ok("stmt_block", empty)
+    }
+    then "a string-keyed brace is a map expression, not a block" {
+        mut keyed = new_pstate("{ \"key\": value }")
+        !lookahead_ok("stmt_block", keyed)
     }
 }
 

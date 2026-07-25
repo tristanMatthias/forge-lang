@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_arm, mk_match, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_return_opt, mk_arm, mk_match, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, Tk, SrcPos}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -34,13 +34,56 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "match" {
         return parse_match_stmt(st)
     }
-    if st.cur().text == "{" || st.cur().text == "if" || st.cur().text == "while" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" {
-        return CapVal.SNode(run_hand_stmt("stmt_hand", st))
+    if st.cur().text == "defer" {
+        return parse_defer_stmt(st)
+    }
+    if st.cur().text == "errdefer" {
+        return parse_errdefer_stmt(st)
+    }
+    if st.cur().text == "return" {
+        return parse_return_stmt(st)
+    }
+    if lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) {
+        return parse_stmt_block(st)
     }
     parse_expr_stmt(st)
 }
 
 fn parse_block(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut stmts_list: List<StmtId> = []
+    let _ = st.advance()
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_statement(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            stmts_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        stmts_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_block(st, sp_start, stmts_list)
+}
+
+fn parse_stmt_block(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut stmts_list: List<StmtId> = []
     let _ = st.advance()
@@ -210,6 +253,27 @@ fn parse_match_arm(st: PState) -> CapVal {
     let b = parse_expression(st)
     st.set_modes(__modes_3)
     mk_arm(st, p, g, b)
+}
+
+fn parse_defer_stmt(st: PState) -> CapVal {
+    let _ = st.advance()
+    let e = parse_expression(st)
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, e))))
+}
+
+fn parse_errdefer_stmt(st: PState) -> CapVal {
+    let _ = st.advance()
+    let e = parse_expression(st)
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, e))))
+}
+
+fn parse_return_stmt(st: PState) -> CapVal {
+    mut e: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if (tok_starts_expr_leaf(st.cur())) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
+        e = parse_expression(st)
+    }
+    mk_return_opt(st, e)
 }
 
 fn parse_expr_stmt(st: PState) -> CapVal {
