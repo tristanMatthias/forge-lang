@@ -97,9 +97,9 @@ fn avra_expr_core() -> Grammar {
              | base:variant_ctor ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(match_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(if_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
-             | base:@hand(spawn_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
+             | base:spawn_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:channel_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
-             | base:@hand(isolated_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
+             | base:isolated_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:when_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(quote_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:list_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
@@ -111,6 +111,9 @@ fn avra_expr_core() -> Grammar {
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
+  spawn_expr   = "spawn" body:block_expr -> MkSpawn(body)
+  isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
+  block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}" -> MkExprBlock(stmts)
   when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
@@ -121,30 +124,44 @@ fn avra_expr_core() -> Grammar {
                | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
-  lambda_body  = @hand(lambda_block_body) | expression
+  lambda_body  = block_expr | expression
   param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
     }
     gp.grammar
 }
 
 /// The §2 expression grammar the INTERPRETER runs (run_grammar_expr / the inverse-@hand
-/// dsl_expr_grammar cache in parse/mod.av / the equivalence oracles) — SELF-CONTAINED: it
-/// composes the type family (avra_type_flip_grammar) so paren_expr's typed-lambda
-/// `param -> type_expr` resolves IN-GRAMMAR (exec_rule must be able to walk `type_expr`).
-/// Byte-identical to the core for pure-expression inputs — the type rules are reached ONLY
-/// via paren's `param`. The EMIT view keeps `type_expr` EXTERNAL (avra_expr_dispatch_grammar)
-/// so the generated parser calls the already-emitted parse_type_expr rather than re-emitting
-/// the type ladder — the same interpreter/dispatch split avra_stmt_flip vs
-/// avra_stmt_dispatch_grammar use.
+/// dsl_expr_grammar cache in parse/mod.av / the equivalence oracles) — SELF-CONTAINED:
+/// it composes declarations/statements for expression blocks, types for typed lambdas and
+/// channels, and patterns for match statements nested in those blocks. The EMIT view keeps
+/// those families EXTERNAL (avra_expr_dispatch_grammar), so the checked-in parser calls the
+/// already-emitted parse_declaration / parse_type_expr functions rather than re-emitting them.
+/// This is the same interpreter/dispatch split used by the statement family.
+/// The declaration edge shared by every interpreter composition that can enter
+/// an expression block. Keeping this as one fragment avoids duplicating the
+/// existing hand-declaration frontier while block bodies call `declaration*`.
+fn avra_decl_edge_grammar() -> Grammar {
+    let gp = grammar {
+  declaration = @hand(decl_hand) | statement
+    }
+    gp.grammar
+}
+
 export fn avra_expr_grammar() -> Grammar {
-    compose_grammars(avra_expr_core(), avra_type_flip_grammar())
+    compose_grammars(
+        compose_grammars(
+            compose_grammars(avra_expr_core(), avra_decl_dispatch_grammar()),
+            avra_type_flip_grammar()
+        ),
+        avra_pat_grammar()
+    )
 }
 
 /// The DISPATCH-only expression grammar the STATIC production parser is EMITTED from
 /// (gen_expr_file.emit_expr_parser_file): == avra_expr_core, so `type_expr` in paren_expr's
-/// `param` stays an EXTERNAL reference → the emitted parse_paren_expr / parse_param CALL the
-/// already-generated parse_type_expr (gen_type_parser.av, same flat `parse` module) instead
-/// of re-emitting the type ladder fn-for-fn (which would collide). The emit twin of
+/// `param` and block-expression `declaration` stay EXTERNAL references → the emitted parser
+/// calls parse_type_expr / parse_declaration from the other generated files in the same flat
+/// `parse` module instead of re-emitting either family. The emit twin of
 /// avra_stmt_dispatch_grammar.
 export fn avra_expr_dispatch_grammar() -> Grammar {
     avra_expr_core()
@@ -168,7 +185,7 @@ export fn avra_stmt_grammar() -> Grammar {
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
+    compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
@@ -232,7 +249,7 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    compose_grammars(compose_grammars(gp.grammar, avra_expr_grammar()), avra_pat_grammar())
+    compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
@@ -256,10 +273,7 @@ export fn avra_stmt_flip_grammar() -> Grammar {
 /// on the parse_declaration path (component/annotation) and everything else on
 /// the statement path. Byte-identical: each arm's builder IS the hand parser's.
 export fn avra_decl_flip_grammar() -> Grammar {
-    let gp = grammar {
-  declaration = @hand(decl_hand) | statement
-    }
-    compose_grammars(gp.grammar, avra_stmt_flip_grammar())
+    compose_grammars(avra_decl_edge_grammar(), avra_stmt_flip_grammar())
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar the STATIC production
@@ -326,10 +340,7 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
 /// with the dispatch-only statement grammar (expression EXTERNAL). This is what
 /// gen_decl_file emits the checked-in production declaration static parser from.
 export fn avra_decl_dispatch_grammar() -> Grammar {
-    let gp = grammar {
-  declaration = @hand(decl_hand) | statement
-    }
-    compose_grammars(gp.grammar, avra_stmt_dispatch_grammar())
+    compose_grammars(avra_decl_edge_grammar(), avra_stmt_dispatch_grammar())
 }
 
 // The §2 match-pattern family (`avra_pat_grammar`) now lives with its owning

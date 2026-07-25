@@ -26,7 +26,14 @@ fn hand(src: string) -> string {
 }
 
 fn agree(src: string) -> bool {
-    dsl(src) == hand(src)
+    let got = dsl(src)
+    let want = hand(src)
+    if got != want {
+        println("expression grammar mismatch: ${src}")
+        println("generated: ${got}")
+        println("hand:      ${want}")
+    }
+    got == want
 }
 
 spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surface)" {
@@ -143,7 +150,15 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
         then "zero/one/multi-param and typed closures agree" {
             dsl("(x) -> x + 1") != "<err>" &&
             agree("(x) -> x + 1") && agree("() -> 1") && agree("(x, y) -> x + y") &&
-            agree("(x: int) -> x") && agree("(a) -> (b) -> a + b")
+            agree("(x: int) -> x") && agree("(a) -> (b) -> a + b") &&
+            agree("(x) -> { let y = x + 1 y }")
+        }
+    }
+    given "statement-bearing expression blocks" {
+        then "spawn and isolated bodies agree without a hand leaf" {
+            agree("spawn { let x = 1 x + 1 }") &&
+            agree("isolated { let x = 1 x + 1 }") &&
+            agree("spawn { if true { return 1 } 2 }.await")
         }
     }
     given "prefix `not` and null/none primaries" {

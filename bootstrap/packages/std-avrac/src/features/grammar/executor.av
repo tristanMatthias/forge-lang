@@ -1195,8 +1195,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // leading keyword, routed to the feature's hand parser via run_hand_expr.
     if name == "match_expr" { return tok.text == "match" }
     if name == "if_expr" { return tok.text == "if" }
-    if name == "spawn_expr" { return tok.text == "spawn" }
-    if name == "isolated_expr" { return tok.text == "isolated" }
     // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
     // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
     if name == "list_expr" { return tok.text == "[" }
@@ -1653,7 +1651,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1690,7 +1688,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1757,8 +1755,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // parse_primary's `if check(Kw) -> parse_<kw>_expression()` chain makes.
         "match_expr"    -> bp.parse_match_expression()
         "if_expr"       -> bp.parse_if_expression()
-        "spawn_expr"    -> bp.parse_spawn_expression()
-        "isolated_expr" -> bp.parse_isolated_expression()
         "list_expr"     -> bp.parse_list_expr()
         "qualified_expr" -> bp.parse_qualified_expr()
         "paren_expr"    -> bp.parse_paren_expr()
@@ -1994,6 +1990,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
+        "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
+        "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
+        "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
         "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
@@ -2452,6 +2451,35 @@ export fn mk_channel(st: PState, sp_start: int, elem_cv: CapVal, cap_cv: CapVal)
         Expr.ChannelNew(elem, cap),
         byte_span(sp_start, st.cur().pos),
         [NodeRef.TypeRef(elem_id)]
+    ))
+}
+
+/// A `{ statement* }` expression body. Its statement ids are the payload and
+/// remain walker-opaque, exactly like the retired parse_block_expression path.
+export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.Block(capval_to_stmt_list(stmts_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// Grammar-native `spawn { ... }`, preserving the hand parser's span and
+/// walker-opaque body id.
+export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.Spawn(capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// Grammar-native `isolated { ... }`, the process-isolation twin of spawn.
+export fn mk_isolated(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.Isolated(capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
     ))
 }
 

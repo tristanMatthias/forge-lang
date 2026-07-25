@@ -109,12 +109,25 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("run_hand_expr(\"when_expr\", st)")
     }
 
-    then "lambda expression bodies recurse through the grammar; only block bodies use the edge oracle" {
+    then "lambda expression and block bodies recurse entirely through generated rules" {
         let src = emit_all()
         src.contains("fn parse_lambda_body(st: PState) -> CapVal {") &&
-        src.contains("CapVal.Node(run_hand_expr(\"lambda_block_body\", st))") &&
+        src.contains("return parse_block_expr(st)") &&
         src.contains("parse_expression(st)") &&
-        !src.contains("run_hand_expr(\"lambda_body\", st)")
+        !src.contains("run_hand_expr(\"lambda_body\", st)") &&
+        !src.contains("run_hand_expr(\"lambda_block_body\", st)")
+    }
+
+    then "expression blocks power generated spawn and isolated primaries" {
+        let src = emit_all()
+        src.contains("fn parse_block_expr(st: PState) -> CapVal {") &&
+        src.contains("mut stmts_list: List<StmtId> = []") &&
+        src.contains("let __cv = parse_declaration(st)") &&
+        src.contains("mk_expr_block(st, sp_start, CapVal.SNodes(stmts_list))") &&
+        src.contains("mk_spawn(st, sp_start, body)") &&
+        src.contains("mk_isolated(st, sp_start, body)") &&
+        !src.contains("run_hand_expr(\"spawn_expr\", st)") &&
+        !src.contains("run_hand_expr(\"isolated_expr\", st)")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
