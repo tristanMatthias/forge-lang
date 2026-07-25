@@ -99,6 +99,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         !src.contains("run_hand_expr(\"channel_expr\", st)")
     }
 
+    then "lambda expression bodies recurse through the grammar; only block bodies use the edge oracle" {
+        let src = emit_all()
+        src.contains("fn parse_lambda_body(st: PState) -> CapVal {") &&
+        src.contains("CapVal.Node(run_hand_expr(\"lambda_block_body\", st))") &&
+        src.contains("parse_expression(st)") &&
+        !src.contains("run_hand_expr(\"lambda_body\", st)")
+    }
+
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
         let src = emit_all()
         src.contains("while st.cur().tk == Tk.QuestionQuestion {") &&

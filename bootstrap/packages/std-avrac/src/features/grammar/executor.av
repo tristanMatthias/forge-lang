@@ -1222,6 +1222,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // complete (byte-side twin: emit.av hand_first_guard). DORMANT: no live grammar
     // references it, so this branch is never queried on the production type_flip path.
     if name == "lambda_body" { return tok_starts_expr_leaf(tok) }
+    if name == "lambda_block_body" { return tok.text == "{" }
     // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
     // map-literal statement, disambiguated inside parse_statement) plus the
     // statement KEYWORDS parse_statement routes to feature parsers. `break` /
@@ -1633,7 +1634,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1749,6 +1750,7 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // (couples to the statement machinery), so the paren flip's lambda body delegates
         // here rather than re-expressing it — the deliberate @hand(lambda_body) leaf.
         "lambda_body"   -> bp.parse_lambda_body()
+        "lambda_block_body" -> bp.parse_block_expression()
         "ident_primary" -> bp.parse_ident_expr()
         "template_expr" -> bp.parse_template_primary()
         "brace_expr"    -> bp.parse_brace_expr()

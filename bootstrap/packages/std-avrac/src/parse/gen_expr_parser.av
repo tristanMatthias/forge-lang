@@ -659,7 +659,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
             st.report("expected ->")
         }
-        let lb = CapVal.Node(run_hand_expr("lambda_body", st))
+        let lb = parse_lambda_body(st)
         return CapVal.Node(mk_lambda_typed(st, sp_start, ps_list, capval_to_expr(st, lb)))
     }
     if st.cur().tk == Tk.LeftParen {
@@ -687,7 +687,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
             st.report("expected ->")
         }
-        let lb = CapVal.Node(run_hand_expr("lambda_body", st))
+        let lb = parse_lambda_body(st)
         if st.diags.length == s_diags && st.had_error == s_err {
             return CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(a_list), capval_to_expr(st, lb)))
         }
@@ -743,6 +743,13 @@ fn parse_paren_expr(st: PState) -> CapVal {
     }
     if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_lambda_body(st: PState) -> CapVal {
+    if st.cur().tk == Tk.LeftBrace {
+        return CapVal.Node(run_hand_expr("lambda_block_body", st))
+    }
+    parse_expression(st)
 }
 
 fn parse_param(st: PState) -> CapVal {
