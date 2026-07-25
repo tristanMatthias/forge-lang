@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, SrcPos, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser}
@@ -2565,7 +2565,11 @@ export fn mk_evariant(name: string, fields: List<FieldEntry>) -> CapVal {
 /// UN-annotated param defaults to Int (parse_param_list's default, NOT Unknown).
 export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> CapVal {
     let pvt = if has_pt { type_expr_to_vtype(capval_to_texpr(st, pt_cv)) } else { ValueType.Int }
-    CapVal.PEntry(ParamEntry { name: name, vtype: pvt })
+    // Type-carrying parameter positions maintain the F1d dual exactly like
+    // Parser.param_entry_typed: even the default Int owns a real orphan type
+    // row, while syntax-only ParamEntry producers explicitly leave ty_id null.
+    let ty_id = st.store.ingest_type(pvt, byte_span_none())
+    CapVal.PEntry(ParamEntry { name: name, vtype: pvt, ty_id: ty_id })
 }
 
 /// `type Name` — a trait associated-type member (the `MkAssocType` build's core).
