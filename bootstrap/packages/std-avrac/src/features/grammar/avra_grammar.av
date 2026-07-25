@@ -60,7 +60,12 @@ use features.grammar.{parse_grammar, Grammar, compose_grammars}
 /// statement) and mode-stateful (`allow_struct_lit`, `allow_dot_postfix`,
 /// `allow_it_sugar`, `quote_depth`), so the @hand escape hatch (GRAMMAR_DSL.md §5)
 /// is the correct — and byte-identity-preserving — home for it (ps3t.6.7 Step C).
-export fn avra_expr_grammar() -> Grammar {
+///
+/// avra_expr_core is the RULE SET (the emit view via avra_expr_dispatch_grammar); the
+/// INTERPRETER view (avra_expr_grammar) composes the type family so paren_expr's typed-lambda
+/// `param -> type_expr` resolves in-grammar. (t-47hc.16 paren flip: `paren_expr` replaced the
+/// `@hand(paren_expr)` leaf — the hand parse_paren_expr is deleted.)
+fn avra_expr_core() -> Grammar {
     let gp = grammar {
   expression    = assignment
   assignment    = l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
@@ -99,7 +104,7 @@ export fn avra_expr_grammar() -> Grammar {
              | base:list_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(brace_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(qualified_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
-             | base:@hand(paren_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
+             | base:paren_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(template_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(ident_primary) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
@@ -107,8 +112,36 @@ export fn avra_expr_grammar() -> Grammar {
   list_expr    = @try "[" cb:list_comp "]" -> cb
                | "[" ( a:expression ( "," a:expression )* )? ( "," )? "]" -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
+  paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:@hand(lambda_body) -> MkLambdaTyped(ps, lb)
+               | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" lb:@hand(lambda_body) -> MkLambda(a, lb)
+               | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
+               | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
+  param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
     }
     gp.grammar
+}
+
+/// The §2 expression grammar the INTERPRETER runs (run_grammar_expr / the inverse-@hand
+/// dsl_expr_grammar cache in parse/mod.av / the equivalence oracles) — SELF-CONTAINED: it
+/// composes the type family (avra_type_flip_grammar) so paren_expr's typed-lambda
+/// `param -> type_expr` resolves IN-GRAMMAR (exec_rule must be able to walk `type_expr`).
+/// Byte-identical to the core for pure-expression inputs — the type rules are reached ONLY
+/// via paren's `param`. The EMIT view keeps `type_expr` EXTERNAL (avra_expr_dispatch_grammar)
+/// so the generated parser calls the already-emitted parse_type_expr rather than re-emitting
+/// the type ladder — the same interpreter/dispatch split avra_stmt_flip vs
+/// avra_stmt_dispatch_grammar use.
+export fn avra_expr_grammar() -> Grammar {
+    compose_grammars(avra_expr_core(), avra_type_flip_grammar())
+}
+
+/// The DISPATCH-only expression grammar the STATIC production parser is EMITTED from
+/// (gen_expr_file.emit_expr_parser_file): == avra_expr_core, so `type_expr` in paren_expr's
+/// `param` stays an EXTERNAL reference → the emitted parse_paren_expr / parse_param CALL the
+/// already-generated parse_type_expr (gen_type_parser.av, same flat `parse` module) instead
+/// of re-emitting the type ladder fn-for-fn (which would collide). The emit twin of
+/// avra_stmt_dispatch_grammar.
+export fn avra_expr_dispatch_grammar() -> Grammar {
+    avra_expr_core()
 }
 
 /// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return

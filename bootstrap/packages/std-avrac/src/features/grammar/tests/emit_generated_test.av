@@ -14,13 +14,13 @@
 // "generated fns compile + pass the differential test" gate is the diagnose
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
-use @std.avrac.features.grammar.{avra_expr_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
 // block dogfooded into compiler src/ (avra_grammar.av, ps3t.6.5.11); the
 // emitter lowers each of its rules to a static parse fn.
 fn emit_all() -> string {
-    emit_parser_source(avra_expr_grammar())
+    emit_parser_source(avra_expr_dispatch_grammar())
 }
 
 fn rule_named(g: Grammar, name: string) -> Rule {
@@ -209,7 +209,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
         // emit_rule_fn(g, term) needs the grammar to resolve factor's FIRST set
         // for its `while` guard — the operator group here (Tk-dispatched, ps3t.6.7 perf).
-        let g = avra_expr_grammar()
+        let g = avra_expr_dispatch_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
         term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
     }
