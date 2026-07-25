@@ -62,7 +62,11 @@ fn parse_pipe(st: PState) -> CapVal {
 }
 
 fn parse_pipe_arg(st: PState) -> CapVal {
-    CapVal.Node(run_hand_expr("pipe_rhs", st))
+    let __m = st.modes
+    st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
+    let __r = parse_logic_or(st)
+    st.set_modes(__m)
+    __r
 }
 
 fn parse_null_coalesce(st: PState) -> CapVal {

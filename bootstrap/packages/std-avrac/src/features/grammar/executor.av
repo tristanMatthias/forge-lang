@@ -1217,7 +1217,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // A `with { … }` postfix step's FIRST is the `with` keyword.
     if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
-    if name == "pipe_rhs" { return tok_starts_expr_leaf(tok) }
     // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
     // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
     // exactly tok_starts_expr_leaf (which includes `{`). Registered so an Opt/Star/Alt
@@ -1693,7 +1692,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "pipe_rhs" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "spawn_expr" || name == "channel_expr" || name == "isolated_expr" || name == "when_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1835,9 +1834,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         // One `with { … }` postfix step → a PARTIAL Expr.With (placeholder receiver,
         // rebound by fold_with_expr). The partial's span carries this step's end byte.
         "with_suffix"   -> bp.parse_with_suffix()
-        // The RHS of a `|>` step — a parse_or-level expr with `it`-sugar on, so
-        // the DSL pipe stratum's operands match parse_pipe byte-for-byte.
-        "pipe_rhs"      -> bp.parse_pipe_rhs()
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
@@ -3189,8 +3185,8 @@ fn rebind_bin_subject(st: PState, sp_start: int, id: ExprId, base: ExprId) -> Ex
 
 /// Left-fold `l ( "|>" r )*` into the pipe desugar — the hand parse_pipe: `a |> f`
 /// → `f(a)`; `a |> f(b)` → `f(a, b)` (prepend); `a |> f(_, b)` → `f(a, b)` (the `_`
-/// placeholder takes the piped value). Each `r` is a pipe_arg (@hand(pipe_rhs),
-/// parse_or with `it`-sugar). Left-associative: `a |> f |> g` = `g(f(a))`.
+/// placeholder takes the piped value). Each `r` is a grammar-native logic_or
+/// parsed with `it`-sugar. Left-associative: `a |> f |> g` = `g(f(a))`.
 export fn fold_pipe_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) -> ExprId {
     mut acc = capval_to_expr(st, lcap)
     // [sp_start, next-token) as the hand parse_pipe stamps each desugared Call
