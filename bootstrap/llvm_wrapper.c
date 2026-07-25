@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
 
 // All functions use the avra_llvm_* naming convention matching
 // the extern fn declarations in src/core/llvm.fg.

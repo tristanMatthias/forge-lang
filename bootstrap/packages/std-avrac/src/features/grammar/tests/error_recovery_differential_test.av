@@ -293,3 +293,34 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
         static_raw("fn f() -> int {\n let z = [1, 2, 3]\n let w = [x for x in z]\n return 0\n}") == ""
     }
 }
+
+// t-47hc.16: `paren_expr` now replaces the former @hand leaf in the generated
+// expression parser. Unlike valid-input differential tests, this oracle makes
+// a failed @try/tuple/lambda parse observable: the generated parser must fall
+// through to the same hand recovery tree and diagnostics as Parser A.
+spec "t-47hc.16: grammar-native paren_expr recovers == hand oracle" {
+    then "unclosed grouping REPORTS exactly like hand" {
+        agree_error("fn f() -> int {\n let a = (1 + 2\n return a\n}")
+    }
+    then "unclosed tuple REPORTS exactly like hand" {
+        agree_error("fn f() -> int {\n let pair = (1, 2\n return 0\n}")
+    }
+    then "untyped and typed lambda failures REPORT exactly like hand" {
+        agree_error("fn f() -> int {\n let id = (x -> x\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let id = (x) ->\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let id = (x: ) -> x\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let id = (x: int) ->\n return 0\n}")
+    }
+    then "every malformed paren form recovers to the identical tree" {
+        agree_tree("fn f() -> int {\n let a = (1 + 2\n return a\n}") &&
+        agree_tree("fn f() -> int {\n let pair = (1, 2\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let id = (x -> x\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let id = (x) ->\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let id = (x: ) -> x\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let id = (x: int) ->\n return 0\n}")
+    }
+    then "well-formed group tuple and lambda forms produce no diagnostics" {
+        agree("fn f() -> int {\n let a = (1 + 2)\n let pair = (1, 2)\n let typed = (x: int) -> x\n return a\n}") &&
+        static_raw("fn f() -> int {\n let a = (1 + 2)\n let pair = (1, 2)\n let typed = (x: int) -> x\n return a\n}") == ""
+    }
+}
