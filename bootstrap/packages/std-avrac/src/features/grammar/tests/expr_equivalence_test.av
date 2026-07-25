@@ -157,7 +157,9 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             dsl("match x { _ -> 1 }") != "<err>" &&
             agree("match x { _ -> 1 }") &&
             agree("if a { 1 } else { 2 }") &&
-            agree("when { true -> 1 }")
+            agree("when { true -> 1 }") &&
+            agree("when { a > 1 -> f(a) _ -> g() }") &&
+            agree("when { false -> 1 else -> 2 }.field")
         }
     }
     given "channel construction (grammar-native keyword primary)" {

@@ -100,7 +100,7 @@ fn avra_expr_core() -> Grammar {
              | base:@hand(spawn_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:channel_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(isolated_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
-             | base:@hand(when_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
+             | base:when_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(quote_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:list_expr ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
              | base:@hand(brace_expr) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
@@ -111,6 +111,9 @@ fn avra_expr_core() -> Grammar {
              | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )* -> fold_postfix_with(base, p, s)
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
+  when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
+  when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
+               | cond:expression "->" body:expression -> MkWhenArm(cond, body)
   list_expr    = @try "[" cb:list_comp "]" -> cb
                | "[" ( a:expression ( "," a:expression )* )? ( "," )? "]" -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
