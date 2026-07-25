@@ -4,8 +4,8 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, run_hand_expr, run_hand_stmt, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, mk_block, mk_while, mk_if, mk_for_loop, modes_with_flag_off}
-use core.{ExprId, Stmt, Tk, SrcPos}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_arm, mk_match, modes_with_flag_off}
+use core.{ExprId, Stmt, MatchArm, Tk, SrcPos}
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_declaration(st: PState) -> CapVal {
@@ -31,7 +31,10 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "while" {
         return parse_while_stmt(st)
     }
-    if st.cur().text == "{" || st.cur().text == "if" || st.cur().text == "while" || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" {
+    if st.cur().text == "match" {
+        return parse_match_stmt(st)
+    }
+    if st.cur().text == "{" || st.cur().text == "if" || st.cur().text == "while" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" {
         return CapVal.SNode(run_hand_stmt("stmt_hand", st))
     }
     parse_expr_stmt(st)
@@ -151,6 +154,62 @@ fn parse_while_stmt(st: PState) -> CapVal {
     st.set_modes(__modes_1)
     let body = parse_block(st)
     mk_while(st, sp_start, c, body)
+}
+
+fn parse_match_stmt(st: PState) -> CapVal {
+    mut tried_spec = false
+    if st.cur().text == "match" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        mut arms_list: List<MatchArm> = []
+        let _ = st.advance()
+        let __modes_1 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        let subj = parse_expression(st)
+        st.set_modes(__modes_1)
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        while tok_starts_pattern(st.cur()) {
+            arms_list.push(capval_to_arm(st, parse_match_arm(st)))
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return mk_match(st, subj, CapVal.Arms(arms_list))
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+    }
+    if st.cur().text == "match" {
+        return CapVal.SNode(run_hand_stmt("match_stmt_edge", st))
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_match_arm(st: PState) -> CapVal {
+    mut g: CapVal = CapVal.Nil
+    let p = parse_pattern_or(st)
+    if st.cur().text == "if" {
+        let _ = st.advance()
+        g = parse_expression(st)
+    }
+    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+        st.report("expected ->")
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+    let b = parse_expression(st)
+    st.set_modes(__modes_3)
+    mk_arm(st, p, g, b)
 }
 
 fn parse_expr_stmt(st: PState) -> CapVal {

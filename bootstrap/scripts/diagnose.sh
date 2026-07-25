@@ -2170,9 +2170,9 @@ fn harness_block() -> string {
 }
 
 fn stmt_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, literal_node, run_hand, run_hand_expr, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, capval_tok_text}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_pat, capval_to_arm, literal_node, run_hand, run_hand_expr, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, capval_tok_text, capval_present, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, mk_arm, mk_match, modes_with_flag_off}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
-    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, NodeStore, render_stmt_id}\n\n"
+    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, ValueType, Tk, NodeStore, render_stmt_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
 fn stmt_harness_block() -> string {
@@ -2195,7 +2195,9 @@ fn stmt_harness_block() -> string {
     "        agree(\"return 42\") && agree(\"return 1 + 2\") && agree(\"return 1 + 2 * 3\") &&\n" +
     "        agree(\"return (1 + 2) * 3\") &&\n" +
     "        agree(\"1 + 2 * 3\") && agree(\"8 / 4 / 2\") && agree(\"-2 + 3\") &&\n" +
-    "        agree(\"1 < 2 == 3\") && agree(\"(1 + 2) * 3\")\n" +
+    "        agree(\"1 < 2 == 3\") && agree(\"(1 + 2) * 3\") &&\n" +
+    "        agree(\"match x { .A -> 1, .B if ok -> 2 }\") &&\n" +
+    "        agree(\"match a + b { 1 -> 10, _ -> 0, }\")\n" +
     "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
     "}\n"
 }

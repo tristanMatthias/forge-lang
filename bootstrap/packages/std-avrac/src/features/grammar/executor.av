@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
@@ -1140,6 +1140,9 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // Malformed `for` headers must fail before a body is built. The native branch
     // is speculative; this narrow edge oracle owns only the rolled-back failure.
     if name == "for_stmt_edge" { return tok.text == "for" }
+    // The residual match-statement edge oracle (subjectless/table/bare-return/
+    // quote-splice arms) is intentionally narrower than the generic stmt leaf.
+    if name == "match_stmt_edge" { return tok.text == "match" }
     // A qualified-type hand rule's FIRST is the `@` package marker.
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
@@ -1207,7 +1210,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "stmt_hand" {
         let t = tok.text
         return t == "{" || t == "if" || t == "while" ||
-               t == "match" || t == "defer" || t == "errdefer" || t == "return"
+               t == "defer" || t == "errdefer" || t == "return"
     }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
     // tokens parse_declaration handles itself (doc-comment wrapping, `@`
@@ -1240,7 +1243,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// is ReturnEmpty + a separate statement, decided by the hand parser's
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl" || name == "let_stmt" || name == "return_stmt" || name == "for_stmt_edge" ||
+    name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
+    name == "for_stmt_edge" || name == "match_stmt_edge" ||
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
@@ -1313,6 +1317,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "let_stmt"       -> bp.parse_let_statement()
         "return_stmt"    -> bp.parse_return_statement()
         "for_stmt_edge"  -> bp.parse_for_statement()
+        "match_stmt_edge" -> bp.parse_match_statement()
         // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
         // nested bodies flip, via bp's own delegate); the position-faithful oracle.
@@ -2681,14 +2686,53 @@ export fn mk_use(st: PState, at_present: bool, segs: List<Token>, names: List<To
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown))))
 }
 
+/// Generated-parser twin of the `MkArm` executor build.
+export fn mk_arm(st: PState, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let pat_id = capval_to_pat(st, pat_cv)
+    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
+    CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, body_cv) })
+}
+
+/// Generated-parser twin of the `MkMatch` executor build.
+export fn mk_match(st: PState, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
+    let arms = capval_to_arm_list(arms_cv)
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.SNode(st.store.add_stmt(Stmt.Match(capval_to_expr(st, subject_cv), arms), byte_span_none(), refs))
+}
+
 /// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`
 /// yields `Arms` for ≥2, a scalar `Arm` for exactly 1, `Nil` for none.
-fn capval_to_arm_list(v: CapVal) -> List<MatchArm> {
+export fn capval_to_arm_list(v: CapVal) -> List<MatchArm> {
     match v {
         .Arms(xs) -> xs
         .Arm(a) -> [a]
         _ -> []
     }
+}
+
+/// Coerce one generated match-arm result for a repeated `match_arm` capture.
+export fn capval_to_arm(st: PState, v: CapVal) -> MatchArm {
+    match v {
+        .Arm(a) -> a
+        _ -> {
+            st.report("expected a match arm")
+            let pid = st.store.pats.add_leaf(Pattern.Wildcard)
+            MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node("expected a match arm") }
+        }
+    }
+}
+
+/// FIRST-set predicate for an EXTERNAL `pattern_or` reference in the dispatch-only
+/// statement grammar. The interpreter composes the pattern fragment and computes
+/// this structurally; the static emitter calls this twin so it can keep using the
+/// already-generated `parse_pattern_or` without re-emitting that family.
+export fn tok_starts_pattern(t: Token) -> bool {
+    t.text == "let" || t.text == "none" || t.text == "null" || t.text == "." ||
+    t.kind == "IDENT" || t.text == "true" || t.text == "false" ||
+    t.kind == "STRING" || t.text == "-" || t.kind == "NUMBER"
 }
 
 /// A capture as a parameter list (declaration family, ps3t.6.5.7): the param
