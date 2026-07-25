@@ -28,7 +28,7 @@
 //   ( … )?                    → if <FIRST> { … }
 //   -> Ctor(a, b)             → apply_build's twin: one emission per build name
 //   @hand(fn)                 → run_hand / run_hand_expr / run_hand_stmt /
-//                               run_hand_type by rule class (executor's dispatch)
+//                               run_hand_stmt/run_hand_expr by rule class
 //   @expect / @recover        → a checked consume with st.report + st.synchronize
 //
 // The build-name → emission map (emit_call_build) is the single
@@ -1373,6 +1373,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // list, joined to itself. (ps3t.6.7 — was `capval_tok_text(name)`, undefined
         // once the dotted star made `name` a list label.)
         "MkNamed" -> "mk_named_type(capval_tok_text(CapVal.Toks(${args[0]}_list)), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
+        "MkQualified" -> "mk_qualified_type(${args[0]}_list, ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
         "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
         "TyParen" -> "mk_paren_type(${args[0]}_list)"
         "TyDyn" -> "mk_dyn_type(capval_tok_text(${args[0]}), capval_present(${args[1]}))"
@@ -1422,12 +1423,11 @@ fn build_fn(name: string) -> string {
 
 fn emit_hand_result(hf: string) -> string {
     if is_stmt_hand_name(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
-    if is_type_hand_name(hf) { return "CapVal.TExpr(run_hand_type(\"${hf}\", st))" }
     if is_expr_hand_name(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
     "CapVal.Node(run_hand(\"${hf}\", st))"
 }
 
-// The rule-class tables mirror executor.av's is_stmt_hand / is_type_hand /
+// The rule-class tables mirror executor.av's is_stmt_hand /
 // is_expr_hand (kept local — file-private there; the classes are small and
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
@@ -1438,7 +1438,6 @@ fn is_stmt_hand_name(n: string) -> bool {
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
     n == "stmt_hand" || n == "decl_hand"
 }
-fn is_type_hand_name(n: string) -> bool { n == "qualified_type" }
 fn is_expr_hand_name(n: string) -> bool { n == "quote_expr" || n == "template_expr" || n == "brace_expr" || n == "ident_expr" || n == "more_primary" || n == "hand_unary" || n == "call_leaf" || n == "primary_base" || n == "postfix_suffix" || n == "with_suffix" || n == "match_expr" || n == "if_expr" || n == "spawn_expr" || n == "channel_expr" || n == "isolated_expr" || n == "when_expr" || n == "qualified_expr" || n == "list_expr" || n == "paren_expr" || n == "lambda_body" || n == "ident_primary" }
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
@@ -1564,7 +1563,6 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
     if hf == "match_stmt_edge" { return "st.cur().text == \"match\"" }
     if hf == "block_stmt_edge" { return tk_guard("{") }
-    if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
     // executor hand_starts FIRST guards (kept in lockstep).
@@ -1946,13 +1944,12 @@ fn build_kind(bn: string) -> string {
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
-    if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" { return "type" }
+    if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" || bn == "MkQualified" { return "type" }
     "expr"
 }
 
 fn hand_kind(hf: string) -> string {
     if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" || hf == "for_stmt_edge" || hf == "match_stmt_edge" { return "stmt" }
-    if hf == "qualified_type" { return "type" }
     "expr"
 }
 

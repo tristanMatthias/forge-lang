@@ -733,16 +733,12 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
     run_grammar_type_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
 
-/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8). No source is
-/// threaded — a `@hand` TYPE rule needing the source (e.g. `qualified_type`) is
-/// unavailable on this path (the swap-in serves those from a real Parser).
+/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8).
 export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> TypeRunResult {
     run_grammar_type_src(grammar, toks, store, "")
 }
 
-/// Shared core of the type entry. `src` is threaded (empty on the token-only
-/// path) so a `@hand` type rule (`@pkg::T` → `run_hand_type` → parse_type_atom)
-/// can delegate over the original source (ps3t.6.5.10).
+/// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
     mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
     if grammar.rules.length == 0 {
@@ -812,6 +808,7 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 ///     the statement-position twin of Parser.is_stmt_map_literal.
 ///   for_destructure — current is `for` and next is `(`.
 ///   comma_ident — current is `,` and next is IDENT, separating it from a trailing comma.
+///   double_colon — current and next are adjacent `:` tokens.
 /// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
 export fn lookahead_ok(cond: string, st: PState) -> bool {
@@ -829,6 +826,10 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
+    }
+    if cond == "double_colon" {
+        return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
+            st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
     }
     if cond == "ident_colon" {
         if st.cur().kind != "IDENT" { return false }
@@ -1128,7 +1129,6 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // the right builder.
         .Hand(hf) -> {
             if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
-            else if is_type_hand(hf) { CapVal.TExpr(run_hand_type(hf, st)) }
             else if is_expr_hand(hf) { CapVal.Node(run_hand_expr(hf, st)) }
             else { CapVal.Node(run_hand(hf, st)) }
         }
@@ -1169,8 +1169,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // declaration (for example an inline module's component), @try rolls back
     // and this narrow edge oracle lets the hand block parser preserve it.
     if name == "block_stmt_edge" { return tok.text == "{" }
-    // A qualified-type hand rule's FIRST is the `@` package marker.
-    if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
     if name == "quote_expr" { return tok.text == "quote" }
     // The keyword-led expression primaries (Phase 3a-11): each FIRST is its
@@ -1391,65 +1389,13 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     }
 }
 
-/// True for hand rules that build a TYPE (delegated via `run_hand_type`,
-/// returning a `TypeExpr`). `qualified_type` — the `@pkg::mod::Type` form
-/// (parse_type_atom's `@` branch) — is the case: the DSL's `named_type` is a
-/// bare IDENT, so a package-qualified `@`-prefixed name has no pure-grammar
-/// production, and `::`-segment paths interact with the enum-ctor-vs-method
-/// disambiguation the hand parser owns (ps3t.6.5.10).
-fn is_type_hand(name: string) -> bool {
-    name == "qualified_type"
-}
-
-/// Run a TYPE hand rule by delegating to the hand parser's `parse_type_atom`
-/// over the original source, returning the built `TypeExpr` (a VALUE — not
-/// arena-backed, so no store-sharing needed) and resyncing the DSL cursor past
-/// what it consumed. The type family lowers the returned `TypeExpr` via the
-/// shared `type_expr_to_vtype`, exactly as it does the pure-grammar type atoms.
-export fn run_hand_type(name: string, st: PState) -> TypeExpr {
-    if !is_type_hand(name) || st.src == "" {
-        st.report("`@hand(${name})` needs the source, unavailable here")
-        return TypeExpr.Named("")
-    }
-    let start_byte = st.cur().pos
-    mut bp = parser_new_with_file(st.src, "")
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
-    let result = bp.parse_type_atom("expected type")
-    // Resync the DSL cursor to where the hand delegate stopped. If the delegate
-    // closed a NESTED qualified generic by SPLITTING a `>>` (its own
-    // maybe_split_shr, stopping ON the second `>`), the DSL's own `>>` token
-    // straddles bp.current_start: the delegate consumed the first `>`, and the
-    // second must stay for the ENCLOSING generic's close — e.g. the outer
-    // `List<…>` of `List<@pkg::mod::T<V>>`. Split it in place instead of
-    // advancing past the whole shift token (which would swallow the `>` the DSL
-    // needs to close the outer generic, mis-parsing the type). This is the
-    // executor-side mirror of the hand parser's maybe_split_shr and of
-    // parse_type_expr's own resync split (ps3t.6.7).
-    while !st.at_end() && st.cur().pos < bp.current_start {
-        if st.cur().text == ">>" && st.cur().pos + 1 == bp.current_start {
-            let _ = st.split_gt()
-        } else {
-            let _ = st.advance()
-        }
-    }
-    match result {
-        .Ok(te) -> te
-        .Err(m) -> {
-            st.report(m)
-            TypeExpr.Named("")
-        }
-    }
-}
-
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
 /// stopped at (so a hand-parser caller can resync its token cursor), and the
 /// error channel.
 export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string }
 
-/// INVERSE-@hand TYPE runner (ps3t.6.5.12 slice 1) — the exact mirror of
-/// `run_hand_type`. Where `run_hand_type` lets a DSL type rule delegate a span
-/// to the hand parser, THIS lets the hand parser delegate a whole type
-/// expression to the DSL: it runs the UNIFIED program grammar's `type_expr`
+/// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
+/// whole type expression to the DSL. It runs the unified program grammar's `type_expr`
 /// rule over `src` starting at byte `start_byte`, and reports the byte where the
 /// DSL stopped (`stop_byte`) so a caller can resync its own cursor.
 ///
@@ -1463,10 +1409,8 @@ export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, dia
 /// every boundary), and `PState.cur()` returns the trailing EOF token — whose
 /// `pos` is the end-of-source byte — so `stop_byte` is valid even at EOF.
 ///
-/// The PROGRAM grammar (not the isolated `avra_type_grammar`) is used so its
-/// `type_atom = @hand(qualified_type) | ...` alternative serves the qualified
-/// `@pkg::mod::T` form that re-emitted `@comptime` bodies carry — the one
-/// selfhost-critical type atom the isolated grammar can't build.
+/// The PROGRAM grammar is used so this runner exercises the same complete type
+/// family as declarations, including native qualified names.
 export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
     run_dsl_type_at_toks(lex_real(src), start_byte, src)
 }
@@ -1476,9 +1420,8 @@ export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
 /// annotations from ONE source (the flip inside `parse_type_expr`) lexes it
 /// exactly once and reuses the list — instead of `run_dsl_type_at` re-lexing the
 /// whole file per annotation (the O(n²) + per-call allocation that OOM'd the
-/// full-selfhost flip compile). `src` is still threaded for the `@hand`
-/// delegation (`@pkg::T` → the hand parser over the original source) and the
-/// line index. Behaviour is otherwise identical to `run_dsl_type_at`.
+/// full-selfhost flip compile). `src` is still threaded for the line index.
+/// Behaviour is otherwise identical to `run_dsl_type_at`.
 export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) -> DslTypeResult {
     run_dsl_type_at_shared(toks, start_byte, src, new_node_store(build_line_index(src)), avra_program_grammar())
 }
@@ -1507,11 +1450,10 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 }
 
 /// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
-/// `run_dsl_type_at_shared` (null delegate, `src` threaded so the `@hand(qualified_type)`
-/// leaf reconstructs its `@pkg::T` parse), but drives the CHECKED-IN generated static
+/// `run_dsl_type_at_shared`, but drives the CHECKED-IN generated static
 /// type parser (parse/gen_type_parser.av's `parse_type_expr`, passed in as `parse` so
 /// this module needs no import back into `parse`) instead of the Grammar-tree
-/// interpreter (`exec_rule`). Same builders, same PState, same `@hand` leaf ⇒
+/// interpreter (`exec_rule`). Same builders and same PState yield a
 /// byte-identical TypeExpr to both the interpreter flip AND the hand parser, at
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
@@ -1719,9 +1661,8 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// Run an EXPRESSION hand rule by delegating to the real hand parser over the
 /// PState's ORIGINAL source, SHARING the store (so the returned id is valid in
 /// it — the `run_hand_stmt` pattern, for the Expr arena) and resyncing the DSL
-/// cursor past what it consumed. This is the ExprId sibling of `run_hand_stmt`
-/// (→ StmtId) and `run_hand_type` (→ TypeExpr): the `@hand` delegation now spans
-/// all three live node kinds. `parse_quote` tracks `quote_depth` internally, so
+/// cursor past what it consumed. This is the ExprId sibling of `run_hand_stmt`.
+/// `parse_quote` tracks `quote_depth` internally, so
 /// a `~` splice in the quote body is decided identically to the oracle parse.
 /// True iff an @hand expression rule produces a POSTFIX-CHAIN BASE that the
 /// grammar's `( postfix_suffix )*` loop then wraps — so run_hand_expr must seed
@@ -2131,6 +2072,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    generated static type parser build byte-identical trees. ──
         "TyUnion" if args.length == 2 -> fold_type_union(st, env.get(args[0]), capval_to_texpr_list(env.get(args[1])))
         "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
+        "MkQualified" if args.length == 3 -> mk_qualified_type(capval_toks(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
         "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
         "TyDyn" if args.length == 1 -> mk_dyn_type(capval_tok_text(env.get(args[0])), false)
@@ -2459,6 +2401,20 @@ export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_
     mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
     if is_opt { base = TypeExpr.Optional(base) }
     CapVal.TExpr(base)
+}
+
+/// A package-qualified type atom. Punctuation is structural in the grammar, so
+/// rebuild the canonical `@pkg::mod::Type` spelling from captured segments,
+/// then apply the same generic/optional wrappers as a bare named type.
+export fn mk_qualified_type(segments: List<Token>, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
+    mut name = "@"
+    mut i = 0
+    for segment in segments {
+        if i > 0 { name = name + "::" }
+        name = name + segment.text
+        i = i + 1
+    }
+    mk_named_type(name, has_gen, gen_args, is_opt)
 }
 
 /// A `dyn Trait` type — the TyDyn build's core. Matches the hand parser

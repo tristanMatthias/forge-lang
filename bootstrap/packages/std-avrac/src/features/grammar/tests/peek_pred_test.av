@@ -68,6 +68,12 @@ spec "t-47hc: @peek(for_destructure) — loop binding disambiguation" {
         mut trailing = new_pstate(", )")
         lookahead_ok("comma_ident", separator) && !lookahead_ok("comma_ident", trailing)
     }
+    then "double-colon requires adjacent package separators" {
+        mut adjacent = new_pstate("::Type")
+        mut spaced = new_pstate(": : Type")
+        lookahead_ok("double_colon", adjacent) && !lookahead_ok("double_colon", spaced) &&
+        peek_cond_supported("double_colon")
+    }
 }
 
 spec "t-47hc: @peek(stmt_block) — statement brace disambiguation" {

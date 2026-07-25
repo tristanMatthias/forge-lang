@@ -1,8 +1,7 @@
 // ps3t.6.5.12 slice 1 — the INVERSE-@hand TYPE runner (`run_dsl_type_at`).
 //
-// This is the swap-in primitive: where the existing `@hand(...)` bridge lets a
-// DSL rule delegate a span to the hand parser (`run_hand_type`), `run_dsl_type_at`
-// lets the HAND parser delegate a whole type expression to the DSL. It runs the
+// This is the swap-in primitive: `run_dsl_type_at` lets the hand parser delegate
+// a whole type expression to the DSL. It runs the
 // UNIFIED program grammar's `type_expr` rule over the source at a byte offset and
 // reports where it stopped, so a caller can resync its cursor (the flip) or just
 // compare the built type and leave its cursor alone (the shadow canary).
@@ -11,8 +10,7 @@
 // source uses, the runner's `TypeExpr` (lowered + rendered) must equal the hand
 // parser's. Because it uses the PROGRAM grammar (not the isolated
 // `avra_type_grammar`), this EXTENDS the `type_equivalence_test` coverage to the
-// two atoms that test explicitly excluded: qualified `@pkg::mod::T` (served by
-// the grammar's `@hand(qualified_type)` alternative) and nested generics that
+// two atoms that test explicitly excluded: qualified `@pkg::mod::T` and nested generics that
 // close with `>>` (`List<List<T>>`, split by the executor's `maybe_split_shr`).
 //
 // It also pins the RESYNC contract: `stop_byte` is the byte where the DSL
@@ -79,7 +77,7 @@ spec "ps3t.6.5.12 slice 1: run_dsl_type_at == hand parser (inverse-@hand type ru
         }
     }
     given "QUALIFIED `@pkg::mod::T` atoms — the selfhost-critical re-emitted form" {
-        then "bare, generic, and optional qualified names agree (served by @hand(qualified_type))" {
+        then "bare, generic, and optional qualified names agree on the native rule" {
             agree("@std::avrac::core::ExprId") &&
             agree("List<@std::avrac::core::ExprId>") &&
             agree("@std::avrac::core::Result<int, string>") &&

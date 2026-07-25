@@ -54,10 +54,11 @@ spec "grammar emitter: renders the whole-program generated static parser" {
 
     then "the gnarly-5% forms delegate via the @hand dispatch" {
         let src = emit_all()
-        // return_stmt migrated off @hand (see the native-return guard below); let_stmt,
-        // qualified_type, and quote_expr remain the current @hand escape-hatch leaves.
+        // return_stmt and qualified_type migrated off @hand; let_stmt and
+        // quote_expr remain current escape-hatch leaves.
         src.contains("return CapVal.SNode(run_hand_stmt(\"let_stmt\", st))") &&
-        src.contains("CapVal.TExpr(run_hand_type(\"qualified_type\", st))") &&
+        src.contains("mk_qualified_type(qn_list, qargs_list.length > 0, qargs_list, capval_present(qopt))") &&
+        !src.contains("run_hand_type") &&
         src.contains("CapVal.Node(run_hand_expr(\"quote_expr\", st))")
     }
 

@@ -12,11 +12,10 @@
 // only inside a quote — and `quote { … }` is itself parser-mode-stateful
 // (`parse_quote` bumps quote_depth). So the route is to delegate the whole
 // `quote` construct to the hand parser via an EXPRESSION-level @hand:
-// run_hand_expr — the ExprId sibling of run_hand_stmt (→ StmtId, #835) and
-// run_hand_type (→ TypeExpr, #842). It shares the DSL store, delegates to
+// run_hand_expr — the ExprId sibling of run_hand_stmt. It shares the DSL store, delegates to
 // `parse_quote`, and the inner `~`→Splice falls out by construction (the
 // delegated parse tracks quote_depth). The `@hand` delegation now spans all
-// three live node kinds.
+// remaining live expression/statement node kinds.
 //
 // Oracle: run the DSL expression parser (with `@hand(quote_expr)` as a primary
 // alternative and a pure `~`/`-`/`!` unary rule) AND the hand parser

@@ -3,7 +3,7 @@
 // This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4
 // Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals
 // emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_dyn_type}
+use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}
 use core.{TypeExpr, Tk}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -19,7 +19,7 @@ export fn parse_type_expr(st: PState) -> CapVal {
 
 fn parse_type_atom(st: PState) -> CapVal {
     if st.cur().tk == Tk.At {
-        return CapVal.TExpr(run_hand_type("qualified_type", st))
+        return parse_qualified_type(st)
     }
     if st.cur().text == "fn" {
         return parse_fn_type(st)
@@ -37,6 +37,41 @@ fn parse_type_atom(st: PState) -> CapVal {
         return parse_named_type(st)
     }
     CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_qualified_type(st: PState) -> CapVal {
+    mut qname_list: List<Token> = []
+    mut qa_list: List<TypeExpr> = []
+    mut qopt: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
+        st.report("expected IDENT")
+    }
+    if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) { st.report("expected at least one repetition") }
+    while lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon) {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+            st.report("expected :")
+        }
+        if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+    }
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        qa_list.push(capval_to_texpr(st, parse_type_expr(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            qa_list.push(capval_to_texpr(st, parse_type_expr(st)))
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected >")
+        }
+    }
+    if st.cur().tk == Tk.Question {
+        qopt = CapVal.Tok(st.advance())
+    }
+    mk_qualified_type(qname_list, qa_list.length > 0, qa_list, capval_present(qopt))
 }
 
 fn parse_fn_type(st: PState) -> CapVal {
