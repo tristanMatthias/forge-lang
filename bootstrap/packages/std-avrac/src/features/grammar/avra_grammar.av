@@ -183,10 +183,9 @@ export fn avra_stmt_grammar() -> Grammar {
 ///     reject it (they require `{` before `parse_statement`). The inner `statement*`
 ///     dispatches each body statement through this same grammar. A standalone block
 ///     is lookahead-gated: string-keyed map literals route into `expr_stmt`, while
-///     `{}` and ordinary statement blocks remain blocks. The if-then uses `block`; the
-///     if-ELSE stays `@hand(stmt_hand)` because the hand parser's else is an
-///     unrestricted `parse_statement()` (accepts `else if …`, `else { … }`, and a
-///     bare `else <stmt>`).
+///     `{}` and ordinary statement blocks remain blocks. The if-then uses `block`;
+///     the recursive `else statement` remains unrestricted (accepts `else if …`,
+///     `else { … }`, and a bare `else <stmt>`).
 ///
 ///     POSITION NOTE (why this is the FLIP grammar, not yet the production emit):
 ///     the native `block`'s inner `statement*` builds its children WITHOUT the
@@ -220,7 +219,7 @@ export fn avra_stmt_flip_grammar() -> Grammar {
                 | @hand(block_stmt_edge)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
   for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
                 | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
@@ -288,8 +287,8 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// disambiguation (emit twin: modes save / clear via modes_with_flag_off / restore).
 /// A top-level `{` is lookahead-routed to a native block or to the expression path
 /// for a string-keyed map literal; defer/errdefer/return are native. Match's
-/// ordinary form is native with a narrow edge oracle, and the if-ELSE stays
-/// `@hand(stmt_hand)`.
+/// ordinary form is native with a narrow edge oracle, and if-ELSE recursively
+/// enters the native statement rule.
 /// This is an `intended-ir-change`: the generated
 /// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
@@ -302,7 +301,7 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
                 | @hand(block_stmt_edge)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
+  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
   for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
                 | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
