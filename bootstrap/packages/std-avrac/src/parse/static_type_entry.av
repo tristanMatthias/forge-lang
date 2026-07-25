@@ -15,8 +15,8 @@ use core.{NodeStore}
 /// Drive the generated static type parser over the shared token stream at
 /// `start_byte`, into the caller-owned `store` — the static sibling of
 /// run_dsl_type_at_shared (the Grammar-tree interpreter). Same builders, same PState,
-/// same `@hand(qualified_type)` leaf ⇒ byte-identical TypeExpr to both the interpreter
-/// flip AND the hand parser, at straight-line speed.
+/// same native builders ⇒ byte-identical TypeExpr to both the interpreter flip
+/// and the hand parser, at straight-line speed.
 export fn run_static_type(toks: List<Token>, start_byte: int, src: string, store: NodeStore) -> DslTypeResult {
     run_static_type_at_shared(toks, start_byte, src, store, parse_type_expr)
 }

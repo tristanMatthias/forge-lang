@@ -19,7 +19,7 @@ use features.grammar.{avra_type_flip_grammar, emit_parser_source_ex}
 /// import is only an F9002 warning, but a MISSING one is a hard undefined-symbol error —
 /// keep this in lockstep with the build helpers avra_type_flip_grammar's rules name
 /// (fold_type_union / mk_named_type / mk_paren_type / mk_fn_type + TyDyn/TyList inline
-/// builds via capval_* + the @hand(qualified_type) run_hand leaf) and the Tk guards.
+/// builds via capval_* + mk_qualified_type) and the Tk/lookahead guards.
 export fn gen_type_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.` form
     // the emit-gen-check STANDALONE harness uses: this file is a globbed in-package
@@ -31,7 +31,7 @@ export fn gen_type_parser_header() -> string {
     "// This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4\n" +
     "// Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals\n" +
     "// emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, run_hand_type, fold_type_union, mk_named_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
+    "use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
     "use core.{TypeExpr, Tk}\n\n"
 }
 
