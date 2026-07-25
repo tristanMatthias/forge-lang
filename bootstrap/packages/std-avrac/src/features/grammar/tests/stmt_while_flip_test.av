@@ -113,6 +113,15 @@ spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)
         agree_ok("for i in a..b { break }") &&
         agree_ok("for x in xs { for y in ys { break } }")
     }
+    then "tuple-destructure loops are accepted by both paths" {
+        // The process-wide gensym intentionally differs between two parses in
+        // one process, so acceptance is the local assertion; the cold compiler
+        // differential proves exact generated-vs-hand temp ordering.
+        flip_stmt("for (a, b) in pairs { a }") != "<err>" &&
+        hand_stmt("for (a, b) in pairs { a }") != "<err>" &&
+        flip_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>" &&
+        hand_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>"
+    }
 }
 
 // The BODY-PARITY regression (the CodeRabbit finding on PR #981): a control-flow

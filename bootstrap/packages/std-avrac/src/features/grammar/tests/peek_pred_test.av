@@ -49,7 +49,24 @@ spec "t-47hc: @peek(ident_colon) — parse-time acceptance + validation" {
     }
     then "peek_cond_supported accepts the known conditions, rejects a typo and empty" {
         peek_cond_supported("ident_colon") && peek_cond_supported("stmt_block") &&
+        peek_cond_supported("for_destructure") &&
         !peek_cond_supported("ident_coln") && !peek_cond_supported("")
+    }
+}
+
+spec "t-47hc: @peek(for_destructure) — loop binding disambiguation" {
+    then "tuple bindings select the destructure branch" {
+        mut tuple = new_pstate("for (a, b) in pairs { }")
+        lookahead_ok("for_destructure", tuple)
+    }
+    then "ordinary identifier bindings skip it" {
+        mut plain = new_pstate("for item in items { }")
+        !lookahead_ok("for_destructure", plain)
+    }
+    then "comma-ident distinguishes a separator from a trailing comma" {
+        mut separator = new_pstate(", b")
+        mut trailing = new_pstate(", )")
+        lookahead_ok("comma_ident", separator) && !lookahead_ok("comma_ident", trailing)
     }
 }
 

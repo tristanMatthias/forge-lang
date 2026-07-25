@@ -187,17 +187,12 @@ export fn avra_stmt_grammar() -> Grammar {
 ///     the recursive `else statement` remains unrestricted (accepts `else if …`,
 ///     `else { … }`, and a bare `else <stmt>`).
 ///
-///     POSITION NOTE (why this is the FLIP grammar, not yet the production emit):
-///     the native `block`'s inner `statement*` builds its children WITHOUT the
-///     per-child `record_pos` that parse_statement_list_ids stamps on a hand-parsed
-///     block body — so a statement nested inside a native block carries NO SrcPos
-///     side-table entry here. That is byte-identical on THIS path because the
-///     stmt-flip differential compares STRUCTURE (render_stmt_id, position-free) and
-///     stmt-flip is OFF in production; it is precisely why the STATIC production
-///     emit (avra_stmt_dispatch_grammar) keeps if/for/while/block on `@hand` — a
-///     native block on the position-SENSITIVE static path would drop those entries
-///     and diverge. A SrcPos-threading native block, then mirrored into the dispatch
-///     grammar, is the production-flip slice (an `intended-ir-change`).
+///     POSITION NOTE: this interpreter grammar compares structure only. Its
+///     dispatch-only emitted twin uses emit_stmt_list_loop + sp_start-aware builders
+///     to reproduce the hand parser's per-child SrcPos side table.
+///   * `for_stmt` — ordinary range/collection loops and tuple-destructure bindings
+///     are native. The binding sub-rule reserves its gensym before parsing the body,
+///     preserving nested-loop temp ordering without allocating AST rows early.
 ///   * `match_stmt` — the ordinary subject/pattern/guard/expression-body form is
 ///     grammar-native. Its bounded `@try` rolls back to `@hand(match_stmt_edge)`
 ///     only for the distinct subjectless/table/bare-return/quote-splice paths.
@@ -220,8 +215,9 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
-  for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
-                | @hand(for_stmt_edge)
+  for_stmt      = @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
+                | "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
@@ -288,7 +284,9 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// A top-level `{` is lookahead-routed to a native block or to the expression path
 /// for a string-keyed map literal; defer/errdefer/return are native. Match's
 /// ordinary form is native with a narrow edge oracle, and if-ELSE recursively
-/// enters the native statement rule.
+/// enters the native statement rule. Both valid `for` families are native; the
+/// remaining `for_stmt_edge` is reached only after a speculative generated parse
+/// reports a malformed-header error, preserving exact abort/recovery diagnostics.
 /// This is an `intended-ir-change`: the generated
 /// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
@@ -302,8 +300,10 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
-  for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  for_stmt      = @try @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
+                | @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
                 | @hand(for_stmt_edge)
+  for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
