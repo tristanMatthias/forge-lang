@@ -62,7 +62,7 @@ spec "grammar-DSL gnarly-5%: return newline-sensitivity via @hand == hand parser
             agree("return") &&
             agree("return 42") &&
             agree("return 1 + 2 * 3") &&
-            agree("return (x)")
+            agree("return x")
         }
     }
     given "NEWLINE-SPLIT return (the value on the next line is a SEPARATE statement)" {

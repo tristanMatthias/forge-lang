@@ -42,14 +42,19 @@ spec "grammar emitter: renders the statement family's generated static parser" {
         let src = emit_all()
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))") &&
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))") &&
-        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, e))))") &&
+        src.contains("mk_return_opt(st, e)") &&
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, e))))") &&
+        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, e))))") &&
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e))))")
     }
 
     then "`return <expr>` consumes the keyword then the operand expression" {
         let src = emit_all()
         src.contains("fn parse_return_stmt(st: PState) -> CapVal {\n" +
-                     "    let _ = st.advance()\n" +
-                     "    let e = parse_expression(st)\n")
+                     "    mut e: CapVal = CapVal.Nil\n" +
+                     "    let _ = st.advance()\n") &&
+        src.contains("st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line") &&
+        src.contains("e = parse_expression(st)\n") &&
+        src.contains("mk_return_opt(st, e)")
     }
 }

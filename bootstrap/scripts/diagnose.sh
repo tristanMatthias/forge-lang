@@ -2189,7 +2189,17 @@ fn stmt_harness_block() -> string {
     "        .Err(_) -> \"<parse error>\"\n" +
     "    }\n" +
     "}\n\n" +
-    "fn agree(src: string) -> bool { gen_stmt(src) == hand_stmt(src) }\n\n" +
+    "fn agree(src: string) -> bool {\n" +
+    "    let gen = gen_stmt(src)\n" +
+    "    let hand = hand_stmt(src)\n" +
+    "    if gen != hand {\n" +
+    "        println(\"stmt mismatch\")\n" +
+    "        println(src)\n" +
+    "        println(gen)\n" +
+    "        println(hand)\n" +
+    "    }\n" +
+    "    gen == hand\n" +
+    "}\n\n" +
     "fn main() {\n" +
     "    let ok = agree(\"break\") && agree(\"continue\") &&\n" +
     "        agree(\"return 42\") && agree(\"return 1 + 2\") && agree(\"return 1 + 2 * 3\") &&\n" +
@@ -2197,7 +2207,8 @@ fn stmt_harness_block() -> string {
     "        agree(\"1 + 2 * 3\") && agree(\"8 / 4 / 2\") && agree(\"-2 + 3\") &&\n" +
     "        agree(\"1 < 2 == 3\") && agree(\"(1 + 2) * 3\") &&\n" +
     "        agree(\"match x { .A -> 1, .B if ok -> 2 }\") &&\n" +
-    "        agree(\"match a + b { 1 -> 10, _ -> 0, }\")\n" +
+    "        agree(\"match a + b { 1 -> 10, _ -> 0, }\") &&\n" +
+    "        agree(\"defer cleanup()\") && agree(\"errdefer { cleanup }\")\n" +
     "    if ok { println(\"GENPASS\") } else { println(\"GENFAIL\") }\n" +
     "}\n"
 }
@@ -2298,7 +2309,17 @@ fn program_harness_block() -> string {
     "    if p.ids == null { return \"<hand no ids>\" }\n" +
     "    render_stmt_ids(p.store, p.ids!)\n" +
     "}\n\n" +
-    "fn agree(src: string) -> bool { gen_prog(src) == hand_prog(src) }\n\n" +
+    "fn agree(src: string) -> bool {\n" +
+    "    let gen = gen_prog(src)\n" +
+    "    let hand = hand_prog(src)\n" +
+    "    if gen != hand {\n" +
+    "        println(\"program mismatch\")\n" +
+    "        println(src)\n" +
+    "        println(gen)\n" +
+    "        println(hand)\n" +
+    "    }\n" +
+    "    gen == hand\n" +
+    "}\n\n" +
     "fn main() {\n" +
     "    let ok = agree(\"fn f() {\\n}\\n\") &&\n" +
     "        agree(\"type Point = { x: int, y: int }\\n\") &&\n" +
@@ -2327,6 +2348,7 @@ fn program_harness_block() -> string {
     "        agree(\"fn f() {\\n    for i in xs {\\n        while g {\\n            continue\\n        }\\n    }\\n}\\n\") &&\n" +
     "        agree(\"fn f() {\\n    if a {\\n        return 1\\n    } else {\\n        return 2\\n    }\\n}\\n\") &&\n" +
     "        agree(\"fn f() {\\n    if a {\\n        x()\\n    } else if b {\\n        y()\\n    }\\n}\\n\") &&\n" +
+    "        agree(\"fn f() {\\n    defer cleanup()\\n    errdefer cleanup()\\n}\\n\") &&\n" +
     "        agree(\"fn f() {\\n    let a = 1\\n    let mut b = 2\\n    return a\\n}\\n\") &&\n" +
     "        agree(\"fn f() {\\n    let v = x else {\\n        return\\n    }\\n    return v\\n}\\n\") &&\n" +
     "        agree(\"fn f(a: int, b: string, c: bool) -> int {\\n    return a\\n}\\n\") &&\n" +

@@ -805,9 +805,20 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 ///     hand parse_paren_expr's peek_after_ident_is_colon: a typed lambda `(x: …) -> …`
 ///     vs a grouping/tuple. (The current-is-IDENT half is redundant with the branch's
 ///     own IDENT FIRST token, but included so the predicate fully mirrors the hand check
-///     and is correct in any position.) An unknown cond is ungated (true) — a typo is
+///     and is correct in any position.)
+///   stmt_block — the current token is `{` and the next two tokens are not STRING `:`;
+///     the statement-position twin of Parser.is_stmt_map_literal.
+/// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
 export fn lookahead_ok(cond: string, st: PState) -> bool {
+    // Statement-position brace disambiguation, the token-level twin of
+    // Parser.is_stmt_map_literal: only a string-keyed `{ "key": ... }` is a map
+    // expression here. Empty braces and every other leading token are blocks.
+    if cond == "stmt_block" {
+        if st.cur().text != "{" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        return !(st.toks[st.pos + 1].kind == "STRING" && st.toks[st.pos + 2].text == ":")
+    }
     if cond == "ident_colon" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -1143,6 +1154,10 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The residual match-statement edge oracle (subjectless/table/bare-return/
     // quote-splice arms) is intentionally narrower than the generic stmt leaf.
     if name == "match_stmt_edge" { return tok.text == "match" }
+    // Native statement blocks own ordinary bodies. If a body contains a
+    // declaration (for example an inline module's component), @try rolls back
+    // and this narrow edge oracle lets the hand block parser preserve it.
+    if name == "block_stmt_edge" { return tok.text == "{" }
     // A qualified-type hand rule's FIRST is the `@` package marker.
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
@@ -1209,8 +1224,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // stmt_keyword set (if/while/for/match/defer/errdefer/return) exactly.
     if name == "stmt_hand" {
         let t = tok.text
-        return t == "{" || t == "if" || t == "while" ||
-               t == "defer" || t == "errdefer" || t == "return"
+        return t == "{" || t == "if" || t == "while" || t == "return"
     }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
     // tokens parse_declaration handles itself (doc-comment wrapping, `@`
@@ -1244,7 +1258,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
     name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
-    name == "for_stmt_edge" || name == "match_stmt_edge" ||
+    name == "for_stmt_edge" || name == "match_stmt_edge" || name == "block_stmt_edge" ||
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
@@ -1318,6 +1332,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "return_stmt"    -> bp.parse_return_statement()
         "for_stmt_edge"  -> bp.parse_for_statement()
         "match_stmt_edge" -> bp.parse_match_statement()
+        "block_stmt_edge" -> bp.parse_statement_hand()
         // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
         // nested bodies flip, via bp's own delegate); the position-faithful oracle.

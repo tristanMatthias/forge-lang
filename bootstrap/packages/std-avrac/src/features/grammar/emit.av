@@ -1337,6 +1337,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `return ^( value )?` — the conditional Return/ReturnEmpty core, shared with
         // apply_build's MkReturn arm so interpreter + generated parser stay in lockstep.
         "MkReturn" -> "mk_return_opt(st, ${args[0]})"
+        "MkDefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, ${args[0]}))))"
+        "MkErrdefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, ${args[0]}))))"
         // A statement-position expression that FAILED (st.had_error set by
         // parse_expression's report/error_node) recovers as a bare Stmt.Error —
         // the twin of the hand parser's `parse_expression()?` yielding .Err (the
@@ -1427,7 +1429,7 @@ fn emit_hand_result(hf: string) -> string {
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
     n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
-    n == "for_stmt_edge" || n == "match_stmt_edge" ||
+    n == "for_stmt_edge" || n == "match_stmt_edge" || n == "block_stmt_edge" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1558,6 +1560,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
     if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
     if hf == "match_stmt_edge" { return "st.cur().text == \"match\"" }
+    if hf == "block_stmt_edge" { return tk_guard("{") }
     if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
@@ -1602,7 +1605,7 @@ fn hand_first_guard(hf: string) -> string {
     // the generated static parser routes to run_hand_stmt on the same tokens the
     // interpreter flip does (byte-identical dispatch).
     if hf == "stmt_hand" {
-        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
+        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"return\""
     }
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
@@ -1701,6 +1704,13 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
     v2.push(name)
     let r = emit_lookup_rule(g, name)
     if r.name == "" {
+        // Dispatch-only production grammars intentionally leave `expression`
+        // external so the checked-in declaration parser calls the separately
+        // generated expression parser. Its FIRST set is nevertheless required
+        // when that reference is optional/repeated (for example the same-line
+        // optional operand of native `return`). Keep this on the shared leaf
+        // predicate used by the expression dispatch itself.
+        if name == "expression" { return "tok_starts_expr_leaf(st.cur())" }
         if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
         return "false"
     }
@@ -1924,7 +1934,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 
 fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" { return "expr" }
-    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkMatch" { return "stmt" }
+    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkMatch" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
