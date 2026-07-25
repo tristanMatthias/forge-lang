@@ -59,9 +59,11 @@ spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
         src.contains("mut tried_spec = false") &&
         src.contains("tried_spec = true") &&
         src.contains("let s_mark = st.store.mark()") &&
+        src.contains("let s_hand = st.save_hand_state()") &&
         src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
         src.contains("st.store.truncate_to_mark(s_mark)") &&
         src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
+        src.contains("st.restore_hand_state(s_hand)") &&
         src.contains("if tried_spec { return CapVal.Nil }")
     }
     then "a later terminal in a @try branch REPORTS on mismatch (the rollback signal)" {

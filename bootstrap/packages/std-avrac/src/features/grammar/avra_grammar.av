@@ -214,7 +214,8 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
-  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+                | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
@@ -285,7 +286,8 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:@hand(stmt_hand) )? -> If(c, t, e)
-  for_stmt      = "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  for_stmt      = @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+                | @hand(for_stmt_edge)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   expr_stmt     = e:expression -> ExprStmt(e)
     }

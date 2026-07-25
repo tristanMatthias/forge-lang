@@ -674,6 +674,7 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
+    out = out + "        let s_hand = st.save_hand_state()\n"
     // Same span prelude as the flat path / the non-speculative branch: a span-stamping
     // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
     if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
@@ -683,6 +684,7 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "    }\n"
     out
 }
@@ -699,6 +701,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
+    out = out + "        let s_hand = st.save_hand_state()\n"
     out = out + "        mut s_last: CapVal = CapVal.Nil\n"
     // A span-stamping build (`mk_assign`/`fold_logical`/`Block`/…) reads `sp_start`,
     // the rule-entry byte — the twin of the non-speculative branch's prelude
@@ -728,6 +731,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "    }\n"
     out
 }
@@ -1404,7 +1408,7 @@ fn emit_hand_result(hf: string) -> string {
 // is_expr_hand (kept local — file-private there; the classes are small and
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
-    n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
+    n == "component_decl" || n == "let_stmt" || n == "return_stmt" || n == "for_stmt_edge" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1533,6 +1537,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
+    if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
     if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
@@ -1577,7 +1582,7 @@ fn hand_first_guard(hf: string) -> string {
     // the generated static parser routes to run_hand_stmt on the same tokens the
     // interpreter flip does (byte-identical dispatch).
     if hf == "stmt_hand" {
-        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"for\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
+        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
     }
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
@@ -1910,7 +1915,7 @@ fn build_kind(bn: string) -> string {
 }
 
 fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" { return "stmt" }
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" || hf == "for_stmt_edge" { return "stmt" }
     if hf == "qualified_type" { return "type" }
     "expr"
 }

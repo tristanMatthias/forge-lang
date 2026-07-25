@@ -18,7 +18,8 @@
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
-use parse.{parser_new_with_file, parser_new_with_store, Parser}
+use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
+use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
 
 // ── Capture values + environment ──
@@ -349,6 +350,11 @@ export fn default_expr_modes() -> ExprModes {
 
 export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, hand_delegate: Parser? }
 
+/// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
+/// aliases the parser's mutable bag record, so it cannot by itself preserve the
+/// pre-branch diagnostics; keep an explicit value-copy of the bag beside it.
+export type HandTryState = { parser: ParserState, bag: DiagnosticBag }
+
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
 
@@ -447,6 +453,30 @@ impl PState {
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+    }
+
+    /// Snapshot the threaded procedural delegate alongside a grammar `@try`.
+    /// A speculative native branch may call an expression `@hand` leaf, which
+    /// advances this parser independently of `PState.pos`; rolling back only the
+    /// token index would leave the fallback delegate ahead of the retry point.
+    fn save_hand_state(self) -> HandTryState? {
+        if self.hand_delegate == null { return null }
+        let d = self.hand_delegate!
+        let bag = DiagnosticBag {
+            diagnostics: list_take(d.bag.diagnostics, d.bag.diagnostics.length),
+            error_count: d.bag.error_count,
+            warning_count: d.bag.warning_count,
+        }
+        HandTryState { parser: d.save_state(), bag }
+    }
+
+    /// Restore the procedural half of a failed grammar `@try`: cursor,
+    /// mode/error fields, shared-store mark, and the separately copied bag.
+    fn restore_hand_state(self, saved: HandTryState?) {
+        if saved == null || self.hand_delegate == null { return }
+        mut d = self.hand_delegate!
+        d.restore_state(saved!.parser)
+        d.bag = saved!.bag
     }
 
     /// A whole-construct error placeholder (no matching alternative).
@@ -879,6 +909,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
+                        let s_hand = st.save_hand_state()
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
                         // permitted, to feed a `-> build`) cannot leak to a sibling.
@@ -893,6 +924,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         env.restore_caps(s_caps)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
+                        st.restore_hand_state(s_hand)
                     } else {
                         return exec_seq(g, b, st, env, multi)
                     }
@@ -1092,6 +1124,9 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "component_decl" { return tok.text == "component" }
     if name == "let_stmt" { return tok.text == "let" }
     if name == "return_stmt" { return tok.text == "return" }
+    // Malformed `for` headers must fail before a body is built. The native branch
+    // is speculative; this narrow edge oracle owns only the rolled-back failure.
+    if name == "for_stmt_edge" { return tok.text == "for" }
     // A qualified-type hand rule's FIRST is the `@` package marker.
     if name == "qualified_type" { return tok.text == "@" }
     // An expression hand rule's FIRST is its leading keyword.
@@ -1158,7 +1193,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // stmt_keyword set (if/while/for/match/defer/errdefer/return) exactly.
     if name == "stmt_hand" {
         let t = tok.text
-        return t == "{" || t == "if" || t == "while" || t == "for" ||
+        return t == "{" || t == "if" || t == "while" ||
                t == "match" || t == "defer" || t == "errdefer" || t == "return"
     }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
@@ -1192,7 +1227,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// is ReturnEmpty + a separate statement, decided by the hand parser's
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
+    name == "component_decl" || name == "let_stmt" || name == "return_stmt" || name == "for_stmt_edge" ||
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
@@ -1256,6 +1291,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     bp.quote_depth = st.modes.quote_depth
     bp.cell_mode = st.modes.cell_mode
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    let bp_diag_before = bp.bag.diagnostics.length
     // Dispatch to the real hand-parser entry (method calls on the local `bp`,
     // so its cursor advances in place for the resync below). Each builds into
     // bp's (== the DSL's) shared store.
@@ -1263,6 +1299,7 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "component_decl" -> bp.parse_component_decl()
         "let_stmt"       -> bp.parse_let_statement()
         "return_stmt"    -> bp.parse_return_statement()
+        "for_stmt_edge"  -> bp.parse_for_statement()
         // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
         // nested bodies flip, via bp's own delegate); the position-faithful oracle.
@@ -1300,7 +1337,12 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     match result {
         .Ok(id) -> id
         .Err(m) -> {
-            st.report(m)
+            // The delegate's parser bag already owns a precise diagnostic for
+            // ordinary parse failures (`consume`/`set_error`). Preserve that
+            // F-code/message through the outer bag merge instead of adding a
+            // second generic grammar error. Only synthesize a grammar diagnostic
+            // for a silent `.Err`, where no delegate diagnostic exists.
+            if bp.bag.diagnostics.length == bp_diag_before { st.report(m) }
             st.store.stmts.add_leaf(Stmt.Error)
         }
     }

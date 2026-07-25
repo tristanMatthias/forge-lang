@@ -31,7 +31,7 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "while" {
         return parse_while_stmt(st)
     }
-    if st.cur().text == "{" || st.cur().text == "if" || st.cur().text == "while" || st.cur().text == "for" || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" {
+    if st.cur().text == "{" || st.cur().text == "if" || st.cur().text == "while" || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" {
         return CapVal.SNode(run_hand_stmt("stmt_hand", st))
     }
     parse_expr_stmt(st)
@@ -98,29 +98,48 @@ fn parse_if_stmt(st: PState) -> CapVal {
 }
 
 fn parse_for_stmt(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut hi: CapVal = CapVal.Nil
-    let _ = st.advance()
-    let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
-        CapVal.Tok(st.cur())
-    }
-    if st.cur().text == "in" { let _ = st.advance() } else {
-        st.report("expected in")
-    }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-    let lo = parse_expression(st)
-    st.set_modes(__modes_3)
-    let __modes_4 = st.modes
-    st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-    if st.cur().tk == Tk.DotDot {
+    mut tried_spec = false
+    if st.cur().text == "for" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let sp_start = st.cur().pos
+        mut hi: CapVal = CapVal.Nil
         let _ = st.advance()
-        hi = parse_expression(st)
+        let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+            st.report("expected IDENT")
+            CapVal.Tok(st.cur())
+        }
+        if st.cur().text == "in" { let _ = st.advance() } else {
+            st.report("expected in")
+        }
+        let __modes_3 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        let lo = parse_expression(st)
+        st.set_modes(__modes_3)
+        let __modes_4 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        if st.cur().tk == Tk.DotDot {
+            let _ = st.advance()
+            hi = parse_expression(st)
+        }
+        st.set_modes(__modes_4)
+        let body = parse_block(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return mk_for_loop(st, sp_start, v, lo, hi, body)
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
     }
-    st.set_modes(__modes_4)
-    let body = parse_block(st)
-    mk_for_loop(st, sp_start, v, lo, hi, body)
+    if st.cur().text == "for" {
+        return CapVal.SNode(run_hand_stmt("for_stmt_edge", st))
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node("expected an expression"))
 }
 
 fn parse_while_stmt(st: PState) -> CapVal {
