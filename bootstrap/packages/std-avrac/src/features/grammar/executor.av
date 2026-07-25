@@ -897,6 +897,19 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
         .Alt(branches) -> {
             let empty: List<string> = []
             mut tried_spec = false
+            // Snapshot the procedural delegate only if a failed native branch
+            // can retry through an @hand sibling. Native-only alternatives keep
+            // their established committed-recovery behavior after a hand leaf
+            // crosses a discriminator such as a lambda's `->`.
+            mut retry_hand = false
+            for rb in branches {
+                if !rb.speculative && rb.items.length > 0 {
+                    match rb.items[0].prim {
+                        .Hand(_) -> retry_hand = true
+                        _ -> {}
+                    }
+                }
+            }
             for b in branches {
                 if branch_pred_ok(b, st) && tok_starts_seq(g, b, st.cur(), empty) {
                     if b.speculative {
@@ -909,7 +922,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
-                        let s_hand = st.save_hand_state()
+                        let s_hand = if retry_hand { st.save_hand_state() } else { null }
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
                         // permitted, to feed a `-> build`) cannot leak to a sibling.
@@ -924,7 +937,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         env.restore_caps(s_caps)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
-                        st.restore_hand_state(s_hand)
+                        if retry_hand { st.restore_hand_state(s_hand) }
                     } else {
                         return exec_seq(g, b, st, env, multi)
                     }

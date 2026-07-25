@@ -49,13 +49,12 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
     then "the tuple arm builds mk_tuple over the same accumulator" {
         emit_tail().contains("mk_tuple(st, sp_start, CapVal.Nodes(a_list))")
     }
-    then "each speculative branch keeps the snapshot/rollback scaffold" {
+    then "native-only speculative siblings keep the PState rollback scaffold without a hand snapshot" {
         let s = emit_tail()
         s.contains("let s_mark = st.store.mark()") &&
-        s.contains("let s_hand = st.save_hand_state()") &&
         s.contains("st.store.truncate_to_mark(s_mark)") &&
         s.contains("st.restore_to(s_pos, s_diags, s_err)") &&
-        s.contains("st.restore_hand_state(s_hand)")
+        !s.contains("save_hand_state") && !s.contains("restore_hand_state")
     }
     then "the accumulator loop consumes the comma separators" {
         emit_tail().contains("while st.cur().tk == Tk.Comma")
