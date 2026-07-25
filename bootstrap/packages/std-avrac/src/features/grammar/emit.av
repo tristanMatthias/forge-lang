@@ -540,6 +540,12 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     // executor.exec_node's speculative arm one-for-one so the generated parser and
     // the interpreter agree — the same lockstep discipline as @when's mode preds.
     let has_spec = any_speculative(branches)
+    // The procedural delegate only needs its own cursor snapshot when a failed
+    // native attempt can retry through an @hand sibling. Native-only retries
+    // intentionally keep the incumbent delegate progression: malformed lambda
+    // bodies have crossed their `->` discriminator and must recover as the hand
+    // parser does, rather than rewinding into the grouping alternative.
+    let retry_hand = has_hand_fallback(branches)
     mut out = ""
     if has_spec { out = out + "    mut tried_spec = false\n" }
     mut tail = ""
@@ -547,7 +553,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     mut i = 0
     for b in branches {
         if b.speculative {
-            out = out + emit_speculative_branch(g, b)
+            out = out + emit_speculative_branch(g, b, retry_hand)
         } else if is_bare_ref(b) && i == last && !has_spec && rule_self_validates(g, prim_ref_name(b.items[0].prim), []) {
             // UNGUARDED catch-all tail — ONLY when the referenced rule reaches an
             // `@hand` delegate that owns recovery (unary's `| postfix`, statement's
@@ -631,9 +637,19 @@ fn any_speculative(branches: List<GSeq>) -> bool {
 /// exec_seq's FULL item vocabulary. Dispatch on `spec_branch_is_flat` so an existing
 /// flat @try emits BYTE-IDENTICALLY (the rich path is dormant until a grammar uses a
 /// complex @try branch — e.g. the paren spend's paren_tail).
-fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
-    if spec_branch_is_flat(b) { return emit_speculative_branch_flat(g, b) }
-    emit_speculative_branch_rich(g, b)
+fn emit_speculative_branch(g: Grammar, b: GSeq, retry_hand: bool) -> string {
+    if spec_branch_is_flat(b) { return emit_speculative_branch_flat(g, b, retry_hand) }
+    emit_speculative_branch_rich(g, b, retry_hand)
+}
+
+/// True when a non-speculative sibling delegates its retry to Parser A. Only
+/// these alternations need to rewind the shared hand delegate after a failed
+/// generated attempt (for_stmt -> for_stmt_edge is the motivating production).
+fn has_hand_fallback(branches: List<GSeq>) -> bool {
+    for b in branches {
+        if !b.speculative && is_leading_hand(b) { return true }
+    }
+    false
 }
 
 /// A @try branch is FLAT when every token-bearing item is a One-rep terminal or rule
@@ -667,13 +683,14 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
 /// a rolled-back branch's bindings never leak (the emit twin of exec_node's env.caps
 /// snapshot). EMIT-ONLY: the executor already handles complex @try (exec_node's
 /// speculative arm over exec_seq), so no executor change accompanies this.
-fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
+fn emit_speculative_branch_rich(g: Grammar, b: GSeq, retry_hand: bool) -> string {
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
     out = out + "        tried_spec = true\n"
     out = out + "        let s_pos = st.pos\n"
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
+    if retry_hand { out = out + "        let s_hand = st.save_hand_state()\n" }
     // Same span prelude as the flat path / the non-speculative branch: a span-stamping
     // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
     if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
@@ -683,6 +700,7 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    if retry_hand { out = out + "        st.restore_hand_state(s_hand)\n" }
     out = out + "    }\n"
     out
 }
@@ -692,13 +710,14 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
 /// `-> build` reads any labeled locals on commit. Unchanged from the original
 /// emit_speculative_branch — kept so an existing flat @try (list_expr) regens
 /// byte-identically.
-fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
+fn emit_speculative_branch_flat(g: Grammar, b: GSeq, retry_hand: bool) -> string {
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
     out = out + "        tried_spec = true\n"
     out = out + "        let s_pos = st.pos\n"
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
+    if retry_hand { out = out + "        let s_hand = st.save_hand_state()\n" }
     out = out + "        mut s_last: CapVal = CapVal.Nil\n"
     // A span-stamping build (`mk_assign`/`fold_logical`/`Block`/…) reads `sp_start`,
     // the rule-entry byte — the twin of the non-speculative branch's prelude
@@ -728,6 +747,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
+    if retry_hand { out = out + "        st.restore_hand_state(s_hand)\n" }
     out = out + "    }\n"
     out
 }
@@ -1404,7 +1424,7 @@ fn emit_hand_result(hf: string) -> string {
 // is_expr_hand (kept local — file-private there; the classes are small and
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
-    n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
+    n == "component_decl" || n == "let_stmt" || n == "return_stmt" || n == "for_stmt_edge" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1533,6 +1553,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
+    if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
     if hf == "qualified_type" { return tk_guard("@") }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
@@ -1577,7 +1598,7 @@ fn hand_first_guard(hf: string) -> string {
     // the generated static parser routes to run_hand_stmt on the same tokens the
     // interpreter flip does (byte-identical dispatch).
     if hf == "stmt_hand" {
-        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"for\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
+        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"match\" || st.cur().text == \"defer\" || st.cur().text == \"errdefer\" || st.cur().text == \"return\""
     }
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
@@ -1910,7 +1931,7 @@ fn build_kind(bn: string) -> string {
 }
 
 fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" { return "stmt" }
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "component_decl" || hf == "for_stmt_edge" { return "stmt" }
     if hf == "qualified_type" { return "type" }
     "expr"
 }
