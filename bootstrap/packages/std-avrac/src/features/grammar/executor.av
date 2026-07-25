@@ -22,6 +22,8 @@ use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
 use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
 
+extern fn avra_gensym() -> int
+
 // ── Capture values + environment ──
 
 /// The value a grammar construct yields: a matched token, a built node,
@@ -808,6 +810,8 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 ///     and is correct in any position.)
 ///   stmt_block — the current token is `{` and the next two tokens are not STRING `:`;
 ///     the statement-position twin of Parser.is_stmt_map_literal.
+///   for_destructure — current is `for` and next is `(`.
+///   comma_ident — current is `,` and next is IDENT, separating it from a trailing comma.
 /// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
 export fn lookahead_ok(cond: string, st: PState) -> bool {
@@ -818,6 +822,13 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().text != "{" { return false }
         if st.pos + 2 >= st.toks.length { return true }
         return !(st.toks[st.pos + 1].kind == "STRING" && st.toks[st.pos + 2].text == ":")
+    }
+    // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
+    if cond == "for_destructure" {
+        return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
+    }
+    if cond == "comma_ident" {
+        return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
     if cond == "ident_colon" {
         if st.cur().kind != "IDENT" { return false }
@@ -2074,6 +2085,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "While" if args.length == 2 -> mk_while(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "If" if args.length == 3 -> mk_if(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
         "ForLoop" if args.length == 4 -> mk_for_loop(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
+        "MkForBinding" if args.length == 2 -> mk_for_binding(env.get(args[0]), env.get(args[1]))
+        "MkForDestructure" if args.length == 3 -> mk_for_destructure(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
         // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
         "OrMaybe" if args.length == 2 -> {
             // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
@@ -2576,6 +2589,51 @@ export fn mk_for_loop(st: PState, sp_start: int, var_cv: CapVal, lo_cv: CapVal, 
             add_stmt_at(st, Stmt.For(var, lo, hi, body), sp_start)
         }
     }
+}
+
+/// Capture a tuple-destructure loop binding before parsing its collection/body.
+/// The hand parser reserves the gensym immediately after `for (`; doing that in
+/// this sub-rule preserves allocation order for nested destructure loops. The
+/// synthetic first token carries both the temp name and the opening-paren byte;
+/// the remaining tokens are the user binding names.
+export fn mk_for_binding(lp_cv: CapVal, names_cv: CapVal) -> CapVal {
+    let lp = match lp_cv {
+        .Tok(t) -> t
+        _ -> Token { kind: "PUNCT", text: "(", pos: 0, tk: Tk.LeftParen }
+    }
+    mut packed: List<Token> = [Token {
+        kind: "IDENT",
+        text: "__forpair_${avra_gensym()}",
+        pos: lp.pos,
+        tk: Tk.Identifier,
+    }]
+    for name in capval_tok_list(names_cv) { packed.push(name) }
+    CapVal.Toks(packed)
+}
+
+/// Finish `for (a, b, …) in collection { body }` using the hand parser's exact
+/// desugaring and node-allocation order. `binding_cv` was created before parsing
+/// the collection/body, so its temp name has the same process-wide gensym order.
+export fn mk_for_destructure(st: PState, sp_start: int, binding_cv: CapVal, coll_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let packed = capval_tok_list(binding_cv)
+    if packed.length == 0 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+    }
+    let tmp_tok = packed[0]
+    mut names: List<Token> = []
+    mut i = 1
+    while i < packed.length {
+        names.push(packed[i])
+        i = i + 1
+    }
+    let tmp_ident_id = st.store.exprs.add_leaf(Expr.Ident(tmp_tok.text))
+    let entries = param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown)
+    let unpack_id = st.store.stmts.add_leaf(Stmt.LetDestructure(entries, tmp_ident_id))
+    let lc = st.store.lines.to_linecol(tmp_tok.pos)
+    st.store.stmts.record_pos(unpack_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    let body_id = capval_to_stmt(st, body_cv)
+    let block_id = st.store.stmts.add_leaf(Stmt.Block([unpack_id, body_id]))
+    add_stmt_at(st, Stmt.ForIn(tmp_tok.text, capval_to_expr(st, coll_cv), block_id), sp_start)
 }
 
 /// `return ^( value )?` (the `MkReturn` build's core). An ABSENT same-line value

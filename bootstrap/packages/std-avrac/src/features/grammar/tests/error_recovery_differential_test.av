@@ -33,7 +33,17 @@ fn errcodes(env: string, source: string) -> string {
 
 fn static_raw(source: string) -> string { errcodes("AVRA_NO_STATIC_FALLBACK=1", source) }
 fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", source) }
-fn agree(source: string) -> bool { static_raw(source) == hand_oracle(source) }
+fn agree(source: string) -> bool {
+    let sr = static_raw(source)
+    let hand = hand_oracle(source)
+    if sr != hand {
+        println("recovery diagnostic mismatch")
+        println(source)
+        println(sr)
+        println(hand)
+    }
+    sr == hand
+}
 // A malformed case that must ACTUALLY report an error: parser parity AND a
 // nonempty F-code signature, so the assertion pins the `had_error` contract
 // rather than passing vacuously when both parsers emit nothing.
@@ -128,7 +138,17 @@ fn rtree(static_raw: bool, source: string) -> string {
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
 }
-fn agree_tree(source: string) -> bool { rtree(true, source) == rtree(false, source) }
+fn agree_tree(source: string) -> bool {
+    let sr = rtree(true, source)
+    let hand = rtree(false, source)
+    if sr != hand {
+        println("recovery tree mismatch")
+        println(source)
+        println(sr)
+        println(hand)
+    }
+    sr == hand
+}
 
 spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     // The same category-diverse invalid corpus as the F-code oracle, now asserting
