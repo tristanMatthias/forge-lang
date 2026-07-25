@@ -144,9 +144,9 @@ spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-re
 
 // The ELSE branch is NOT over-restricted: the hand parser's else is an
 // unrestricted `parse_statement()` (accepts `else if`, `else { }`, AND a bare
-// `else <stmt>`), so the grammar keeps it `@hand(stmt_hand)`. These agreements
-// prove the gate lives on the THEN branch only.
-spec "t-47hc.13 S1: the if-ELSE stays unrestricted (parse_statement, not braced)" {
+// `else <stmt>`), so the grammar recursively enters its native `statement` rule.
+// These agreements prove the gate lives on the THEN branch only.
+spec "t-47hc.13 S1: the native if-ELSE stays unrestricted (statement, not braced)" {
     then "a bare `else <stmt>` is accepted by BOTH (else is ungated)" {
         agree_ok("if 1 { } else break") &&
         agree_ok("if 1 { break } else continue") &&

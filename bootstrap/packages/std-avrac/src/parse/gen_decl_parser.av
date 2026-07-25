@@ -157,7 +157,7 @@ fn parse_if_stmt(st: PState) -> CapVal {
     let t = parse_block(st)
     if st.cur().text == "else" {
         let _ = st.advance()
-        e = CapVal.SNode(run_hand_stmt("stmt_hand", st))
+        e = parse_statement(st)
     }
     mk_if(st, sp_start, c, t, e)
 }
