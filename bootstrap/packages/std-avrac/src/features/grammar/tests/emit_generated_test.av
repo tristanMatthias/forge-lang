@@ -185,7 +185,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
         // directly (unary_expr build). Phase 3a-4 gives the grammar the POSTFIX CHAIN
         // + the `with` postfix: the non-prefix branch is
-        // `base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:@hand(with_suffix) )*
+        // `base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:with_suffix )*
         //  -> fold_postfix_with(base, p, s)`. primary_base (→ parse_primary_base) is the
         // splice/prefix + parse_primary base WITHOUT the postfix loop; the grammar owns
         // the postfix loop as `( postfix_suffix )*` — each step runs ONE postfix_step over
@@ -234,7 +234,9 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("p_list.push(capval_to_expr(st, CapVal.Node(run_hand_expr(\"postfix_suffix\", st))))") &&
         src.contains("if st.pos == __rep_before { break }") &&
         src.contains("while st.cur().text == \"with\" {") &&
-        src.contains("s_list.push(capval_to_expr(st, CapVal.Node(run_hand_expr(\"with_suffix\", st))))") &&
+        src.contains("fn parse_with_suffix(st: PState) -> CapVal {") &&
+        src.contains("CapVal.Node(run_hand_expr(\"with_suffix\", st))") &&
+        src.contains("s_list.push(capval_to_expr(st, parse_with_suffix(st)))") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
         // ORDERING: the literal branches MUST be emitted before the @hand(primary_base)
         // fallback, else the guarded branches would be unreachable (the fallback tail
