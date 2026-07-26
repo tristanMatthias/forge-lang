@@ -21,7 +21,16 @@ use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbig
 // pair 0/1) so every OTHER shadow — including any future real `in_rhs` overlap — still
 // trips the guard.
 fn is_intended_shadow(a: GAmbiguity) -> bool {
-    a.rule == "in_rhs" && a.i == 0 && a.j == 1
+    a.rule == "in_rhs" && a.i == 0 && a.j == 1 ||
+    // t-47hc.18: `brace_expr` went grammar-native, so its `{` is a CONCRETE FIRST where
+    // `@hand(brace_expr)` used to be opaque. That EXPOSES two pre-existing ordered-choice
+    // shadows (it does not create them): at a `{`, a lambda body and a statement are a
+    // BLOCK, never a map expression — `lambda_body = block_expr | expression` and
+    // statement's block branch before expr_stmt. Both match the hand parse (verified
+    // differentially: `(x) -> { "a": 1 }` yields the same F0040 under both parsers).
+    // Filtered by exact rule + branch pair, so any OTHER `{` overlap still trips.
+    a.rule == "lambda_body" && a.i == 0 && a.j == 1 ||
+    a.rule == "statement" && a.i == 9 && a.j == 10
 }
 
 // True iff `g` has no FIRST/FIRST ambiguity beyond the intended-shadow allowlist; on
