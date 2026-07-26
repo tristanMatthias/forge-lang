@@ -806,7 +806,7 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
     mut env = CapEnv { caps: [] }
-    let v = exec_node(g, r.body, st, env, false)
+    let v = exec_node(g, r.body, st, env, false, [])
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
     // HERE, at the rule boundary — otherwise a rule reference captured in a
@@ -970,7 +970,16 @@ fn list_take(xs: List<string>, n: int) -> List<string> {
 /// next branch if it fails (adds a diagnostic). No match → an Error node +
 /// diagnostic (error-tolerant), unless a speculative branch rolled back (then a
 /// clean Nil — the caller decides, and diags/had_error are already restored).
-fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> CapVal {
+/// The executor twin of emit's `annots_or`: a nested group carries no annotations of
+/// its own, so an `@expect` on the OWNING sequence must still reach items inside its
+/// `( … )*`. Keeping these two in lockstep is what stops the interpreter reporting a
+/// different diagnostic than the generated parser for the same grammar.
+fn exec_annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
+    if inner.length > 0 { return inner }
+    outer
+}
+
+fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>) -> CapVal {
     match node {
         .Alt(branches) -> {
             let empty: List<string> = []
@@ -1008,7 +1017,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         // list, so the old reference is an immutable snapshot; the
                         // emit side never leaks (labels are auto-scoped locals).
                         let s_caps = env.caps
-                        let v = exec_seq(g, b, st, env, multi)
+                        let v = exec_seq(g, b, st, env, multi, outer_annots)
                         if st.diags.length == s_diags && st.had_error == s_err {
                             return v
                         }
@@ -1017,7 +1026,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         st.restore_to(s_pos, s_diags, s_err)
                         if retry_hand { st.restore_hand_state(s_hand) }
                     } else {
-                        return exec_seq(g, b, st, env, multi)
+                        return exec_seq(g, b, st, env, multi, outer_annots)
                     }
                 }
             }
@@ -1033,7 +1042,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
 
 /// Execute one alternative: run each item (threading the shared env),
 /// then apply the build.
-fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapVal {
+fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>) -> CapVal {
     // Phase 3a base-threading (executor twin of the emit seed): a fold_postfix_with
     // seq's item 0 is the postfix-chain BASE; seed st.postfix_base from it AFTER it
     // parses and BEFORE the ( postfix_suffix )* repetition, so each postfix_step wraps
@@ -1045,7 +1054,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
     mut last = CapVal.Nil
     mut count = 0
     for item in seq.items {
-        last = exec_item(g, item, st, env, multi, seq.annots)
+        last = exec_item(g, item, st, env, multi, exec_annots_or(seq.annots, outer_annots))
         // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
         // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
         if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
@@ -1176,7 +1185,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             CapVal.Node(st.missing_node())
         }
         .Ref(name) -> exec_rule(g, name, st)
-        .Group(inner) -> exec_node(g, inner, st, env, multi)
+        .Group(inner) -> exec_node(g, inner, st, env, multi, annots)
         // Statement/declaration hand rules delegate to the real hand parser and
         // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
         // Expr node. Dispatch on the rule name so a mixed declaration grammar
