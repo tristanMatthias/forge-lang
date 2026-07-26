@@ -1242,7 +1242,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
     // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
     if name == "list_expr" { return tok.text == "[" }
-    if name == "qualified_expr" { return tok.text == "@" }
     if name == "paren_expr" { return tok.text == "(" }
     // The identifier-led primary (bare ident / struct-lit / table / feature-kw /
     // tagged-template) — FIRST is an IDENT.
@@ -1693,7 +1692,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1730,7 +1729,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1798,7 +1797,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "match_expr"    -> bp.parse_match_expression()
         "if_expr"       -> bp.parse_if_expression()
         "list_expr"     -> bp.parse_list_expr()
-        "qualified_expr" -> bp.parse_qualified_expr()
         "paren_expr"    -> bp.parse_paren_expr()
         // The lambda BODY (t-47hc paren_expr flip prep — DORMANT delegate). parse_lambda_body
         // (closures/parser.av) = a block `{ … }` (parse_block_expression → Expr.Block over a
@@ -2018,6 +2016,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
         // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
+        "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
@@ -3153,6 +3152,20 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 /// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
 export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
     st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `@pkg::mod::name` and its struct-literal form `@pkg::mod::Name { f: v }` (t-47hc.18b).
+/// The name is rebuilt from the `@`-IDENT plus each `::`-segment token, exactly as the
+/// hand parse_qualified_at_name concatenates them. A `{ … }` suffix is taken ONLY when
+/// allow_struct_lit is on (the @when gate) — `lb` present distinguishes an EMPTY struct
+/// literal `@a::B {}` from a bare qualified ident, which both yield no field inits.
+export fn mk_qualified(st: PState, sp_start: int, ncap: CapVal, scap: CapVal, lbcap: CapVal, fcap: CapVal) -> ExprId {
+    mut name = "@" + capval_tok_text(ncap)
+    for t in capval_toks(scap) { name = name + "::" + t.text }
+    match lbcap {
+        .Nil -> st.store.exprs.add_leaf(Expr.QualifiedIdent(name))
+        _ -> st.store.add_expr(Expr.StructLit(name, capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+    }
 }
 
 /// `{ "k": v, … }` map literal (t-47hc.18). `Expr.MapLit`'s payload is a FLAT id list

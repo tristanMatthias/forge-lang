@@ -314,6 +314,25 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
     }
 }
 
+// t-47hc.18b: `qualified_expr` (`@pkg::mod::name` + its struct-literal form) is native.
+// The `( "::" IDENT )+` carries `@expect("+", …)` so a bare `@name` reports the hand's
+// exact wording, not the emitter's generic required-repetition message.
+spec "t-47hc.18b: grammar-native qualified_expr recovers == hand oracle" {
+    then "malformed qualified references REPORT and agree" {
+        agree_error("fn f() -> int {\n let q = @foo\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let q = @pkg::\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let q = @pkg::T { x: }\n return 0\n}")
+    }
+    then "the recovered TREES agree with hand" {
+        agree_tree("fn f() -> int {\n let q = @foo\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let q = @pkg::T { x: }\n return 0\n}")
+    }
+    then "well-formed qualified idents and struct literals agree" {
+        agree("fn f() -> int {\n let q = @pkg::mod::name\n return 0\n}") &&
+        agree("fn f() -> int {\n let q = @pkg::T { x: 1 }\n return 0\n}")
+    }
+}
+
 // t-47hc.18: `brace_expr` dispatches natively via `@peek(brace_map)` (the token twin of
 // is_map_literal) and `map_literal` is grammar-owned. The hand parse_brace_expr is gone.
 spec "t-47hc.18: grammar-native brace_expr / map_literal recover == hand oracle" {
