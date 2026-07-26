@@ -1108,9 +1108,42 @@ fn emit_opt(g: Grammar, item: GItem, ind: string, list_labels: List<string>, opt
 /// emitted `while` needs a no-progress break to mirror the interpreter's exec_repeat
 /// (which already breaks on no progress). Always-progressing single-@hand loops
 /// (with_suffix) get a dead-but-harmless break.
-fn group_is_single_hand(node: GNode) -> bool {
+/// True iff the group is a single `@hand` delegate — INCLUDING one reached through a
+/// one-line delegate rule (`postfix_suffix = @hand(postfix_suffix)`).
+///
+/// This gates the no-progress break emitted below, which is LOAD-BEARING: a hand step
+/// that consumes nothing must END the chain, because the loop's FIRST guard can stay
+/// true while the step declines to consume (the postfix chain guards on `Tk.Less`, so
+/// `a < b` re-enters forever once the generic-call step decides it is a comparison).
+///
+/// Sharing one delegate behind a named rule — so 19 FIRST-disjoint bases reference it
+/// once instead of duplicating it — is a SPELLING change, not a semantic one, so the
+/// guard must survive it. Resolving one level of bare-ref indirection here keeps the
+/// emitted loop identical whether the delegate is written inline or named.
+fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
     match node {
-        .Alt(branches) -> branches.length == 1 && branches[0].items.length == 1 && prim_is_hand(branches[0].items[0].prim)
+        .Alt(branches) -> {
+            if branches.length != 1 || branches[0].items.length != 1 { return false }
+            let p = branches[0].items[0].prim
+            if prim_is_hand(p) { return true }
+            match p {
+                .Ref(nm) -> rule_is_bare_hand(g, nm)
+                _ -> false
+            }
+        }
+    }
+}
+
+/// True iff rule `name` is EXACTLY `name = @hand(f)` — a pure delegate with no other
+/// structure. Only such a rule is transparent for the no-progress guard above: any
+/// extra items or alternatives mean the rule does its own consuming, so the caller's
+/// loop can no longer assume the hand step is the sole source of progress.
+fn rule_is_bare_hand(g: Grammar, name: string) -> bool {
+    let i = rule_index_of(g, name)
+    if i < 0 { return false }
+    match g.rules[i].body {
+        .Alt(branches) -> branches.length == 1 && branches[0].items.length == 1 &&
+            prim_is_hand(branches[0].items[0].prim)
     }
 }
 
@@ -1197,7 +1230,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, ind: string, list_labels: List<str
             // forced first iteration). Message text is irrelevant: it never surfaces —
             // non-spec never fires it, spec discards it on rollback (truncate/restore).
             let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) { st.report(\"expected at least one repetition\") }\n"  _ -> "" }
-            if group_is_single_hand(inner) {
+            if group_is_single_hand(g, inner) {
                 req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     "${ind}    let __rep_before = st.pos\n" +
                     emit_node_items(g, inner, ind + "    ", list_labels, opts) +

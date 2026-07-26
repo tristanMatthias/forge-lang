@@ -27,7 +27,7 @@ use features.match_expr.{avra_pat_grammar}
 /// because it has NO context overload — it is logical `Not` at every quote depth.
 /// Phase 3a-4 gives the grammar the POSTFIX CHAIN + the `with` postfix: `unary`'s
 /// non-prefix branch is
-/// `base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:with_suffix )*
+/// `base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )*
 ///  -> fold_postfix_with(base, p, s)`. The grammar OWNS the postfix loop as
 /// `( postfix_suffix )*`: each `postfix_suffix` (→ `parse_postfix_suffix`) runs ONE
 /// hand `postfix_step` over the base threaded on PState (`postfix_base`), so the 8
@@ -51,9 +51,12 @@ use features.match_expr.{avra_pat_grammar}
 /// fold_postfix_with(b,p,s)`), so `is_leading_hand` stays true and `@hand` still owns error
 /// recovery. The token base is seeded into the postfix loop via `seed_postfix` (exec_seq /
 /// emit lockstep) and built by `literal_node` (interning, matching hand `alloc_leaf`).
-/// `with_suffix` is a single delegate rule around its stateful hand step; every base
-/// references that rule, so the remaining frontier is represented once instead of
-/// duplicated across all 19 FIRST-disjoint primary alternatives.
+/// `postfix_suffix` and `with_suffix` are each a single delegate rule around their
+/// stateful hand step; every base references those rules, so the remaining frontier is
+/// represented once instead of duplicated across all 19 FIRST-disjoint primary
+/// alternatives. Both loops stay `( p:postfix_suffix )* ( s:with_suffix )*` at every
+/// base, so the shape is unchanged — only the duplication is gone, and nativizing
+/// either step is now a ONE-LINE edit to its delegate rule instead of 19 edits.
 /// `Tk.Float` projects to the `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER`
 /// branch owns floats too; `null`/`none` are keyword tokens (no distinct grammar kind) so
 /// they use a string-alternation terminal and `literal_node` builds `Expr.None` by `tk`.
@@ -93,25 +96,26 @@ fn avra_expr_core() -> Grammar {
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
              | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
-             | b:NUMBER ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:STRING ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:BOOL ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:("null" | "none") ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | base:variant_ctor ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(match_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(if_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:spawn_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:channel_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:isolated_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:when_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(quote_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:list_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(brace_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(qualified_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:paren_expr ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(template_expr) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(ident_primary) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(primary_base) ( p:@hand(postfix_suffix) )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | b:NUMBER ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:STRING ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:BOOL ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:("null" | "none") ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | base:variant_ctor ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(match_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(if_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:spawn_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:channel_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:isolated_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:when_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(quote_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:list_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(brace_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(qualified_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(template_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(ident_primary) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+  postfix_suffix = @hand(postfix_suffix)
   with_suffix = @hand(with_suffix)
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
