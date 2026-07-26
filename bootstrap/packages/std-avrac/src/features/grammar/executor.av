@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
@@ -70,6 +70,14 @@ export enum CapVal {
     // rule accumulates `Arms`, which a `Match` build folds into Stmt.Match.
     Arm(a: MatchArm)
     Arms(xs: List<MatchArm>)
+    // A built STRUCT FIELD-INIT + a parallel list of them (t-47hc.17). Carried
+    // inline like `Arm` (FieldInit is a small record, not an arena node), so a
+    // `*` over the field_init rule accumulates `FInits`, which a `MkWithSuffix`
+    // build folds into the `Expr.With` overrides list. This is the seam that lets
+    // the grammar OWN a `{ name: value, … }` init list — the single gap that kept
+    // `with_suffix` (and `brace_expr`'s struct-literal half) behind `@hand`.
+    FInit(f: FieldInit)
+    FInits(fs: List<FieldInit>)
     // A subjectless `when` arm + repetition list. Unlike MatchArm, WhenArm
     // carries only an optional condition id and a body id; Expr.When is
     // walker-opaque, so these ids deliberately do not become arena edges.
@@ -241,6 +249,22 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.Arms(xs))
+    }
+
+    // Struct field-init accumulator (t-47hc.17), parallel to append_arm: a `*`
+    // over the field_init rule collects each built FieldInit here.
+    fn append_finit(self, name: string, f: FieldInit) {
+        let existing = self.get(name)
+        mut xs: List<FieldInit> = []
+        match existing {
+            .FInits(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .FInit(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(f)
+        self.set_scalar(name, CapVal.FInits(xs))
     }
 
     // Subjectless-when-arm accumulator, parallel to append_arm.
@@ -1229,7 +1253,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // (byte-identical to parse_call's `while` guard being false).
     if name == "postfix_suffix" { return tok.text == "." || tok.text == "(" || tok.text == "[" || tok.text == "!" || tok.text == "?" || tok.text == "?." || tok.text == "<" || tok.text == "catch" }
     // A `with { … }` postfix step's FIRST is the `with` keyword.
-    if name == "with_suffix" { return tok.text == "with" }
     // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
     // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
     // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
@@ -1651,7 +1674,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "with_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1788,7 +1811,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "postfix_suffix" -> bp.parse_postfix_suffix()
         // One `with { … }` postfix step → a PARTIAL Expr.With (placeholder receiver,
         // rebound by fold_with_expr). The partial's span carries this step's end byte.
-        "with_suffix"   -> bp.parse_with_suffix()
         _               -> .Err("no hand expression rule `${name}`")
     }
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
@@ -1877,6 +1899,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .TExpr(te) -> env.append_texpr(label, te)
             .Arm(a) -> env.append_arm(label, a)
             .WArm(a) -> env.append_warm(label, a)
+            .FInit(f) -> env.append_finit(label, f)
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
             .Var(v) -> env.append_var(label, v)
@@ -1968,6 +1991,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "rebind_eq" if args.length == 2 -> CapVal.Node(rebind_eq_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_is" if args.length == 1 -> CapVal.Node(mk_is_expr(st, env.get(args[0])))
         "mk_inlist" if args.length == 1 -> CapVal.Node(mk_inlist_expr(st, env.get(args[0])))
+        // `name: value` / shorthand `name` struct field-init, and the `with { … }`
+        // suffix that folds a list of them (t-47hc.17). The interpreter is the
+        // differential oracle, so the suffix is span-free (sp_start = 0 - 1) exactly
+        // like the sibling builds; the GENERATED parser passes the real chain start.
+        "MkFieldInit" if args.length == 2 -> mk_field_init(st, env.get(args[0]), env.get(args[1]))
+        "MkWithSuffix" if args.length == 1 -> CapVal.Node(mk_with_suffix(st, 0 - 1, env.get(args[0])))
         // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
         // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
@@ -2856,6 +2885,54 @@ export fn capval_to_arm(st: PState, v: CapVal) -> MatchArm {
             MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node("expected a match arm") }
         }
     }
+}
+
+/// A capture as a field-init list (t-47hc.17): the `field_init` `*` yields `FInits`
+/// for ≥2, a scalar `FInit` for exactly 1, `Nil` for none — the `Arms` shape.
+export fn capval_to_finit_list(v: CapVal) -> List<FieldInit> {
+    match v {
+        .FInits(fs) -> fs
+        .FInit(f) -> [f]
+        _ -> []
+    }
+}
+
+/// Coerce one generated field-init result for a repeated `field_init` capture — the
+/// `capval_to_arm` twin. The fallback keeps the list well-formed after a reported
+/// error (an empty name + an error node), so recovery continues instead of aborting.
+export fn capval_to_finit(st: PState, v: CapVal) -> FieldInit {
+    match v {
+        .FInit(f) -> f
+        _ -> {
+            st.report("expected field name")
+            FieldInit { name: "", value_id: st.store.exprs.add_leaf(Expr.Error) }
+        }
+    }
+}
+
+/// Build ONE struct field-init. Mirrors `parse_field_init_list`'s body
+/// (features/struct_decl/parser.av:143): `name: value`, or the SHORTHAND `name`
+/// (no `:`) which expands to `name: Expr.Ident(name)` — so an absent value must
+/// allocate that ident leaf, exactly as the hand `alloc_leaf(Expr.Ident(name))` does.
+export fn mk_field_init(st: PState, name_cv: CapVal, value_cv: CapVal) -> CapVal {
+    let name = capval_tok_text(name_cv)
+    let value_id = match value_cv {
+        .Nil -> st.store.exprs.add_leaf(Expr.Ident(name))
+        _ -> capval_to_expr(st, value_cv)
+    }
+    CapVal.FInit(FieldInit { name, value_id })
+}
+
+/// Build ONE `with { … }` suffix as a PARTIAL `Expr.With` whose receiver is a
+/// placeholder — `fold_postfix_with_expr`/`fold_with_expr` rebind it to the running
+/// base via `rebind_with`. The span is `[with-start, next-token)`: `rebind_with` reads
+/// this node's `.hi` to stamp each rebuilt `With`, so a chained `a with { } with { }`
+/// reproduces the hand loop's per-iteration `alloc_at(…, sp_start)` spans exactly.
+/// The twin of the deleted `parse_with_suffix` (parse/mod.av).
+export fn mk_with_suffix(st: PState, sp_start: int, finits_cv: CapVal) -> ExprId {
+    let inits = capval_to_finit_list(finits_cv)
+    let recv = st.store.exprs.add_leaf(Expr.Missing)
+    st.store.add_expr(Expr.With(recv, inits), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// FIRST-set predicate for an EXTERNAL `pattern_or` reference in the dispatch-only

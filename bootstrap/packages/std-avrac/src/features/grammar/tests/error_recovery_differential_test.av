@@ -314,6 +314,39 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
     }
 }
 
+// t-47hc.17: `with_suffix` is now grammar-native (the hand `parse_with_suffix` is
+// DELETED), built on the new FieldInit CapVal seam. The hand's field loop was
+// `while !check(RightBrace) { consume_identifier("expected field name") … }`, so its
+// trailing `consume(RightBrace, "expected \`}\` after with fields")` was UNREACHABLE —
+// the loop exits only when `}` is already current. That is why the grammar reproduces
+// it with a FIRST-guarded `( field_init )*` plus `@expect("}", "expected field name")`:
+// one message covers BOTH the junk-token case and EOF, exactly as the hand did. These
+// cases pin that equivalence — including the follow-on diagnostics, where a divergence
+// would show up if the grammar's report-and-continue drifted from the hand's
+// report-and-abort.
+spec "t-47hc.17: grammar-native with_suffix recovers == hand oracle" {
+    then "malformed with-field lists REPORT and agree (junk token, unclosed)" {
+        agree_error("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { 1 }\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { x: 2\n return 0\n}") &&
+        agree_error("fn f() -> int {\n let a = P { x: 1 }\n let b = a with x: 2 }\n return 0\n}")
+    }
+    then "the recovered TREES agree with hand (strictly stronger than F-codes)" {
+        agree_tree("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { 1 }\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { x: 2\n return 0\n}") &&
+        agree_tree("fn f() -> int {\n let a = P { x: 1 }\n let b = a with x: 2 }\n return 0\n}")
+    }
+    then "well-formed `with` — including SHORTHAND, comma-less and CHAINED — agrees" {
+        // The hand loop needs no comma between fields (`{ x y }` is two shorthand
+        // inits), and `mk_field_init` must expand a bare `name` to `name: Ident(name)`.
+        // Chaining exercises the span contract: rebind_with reads each partial With's
+        // `.hi`, so a wrong sp_start would corrupt the second suffix's span.
+        agree("fn f() -> int {\n let a = P { x: 1, y: 2 }\n let b = a with { x: 10 } with { y: 20 }\n return 0\n}") &&
+        agree("fn f() -> int {\n let a = P { x: 1, y: 2 }\n let x = 5\n let b = a with { x }\n return 0\n}") &&
+        agree("fn f() -> int {\n let a = P { x: 1, y: 2 }\n let x = 5\n let y = 6\n let b = a with { x y }\n return 0\n}") &&
+        static_raw("fn f() -> int {\n let a = P { x: 1, y: 2 }\n let b = a with { x: 10 } with { y: 20 }\n return 0\n}") == ""
+    }
+}
+
 // t-47hc.16: `paren_expr` now replaces the former @hand leaf in the generated
 // expression parser. Unlike valid-input differential tests, this oracle makes
 // a failed @try/tuple/lambda parse observable: the generated parser must fall

@@ -237,15 +237,33 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))") &&
         src.contains("fn parse_postfix_suffix(st: PState) -> CapVal {") &&
         src.contains("fn parse_with_suffix(st: PState) -> CapVal {") &&
-        // …and sharing must NOT cost the no-progress break. It is LOAD-BEARING: a hand
-        // step that consumes nothing has to END the chain, because the loop's FIRST guard
-        // can stay true while the step declines (postfix guards `Tk.Less`, so `a < b`
-        // would re-enter forever once the generic-call step decides it is a comparison).
-        // Pin the guard on BOTH loops in full, so routing a delegate through a named rule
-        // can never silently drop it again.
+        // …and sharing must NOT cost the no-progress break where it is LOAD-BEARING. The
+        // two loops differ, and the difference is exactly `rule_is_bare_hand`:
+        //
+        //   postfix_suffix — still a BARE @hand delegate. The hand step may consume
+        //     NOTHING while the loop's FIRST guard stays true (it guards `Tk.Less`, so
+        //     `a < b` re-enters forever once the generic-call step decides it is a
+        //     comparison). The guard is REQUIRED, and survives the named-rule indirection.
+        //
+        //   with_suffix — GRAMMAR-NATIVE since t-47hc.17, so NOT transparent: it does its
+        //     own consuming, unconditionally advancing past `with` on entry. Progress is
+        //     therefore structural and no guard is emitted. That asymmetry is the point of
+        //     restricting transparency to `name = @hand(f)` — pin BOTH halves so neither a
+        //     dropped guard nor a spurious one slips through.
         src.contains("            let __rep_before = st.pos\n            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))\n            if st.pos == __rep_before { break }") &&
-        src.contains("        while st.cur().text == \"with\" {\n            let __rep_before = st.pos\n            s_list.push(capval_to_expr(st, parse_with_suffix(st)))\n            if st.pos == __rep_before { break }") &&
-        src.contains("CapVal.Node(run_hand_expr(\"with_suffix\", st))") &&
+        src.contains("        while st.cur().text == \"with\" {\n            s_list.push(capval_to_expr(st, parse_with_suffix(st)))\n        }") &&
+        // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
+        // so its delegate rule must no longer route through run_hand_expr — it parses the
+        // field list itself and folds it via mk_with_suffix. Assert the absence too, so a
+        // regression back to the @hand leaf fails loudly here.
+        !src.contains("run_hand_expr(\"with_suffix\"") &&
+        src.contains("f_list.push(capval_to_finit(st, parse_field_init(st)))") &&
+        src.contains("CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))") &&
+        // The two field-list diagnostics reproduce the hand exactly: the `{` message, and
+        // `expected field name` on the closer — which covers BOTH a junk token and EOF,
+        // because the hand's own `expected \`}\` after with fields` was unreachable.
+        src.contains("st.report(\"expected `{` after `with`\")") &&
+        src.contains("st.report(\"expected field name\")") &&
         src.contains("s_list.push(capval_to_expr(st, parse_with_suffix(st)))") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
         // ORDERING: the literal branches MUST be emitted before the @hand(primary_base)

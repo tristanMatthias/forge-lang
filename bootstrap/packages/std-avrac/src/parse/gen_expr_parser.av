@@ -3,8 +3,8 @@
 // This is the PRODUCTION expression parser under AVRA_PARSER_EXPR_STATIC=1 (ps3t.6.7
 // Step G); parse/tests/gen_expr_parser_regen_test.av asserts it equals
 // emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf}
-use core.{ExprId, StmtId, Stmt, SrcPos, Tk, ParamEntry, WhenArm}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit}
+use core.{ExprId, StmtId, Stmt, SrcPos, Tk, ParamEntry, WhenArm, FieldInit}
 
 // generated recursive-descent parser for grammar `grammar`
 fn binary_lbp_g(t: Token) -> int {
@@ -212,9 +212,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -230,9 +228,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -248,9 +244,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -266,9 +260,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -284,9 +276,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -301,9 +291,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -318,9 +306,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -336,9 +322,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -354,9 +338,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -372,9 +354,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -390,9 +370,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -407,9 +385,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -425,9 +401,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -442,9 +416,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -459,9 +431,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -477,9 +447,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -494,9 +462,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -511,9 +477,7 @@ fn parse_unary(st: PState) -> CapVal {
             if st.pos == __rep_before { break }
         }
         while st.cur().text == "with" {
-            let __rep_before = st.pos
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-            if st.pos == __rep_before { break }
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -527,9 +491,7 @@ fn parse_unary(st: PState) -> CapVal {
         if st.pos == __rep_before { break }
     }
     while st.cur().text == "with" {
-        let __rep_before = st.pos
         s_list.push(capval_to_expr(st, parse_with_suffix(st)))
-        if st.pos == __rep_before { break }
     }
     CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
 }
@@ -539,7 +501,32 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
 }
 
 fn parse_with_suffix(st: PState) -> CapVal {
-    CapVal.Node(run_hand_expr("with_suffix", st))
+    let sp_start = st.cur().pos
+    mut f_list: List<FieldInit> = []
+    let _ = st.advance()
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after `with`")
+    }
+    while st.cur().tk == Tk.Identifier {
+        f_list.push(capval_to_finit(st, parse_field_init(st)))
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected field name")
+    }
+    CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))
+}
+
+fn parse_field_init(st: PState) -> CapVal {
+    mut v: CapVal = CapVal.Nil
+    let n = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.Colon {
+        let _ = st.advance()
+        v = parse_expression(st)
+    }
+    if st.cur().tk == Tk.Comma {
+        let _ = st.advance()
+    }
+    mk_field_init(st, n, v)
 }
 
 fn parse_variant_ctor(st: PState) -> CapVal {
