@@ -1751,7 +1751,7 @@ impl Parser {
         mut eid = self.parse_unary_leaf()?
         // `expr with { field: value, ... }` — functional struct update (chainable).
         // The production grammar's `unary` rule now OWNS this loop (fold_with_expr,
-        // over `parse_with_suffix`); parse_unary stays the differential oracle
+        // over the grammar-native `with_suffix`); parse_unary stays the differential oracle
         // (Phase 3a Option B) and its behaviour is unchanged — the loop is byte-
         // identical, just factored above `parse_unary_leaf`.
         while self.check(Tk.KwWith) {
@@ -1848,27 +1848,6 @@ impl Parser {
         let s = self.postfix_step(self.postfix_base, self.postfix_sp_start)?
         self.postfix_base = s.rid
         .Ok(s.rid)
-    }
-
-    /// The `with_suffix` delegate (@hand): consume ONE `with { <field-init-list> }`
-    /// and return a PARTIAL `Expr.With` whose receiver is a placeholder (fold_with_expr
-    /// rebinds it to the accumulated base). Its body matches the `parse_unary` with-loop
-    /// step exactly (same `parse_field_init_list`, same two consumes). The partial node's
-    /// span records `[with-start, next-token)`, so its `.hi` IS the per-iteration end
-    /// byte the hand loop's `alloc_at(Expr.With(…), sp_start)` stamps — fold_with_expr
-    /// reads it to reproduce each `With`'s `[base-start, next-token)` span precisely,
-    /// even for a chained `a with { } with { }`.
-    fn parse_with_suffix(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        self.advance()  // consume `with`
-        if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
-            return .Err("parse error")
-        }
-        let parsed = self.parse_field_init_list()?
-        if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
-            return .Err("parse error")
-        }
-        .Ok(self.alloc_at(Expr.With(self.alloc_leaf(Expr.Missing), parsed.inits), sp_start))
     }
 
     // Peek at the source character immediately after the current
