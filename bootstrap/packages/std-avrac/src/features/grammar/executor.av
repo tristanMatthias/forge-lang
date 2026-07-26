@@ -806,7 +806,7 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
     mut env = CapEnv { caps: [] }
-    let v = exec_node(g, r.body, st, env, false)
+    let v = exec_node(g, r.body, st, env, false, [])
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
     // HERE, at the rule boundary — otherwise a rule reference captured in a
@@ -863,6 +863,17 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().text != "{" { return false }
         if st.pos + 2 >= st.toks.length { return true }
         return !(st.toks[st.pos + 1].kind == "STRING" && st.toks[st.pos + 2].text == ":")
+    }
+    // Expression-position brace: the token twin of Parser.is_map_literal. `{ }` is an
+    // EMPTY MAP here (unlike statement position, where it stays a block), otherwise a
+    // map needs a string/template key followed by `:`. Everything else is a block.
+    if cond == "brace_map" {
+        if st.cur().text != "{" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].text == "}" { return true }
+        if st.pos + 2 >= st.toks.length { return false }
+        let k = st.toks[st.pos + 1]
+        return (k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":"
     }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
@@ -959,7 +970,16 @@ fn list_take(xs: List<string>, n: int) -> List<string> {
 /// next branch if it fails (adds a diagnostic). No match → an Error node +
 /// diagnostic (error-tolerant), unless a speculative branch rolled back (then a
 /// clean Nil — the caller decides, and diags/had_error are already restored).
-fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> CapVal {
+/// The executor twin of emit's `annots_or`: a nested group carries no annotations of
+/// its own, so an `@expect` on the OWNING sequence must still reach items inside its
+/// `( … )*`. Keeping these two in lockstep is what stops the interpreter reporting a
+/// different diagnostic than the generated parser for the same grammar.
+fn exec_annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
+    if inner.length > 0 { return inner }
+    outer
+}
+
+fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>) -> CapVal {
     match node {
         .Alt(branches) -> {
             let empty: List<string> = []
@@ -997,7 +1017,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         // list, so the old reference is an immutable snapshot; the
                         // emit side never leaks (labels are auto-scoped locals).
                         let s_caps = env.caps
-                        let v = exec_seq(g, b, st, env, multi)
+                        let v = exec_seq(g, b, st, env, multi, outer_annots)
                         if st.diags.length == s_diags && st.had_error == s_err {
                             return v
                         }
@@ -1006,7 +1026,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
                         st.restore_to(s_pos, s_diags, s_err)
                         if retry_hand { st.restore_hand_state(s_hand) }
                     } else {
-                        return exec_seq(g, b, st, env, multi)
+                        return exec_seq(g, b, st, env, multi, outer_annots)
                     }
                 }
             }
@@ -1022,7 +1042,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool) -> C
 
 /// Execute one alternative: run each item (threading the shared env),
 /// then apply the build.
-fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapVal {
+fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>) -> CapVal {
     // Phase 3a base-threading (executor twin of the emit seed): a fold_postfix_with
     // seq's item 0 is the postfix-chain BASE; seed st.postfix_base from it AFTER it
     // parses and BEFORE the ( postfix_suffix )* repetition, so each postfix_step wraps
@@ -1034,7 +1054,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool) -> CapV
     mut last = CapVal.Nil
     mut count = 0
     for item in seq.items {
-        last = exec_item(g, item, st, env, multi, seq.annots)
+        last = exec_item(g, item, st, env, multi, exec_annots_or(seq.annots, outer_annots))
         // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
         // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
         if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
@@ -1165,7 +1185,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             CapVal.Node(st.missing_node())
         }
         .Ref(name) -> exec_rule(g, name, st)
-        .Group(inner) -> exec_node(g, inner, st, env, multi)
+        .Group(inner) -> exec_node(g, inner, st, env, multi, annots)
         // Statement/declaration hand rules delegate to the real hand parser and
         // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
         // Expr node. Dispatch on the rule name so a mixed declaration grammar
@@ -1230,7 +1250,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
     if name == "template_expr" { return tok.kind == "TEMPLATE" }
     // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
-    if name == "brace_expr" { return tok.text == "{" }
     // The ident-primary (bare ident / struct literal / qualified @pkg::T /
     // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
     // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
@@ -1674,7 +1693,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "brace_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "template_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "qualified_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1711,7 +1730,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "brace_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "qualified_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1790,7 +1809,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "lambda_block_body" -> bp.parse_block_expression()
         "ident_primary" -> bp.parse_ident_expr()
         "template_expr" -> bp.parse_template_primary()
-        "brace_expr"    -> bp.parse_brace_expr()
         "ident_expr"    -> bp.parse_primary()
         "more_primary"  -> bp.parse_primary()
         // The whole procedural leaf: prefix unary ops + `with`/splice + the
@@ -2000,6 +2018,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
         // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
+        "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
         "MkTuple" if args.length == 1 -> CapVal.Node(mk_tuple(st, 0 - 1, env.get(args[0])))
@@ -3134,6 +3153,23 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 /// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
 export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
     st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `{ "k": v, … }` map literal (t-47hc.18). `Expr.MapLit`'s payload is a FLAT id list
+/// `[k1,v1,k2,v2,…]`, so the two PARALLEL captures are interleaved here — a `map_entry`
+/// sub-rule can't work (a rule ref yields one CapVal, an entry needs two). Empty `{}`
+/// falls out as empty lists. Spanned like the hand parse_map_literal's alloc_at.
+export fn mk_map_lit(st: PState, sp_start: int, kcap: CapVal, vcap: CapVal) -> ExprId {
+    let ks = capval_to_node_list(kcap)
+    let vs = capval_to_node_list(vcap)
+    mut ids: List<ExprId> = []
+    mut i = 0
+    while i < ks.length {
+        ids.push(ks[i])
+        if i < vs.length { ids.push(vs[i]) }
+        i = i + 1
+    }
+    st.store.add_expr(Expr.MapLit(ids), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `( a, b, … )` tuple (t-47hc paren_expr flip prep — DORMANT build, proven by a test

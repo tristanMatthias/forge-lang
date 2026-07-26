@@ -109,12 +109,16 @@ fn avra_expr_core() -> Grammar {
              | base:when_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(quote_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:list_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(brace_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:brace_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(qualified_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(template_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(ident_primary) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+  brace_expr   = @peek(brace_map) map_literal | block_expr
+  map_literal  = "{" ( k:expression ":" v:expression ( "," )? )* "}"
+                 @expect(":", "expected `:` after map key")
+                 @expect("}", "expected `}` after map") -> MkMapLit(k, v)
   postfix_suffix = @hand(postfix_suffix)
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)

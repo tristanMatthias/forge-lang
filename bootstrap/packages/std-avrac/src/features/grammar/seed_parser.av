@@ -425,7 +425,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `lparen_ident_colon`: the position-0 twin of `ident_colon` — cur is `(`, the next
     // token an IDENT, the one after `:` (the TYPED-LAMBDA opener, checked from before `(`
     // so the paren rule spans from the `(` byte). See executor.lookahead_ok.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "for_destructure" || cond == "comma_ident" || cond == "double_colon"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "comma_ident" || cond == "double_colon"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -730,7 +730,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, for_destructure, comma_ident, double_colon)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, comma_ident, double_colon)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

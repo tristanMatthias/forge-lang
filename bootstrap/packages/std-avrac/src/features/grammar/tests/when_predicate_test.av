@@ -18,10 +18,12 @@ fn first_branch_items(g: Grammar) -> int {
     }
 }
 
-// A rule gated on `flag`, delegating to the proven brace_expr hand leaf. Under
+// A rule gated on `flag`, delegating to a proven hand leaf. (Was brace_expr until
+// t-47hc.18 made it grammar-native; primary_base is the surviving `{`-capable leaf.)
+// Under
 // default modes the gate alone decides whether `{ }` parses (had_error).
 fn gated_errs(flag: string, src: string) -> bool {
-    let gp = parse_grammar("gated = @when(${flag}) @hand(brace_expr)")
+    let gp = parse_grammar("gated = @when(${flag}) @hand(primary_base)")
     run_grammar_expr(gp.grammar, src).had_error
 }
 
@@ -34,8 +36,8 @@ spec "t-47hc.3: @when(flag) mode predicate" {
     then "@when(flag) parses as a zero-width leading item (pred + terminal = 2 items)" {
         first_branch_items(parse_grammar("gated = @when(allow_struct_lit) NUMBER").grammar) == 2
     }
-    then "baseline: an ungated @hand(brace_expr) parses `{ }` without error" {
-        let gp = parse_grammar("gated = @hand(brace_expr)")
+    then "baseline: an ungated @hand(primary_base) parses `{ }` without error" {
+        let gp = parse_grammar("gated = @hand(primary_base)")
         !run_grammar_expr(gp.grammar, "{ }").had_error
     }
     then "a predicate whose flag is SET takes the branch (allow_struct_lit default true)" {

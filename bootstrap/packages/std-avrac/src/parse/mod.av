@@ -2552,23 +2552,6 @@ impl Parser {
         .Err("parse error")
     }
 
-    // The brace-primary (`{ … }`) in isolation — the @hand(brace_expr) entry for
-    // the grammar-DSL (ps3t.6.7 parser modes). A `{` is a MAP literal when the
-    // one-/two-token lookahead is `{ }` or `{ "key" : … }` (is_map_literal),
-    // otherwise a BLOCK expression. Byte-identical to parse_primary's `{` arm.
-    // The map-vs-block disambiguation is a contextual PARSER mode the stateless
-    // token-grammar can't carry, so the @hand bridge delegates it.
-    fn parse_brace_expr(self) -> Result<ExprId, string> {
-        if !self.check(Tk.LeftBrace) {
-            self.set_error("expected `{`")
-            return .Err("parse error")
-        }
-        if self.is_map_literal() {
-            return self.parse_map_literal()
-        }
-        self.parse_block_expression()
-    }
-
     fn desugar_template(self, raw: string) -> Result<ExprId, string> {
         mut acc = TemplateFold { have: false, result: Expr.None, result_id: ExprId(0) }
         mut i = 0
