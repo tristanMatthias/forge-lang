@@ -228,7 +228,12 @@ export fn avra_stmt_grammar() -> Grammar {
 ///
 /// The alternation order (break/continue, the control-flow headers, return/block,
 /// then expr_stmt) matches parse_statement's dispatch order.
-export fn avra_stmt_flip_grammar() -> Grammar {
+///
+/// The interpreter and static-emitter views differ only in `for_stmt`: the
+/// static parser needs bounded `@try` plus its malformed-header edge oracle,
+/// while the interpreter can report those errors directly. Keep every other
+/// statement rule in one fragment so their native/hand frontier cannot drift.
+fn avra_stmt_common_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
@@ -237,8 +242,6 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
-  for_stmt      = @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
-                | "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
   for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
   match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
@@ -249,7 +252,29 @@ export fn avra_stmt_flip_grammar() -> Grammar {
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar())
+    gp.grammar
+}
+
+fn avra_stmt_flip_for_grammar() -> Grammar {
+    let gp = grammar {
+  for_stmt = @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
+           | "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+    }
+    gp.grammar
+}
+
+fn avra_stmt_dispatch_for_grammar() -> Grammar {
+    let gp = grammar {
+  for_stmt = @try @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
+           | @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+           | @hand(for_stmt_edge)
+    }
+    gp.grammar
+}
+
+export fn avra_stmt_flip_grammar() -> Grammar {
+    let stmt = compose_grammars(avra_stmt_common_grammar(), avra_stmt_flip_for_grammar())
+    compose_grammars(compose_grammars(compose_grammars(compose_grammars(stmt, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
@@ -311,28 +336,7 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
 /// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
-    let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
-  block         = "{" stmts:statement* "}" -> Block(stmts)
-  stmt_block    = @try @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
-                | @hand(block_stmt_edge)
-  break_stmt    = "break" -> Break()
-  continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
-  for_stmt      = @try @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
-                | @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
-                | @hand(for_stmt_edge)
-  for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
-  while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
-  match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
-                | @hand(match_stmt_edge)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
-  defer_stmt    = "defer" e:expression -> MkDefer(e)
-  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
-  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
-  expr_stmt     = e:expression -> ExprStmt(e)
-    }
-    gp.grammar
+    compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar())
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY declaration grammar (the static-emit twin of
