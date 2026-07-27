@@ -120,7 +120,11 @@ type Cap = { name: string, val: CapVal }
 /// parallel Toks/Nodes lists. Rebuilt on each mutation via `.push`
 /// (list index-assignment and payload mutation aren't available), which
 /// is cheap — a rule has a handful of captures.
-type CapEnv = { caps: List<Cap> }
+/// `cut` is the live `@cut` commit flag for the rule invocation this env belongs
+/// to (exec_rule mints one per call). Set by exec_item when it reaches a cut item,
+/// read + reset by exec_node's speculative arm — the interpreter twin of the
+/// generated parser's function-local `mut s_cut`.
+type CapEnv = { caps: List<Cap>, cut: bool, cut_diags: int, cut_err: bool }
 
 impl CapEnv {
     fn get(self, name: string) -> CapVal {
@@ -135,6 +139,21 @@ impl CapEnv {
     /// rolled-back speculative branch's label bindings don't leak to a sibling.
     fn restore_caps(self, caps: List<Cap>) {
         self.caps = caps
+    }
+
+    /// `@cut` commit flag — set by exec_item on reaching a cut item, read + reset
+    /// by exec_node's speculative arm. Methods (not direct field writes) because
+    /// `env` reaches those call sites as an immutable binding; `self` is by-pointer.
+    fn set_cut(self, v: bool) {
+        self.cut = v
+    }
+
+    /// Record the enclosing speculative branch's entry snapshot — the twin of the
+    /// generated parser's `s_diags`/`s_err` locals. A cut fires only while the
+    /// branch still matches this (i.e. it has reported nothing yet).
+    fn set_cut_frame(self, diags: int, err: bool) {
+        self.cut_diags = diags
+        self.cut_err = err
     }
 
     fn set_scalar(self, name: string, v: CapVal) {
@@ -805,7 +824,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
-    mut env = CapEnv { caps: [] }
+    mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false }
     let v = exec_node(g, r.body, st, env, false, [])
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
@@ -1017,8 +1036,22 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                         // list, so the old reference is an immutable snapshot; the
                         // emit side never leaks (labels are auto-scoped locals).
                         let s_caps = env.caps
+                        // t-47hc.21: run with a FRESH cut flag (a sibling branch's
+                        // commit says nothing about this one) and restore the outer
+                        // value afterwards, so an inner `@try` inside a group cannot
+                        // commit the branch that encloses it.
+                        let s_cut = env.cut
+                        let s_cut_diags = env.cut_diags
+                        let s_cut_err = env.cut_err
+                        env.set_cut(false)
+                        env.set_cut_frame(s_diags, s_err)
                         let v = exec_seq(g, b, st, env, multi, outer_annots)
-                        if st.diags.length == s_diags && st.had_error == s_err {
+                        let committed = env.cut
+                        env.set_cut(s_cut)
+                        env.set_cut_frame(s_cut_diags, s_cut_err)
+                        // Past a `@cut` the branch OWNS its diagnostics: report and
+                        // keep them instead of reading them as "wrong branch".
+                        if committed || (st.diags.length == s_diags && st.had_error == s_err) {
                             return v
                         }
                         env.restore_caps(s_caps)
@@ -1099,6 +1132,16 @@ fn sameline_ok(st: PState, item: GItem) -> bool {
 /// Execute one postfix item, honouring its repetition, and bind its
 /// capture (scalar in a normal position, list-append inside `*`/`+`).
 fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
+    // `@cut` COMMIT POINT (t-47hc.21): reaching this item commits the enclosing
+    // `@try`, so a diagnostic from here on is a real parse error rather than the
+    // rollback signal. Recorded BEFORE the sub-parse — the commit covers this
+    // item's own failure, which is the whole point (`… ".." @cut hi:expression`
+    // must report a bad `hi`, not silently re-try the next branch). Lives on the
+    // CapEnv because exec_rule mints a fresh one per rule invocation, so a cut
+    // inside a called rule cannot leak out to its caller's `@try` — exactly the
+    // function-scope isolation the generated parser gets for free from `s_cut`
+    // being a local. Groups share the env, so a cut nested in one propagates up.
+    if item.cut && st.diags.length == env.cut_diags && st.had_error == env.cut_err { env.set_cut(true) }
     // `@off(flag)` mode-SET marker: set the flag OFF for the DURATION of this
     // item's sub-parse (all reps + the .Opt FIRST-check), then restore — the
     // executor twin of the hand parser's save/set/restore around a control-header

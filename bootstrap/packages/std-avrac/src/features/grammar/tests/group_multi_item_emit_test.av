@@ -1,0 +1,51 @@
+// WHY: a One-rep `( … )` group holding MORE THAN ONE item is a STRUCTURAL group,
+// not a terminal alternation — and the emitter used to render it as one.
+//
+// `prim_yields_token` routes a group to emit_one_terminal (a single FIRST-disjunction
+// token consume) when `node_all_terminal` holds. That check only asked "is every item
+// a terminal", which is also true of `( "-" "*" )` — a SEQUENCE. Rendering that as one
+// token silently DROPPED the `"*"`, so the generated parser accepted input the
+// interpreter (which runs the whole inner sequence via exec_node) rejected: a
+// two-engine divergence the byte-identity gates cannot see, because no production
+// grammar happens to use the shape. Found while proving `@cut` propagates out of a
+// nested group.
+//
+// node_all_terminal now requires each branch to be exactly ONE plain One-rep terminal.
+// The genuine `op:("!" | "-")` alternation is unaffected — every checked-in generated
+// parser regenerates byte-identically.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+
+fn errs(grammar_src: string, src: string) -> bool {
+    run_grammar_expr(parse_grammar(grammar_src).grammar, src).had_error
+}
+
+fn emitted(grammar_src: string) -> string {
+    emit_parser_source(parse_grammar(grammar_src).grammar)
+}
+
+spec "a multi-item One group is structural, not a terminal alternation" {
+    then "the generated parser VALIDATES both items of `( \"-\" \"*\" )`" {
+        // Both terminals get a real guard: the group is entered unguarded, so even
+        // its leading `-` is checked rather than swallowed (emit_node_items idx_base).
+        let src = emitted("r = \"+\" ( \"-\" \"*\" )")
+        src.contains("expected -") && src.contains("expected *")
+    }
+    then "the interpreter accepts the full sequence" {
+        !errs("r = \"+\" ( \"-\" \"*\" )", "+ - *")
+    }
+    then "the interpreter rejects a truncated sequence (the dropped item is required)" {
+        errs("r = \"+\" ( \"-\" \"*\" )", "+ - /")
+    }
+    then "and rejects a wrong LEADING item too (the group's first token is not assumed)" {
+        errs("r = \"+\" ( \"-\" \"*\" )", "+ / *")
+    }
+    then "CONTROL: a real terminal ALTERNATION still takes the single-token path" {
+        // One item per branch — emit_one_terminal's intended shape: ONE unconditional
+        // consume for the whole alternation, no per-operator guard.
+        let src = emitted("r = op:(\"!\" | \"-\") \"+\"")
+        src.contains("let op = CapVal.Tok(st.advance())") && !src.contains("expected -")
+    }
+    then "the alternation matches either operand" {
+        !errs("r = op:(\"!\" | \"-\") \"+\"", "! +") && !errs("r = op:(\"!\" | \"-\") \"+\"", "- +")
+    }
+}

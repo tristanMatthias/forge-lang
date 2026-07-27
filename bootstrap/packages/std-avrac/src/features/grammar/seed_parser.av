@@ -174,6 +174,13 @@ export fn parse_grammar(src: string) -> GrammarParse {
         let oe = validate_mode_markers(g)
         if oe != "" { p.error = oe }
     }
+    // t-47hc.21: a `@cut` outside a `@try` branch is DEAD notation (a predictive
+    // branch never rolls back, so there is nothing to commit). Reject it rather
+    // than accept a marker that silently does nothing.
+    if p.error == "" {
+        let ce = validate_cuts(g)
+        if ce != "" { p.error = ce }
+    }
     GrammarParse { grammar: g, error: p.error }
 }
 
@@ -376,7 +383,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_cut_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -460,6 +467,16 @@ fn at_off_marker(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "off"
+}
+
+/// True when the cursor is `@cut` — the COMMIT-POINT marker (t-47hc.21). Bare (no
+/// parens), so it needs no argument validation. Same item-start role as `@off`/`@on`,
+/// so seq_can_continue must treat it as an item-start too.
+fn at_cut_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "cut"
 }
 
 /// True when the cursor is `@on` — the SET-ON twin of at_off_marker. Same item-start
@@ -546,6 +563,66 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
     ""
 }
 
+/// Reject every `@cut` the executor and the generated parser would not honor
+/// identically. `in_try` carries the enclosing `@try` DOWN through groups: a group
+/// nested in a speculative branch is still inside that branch's rollback scope, so a
+/// cut there is honored (both emitters inline the group into the branch body, and the
+/// executor shares one CapEnv across the whole rule). Returns "" when clean.
+fn validate_cuts(g: Grammar) -> string {
+    for rule in g.rules {
+        let e = check_cut_node(rule.body, rule.name, false)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn check_cut_node(node: GNode, rule: string, in_try: bool) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                let this_try = in_try || b.speculative
+                for item in b.items {
+                    if item.cut {
+                        if !this_try {
+                            return "`@cut` is only meaningful inside a `@try` branch (rule `${rule}`) — a predictive branch never rolls back, so there is nothing to commit"
+                        }
+                        // A fold branch takes emit_fold, which bypasses emit_item —
+                        // the cut would vanish from the generated parser while the
+                        // executor still honored it (a silent divergence).
+                        if branch_is_expr_fold(b) {
+                            return "`@cut` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the commit"
+                        }
+                        // Both emitters SKIP zero-width predicates in their item
+                        // loops, so a cut riding one would never be emitted.
+                        if prim_is_pred_e_sp(item.prim) {
+                            return "`@cut` cannot wrap a `@when`/`@peek` predicate (rule `${rule}`) — put it on the next token-bearing item"
+                        }
+                    }
+                    match item.prim {
+                        .Group(inner) -> {
+                            let e = check_cut_node(inner, rule, this_try)
+                            if e != "" { return e }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    ""
+}
+
+/// The zero-width predicates the emitters skip (`@when`/`@peek`). Named apart from
+/// prim_is_hand_or_pred, which also counts `@hand` — a cut BEFORE a `@hand` leaf is
+/// legitimate (the leaf goes through emit_item, so the commit is emitted).
+fn prim_is_pred_e_sp(prim: GPrim) -> bool {
+    match prim {
+        .Pred(_) -> true
+        .Peek(_) -> true
+        _ -> false
+    }
+}
+
 /// True iff a branch's build is one of the legacy expr-fold helpers that take the
 /// SPECIALISED emit_fold path (which bypasses emit_item, so a @off on such a branch
 /// would be dropped from the generated parser). Mirrors emit.av `build_is_expr_fold`.
@@ -569,6 +646,21 @@ fn prim_is_hand_or_pred(prim: GPrim) -> bool {
 
 // labeled = ( NAME ":" )? postfix
 fn parse_labeled(p: GP) -> GItem {
+    // t-47hc.21 COMMIT POINT: a leading `@cut` commits the enclosing `@try` branch
+    // as of this item. Bare marker (no parens) — it takes no argument, so it is
+    // consumed here and recorded on the item that FOLLOWS it (the cut point sits
+    // BETWEEN items; attaching it to the next one is the same position and keeps
+    // the emitters' `continue`-heavy item loops free of index arithmetic). A
+    // trailing `@cut` has no following item to attach to and is rejected below.
+    mut cut = false
+    if at_cut_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "cut"
+        cut = true
+        if !seq_can_continue(p) {
+            p.fail("`@cut` must be followed by an item — it marks the point a `@try` branch commits")
+        }
+    }
     // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
     // matches only on the same source line as the previous token (the
     // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
@@ -644,7 +736,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

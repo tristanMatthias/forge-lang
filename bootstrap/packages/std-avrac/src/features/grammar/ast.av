@@ -115,6 +115,17 @@ export type GItem = {
     // = true; … = saved` (parse_paren_expr re-enables dot-postfix inside `(...)`).
     // Empty = no set. mode_off and mode_on are mutually exclusive on one item.
     mode_on: string,
+    // t-47hc.21 COMMIT POINT (`@cut`, the PEG cut): when true, reaching this item
+    // COMMITS the enclosing `@try` branch. Past the cut a diagnostic is a real
+    // parse error — reported and recovered from — instead of the "wrong branch,
+    // roll back" signal `@try` otherwise reads it as. That conflation is why a
+    // speculative branch could never own its own error path, and why every
+    // ambiguous statement form needed an `@hand(*_edge)` fallback purely to hold
+    // the diagnostics. Place the cut right after the tokens that make the branch
+    // unambiguous (`… lo:expression ".." @cut hi:expression`). The commit is
+    // IRREVOCABLE once reached, and only meaningful inside `@try` — a cut on a
+    // predictive branch is rejected at grammar-parse time (validate_cuts).
+    cut: bool,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -184,7 +195,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", cut: false }
 }
 
 /// True when a sequence has no explicit build — the executor then
