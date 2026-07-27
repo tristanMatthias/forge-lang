@@ -2183,6 +2183,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
         "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
+        // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
+        // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
+        "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         // Subjectless `match { … }` at STATEMENT position: the hand builds Expr.When and
         // boxes it in Stmt.Expr (parse_match_statement), so this does exactly that pair.
         "MkWhenStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, 0 - 1, env.get(args[0]))))))
@@ -3014,6 +3017,32 @@ export fn mk_arm(st: PState, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) 
     let pat_id = capval_to_pat(st, pat_cv)
     let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
     CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, body_cv) })
+}
+
+/// The EXPRESSION twin of `mk_match` (t-47hc.25). Same arms, same child refs — only
+/// the node kind and the span differ.
+///
+/// REFS are identical to mk_match's, for the same reason: `MatchArm` is a MIXED walker
+/// node — only the PATTERN is a walked child, while guard and body ride as walker-opaque
+/// `ExprId` scalars, and the subject is opaque too so it contributes no edge. That is
+/// exactly the set the hand builds (`alloc_expr(node, span, parsed.refs)` where
+/// parsed.refs is the arms' patterns). Adding the subject, or guard/body, would hand the
+/// walker a different child set than the hand parser produces.
+///
+/// SPAN: the hand anchors at the `match` keyword (`alloc_at(..., sp_start)`), so this
+/// takes sp_start and spans to the current token, with mk_when's `sp_start < 0` guard for
+/// the interpreter path (which has no sequence-start byte to pass).
+export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
+    let arms = capval_to_arm_list(arms_cv)
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.MatchExpr(capval_to_expr(st, subject_cv), arms),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        refs
+    ))
 }
 
 /// Generated-parser twin of the `MkMatch` executor build.
