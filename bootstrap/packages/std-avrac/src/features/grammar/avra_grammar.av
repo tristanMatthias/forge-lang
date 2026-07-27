@@ -102,7 +102,7 @@ fn avra_expr_core() -> Grammar {
              | b:("null" | "none") ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | base:variant_ctor ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:match_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(if_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:if_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:spawn_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:channel_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:isolated_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
@@ -152,6 +152,30 @@ fn avra_expr_core() -> Grammar {
   match_expr   = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhen(a)
                | @peek(match_table) @hand(match_expr)
                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatchExpr(subj, arms)
+  // t-47hc.24 — the EXPRESSION `if`. The bind-fresh `if let v = x { … }` stays @hand:
+  // it is not a parse at all but a DESUGARING (a fresh temp, a none-check condition, and
+  // an unwrap-bind row PREPENDED to the then-block), so `@peek(if_let)` peels it off at
+  // the `if` and hands the whole leaf over — the same shape match_expr uses for its
+  // table form. The ordinary branch is then PREDICTIVE on a bare `if`.
+  //
+  // `@require t:block_expr` is the first production spend of @require on a RULE
+  // REFERENCE: the hand reports "expected `{` after if condition" and `return .Err`s,
+  // and the marker checks block_expr's FIRST (`{`) BEFORE the call, so an ABSENT block
+  // aborts while a MALFORMED one recovers — which is exactly the hand's split.
+  //
+  // else_tail must keep `if_expr` as its own FIRST branch rather than folding into
+  // `expression` (which already reaches if_expr via unary). Measured, not assumed:
+  // `else if b { 2 }.foo` parses as `(field (if-expr …) foo)` — the postfix binds to the
+  // OUTER if, because the hand's `else if` RECURSION returns from parse_if_expression
+  // directly. Routing the else through `expression` would enter unary's
+  // `base:if_expr ( postfix_suffix )*` and bind `.foo` to the ELSE-IF instead.
+  // `block_expr` likewise cannot fold in: brace_expr peeks brace_map first, so
+  // `else { "a": 1 }` would become a MAP where the hand calls parse_block_expression
+  // unconditionally.
+  if_expr      = @peek(if_let) @hand(if_expr)
+               | "if" @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
+                 @expect("{", "expected `{` after if condition") -> MkIfExpr(c, t, e)
+  else_tail    = if_expr | block_expr | expression
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
   list_expr    = @try "[" cb:list_comp "]" -> cb

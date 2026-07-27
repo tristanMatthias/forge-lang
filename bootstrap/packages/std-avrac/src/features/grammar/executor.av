@@ -943,6 +943,14 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         }
         false
     }
+    // `if let v = x { … }` — the BIND-FRESH form, which desugars to a temp + a
+    // none-check + an unwrap-bind prepended to the then-block, and stays the hand's.
+    // The hand decides it the same way, one token later: advance past `if`, then
+    // `check(Tk.KwLet)`. Checked here BEFORE consuming `if`, so the ordinary branch's
+    // FIRST stays a plain `if`.
+    if cond == "if_let" {
+        return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
+    }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
@@ -2204,6 +2212,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
+        // `if c { … } else …` (t-47hc.24). An ABSENT else arrives as CapVal.Nil, which
+        // mk_if_expr turns into the hand's synthesized empty (Void) block.
+        "MkIfExpr" if args.length == 3 -> mk_if_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
         // Subjectless `match { … }` at STATEMENT position: the hand builds Expr.When and
         // boxes it in Stmt.Expr (parse_match_statement), so this does exactly that pair.
         "MkWhenStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, 0 - 1, env.get(args[0]))))))
@@ -3060,6 +3071,29 @@ export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: 
         Expr.MatchExpr(capval_to_expr(st, subject_cv), arms),
         if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
         refs
+    ))
+}
+
+/// `if c { … } else …` in EXPRESSION position (t-47hc.24) — the ordinary form only;
+/// the bind-fresh `if let` stays behind `@peek(if_let) @hand(if_expr)`.
+///
+/// The whole reason this needs a build rather than a bare 3-capture node ctor is the
+/// ABSENT else. The hand (if_stmt/parser.av:190-202) synthesizes an EMPTY BLOCK — NOT a
+/// `0` literal — so the if-expr types `.Void` on the fall-through path, which is what
+/// keeps `if c { return X }` valid in value position and lets a diverging then-branch
+/// hand back the real ELSE type instead of a synthesized `int`. That empty block goes
+/// through `intern_expr_leaf` (hash-consed, spanless), exactly as `alloc_leaf` does, and
+/// is allocated BEFORE the IfExpr row so arena ids stay in the hand's order.
+export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
+    let empty_rows: List<StmtId> = []
+    let else_id = match else_cv {
+        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
+        _ -> capval_to_expr(st, else_cv)
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.IfExpr(capval_to_expr(st, cond_cv), capval_to_expr(st, then_cv), else_id),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
     ))
 }
 
