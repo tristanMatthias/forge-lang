@@ -17,11 +17,23 @@
 // language silently; duplicating them lets the copies drift into the same outcome. Being
 // ONE definition is the whole point, so that is what these specs pin.
 use @std.avrac.features.match_expr.{avra_match_arm_grammar}
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar}
 
 fn arm_rules() -> string { render_grammar(avra_match_arm_grammar()) }
 
-fn decl_rules() -> string { render_grammar(avra_decl_dispatch_grammar()) }
+/// Does this grammar DEFINE the rule — not merely mention it?
+///
+/// The distinction is the whole point. `render_grammar` renders rule BODIES too, so
+/// `render(g).contains("match_arm")` is satisfied by `match_stmt`'s REFERENCE to the rule
+/// and says nothing about whether it resolves. The first version of this file used exactly
+/// that check and passed while the interpreter grammars were missing both rules — a test
+/// structurally incapable of observing what it claimed. Walk the rule list instead.
+fn defines(g: Grammar, name: string) -> bool {
+    for r in g.rules { if r.name == name { return true } }
+    false
+}
+
+fn defines_arms(g: Grammar) -> bool { defines(g, "match_arm") && defines(g, "match_when_arm") }
 
 spec "t-47hc.25: the arm fragment owns exactly the two arm rules" {
     then "it defines match_arm and match_when_arm" {
@@ -47,13 +59,22 @@ spec "t-47hc.25: the arm fragment owns exactly the two arm rules" {
     }
 }
 
-spec "t-47hc.25: composing the fragment resolves the arms, and does not double-define them" {
-    then "the declaration dispatch grammar resolves match_arm from the composed fragment" {
-        // Not external: the rule must be PRESENT in the merged set the decl parser is
-        // emitted from, or the generated parser calls an undeclared-FIRST stub.
-        decl_rules().contains("match_arm")
+spec "t-47hc.25: every grammar that references the arms also DEFINES them" {
+    then "the declaration dispatch grammar (the emitted static parser's source)" {
+        // Not external: the rules must be present in the merged set the decl parser is
+        // emitted from, or the generated parser calls an undeclared-FIRST stub (#1021).
+        defines_arms(avra_decl_dispatch_grammar())
     }
-    then "and match_when_arm too" { decl_rules().contains("match_when_arm") }
+    then "the statement FLIP grammar (the interpreter path)" {
+        // The one this file originally missed. The interpreter WALKS the composed
+        // Grammar — there is no cross-file linking to save it — so an unresolved
+        // match_arm makes the DSL error on every `match` statement and silently fall
+        // back to the hand parser: right answer, no diagnostic, flip quietly off.
+        defines_arms(avra_stmt_flip_grammar())
+    }
+    then "the declaration FLIP grammar (the interpreter path the decl flip runs)" {
+        defines_arms(avra_decl_flip_grammar())
+    }
     then "composing it a second time WOULD be a conflict — the disjointness is real" {
         // Guards the duplicate-definition mistake directly: if someone re-adds the rules
         // inline to the statement grammar while the fragment is still composed, this is
