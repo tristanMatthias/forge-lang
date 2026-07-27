@@ -871,6 +871,13 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     // operator (hand parse_leaf_common), and the production static parser DOES
     // run inside quote bodies, so a grammar-owned `~` must fire ONLY at depth 0.
     if flag == "at_quote_top" { return modes.quote_depth == 0 }
+    // `in_quote_body` = the exact complement, `quote_depth > 0`. Both directions are
+    // needed because `~` is TWO different operators either side of the line: bitnot at
+    // depth 0 (grammar-owned, gated `at_quote_top`) and quote SPLICE inside a body.
+    // Spelled as its own predicate rather than a negation form because the DSL has no
+    // `!` on predicates, and inventing one would need a matching emit twin for a single
+    // use — the two named readings stay trivially checkable against each other.
+    if flag == "in_quote_body" { return modes.quote_depth > 0 }
     true
 }
 

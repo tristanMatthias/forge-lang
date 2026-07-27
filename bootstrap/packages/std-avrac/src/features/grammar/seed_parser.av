@@ -465,6 +465,26 @@ export fn off_flag_supported(flag: string) -> bool {
         flag == "allow_it_sugar" || flag == "cell_mode"
 }
 
+/// The predicates a `@when(flag)` marker may READ — the single source of truth for the
+/// @when SET, in lockstep with `executor.modes_flag` (which maps each name to its
+/// reading) and `emit.pred_guard` (its byte-side twin).
+///
+/// This is WIDER than off_flag_supported: `@off`/`@on` may only name a SETTABLE bool,
+/// while `@when` may also read a DERIVED predicate — `at_quote_top` / `in_quote_body`
+/// are computed from the `quote_depth` counter, so they are legal to read and illegal
+/// to set. That asymmetry is the reason for two lists rather than one.
+///
+/// Validating at all is the point: `modes_flag` answers TRUE for an unrecognised flag
+/// (an unknown predicate is ungated), so before this existed a typo — `@when(allow_strct_lit)`
+/// — parsed clean and emitted a guard that was always true. A dead gate that silently
+/// admits every branch is exactly the silent-failure class `@off`, `@on` and `@peek`
+/// each already reject by name, and `@when` was the one marker that did not.
+export fn when_pred_supported(flag: string) -> bool {
+    flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
+        flag == "allow_it_sugar" || flag == "cell_mode" ||
+        flag == "at_quote_top" || flag == "in_quote_body"
+}
+
 /// The parse-MODE flags a `@on(flag)` marker (GItem.mode_on) may turn ON — the
 /// SET-ON twin of off_flag_supported (the same settable ExprModes bools). Kept in
 /// lockstep with executor.modes_with_flag_on (a new @on-able flag is added in both).
@@ -1169,7 +1189,18 @@ fn parse_primary(p: GP) -> GPrim {
         let _ = p.advance()   // "when"
         p.expect_punct("(", "expected `(` after `@when`")
         mut flag = ""
-        if p.peek().kind == "NAME" { flag = p.advance().text }
+        if p.peek().kind == "NAME" {
+            let fl = p.advance().text
+            // Validated for the same reason `@off`/`@on`/`@peek` validate theirs: the
+            // name is interpolated into emitted source, and modes_flag ungates (returns
+            // true for) anything it does not recognise — so an unvalidated typo becomes
+            // an always-true guard rather than an error.
+            if when_pred_supported(fl) {
+                flag = fl
+            } else {
+                p.fail("unknown `@when` predicate `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode / at_quote_top / in_quote_body)")
+            }
+        }
         else { p.fail("expected a flag name in `@when(flag)`") }
         p.expect_punct(")", "expected `)` to close `@when`")
         return GPrim.Pred(flag)
