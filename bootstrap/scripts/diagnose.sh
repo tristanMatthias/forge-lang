@@ -328,12 +328,15 @@ DIFF & ANALYSIS
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
                        over the selfhost source + curated standalone corpus
-                       (tests/difftest_corpus/*.av). The two selfhost compiles
-                       run concurrently; the corpus fans out in parallel. The
-                       go-hard safety net. --new-prebuilt reuses build/bs2 as
+                       (tests/difftest_corpus/*.av). By default the two
+                       selfhost compiles run concurrently and the corpus fans
+                       out in parallel (see DIFF_TEST_JOBS below to serialize).
+                       The go-hard safety net. --new-prebuilt reuses build/bs2 as
                        NEW (skip the cold rebuild; LOCAL, non-hermetic).
                        DIFF_TEST_CORPUS=<glob> overrides the corpus;
-                       DIFF_TEST_JOBS=<n> the fan-out width.
+                       DIFF_TEST_JOBS=<n> the concurrency width (1 also
+                       serializes the two selfhost compiles: half the peak
+                       memory, for a ≤16GB box).
   --cache-fuzz [N] [SEED]
                        The canonical "is the cache lying to me" check
                        (pdme.9). N seeded edit/damage iterations against a
@@ -385,7 +388,8 @@ DIFF & ANALYSIS
                        RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
                        Starts the memory watchdog (--memguard), runs <cmd>,
                        and ALWAYS tears the watchdog down. Also forces
-                       AVRA_TEST_JOBS=1 (overridable). Use this for
+                       AVRA_TEST_JOBS=1 and DIFF_TEST_JOBS=1 (both
+                       overridable) so neither runner fans out. Use this for
                        diff-test / bs2 test / cold builds so a memory spike
                        kills the compile, NOT the whole container.
                        e.g. --guarded 5500 -- make diff-test
@@ -3029,11 +3033,17 @@ mode_guarded() {
   [ "${1:-}" = "--" ] && shift
   [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
   export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
+  # Same reasoning, for the other heavy runner under this wrapper: diff-test's
+  # two selfhost compiles peak at ~12GB CONCURRENTLY, which trips the very
+  # watchdog this mode starts. Serializing them is the difference between the
+  # gate running and the gate being unrunnable on a ≤16GB box; it costs one
+  # extra compile (~30s). Overridable, like AVRA_TEST_JOBS.
+  export DIFF_TEST_JOBS="${DIFF_TEST_JOBS:-1}"
   mode_memguard "$floor" &
   local guard=$!
   # Reap the watchdog however the command (or this script) exits.
   trap 'kill "$guard" 2>/dev/null' EXIT INT TERM
-  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS — running: $*"
+  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS DIFF_TEST_JOBS=$DIFF_TEST_JOBS — running: $*"
   "$@"
   local rc=$?
   kill "$guard" 2>/dev/null
@@ -4374,7 +4384,11 @@ mode_check_bootstrap_window() {
 #                           rebuild. LOCAL convenience only: NON-HERMETIC (the
 #                           binary's seed/source aren't pinned); CI never uses it.
 #   DIFF_TEST_CORPUS=<glob> corpus inputs  (default: tests/difftest_corpus/*.av)
-#   DIFF_TEST_JOBS=<n>      corpus fan-out width (default: ~nproc-1, capped at 8)
+#   DIFF_TEST_JOBS=<n>      concurrency width (default: ~nproc-1, capped at 8).
+#                           Bounds the corpus fan-out; jobs=1 ALSO serializes
+#                           the two selfhost compiles, halving peak memory
+#                           (~12GB -> ~6GB) for one extra compile of wall-clock.
+#                           That is the setting for a ≤16GB box.
 #   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
 
 DIFFTEST_DIR="$BUILD_DIR/difftest"
@@ -4544,17 +4558,33 @@ mode_diff_test() {
   local fails=0 checked=0 skipped=0
 
   # ── Selfhost differential: compile the OLD compiler's OWN source with
-  # BOTH compilers, CONCURRENTLY. OLD parses it by construction; a
-  # behaviour-preserving NEW must emit identical IR. This single input
-  # exercises ~all codegen and is the dominant post-build cost — --output
-  # keeps the two compiles from racing on main.av.ll, so they run in parallel.
-  log "diff-test: selfhost differential — both compilers compile the compiler (parallel)"
+  # BOTH compilers. OLD parses it by construction; a behaviour-preserving NEW
+  # must emit identical IR. This single input exercises ~all codegen and is the
+  # dominant post-build cost — --output keeps the two compiles from racing on
+  # main.av.ll, so by default they run CONCURRENTLY and the phase costs ~one
+  # compile instead of two.
+  #
+  # DIFF_TEST_JOBS=1 serializes them. Two whole-compiler compiles peak at ~12GB
+  # together, which on a ≤16GB box trips the memory watchdog (or takes the
+  # container down without one) — so the authoritative local gate was
+  # unrunnable there, with no knob to trade wall-clock for peak memory: jobs=1
+  # only ever bounded the corpus fan-out, leaving the heaviest phase untouched.
+  # jobs=1 now means what it says — nothing in diff-test runs concurrently —
+  # at the cost of ~one extra selfhost compile (~30s).
+  local self_jobs="${DIFF_TEST_JOBS:-$(dt_default_jobs)}"
   local self="$old/tree/bootstrap/packages/cli/src/main.av"
   local p_old p_new rc_old rc_new
-  dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll" & p_old=$!
-  dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll" & p_new=$!
-  wait "$p_old"; rc_old=$?
-  wait "$p_new"; rc_new=$?
+  if [ "$self_jobs" -le 1 ]; then
+    log "diff-test: selfhost differential — both compilers compile the compiler (SEQUENTIAL, jobs=1)"
+    dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll"; rc_old=$?
+    dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll"; rc_new=$?
+  else
+    log "diff-test: selfhost differential — both compilers compile the compiler (parallel)"
+    dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll" & p_old=$!
+    dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll" & p_new=$!
+    wait "$p_old"; rc_old=$?
+    wait "$p_new"; rc_new=$?
+  fi
   if [ "$rc_old" -ne 0 ]; then
     cat "$old/last.compile.log" >&2; die "diff-test: OLD failed its own selfhost compile (oracle broken)"
   fi
