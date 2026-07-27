@@ -1246,8 +1246,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The identifier-led primary (bare ident / struct-lit / table / feature-kw /
     // tagged-template) — FIRST is an IDENT.
     if name == "ident_primary" { return tok.kind == "IDENT" }
-    // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
-    // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
+    // (Interpolated strings and brace primaries are grammar-native now — template_lit
+    // t-47hc.19, brace_expr t-47hc.18 — so neither has a hand_starts entry.)
     // The ident-primary (bare ident / struct literal / qualified @pkg::T /
     // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
     // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then

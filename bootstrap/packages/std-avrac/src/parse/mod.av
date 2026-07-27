@@ -2635,17 +2635,11 @@ impl Parser {
         .Err("parse error")
     }
 
-    // Desugar `hello ${expr}!` into `"hello " + string(expr) + "!"`
-    // The content between `${` and `}` is parsed as a full expression
-    // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
-    // `${string(x)}` all work.
-    // The interpolated-string primary in isolation — the @hand(template_expr)
-    // entry for the grammar-DSL (ps3t.6.7). A `Tk.Template` token (an
-    // interpolated `"..{e}.."` string) desugars to the `+`-chain of text +
-    // string(expr) fragments; desugar_template re-parses each embedded
-    // expression via parse_template_expr. Byte-identical to parse_primary's
-    // Tk.Template arm — the stateless token-grammar can't re-express the nested
-    // expression re-parse, so the @hand bridge delegates it (like quote_expr).
+    /// Desugar `hello ${expr}!` into `"hello " + string(expr) + "!"`. Thin wrapper
+    /// over the SHARED store-based desugar_template_store (t-47hc.19) — the grammar's
+    /// native `template_lit` rule calls the same fn through mk_template, so the two
+    /// parsers cannot drift. This side reports the returned message on the hand
+    /// parser's own error channel.
     fn desugar_template(self, raw: string) -> Result<ExprId, string> {
         match desugar_template_store(self.store, raw) {
             .Ok(id) -> .Ok(id)

@@ -333,6 +333,10 @@ spec "t-47hc.19: grammar-native template_lit recovers == hand oracle" {
         agree_error(tpl_src("let b = \"v=" + dbrace() + "x\"")) &&
         agree_error(tpl_src("let b = \"v=" + dbrace() + "(}\""))
     }
+    then "the recovered TREES agree with hand (strictly stronger than F-codes)" {
+        agree_tree(tpl_src("let b = \"v=" + dbrace() + "x\"")) &&
+        agree_tree(tpl_src("let b = \"v=" + dbrace() + "(}\""))
+    }
     then "well-formed templates agree (plain, single, multiple, empty, format specs)" {
         agree(tpl_src("let a = \"plain\"")) &&
         agree(tpl_src("let b = \"v=" + dbrace() + "x}\"")) &&
