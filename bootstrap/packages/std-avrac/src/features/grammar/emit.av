@@ -674,6 +674,15 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
         // recognizer with no `s_cut` in scope, and the commit is emitted by
         // emit_item. Checked BEFORE the pred skip so a cut can never be lost.
         if item.cut { return false }
+        // Same reason, for `@require`: the flat emitter is a straight-line `s_last`
+        // recognizer with no place to put the marker's guard, and emit_spec_item's
+        // `.Ref` path would silently DROP it — no FIRST check, no report, just the
+        // bare call. The executor aborts there, so a flat branch would diverge from
+        // its own oracle. Routing to the rich emitter (which already handles
+        // @require for terminals AND refs, pre- and post-cut) keeps the marker
+        // meaningful everywhere it is legal, without duplicating the guard logic.
+        // Checked BEFORE the pred skip so it can never be lost, exactly like @cut.
+        if item.require { return false }
         if prim_is_pred_e(item.prim) { continue }
         if item.mode_off != "" || item.mode_on != "" { return false }
         if !rep_is_one(item.rep) { return false }

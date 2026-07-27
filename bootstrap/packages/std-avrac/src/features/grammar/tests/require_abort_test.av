@@ -131,6 +131,58 @@ fn emitted_compiles(grammar_src: string) -> bool {
     out.contains("rc=0")
 }
 
+// The `@try` composition above is pinned for a TERMINAL `@require`. A rule-reference
+// `@require` composes with `@try` through a DIFFERENT emitter, and got there by a
+// different route, so it needs its own specs rather than inheriting the terminal ones.
+//
+// `spec_branch_is_flat` routes a simple `@try` branch to `emit_spec_item`, a straight-line
+// `s_last` recognizer with no place to put a marker guard — and its `.Ref` path emitted the
+// bare `parse_<rule>(st)` call, silently DROPPING `@require`: no FIRST check, no report.
+// The executor's `.Ref` branch aborts there unconditionally, so a flat branch diverged from
+// its own oracle. Latent, because it needs a `@try` branch whose required rule can return
+// without reporting — then nothing grows st.diags, the speculative commit guard PASSES, and
+// the branch commits a parse the executor rejected.
+//
+// The fix is the one `@cut` already uses: `@require` forces the RICH emitter, which handles
+// the marker for terminals and refs alike. These specs pin that routing, both sides of a cut.
+fn g_try_ref_precut() -> string {
+    "r = @try \"+\" @require blk \"*\" | \"+\"\nblk = \"{\" \"}\""
+}
+
+fn g_try_ref_postcut() -> string {
+    "r = @try \"+\" \"-\" @cut @require blk | \"+\"\nblk = \"{\" \"}\""
+}
+
+spec "t-47hc.24: @require on a rule reference composes with @try on BOTH sides of the cut" {
+    then "a PRE-cut required rule emits its FIRST guard (it is no longer dropped)" {
+        // The regression this pins: the flat emitter produced a bare `s_last = parse_blk(st)`
+        // with no guard at all. The guard's presence is what makes the marker mean anything
+        // inside a speculative branch.
+        emitted(g_try_ref_precut()).contains("if !(st.cur().tk == Tk.LeftBrace) {")
+    }
+    then "and it REPORTS rather than returning — the rollback is the abort pre-cut" {
+        // Same rule the terminal form follows: an early `return` before the cut would jump
+        // past the rollback scaffold. The report fails the commit guard, and the rollback IS
+        // the abort. Asserted as report-without-return, not merely "no return anywhere".
+        let src = emitted(g_try_ref_precut())
+        src.contains("st.report(\"expected {\")") && !src.contains("error_node_silent")
+    }
+    then "a POST-cut required rule emits the s_cut-guarded abort" {
+        let src = emitted(g_try_ref_postcut())
+        src.contains("if !(st.cur().tk == Tk.LeftBrace) {") &&
+            src.contains("if s_cut {") && src.contains("error_node_silent")
+    }
+    then "EXECUTOR parity pre-cut: the branch rolls back to the sibling, no error survives" {
+        !run_grammar_expr(parse_grammar(g_try_ref_precut()).grammar, "+ 9").had_error
+    }
+    then "EXECUTOR parity post-cut: past the cut the abort is real and the error stands" {
+        run_grammar_expr(parse_grammar(g_try_ref_postcut()).grammar, "+ - 9").had_error
+    }
+    then "both emitted forms are well-formed Avra, not just the right text" {
+        emitted_compiles(g_try_ref_precut()) && emitted_compiles(g_try_ref_postcut())
+    }
+}
+
 spec "t-47hc.21: the emitted abort is well-formed Avra, not just the right text" {
     then "a predictive @require renders a fn that compiles" {
         emitted_compiles("r = \"+\" @require \"-\" @expect(\"-\", \"expected a minus here\")")
