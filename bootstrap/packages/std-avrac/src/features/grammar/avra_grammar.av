@@ -17,7 +17,7 @@
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
 use features.grammar.{parse_grammar, Grammar, compose_grammars}
-use features.match_expr.{avra_pat_grammar}
+use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -302,9 +302,10 @@ fn avra_stmt_common_grammar() -> Grammar {
                 // through it, which cost every ordinary `match` a snapshot and left the
                 // missing-`{` message with the oracle.
                 | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
-  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
-                 | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+  // match_when_arm + match_arm moved to features/match_expr/grammar.av
+  // (avra_match_arm_grammar) — the expression `match_expr` needs the SAME rules and
+  // each family's emitted parser is generated from its own dispatch grammar, so one
+  // shared fragment composed into both is the only home that serves both (t-47hc.25).
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
@@ -406,7 +407,15 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
 /// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
-    compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar())
+    // The match ARM fragment is composed in rather than defined inline: the
+    // expression family needs the identical rules and is emitted from its OWN
+    // dispatch grammar, so one shared fragment is the only home that serves both
+    // (t-47hc.25). Composed LAST so the statement rules keep leading the merged
+    // rule set — the emitted function order is observable.
+    compose_grammars(
+        compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()),
+        avra_match_arm_grammar()
+    )
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY declaration grammar (the static-emit twin of

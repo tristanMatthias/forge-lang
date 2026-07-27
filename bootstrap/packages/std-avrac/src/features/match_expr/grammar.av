@@ -39,3 +39,33 @@ export fn avra_pat_grammar() -> Grammar {
     }
     gp.grammar
 }
+
+/// The match ARM rules — the second fragment this feature owns, and the FIRST
+/// fragment shared by two families (t-47hc.25). They used to live inline in the
+/// statement grammar, which was fine while only `match_stmt` referenced them;
+/// the expression `match_expr` needs the same rules, and each family's EMITTED
+/// parser is generated from its OWN dispatch grammar (avra_expr_dispatch_grammar
+/// / avra_decl_dispatch_grammar), each treating the other's rules as EXTERNAL.
+/// So neither inline home works for both: whichever family did not define them
+/// would emit the loud `avra_grammar_external_first_undeclared_match_arm(...)`
+/// undeclared-FIRST call. Composing ONE fragment into BOTH dispatch grammars is
+/// the fix — two generated `parse_match_arm` functions from one source, which is
+/// what code generation is for.
+///
+/// `match_when_arm` must stay a SINGLE definition and must NOT be folded into
+/// the expression family's `when_arm`: the hand `parse_when_arm_list` it mirrors
+/// takes `_` as the ONLY default, never `else` — which `when { … }` DOES accept.
+/// Merging them would silently widen the accepted language; a duplicated copy
+/// would drift into the same outcome. One definition, referenced twice.
+///
+/// Both rules embed `expression` and `pattern_or`, which resolve after the flat
+/// merge against whichever fragment defines them (compose.av) — the mechanism
+/// that lets an arm reference the expression ladder without re-defining it.
+export fn avra_match_arm_grammar() -> Grammar {
+    let gp = grammar {
+  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
+                 | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
+  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+    }
+    gp.grammar
+}
