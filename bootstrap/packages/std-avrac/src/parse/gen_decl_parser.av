@@ -256,39 +256,22 @@ fn parse_expr_stmt(st: PState) -> CapVal {
 }
 
 fn parse_for_stmt(st: PState) -> CapVal {
-    mut tried_spec = false
     if lookahead_ok("for_destructure", st) && (st.cur().text == "for") {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
         let sp_start = st.cur().pos
         let _ = st.advance()
         let fb = parse_for_binding(st)
         if st.cur().text == "in" { let _ = st.advance() } else {
-            st.report("expected in")
+            st.report("expected `in` after for destructure pattern")
+            return CapVal.Node(st.error_node_silent())
         }
         let __modes_3 = st.modes
         st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
         let coll = parse_expression(st)
         st.set_modes(__modes_3)
         let body = parse_block(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return mk_for_destructure(st, sp_start, fb, coll, body)
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
+        return mk_for_destructure(st, sp_start, fb, coll, body)
     }
     if st.cur().text == "for" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
         let sp_start = st.cur().pos
         mut hi: CapVal = CapVal.Nil
         let _ = st.advance()
@@ -297,7 +280,8 @@ fn parse_for_stmt(st: PState) -> CapVal {
             CapVal.Tok(st.cur())
         }
         if st.cur().text == "in" { let _ = st.advance() } else {
-            st.report("expected in")
+            st.report("expected `in` after loop variable")
+            return CapVal.Node(st.error_node_silent())
         }
         let __modes_3 = st.modes
         st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
@@ -311,17 +295,8 @@ fn parse_for_stmt(st: PState) -> CapVal {
         }
         st.set_modes(__modes_4)
         let body = parse_block(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return mk_for_loop(st, sp_start, v, lo, hi, body)
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
+        return mk_for_loop(st, sp_start, v, lo, hi, body)
     }
-    if st.cur().text == "for" {
-        return CapVal.SNode(run_hand_stmt("for_stmt_edge", st))
-    }
-    if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node("expected an expression"))
 }
 

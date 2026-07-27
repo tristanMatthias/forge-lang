@@ -279,12 +279,18 @@ fn avra_stmt_common_grammar() -> Grammar {
 
 fn avra_stmt_flip_for_grammar() -> Grammar {
     let gp = grammar {
-  for_stmt = @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
-           | "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
+  for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
+           | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
     }
     gp.grammar
 }
 
+// t-47hc.21: the dispatch view is now IDENTICAL to the flip view above — `@hand(for_stmt_edge)`
+// is gone and the branches are predictive, not speculative. Two fixes made that possible:
+// `@require` aborts a malformed header before a body is built (no more runaway that ate the
+// next declaration), and the flip's error path now surfaces a GRAMMAR-NATIVE diagnostic and
+// adopts the DSL's stop byte, so a native rule owns its own message and resync point instead
+// of borrowing a hand leaf's.
 fn avra_stmt_dispatch_for_grammar() -> Grammar {
     let gp = grammar {
   // t-47hc.21: `@require` (the abort) exists now and fixes the RUNAWAY here — a
@@ -294,9 +300,8 @@ fn avra_stmt_dispatch_for_grammar() -> Grammar {
   // (F0001 F0001 F0013, two nodes) where the abort yields one (F0001). Spending the
   // capability waits on matching that resync — the oracle is the gate, per the
   // opt-in-primitive discipline.
-  for_stmt = @try @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
-           | @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
-           | @hand(for_stmt_edge)
+  for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
+           | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
     }
     gp.grammar
 }
@@ -357,9 +362,9 @@ export fn avra_decl_flip_grammar() -> Grammar {
 /// A top-level `{` is lookahead-routed to a native block or to the expression path
 /// for a string-keyed map literal; defer/errdefer/return are native. Match's
 /// ordinary form is native with a narrow edge oracle, and if-ELSE recursively
-/// enters the native statement rule. Both valid `for` families are native; the
-/// remaining `for_stmt_edge` is reached only after a speculative generated parse
-/// reports a malformed-header error, preserving exact abort/recovery diagnostics.
+/// enters the native statement rule. Both `for` families are native outright —
+/// `@require` owns the malformed-header abort and the flip surfaces the grammar's own
+/// diagnostic, so no edge oracle remains.
 /// This is an `intended-ir-change`: the generated
 /// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
 /// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the

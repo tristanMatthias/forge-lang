@@ -1,0 +1,55 @@
+use @std.avrac.parse.{parse_program_source}
+
+// WHY: t-47hc.21 — the first @hand leaf retired by owning its OWN diagnostics.
+//
+// `for_stmt` is grammar-native now: no @try speculation and no @hand(for_stmt_edge).
+// Two things had to be true for that. @require aborts a malformed header before a
+// body is built (without it `for Foo { }` parsed `{ … }` as the collection and its
+// body swallowed the NEXT declaration). And the flip's error path had to stop
+// dropping the grammar's own diagnostic — it merged only the hand DELEGATE's bag and
+// adopted the delegate's (unmoved) cursor, so a native rule could report and resync
+// but neither reached the caller. That is why every leaf needed a hand sibling.
+//
+// These cases pin the malformed-header behaviour directly, since diff-test does not
+// cover the error text of invalid programs.
+
+fn diags(src: string) -> int {
+    parse_program_source(src).bag.diagnostics.length
+}
+
+fn first_msg(src: string) -> string {
+    let b = parse_program_source(src).bag
+    if b.diagnostics.length == 0 { return "" }
+    b.diagnostics[0].message
+}
+
+spec "t-47hc.21: a malformed `for` header aborts and owns its diagnostic" {
+    then "a missing `in` reports the hand parser's exact message" {
+        first_msg("fn f() -> int {\n    for x 1..2 { }\n    return 0\n}") == "expected `in` after loop variable"
+    }
+    then "the abort does NOT swallow the following declaration" {
+        // The runaway signature: `for Foo { }` consuming `{ … }` as the collection and
+        // letting `body:block` eat whatever came next. `g` must survive as its own item.
+        let r = parse_program_source("impl for Foo { }\nfn g() -> int { 1 }")
+        r.ids != null && r.ids!.length >= 3
+    }
+    then "the abort reports the header error, then the caller's own resync error" {
+        // Two diagnostics, matching the hand parser exactly: the aborted header, then
+        // the stray `}` the caller lands on once the malformed statement is dropped.
+        // Pinned as a pair because a regression in EITHER the abort or the resync
+        // shows up as a changed count.
+        let b = parse_program_source("fn f() -> int {\n    for x 1..2 { }\n    return 0\n}").bag
+        b.diagnostics.length == 2 &&
+            b.diagnostics[0].message == "expected `in` after loop variable" &&
+            b.diagnostics[1].message == "unexpected `}`"
+    }
+    then "a well-formed range loop stays clean" {
+        diags("fn f() -> int {\n    for i in 0..3 { }\n    return 0\n}") == 0
+    }
+    then "a well-formed for-in loop stays clean" {
+        diags("fn f() -> int {\n    for x in xs { }\n    return 0\n}") == 0
+    }
+    then "a well-formed destructuring loop stays clean" {
+        diags("fn f() -> int {\n    for (a, b) in xs { }\n    return 0\n}") == 0
+    }
+}
