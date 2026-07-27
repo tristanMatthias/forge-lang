@@ -93,7 +93,7 @@ fn parse_stmt_block(st: PState) -> CapVal {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
         st.clear_error()
-        let __cv = parse_statement(st)
+        let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
