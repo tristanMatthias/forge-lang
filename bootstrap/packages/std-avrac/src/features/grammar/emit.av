@@ -1888,7 +1888,21 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // predicate used by the expression dispatch itself.
         if name == "expression" { return "tok_starts_expr_leaf(st.cur())" }
         if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
-        return "false"
+        // Any OTHER external rule has no declared FIRST, and falling back to `false`
+        // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
+        // `( r )?` is never taken, and the generated parser DROPS the whole construct
+        // while still compiling and reporting no error. (Caught red-handed adding
+        // subjectless `match { … }`: `when_arm` is an expression-family rule, so the
+        // statement dispatch emitted `while false { a_list.push(…) }` — every arm
+        // dropped, `bs2 check` still said `ok`, and the match feature suite stayed
+        // green because nothing covered that form.)
+        //
+        // Emit an UNDEFINED call instead, so regen -> build fails loudly and names the
+        // rule. No production grammar reaches this today (no generated parser contains
+        // a `false` guard), so every checked-in parser regenerates byte-identically —
+        // this only fires the moment someone adds a cross-family reference and forgets
+        // to declare its FIRST above.
+        return "avra_grammar_external_first_undeclared_${name}(st.cur())"
     }
     node_first_guard(g, r.body, v2)
 }
