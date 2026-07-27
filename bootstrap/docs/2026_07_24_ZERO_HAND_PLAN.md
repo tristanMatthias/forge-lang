@@ -118,11 +118,15 @@ it **aborts** the rule and lets the statement-list loop synchronise. `@expect` i
 report-and-continue, so it cannot express that; the `@hand` leaf exists purely to
 own the abort.
 
-**The missing primitive is `@require(tok, msg)`** — the dual of `@cut`: on
-failure, report and abort the rule with a kind-appropriate error node instead of
-running the rest of the sequence. Sketch:
+**The missing primitive is `@require`** — the dual of `@cut`: a bare marker on a
+terminal that, on failure, reports and aborts the rule instead of running the rest
+of the sequence. It carries no message of its own; the diagnostic still comes from
+the sequence's `@expect(tok, msg)`, so control flow and diagnostics stay separate
+seams. Sketch:
 
-- **emit** — natural: `if <guard> { advance } else { st.report(msg); return <error of rule_result_kind> }`.
+- **emit** — natural: `if <guard> { advance } else { st.report(msg); return <error node> }`
+  (the same error node emit already uses for "no branch matched", so no rule-kind
+  threading is needed).
 - **executor** — an `abort` flag on `CapEnv` (the `cut` precedent), checked by
   `exec_seq` after each item.
 - **composition with `@try`** — an abort *before* a cut must degrade to a

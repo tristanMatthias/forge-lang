@@ -15,6 +15,9 @@
 // matching the hand oracle's resync), so every generated parser regenerates
 // byte-identically.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
 
 // Diagnostic COUNT, not just presence: the runaway signature is "kept going and
 // reported more", so a count is what distinguishes abort from report-and-continue.
@@ -96,6 +99,34 @@ spec "t-47hc.21: @require inside @try defers to the rollback until the @cut" {
     }
 }
 
+// The `contains` assertions above check WHAT is emitted; this checks that what is
+// emitted is well-formed Avra. A misplaced early `return` — wrong result type, or
+// stranded past a terminator — is invisible to a source-text match but fatal to the
+// generated parser, and no production grammar spends `@require` yet, so
+// --emit-gen-check cannot cover it. Compiling the rendered fn closes that gap.
+fn emitted_compiles(grammar_src: string) -> bool {
+    let src = "use @std.avrac.features.grammar.{Token, CapVal, PState, capval_to_expr, literal_node, mk_binary, tok_starts_expr_leaf}\n" +
+        "use @std.avrac.core.{Expr, ExprId, NodeStore, Tk}\n\n" +
+        emit_parser_source(parse_grammar(grammar_src).grammar) +
+        "\nfn main() {}\n"
+    let path = "/tmp/avra_require_emit.av"
+    write_fixture(path, src)
+    let out = avra_shell_exec("./build/bs2 compile '${path}' 2>&1; echo rc=$?")
+    out.contains("rc=0")
+}
+
+spec "t-47hc.21: the emitted abort is well-formed Avra, not just the right text" {
+    then "a predictive @require renders a fn that compiles" {
+        emitted_compiles("r = \"+\" @require \"-\" @expect(\"-\", \"expected a minus here\")")
+    }
+    then "a POST-cut @require inside a @try renders a fn that compiles" {
+        emitted_compiles("r = @try \"+\" \"-\" @cut @require \"*\" | \"+\"")
+    }
+    then "a pre-cut @require inside a @try renders a fn that compiles" {
+        emitted_compiles("r = @try \"+\" @require \"-\" \"*\" | \"+\"")
+    }
+}
+
 spec "t-47hc.21: @require well-formedness is enforced at parse time" {
     then "a TRAILING @require is rejected — it has no item to attach to" {
         rejects("r = \"+\" \"-\" @require")
@@ -108,5 +139,16 @@ spec "t-47hc.21: @require well-formedness is enforced at parse time" {
     }
     then "@require on a zero-width @peek is rejected" {
         rejects("r = \"+\" @require @peek(ident_colon) \"-\"")
+    }
+    then "@require on the LEADING item is rejected as dead notation" {
+        // Index 0 is the sequence's guard token — the FIRST check already proved it,
+        // so both engines consume it unconditionally and it can never mismatch.
+        rejects("r = @require \"+\" \"-\"")
+    }
+    then "@require on an expr-fold branch is rejected (emit_fold bypasses emit_item)" {
+        rejects("r = l:t o:\"+\" @require rr:t -> fold_binary(l, o, rr)\nt = NUMBER")
+    }
+    then "@require inside a GROUP of a fold branch is rejected too (fold context descends)" {
+        rejects("r = l:t ( o:\"+\" @require rr:t )* -> fold_binary(l, o, rr)\nt = NUMBER")
     }
 }

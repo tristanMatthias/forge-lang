@@ -955,15 +955,21 @@ fn annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
 }
 
 fn emit_seq_items(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
-    emit_seq_items_from(g, seq, outer_annots, ind, list_labels, opts, 0)
+    emit_seq_items_from(g, seq, outer_annots, ind, list_labels, opts, 0, spec_none())
 }
+
+/// The three speculative contexts a `@require` can sit in. Small named constants
+/// rather than a bool pair so the intent reads at every call site.
+fn spec_none() -> int { 0 - 1 }
+fn spec_pre_cut() -> int { 0 }
+fn spec_committed() -> int { 1 }
 
 /// emit_seq_items with an explicit starting item INDEX. `idx == 0` marks the
 /// sequence's GUARD token — already FIRST-matched by the enclosing `if`/`while`, so
 /// emit_one_terminal consumes it unconditionally. Pass `idx_base = 1` when nothing
 /// proved the first token (an UNGUARDED single-branch structural group), so it is
 /// VALIDATED like any later item instead of being swallowed whole.
-fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int) -> string {
+fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int, spec_ctx_in: int) -> string {
     let seeds_postfix = seq_seeds_postfix_e(seq)
     mut out = ""
     mut idx = idx_base
@@ -972,14 +978,21 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
     // speculative snapshot. There it degrades to plain reporting, which is already the
     // right behaviour: the report fails the commit guard, so the ROLLBACK is the abort.
     // Predictive branches, and everything past a cut, abort for real.
-    mut cut_seen = false
+    //
+    // `spec_ctx` carries that state DOWN into nested groups. A group's own sequence is
+    // never `speculative` (only a branch is), so deriving abortability from it alone
+    // would let a pre-cut `@require` inside a `@try` branch's group emit the early
+    // return — exactly the rollback bypass this guards against. Values: SPEC_NONE
+    // predictive, SPEC_PRE_CUT inside a speculative branch before its cut,
+    // SPEC_COMMITTED past the cut.
+    mut ctx = if seq.speculative { spec_pre_cut() } else { spec_ctx_in }
     for item in seq.items {
-        if item.cut { cut_seen = true }
+        if item.cut && ctx == spec_pre_cut() { ctx = spec_committed() }
         // A `@when` predicate is zero-width: it emits no code and consumes no
         // idx slot, so the first token-bearing item stays the guard token (idx 0).
         if prim_is_pred_e(item.prim) { continue }
-        let abortable = !seq.speculative || cut_seen
-        out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable)
+        let abortable = ctx != spec_pre_cut()
+        out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable, ctx)
         // Phase 3a base-threading (twin of exec_seq's hook): after a grammar-BUILT base
         // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
         // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
@@ -1001,7 +1014,7 @@ fn prim_is_pred_e(prim: GPrim) -> bool {
 /// One item. `idx == 0` is the branch's guard token (already matched by the
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
-fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool) -> string {
+fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     // `@cut` COMMIT POINT (t-47hc.21): the twin of exec_item's `env.cut = true`.
     // `s_cut` is a `mut` local of the enclosing speculative branch's block, so the
     // write reaches it from a nested group too (groups emit inline). Emitted BEFORE
@@ -1014,7 +1027,7 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // roll back to the `"+"` sibling). `s_diags`/`s_err` are the enclosing
     // speculative branch's entry snapshot, already in scope.
     let cut_pre = if item.cut { "${ind}if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }\n" } else { "" }
-    let inner = cut_pre + emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable)
+    let inner = cut_pre + emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
@@ -1043,16 +1056,16 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     inner
 }
 
-fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool) -> string {
+fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     match item.rep {
-        .One -> emit_one(g, item, idx, annots, ind, list_labels, opts, abortable)
-        .Opt -> emit_opt(g, item, annots, ind, list_labels, opts)
-        .Star -> emit_repeat_group(g, item, annots, ind, list_labels, opts)
-        .Plus -> emit_repeat_group(g, item, annots, ind, list_labels, opts)
+        .One -> emit_one(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
+        .Opt -> emit_opt(g, item, annots, ind, list_labels, opts, spec_ctx)
+        .Star -> emit_repeat_group(g, item, annots, ind, list_labels, opts, spec_ctx)
+        .Plus -> emit_repeat_group(g, item, annots, ind, list_labels, opts, spec_ctx)
     }
 }
 
-fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool) -> string {
+fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     match item.prim {
         .Ref(name) -> {
             if str_in(list_labels, item.label) {
@@ -1084,7 +1097,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             if prim_yields_token(item.prim) {
                 return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts, abortable)
             }
-            emit_node_items(g, inner, annots, ind, list_labels, opts, 1)
+            emit_node_items(g, inner, annots, ind, list_labels, opts, 1, spec_ctx)
         }
         // A `@when`/`@peek` predicate emits nothing (zero-width); emit_seq_items already
         // skips it, so this is a defensive no-op for any other caller.
@@ -1199,11 +1212,11 @@ fn same_line_wrap(item: GItem, guard: string) -> string {
 
 /// An optional group `( … )?` → an if guarded by the group's FIRST. The
 /// group's captures accumulate into the branch's already-declared lists.
-fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, spec_ctx: int) -> string {
     match item.prim {
         .Group(inner) -> {
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
+                emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                 "${ind}}\n"
         }
         _ -> {
@@ -1306,7 +1319,7 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
         "${ind}if __any_err { st.note_had_error() }\n"
 }
 
-fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, spec_ctx: int) -> string {
     match item.prim {
         // A labeled bare-ref `*`/`+` over a STATEMENT rule → the statement-list-with-
         // recovery loop (emit_stmt_list_loop). Non-matching refs keep the pre-existing
@@ -1349,12 +1362,12 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
             if group_is_single_hand(g, inner) {
                 req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     "${ind}    let __rep_before = st.pos\n" +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     "${ind}    if st.pos == __rep_before { break }\n" +
                     "${ind}}\n"
             } else {
                 req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     "${ind}}\n"
             }
         }
@@ -1375,19 +1388,19 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
 /// entered UNGUARDED (a structural group sitting mid-sequence), so its leading terminal
 /// must be validated too. The multi-branch case always emits its own per-branch guard,
 /// so it proves the token itself and ignores `idx_base`.
-fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int) -> string {
+fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int, spec_ctx: int) -> string {
     match node {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
             if branches.length == 1 {
-                return emit_seq_items_from(g, branches[0], annots, ind, list_labels, opts, idx_base)
+                return emit_seq_items_from(g, branches[0], annots, ind, list_labels, opts, idx_base, spec_ctx)
             }
             mut out = ""
             mut i = 0
             for b in branches {
                 let kw = if i == 0 { "if" } else { "} else if" }
                 out = out + "${ind}${kw} ${seq_first_guard(g, b, [])} {\n"
-                out = out + emit_seq_items(g, b, annots, ind + "    ", list_labels, opts)
+                out = out + emit_seq_items_from(g, b, annots, ind + "    ", list_labels, opts, 0, spec_ctx)
                 i = i + 1
             }
             out = out + "${ind}}\n"
@@ -1990,7 +2003,7 @@ fn node_all_terminal(node: GNode) -> bool {
                 let item = b.items[0]
                 if !prim_is_terminal(item.prim) { return false }
                 if !rep_is_one(item.rep) { return false }
-                if item.cut || item.sameline || item.mode_off != "" || item.mode_on != "" { return false }
+                if item.cut || item.require || item.sameline || item.mode_off != "" || item.mode_on != "" { return false }
             }
             true
         }
