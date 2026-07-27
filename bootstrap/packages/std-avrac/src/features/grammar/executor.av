@@ -1306,9 +1306,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "return_stmt" { return tok.text == "return" }
     // The residual match-statement edge oracle (subjectless/table/bare-return/
     // quote-splice arms) is intentionally narrower than the generic stmt leaf.
-    // Malformed `for` headers must fail before a body is built. The native branch
-    // is speculative; this narrow edge oracle owns only the rolled-back failure.
-    if name == "for_stmt_edge" { return tok.text == "for" }
     if name == "match_stmt_edge" { return tok.text == "match" }
     // (Statement blocks are grammar-native — stmt_block's body is `declaration*`,
     // so an inline module's component parses without a hand fallback.)
@@ -1402,7 +1399,7 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
 fn is_stmt_hand(name: string) -> bool {
     name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
-    name == "for_stmt_edge" || name == "match_stmt_edge" ||
+    name == "match_stmt_edge" ||
     // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
     // production statement/declaration flips delegate to (parse_statement /
     // parse_declaration).
@@ -1474,7 +1471,6 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
         "component_decl" -> bp.parse_component_decl()
         "let_stmt"       -> bp.parse_let_statement()
         "return_stmt"    -> bp.parse_return_statement()
-        "for_stmt_edge"  -> bp.parse_for_statement()
         "match_stmt_edge" -> bp.parse_match_statement()
         // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
         // return). The *_hand entry so bp does NOT re-flip THIS statement (only its

@@ -652,7 +652,7 @@ fn emit_speculative_branch(g: Grammar, b: GSeq, retry_hand: bool) -> string {
 
 /// True when a non-speculative sibling delegates its retry to Parser A. Only
 /// these alternations need to rewind the shared hand delegate after a failed
-/// generated attempt (for_stmt -> for_stmt_edge is the motivating production).
+/// generated attempt (match_stmt -> match_stmt_edge is the motivating production).
 fn has_hand_fallback(branches: List<GSeq>) -> bool {
     for b in branches {
         if !b.speculative && is_leading_hand(b) { return true }
@@ -1617,7 +1617,7 @@ fn emit_hand_result(hf: string) -> string {
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
     n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
-    n == "for_stmt_edge" || n == "match_stmt_edge" ||
+    n == "match_stmt_edge" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1745,7 +1745,6 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
-    if hf == "for_stmt_edge" { return "st.cur().text == \"for\"" }
     if hf == "match_stmt_edge" { return "st.cur().text == \"match\"" }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
@@ -2139,7 +2138,7 @@ fn build_kind(bn: string) -> string {
 }
 
 fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "decl_hand" || hf == "component_decl" || hf == "for_stmt_edge" || hf == "match_stmt_edge" { return "stmt" }
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "decl_hand" || hf == "component_decl" || hf == "match_stmt_edge" { return "stmt" }
     "expr"
 }
 

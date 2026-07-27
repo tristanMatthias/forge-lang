@@ -1048,6 +1048,19 @@ impl Parser {
             // home parse_file_program returns and codegen gates on — and mark
             // had_error, so the error is surfaced WITHOUT a re-parse (re-parsing is
             // the orphan-Error-row + cascade source the full-program flip hit).
+            // A GRAMMAR-NATIVE diagnostic lives on the DSL RESULT, not on the
+            // delegate's bag: the generated parser (and the interpreter) report into
+            // their own PState, and `dsl.diag` carries the first message out. Merging
+            // only `d.bag` therefore DROPS it, leaving had_error set with no
+            // diagnostic — which is precisely why every leaf still needed an
+            // `@hand(*_edge)` sibling whose only job was to own the message. Surface
+            // it whenever the delegate itself reported nothing, so a native rule can
+            // carry its own diagnostics. (The span is this parser's current position
+            // rather than the exact mismatch byte; the F-code and message match the
+            // hand parser, which is what the recovery oracle compares.)
+            if d.bag.diagnostics.length == 0 && dsl.diag != "" {
+                self.set_error(dsl.diag)
+            }
             self.bag = bag_merge(self.bag, d.bag)
             self.had_error = true
             // Distinguish a WHOLE-ITEM failure from an already-recovered BODY error.
@@ -1063,6 +1076,18 @@ impl Parser {
             // whole subtree as orphan Error rows.
             match self.stmt_of(dsl.stmt) {
                 .Error -> {
+                    // Adopting the DELEGATE's cursor is right when the delegate did
+                    // the parsing — its synchronize then starts where the hand parser
+                    // would. But on a GRAMMAR-NATIVE failure the delegate never moved,
+                    // so `d` still sits at the item start and the caller resyncs from
+                    // before the construct instead of from the token that failed. The
+                    // DSL's own stop byte is the equivalent landing point; walk the
+                    // delegate there first so the cursor means the same thing on both
+                    // paths. (Guarded on forward progress, so a zero-width failure
+                    // still hands back untouched and the caller's progress guard fires.)
+                    if d.bag.diagnostics.length == 0 && dsl.stop_byte > item_start {
+                        d.resync_to_stop_byte(dsl.stop_byte)
+                    }
                     self.copy_cursor_from(d)
                     return .Err("parse error")
                 }
