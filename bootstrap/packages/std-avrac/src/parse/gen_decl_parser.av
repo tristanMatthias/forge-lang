@@ -218,49 +218,6 @@ fn parse_match_stmt(st: PState) -> CapVal {
     CapVal.Node(st.error_node("expected an expression"))
 }
 
-fn parse_match_when_arm(st: PState) -> CapVal {
-    if st.cur().text == "_" {
-        let _ = st.advance()
-        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected ->")
-        }
-        let __modes_2 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
-        let b = parse_expression(st)
-        st.set_modes(__modes_2)
-        return mk_when_default(st, b)
-    }
-    if tok_starts_expr_leaf(st.cur()) {
-        let c = parse_expression(st)
-        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected ->")
-        }
-        let __modes_2 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
-        let b = parse_expression(st)
-        st.set_modes(__modes_2)
-        return mk_when_arm(st, c, b)
-    }
-    CapVal.Node(st.error_node("expected an expression"))
-}
-
-fn parse_match_arm(st: PState) -> CapVal {
-    mut g: CapVal = CapVal.Nil
-    let p = parse_pattern_or(st)
-    if st.cur().text == "if" {
-        let _ = st.advance()
-        g = parse_expression(st)
-    }
-    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected ->")
-    }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
-    let b = parse_expression(st)
-    st.set_modes(__modes_3)
-    mk_arm(st, p, g, b)
-}
-
 fn parse_defer_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let e = parse_expression(st)
@@ -330,5 +287,48 @@ fn parse_for_stmt(st: PState) -> CapVal {
         return mk_for_loop(st, sp_start, v, lo, hi, body)
     }
     CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_match_when_arm(st: PState) -> CapVal {
+    if st.cur().text == "_" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected ->")
+        }
+        let __modes_2 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+        let b = parse_expression(st)
+        st.set_modes(__modes_2)
+        return mk_when_default(st, b)
+    }
+    if tok_starts_expr_leaf(st.cur()) {
+        let c = parse_expression(st)
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected ->")
+        }
+        let __modes_2 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+        let b = parse_expression(st)
+        st.set_modes(__modes_2)
+        return mk_when_arm(st, c, b)
+    }
+    CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_match_arm(st: PState) -> CapVal {
+    mut g: CapVal = CapVal.Nil
+    let p = parse_pattern_or(st)
+    if st.cur().text == "if" {
+        let _ = st.advance()
+        g = parse_expression(st)
+    }
+    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+        st.report("expected ->")
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+    let b = parse_expression(st)
+    st.set_modes(__modes_3)
+    mk_arm(st, p, g, b)
 }
 

@@ -20,7 +20,7 @@ use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keywo
 use features.list_comp.{list_comp_feature}
 use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
-use features.match_expr.{match_feature, when_feature, avra_pat_grammar}
+use features.match_expr.{match_feature, when_feature, avra_pat_grammar, avra_match_arm_grammar}
 use features.modules.{mod_feature, use_feature}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_feature}
@@ -120,6 +120,7 @@ export fn init_features(reg: Registry) {
 /// is a clean union with a well-defined start symbol.
 export fn feature_grammar_fragments() -> List<Grammar> {
     [
-        avra_pat_grammar(),   // match_expr — pattern syntax (`pattern_or` …)
+        avra_pat_grammar(),        // match_expr — pattern syntax (`pattern_or` …)
+        avra_match_arm_grammar(),  // match_expr — match/when ARM syntax (`match_arm`, `match_when_arm`)
     ]
 }

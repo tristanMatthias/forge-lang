@@ -1,0 +1,96 @@
+// WHY: t-47hc.25 — `match_arm` / `match_when_arm` are the FIRST grammar fragment shared
+// by two families, which is what the composition seam was built for.
+//
+// They used to sit inline in the statement grammar. That was fine while only `match_stmt`
+// referenced them, but the expression `match_expr` needs the identical rules, and each
+// family's EMITTED parser is generated from its OWN dispatch grammar — each treating the
+// other family's rules as EXTERNAL. So neither inline home serves both: whichever family
+// did not define them would emit the loud `avra_grammar_external_first_undeclared_match_arm`
+// call (#1021) and fail to compile. Moving them would just relocate the breakage.
+//
+// One fragment composed into both dispatch grammars is the fix. Two generated
+// `parse_match_arm` functions from ONE source — which is what code generation is for.
+//
+// The rule that must NOT be "simplified" later: `match_when_arm` is deliberately not the
+// expression family's `when_arm`. The hand `parse_when_arm_list` it mirrors takes `_` as
+// the ONLY default, never `else`, which `when { … }` DOES accept. Merging them widens the
+// language silently; duplicating them lets the copies drift into the same outcome. Being
+// ONE definition is the whole point, so that is what these specs pin.
+use @std.avrac.features.match_expr.{avra_match_arm_grammar}
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar}
+use @std.avrac.features.{feature_grammar_fragments}
+
+fn arm_rules() -> string { render_grammar(avra_match_arm_grammar()) }
+
+/// Does this grammar DEFINE the rule — not merely mention it?
+///
+/// The distinction is the whole point. `render_grammar` renders rule BODIES too, so
+/// `render(g).contains("match_arm")` is satisfied by `match_stmt`'s REFERENCE to the rule
+/// and says nothing about whether it resolves. The first version of this file used exactly
+/// that check and passed while the interpreter grammars were missing both rules — a test
+/// structurally incapable of observing what it claimed. Walk the rule list instead.
+fn defines(g: Grammar, name: string) -> bool {
+    for r in g.rules { if r.name == name { return true } }
+    false
+}
+
+fn defines_arms(g: Grammar) -> bool { defines(g, "match_arm") && defines(g, "match_when_arm") }
+
+spec "t-47hc.25: the arm fragment owns exactly the two arm rules" {
+    then "it defines match_arm and match_when_arm" {
+        // Structural, not textual — `contains` is satisfied by a rule BODY mentioning the
+        // name and cannot establish a definition. Same reason the composition specs below
+        // walk g.rules.
+        defines_arms(avra_match_arm_grammar())
+    }
+    then "match_when_arm keeps `_`-only default semantics — never `else`" {
+        // The load-bearing difference from when_arm. If this ever renders an `else`
+        // alternative, subjectless `match` has silently started accepting `when` syntax.
+        let r = arm_rules()
+        r.contains("\"_\"") && !r.contains("\"else\"")
+    }
+    then "match_arm still carries the pattern, the optional guard, and the arm build" {
+        let r = arm_rules()
+        r.contains("pattern_or") && r.contains("\"if\"") && r.contains("MkArm(p, g, b)")
+    }
+    then "the `@off(allow_dot_postfix)` gate survives into the GENERATED parser" {
+        // Asserted against the emitted source, not the render: render_grammar does not
+        // round-trip mode markers (t-a3ky), so a render-based check here would pass even
+        // if the gate were dropped. The generated body is where the gate is observable.
+        emit_parser_source(avra_match_arm_grammar())
+            .contains("modes_with_flag_off(st.modes, \"allow_dot_postfix\")")
+    }
+}
+
+spec "t-47hc.25: every grammar that references the arms also DEFINES them" {
+    then "the declaration dispatch grammar (the emitted static parser's source)" {
+        // Not external: the rules must be present in the merged set the decl parser is
+        // emitted from, or the generated parser calls an undeclared-FIRST stub (#1021).
+        defines_arms(avra_decl_dispatch_grammar())
+    }
+    then "the statement FLIP grammar (the interpreter path)" {
+        // The one this file originally missed. The interpreter WALKS the composed
+        // Grammar — there is no cross-file linking to save it — so an unresolved
+        // match_arm makes the DSL error on every `match` statement and silently fall
+        // back to the hand parser: right answer, no diagnostic, flip quietly off.
+        defines_arms(avra_stmt_flip_grammar())
+    }
+    then "the declaration FLIP grammar (the interpreter path the decl flip runs)" {
+        defines_arms(avra_decl_flip_grammar())
+    }
+    then "composing it a second time WOULD be a conflict — the disjointness is real" {
+        // Guards the duplicate-definition mistake directly: if someone re-adds the rules
+        // inline to the statement grammar while the fragment is still composed, this is
+        // the shape that fires. Two fragments both defining match_arm is a clash.
+        let dup = fragment_rule_conflicts([avra_match_arm_grammar(), avra_match_arm_grammar()])
+        dup.length > 0
+    }
+    then "and the REGISTRY's fragments are mutually clash-free" {
+        // Pass the FRAGMENTS, not an already-composed grammar. compose_grammars merges
+        // into a flat rule set, so asking a composed view for conflicts is vacuous — a
+        // duplicate would have been collapsed to one rule before the detector saw it.
+        // This is the assembly that actually happens: every fragment the registry
+        // contributes, as separate Grammars.
+        fragment_rule_conflicts(feature_grammar_fragments()).length == 0
+    }
+}
