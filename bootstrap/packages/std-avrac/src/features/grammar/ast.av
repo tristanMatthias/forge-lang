@@ -285,11 +285,13 @@ export enum GAnnot {
 
 // ── Small constructors / probes (keep call sites readable) ──
 
-/// Is `s` one of `xs`? The feature's ONE string-membership helper — it had grown
-/// four private copies (`list_has` in executor.av, `ffs_has` in first_follow.av,
-/// `frag_name_in` in compose.av, and `str_in` in emit.av, which additionally treats
-/// `""` as absent). Lives here because ast.av is the contract module every one of
-/// those files already imports.
+/// Is `s` one of `xs`? Lives here because ast.av is the contract module the whole
+/// feature already imports, so new code has one place to reach for rather than adding
+/// yet another private copy. Several predate it and still stand (`list_has` in
+/// executor.av, `ffs_has` in first_follow.av, `frag_name_in` in compose.av, `str_in`
+/// in emit.av, `str_in_seq` in seed_parser.av); converging them is a separate pass,
+/// since `str_in` additionally treats `""` as absent and that guard is load-bearing at
+/// its call sites.
 export fn name_in(xs: List<string>, s: string) -> bool {
     for x in xs {
         if x == s { return true }

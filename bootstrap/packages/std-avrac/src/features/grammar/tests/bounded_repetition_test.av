@@ -101,6 +101,60 @@ spec "t-47hc.28: the emitted parser is the executor's twin" {
     }
 }
 
+// The shape the construct EXISTS for: `match … table`'s per-row cell loop. The bound
+// sits on an item INSIDE a repeating group, and the capture it names comes from the
+// header row OUTSIDE that group. Validation must carry the enclosing branch's scope
+// into the group, or this — the headline use case — is unparseable.
+fn nested_g() -> string {
+    "r = \"[\" ( h:paren )+ \"|\" ( ( c:paren )*{#h} \";\" )* -> MkListLit(c)\n" +
+    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+}
+
+spec "t-47hc.28: a bound INSIDE a repeating group sees the enclosing branch" {
+    then "the grammar is accepted — the group does not restart bound visibility" {
+        perr(nested_g()) == ""
+    }
+    then "each row's cell loop is capped independently, not cumulatively" {
+        // Two rows, cap 2 each. A cumulative counter would take 2 cells TOTAL and drop
+        // row two; a per-entry counter takes 2 per row — which is why the emitted
+        // counter is declared inside the outer loop rather than around it.
+        run_render(nested_g(), "[(1)(2)|(7)(8);(5)(6);]") ==
+            "(list ((group 7), (group 8), (group 5), (group 6)))"
+    }
+    then "a bound naming a capture to its RIGHT is still rejected inside a group" {
+        // Threading the scope must not become "see everything" — left-to-right
+        // visibility is what both engines implement.
+        perr("r = ( ( c:NUMBER )*{#h} )* ( h:NUMBER )+").contains("not captured earlier")
+    }
+}
+
+spec "t-47hc.28: `+` with a zero cap takes zero iterations, matching the emitted loop" {
+    then "a `+{#cap}` over an EMPTY capture takes nothing" {
+        // exec_item_body's `.Plus` arm forces one iteration before exec_repeat; the
+        // emitted loop has no forced iteration and its guard breaks on the first check.
+        // Unless the forced iteration honours the cap, the two engines disagree here —
+        // reachable whenever the bound names a `*` capture that matched nothing.
+        let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
+                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+        run_render(g, "[|(7)(8)]") == "(list ())"
+    }
+    then "a positive cap still takes its full count" {
+        let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
+                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+        run_render(g, "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8)))"
+    }
+}
+
+spec "t-47hc.28: the validator and the emitter agree on what a list capture is" {
+    then "a label merely REPEATED across two `One` items is not bindable" {
+        // The emitter declares a `<label>_list` only for a label under a `*`/`+`
+        // (list_labels_of). Accepting a bound on a repeated-scalar label would emit a
+        // reference to an undeclared `a_list` — the generated file would not compile —
+        // while the interpreter saw a last-wins scalar and answered 1.
+        perr("r = a:NUMBER a:NUMBER ( c:NUMBER )*{#a}").contains("scalar capture")
+    }
+}
+
 spec "t-47hc.28: render round-trips the bound" {
     then "the bound survives render -> parse" {
         // A renderer that dropped it would turn a capped loop into an unbounded one —

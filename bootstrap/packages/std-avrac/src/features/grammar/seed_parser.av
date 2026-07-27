@@ -638,13 +638,33 @@ fn node_has_bound(node: GNode) -> bool {
 }
 
 fn check_bound_node(node: GNode, rule: string) -> string {
+    let no_lists: List<string> = []
+    let no_seen: List<string> = []
+    check_bound_node_in(node, rule, no_lists, no_seen, false)
+}
+
+/// `outer_lists`/`outer_seen` are the captures already collected to the LEFT of this
+/// node by the ENCLOSING branch. Threading them is what lets a bound written INSIDE a
+/// group see the enclosing branch's captures — which is not an edge case but the
+/// headline shape: `match … table`'s per-row cell loop is
+/// `( h:IDENT )+ ( p:pattern c:cell{#h} )*`, where the bound sits inside the row group
+/// and `h` comes from the header row outside it. Restarting the scope at each group
+/// made that grammar unparseable.
+///
+/// `under_multi` says this node sits inside a repeating group, which makes every
+/// capture within it list-shaped — mirroring emit's `node_labels_of(inner, under_multi)`,
+/// because the two must agree on what a `<label>_list` accumulator exists for.
+fn check_bound_node_in(node: GNode, rule: string, outer_lists: List<string>, outer_seen: List<string>, under_multi: bool) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
-                // Labels that are LIST-shaped by the time each item is reached. Built
-                // incrementally so a bound can only see captures to its LEFT.
+                // Labels that are LIST-shaped by the time each item is reached. Seeded
+                // from the enclosing scope, then built incrementally so a bound can only
+                // ever see captures to its LEFT.
                 mut lists: List<string> = []
                 mut seen: List<string> = []
+                for l in outer_lists { lists.push(l) }
+                for l in outer_seen { seen.push(l) }
                 for item in b.items {
                     if item.bound != "" {
                         // A repetition bounded by a capture IT ITSELF writes is
@@ -666,20 +686,33 @@ fn check_bound_node(node: GNode, rule: string) -> string {
                         }
                     }
                     if item.label != "" {
-                        // A `*`/`+` item collects into a list; so does a label reused
-                        // across items (the parallel-list capture shape).
-                        let multi = match item.rep { .Star -> true  .Plus -> true  _ -> false }
-                        if multi || name_in(seen, item.label) {
+                        // LIST-shaped means exactly what the EMITTER declares a
+                        // `<label>_list` accumulator for: a label under a `*`/`+`, own
+                        // or inherited from an enclosing repeating group (emit's
+                        // list_labels_of / node_labels_of). A label merely REPEATED
+                        // across two `One` items is NOT one — the emitter declares no
+                        // accumulator for it, so accepting a bound on it would emit a
+                        // reference to an undeclared `<label>_list` and the generated
+                        // file would not compile, while the interpreter's capval_len saw
+                        // a last-wins scalar and answered 1. Both engines must agree on
+                        // what a bindable list is.
+                        let multi = under_multi || match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                        if multi {
                             if !name_in(lists, item.label) { lists.push(item.label) }
                         }
                         if !name_in(seen, item.label) { seen.push(item.label) }
                     }
-                    // A group's own items bind into the SAME enclosing env, so their
-                    // labels are visible to a later bound in this branch. Inside a
-                    // `*`/`+` group every capture is list-shaped by construction.
                     match item.prim {
                         .Group(inner) -> {
-                            let multi = match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                            let multi = under_multi || match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                            // Recurse BEFORE merging the group's own labels outward, so a
+                            // bound inside the group sees only what is genuinely to its
+                            // LEFT — the enclosing branch's captures plus, via the inner
+                            // walk's own accumulation, the group items preceding it.
+                            let e = check_bound_node_in(inner, rule, lists, seen, multi)
+                            if e != "" { return e }
+                            // A group's items bind into the SAME env, so its labels are
+                            // visible to later items of THIS branch.
                             let sub = group_label_shapes(inner, multi)
                             for l in sub.lists {
                                 if !name_in(lists, l) { lists.push(l) }
@@ -687,8 +720,6 @@ fn check_bound_node(node: GNode, rule: string) -> string {
                             for l in sub.all {
                                 if !name_in(seen, l) { seen.push(l) }
                             }
-                            let e = check_bound_node(inner, rule)
-                            if e != "" { return e }
                         }
                         _ -> {}
                     }
@@ -732,8 +763,10 @@ fn group_label_shapes(node: GNode, multi: bool) -> LabelShapes {
             for b in branches {
                 for item in b.items {
                     if item.label != "" {
+                        // Same rule as check_bound_node_in: list-shaped ⇔ under a
+                        // `*`/`+`, never merely repeated across `One` items.
                         let item_multi = match item.rep { .Star -> true  .Plus -> true  _ -> false }
-                        if multi || item_multi || name_in(all, item.label) {
+                        if multi || item_multi {
                             if !name_in(lists, item.label) { lists.push(item.label) }
                         }
                         if !name_in(all, item.label) { all.push(item.label) }

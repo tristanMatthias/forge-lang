@@ -1315,10 +1315,24 @@ fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool,
             CapVal.Nil
         }
         .Plus -> {
-            // require ≥1: one forced iteration, then like Star.
-            let v0 = exec_primary(g, item.prim, st, env, true, annots)
-            bind(env, item.label, v0, true)
-            exec_repeat(g, item, st, env, annots)
+            // require ≥1: one forced iteration, then like Star — EXCEPT when a bound
+            // already caps this loop at zero. The emitted twin has no forced iteration;
+            // its counter guard breaks before the first one. Without this check a
+            // `+{#cap}` over an empty capture would take one iteration here and none
+            // there. Reachable whenever the bound names a `*` capture that matched
+            // nothing.
+            //
+            // The forced iteration also COUNTS toward the cap — it is one of the at-most-N,
+            // not a freebie before them — so it is carried into the loop as `already`.
+            // Otherwise a `+{#h}` with cap 2 would take 1 + 2 = 3 here against the
+            // emitted loop's 2.
+            mut already = 0
+            if item_bound_cap(item, env) != 0 {
+                let v0 = exec_primary(g, item.prim, st, env, true, annots)
+                bind(env, item.label, v0, true)
+                already = 1
+            }
+            exec_repeat_from(g, item, st, env, annots, already)
             CapVal.Nil
         }
     }
@@ -1328,14 +1342,19 @@ fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool,
 /// while the current token starts it, binding into list captures.
 /// Bounded — a non-consuming iteration breaks the loop.
 fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
+    exec_repeat_from(g, item, st, env, annots, 0)
+}
+
+/// `already` is how many iterations the caller has taken toward this item's cap —
+/// nonzero only for `.Plus`, whose forced first iteration counts toward the at-most-N.
+fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>, already: int) {
     let empty: List<string> = []
     // t-47hc.28 `x{#cap}`: the cap is read ONCE, before the loop. Reading it per
     // iteration would be wrong the moment the repetition's own captures share a
     // label with the bound (self-limiting), and the count it stands for — "how many
     // columns did the header declare" — is fixed by the time the bounded loop starts.
-    // `-1` means unbounded, which keeps the hot comparison a single int test.
-    let cap = if item.bound == "" { -1 } else { capval_len(env.get(item.bound)) }
-    mut taken = 0
+    let cap = item_bound_cap(item, env)
+    mut taken = already
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop.
     while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
@@ -1346,6 +1365,14 @@ fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GA
         taken = taken + 1
         if st.pos == before { return }
     }
+}
+
+/// This item's repetition cap, or `-1` when unbounded — which keeps the hot comparison
+/// a single int test. ONE reader for the bound so `exec_repeat` and the `.Plus` forced
+/// iteration can never disagree about what the cap is.
+fn item_bound_cap(item: GItem, env: CapEnv) -> int {
+    if item.bound == "" { return -1 }
+    capval_len(env.get(item.bound))
 }
 
 /// How many elements a capture holds — the value `x{#cap}` bounds against. TOTAL over
