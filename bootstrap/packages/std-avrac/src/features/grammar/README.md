@@ -48,6 +48,15 @@ grammar Name {
   purely to carry diagnostics. Only legal inside `@try` (a predictive branch has
   nothing to commit) and it fires only while the branch has reported nothing —
   both enforced at grammar-parse time.
+- **abort** `@require` (`@cut`'s dual) marks a terminal whose absence STOPS the
+  rule: `"for" v:IDENT @require "in" …`. By default both engines are
+  error-tolerant — a missing token reports and the sequence keeps building a
+  partial node — which lets a malformed header run away and swallow whatever
+  follows. `@require` is the grammar's way to say what the hand parser says with
+  `return .Err`. It carries no message of its own: the diagnostic still comes from
+  `@expect`, so control flow and diagnostics stay separate seams. Inside a `@try`
+  branch before a `@cut` it degrades to plain reporting, because the rollback
+  already is the abort.
 
 The gnarly 5% (string interpolation, newline-sensitivity, `~`, `<` generic-vs-
 less-than) stays **out** of the notation — in the lexer or a hand-written

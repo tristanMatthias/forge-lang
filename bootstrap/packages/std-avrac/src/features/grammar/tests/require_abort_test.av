@@ -1,0 +1,154 @@
+// WHY: t-47hc.21 — `@require`, the ABORT marker (`@cut`'s dual).
+//
+// Both engines are error-TOLERANT: a missing required token reports and the
+// sequence carries on building a partial node. The hand parser instead
+// `return .Err`s and lets the statement-list loop synchronise. Without a way to
+// say that, a malformed header RUNS AWAY: `impl for Foo { }` parsed `{ … }` as
+// the for-in collection and its `body:block` swallowed the following declaration.
+// That runaway is exactly why the `@hand(*_edge)` oracles exist.
+//
+// `@require` is a bare marker on a terminal: on a mismatch, report and stop the
+// rule. The MESSAGE still comes from the sequence's `@expect(tok, msg)`, so
+// diagnostics keep one seam and control flow another.
+//
+// Dormant: no production grammar spends it yet (the for_stmt spend waits on
+// matching the hand oracle's resync), so every generated parser regenerates
+// byte-identically.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+// Diagnostic COUNT, not just presence: the runaway signature is "kept going and
+// reported more", so a count is what distinguishes abort from report-and-continue.
+fn diag_count(grammar_src: string, src: string) -> int {
+    run_grammar_expr(parse_grammar(grammar_src).grammar, src).diags.length
+}
+
+fn rejects(grammar_src: string) -> bool {
+    parse_grammar(grammar_src).error != ""
+}
+
+fn emitted(grammar_src: string) -> string {
+    emit_parser_source(parse_grammar(grammar_src).grammar)
+}
+
+// `"+" "-" "*"` on input `+ / /`: the `-` is missing. Without `@require` the
+// sequence reports and presses on, so the `*` mismatch reports a SECOND time.
+// With it, the rule stops at the first failure.
+spec "t-47hc.21: @require aborts the rule instead of reporting on" {
+    then "CONTROL: without @require a mismatch reports and the sequence continues" {
+        diag_count("r = \"+\" \"-\" \"*\"", "+ / /") == 2
+    }
+    then "with @require the rule stops at the first missing terminal" {
+        diag_count("r = \"+\" @require \"-\" \"*\"", "+ / /") == 1
+    }
+    then "a satisfied @require is invisible — the rest of the sequence still runs" {
+        diag_count("r = \"+\" @require \"-\" \"*\"", "+ - /") == 1
+    }
+    then "a fully matching sequence reports nothing" {
+        diag_count("r = \"+\" @require \"-\" \"*\"", "+ - *") == 0
+    }
+    then "the abort propagates out of a nested group" {
+        // The flag rides the rule's CapEnv, which groups share, so the sequence
+        // ENCLOSING the group stops too: the trailing `%` never reports.
+        // The group is entered (its `-` matches) and aborts on the missing `*`.
+        diag_count("r = \"+\" ( \"-\" @require \"*\" ) \"%\"", "+ - /") == 1
+    }
+    then "a @require on a group's LEAD item is unreachable when the group's FIRST fails" {
+        // Not propagation — the group simply isn't entered, so the marker never
+        // runs and the enclosing sequence carries on (2 reports: the group's own
+        // no-branch error, then the trailing terminal). Pinned so the asymmetry is
+        // a documented property rather than a surprise: mark the item that must be
+        // THERE, not the one that decides whether to enter.
+        diag_count("r = \"+\" ( @require \"-\" ) \"*\"", "+ / /") == 2
+    }
+}
+
+// The message seam stays `@expect`: `@require` never carries one.
+spec "t-47hc.21: @require defers its message to @expect" {
+    then "the emitted abort reports the @expect message, not a generic one" {
+        let src = emitted("r = \"+\" @require \"-\" @expect(\"-\", \"expected a minus here\")")
+        src.contains("expected a minus here") && src.contains("return CapVal.Node(st.error_node_silent())")
+    }
+    then "without @require the same @expect reports but does NOT return" {
+        let src = emitted("r = \"+\" \"-\" @expect(\"-\", \"expected a minus here\")")
+        src.contains("expected a minus here") && !src.contains("error_node_silent")
+    }
+}
+
+// Composition with `@try`: an early `return` inside a speculative branch would
+// jump past the rollback scaffold. Before the branch's `@cut` the abort degrades
+// to plain reporting — which is already correct, because the report fails the
+// commit guard and the ROLLBACK is the abort. Past a cut the branch is committed,
+// so the abort is emitted for real.
+spec "t-47hc.21: @require inside @try defers to the rollback until the @cut" {
+    then "a pre-cut @require in a @try branch emits no early return" {
+        let src = emitted("r = @try \"+\" @require \"-\" \"*\" | \"+\"")
+        !src.contains("error_node_silent")
+    }
+    then "and it still rolls back to the sibling branch (no error survives)" {
+        !run_grammar_expr(parse_grammar("r = @try \"+\" @require \"-\" \"*\" | \"+\"").grammar, "+ / /").had_error
+    }
+    then "a POST-cut @require in a @try branch does emit the abort" {
+        let src = emitted("r = @try \"+\" \"-\" @cut @require \"*\" | \"+\"")
+        src.contains("error_node_silent")
+    }
+    then "a predictive branch always emits the abort" {
+        emitted("r = \"+\" @require \"-\"").contains("error_node_silent")
+    }
+}
+
+// The `contains` assertions above check WHAT is emitted; this checks that what is
+// emitted is well-formed Avra. A misplaced early `return` — wrong result type, or
+// stranded past a terminator — is invisible to a source-text match but fatal to the
+// generated parser, and no production grammar spends `@require` yet, so
+// --emit-gen-check cannot cover it. Compiling the rendered fn closes that gap.
+fn emitted_compiles(grammar_src: string) -> bool {
+    let src = "use @std.avrac.features.grammar.{Token, CapVal, PState, capval_to_expr, literal_node, mk_binary, tok_starts_expr_leaf}\n" +
+        "use @std.avrac.core.{Expr, ExprId, NodeStore, Tk}\n\n" +
+        emit_parser_source(parse_grammar(grammar_src).grammar) +
+        "\nfn main() {}\n"
+    let path = "/tmp/avra_require_emit.av"
+    write_fixture(path, src)
+    let out = avra_shell_exec("./build/bs2 compile '${path}' 2>&1; echo rc=$?")
+    out.contains("rc=0")
+}
+
+spec "t-47hc.21: the emitted abort is well-formed Avra, not just the right text" {
+    then "a predictive @require renders a fn that compiles" {
+        emitted_compiles("r = \"+\" @require \"-\" @expect(\"-\", \"expected a minus here\")")
+    }
+    then "a POST-cut @require inside a @try renders a fn that compiles" {
+        emitted_compiles("r = @try \"+\" \"-\" @cut @require \"*\" | \"+\"")
+    }
+    then "a pre-cut @require inside a @try renders a fn that compiles" {
+        emitted_compiles("r = @try \"+\" @require \"-\" \"*\" | \"+\"")
+    }
+}
+
+spec "t-47hc.21: @require well-formedness is enforced at parse time" {
+    then "a TRAILING @require is rejected — it has no item to attach to" {
+        rejects("r = \"+\" \"-\" @require")
+    }
+    then "@require on a rule REFERENCE is rejected (it reports its own failure)" {
+        rejects("r = \"+\" @require sub\nsub = \"-\"")
+    }
+    then "@require on a repetition is rejected (an absent optional is not a mismatch)" {
+        rejects("r = \"+\" @require \"-\"*")
+    }
+    then "@require on a zero-width @peek is rejected" {
+        rejects("r = \"+\" @require @peek(ident_colon) \"-\"")
+    }
+    then "@require on the LEADING item is rejected as dead notation" {
+        // Index 0 is the sequence's guard token — the FIRST check already proved it,
+        // so both engines consume it unconditionally and it can never mismatch.
+        rejects("r = @require \"+\" \"-\"")
+    }
+    then "@require on an expr-fold branch is rejected (emit_fold bypasses emit_item)" {
+        rejects("r = l:t o:\"+\" @require rr:t -> fold_binary(l, o, rr)\nt = NUMBER")
+    }
+    then "@require inside a GROUP of a fold branch is rejected too (fold context descends)" {
+        rejects("r = l:t ( o:\"+\" @require rr:t )* -> fold_binary(l, o, rr)\nt = NUMBER")
+    }
+}

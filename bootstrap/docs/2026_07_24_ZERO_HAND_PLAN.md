@@ -118,11 +118,15 @@ it **aborts** the rule and lets the statement-list loop synchronise. `@expect` i
 report-and-continue, so it cannot express that; the `@hand` leaf exists purely to
 own the abort.
 
-**The missing primitive is `@require(tok, msg)`** — the dual of `@cut`: on
-failure, report and abort the rule with a kind-appropriate error node instead of
-running the rest of the sequence. Sketch:
+**The missing primitive is `@require`** — the dual of `@cut`: a bare marker on a
+terminal that, on failure, reports and aborts the rule instead of running the rest
+of the sequence. It carries no message of its own; the diagnostic still comes from
+the sequence's `@expect(tok, msg)`, so control flow and diagnostics stay separate
+seams. Sketch:
 
-- **emit** — natural: `if <guard> { advance } else { st.report(msg); return <error of rule_result_kind> }`.
+- **emit** — natural: `if <guard> { advance } else { st.report(msg); return <error node> }`
+  (the same error node emit already uses for "no branch matched", so no rule-kind
+  threading is needed).
 - **executor** — an `abort` flag on `CapEnv` (the `cut` precedent), checked by
   `exec_seq` after each item.
 - **composition with `@try`** — an abort *before* a cut must degrade to a
@@ -135,3 +139,20 @@ With `@require` + `@cut`, `for_stmt` splits cleanly into range and collection
 branches, each owning its own missing-brace message (`expected `{` after for
 range` vs `expected `{` or `..` after for expression`) — the exact reason
 `for_stmt_edge` still exists.
+
+### `@require` has landed; the `for_stmt` spend is one resync away
+
+`@require` is implemented and specced (`require_abort_test.av`), and it FIXES the
+runaway: with it, `for Foo { }` aborts on the missing `in` instead of parsing
+`{ … }` as the collection and eating the next declaration. It is NOT spent yet,
+because one recovery case still diverges.
+
+On `impl for Foo { }` the hand oracle emits `F0001 F0001 F0013` and TWO nodes —
+it resyncs past the bad `impl` header and re-parses `Foo { }` as a struct-literal
+expression statement. The abort emits `F0001` and one node. So the residual gap is
+not the abort itself but **where the caller resumes afterwards**: the hand
+parser's `synchronize()` leaves the cursor somewhere the grammar path does not.
+Closing it means matching that resync (very likely a `@recover(sync_to:)` on the
+`for` branches), then re-running the recovery oracle. That is the whole remaining
+distance to deleting `for_stmt_edge`, and `match_stmt_edge` follows the same
+shape.

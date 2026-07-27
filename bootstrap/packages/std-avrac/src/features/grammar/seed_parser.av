@@ -175,8 +175,9 @@ export fn parse_grammar(src: string) -> GrammarParse {
         if oe != "" { p.error = oe }
     }
     // t-47hc.21: a `@cut` outside a `@try` branch is DEAD notation (a predictive
-    // branch never rolls back, so there is nothing to commit). Reject it rather
-    // than accept a marker that silently does nothing.
+    // branch never rolls back, so there is nothing to commit), and `@require` only
+    // means anything on a plain terminal. Reject either rather than accept a marker
+    // that silently does nothing.
     if p.error == "" {
         let ce = validate_cuts(g)
         if ce != "" { p.error = ce }
@@ -383,7 +384,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_cut_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_cut_marker(p) || at_require_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -477,6 +478,15 @@ fn at_cut_marker(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "cut"
+}
+
+/// True when the cursor is `@require` — the ABORT marker (t-47hc.21). Bare, like
+/// `@cut`: the diagnostic still comes from the sequence's `@expect`.
+fn at_require_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "require"
 }
 
 /// True when the cursor is `@on` — the SET-ON twin of at_off_marker. Same item-start
@@ -577,10 +587,21 @@ fn validate_cuts(g: Grammar) -> string {
 }
 
 fn check_cut_node(node: GNode, rule: string, in_try: bool) -> string {
+    check_cut_node_ctx(node, rule, in_try, false)
+}
+
+fn check_cut_node_ctx(node: GNode, rule: string, in_try: bool, in_fold: bool) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
                 let this_try = in_try || b.speculative
+                // A fold branch takes emit_fold, which bypasses emit_item — carried
+                // DOWN through groups, exactly like check_mode_node does, because a
+                // group inside a fold branch takes the fold path too.
+                let this_fold = in_fold || branch_is_expr_fold(b)
+                // Item index, skipping the zero-width predicates the emitters skip —
+                // so index 0 is the sequence's GUARD token.
+                mut idx = 0
                 for item in b.items {
                     if item.cut {
                         if !this_try {
@@ -589,7 +610,7 @@ fn check_cut_node(node: GNode, rule: string, in_try: bool) -> string {
                         // A fold branch takes emit_fold, which bypasses emit_item —
                         // the cut would vanish from the generated parser while the
                         // executor still honored it (a silent divergence).
-                        if branch_is_expr_fold(b) {
+                        if this_fold {
                             return "`@cut` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the commit"
                         }
                         // Both emitters SKIP zero-width predicates in their item
@@ -598,18 +619,58 @@ fn check_cut_node(node: GNode, rule: string, in_try: bool) -> string {
                             return "`@cut` cannot wrap a `@when`/`@peek` predicate (rule `${rule}`) — put it on the next token-bearing item"
                         }
                     }
+                    // `@require` is a TERMINAL-mismatch abort: both engines detect
+                    // "the token isn't there" on a Lit/Named, not on a rule ref (whose
+                    // failure is its own internal report) or a zero-width predicate.
+                    if item.require {
+                        if !prim_is_terminal_sp(item.prim) {
+                            return "`@require` only applies to a terminal (rule `${rule}`) — a rule reference reports its own failure"
+                        }
+                        if !rep_is_one_sp(item.rep) {
+                            return "`@require` cannot carry a repetition (rule `${rule}`) — an absent optional/repeated item is not a mismatch"
+                        }
+                        // Same fold hazard as `@cut`: emit_fold consumes its terminals
+                        // through emit_accumulate, never emit_item, so the abort would
+                        // vanish from the generated parser while the executor honoured it.
+                        if this_fold {
+                            return "`@require` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the abort"
+                        }
+                        // Index 0 is the sequence's GUARD position. In a rule branch and
+                        // in a terminal-alternation group the enclosing FIRST check has
+                        // already proved that token, so both engines consume it
+                        // unconditionally and it can never mismatch; in an unguarded
+                        // structural group it IS validated. Rather than make the marker's
+                        // meaning depend on which of those the emitters picked, reject it
+                        // outright — mark the item that must FOLLOW the guard.
+                        if idx == 0 {
+                            return "`@require` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard; mark the item that must follow it"
+                        }
+                    }
                     match item.prim {
                         .Group(inner) -> {
-                            let e = check_cut_node(inner, rule, this_try)
+                            let e = check_cut_node_ctx(inner, rule, this_try, this_fold)
                             if e != "" { return e }
                         }
                         _ -> {}
                     }
+                    if !prim_is_pred_e_sp(item.prim) { idx = idx + 1 }
                 }
             }
         }
     }
     ""
+}
+
+fn prim_is_terminal_sp(prim: GPrim) -> bool {
+    match prim {
+        .Lit(_) -> true
+        .Named(_) -> true
+        _ -> false
+    }
+}
+
+fn rep_is_one_sp(r: GRep) -> bool {
+    match r { .One -> true  _ -> false }
 }
 
 /// The zero-width predicates the emitters skip (`@when`/`@peek`). Named apart from
@@ -659,6 +720,18 @@ fn parse_labeled(p: GP) -> GItem {
         cut = true
         if !seq_can_continue(p) {
             p.fail("`@cut` must be followed by an item — it marks the point a `@try` branch commits")
+        }
+    }
+    // t-47hc.21 ABORT: `@require` makes a mismatch on this terminal stop the rule
+    // rather than report-and-continue. Bare marker (no parens) — the message is the
+    // sequence's `@expect`, so diagnostics keep ONE seam.
+    mut require = false
+    if at_require_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "require"
+        require = true
+        if !seq_can_continue(p) {
+            p.fail("`@require` must be followed by an item — it marks a terminal whose absence aborts the rule")
         }
     }
     // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
@@ -736,7 +809,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut, require }
 }
 
 // postfix = primary ( "*" | "+" | "?" )?

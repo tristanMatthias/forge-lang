@@ -287,6 +287,13 @@ fn avra_stmt_flip_for_grammar() -> Grammar {
 
 fn avra_stmt_dispatch_for_grammar() -> Grammar {
     let gp = grammar {
+  // t-47hc.21: `@require` (the abort) exists now and fixes the RUNAWAY here — a
+  // malformed `for Foo { }` header no longer parses `{ … }` as the collection and
+  // swallows the next declaration. It is NOT spent yet: on `impl for Foo { }` the
+  // hand oracle resyncs and re-parses `Foo { }` as a struct-literal expr-stmt
+  // (F0001 F0001 F0013, two nodes) where the abort yields one (F0001). Spending the
+  // capability waits on matching that resync — the oracle is the gate, per the
+  // opt-in-primitive discipline.
   for_stmt = @try @peek(for_destructure) "for" fb:for_binding "in" @off(allow_struct_lit) coll:expression body:block -> MkForDestructure(fb, coll, body)
            | @try "for" v:IDENT "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block -> ForLoop(v, lo, hi, body)
            | @hand(for_stmt_edge)
