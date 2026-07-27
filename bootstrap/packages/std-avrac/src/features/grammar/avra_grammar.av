@@ -158,9 +158,19 @@ fn avra_expr_core() -> Grammar {
 /// The declaration edge shared by every interpreter composition that can enter
 /// an expression block. Keeping this as one fragment avoids duplicating the
 /// existing hand-declaration frontier while block bodies call `declaration*`.
+///
+/// t-47hc.24 — the `@peek(decl_lead)` gate is what makes the second alternative
+/// carry real weight. `@hand(decl_hand)`'s FIRST includes a bare IDENT (the
+/// component instantiation `Comp inst { … }` is a declaration), but
+/// parse_declaration_hand handles ONLY that form itself and falls through to
+/// `parse_statement` for every other identifier-led item — so an unqualified IDENT
+/// in the FIRST routed `x = 1`, `f(a)` and `x.m()` into a Parser delegate whose only
+/// job was to hand them straight back to this same grammar. The gate keeps the
+/// component shape on the hand path and lets the rest reach `statement` directly,
+/// which is where they were always going to be parsed.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @hand(decl_hand) | statement
+  declaration = @peek(decl_lead) @hand(decl_hand) | statement
     }
     gp.grammar
 }

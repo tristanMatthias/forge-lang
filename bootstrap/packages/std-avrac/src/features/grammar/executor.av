@@ -967,7 +967,44 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
         return st.toks[st.pos + 2].text == ":"
     }
+    // t-47hc.24 — "is this token position a DECLARATION lead?", the narrowing that
+    // takes IDENT off `@hand(decl_hand)`'s unconditional FIRST.
+    //
+    // decl_hand's FIRST claimed a bare IDENT because parse_declaration_hand handles
+    // ONE identifier-led declaration — the component instantiation `Comp inst { … }`
+    // — and falls through to `self.parse_statement()` for everything else. That
+    // fall-through made the hand parser the entry point for EVERY identifier-led
+    // statement (`x = 1`, `f(a)`, `x.m()`): the DSL handed the item to a Parser
+    // delegate purely so the delegate could hand it straight back to the DSL.
+    //
+    // The gate keeps the component form on the hand path and routes the rest to the
+    // `statement` alternative directly. It is deliberately a token-level SUPERSET of
+    // Parser.peek_after_ident_is_ident_not_keyword (which additionally excludes a
+    // keyword list, at char level): a false POSITIVE is inert — parse_declaration_hand
+    // re-checks precisely and still falls through to parse_statement, reproducing
+    // today's path exactly — while a false NEGATIVE would silently re-route a real
+    // component instantiation. Asymmetric risk, so the gate errs wide.
+    if cond == "decl_lead" {
+        // Non-IDENT leads (doc comments, `@`, `export`, the decl keywords) are the
+        // hand's unconditionally — the narrowing is IDENT-only.
+        if st.cur().kind != "IDENT" { return true }
+        if st.pos + 2 >= st.toks.length { return false }
+        // `Comp inst {`: an instance NAME (the hand scans a raw word starting with a
+        // letter or `_`, so keyword-kinded tokens count too) then the block brace.
+        if !tok_starts_word(st.toks[st.pos + 1]) { return false }
+        return st.toks[st.pos + 2].tk == Tk.LeftBrace
+    }
     true
+}
+
+/// True when a token's lexeme begins with a letter or `_` — the token-level twin of
+/// Parser.peek_after_ident_is_ident_not_keyword's raw-char `is_alpha` scan. Kind is
+/// deliberately NOT consulted: the hand reads a WORD out of the source, so a
+/// keyword-kinded token (`in`, `defer`, …) is a word there too, and the `decl_lead`
+/// gate must not be narrower than the hand check it fronts.
+fn tok_starts_word(t: Token) -> bool {
+    if t.text == "" { return false }
+    is_ident_start_code(code_at(t.text, 0))
 }
 
 /// The WRITE twin of modes_flag: a copy of `modes` with the named flag turned OFF.
