@@ -9,7 +9,7 @@ use core.{ExprId, Stmt, MatchArm, Tk, SrcPos}
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_declaration(st: PState) -> CapVal {
-    if st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component" {
+    if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
     }
     parse_statement(st)

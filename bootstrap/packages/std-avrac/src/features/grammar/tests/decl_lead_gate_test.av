@@ -1,0 +1,113 @@
+// WHY: t-47hc.24 — `@hand(decl_hand)` claimed a bare IDENT in its FIRST, so EVERY
+// identifier-led statement (`x = 1`, `f(a)`, `x.m()`) entered the hand parser.
+//
+// It claimed IDENT for one reason: the component instantiation `Comp inst { … }` is a
+// declaration and needs a 2-token lookahead a flat FIRST-set cannot do. But
+// parse_declaration_hand handles ONLY that form and falls through to
+// `self.parse_statement()` for everything else — which, with the statement flip on,
+// hands the item straight back to this same grammar. The hand parser was a detour that
+// every identifier-led statement in the language took on its way to `statement`.
+//
+// `@peek(decl_lead)` fronts the branch so only the component shape takes the detour.
+//
+// The gate is a deliberate SUPERSET of Parser.peek_after_ident_is_ident_not_keyword (it
+// skips that function's keyword exclusion list, checking only "word then `{`"). The
+// asymmetry is the whole design: a false POSITIVE is inert — parse_declaration_hand
+// re-checks precisely and still falls through to parse_statement, reproducing the old
+// path exactly — while a false NEGATIVE would silently re-route a real component
+// instantiation into an expression statement. So the gate errs wide, and the specs
+// below pin BOTH directions.
+use @std.avrac.features.grammar.{new_pstate, lookahead_ok}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids}
+
+/// Is this source's FIRST token a declaration lead?
+fn lead(src: string) -> bool { lookahead_ok("decl_lead", new_pstate(src)) }
+
+fn tree(src: string) -> string {
+    let r = parse_program_source(src)
+    if r.ids == null { return "<parse error>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+
+fn clean(src: string) -> bool { parse_program_source(src).had_error == 0 }
+
+fn comp_src() -> string {
+    "component cmd_x { config { name: string = \"\" } }\nfn f() {\n    cmd_x build {}\n}\n"
+}
+
+spec "t-47hc.24: an identifier-led STATEMENT is not a declaration lead" {
+    then "an assignment is not" { !lead("x = 1") }
+    then "a call is not" { !lead("f(a)") }
+    then "a method call is not" { !lead("x.m()") }
+    then "a bare identifier is not" { !lead("x") }
+    then "an indexed assignment is not" { !lead("m[k] = 1") }
+    then "IDENT IDENT with no block is not (the `{` is required)" { !lead("foo bar") }
+    then "IDENT IDENT followed by something else is not" { !lead("foo bar = 1") }
+    then "IDENT then `{` is not — a struct literal has no instance name" { !lead("foo { a: 1 }") }
+}
+
+spec "t-47hc.24: the component instantiation shape IS a declaration lead" {
+    then "`Comp inst { }` passes the gate" { lead("cli_p avra { }") }
+    then "so does a populated body" { lead("cmd_x build { name: \"b\" }") }
+    then "whitespace and newlines between the three tokens are irrelevant" {
+        // The gate reads TOKENS; the hand check it fronts scans raw chars past
+        // whitespace. Both see the same three-token shape.
+        lead("cmd_x\n    build\n{ }")
+    }
+}
+
+spec "t-47hc.24: every non-IDENT lead reaches decl_hand exactly as before" {
+    then "the declaration keywords lead" {
+        lead("fn f() {}") && lead("let x = 1") && lead("mut y = 2") && lead("const C = 1") &&
+            lead("type T = { a: int }") && lead("enum E { A }") && lead("trait T { }") &&
+            lead("impl T { }") && lead("use a.b") && lead("export fn f() {}")
+    }
+    then "an annotation leads" { lead("@doc(\"x\")\nfn f() {}") }
+    then "a doc comment leads" { lead("/// doc\nfn f() {}") }
+    then "a module doc comment leads" { lead("//! mod doc\nfn f() {}") }
+    then "a STATEMENT keyword still passes the gate — decl_hand's own FIRST rejects it" {
+        // Division of labour: the gate narrows IDENT only. `if`/`while`/`{` were never
+        // in decl_hand's FIRST and are still routed to `statement` by that FIRST, not
+        // by this gate. Widening the gate to re-decide them would duplicate the FIRST set.
+        lead("if x { }") && lead("while x { }") && lead("{ }") && lead("break")
+    }
+}
+
+spec "t-47hc.24: the gate is wider than the hand check it fronts, never narrower" {
+    then "a KEYWORD-kinded instance name still passes (false positives are inert)" {
+        // peek_after_ident_is_ident_not_keyword rejects these words; the token gate does
+        // not, because it must never be the narrower of the two. parse_declaration_hand
+        // still falls through to parse_statement for them, so behaviour is unchanged.
+        lead("foo defer { }") && lead("foo match { }") && lead("foo in { }")
+    }
+    then "a non-word follower is rejected — the instance name must start a word" {
+        !lead("foo 1 { }") && !lead("foo \"s\" { }") && !lead("foo.bar { }") && !lead("foo, bar { }")
+    }
+    then "an IDENT with a truncated tail is rejected rather than read past the end" {
+        // Both need toks[pos+2], which does not exist — the bounds check must reject,
+        // not index. (An EMPTY source leads with EOF, so it is a non-IDENT lead and the
+        // gate passes it through to decl_hand's FIRST, which rejects EOF.)
+        !lead("foo bar") && !lead("foo") && lead("")
+    }
+}
+
+spec "t-47hc.24: end-to-end trees are unchanged" {
+    then "a component instantiation still builds a component-block, not an expression" {
+        // The discriminating render: `(component-block cmd_x build )`. If the gate went
+        // narrow this would degrade to `(expr cmd_x)` plus a stray block — clean, and
+        // completely wrong.
+        tree(comp_src()).contains("(component-block cmd_x build )")
+    }
+    then "and it parses without diagnostics" { clean(comp_src()) }
+    then "identifier-led statements build the same trees on the statement path" {
+        let t = tree("fn f() {\n    x = 1\n    g(2)\n    y.m()\n}\n")
+        t.contains("(assign x 1)") && t.contains("(call g (2))") && t.contains("(call (field y m) ())")
+    }
+    then "a nested instantiation inside a parent body still resolves" {
+        let src = "component cmd_x { config { name: string = \"\" } }\n" +
+            "component cli_p { children { commands: List<cmd_x> } }\n" +
+            "fn f() {\n    cli_p avra {\n        cmd_x build {}\n    }\n}\n"
+        clean(src) && tree(src).contains("(component-block cmd_x build )")
+    }
+}
