@@ -1,0 +1,60 @@
+// WHY: t-47hc.22 — subjectless `match { … }` at statement position is grammar-native.
+//
+// Its arms are NOT the expression family's `when_arm`. The hand `parse_when_arm_list`
+// this mirrors takes `_` as the ONLY default — never `else`, which `when { … }` DOES
+// accept — so the grammar defines a local `match_when_arm` instead of reusing when_arm.
+// Reusing it would have silently widened the accepted language, which is what the
+// `else` case below pins.
+//
+// The arm assertions look at the rendered TREE on purpose. An earlier attempt emitted
+// `while false { a_list.push(…) }` (the arm rule was external, so its FIRST could not be
+// computed) and dropped every arm — yet `bs2 check` said `ok` and the 166-test match
+// suite stayed green, because nothing asserted the arms. A test that only checks
+// "parses without error" passes against a parser that throws the body away.
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids}
+
+fn tree(src: string) -> string {
+    let r = parse_program_source(src)
+    if r.ids == null { return "<parse error>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+
+fn clean(src: string) -> bool { parse_program_source(src).had_error == 0 }
+
+fn two_arm() -> string {
+    "fn f(n: int) -> int {\n    match {\n        n > 0 -> 1\n        _ -> 0\n    }\n    return 0\n}"
+}
+
+spec "t-47hc.22: subjectless match keeps every arm" {
+    then "both arms survive — not an empty when" {
+        let t = tree(two_arm())
+        t.contains("when") && t.contains("(> n 0)")
+    }
+    then "a THREE-arm body keeps all three (the loop is not truncated)" {
+        let t = tree("fn f(n: int) -> int {\n    match {\n        n > 2 -> 2\n        n > 1 -> 1\n        _ -> 0\n    }\n    return 0\n}")
+        t.contains("(> n 2)") && t.contains("(> n 1)")
+    }
+    then "comma-separated arms parse (the hand consumes a trailing `,` per arm)" {
+        clean("fn f(n: int) -> int {\n    match {\n        n > 0 -> 1,\n        _ -> 0,\n    }\n    return 0\n}")
+    }
+    then "it parses clean" { clean(two_arm()) }
+    then "an EMPTY subjectless match is valid" {
+        clean("fn f() -> int {\n    match {\n    }\n    return 0\n}")
+    }
+}
+
+spec "t-47hc.22: the subjectless branch does not widen or capture other forms" {
+    then "`else` is REJECTED — hand parity; only `_` is the default arm" {
+        // `when { … else -> 0 }` accepts it; subjectless `match` does not. Reusing
+        // when_arm here would have made this pass and silently changed the language.
+        !clean("fn f(n: int) -> int {\n    match {\n        n > 0 -> 1\n        else -> 0\n    }\n    return 0\n}")
+    }
+    then "a SUBJECT-ful match is untouched by the new branch" {
+        let t = tree("fn f(n: int) -> int {\n    match n {\n        0 -> 1\n        _ -> 2\n    }\n    return 0\n}")
+        t.contains("match") && !t.contains("when")
+    }
+    then "a missing `}` reports instead of running away" {
+        !clean("fn f(n: int) -> int {\n    match {\n        n > 0 -> 1\n")
+    }
+}

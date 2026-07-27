@@ -913,6 +913,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "for_destructure" {
         return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
     }
+    // `match {` with no subject. The hand parse_match_statement decides it the same way:
+    // `match`, then an immediate `{`.
+    if cond == "match_subjectless" {
+        return st.cur().text == "match" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.LeftBrace
+    }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
@@ -2116,6 +2121,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
         "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
+        // Subjectless `match { … }` at STATEMENT position: the hand builds Expr.When and
+        // boxes it in Stmt.Expr (parse_match_statement), so this does exactly that pair.
+        "MkWhenStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, 0 - 1, env.get(args[0]))))))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))

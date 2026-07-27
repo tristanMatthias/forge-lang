@@ -266,8 +266,21 @@ fn avra_stmt_common_grammar() -> Grammar {
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
   for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
   while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
-  match_stmt    = @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
+  // t-47hc.22: the SUBJECTLESS form `match { cond -> body }` is grammar-native. Its arms
+  // are NOT the expression family's `when_arm`: the hand parse_when_arm_list this mirrors
+  // takes `_` as the ONLY default (never `else`, which `when { … }` does accept), so
+  // match_when_arm is defined LOCALLY here rather than reusing when_arm — reusing it would
+  // silently widen the accepted language. Local also means its FIRST and its `warm` result
+  // kind are both derived, with no cross-family declarations. The `@peek` is decisive
+  // (`match` then `{`), so the branch is predictive and owns its own `}` diagnostic.
+  // What is LEFT for the edge oracle is `match e table { … }`, whose rows must supply
+  // exactly as many values as the header row declared — data-dependent, so not a grammar
+  // rule at any level of DSL power.
+  match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
+                | @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
+  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
+                 | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
