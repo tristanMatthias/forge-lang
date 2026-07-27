@@ -1,0 +1,90 @@
+// WHY: t-kbqq — a compile cache can hide ONE LEVEL DEEPER than the root list reaches.
+//
+// `--emit-gen-check` compiles its five generated parser modules with cwd inside
+// `build/emit_gen`, so bs2 parks a compile cache at `build/emit_gen/build/cache`.
+// The cache-gc root list walked `<root>` and `<root>/packages/*/` only, so that
+// scratch cache was invisible to it: it grew to 11 GB unpruned while
+// `make cache-gc` reported "under the 12G size cap — nothing to evict", filled the
+// container disk, and made the NEXT `--emit-gen-check` die with a MISLEADING
+// "generated pattern parser failed to compile/run". An ENOSPC wearing a grammar
+// regression's clothes costs a real debugging session — the fake failure names a
+// parser family, so you go looking at the parser.
+//
+// The fix is one shared enumeration (`cache_owner_dirs`) that both --cache-gc and
+// --clean-cache consume, so a root can never be reachable by one and invisible to
+// the other. These specs pin BOTH halves: that the scratch root is actually swept,
+// and that the two consumers still share the list — because the failure mode was
+// never a wrong list, it was TWO lists that drifted.
+//
+// The pdme.3 `src` sentinel moved into the shared helper, so it is re-pinned here
+// too: a package literally named `src` makes the parent-of-build a SOURCE dir, and
+// ad-hoc root walks have eaten those before.
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid, avra_selfhost_file_exists}
+
+fn sandbox() -> string { "/tmp/avra_kbqq_${string(avra_getpid())}" }
+
+spec "t-kbqq: a build/<scratch>/build/cache is a cache root like any other" {
+    then "clean-cache sweeps the emit_gen scratch cache the package glob cannot see" {
+        let root = sandbox()
+        avra_shell_exec("rm -rf '${root}'")
+        // The three levels: bootstrap root, a package, and the scratch tree a
+        // cwd-inside-build compile creates.
+        let _ = avra_mkdir_p("${root}/build/cache/topslot")
+        let _ = avra_mkdir_p("${root}/packages/aaa/build/cache/slot")
+        let _ = avra_mkdir_p("${root}/build/emit_gen/build/cache/scratchslot")
+        let _ = avra_selfhost_write_file("${root}/build/cache/topslot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/cache/slot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/build/emit_gen/build/cache/scratchslot/unit.ll", "x")
+        // A sibling artifact in the scratch tree: only the CACHE goes, not the
+        // generated sources beside it (regenerating those is the cheap part).
+        let _ = avra_selfhost_write_file("${root}/build/emit_gen/generated_parser.av", "// gen")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' 2>&1")
+        let ok = out.contains("clean-cache: 3 cache dir(s) wiped")
+            && avra_selfhost_file_exists("${root}/build/emit_gen/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/packages/aaa/build/cache") == 0
+            && avra_selfhost_file_exists("${root}/build/emit_gen/generated_parser.av") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "the src sentinel survives the move into the shared helper" {
+        // A package literally named `src` still makes the owner a source dir.
+        let root = sandbox() + "_src"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/packages/src/build/cache/decoy")
+        let _ = avra_selfhost_write_file("${root}/packages/src/build/cache/decoy/unit.ll", "x")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' 2>&1")
+        let ok = out.contains("SPARED")
+            && avra_selfhost_file_exists("${root}/packages/src/build/cache/decoy/unit.ll") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "a scratch tree with no cache is not invented as a root" {
+        let root = sandbox() + "_bare"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/build/difftest/work")
+        let _ = avra_selfhost_write_file("${root}/build/difftest/work/x.ll", "x")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --clean-cache '${root}' 2>&1")
+        let ok = out.contains("clean-cache: 0 cache dir(s) wiped")
+            && avra_selfhost_file_exists("${root}/build/difftest/work/x.ll") == 1
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}
+
+spec "t-kbqq: the two consumers share ONE root list" {
+    then "both --cache-gc and --clean-cache iterate cache_owner_dirs" {
+        // The structural half. The bug was never a wrong list — it was TWO lists
+        // that drifted, so the behavioural spec above would have passed on the
+        // broken tree if it only exercised clean-cache. Re-forking the enumeration
+        // is what must stay impossible.
+        let src = avra_shell_exec("cat scripts/diagnose.sh")
+        let gc = src.contains("done < <(cache_owner_dirs \"$BOOTSTRAP_DIR\")")
+        let cc = src.contains("done < <(cache_owner_dirs \"$root\")")
+        gc && cc
+    }
+    then "the helper walks all three levels, scratch trees included" {
+        let src = avra_shell_exec("cat scripts/diagnose.sh")
+        src.contains("for d in \"$root\" \"$root\"/packages/*/ \"$root\"/build/*/; do")
+    }
+}
