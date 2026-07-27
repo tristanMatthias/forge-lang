@@ -1,0 +1,96 @@
+// WHY: t-47hc — two things, both about `@when(flag)`.
+//
+// 1. `in_quote_body` — the complement of `at_quote_top`. `~` is TWO operators either
+//    side of the quote boundary: bitnot at depth 0 (already grammar-owned, gated
+//    `@when(at_quote_top)`) and quote SPLICE inside a body. The splice reading is the
+//    residue the `primary_base` @hand leaf still owns, so the grammar needs to be able
+//    to ASK for `quote_depth > 0`. The read side is all that is needed here: the hand
+//    `quote_expr` leaf still maintains the counter, so nothing has to SET it yet.
+//    Landed DORMANT — no production grammar spends it, so emitted parsers are unchanged.
+//
+// 2. `@when` now VALIDATES its predicate name. It was the one marker that did not
+//    (`@off`, `@on` and `@peek` all reject an unknown name), and `modes_flag` answers
+//    TRUE for anything it does not recognise — so a typo parsed clean and emitted a
+//    guard that was always true. A dead gate admits every branch silently, which is
+//    strictly worse than a parse error.
+//
+// Both engines must agree: the interpreter reads via executor.modes_flag, the generated
+// parser via the string emit.pred_guard produces. Asserting only one would let them drift,
+// which is precisely how three divergences shipped in #1032 — so the emit side is checked
+// against the emitted SOURCE and the executor side by RUNNING it.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr}
+
+fn rejects(grammar_src: string) -> bool {
+    parse_grammar(grammar_src).error != ""
+}
+
+fn err_of(grammar_src: string) -> string {
+    parse_grammar(grammar_src).error
+}
+
+// A rule gated on `flag`, delegating to a hand leaf that can consume `{ }`.
+fn gated_errs(flag: string, src: string) -> bool {
+    let gp = parse_grammar("gated = @when(${flag}) @hand(primary_base)")
+    run_grammar_expr(gp.grammar, src).had_error
+}
+
+fn emitted(flag: string) -> string {
+    // TWO alternatives: with a single branch the emitter elides the guard
+    // entirely (nothing to discriminate), so the predicate would be untestable.
+    let gp = parse_grammar("gated = @when(${flag}) NUMBER | STRING")
+    for gr in gp.grammar.rules {
+        if gr.name == "gated" { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+spec "t-47hc: `in_quote_body` reads quote_depth > 0" {
+    then "it is accepted as a @when predicate" {
+        !rejects("r = @when(in_quote_body) NUMBER")
+    }
+    then "the emitted guard tests the counter, not an int-as-bool field" {
+        // The default `st.modes.<flag> != 0` form would be wrong for a counter: it
+        // would read `quote_depth != 0`, which is accidentally right here but wrong
+        // for at_quote_top — both are spelled explicitly so neither depends on luck.
+        emitted("in_quote_body").contains("st.modes.quote_depth > 0")
+    }
+    then "it is the exact complement of at_quote_top" {
+        emitted("at_quote_top").contains("st.modes.quote_depth == 0")
+    }
+    then "the interpreter agrees — at depth 0 the in_quote_body branch does NOT fire" {
+        // Default modes are quote_depth == 0, so a rule gated in_quote_body is dead and
+        // the `{ }` never parses. The at_quote_top twin is live and parses it.
+        gated_errs("in_quote_body", "{ }") && !gated_errs("at_quote_top", "{ }")
+    }
+}
+
+spec "t-47hc: @when validates its predicate name" {
+    then "an unknown predicate is a HARD error, not a silently-true guard" {
+        rejects("r = @when(nonsense) NUMBER")
+    }
+    then "a typo of a real flag is rejected rather than ungated" {
+        // The exact failure this closes: modes_flag returns true for anything it does
+        // not know, so `allow_strct_lit` used to emit a guard that always held.
+        rejects("r = @when(allow_strct_lit) NUMBER")
+    }
+    then "the message names the offending predicate and lists the legal set" {
+        let e = err_of("r = @when(allow_strct_lit) NUMBER")
+        e.contains("allow_strct_lit") && e.contains("at_quote_top")
+    }
+    then "every legal predicate is still accepted" {
+        !rejects("r = @when(allow_struct_lit) NUMBER") &&
+            !rejects("r = @when(allow_dot_postfix) NUMBER") &&
+            !rejects("r = @when(allow_it_sugar) NUMBER") &&
+            !rejects("r = @when(cell_mode) NUMBER") &&
+            !rejects("r = @when(at_quote_top) NUMBER") &&
+            !rejects("r = @when(in_quote_body) NUMBER")
+    }
+    then "a DERIVED predicate is readable but still not settable" {
+        // The asymmetry that needs two lists: @when may READ a value computed from the
+        // quote_depth counter; @off/@on may only name a settable bool.
+        !rejects("r = @when(in_quote_body) NUMBER") &&
+            rejects("r = @off(in_quote_body) NUMBER") &&
+            rejects("r = @on(in_quote_body) NUMBER")
+    }
+}

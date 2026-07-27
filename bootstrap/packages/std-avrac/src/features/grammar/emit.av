@@ -1922,6 +1922,9 @@ fn pred_guard(flag: string) -> string {
     // int-as-bool), so it needs its own guard (== 0), the byte-side twin of
     // executor.modes_flag's at_quote_top case. Gates the grammar-owned `~` bitnot.
     if flag == "at_quote_top" { return "st.modes.quote_depth == 0" }
+    // The complement — see executor.modes_flag's in_quote_body case. Gates the splice
+    // reading of `~`, which is what the `primary_base` leaf still owns.
+    if flag == "in_quote_body" { return "st.modes.quote_depth > 0" }
     "st.modes.${flag} != 0"
 }
 

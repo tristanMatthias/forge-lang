@@ -631,7 +631,14 @@ slices onto one branch/PR. Each slice is its OWN branch and its OWN PR,
   bottom of the stack (`claude/avra-ps3t-6-7-grammar-flip`, the routine-tracked
   branch) bases on integration (`feat/crafting-intepreters`). One slice per PR,
   reviewable in isolation.
-- **Merge when ready** — PRs merge bottom-up as each goes green.
+- **Merge when ready — MERGE IT YOURSELF, do NOT ask (user directive 2026-07-27).**
+  This is a STANDING authorization, not a per-PR one: whenever CI is green AND
+  CodeRabbit has approved (every review thread resolved — check the THREADS via
+  `pull_request_read get_review_comments`, not just the pre-merge check summary,
+  which reports title/description/scope and says nothing about thread state), MERGE.
+  Do not pause the work to request permission, and do not treat a bot's "confirmed
+  as addressed" as the thing you were waiting for — there is nothing to wait for.
+  PRs merge bottom-up as each goes green.
 - **Rebase** — when a lower PR merges (the merged-PR webhook fires reliably),
   rebase the rest of the stack onto the new integration tip, re-target the next
   PR's base to integration, and re-fetch the pinned seed.
