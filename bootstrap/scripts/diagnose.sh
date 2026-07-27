@@ -328,9 +328,10 @@ DIFF & ANALYSIS
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
                        over the selfhost source + curated standalone corpus
-                       (tests/difftest_corpus/*.av). The two selfhost compiles
-                       run concurrently; the corpus fans out in parallel. The
-                       go-hard safety net. --new-prebuilt reuses build/bs2 as
+                       (tests/difftest_corpus/*.av). By default the two
+                       selfhost compiles run concurrently and the corpus fans
+                       out in parallel (see DIFF_TEST_JOBS below to serialize).
+                       The go-hard safety net. --new-prebuilt reuses build/bs2 as
                        NEW (skip the cold rebuild; LOCAL, non-hermetic).
                        DIFF_TEST_CORPUS=<glob> overrides the corpus;
                        DIFF_TEST_JOBS=<n> the concurrency width (1 also
