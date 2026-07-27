@@ -291,6 +291,11 @@ RUN MODES
                        total instruction count + per-symbol lexer self-costs. The
                        perf rail — run before/after a lexer slice and compare.
                        Dev-only (needs valgrind + python3; run make build-quick first).
+  --hand-leaves        t-47hc's ONE NUMBER: the `@hand` leaves still on the
+                       PRODUCTION path, read off the checked-in generated
+                       parsers (what the compiler actually routes to) rather
+                       than grepping the grammar text — which also contains
+                       family-ISOLATED views that inflate the count.
   --emit-gen-check     ps3t.6.5.11 behavioural gate: render the grammar-DSL
                        parser via emit.av, then COMPILE + RUN the generated
                        source and assert it parses byte-equivalent to the hand
@@ -2118,6 +2123,39 @@ PY
   log "lexer-bench: artifacts in $dir — re-run after a lexer change and compare TOTAL + per-symbol"
 }
 
+mode_hand_leaves() {
+  # t-47hc's headline metric, measured rather than eyeballed.
+  #
+  # Counting `@hand(...)` in avra_grammar.av OVERSTATES it: that file holds the
+  # production grammars AND the family-ISOLATED §2 views the equivalence tests use
+  # (avra_program_grammar, avra_stmt_grammar, ...). A leaf that appears only in an
+  # isolated view is not on the compiler's path and must not be counted as remaining
+  # work — `let_stmt` is exactly that case, and it inflated the reported number by one
+  # until this mode existed.
+  #
+  # The honest source is the CHECKED-IN GENERATED PARSERS: whatever they call through
+  # run_hand_stmt/run_hand_expr is, by construction, what production routes to.
+  local gendir="packages/std-avrac/src/parse"
+  local prod all
+  prod=$(grep -ohE 'run_hand_(stmt|expr)\("[a-z_]+"' "$gendir"/gen_*.av 2>/dev/null \
+           | sed -E 's/.*"([a-z_]+)"/\1/' | sort -u)
+  all=$(grep -vE '^[[:space:]]*//' "packages/std-avrac/src/features/grammar/avra_grammar.av" \
+           | grep -ohE '@hand\([a-z_]+\)' | sed -E 's/@hand\(([a-z_]+)\)/\1/' | sort -u)
+
+  echo "PRODUCTION @hand leaves (the number that matters):"
+  if [ -n "$prod" ]; then echo "$prod" | sed 's/^/  /'; else echo "  (none)"; fi
+  echo "  -> $(printf '%s\n' "$prod" | grep -c . || true)"
+
+  local only
+  only=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$prod") | grep . || true)
+  if [ -n "$only" ]; then
+    echo
+    echo "Grammar-text-only (family-ISOLATED views; NOT production, do not count):"
+    echo "$only" | sed 's/^/  /'
+  fi
+  ok "hand-leaves: $(printf '%s\n' "$prod" | grep -c . || true) leaf(s) on the production path"
+}
+
 mode_emit_gen_check() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   local dir="$BUILD_DIR/emit_gen"
@@ -3378,6 +3416,7 @@ main() {
     --emit-regen-kw)      mode_emit_regen_kw "$@" ;;
     --emit-regen-run)     mode_emit_regen_run "$@" ;;
     --lexer-bench)        mode_lexer_bench "$@" ;;
+    --hand-leaves)        mode_hand_leaves "$@" ;;
     --emit-gen-check)     mode_emit_gen_check "$@" ;;
     --bs2-stale-check)    mode_bs2_stale_check "$@" ;;
     --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
