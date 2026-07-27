@@ -97,3 +97,41 @@ a frozen `@hand`. Closing t-47hc.2 freezes nothing.
 
 `@hand` leaves remaining → 0, and Parser A deleted. Nothing else is the finish
 line.
+
+## `@cut` landed; the residual `*_edge` leaves need ABORT, not commit (t-47hc.21)
+
+`@cut` (the PEG commit point, #1018) resolves half of why `@hand(*_edge)` leaves
+survive: a `@try` branch could not carry an `@expect`, because reporting the
+message *is* the rollback signal. Past a `@cut` the branch is committed and owns
+its diagnostics.
+
+**It is not enough for `for_stmt_edge` / `match_stmt_edge`.** Measured, not
+guessed: dropping the `@try` + `@hand` tail from `avra_stmt_dispatch_for_grammar`
+(making it identical to the already-hand-free interpreter grammar) regresses the
+recovery oracle on `impl for Foo { }` — hand yields `F0001 F0001 F0013` /
+`(error)`, the static parser yields `F0001 F0040` and a runaway
+`(for-in Foo (map ()) (block …))` that **swallows the following declaration**.
+
+Root cause: both engines are error-TOLERANT. A failed required token reports and
+**continues**, building a partial node. The hand parser instead `return .Err`s —
+it **aborts** the rule and lets the statement-list loop synchronise. `@expect` is
+report-and-continue, so it cannot express that; the `@hand` leaf exists purely to
+own the abort.
+
+**The missing primitive is `@require(tok, msg)`** — the dual of `@cut`: on
+failure, report and abort the rule with a kind-appropriate error node instead of
+running the rest of the sequence. Sketch:
+
+- **emit** — natural: `if <guard> { advance } else { st.report(msg); return <error of rule_result_kind> }`.
+- **executor** — an `abort` flag on `CapEnv` (the `cut` precedent), checked by
+  `exec_seq` after each item.
+- **composition with `@try`** — an abort *before* a cut must degrade to a
+  rollback (it reports, so the commit guard already fails); *after* a cut it must
+  propagate. The emit side is the hard part: an early `return` inside a
+  speculative branch bypasses the rollback, so the abort has to become a flag the
+  branch tests rather than a raw `return`.
+
+With `@require` + `@cut`, `for_stmt` splits cleanly into range and collection
+branches, each owning its own missing-brace message (`expected `{` after for
+range` vs `expected `{` or `..` after for expression`) — the exact reason
+`for_stmt_edge` still exists.

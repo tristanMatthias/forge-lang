@@ -668,6 +668,10 @@ fn has_hand_fallback(branches: List<GSeq>) -> bool {
 /// skipped by BOTH emitters, so they don't force the rich path.
 fn spec_branch_is_flat(seq: GSeq) -> bool {
     for item in seq.items {
+        // A `@cut` needs the rich path: emit_spec_item is a straight-line
+        // recognizer with no `s_cut` in scope, and the commit is emitted by
+        // emit_item. Checked BEFORE the pred skip so a cut can never be lost.
+        if item.cut { return false }
         if prim_is_pred_e(item.prim) { continue }
         if item.mode_off != "" || item.mode_on != "" { return false }
         if !rep_is_one(item.rep) { return false }
@@ -681,6 +685,33 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
     true
 }
 
+/// True when this sequence contains a `@cut` anywhere the branch body will emit —
+/// its own items plus any nested `( … )` group (groups emit INLINE, so their cut
+/// writes the same `s_cut` local). Does NOT follow rule refs: a called rule emits a
+/// separate function with its own scope, matching the executor's fresh-per-rule
+/// CapEnv. Drives the `mut s_cut` declaration + commit guard.
+fn seq_has_cut(seq: GSeq) -> bool {
+    for item in seq.items {
+        if item.cut { return true }
+        match item.prim {
+            .Group(inner) -> { if node_has_cut(inner) { return true } }
+            _ -> {}
+        }
+    }
+    false
+}
+
+fn node_has_cut(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                if seq_has_cut(b) { return true }
+            }
+        }
+    }
+    false
+}
+
 /// The RICH speculative branch: the snapshot/commit/rollback scaffold wrapping
 /// emit_seq_stmts (the SAME per-item emitter the non-speculative path uses — list
 /// accumulators, opt-scalars, `@on`/`@off`, `@hand`, groups) + emit_seq_result (the
@@ -692,18 +723,25 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
 /// snapshot). EMIT-ONLY: the executor already handles complex @try (exec_node's
 /// speculative arm over exec_seq), so no executor change accompanies this.
 fn emit_speculative_branch_rich(g: Grammar, b: GSeq, retry_hand: bool) -> string {
+    let has_cut = seq_has_cut(b)
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
     out = out + "        tried_spec = true\n"
     out = out + "        let s_pos = st.pos\n"
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
+    // t-47hc.21 COMMIT POINT: only a cut-bearing branch declares `s_cut`, so every
+    // existing grammar regenerates byte-identically.
+    if has_cut { out = out + "        mut s_cut = false\n" }
     if retry_hand { out = out + "        let s_hand = st.save_hand_state()\n" }
     // Same span prelude as the flat path / the non-speculative branch: a span-stamping
     // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
     if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
     out = out + emit_seq_stmts(g, b, "        ")
-    out = out + "        if st.diags.length == s_diags && st.had_error == s_err {\n"
+    // Past a `@cut` the branch OWNS its diagnostics — commit regardless of what it
+    // reported, so the error is kept instead of being read as "wrong branch".
+    let guard = if has_cut { "s_cut || (st.diags.length == s_diags && st.had_error == s_err)" } else { "st.diags.length == s_diags && st.had_error == s_err" }
+    out = out + "        if ${guard} {\n"
     out = out + "            return ${emit_seq_result(g, b)}\n"
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
@@ -917,9 +955,18 @@ fn annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
 }
 
 fn emit_seq_items(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    emit_seq_items_from(g, seq, outer_annots, ind, list_labels, opts, 0)
+}
+
+/// emit_seq_items with an explicit starting item INDEX. `idx == 0` marks the
+/// sequence's GUARD token — already FIRST-matched by the enclosing `if`/`while`, so
+/// emit_one_terminal consumes it unconditionally. Pass `idx_base = 1` when nothing
+/// proved the first token (an UNGUARDED single-branch structural group), so it is
+/// VALIDATED like any later item instead of being swallowed whole.
+fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int) -> string {
     let seeds_postfix = seq_seeds_postfix_e(seq)
     mut out = ""
-    mut idx = 0
+    mut idx = idx_base
     for item in seq.items {
         // A `@when` predicate is zero-width: it emits no code and consumes no
         // idx slot, so the first token-bearing item stays the guard token (idx 0).
@@ -929,7 +976,7 @@ fn emit_seq_items(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string
         // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
         // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
         // itself inside run_hand_expr, so it is skipped (no redundant seed on the hot path).
-        if seeds_postfix && idx == 0 && !prim_is_hand(item.prim) {
+        if seeds_postfix && idx == idx_base && !prim_is_hand(item.prim) {
             out = out + "${ind}st.seed_postfix(capval_to_expr(st, ${item.label}), sp_start)\n"
         }
         idx = idx + 1
@@ -947,7 +994,19 @@ fn prim_is_pred_e(prim: GPrim) -> bool {
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
 fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
-    let inner = emit_item_body(g, item, idx, annots, ind, list_labels, opts)
+    // `@cut` COMMIT POINT (t-47hc.21): the twin of exec_item's `env.cut = true`.
+    // `s_cut` is a `mut` local of the enclosing speculative branch's block, so the
+    // write reaches it from a nested group too (groups emit inline). Emitted BEFORE
+    // the item, so the commit covers the item's own failure. validate_cuts already
+    // proved a cut only ever appears where `s_cut` is in scope.
+    // The commit fires only if the branch is STILL on its happy path. Both engines
+    // are error-TOLERANT — a mismatched item reports and execution carries on to the
+    // next one — so a cut placed after a failure would otherwise commit a branch that
+    // had already proved itself wrong (`@try "+" "-" @cut "*"` on `+ / *` must still
+    // roll back to the `"+"` sibling). `s_diags`/`s_err` are the enclosing
+    // speculative branch's entry snapshot, already in scope.
+    let cut_pre = if item.cut { "${ind}if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }\n" } else { "" }
+    let inner = cut_pre + emit_item_body(g, item, idx, annots, ind, list_labels, opts)
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
@@ -1017,7 +1076,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             if prim_yields_token(item.prim) {
                 return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts)
             }
-            emit_node_items(g, inner, annots, ind, list_labels, opts)
+            emit_node_items(g, inner, annots, ind, list_labels, opts, 1)
         }
         // A `@when`/`@peek` predicate emits nothing (zero-width); emit_seq_items already
         // skips it, so this is a defensive no-op for any other caller.
@@ -1128,7 +1187,7 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
     match item.prim {
         .Group(inner) -> {
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                emit_node_items(g, inner, annots, ind + "    ", list_labels, opts) +
+                emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
                 "${ind}}\n"
         }
         _ -> {
@@ -1274,12 +1333,12 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
             if group_is_single_hand(g, inner) {
                 req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     "${ind}    let __rep_before = st.pos\n" +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
                     "${ind}    if st.pos == __rep_before { break }\n" +
                     "${ind}}\n"
             } else {
                 req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0) +
                     "${ind}}\n"
             }
         }
@@ -1294,12 +1353,18 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
 /// MULTI-branch group (an inline alternation, e.g. variant_pat's
 /// `binds:IDENT … | subs:variant_pat …`) becomes an if/else-if dispatch on
 /// each branch's FIRST — the executor's exec_node branch selection, inlined.
-fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+/// `idx_base` says whether this group's first token was already PROVEN by the caller.
+/// 0 — the caller emitted a FIRST guard (emit_opt's `if`, emit_repeat_group's `while`),
+/// so the group's leading terminal is consumed unconditionally. 1 — the group is
+/// entered UNGUARDED (a structural group sitting mid-sequence), so its leading terminal
+/// must be validated too. The multi-branch case always emits its own per-branch guard,
+/// so it proves the token itself and ignores `idx_base`.
+fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, idx_base: int) -> string {
     match node {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
             if branches.length == 1 {
-                return emit_seq_items(g, branches[0], annots, ind, list_labels, opts)
+                return emit_seq_items_from(g, branches[0], annots, ind, list_labels, opts, idx_base)
             }
             mut out = ""
             mut i = 0
@@ -1892,13 +1957,24 @@ fn prim_yields_token(prim: GPrim) -> bool {
     }
 }
 
+/// True only for the TERMINAL-ALTERNATION shape `("!" | "-")` — every branch is
+/// exactly ONE plain One-rep terminal, which emit_one_terminal renders as a single
+/// FIRST-disjunction token consume. A branch carrying MORE than one item, a
+/// repetition, or a marker is a STRUCTURAL group: rendering it as one token would
+/// silently DROP everything after the first item (the executor, which runs the whole
+/// inner sequence via exec_node, would then disagree with the generated parser). Those
+/// take the inlined emit_node_items path instead. An empty alternation is not a
+/// terminal group either — there is no token to consume.
 fn node_all_terminal(node: GNode) -> bool {
     match node {
         .Alt(branches) -> {
+            if branches.length == 0 { return false }
             for b in branches {
-                for item in b.items {
-                    if !prim_is_terminal(item.prim) { return false }
-                }
+                if b.items.length != 1 { return false }
+                let item = b.items[0]
+                if !prim_is_terminal(item.prim) { return false }
+                if !rep_is_one(item.rep) { return false }
+                if item.cut || item.sameline || item.mode_off != "" || item.mode_on != "" { return false }
             }
             true
         }

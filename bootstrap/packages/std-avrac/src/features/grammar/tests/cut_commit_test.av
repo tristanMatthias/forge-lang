@@ -1,0 +1,114 @@
+// WHY: t-47hc.21 — the `@cut` COMMIT POINT (the PEG cut).
+//
+// `@try` reads "a diagnostic was reported" as "wrong branch, roll back". That
+// conflates two different facts: *this alternative doesn't apply* and *this
+// alternative applies but the input is malformed*. Because of the conflation a
+// speculative branch could never own its own error path, which is the whole
+// reason the statement grammar still carried `@hand(*_edge)` leaves — they exist
+// only to hold diagnostics a `@try` sibling would have swallowed.
+//
+// `@cut` separates them: past the cut the branch is COMMITTED, so a diagnostic is
+// reported and kept instead of triggering rollback. Proven here on both engines —
+// the interpreter (exec_item's env.cut / exec_node's commit guard) and the
+// emitter (`mut s_cut` + the `s_cut || …` guard) — plus the parse-time
+// well-formedness rules that keep the two from ever diverging.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source, Grammar}
+
+// A `@try` branch that consumes `+ -`, then (optionally) cuts, then requires `*`,
+// with a bare `"+"` fallback branch. On input `+ - /` the required `*` is missing:
+// WITHOUT the cut the reported diagnostic rolls the branch back and the fallback
+// takes over; WITH it the branch commits and the diagnostic survives.
+fn errs(grammar_src: string, src: string) -> bool {
+    run_grammar_expr(parse_grammar(grammar_src).grammar, src).had_error
+}
+
+// True iff `grammar_src` is REJECTED at grammar-parse time.
+fn rejects(grammar_src: string) -> bool {
+    parse_grammar(grammar_src).error != ""
+}
+
+// Item count of the first rule's first branch — `@cut` is a MARKER on the item
+// that follows it, never an item of its own.
+fn first_branch_items(g: Grammar) -> int {
+    match g.rules[0].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return -1 }
+            branches[0].items.length
+        }
+    }
+}
+
+spec "t-47hc.21: @cut commits a @try branch" {
+    then "@cut is a marker on the next item, not an item of its own" {
+        first_branch_items(parse_grammar("r = @try \"+\" @cut \"-\"").grammar) == 2
+    }
+    then "CONTROL: without @cut a post-guard mismatch rolls back to the next branch" {
+        !errs("r = @try \"+\" \"-\" \"*\" | \"+\"", "+ - /")
+    }
+    then "with @cut the branch COMMITS — the diagnostic is kept, not rolled back" {
+        errs("r = @try \"+\" \"-\" @cut \"*\" | \"+\"", "+ - /")
+    }
+    then "a branch that fails BEFORE the cut still rolls back cleanly" {
+        // `-` is missing, so the cut is never reached: rollback, fallback wins.
+        !errs("r = @try \"+\" \"-\" @cut \"*\" | \"+\"", "+ / *")
+    }
+    then "a committed branch that MATCHES is unaffected (the cut is not an error)" {
+        !errs("r = @try \"+\" \"-\" @cut \"*\" | \"+\"", "+ - *")
+    }
+}
+
+// The cut's SCOPE. It propagates out of a nested `( … )` group (both engines emit
+// / execute a group inline, inside the enclosing branch), but NOT out of a called
+// rule (emit gives each rule its own function and `s_cut` local; exec_rule mints a
+// fresh CapEnv per invocation). Without the rule boundary a callee's commit would
+// silently pin its caller's branch.
+spec "t-47hc.21: @cut scope — groups propagate, rule calls do not" {
+    then "a @cut inside a nested group commits the enclosing @try branch" {
+        errs("r = @try \"+\" ( \"-\" @cut \"%\" ) | \"+\"", "+ - /")
+    }
+    then "CONTROL: the same nested group without the cut rolls back" {
+        !errs("r = @try \"+\" ( \"-\" \"%\" ) | \"+\"", "+ - /")
+    }
+    then "a @cut inside a CALLED rule does not commit the caller's @try" {
+        // `sub` commits and reports; `r`'s own branch sees only "a diagnostic
+        // appeared", so it rolls back and the `"+"` fallback succeeds cleanly.
+        !errs("r = @try \"+\" sub | \"+\"\nsub = @try \"-\" @cut \"%\" | \"-\"", "+ - /")
+    }
+}
+
+// Every `@cut` position the two engines could not honor IDENTICALLY is a hard
+// grammar error, so a cut can never be silently dropped from one side.
+spec "t-47hc.21: @cut well-formedness is enforced at parse time" {
+    then "a @cut on a PREDICTIVE branch is rejected (nothing to commit)" {
+        rejects("r = \"+\" @cut \"-\"")
+    }
+    then "a @cut inside a group of a predictive branch is rejected too" {
+        rejects("r = \"+\" ( \"-\" @cut \"%\" )")
+    }
+    then "a TRAILING @cut is rejected — it has no item to attach to" {
+        rejects("r = @try \"+\" \"-\" @cut")
+    }
+    then "a @cut on a zero-width @when predicate is rejected (both emitters skip it)" {
+        rejects("r = @try \"+\" @cut @when(allow_struct_lit) \"-\"")
+    }
+    then "a @cut on a zero-width @peek predicate is rejected" {
+        rejects("r = @try \"+\" @cut @peek(ident_colon) \"-\"")
+    }
+    then "a @cut on an expr-fold branch is rejected (emit_fold bypasses emit_item)" {
+        rejects("r = @try l:t o:\"+\" @cut rr:t -> fold_binary(l, o, rr)\nt = NUMBER")
+    }
+}
+
+spec "t-47hc.21: the generated parser carries the commit" {
+    then "a cut-bearing branch emits the s_cut local and the commit guard" {
+        let src = emit_parser_source(parse_grammar("r = @try \"+\" \"-\" @cut \"*\" | \"+\"").grammar)
+        src.contains("mut s_cut = false") && src.contains("s_cut = true") && src.contains("s_cut ||")
+    }
+    then "a cut-FREE grammar emits no s_cut at all (existing parsers stay byte-identical)" {
+        !emit_parser_source(parse_grammar("r = @try \"+\" \"-\" \"*\" | \"+\"").grammar).contains("s_cut")
+    }
+    then "a @cut in a nested group still lands inside the branch's s_cut scope" {
+        let src = emit_parser_source(parse_grammar("r = @try \"+\" ( \"-\" @cut \"%\" ) | \"+\"").grammar)
+        src.contains("mut s_cut = false") && src.contains("s_cut = true")
+    }
+}

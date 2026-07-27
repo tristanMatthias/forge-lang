@@ -39,6 +39,15 @@ grammar Name {
   the grammar: a missing required terminal reports the message and panic-mode
   synchronises to the recover target — yielding a partial tree + diagnostics,
   never a hard bail.
+- **commit** `@cut` (the PEG cut) marks the point a `@try` branch stops
+  speculating: `@try "for" v:IDENT "in" lo:expression ".." @cut hi:expression …`.
+  Before it, a reported diagnostic means "wrong alternative, roll back"; after
+  it, the branch is committed and the diagnostic is a real parse error the branch
+  owns. That conflation is why a speculative branch could not hold its own error
+  messages, and why ambiguous statement forms needed an `@hand(*_edge)` sibling
+  purely to carry diagnostics. Only legal inside `@try` (a predictive branch has
+  nothing to commit) and it fires only while the branch has reported nothing —
+  both enforced at grammar-parse time.
 
 The gnarly 5% (string interpolation, newline-sensitivity, `~`, `<` generic-vs-
 less-than) stays **out** of the notation — in the lexer or a hand-written
