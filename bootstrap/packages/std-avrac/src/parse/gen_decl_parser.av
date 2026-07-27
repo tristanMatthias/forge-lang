@@ -198,6 +198,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        mut s_cut = false
         let s_hand = st.save_hand_state()
         mut arms_list: List<MatchArm> = []
         let _ = st.advance()
@@ -208,14 +209,18 @@ fn parse_match_stmt(st: PState) -> CapVal {
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
             st.report("expected {")
         }
+        if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
         while tok_starts_pattern(st.cur()) {
             arms_list.push(capval_to_arm(st, parse_match_arm(st)))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` after match arms")
+            if s_cut {
+                return CapVal.Node(st.error_node_silent())
+            }
         }
-        if st.diags.length == s_diags && st.had_error == s_err {
+        if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
             return mk_match(st, subj, CapVal.Arms(arms_list))
         }
         st.store.truncate_to_mark(s_mark)

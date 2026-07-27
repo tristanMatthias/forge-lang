@@ -277,7 +277,15 @@ fn avra_stmt_common_grammar() -> Grammar {
   // exactly as many values as the header row declared — data-dependent, so not a grammar
   // rule at any level of DSL power.
   match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
-                | @try "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
+                // The `@cut` sits right after the `{`, and that position is load-bearing.
+                // BEFORE it the branch must still be able to roll back: `match e table { … }`
+                // reaches this branch, fails on `"{"` (it finds `table`), and falls through
+                // to the edge oracle — which is the only way the table sub-language is
+                // reached. AFTER it the branch is committed, so the arm list and the closing
+                // `}` are native and carry their own diagnostic instead of borrowing the
+                // hand's. Moving the cut earlier would swallow the table form; moving it
+                // later would leave the `}` message with the oracle.
+                | @try "match" @off(allow_struct_lit) subj:expression "{" @cut ( arms:match_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
                 | @hand(match_stmt_edge)
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
