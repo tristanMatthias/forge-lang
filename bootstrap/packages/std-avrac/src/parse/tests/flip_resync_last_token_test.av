@@ -1,0 +1,47 @@
+// WHY: the DSL-flip RESYNC must reach the stop byte even when the grammar parser's
+// last consumed token abuts EOF.
+//
+// After a grammar-DSL parse the hand cursor is walked forward to `dsl.stop_byte`
+// (Parser.resync_to_stop_byte). That loop used to be bounded by `is_at_end()`,
+// which asks whether the SCANNER has consumed the last source BYTE — already true
+// while the cursor still sits ON the file's final token. So on a source with no
+// trailing newline the resync stopped ONE TOKEN SHORT, leaving the cursor parked on
+// that token; the caller then re-read it as a fresh item and reported a bogus
+// `unexpected }`. Bounding on `check(Tk.Eof)` — the current TOKEN being EOF — is the
+// honest test.
+//
+// The bug was latent for as long as top-level `{ … }` blocks routed through an
+// `@hand` leaf (the hand delegate parses and its own cursor is already past the
+// block, so the resync is a no-op). t-47hc.20 made statement blocks grammar-native,
+// which put them on the resync path and exposed it.
+use @std.avrac.parse.{parse_program_source}
+
+fn parses_clean(src: string) -> bool {
+    parse_program_source(src).had_error == 0
+}
+
+spec "flip resync: a final token abutting EOF is still consumed" {
+    then "a top-level block with NO trailing newline parses clean" {
+        parses_clean("{\n    let x = 1\n}")
+    }
+    then "an EMPTY top-level block with no trailing newline parses clean" {
+        parses_clean("{\n}")
+    }
+    then "CONTROL: the same block WITH a trailing newline parses clean" {
+        parses_clean("{\n    let x = 1\n}\n")
+    }
+    then "a block holding a DECLARATION, no trailing newline, parses clean" {
+        // `stmt_block`'s body is `declaration*`, not `statement*` — an inline
+        // module's component is the shape that proves it.
+        parses_clean("{\n    type Inner = { x: int }\n}")
+    }
+    then "a trailing declaration whose last token abuts EOF parses clean" {
+        parses_clean("fn f() -> int { return 0 }")
+    }
+    then "a trailing expression statement abutting EOF parses clean" {
+        parses_clean("let z = 1 + 2")
+    }
+    then "a module stub followed by a block, no trailing newline, parses clean" {
+        parses_clean("mod inner {\n    let x = 1\n}")
+    }
+}

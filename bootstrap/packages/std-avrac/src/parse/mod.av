@@ -1039,9 +1039,7 @@ impl Parser {
                 dsl = run_dsl_decl_at_shared(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
             }
             if !dsl.had_error {
-                while d.current_start < dsl.stop_byte && !d.is_at_end() {
-                    d.advance_token()
-                }
+                d.resync_to_stop_byte(dsl.stop_byte)
                 self.copy_cursor_from(d)
                 return .Ok(dsl.stmt)
             }
@@ -1081,9 +1079,7 @@ impl Parser {
                         self.copy_cursor_from(d)
                         return .Err("parse error")
                     }
-                    while d.current_start < dsl.stop_byte && !d.is_at_end() {
-                        d.advance_token()
-                    }
+                    d.resync_to_stop_byte(dsl.stop_byte)
                     self.copy_cursor_from(d)
                     return .Ok(dsl.stmt)
                 }
@@ -1421,9 +1417,7 @@ impl Parser {
                 // trailing structural tokens the DSL itself consumed), then adopt
                 // its cursor+line so this parser continues from the statement's end
                 // with the same line the hand parser would have.
-                while d.current_start < dsl.stop_byte && !d.is_at_end() {
-                    d.advance_token()
-                }
+                d.resync_to_stop_byte(dsl.stop_byte)
                 self.copy_cursor_from(d)
                 return .Ok(dsl.stmt)
             }
@@ -1508,9 +1502,7 @@ impl Parser {
                 // advance it to stop_byte (lexing those tokens — they are not blocks,
                 // so they add their newlines but NO is_map_literal nudge), so its
                 // position AND line match the expression's true end, then adopt.
-                while d.current_start < dsl.stop_byte && !d.is_at_end() {
-                    d.advance_token()
-                }
+                d.resync_to_stop_byte(dsl.stop_byte)
                 self.copy_cursor_from(d)
                 return .Ok(dsl.expr)
             }
@@ -2847,6 +2839,25 @@ impl Parser {
     /// the delegate incurs propagates into this parser's continuous line, matching a
     /// from-scratch hand parse byte-for-byte. These are exactly the ten cursor fields
     /// save_state/restore_state round-trip (minus the store mark / diagnostics).
+    /// Forward-advance this parser's cursor to `stop_byte` — the DSL flip's RESYNC
+    /// (the grammar parser consumed tokens off the shared stream; this walks the
+    /// hand cursor over the same span so its position AND line match).
+    ///
+    /// The loop bound is `check(Tk.Eof)` — the CURRENT TOKEN being EOF — NOT
+    /// `is_at_end()`, which asks whether the SCANNER has consumed the last source
+    /// byte. Those differ on the file's final token: after scanning it,
+    /// `current >= source_len` already holds while the cursor still sits ON that
+    /// token. A resync bounded by `is_at_end()` therefore stops ONE TOKEN SHORT
+    /// whenever the DSL's last consumed token abuts EOF — e.g. a top-level `{ … }`
+    /// block in a source string with no trailing newline, which left the cursor
+    /// parked on the `}` and made the caller report `unexpected }`. `advance_token`
+    /// sets Eof once it runs out of bytes, so this still terminates.
+    fn resync_to_stop_byte(self, stop_byte: int) {
+        while self.current_start < stop_byte && !self.check(Tk.Eof) {
+            self.advance_token()
+        }
+    }
+
     fn copy_cursor_from(self, other: Parser) {
         self.start = other.start
         self.current = other.current
@@ -3021,7 +3032,7 @@ impl Parser {
                 run_dsl_type_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
             }
             if !dsl.had_error {
-                while self.current_start < dsl.stop_byte && !self.is_at_end() {
+                while self.current_start < dsl.stop_byte && !self.check(Tk.Eof) {
                     // Nested-generic close: the DSL splits a `>>` (Tk.Shr) into two
                     // `>`, consuming ONE to close the inner generic and leaving the
                     // second for the CALLER's own `>` (the hand channel /
