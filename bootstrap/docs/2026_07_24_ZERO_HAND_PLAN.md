@@ -98,6 +98,23 @@ a frozen `@hand`. Closing t-47hc.2 freezes nothing.
 `@hand` leaves remaining → 0, and Parser A deleted. Nothing else is the finish
 line.
 
+**Read it with `bash scripts/diagnose.sh --hand-leaves`, not by grepping.**
+`avra_grammar.av` holds the production grammars AND the family-ISOLATED §2 views the
+equivalence tests use (`avra_program_grammar`, `avra_stmt_grammar`, …). A leaf that
+appears only in an isolated view is not on the compiler's path and is not remaining
+work — `let_stmt` is exactly that, and it inflated the reported count by one until the
+mode existed. The honest source is the checked-in generated parsers: whatever they call
+through `run_hand_stmt`/`run_hand_expr` is, by construction, what production routes to.
+
+Not every leaf at 0 is reachable by nativisation, and pretending otherwise would be
+dishonest bookkeeping:
+- `match_table` — the rows of `match e table { … }` must supply exactly as many values
+  as the header row declared. Data-dependent, so not a grammar rule at ANY level of DSL
+  power. This one is retired by deleting the CONSTRUCT or by accepting a hand leaf, not
+  by a better grammar.
+- `primary_base` / `postfix_suffix` — the bridge into Parser A. They die WITH Parser A
+  in Phase 4, not before.
+
 ## `@cut` landed; the residual `*_edge` leaves need ABORT, not commit (t-47hc.21)
 
 `@cut` (the PEG commit point, #1018) resolves half of why `@hand(*_edge)` leaves
