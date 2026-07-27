@@ -97,6 +97,22 @@ spec "t-47hc.21: @require inside @try defers to the rollback until the @cut" {
     then "a predictive branch always emits the abort" {
         emitted("r = \"+\" @require \"-\"").contains("error_node_silent")
     }
+    then "a POST-cut abort is GUARDED on s_cut, not unconditional" {
+        // `abortable` is a STATIC fact ("this item is after the cut in the source")
+        // standing in for a RUNTIME one ("the cut fired"). When the branch fails BEFORE
+        // reaching the cut, s_cut is false and the branch must still roll back — an
+        // unguarded `return` would jump past the rollback scaffold.
+        let src = emitted("r = @try \"+\" \"-\" @cut @require \"*\" | \"+\"")
+        src.contains("if s_cut {") && src.contains("error_node_silent")
+    }
+    then "and a PREDICTIVE abort stays unguarded (no rollback to bypass)" {
+        !emitted("r = \"+\" @require \"-\"").contains("if s_cut {")
+    }
+    then "EXECUTOR parity: a pre-cut failure rolls back to the sibling, no error" {
+        // The behaviour the guard preserves. The executor gets this right via
+        // exec_node clearing env.abort on rollback; emit must not diverge.
+        !run_grammar_expr(parse_grammar("r = @try \"+\" \"-\" @cut @require \"*\" | \"+\"").grammar, "+ / /").had_error
+    }
 }
 
 // The `contains` assertions above check WHAT is emitted; this checks that what is

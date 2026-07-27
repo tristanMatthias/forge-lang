@@ -1095,7 +1095,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
         // via emit_node_items (an if/else-if dispatch for a multi-branch one).
         .Group(inner) -> {
             if prim_yields_token(item.prim) {
-                return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts, abortable)
+                return emit_one_terminal(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
             }
             emit_node_items(g, inner, annots, ind, list_labels, opts, 1, spec_ctx)
         }
@@ -1103,7 +1103,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
         // skips it, so this is a defensive no-op for any other caller.
         .Pred(_) -> ""
         .Peek(_) -> ""
-        _ -> emit_one_terminal(g, item, idx, annots, ind, list_labels, opts, abortable)
+        _ -> emit_one_terminal(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
     }
 }
 
@@ -1116,7 +1116,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
 /// @recover synchronises. The guard is `prim_first_guard` (not `term_guard`) so a
 /// mandatory `("a" | "b")` group emits its FIRST disjunction rather than a bogus
 /// always-failing `false`.
-fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool) -> string {
+fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     // The primary's FIRST-set guard. For .Lit/.Named this is the SAME single-token
     // compare `term_guard` produced (byte-identical); for a terminal-alternation
     // .Group it is the FIRST disjunction (`term_guard` returned `false` for a group
@@ -1143,7 +1143,18 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // is the same error node emit already uses for "no branch matched", so callers
     // (capval_to_stmt / capval_to_expr) need no new case — the executor's exec_seq
     // returns exactly this on `env.abort`.
-    let abort_line = if item.require && abortable { "${ind}    return CapVal.Node(st.error_node_silent())\n" } else { "" }
+    // Past a `@cut` inside a `@try`, `abortable` is a STATIC fact ("this item sits after
+    // the cut in the source") standing in for a RUNTIME one ("the cut actually fired").
+    // They differ whenever the branch failed BEFORE reaching the cut: `s_cut` is still
+    // false, the branch is destined to roll back, and an unguarded `return` here would
+    // jump straight past the rollback scaffold — reporting an error where the executor
+    // (whose exec_node clears env.abort on rollback) correctly falls through to the next
+    // alternative. So a committed-context abort is GUARDED on s_cut; a predictive branch
+    // has no rollback to bypass and returns outright.
+    let abort_ret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+    let abort_line = if !item.require || !abortable { "" }
+        else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
+        else { abort_ret }
 
     // A repetition-captured terminal (`( … x:IDENT … )*`). idx==0 is the loop guard
     // (the enclosing `while` FIRST proved it) → unconditional push; a non-first
