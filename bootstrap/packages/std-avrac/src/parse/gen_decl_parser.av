@@ -31,7 +31,7 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "while" {
         return parse_while_stmt(st)
     }
-    if st.cur().text == "match" {
+    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || st.cur().text == "match" {
         return parse_match_stmt(st)
     }
     if st.cur().text == "defer" {
@@ -175,6 +175,23 @@ fn parse_while_stmt(st: PState) -> CapVal {
 
 fn parse_match_stmt(st: PState) -> CapVal {
     mut tried_spec = false
+    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") {
+        let sp_start = st.cur().pos
+        mut a_list: List<WhenArm> = []
+        let _ = st.advance()
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        while st.cur().text == "_" || tok_starts_expr_leaf(st.cur()) {
+            a_list.push(capval_to_when_arm(st, parse_match_when_arm(st)))
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected `}` after match arms")
+            return CapVal.Node(st.error_node_silent())
+        }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
+    }
     if st.cur().text == "match" {
         tried_spec = true
         let s_pos = st.pos
@@ -209,6 +226,32 @@ fn parse_match_stmt(st: PState) -> CapVal {
         return CapVal.SNode(run_hand_stmt("match_stmt_edge", st))
     }
     if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_match_when_arm(st: PState) -> CapVal {
+    if st.cur().text == "_" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected ->")
+        }
+        let __modes_2 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+        let b = parse_expression(st)
+        st.set_modes(__modes_2)
+        return mk_when_default(st, b)
+    }
+    if tok_starts_expr_leaf(st.cur()) {
+        let c = parse_expression(st)
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected ->")
+        }
+        let __modes_2 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+        let b = parse_expression(st)
+        st.set_modes(__modes_2)
+        return mk_when_arm(st, c, b)
+    }
     CapVal.Node(st.error_node("expected an expression"))
 }
 

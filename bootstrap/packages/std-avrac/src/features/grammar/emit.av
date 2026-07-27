@@ -483,7 +483,7 @@ fn build_uses_sp_start(name: string) -> bool {
         // list_expr, rule entry = `[`) but the BODY's first byte for MkListComp (built in
         // the list_comp sub-rule, entered AFTER `[` is consumed) — the two-level span
         // asymmetry matching hand parse_list_expr (@ `[`) vs parse_list_elements (@ body).
-        name == "MkListLit" || name == "MkListComp" || name == "MkChannel" || name == "MkWhen" ||
+        name == "MkListLit" || name == "MkListComp" || name == "MkChannel" || name == "MkWhen" || name == "MkWhenStmt" ||
         name == "MkExprBlock" || name == "MkSpawn" || name == "MkIsolated" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
@@ -1495,6 +1495,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkWhenArm" -> "mk_when_arm(st, ${args[0]}, ${args[1]})"
         "MkWhenDefault" -> "mk_when_default(st, ${args[0]})"
         "MkWhen" -> "mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))"
+        "MkWhenStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))))))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
         // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒
@@ -2135,7 +2136,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 
 fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
-    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" { return "stmt" }
+    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
