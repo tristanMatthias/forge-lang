@@ -1,24 +1,21 @@
-// ps3t.6.7 (lexer modes, interpolation half) — the grammar-DSL now handles
-// interpolated strings via the @hand bridge. An interpolated `"..${e}.."` string
-// lexes to a single Tk.Template token (kind "TEMPLATE" in the DSL surface), which
-// has no plain grammar terminal; @hand(template_expr) delegates it to the hand
-// parser's parse_template_primary → desugar_template (the SAME desugar the hand
-// parser uses in parse_primary), so the DSL builds the byte-identical
-// `+`-chain of text + string(expr) fragments. This is the mode-sensitive-
-// construct pattern (like @hand(quote_expr)), the interpolation half of 6.7.
+// ps3t.6.7 (lexer modes, interpolation half) — an interpolated `"..${e}.."` string
+// lexes to a single Tk.Template token, which has no plain grammar terminal. t-47hc.19
+// made it GRAMMAR-NATIVE: `template_lit = t:TEMPLATE -> MkTemplate(t)`, and the desugar
+// itself was EXTRACTED to the store-based desugar_template_store that BOTH parsers now
+// call — so the `+`-chain of text + string(expr) fragments is byte-identical by
+// construction rather than by convention. @hand(template_expr) and the hand
+// parse_template_primary are both deleted.
 //
-// Tested through the runtime executor (parse_grammar + run_grammar_expr) rather
-// than the compiler's own grammar blocks, so it exercises the executor's
-// @hand(template_expr) path directly with no comptime/seed dependency.
-use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+// Still tested through the runtime executor, now against the PRODUCTION grammar rather
+// than a one-rule @hand stub.
+use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_expr_id}
 
-// The DSL's rendered expr for `src` under a grammar that accepts a plain STRING
-// or delegates an interpolated string to @hand(template_expr).
+// The DSL's rendered expr for `src` under the production expression grammar, whose
+// `template_lit` rule owns the TEMPLATE token natively.
 fn dsl_expr(src: string) -> string {
-    let gp = parse_grammar("expr = STRING | @hand(template_expr)")
-    let r = run_grammar_expr(gp.grammar, src)
+    let r = run_grammar_expr(avra_expr_grammar(), src)
     if r.had_error { return "<dsl err>" }
     render_expr_id(r.store, r.root)
 }
@@ -46,7 +43,7 @@ fn interp(body: string) -> string {
 // NOTE: no interpolation syntax appears in ANY string literal here (not even in
 // descriptions) — the interpolated SOURCE under test is built by concatenating a
 // lone "$" with "{...}", so this file itself never triggers interpolation.
-spec "ps3t.6.7 interpolation: DSL @hand(template_expr) == hand parser" {
+spec "t-47hc.19: grammar-native template_lit == hand parser" {
     given "a lone interpolation" {
         then "hi-x interpolation agrees and is not a DSL error" {
             let d = "$"
