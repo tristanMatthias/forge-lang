@@ -1,0 +1,200 @@
+// WHY: t-47hc.28 — `x{#cap}`, a repetition capped by a capture list's LENGTH.
+//
+// This is the capability that unblocks Phase 4. `match … table` was recorded as
+// permanently inexpressible because "row width is data-dependent", which conflated it
+// with the separate `table { }` LITERAL (parse/mod.av, the one that really does reject a
+// wrong-width row). The match-table leaf does no such check: its cell loop is literally
+//
+//     while i < value_count { if check(RightBrace) { break }  … }
+//
+// — a BOUND, not a validation. A grammar cannot say that with `*` alone, because the
+// count is not a constant: it is a property of something already parsed. But captures
+// inside `( … )*` ALREADY collect into parallel lists, so the count is already in hand
+// as a capture's length. Binding it needs no integer expressions in the DSL and no
+// attribute-evaluation engine — just a name. That is the whole construct.
+//
+// DORMANT on landing: no production grammar spends it, so `--emit-gen-check` and
+// diff-test stay byte-identical. These specs pin the semantics BEFORE the match-table
+// flip spends them, and pin the executor/emit lockstep — the two engines must agree or
+// the differential oracle every leaf migration relies on is meaningless.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, render_grammar}
+use @std.avrac.core.{render_expr_id}
+
+fn run_render(grammar_src: string, input: string) -> string {
+    let r = run_grammar_expr(parse_grammar(grammar_src).grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+fn perr(src: string) -> string { parse_grammar(src).error }
+
+fn emit_rule(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// The columnar shape, minimised: a HEADER row whose width caps the CELL row that
+// follows. `paren` (a node-producing sub-rule) is the element because list captures
+// accumulate Expr NODES, not bare terminal tokens. No closing bracket — the point is
+// what the bounded loop CONSUMES, and a trailing delimiter would only add an unrelated
+// diagnostic when the cap correctly leaves cells behind.
+fn bounded_g() -> string {
+    "r = \"[\" ( h:paren )+ \"|\" ( c:paren )*{#h} -> MkListLit(c)\n" +
+    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+}
+
+// The identical grammar WITHOUT the bound — the control. Any difference between the two
+// on the same input is the cap and nothing else.
+fn unbounded_g() -> string {
+    "r = \"[\" ( h:paren )+ \"|\" ( c:paren )* -> MkListLit(c)\n" +
+    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+}
+
+spec "t-47hc.28: the bound caps the repetition at the header's width" {
+    then "a 2-column header takes exactly 2 cells and leaves the third" {
+        run_render(bounded_g(), "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8)))"
+    }
+    then "the SAME input unbounded takes all three — so the cap is what differs" {
+        // The control. Without this, a passing bounded case could just as well be the
+        // input running out, which would prove nothing.
+        run_render(unbounded_g(), "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8), (group 9)))"
+    }
+    then "a 1-column header takes exactly 1 cell" {
+        run_render(bounded_g(), "[(1)|(7)(8)(9)]") == "(list ((group 7)))"
+    }
+    then "the cap is an UPPER bound — fewer cells than columns is not an error" {
+        // `match … table`'s loop breaks early when the row ends; the bound must not
+        // demand its full count, or a short row would report where the hand does not.
+        run_render(bounded_g(), "[(1)(2)(3)|(7)]") == "(list ((group 7)))"
+    }
+    then "a zero-width cap takes nothing" {
+        // Reachable only via a `*` header (a `+` header cannot be empty); pinned here
+        // because it is the boundary the emitted `>=` guard turns on.
+        let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )*{#h} -> MkListLit(c)\n" +
+                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+        run_render(g, "[|(7)(8)]") == "(list ())"
+    }
+}
+
+spec "t-47hc.28: the emitted parser is the executor's twin" {
+    then "the emitted loop guards on the bound capture's list length" {
+        // The lockstep that matters: exec_repeat stops at `taken >= cap`, and the
+        // generated parser must stop on the same condition or the two engines diverge
+        // and every differential oracle downstream is worthless.
+        let src = emit_rule(bounded_g(), "r")
+        src.contains(">= h_list.length")
+    }
+    then "it counts with its own local, not the capture's length" {
+        // A bounded item inside a repeating group accumulates ACROSS iterations into one
+        // flat parallel list, so `c_list.length` is NOT the per-loop count. Pinning the
+        // counter here stops a future "simplification" back to the capture length.
+        emit_rule(bounded_g(), "r").contains("mut __bnd_")
+    }
+    then "the UNBOUNDED grammar emits no guard at all — the capability is inert" {
+        // Dormancy at the emitter: an unbounded repetition must render byte-identically
+        // to what it rendered before this construct existed, which is what keeps
+        // --emit-gen-check and diff-test green on landing.
+        let src = emit_rule(unbounded_g(), "r")
+        !src.contains("__bnd") && !src.contains("_list.length")
+    }
+}
+
+// The shape the construct EXISTS for: `match … table`'s per-row cell loop. The bound
+// sits on an item INSIDE a repeating group, and the capture it names comes from the
+// header row OUTSIDE that group. Validation must carry the enclosing branch's scope
+// into the group, or this — the headline use case — is unparseable.
+fn nested_g() -> string {
+    "r = \"[\" ( h:paren )+ \"|\" ( ( c:paren )*{#h} \";\" )* -> MkListLit(c)\n" +
+    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+}
+
+spec "t-47hc.28: a bound INSIDE a repeating group sees the enclosing branch" {
+    then "the grammar is accepted — the group does not restart bound visibility" {
+        perr(nested_g()) == ""
+    }
+    then "each row's cell loop is capped independently, not cumulatively" {
+        // Two rows, cap 2 each. A cumulative counter would take 2 cells TOTAL and drop
+        // row two; a per-entry counter takes 2 per row — which is why the emitted
+        // counter is declared inside the outer loop rather than around it.
+        run_render(nested_g(), "[(1)(2)|(7)(8);(5)(6);]") ==
+            "(list ((group 7), (group 8), (group 5), (group 6)))"
+    }
+    then "a bound naming a capture to its RIGHT is still rejected inside a group" {
+        // Threading the scope must not become "see everything" — left-to-right
+        // visibility is what both engines implement.
+        perr("r = ( ( c:NUMBER )*{#h} )* ( h:NUMBER )+").contains("not captured earlier")
+    }
+}
+
+spec "t-47hc.28: `+` with a zero cap takes zero iterations, matching the emitted loop" {
+    then "a `+{#cap}` over an EMPTY capture takes nothing" {
+        // exec_item_body's `.Plus` arm forces one iteration before exec_repeat; the
+        // emitted loop has no forced iteration and its guard breaks on the first check.
+        // Unless the forced iteration honours the cap, the two engines disagree here —
+        // reachable whenever the bound names a `*` capture that matched nothing.
+        let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
+                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+        run_render(g, "[|(7)(8)]") == "(list ())"
+    }
+    then "a positive cap still takes its full count" {
+        let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
+                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+        run_render(g, "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8)))"
+    }
+}
+
+spec "t-47hc.28: the validator and the emitter agree on what a list capture is" {
+    then "a label merely REPEATED across two `One` items is not bindable" {
+        // The emitter declares a `<label>_list` only for a label under a `*`/`+`
+        // (list_labels_of). Accepting a bound on a repeated-scalar label would emit a
+        // reference to an undeclared `a_list` — the generated file would not compile —
+        // while the interpreter saw a last-wins scalar and answered 1.
+        perr("r = a:NUMBER a:NUMBER ( c:NUMBER )*{#a}").contains("scalar capture")
+    }
+}
+
+spec "t-47hc.28: render round-trips the bound" {
+    then "the bound survives render -> parse" {
+        // A renderer that dropped it would turn a capped loop into an unbounded one —
+        // a different grammar, not merely a less-annotated one.
+        render_grammar(parse_grammar(bounded_g()).grammar).contains("{#h}")
+    }
+    then "re-parsing the rendered text yields a grammar that still caps" {
+        let round = render_grammar(parse_grammar(bounded_g()).grammar)
+        run_render(round, "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8)))"
+    }
+}
+
+spec "t-47hc.28: a bound that could not mean anything is rejected at grammar-parse time" {
+    then "`?` cannot carry a bound" {
+        perr("r = \"[\" ( h:NUMBER )+ ( c:NUMBER )?{#h}").contains("only meaningful")
+    }
+    then "a non-repetition cannot carry a bound" {
+        perr("r = \"[\" ( h:NUMBER )+ c:NUMBER{#h}").contains("only meaningful")
+    }
+    then "a repetition cannot be bounded by its OWN capture" {
+        // Self-limiting, and the engines would not agree on it: exec_repeat reads the cap
+        // once up front while the emitted counter and the capture advance together.
+        // Rejecting beats picking a winner.
+        perr("r = ( c:NUMBER )+ ( c:NUMBER )*{#c}").contains("itself writes")
+    }
+    then "an unknown capture name is rejected" {
+        perr("r = ( h:NUMBER )+ ( c:NUMBER )*{#nope}").contains("not captured earlier")
+    }
+    then "a capture bound LATER in the branch is rejected" {
+        // Left-to-right visibility is what both engines actually implement: the cap would
+        // read an empty list and silently clamp the loop to zero iterations.
+        perr("r = ( c:NUMBER )*{#h} ( h:NUMBER )+").contains("not captured earlier")
+    }
+    then "a SCALAR capture is rejected — a bound needs a length" {
+        perr("r = h:NUMBER ( c:NUMBER )*{#h}").contains("scalar capture")
+    }
+    then "a malformed bound is a hard error, never a silently dropped cap" {
+        perr("r = ( h:NUMBER )+ ( c:NUMBER )*{h}").contains("expected `#`")
+    }
+    then "an unclosed bound is a hard error" {
+        perr("r = ( h:NUMBER )+ ( c:NUMBER )*{#h").contains("expected `}`")
+    }
+}

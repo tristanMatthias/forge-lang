@@ -17,7 +17,7 @@
 //   alt      = seq ( "|" seq )*
 //   seq      = labeled+ ( "->" build )? annot*
 //   labeled  = ( NAME ":" )? postfix
-//   postfix  = primary ( "*" | "+" | "?" )?
+//   postfix  = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?
 //   primary  = NAME | STRING | "(" alt ")"
 //   build    = NAME ( "(" ( NAME ( "," NAME )* )? ")" )?
 //   annot    = "@expect" "(" STRING "," STRING ")"
@@ -181,6 +181,15 @@ export fn parse_grammar(src: string) -> GrammarParse {
     if p.error == "" {
         let ce = validate_cuts(g)
         if ce != "" { p.error = ce }
+    }
+    // t-47hc.28: a repetition bound `x{#cap}` must name a capture the SAME branch has
+    // already collected. Unbound or later-bound, the cap would read an empty list and
+    // silently clamp the loop to zero iterations — a whole repetition vanishing with no
+    // diagnostic, which is the exact failure mode the emit-regen review step exists to
+    // catch. Make it a grammar-parse error instead.
+    if p.error == "" {
+        let be = validate_bounds(g)
+        if be != "" { p.error = be }
     }
     GrammarParse { grammar: g, error: p.error }
 }
@@ -578,6 +587,239 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
     ""
 }
 
+/// Is `s` one of `xs`? DELIBERATELY FILE-PRIVATE, and it must stay that way.
+///
+/// This feature carries several near-identical copies of this loop (`list_has` in
+/// executor.av, `ffs_has` in first_follow.av, `frag_name_in` in compose.av, `str_in`
+/// in emit.av — which additionally treats `""` as absent). That looks like textbook
+/// duplication to remove, and removing it BREAKS THE BUILD in a way no ordinary gate
+/// catches: hoisting one shared `export fn` into ast.av and calling it across files
+/// makes every `@expand(...)` comptime macro fail with
+///
+///     F4005 … can only call functions (callee=@std::avrac::features::grammar::name_in
+///     kind=type_marker)
+///
+/// because `parse_grammar` is reachable from comptime macro expansion, and the
+/// comptime evaluator resolves a cross-module callee that is not `@comptime` to a
+/// type_marker rather than a function (features/eval/mod.av `value_type_marker`; the
+/// same trap is recorded at features/derive/emit.av `name_vtype`). A plain
+/// compile, `--emit-gen-check`, and even a byte-identical `diff-test` all stay GREEN —
+/// the comptime path is only exercised on the manifest-driven build, which is why
+/// CLAUDE.md insists the metadata lib build is the real smoke test.
+///
+/// So the duplication is load-bearing, not rot. If it is ever genuinely consolidated,
+/// the shared helper has to be `@comptime` AND the change has to be validated by
+/// building a package that uses `@expand`, not by the parser gates alone.
+fn name_in(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s { return true }
+    }
+    false
+}
+
+/// Reject every repetition bound (`x{#cap}`) whose capture is not already collected
+/// at that point in the branch. Scope is one alternation BRANCH scanned left to
+/// right, which is exactly what both engines see: the executor binds into a shared
+/// per-rule CapEnv as it walks the items, and the generated parser declares one
+/// `<label>_list` accumulator per branch and fills it in the same order. A bound
+/// naming a capture that appears LATER (or not at all) would read an empty list and
+/// clamp the loop to zero iterations silently.
+///
+/// A bound is only honoured against a LIST capture — one collected by a `*`/`+`, or
+/// by a label repeated across items. A scalar capture has no length, so naming one is
+/// rejected too rather than being counted as 1.
+fn validate_bounds(g: Grammar) -> string {
+    // `parse_grammar` runs on the production parse path, so this pass must cost
+    // effectively nothing for the grammars that DON'T use a bound — which today is
+    // all of them. The visibility scan below allocates two lists per branch, so gate
+    // it on a bound existing at all: one allocation-free walk, then out.
+    if !grammar_has_bound(g) { return "" }
+    for rule in g.rules {
+        let e = check_bound_node(rule.body, rule.name)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn grammar_has_bound(g: Grammar) -> bool {
+    for rule in g.rules {
+        if node_has_bound(rule.body) { return true }
+    }
+    false
+}
+
+fn node_has_bound(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    if item.bound != "" { return true }
+                    match item.prim {
+                        .Group(inner) -> {
+                            if node_has_bound(inner) { return true }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn check_bound_node(node: GNode, rule: string) -> string {
+    let no_lists: List<string> = []
+    let no_seen: List<string> = []
+    check_bound_node_in(node, rule, no_lists, no_seen, false)
+}
+
+/// `outer_lists`/`outer_seen` are the captures already collected to the LEFT of this
+/// node by the ENCLOSING branch. Threading them is what lets a bound written INSIDE a
+/// group see the enclosing branch's captures — which is not an edge case but the
+/// headline shape: `match … table`'s per-row cell loop is
+/// `( h:IDENT )+ ( p:pattern c:cell{#h} )*`, where the bound sits inside the row group
+/// and `h` comes from the header row outside it. Restarting the scope at each group
+/// made that grammar unparseable.
+///
+/// `under_multi` says this node sits inside a repeating group, which makes every
+/// capture within it list-shaped — mirroring emit's `node_labels_of(inner, under_multi)`,
+/// because the two must agree on what a `<label>_list` accumulator exists for.
+fn check_bound_node_in(node: GNode, rule: string, outer_lists: List<string>, outer_seen: List<string>, under_multi: bool) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                // Labels that are LIST-shaped by the time each item is reached. Seeded
+                // from the enclosing scope, then built incrementally so a bound can only
+                // ever see captures to its LEFT.
+                mut lists: List<string> = []
+                mut seen: List<string> = []
+                for l in outer_lists { lists.push(l) }
+                for l in outer_seen { seen.push(l) }
+                for item in b.items {
+                    if item.bound != "" {
+                        // A repetition bounded by a capture IT ITSELF writes is
+                        // self-limiting, and the two engines would not agree on it:
+                        // exec_repeat reads the cap ONCE up front, while the emitted
+                        // loop compares against a `_list` that the loop keeps growing.
+                        // Reject rather than pick a winner. The capture is usually on
+                        // an INNER item of an unlabelled group, so the item's own label
+                        // is not enough — ask what the whole item writes.
+                        if name_in(item_written_labels(item), item.bound) {
+                            return "`{#${item.bound}}` in rule `${rule}` bounds a repetition by a capture that repetition itself writes"
+                        }
+                        if name_in(lists, item.bound) {
+                            // fine — a list capture bound earlier in this branch
+                        } else if name_in(seen, item.bound) {
+                            return "`{#${item.bound}}` in rule `${rule}` names a scalar capture — a bound needs a list capture (one collected by `*`/`+`)"
+                        } else {
+                            return "`{#${item.bound}}` in rule `${rule}` names `${item.bound}`, which is not captured earlier in this branch"
+                        }
+                    }
+                    if item.label != "" {
+                        // LIST-shaped means exactly what the EMITTER declares a
+                        // `<label>_list` accumulator for: a label under a `*`/`+`, own
+                        // or inherited from an enclosing repeating group (emit's
+                        // list_labels_of / node_labels_of). A label merely REPEATED
+                        // across two `One` items is NOT one — the emitter declares no
+                        // accumulator for it, so accepting a bound on it would emit a
+                        // reference to an undeclared `<label>_list` and the generated
+                        // file would not compile, while the interpreter's capval_len saw
+                        // a last-wins scalar and answered 1. Both engines must agree on
+                        // what a bindable list is.
+                        let multi = under_multi || match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                        if multi {
+                            if !name_in(lists, item.label) { lists.push(item.label) }
+                        }
+                        if !name_in(seen, item.label) { seen.push(item.label) }
+                    }
+                    match item.prim {
+                        .Group(inner) -> {
+                            let multi = under_multi || match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                            // Recurse BEFORE merging the group's own labels outward, so a
+                            // bound inside the group sees only what is genuinely to its
+                            // LEFT — the enclosing branch's captures plus, via the inner
+                            // walk's own accumulation, the group items preceding it.
+                            let e = check_bound_node_in(inner, rule, lists, seen, multi)
+                            if e != "" { return e }
+                            // A group's items bind into the SAME env, so its labels are
+                            // visible to later items of THIS branch.
+                            let sub = group_label_shapes(inner, multi)
+                            for l in sub.lists {
+                                if !name_in(lists, l) { lists.push(l) }
+                            }
+                            for l in sub.all {
+                                if !name_in(seen, l) { seen.push(l) }
+                            }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    ""
+}
+
+/// Every capture label an item writes — its own, plus all of them inside it when the
+/// item is a group. This is what a bound must not name (see check_bound_node).
+fn item_written_labels(item: GItem) -> List<string> {
+    mut out: List<string> = []
+    if item.label != "" { out.push(item.label) }
+    match item.prim {
+        .Group(inner) -> {
+            for l in group_label_shapes(inner, false).all {
+                if !name_in(out, l) { out.push(l) }
+            }
+        }
+        _ -> {}
+    }
+    out
+}
+
+/// The capture labels a group contributes to its ENCLOSING branch, split by shape:
+/// `lists` are list-collecting (bindable as a bound), `all` is every label seen.
+/// A group's items bind into the same env as the branch around it, so these are
+/// visible to a later bound in that branch. `multi` is true when the group itself
+/// repeats, which makes every capture inside it list-shaped regardless of the inner
+/// item's own repetition. Returned rather than accumulated through parameters —
+/// `List` params are immutable, and a pure result keeps the visibility rule readable.
+type LabelShapes = { lists: List<string>, all: List<string> }
+
+fn group_label_shapes(node: GNode, multi: bool) -> LabelShapes {
+    mut lists: List<string> = []
+    mut all: List<string> = []
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    if item.label != "" {
+                        // Same rule as check_bound_node_in: list-shaped ⇔ under a
+                        // `*`/`+`, never merely repeated across `One` items.
+                        let item_multi = match item.rep { .Star -> true  .Plus -> true  _ -> false }
+                        if multi || item_multi {
+                            if !name_in(lists, item.label) { lists.push(item.label) }
+                        }
+                        if !name_in(all, item.label) { all.push(item.label) }
+                    }
+                    match item.prim {
+                        .Group(inner) -> {
+                            let sub = group_label_shapes(inner, multi)
+                            for l in sub.lists {
+                                if !name_in(lists, l) { lists.push(l) }
+                            }
+                            for l in sub.all {
+                                if !name_in(all, l) { all.push(l) }
+                            }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    LabelShapes { lists, all }
+}
+
 /// Reject every `@cut` the executor and the generated parser would not honor
 /// identically. `in_try` carries the enclosing `@try` DOWN through groups: a group
 /// nested in a speculative branch is still inside that branch's rollback scope, so a
@@ -831,11 +1073,11 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut, require }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut, require, bound: base.bound }
 }
 
-// postfix = primary ( "*" | "+" | "?" )?
-type Postfix = { rep: GRep, prim: GPrim }
+// postfix = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?
+type Postfix = { rep: GRep, prim: GPrim, bound: string }
 
 fn parse_postfix(p: GP) -> Postfix {
     let prim = parse_primary(p)
@@ -850,6 +1092,33 @@ fn parse_postfix(p: GP) -> Postfix {
         let _ = p.advance()
         rep = GRep.Opt
     }
+    // t-47hc.28 BOUNDED REPETITION `x{#cap}` — cap this repetition at the LENGTH of
+    // an already-collected capture list. STRICT grammar `{` `#` NAME `}`: the `#`
+    // sigil keeps the bound unmistakably a COUNT-OF rather than a rule reference, and
+    // the braces cannot collide with anything else in postfix position (a `{` never
+    // followed a postfix primary before this). Both delimiters are required, so a
+    // malformed bound is a hard error, never a silently-dropped cap.
+    mut bound = ""
+    if p.is_punct("{") {
+        let _ = p.advance()
+        p.expect_punct("#", "expected `#` in a repetition bound — the form is `x{#capture}`")
+        if p.peek().kind == "NAME" {
+            bound = p.advance().text
+        } else {
+            p.fail("expected a capture name in `{#capture}`")
+        }
+        p.expect_punct("}", "expected `}` to close `{#capture}`")
+        // A bound is only meaningful on a repetition that can run more than once.
+        // On `?` or a bare item the cap is either vacuous or a contradiction, and
+        // neither engine has anywhere to put it — reject rather than generate a
+        // dead guard. (That the capture EXISTS and is bound earlier in the same
+        // branch is checked once the whole grammar is parsed — validate_bounds.)
+        match rep {
+            .Star -> {}
+            .Plus -> {}
+            _ -> p.fail("`{#${bound}}` is only meaningful on a `*` or `+` repetition")
+        }
+    }
     // A `@when(flag)` predicate is a zero-width, One-repetition gate; a `*`/`+`/`?`
     // suffix is meaningless and both consumers mishandle it (the interpreter never
     // fires it; emit would `st.advance()` on a mode read). Reject it at parse time.
@@ -858,7 +1127,7 @@ fn parse_postfix(p: GP) -> Postfix {
         .Peek(_) -> match rep { .One -> {}  _ -> p.fail("`@peek(cond)` cannot take a `*`/`+`/`?` repetition suffix") }
         _ -> {}
     }
-    Postfix { rep, prim }
+    Postfix { rep, prim, bound }
 }
 
 // primary = NAME | STRING | "(" alt ")"

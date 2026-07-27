@@ -1081,8 +1081,8 @@ fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: 
     match item.rep {
         .One -> emit_one(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
         .Opt -> emit_opt(g, item, annots, ind, list_labels, opts, spec_ctx)
-        .Star -> emit_repeat_group(g, item, annots, ind, list_labels, opts, spec_ctx)
-        .Plus -> emit_repeat_group(g, item, annots, ind, list_labels, opts, spec_ctx)
+        .Star -> emit_repeat_group(g, item, idx, annots, ind, list_labels, opts, spec_ctx)
+        .Plus -> emit_repeat_group(g, item, idx, annots, ind, list_labels, opts, spec_ctx)
     }
 }
 
@@ -1369,13 +1369,51 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
         "${ind}if __any_err { st.note_had_error() }\n"
 }
 
-fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, spec_ctx: int) -> string {
+/// t-47hc.28 `x{#cap}` — the generated twin of exec_repeat's cap. Three pieces that
+/// must be placed around the loop, returned separately because each of
+/// emit_repeat_group's three arms assembles its `while` differently:
+///   `.decl`  — the counter, declared just BEFORE the loop (so a bounded loop nested
+///              in an outer repetition resets per outer iteration, exactly as a fresh
+///              exec_repeat call does).
+///   `.guard` — the `break`, FIRST statement in the body, mirroring exec_repeat's
+///              `if cap >= 0 && taken >= cap { return }` before the primary runs.
+///   `.step`  — the increment, LAST statement in the body.
+/// A counter is used rather than the capture's own length because a bounded item
+/// inside a repeating group accumulates ACROSS iterations into one flat parallel
+/// list (`match … table`'s cells over all rows), so the list length is not the
+/// per-loop count. Named `__bnd_<idx>` on the same footing as `__modes_<idx>` above:
+/// within ONE emit_seq_items call `idx` is unique, and a nested group's items emit
+/// inside their own `{ }` block where a same-idx binding legally shadows — so a
+/// same-scope collision is impossible. (A label-derived name would not do: the bound
+/// commonly sits on an UNLABELLED group whose captures are on its inner items.)
+type BoundEmit = { decl: string, guard: string, step: string }
+
+fn bound_emit(item: GItem, idx: int, ind: string) -> BoundEmit {
+    if item.bound == "" { return BoundEmit { decl: "", guard: "", step: "" } }
+    let v = "__bnd_${idx}"
+    BoundEmit {
+        decl: "${ind}mut ${v} = 0\n",
+        guard: "${ind}    if ${v} >= ${item.bound}_list.length { break }\n",
+        step: "${ind}    ${v} = ${v} + 1\n",
+    }
+}
+
+fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, spec_ctx: int) -> string {
+    let bnd = bound_emit(item, idx, ind)
     match item.prim {
         // A labeled bare-ref `*`/`+` over a STATEMENT rule → the statement-list-with-
         // recovery loop (emit_stmt_list_loop). Non-matching refs keep the pre-existing
         // discard behaviour (byte-identical to the old `_` arm that caught `.Ref`).
         .Ref(name) -> {
-            if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
+            if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" && item.bound != "" {
+                // emit_stmt_list_loop builds its own loop with recovery and has no
+                // seam for a cap, so honouring the bound here would mean silently
+                // dropping it — the same failure the sibling branch below guards.
+                // No grammar needs a bounded statement list today; fail loud rather
+                // than generate a parser whose bound does nothing.
+                "${ind}// GRAMMAR ERROR: `${item.label}:${name}*{#${item.bound}}` — a bounded statement-list repetition is unsupported (emit_stmt_list_loop has no cap seam)\n" +
+                    "${ind}let _ = emit_unsupported_bounded_stmt_list\n"
+            } else if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
                 emit_stmt_list_loop(name, item.label, ind)
             } else if item.label != "" && str_in(list_labels, item.label) {
                 // A labeled bare-ref `*`/`+` over a NON-statement rule: its `<label>_list`
@@ -1387,8 +1425,11 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
                 // path) or add an accumulation branch for that result kind here.
                 "${ind}// GRAMMAR ERROR: labeled bare-ref `${item.label}:${name}*` over a non-statement rule is unsupported — wrap in `( … )*` or extend emit_repeat_group\n" +
                     "${ind}let _ = emit_unsupported_labeled_bare_ref_star\n"
-            } else {
+            } else if item.bound == "" {
                 "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
+            } else {
+                bnd.decl + "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} {\n" +
+                    bnd.guard + "${ind}    let _ = st.advance()\n" + bnd.step + "${ind}}\n"
             }
         }
         .Group(inner) -> {
@@ -1409,21 +1450,32 @@ fn emit_repeat_group(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string,
     // and must match the hand parser's wording. `@expect("+", msg)` overrides it.
     let req_msg = { let e = expect_for(annots, "+")  if e.found { e.msg } else { "expected at least one repetition" } }
     let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) { st.report(\"${req_msg}\") }\n"  _ -> "" }
+            // The bound pieces are empty strings when unbounded, so splicing them into
+            // this multi-line shape leaves the generated text byte-identical.
             if group_is_single_hand(g, inner) {
-                req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                    bnd.guard +
                     "${ind}    let __rep_before = st.pos\n" +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     "${ind}    if st.pos == __rep_before { break }\n" +
+                    bnd.step +
                     "${ind}}\n"
             } else {
-                req + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                    bnd.guard +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                    bnd.step +
                     "${ind}}\n"
             }
         }
         _ -> {
             let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, prim_first_guard(g, item.prim, []))}) { st.report(\"expected at least one repetition\") }\n"  _ -> "" }
-            req + "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
+            if item.bound == "" {
+                req + "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} { let _ = st.advance() }\n"
+            } else {
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, prim_first_guard(g, item.prim, []))} {\n" +
+                    bnd.guard + "${ind}    let _ = st.advance()\n" + bnd.step + "${ind}}\n"
+            }
         }
     }
 }

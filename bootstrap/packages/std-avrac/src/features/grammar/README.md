@@ -19,6 +19,7 @@ grammar Name {
     seq      = labelled+ ( "->" build | annot )*
     labelled = ( name ":" )? postfix        // name: = capture
     postfix  = primary ( "*" | "+" | "?" )?  // repetition
+               ( "{" "#" name "}" )?          // ...capped by a capture's length
     primary  = NAME                          // UPPERCASE = named terminal (NUMBER)
              | ruleref                        // lowercase = nonterminal ref
              | "literal"                       // exact source text
@@ -48,6 +49,20 @@ grammar Name {
   purely to carry diagnostics. Only legal inside `@try` (a predictive branch has
   nothing to commit) and it fires only while the branch has reported nothing —
   both enforced at grammar-parse time.
+- **bound** `x{#cap}` caps a `*`/`+` at the LENGTH of a capture list already
+  collected in the same branch: "repeat `x`, at most `#cap` times". This is what a
+  COLUMNAR sub-language needs and a plain `*` cannot say — a table's body rows take
+  as many cells as the header declared, so the count is not a constant in the
+  grammar but a property of something already parsed. Captures inside `( … )*`
+  already collect into parallel lists, so the count is already in hand as a
+  capture's length; binding it needs no integer expressions in the DSL and no
+  attribute-evaluation engine, just the name. It is an UPPER bound, not a
+  requirement (a short row is not an error), and it is rejected at grammar-parse
+  time when it could not mean anything: on `?` or a non-repetition, or naming a
+  capture that is unbound, bound later, scalar, or written by the repetition
+  itself. `match … table` is the first spender — its cell loop is literally
+  `while i < value_count`, a bound, NOT the row-width VALIDATION it was long
+  recorded as (that check belongs to the separate `table { }` literal).
 - **abort** `@require` (`@cut`'s dual) marks a terminal whose absence STOPS the
   rule: `"for" v:IDENT @require "in" …`. By default both engines are
   error-tolerant — a missing token reports and the sequence keeps building a
