@@ -31,7 +31,7 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "while" {
         return parse_while_stmt(st)
     }
-    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || st.cur().text == "match" {
+    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" {
         return parse_match_stmt(st)
     }
     if st.cur().text == "defer" {
@@ -174,7 +174,6 @@ fn parse_while_stmt(st: PState) -> CapVal {
 }
 
 fn parse_match_stmt(st: PState) -> CapVal {
-    mut tried_spec = false
     if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") {
         let sp_start = st.cur().pos
         mut a_list: List<WhenArm> = []
@@ -192,14 +191,10 @@ fn parse_match_stmt(st: PState) -> CapVal {
         }
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
     }
+    if lookahead_ok("match_table", st) && (st.cur().text == "match") {
+        return CapVal.SNode(run_hand_stmt("match_table", st))
+    }
     if st.cur().text == "match" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
         mut arms_list: List<MatchArm> = []
         let _ = st.advance()
         let __modes_1 = st.modes
@@ -207,30 +202,19 @@ fn parse_match_stmt(st: PState) -> CapVal {
         let subj = parse_expression(st)
         st.set_modes(__modes_1)
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after match subject")
+            return CapVal.Node(st.error_node_silent())
         }
-        if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
         while tok_starts_pattern(st.cur()) {
             arms_list.push(capval_to_arm(st, parse_match_arm(st)))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected `}` after match arms")
-            if s_cut {
-                return CapVal.Node(st.error_node_silent())
-            }
+            return CapVal.Node(st.error_node_silent())
         }
-        if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-            return mk_match(st, subj, CapVal.Arms(arms_list))
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
+        return mk_match(st, subj, CapVal.Arms(arms_list))
     }
-    if st.cur().text == "match" {
-        return CapVal.SNode(run_hand_stmt("match_stmt_edge", st))
-    }
-    if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node("expected an expression"))
 }
 

@@ -652,7 +652,7 @@ fn emit_speculative_branch(g: Grammar, b: GSeq, retry_hand: bool) -> string {
 
 /// True when a non-speculative sibling delegates its retry to Parser A. Only
 /// these alternations need to rewind the shared hand delegate after a failed
-/// generated attempt (match_stmt -> match_stmt_edge is the motivating production).
+/// generated attempt (list_expr was the motivating production).
 fn has_hand_fallback(branches: List<GSeq>) -> bool {
     for b in branches {
         if !b.speculative && is_leading_hand(b) { return true }
@@ -927,12 +927,20 @@ fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
 /// A sequence whose result consumes its sole primary itself: a lone unlabelled
 /// terminal (the default literal build) or a lone @hand primary. These emit no
 /// pre-consume — emit_seq_result's `st.advance()` / run_hand does it.
+///
+/// Keyed on `lone_item_index`, so a leading zero-width `@peek`/`@when` gate does not
+/// hide the lone primary. It MUST agree with emit_seq_result's own lone check: if this
+/// says "not lone" while that one says "lone", the primary is emitted twice (the item
+/// body runs it, then the result runs it AGAIN); if the reverse, the item runs and its
+/// value is discarded for a `CapVal.Nil`. Both were live with a raw `items.length == 1`
+/// check the moment a `@peek`-gated `@hand` appeared.
 fn is_lone_primary_result(seq: GSeq) -> bool {
-    if seq.items.length != 1 || !rep_is_one(seq.items[0].rep) || !build_is_none(seq.build) {
+    let lone = lone_item_index(seq)
+    if lone < 0 || !rep_is_one(seq.items[lone].rep) || !build_is_none(seq.build) {
         return false
     }
-    let p = seq.items[0].prim
-    (prim_is_terminal(p) && seq.items[0].label == "") || prim_is_hand(p)
+    let p = seq.items[lone].prim
+    (prim_is_terminal(p) && seq.items[lone].label == "") || prim_is_hand(p)
 }
 
 /// The per-item lines (no list declarations — those are hoisted by the
@@ -1423,17 +1431,24 @@ fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, l
 // ── A sequence's result (the build), apply_build's emission twin ──
 
 fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
+    // `lone_item_index`, NOT `items.length == 1`: a leading `@peek`/`@when` is a
+    // ZERO-WIDTH gate, so `@peek(c) @hand(f)` is still a LONE hand primary. Counting
+    // raw items made both checks below miss it, and the sequence fell through to the
+    // build-less `.None` arm — emitting `let _ = run_hand_stmt(…)` and returning
+    // CapVal.Nil, i.e. running the leaf and THROWING ITS RESULT AWAY. (Caught peeling
+    // the match table sub-language off behind `@peek(match_table) @hand(match_table)`.)
+    let lone = lone_item_index(seq)
     // A lone unlabelled terminal with no build is the default literal build
     // (executor coerces the boundary Tok via literal_node).
-    if seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
-        seq.items[0].label == "" && prim_is_terminal(seq.items[0].prim) &&
+    if lone >= 0 && rep_is_one(seq.items[lone].rep) &&
+        seq.items[lone].label == "" && prim_is_terminal(seq.items[lone].prim) &&
         build_is_none(seq.build) {
         return "CapVal.Node(literal_node(st, st.advance()))"
     }
     // A lone @hand primary is its own result.
-    if seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
-        prim_is_hand(seq.items[0].prim) && build_is_none(seq.build) {
-        return emit_hand_result(hand_name(seq.items[0].prim))
+    if lone >= 0 && rep_is_one(seq.items[lone].rep) &&
+        prim_is_hand(seq.items[lone].prim) && build_is_none(seq.build) {
+        return emit_hand_result(hand_name(seq.items[lone].prim))
     }
     match seq.build {
         .None -> "CapVal.Nil"
@@ -1629,7 +1644,7 @@ fn emit_hand_result(hf: string) -> string {
 // stable). A new @hand class is added in BOTH places (rule 8's one seam).
 fn is_stmt_hand_name(n: string) -> bool {
     n == "component_decl" || n == "let_stmt" || n == "return_stmt" ||
-    n == "match_stmt_edge" ||
+    n == "match_table" ||
     // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch leaves
     // the production statement/declaration flips delegate to (parse_statement /
     // parse_declaration via run_hand_stmt). Mirrors executor.is_stmt_hand.
@@ -1757,7 +1772,7 @@ fn hand_first_guard(hf: string) -> string {
     if hf == "component_decl" { return "st.cur().text == \"component\"" }
     if hf == "let_stmt" { return "st.cur().text == \"let\"" }
     if hf == "return_stmt" { return "st.cur().text == \"return\"" }
-    if hf == "match_stmt_edge" { return "st.cur().text == \"match\"" }
+    if hf == "match_table" { return "st.cur().text == \"match\"" }
     if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
     // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
     // executor hand_starts FIRST guards (kept in lockstep).
@@ -2164,7 +2179,7 @@ fn build_kind(bn: string) -> string {
 }
 
 fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "decl_hand" || hf == "component_decl" || hf == "match_stmt_edge" { return "stmt" }
+    if hf == "return_stmt" || hf == "let_stmt" || hf == "decl_hand" || hf == "component_decl" || hf == "match_table" { return "stmt" }
     "expr"
 }
 

@@ -234,7 +234,8 @@ export fn avra_stmt_grammar() -> Grammar {
 ///     are native. The binding sub-rule reserves its gensym before parsing the body,
 ///     preserving nested-loop temp ordering without allocating AST rows early.
 ///   * `match_stmt` — the ordinary subject/pattern/guard/expression-body form is
-///     grammar-native. Its bounded `@try` rolls back to `@hand(match_stmt_edge)`
+///     grammar-native and PREDICTIVE. The table sub-language is peeled off by
+///     `@peek(match_table)` into `@hand(match_table)`
 ///     only for the distinct subjectless/table/bare-return/quote-splice paths.
 ///   * `return_stmt` — native and newline-sensitive: its optional expression uses
 ///     `^` so a value on the next line is not consumed as the return operand.
@@ -277,16 +278,20 @@ fn avra_stmt_common_grammar() -> Grammar {
   // exactly as many values as the header row declared — data-dependent, so not a grammar
   // rule at any level of DSL power.
   match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
-                // The `@cut` sits right after the `{`, and that position is load-bearing.
-                // BEFORE it the branch must still be able to roll back: `match e table { … }`
-                // reaches this branch, fails on `"{"` (it finds `table`), and falls through
-                // to the edge oracle — which is the only way the table sub-language is
-                // reached. AFTER it the branch is committed, so the arm list and the closing
-                // `}` are native and carry their own diagnostic instead of borrowing the
-                // hand's. Moving the cut earlier would swallow the table form; moving it
-                // later would leave the `}` message with the oracle.
-                | @try "match" @off(allow_struct_lit) subj:expression "{" @cut ( arms:match_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
-                | @hand(match_stmt_edge)
+                // The TABLE sub-language is peeled off by lookahead (`@peek(match_table)`
+                // scans to the body brace and asks whether `table` precedes it), so the hand
+                // leaf is entered at the `match` keyword and parses the whole statement — no
+                // subject threading, and the leaf is now named for the ONLY thing it does.
+                // Its rows must supply exactly as many values as the header row declared,
+                // which is data-dependent and therefore not a grammar rule at any level of
+                // DSL power; this one stays hand by nature, not by expedience.
+                | @peek(match_table) @hand(match_table)
+                // With table peeled off, the ordinary form no longer needs to speculate: it
+                // is PREDICTIVE and owns BOTH of its diagnostics. Previously the `@try` was
+                // load-bearing only because a table header had to be able to roll back
+                // through it, which cost every ordinary `match` a snapshot and left the
+                // missing-`{` message with the oracle.
+                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
