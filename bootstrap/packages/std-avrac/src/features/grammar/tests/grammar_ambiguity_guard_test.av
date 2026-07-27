@@ -47,7 +47,34 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     //          EXPR_STMT)
     // Pinned by exact rule + branch pair, so any OTHER `match` overlap still trips.
     a.rule == "statement" && a.i == 5 && a.j == 10 ||
-    a.rule == "statement" && a.i == 2 && a.j == 6
+    a.rule == "statement" && a.i == 2 && a.j == 6 ||
+    // t-47hc.24: the same class a third time, from the if_expr flip. `expression` now has
+    // a CONCRETE `if` in its FIRST where `@hand(if_expr)` was opaque, EXPOSING three
+    // pre-existing ordered choices. All three are the hand parser's own cascade, and the
+    // else_tail pair is precisely why that rule cannot collapse into `expression`:
+    //
+    //   else_tail 0/2 (`if`) — at a leading `if` the else is an if_expr, entered by
+    //     RECURSION as the hand does (parse_if_expression calls itself and returns), NOT
+    //     through the expression ladder. Routing it through branch 2 would enter unary's
+    //     `base:if_expr ( postfix_suffix )*` and bind trailing postfix to the ELSE-IF.
+    //     Measured: `else if b { 2 }.foo` is `(field (if-expr …) foo)` under both engines
+    //     — the postfix belongs to the OUTER if.
+    //   else_tail 1/2 (`{`) — at a leading `{` the else is a BLOCK, never a map. The hand
+    //     calls parse_block_expression unconditionally; going through `expression` would
+    //     hit brace_expr's `@peek(brace_map)` first. Structurally identical to the
+    //     lambda_body 0/1 entry above, which is the same rule shape at the same token.
+    //   statement 2/10 (`if`) — at a leading `if` in statement position the IF STATEMENT
+    //     wins over expr_stmt, exactly as the `match` twin at 5/10 does. Verified: the
+    //     tree is `(if a (block (return 1)))`, not `(expr (if-expr …))`, and identical
+    //     under AVRA_PARSER_DECL_FLIP=0.
+    //
+    // No `statement` twin is needed in the §2 emit-gen-check view: that view's `statement`
+    // has no `if` branch at all. diff-test is byte-identical across the flip, the same
+    // evidence the entries above rest on. Pinned by exact branch pair, so any OTHER `if`
+    // or `{` overlap still trips the guard.
+    a.rule == "else_tail" && a.i == 0 && a.j == 2 ||
+    a.rule == "else_tail" && a.i == 1 && a.j == 2 ||
+    a.rule == "statement" && a.i == 2 && a.j == 10
 }
 
 // True iff `g` has no FIRST/FIRST ambiguity beyond the intended-shadow allowlist; on
