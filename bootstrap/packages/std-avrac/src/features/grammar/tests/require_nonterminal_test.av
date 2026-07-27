@@ -1,0 +1,107 @@
+// WHY: t-47hc.24 — `@require` extended from a TERMINAL to a RULE REFERENCE.
+//
+// The marker means "this must be here, or the enclosing rule reports and ABORTS" — the
+// hand parser's `if !check(Tk.LeftBrace) { report(…); return .Err }`. It was terminal-only
+// because the terminal implementation detects failure by asking whether the item REPORTED,
+// and seed_parser said so out loud: "a rule reference reports its own failure".
+//
+// That rejection is right about the mechanism and wrong about the conclusion. A rule
+// reference DOES report its own errors — which is exactly why the diag-growth test cannot
+// serve it: a sub-rule whose BODY is malformed reports too, and the hand RECOVERS that
+// while aborting only an ABSENT sub-rule. So the required-rule form checks the rule's
+// FIRST *before* the call. Same signal the hand uses, same order.
+//
+// That absent-vs-malformed distinction is the load-bearing property here, and the reason
+// widening the terminal path would have been wrong rather than merely incomplete. It is
+// the first thing these specs pin.
+//
+// The single-literal-FIRST restriction is not fussiness: `@expect(tok, msg)` and
+// handle_missing are keyed by TOKEN TEXT, so a required rule can only say "expected X"
+// when there is exactly one X it could have started with. A disjunction has no single
+// answer, and picking one would put a wrong token in a user-facing diagnostic — so it is
+// a grammar-parse error instead.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+
+fn perr(src: string) -> string { parse_grammar(src).error }
+
+fn emitted(src: string) -> string { emit_parser_source(parse_grammar(src).grammar) }
+
+fn diags(src: string, input: string) -> int {
+    run_grammar_expr(parse_grammar(src).grammar, input).diags.length
+}
+
+fn errs(src: string, input: string) -> bool {
+    run_grammar_expr(parse_grammar(src).grammar, input).had_error
+}
+
+// `blk` has a single-literal FIRST (`{`), so it is a legal @require target. The trailing
+// `"!"` exists to detect a RUNAWAY: if the abort does not fire, the sequence keeps going
+// and reports a second, different error.
+fn g_req() -> string {
+    "r = \"+\" @require blk \"!\" @expect(\"{\", \"expected `{` after plus\")\n" +
+    "blk = \"{\" \"}\""
+}
+
+spec "t-47hc.24: @require on a rule reference aborts when the rule is ABSENT" {
+    then "the grammar is accepted — a single-literal FIRST is a legal target" {
+        perr(g_req()) == ""
+    }
+    then "an absent sub-rule reports the @expect message" {
+        // Keyed off the rule's FIRST literal `{`, so the sequence's @expect("{", …) is
+        // what surfaces — the same message seam the terminal form uses.
+        errs(g_req(), "+ 9")
+    }
+    then "and ABORTS — exactly one diagnostic, not a runaway into the next item" {
+        // Without the abort the rule would carry on to `"!"` and report that too. One
+        // diagnostic is the whole point of the marker.
+        diags(g_req(), "+ 9") == 1
+    }
+    then "the emitted parser guards on the rule's FIRST and returns" {
+        let src = emitted(g_req())
+        src.contains("expected `{` after plus") &&
+            src.contains("return CapVal.Node(st.error_node_silent())")
+    }
+}
+
+spec "t-47hc.24: a MALFORMED body is not an absent rule — it must NOT abort" {
+    then "the sub-rule's own error does not abort the enclosing rule" {
+        // THE distinction. `{` is present, so the rule STARTED: the abort must not fire,
+        // `blk` reports its own missing `}`, and the enclosing sequence continues to `!`
+        // and matches it. Under a diag-growth test this would abort and swallow the `!`.
+        // The hand behaves as this does — it aborts only on the absent brace.
+        !errs(g_req(), "+ { } !")
+    }
+    then "a malformed body reports but the enclosing rule still reaches its next item" {
+        // `{` present, `}` missing: blk reports. If the enclosing rule had aborted we
+        // would see only that one error; reaching `!` and finding `9` adds a second.
+        diags(g_req(), "+ { 9") > 1
+    }
+}
+
+spec "t-47hc.24: the target must have a single-literal FIRST" {
+    then "a disjunction FIRST is a grammar-parse ERROR, not a silent guess" {
+        // `two` starts with `{` OR `[` — "expected X" has no single answer, so the
+        // marker is rejected rather than naming one of them in a user-facing message.
+        let e = perr("r = \"+\" @require two \"!\"\ntwo = \"{\" \"}\" | \"[\" \"]\"")
+        e.contains("single-literal FIRST")
+    }
+    then "a named-terminal (KIND) FIRST is rejected too" {
+        let e = perr("r = \"+\" @require nt \"!\"\nnt = IDENT")
+        e.contains("single-literal FIRST")
+    }
+    then "the error names the offending rule" {
+        perr("r = \"+\" @require two \"!\"\ntwo = \"{\" \"}\" | \"[\" \"]\"").contains("two")
+    }
+}
+
+spec "t-47hc.24: the existing terminal restrictions are untouched" {
+    then "a repetition still cannot carry @require" {
+        perr("r = \"+\" @require blk* \"!\"\nblk = \"{\" \"}\"").contains("repetition")
+    }
+    then "the leading item still cannot carry it" {
+        perr("r = @require blk \"!\"\nblk = \"{\" \"}\"").contains("leading item")
+    }
+    then "a plain terminal still works exactly as before" {
+        perr("r = \"+\" @require \"-\" @expect(\"-\", \"need a minus\")") == ""
+    }
+}

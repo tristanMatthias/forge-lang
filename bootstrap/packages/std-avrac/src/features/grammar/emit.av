@@ -1078,14 +1078,32 @@ fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: 
 fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     match item.prim {
         .Ref(name) -> {
+            // `@require <rule>` (t-47hc.24): the rule must START here, or the enclosing
+            // rule reports and ABORTS. Checked on the rule's FIRST BEFORE the call — not
+            // on whether the callee errored, which cannot tell an ABSENT sub-rule from a
+            // sub-rule whose BODY was malformed (the hand recovers the latter). This is
+            // the emit twin of the executor's .Ref branch in exec_item, and the same
+            // s_cut guard the terminal abort needs: a @try branch that fails before its
+            // cut must still roll back rather than return past the rollback scaffold.
+            let req = if !item.require { "" } else {
+                let lit = rule_first_literal(g, name)
+                let exp = expect_for(annots, lit)
+                let rmsg = if exp.found { exp.msg } else { "expected ${lit}" }
+                let rret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                let body = "${ind}    st.report(\"${rmsg}\")\n" +
+                    (if !abortable { "" }
+                     else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${rret}${ind}    }\n" }
+                     else { rret })
+                "${ind}if !(${rule_first_guard(g, name, [])}) {\n${body}${ind}}\n"
+            }
             if str_in(list_labels, item.label) {
-                return "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
+                return req + "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
             }
             if str_in(opts, item.label) {
-                return "${ind}${item.label} = parse_${name}(st)\n"
+                return req + "${ind}${item.label} = parse_${name}(st)\n"
             }
-            if item.label == "" { return "${ind}let _ = parse_${name}(st)\n" }
-            "${ind}let ${item.label} = parse_${name}(st)\n"
+            if item.label == "" { return req + "${ind}let _ = parse_${name}(st)\n" }
+            req + "${ind}let ${item.label} = parse_${name}(st)\n"
         }
         .Hand(hf) -> {
             // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)

@@ -147,8 +147,20 @@ spec "t-47hc.21: @require well-formedness is enforced at parse time" {
     then "a TRAILING @require is rejected — it has no item to attach to" {
         rejects("r = \"+\" \"-\" @require")
     }
-    then "@require on a rule REFERENCE is rejected (it reports its own failure)" {
-        rejects("r = \"+\" @require sub\nsub = \"-\"")
+    then "@require on a rule reference is ACCEPTED when its FIRST is a single literal" {
+        // SUPERSEDES the original assertion here, which rejected every rule reference on
+        // the grounds that "a rule reference reports its own failure". True of the
+        // MECHANISM the terminal form uses (did the item report?) but not a reason the
+        // marker cannot apply: the required-rule form checks the rule's FIRST BEFORE the
+        // call instead, which is what the hand parser does. t-47hc.24 lifted it; the
+        // absent-vs-malformed distinction that makes it sound is pinned in
+        // require_nonterminal_test.
+        !rejects("r = \"+\" @require sub\nsub = \"-\"")
+    }
+    then "but rejected when the FIRST is not a single literal — no token to name" {
+        // @expect / handle_missing are keyed by token TEXT, so a disjunction FIRST has no
+        // single \"expected X\" to report. Rejected rather than guessing one.
+        rejects("r = \"+\" @require sub\nsub = \"-\" | \"*\"")
     }
     then "@require on a repetition is rejected (an absent optional is not a mismatch)" {
         rejects("r = \"+\" @require \"-\"*")
