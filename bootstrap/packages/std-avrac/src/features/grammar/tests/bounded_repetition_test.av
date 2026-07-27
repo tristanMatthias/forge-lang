@@ -135,7 +135,7 @@ spec "t-47hc.28: a bound that could not mean anything is rejected at grammar-par
         perr("r = ( c:NUMBER )*{#h} ( h:NUMBER )+").contains("not captured earlier")
     }
     then "a SCALAR capture is rejected — a bound needs a length" {
-        perr("r = h:NUMBER ( c:NUMBER )*{#h}").contains("SCALAR")
+        perr("r = h:NUMBER ( c:NUMBER )*{#h}").contains("scalar capture")
     }
     then "a malformed bound is a hard error, never a silently dropped cap" {
         perr("r = ( h:NUMBER )+ ( c:NUMBER )*{h}").contains("expected `#`")

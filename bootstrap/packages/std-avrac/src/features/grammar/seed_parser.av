@@ -599,11 +599,42 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
 /// by a label repeated across items. A scalar capture has no length, so naming one is
 /// rejected too rather than being counted as 1.
 fn validate_bounds(g: Grammar) -> string {
+    // `parse_grammar` runs on the production parse path, so this pass must cost
+    // effectively nothing for the grammars that DON'T use a bound — which today is
+    // all of them. The visibility scan below allocates two lists per branch, so gate
+    // it on a bound existing at all: one allocation-free walk, then out.
+    if !grammar_has_bound(g) { return "" }
     for rule in g.rules {
         let e = check_bound_node(rule.body, rule.name)
         if e != "" { return e }
     }
     ""
+}
+
+fn grammar_has_bound(g: Grammar) -> bool {
+    for rule in g.rules {
+        if node_has_bound(rule.body) { return true }
+    }
+    false
+}
+
+fn node_has_bound(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    if item.bound != "" { return true }
+                    match item.prim {
+                        .Group(inner) -> {
+                            if node_has_bound(inner) { return true }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 fn check_bound_node(node: GNode, rule: string) -> string {
@@ -629,7 +660,7 @@ fn check_bound_node(node: GNode, rule: string) -> string {
                         if name_in(lists, item.bound) {
                             // fine — a list capture bound earlier in this branch
                         } else if name_in(seen, item.bound) {
-                            return "`{#${item.bound}}` in rule `${rule}` names a SCALAR capture — a bound needs a list capture (one collected by `*`/`+`)"
+                            return "`{#${item.bound}}` in rule `${rule}` names a scalar capture — a bound needs a list capture (one collected by `*`/`+`)"
                         } else {
                             return "`{#${item.bound}}` in rule `${rule}` names `${item.bound}`, which is not captured earlier in this branch"
                         }
