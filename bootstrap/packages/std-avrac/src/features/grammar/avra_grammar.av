@@ -253,10 +253,14 @@ export fn avra_stmt_grammar() -> Grammar {
 /// statement rule in one fragment so their native/hand frontier cannot drift.
 fn avra_stmt_common_grammar() -> Grammar {
     let gp = grammar {
-  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | stmt_block | expr_stmt
+  statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | @peek(stmt_block) stmt_block | expr_stmt
   block         = "{" stmts:statement* "}" -> Block(stmts)
-  stmt_block    = @try @peek(stmt_block) "{" stmts:statement* "}" -> Block(stmts)
-                | @hand(block_stmt_edge)
+  // A bare `{ … }` statement body may contain DECLARATIONS, not just statements — an
+  // inline module's component is the case that proves it (`declaration = @hand(decl_hand)
+  // | statement`, so declaration is the superset). block_expr already uses declaration*
+  // for exactly this reason; using statement* here silently dropped that case, which the
+  // full suite caught. NOT the same body as `block` — do not "dedupe" the two.
+  stmt_block    = "{" stmts:declaration* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
   if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
