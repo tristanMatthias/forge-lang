@@ -29,6 +29,65 @@ export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr }
 /// One production `name = body`, where `body` is always an Alt.
 export type Rule = { name: string, body: GNode }
 
+/// The single LITERAL token that starts `name`, or "" when its FIRST is not a
+/// singleton literal (t-47hc.24).
+///
+/// WHY it must be a singleton literal, not merely a computable FIRST: this is the
+/// message key for `@require <rule>`. `@expect(tok, msg)` and the executor's
+/// `handle_missing(st, expected, annots)` are both keyed by TOKEN TEXT, so a required
+/// rule reference can only report "expected X" when there is exactly one X it could
+/// have started with. A rule whose FIRST is a disjunction or a named-terminal KIND has
+/// no single answer, and silently picking one would put a wrong token in the
+/// diagnostic — so those are rejected at grammar-parse time instead.
+///
+/// ONE definition, three consumers — seed_parser validates against it, emit renders the
+/// guard's message from it, the executor reports with it. A second copy would be the
+/// same drift hazard the FIRST-set computation already avoids by being shared.
+export fn rule_first_literal(g: Grammar, name: string) -> string {
+    for r in g.rules {
+        if r.name == name { return node_first_literal(r.body) }
+    }
+    ""
+}
+
+/// Every branch must lead with the SAME literal, else there is no single expected token.
+fn node_first_literal(n: GNode) -> string {
+    match n {
+        .Alt(branches) -> {
+            mut lit = ""
+            for seq in branches {
+                let s = seq_first_literal(seq)
+                if s == "" { return "" }
+                if lit == "" { lit = s }
+                else if lit != s { return "" }
+            }
+            lit
+        }
+    }
+}
+
+/// The leading literal of one branch, skipping the zero-width markers the emitters
+/// skip (`@when` / `@peek`) exactly as branch selection does.
+fn seq_first_literal(seq: GSeq) -> string {
+    for item in seq.items {
+        if prim_is_zero_width(item.prim) { continue }
+        match item.prim {
+            .Lit(t) -> { return t }
+            _ -> { return "" }
+        }
+    }
+    ""
+}
+
+/// `@when` / `@peek` — consume no token, so they never contribute a FIRST.
+fn prim_is_zero_width(prim: GPrim) -> bool {
+    match prim {
+        .Pred(_) -> true
+        .Peek(_) -> true
+        _ -> false
+    }
+}
+
 // The C-side string->int hash map backing the rule index (runtime.c).
 // Redeclared here (as in core/registry.av + features/comptime) — an extern
 // decl is just a reference to the C symbol, not a definition.

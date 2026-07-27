@@ -1237,6 +1237,24 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // `@expect` message, so `@require` adds control flow only, never a second seam for
     // diagnostics. exec_seq reads the flag and stops.
     if item.require {
+        // A RULE REFERENCE aborts on its FIRST, checked BEFORE the call — not on
+        // "did diags grow" (t-47hc.24). The callee reports its OWN errors, so a
+        // malformed block BODY is indistinguishable from an ABSENT block under the
+        // diag test, and the hand recovers the former while aborting only the
+        // latter: `if !check(Tk.LeftBrace) { report; return .Err }`. Same signal,
+        // same order.
+        match item.prim {
+            .Ref(rname) -> {
+                let seen: List<string> = []
+                if !tok_starts_rule(g, rname, st.cur(), seen) {
+                    handle_missing(st, rule_first_literal(g, rname), annots)
+                    env.set_abort(true)
+                    return CapVal.Node(st.error_node_silent())
+                }
+                return exec_item_marked(g, item, st, env, multi, annots)
+            }
+            _ -> {}
+        }
         let before = st.diags.length
         let r = exec_item_marked(g, item, st, env, multi, annots)
         if st.diags.length != before { env.set_abort(true) }

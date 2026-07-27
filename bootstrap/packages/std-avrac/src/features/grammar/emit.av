@@ -674,6 +674,15 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
         // recognizer with no `s_cut` in scope, and the commit is emitted by
         // emit_item. Checked BEFORE the pred skip so a cut can never be lost.
         if item.cut { return false }
+        // Same reason, for `@require`: the flat emitter is a straight-line `s_last`
+        // recognizer with no place to put the marker's guard, and emit_spec_item's
+        // `.Ref` path would silently DROP it — no FIRST check, no report, just the
+        // bare call. The executor aborts there, so a flat branch would diverge from
+        // its own oracle. Routing to the rich emitter (which already handles
+        // @require for terminals AND refs, pre- and post-cut) keeps the marker
+        // meaningful everywhere it is legal, without duplicating the guard logic.
+        // Checked BEFORE the pred skip so it can never be lost, exactly like @cut.
+        if item.require { return false }
         if prim_is_pred_e(item.prim) { continue }
         if item.mode_off != "" || item.mode_on != "" { return false }
         if !rep_is_one(item.rep) { return false }
@@ -1078,14 +1087,32 @@ fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: 
 fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     match item.prim {
         .Ref(name) -> {
+            // `@require <rule>` (t-47hc.24): the rule must START here, or the enclosing
+            // rule reports and ABORTS. Checked on the rule's FIRST BEFORE the call — not
+            // on whether the callee errored, which cannot tell an ABSENT sub-rule from a
+            // sub-rule whose BODY was malformed (the hand recovers the latter). This is
+            // the emit twin of the executor's .Ref branch in exec_item, and the same
+            // s_cut guard the terminal abort needs: a @try branch that fails before its
+            // cut must still roll back rather than return past the rollback scaffold.
+            let req = if !item.require { "" } else {
+                let lit = rule_first_literal(g, name)
+                let exp = expect_for(annots, lit)
+                let rmsg = if exp.found { exp.msg } else { "expected ${lit}" }
+                let rret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                let body = "${ind}    st.report(\"${rmsg}\")\n" +
+                    (if !abortable { "" }
+                     else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${rret}${ind}    }\n" }
+                     else { rret })
+                "${ind}if !(${rule_first_guard(g, name, [])}) {\n${body}${ind}}\n"
+            }
             if str_in(list_labels, item.label) {
-                return "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
+                return req + "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
             }
             if str_in(opts, item.label) {
-                return "${ind}${item.label} = parse_${name}(st)\n"
+                return req + "${ind}${item.label} = parse_${name}(st)\n"
             }
-            if item.label == "" { return "${ind}let _ = parse_${name}(st)\n" }
-            "${ind}let ${item.label} = parse_${name}(st)\n"
+            if item.label == "" { return req + "${ind}let _ = parse_${name}(st)\n" }
+            req + "${ind}let ${item.label} = parse_${name}(st)\n"
         }
         .Hand(hf) -> {
             // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)

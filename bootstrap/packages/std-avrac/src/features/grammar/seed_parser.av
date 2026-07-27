@@ -583,17 +583,19 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
 /// executor shares one CapEnv across the whole rule). Returns "" when clean.
 fn validate_cuts(g: Grammar) -> string {
     for rule in g.rules {
-        let e = check_cut_node(rule.body, rule.name, false)
+        let e = check_cut_node(g, rule.body, rule.name, false)
         if e != "" { return e }
     }
     ""
 }
 
-fn check_cut_node(node: GNode, rule: string, in_try: bool) -> string {
-    check_cut_node_ctx(node, rule, in_try, false)
+// `g` is threaded so a `@require` on a rule REFERENCE can look up that rule's
+// single-literal FIRST — the message key the marker needs (t-47hc.24).
+fn check_cut_node(g: Grammar, node: GNode, rule: string, in_try: bool) -> string {
+    check_cut_node_ctx(g, node, rule, in_try, false)
 }
 
-fn check_cut_node_ctx(node: GNode, rule: string, in_try: bool, in_fold: bool) -> string {
+fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fold: bool) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
@@ -626,8 +628,23 @@ fn check_cut_node_ctx(node: GNode, rule: string, in_try: bool, in_fold: bool) ->
                     // "the token isn't there" on a Lit/Named, not on a rule ref (whose
                     // failure is its own internal report) or a zero-width predicate.
                     if item.require {
+                        // t-47hc.24: a RULE REFERENCE is also legal, provided its FIRST is a
+                        // single literal — that literal is the message key `@expect` and
+                        // handle_missing are both indexed by, so without one there is no
+                        // single "expected X" to report. This is what lets `@require
+                        // block_expr` say the hand's `if !check(LeftBrace) { report; return
+                        // .Err }` without inlining (and mis-spanning) the block.
                         if !prim_is_terminal_sp(item.prim) {
-                            return "`@require` only applies to a terminal (rule `${rule}`) — a rule reference reports its own failure"
+                            match item.prim {
+                                .Ref(rname) -> {
+                                    if rule_first_literal(g, rname) == "" {
+                                        return "`@require` on rule reference `${rname}` (in rule `${rule}`) needs a single-literal FIRST — its FIRST is a disjunction or a token KIND, so there is no one token to name in the diagnostic"
+                                    }
+                                }
+                                _ -> {
+                                    return "`@require` only applies to a terminal or a rule reference (rule `${rule}`)"
+                                }
+                            }
                         }
                         if !rep_is_one_sp(item.rep) {
                             return "`@require` cannot carry a repetition (rule `${rule}`) — an absent optional/repeated item is not a mismatch"
@@ -651,7 +668,7 @@ fn check_cut_node_ctx(node: GNode, rule: string, in_try: bool, in_fold: bool) ->
                     }
                     match item.prim {
                         .Group(inner) -> {
-                            let e = check_cut_node_ctx(inner, rule, this_try, this_fold)
+                            let e = check_cut_node_ctx(g, inner, rule, this_try, this_fold)
                             if e != "" { return e }
                         }
                         _ -> {}
