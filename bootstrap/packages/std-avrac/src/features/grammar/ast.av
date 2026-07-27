@@ -126,6 +126,18 @@ export type GItem = {
     // IRREVOCABLE once reached, and only meaningful inside `@try` — a cut on a
     // predictive branch is rejected at grammar-parse time (validate_cuts).
     cut: bool,
+    // t-47hc.21 ABORT (`@require`, `@cut`'s dual): when true, a MISMATCH on this
+    // terminal stops the rule instead of reporting and carrying on. Both engines are
+    // error-TOLERANT by default — a missing token reports and the sequence keeps
+    // building a partial node — but the hand parser `return .Err`s and lets the
+    // statement-list loop synchronise. Without a way to say that, a malformed header
+    // runs away and swallows the next declaration (`impl for Foo { }` parsed as a
+    // for-in over `Foo` whose body ate the following `fn`), which is the whole reason
+    // the `@hand(*_edge)` oracles exist. `@require` is a BARE marker: the message
+    // still comes from the sequence's `@expect(tok, msg)`, so there is one seam for
+    // diagnostics and one for control flow. Inside a `@try` branch BEFORE a `@cut` it
+    // degrades to plain reporting — the rollback already IS the abort.
+    require: bool,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -195,7 +207,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", cut: false }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", cut: false, require: false }
 }
 
 /// True when a sequence has no explicit build — the executor then

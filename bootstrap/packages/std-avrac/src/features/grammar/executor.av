@@ -124,7 +124,7 @@ type Cap = { name: string, val: CapVal }
 /// to (exec_rule mints one per call). Set by exec_item when it reaches a cut item,
 /// read + reset by exec_node's speculative arm — the interpreter twin of the
 /// generated parser's function-local `mut s_cut`.
-type CapEnv = { caps: List<Cap>, cut: bool, cut_diags: int, cut_err: bool }
+type CapEnv = { caps: List<Cap>, cut: bool, cut_diags: int, cut_err: bool, abort: bool }
 
 impl CapEnv {
     fn get(self, name: string) -> CapVal {
@@ -154,6 +154,14 @@ impl CapEnv {
     fn set_cut_frame(self, diags: int, err: bool) {
         self.cut_diags = diags
         self.cut_err = err
+    }
+
+    /// `@require` abort flag — raised when a required terminal was missing, checked
+    /// by exec_seq after every item so the rest of the sequence is skipped. Shared
+    /// across a rule's groups (one CapEnv per rule invocation), so an abort inside a
+    /// nested group stops the sequence that encloses it too.
+    fn set_abort(self, v: bool) {
+        self.abort = v
     }
 
     fn set_scalar(self, name: string, v: CapVal) {
@@ -550,6 +558,13 @@ impl PState {
         self.store.exprs.add_leaf(Expr.Error)
     }
 
+    /// An `Expr.Error` placeholder WITHOUT reporting — the `@require` abort's value.
+    /// The mismatch already reported (with the `@expect` message), so `error_node`
+    /// here would emit the SAME diagnostic a second time. Both engines use this.
+    fn error_node_silent(self) -> ExprId {
+        self.store.exprs.add_leaf(Expr.Error)
+    }
+
     /// An absent-but-required-position placeholder (a missing terminal).
     fn missing_node(self) -> ExprId {
         self.store.exprs.add_leaf(Expr.Missing)
@@ -824,7 +839,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
-    mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false }
+    mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false, abort: false }
     let v = exec_node(g, r.body, st, env, false, [])
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
@@ -1055,6 +1070,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                             return v
                         }
                         env.restore_caps(s_caps)
+                        env.set_abort(false)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
                         if retry_hand { st.restore_hand_state(s_hand) }
@@ -1088,6 +1104,13 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
     mut count = 0
     for item in seq.items {
         last = exec_item(g, item, st, env, multi, exec_annots_or(seq.annots, outer_annots))
+        // `@require` ABORT: a required terminal was missing, so stop building. The
+        // rest of the sequence would consume tokens that belong to whatever comes
+        // NEXT (the runaway `impl for Foo { }` body-swallow), and the caller's
+        // statement-list loop is the thing that should synchronise. The flag lives on
+        // the shared CapEnv, so an abort inside a nested group stops this sequence too
+        // — the executor twin of the generated parser's early `return`.
+        if env.abort { return CapVal.Node(st.error_node_silent()) }
         // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
         // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
         if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
@@ -1142,6 +1165,21 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // function-scope isolation the generated parser gets for free from `s_cut`
     // being a local. Groups share the env, so a cut nested in one propagates up.
     if item.cut && st.diags.length == env.cut_diags && st.had_error == env.cut_err { env.set_cut(true) }
+    // `@require`: a mismatch on this terminal ABORTS the rule. Detected by whether the
+    // item reported — exec_primary's handle_missing already emits the sequence's
+    // `@expect` message, so `@require` adds control flow only, never a second seam for
+    // diagnostics. exec_seq reads the flag and stops.
+    if item.require {
+        let before = st.diags.length
+        let r = exec_item_marked(g, item, st, env, multi, annots)
+        if st.diags.length != before { env.set_abort(true) }
+        return r
+    }
+    exec_item_marked(g, item, st, env, multi, annots)
+}
+
+/// exec_item minus the `@cut`/`@require` markers — the mode-SET wrapper + the body.
+fn exec_item_marked(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
     // `@off(flag)` mode-SET marker: set the flag OFF for the DURATION of this
     // item's sub-parse (all reps + the .Opt FIRST-check), then restore — the
     // executor twin of the hand parser's save/set/restore around a control-header
@@ -1266,11 +1304,11 @@ fn hand_starts(name: string, tok: Token) -> bool {
     if name == "component_decl" { return tok.text == "component" }
     if name == "let_stmt" { return tok.text == "let" }
     if name == "return_stmt" { return tok.text == "return" }
+    // The residual match-statement edge oracle (subjectless/table/bare-return/
+    // quote-splice arms) is intentionally narrower than the generic stmt leaf.
     // Malformed `for` headers must fail before a body is built. The native branch
     // is speculative; this narrow edge oracle owns only the rolled-back failure.
     if name == "for_stmt_edge" { return tok.text == "for" }
-    // The residual match-statement edge oracle (subjectless/table/bare-return/
-    // quote-splice arms) is intentionally narrower than the generic stmt leaf.
     if name == "match_stmt_edge" { return tok.text == "match" }
     // (Statement blocks are grammar-native — stmt_block's body is `declaration*`,
     // so an inline module's component parses without a hand fallback.)
