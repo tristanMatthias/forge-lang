@@ -1,0 +1,47 @@
+// WHY: an EXTERNAL rule reference with no declared FIRST used to emit a DEAD guard.
+//
+// The dispatch-only family grammars deliberately leave cross-family rules external, so
+// the generated files call one another instead of re-emitting duplicates. `rule_first_guard`
+// therefore cannot compute such a rule's FIRST set, and it fell back to the literal
+// `false`. Under a repetition that renders `while false { … }`; under `?` the branch is
+// never taken. The generated parser then DROPS the whole construct — and still compiles,
+// still reports no error, still passes every test that does not happen to cover that form.
+//
+// Caught adding subjectless `match { … }`: `when_arm` is an expression-family rule, so the
+// statement dispatch emitted `while false { a_list.push(…) }`. Every arm silently dropped;
+// `bs2 check` said `ok`; the 166-test match suite stayed green.
+//
+// The fallback is now an UNDEFINED call, so regen -> build fails loudly and names the rule.
+// `expression` and `pattern_or` keep their declared predicates, and no production grammar
+// reaches the fallback (no checked-in parser contains a `false` guard), so every generated
+// parser regenerates byte-identically.
+use @std.avrac.features.grammar.{parse_grammar, emit_parser_source}
+
+fn emitted(grammar_src: string) -> string {
+    emit_parser_source(parse_grammar(grammar_src).grammar)
+}
+
+spec "an undeclared external rule's FIRST is a build failure, never a dead guard" {
+    then "an external ref under `*` no longer emits `while false`" {
+        let src = emitted("r = \"+\" ( a:nowhere )* \"-\"")
+        !src.contains("while false")
+    }
+    then "it names the rule in the undefined call" {
+        emitted("r = \"+\" ( a:nowhere )* \"-\"").contains("avra_grammar_external_first_undeclared_nowhere")
+    }
+    then "an external ref under `?` is guarded the same way" {
+        emitted("r = \"+\" ( a:nowhere )? \"-\"").contains("avra_grammar_external_first_undeclared_nowhere")
+    }
+    then "`expression` keeps its declared FIRST predicate" {
+        let src = emitted("r = \"+\" ( e:expression )* \"-\"")
+        src.contains("tok_starts_expr_leaf(st.cur())") && !src.contains("external_first_undeclared")
+    }
+    then "`pattern_or` keeps its declared FIRST predicate" {
+        let src = emitted("r = \"+\" ( p:pattern_or )* \"-\"")
+        src.contains("tok_starts_pattern(st.cur())") && !src.contains("external_first_undeclared")
+    }
+    then "a LOCALLY-defined rule is unaffected (the fallback is only for external refs)" {
+        let src = emitted("r = \"+\" ( a:sub )* \"-\"\nsub = \"*\"")
+        !src.contains("external_first_undeclared") && !src.contains("while false")
+    }
+}
