@@ -25,7 +25,7 @@
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
-use features.grammar.{build_rule_index, name_in}
+use features.grammar.{build_rule_index}
 
 // ── The DSL token stream ──
 
@@ -585,6 +585,36 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
         }
     }
     ""
+}
+
+/// Is `s` one of `xs`? DELIBERATELY FILE-PRIVATE, and it must stay that way.
+///
+/// This feature carries several near-identical copies of this loop (`list_has` in
+/// executor.av, `ffs_has` in first_follow.av, `frag_name_in` in compose.av, `str_in`
+/// in emit.av — which additionally treats `""` as absent). That looks like textbook
+/// duplication to remove, and removing it BREAKS THE BUILD in a way no ordinary gate
+/// catches: hoisting one shared `export fn` into ast.av and calling it across files
+/// makes every `@expand(...)` comptime macro fail with
+///
+///     F4005 … can only call functions (callee=@std::avrac::features::grammar::name_in
+///     kind=type_marker)
+///
+/// because `parse_grammar` is reachable from comptime macro expansion, and the
+/// comptime evaluator resolves a cross-module callee that is not `@comptime` to a
+/// type_marker rather than a function (features/eval/mod.av `value_type_marker`; the
+/// same trap is recorded at features/derive/emit.av `name_vtype`). A plain
+/// compile, `--emit-gen-check`, and even a byte-identical `diff-test` all stay GREEN —
+/// the comptime path is only exercised on the manifest-driven build, which is why
+/// CLAUDE.md insists the metadata lib build is the real smoke test.
+///
+/// So the duplication is load-bearing, not rot. If it is ever genuinely consolidated,
+/// the shared helper has to be `@comptime` AND the change has to be validated by
+/// building a package that uses `@expand`, not by the parser gates alone.
+fn name_in(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s { return true }
+    }
+    false
 }
 
 /// Reject every repetition bound (`x{#cap}`) whose capture is not already collected
