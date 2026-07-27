@@ -18,6 +18,7 @@
 // ONE definition is the whole point, so that is what these specs pin.
 use @std.avrac.features.match_expr.{avra_match_arm_grammar}
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar}
+use @std.avrac.features.{feature_grammar_fragments}
 
 fn arm_rules() -> string { render_grammar(avra_match_arm_grammar()) }
 
@@ -37,8 +38,10 @@ fn defines_arms(g: Grammar) -> bool { defines(g, "match_arm") && defines(g, "mat
 
 spec "t-47hc.25: the arm fragment owns exactly the two arm rules" {
     then "it defines match_arm and match_when_arm" {
-        let r = arm_rules()
-        r.contains("match_arm") && r.contains("match_when_arm")
+        // Structural, not textual — `contains` is satisfied by a rule BODY mentioning the
+        // name and cannot establish a definition. Same reason the composition specs below
+        // walk g.rules.
+        defines_arms(avra_match_arm_grammar())
     }
     then "match_when_arm keeps `_`-only default semantics — never `else`" {
         // The load-bearing difference from when_arm. If this ever renders an `else`
@@ -82,7 +85,12 @@ spec "t-47hc.25: every grammar that references the arms also DEFINES them" {
         let dup = fragment_rule_conflicts([avra_match_arm_grammar(), avra_match_arm_grammar()])
         dup.length > 0
     }
-    then "but the real composition is clash-free" {
-        fragment_rule_conflicts([avra_decl_dispatch_grammar()]).length == 0
+    then "and the REGISTRY's fragments are mutually clash-free" {
+        // Pass the FRAGMENTS, not an already-composed grammar. compose_grammars merges
+        // into a flat rule set, so asking a composed view for conflicts is vacuous — a
+        // duplicate would have been collapsed to one rule before the detector saw it.
+        // This is the assembly that actually happens: every fragment the registry
+        // contributes, as separate Grammars.
+        fragment_rule_conflicts(feature_grammar_fragments()).length == 0
     }
 }
