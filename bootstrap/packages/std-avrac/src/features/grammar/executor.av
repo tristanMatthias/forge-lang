@@ -1229,9 +1229,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The residual match-statement edge oracle (subjectless/table/bare-return/
     // quote-splice arms) is intentionally narrower than the generic stmt leaf.
     if name == "match_stmt_edge" { return tok.text == "match" }
-    // Native statement blocks own ordinary bodies. If a body contains a
-    // declaration (for example an inline module's component), @try rolls back
-    // and this narrow edge oracle lets the hand block parser preserve it.
+    // (Statement blocks are grammar-native — stmt_block's body is `declaration*`,
+    // so an inline module's component parses without a hand fallback.)
     // An expression hand rule's FIRST is its leading keyword.
     if name == "quote_expr" { return tok.text == "quote" }
     // The keyword-led expression primaries (Phase 3a-11): each FIRST is its
