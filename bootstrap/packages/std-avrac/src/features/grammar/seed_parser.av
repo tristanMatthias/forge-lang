@@ -447,7 +447,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // (t-47hc.24). See executor.lookahead_ok.
     // `if_let`: `if` immediately followed by `let` — the bind-fresh if-let form,
     // which stays the hand's. See executor.lookahead_ok.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —

@@ -917,6 +917,18 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         let k = st.toks[st.pos + 1]
         return (k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":"
     }
+    // `IDENT {` — the token twin of Parser.peek_after_ident_is_lbrace. Distinguishes the
+    // `~Name { … }` splice (which splices only the CONSTRUCTOR NAME of a struct literal)
+    // from the greedy `~expr` form that would otherwise swallow the whole literal as one
+    // spliced node carrying a hardcoded type name. The hand version scans SOURCE bytes
+    // past the ident for the first non-space char; on the token stream the whitespace is
+    // already gone, so "the next token is `{`" is the same question — the same equivalence
+    // ident_colon relies on.
+    if cond == "ident_lbrace" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == "{"
+    }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
         return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
