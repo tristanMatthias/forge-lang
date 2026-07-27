@@ -96,6 +96,7 @@ fn avra_expr_core() -> Grammar {
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
              | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
+             | @when(in_quote_body) "~" t:unary -> MkSplice(t)
              | b:NUMBER ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | b:STRING ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | b:BOOL ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
