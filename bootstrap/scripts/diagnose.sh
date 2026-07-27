@@ -3178,6 +3178,41 @@ mode_prune_tmp_scratch() {
   ok "tmp-scratch prune done"
 }
 
+# t-kbqq: the ONE enumeration of every compile-cache root this tooling owns
+# under ROOT. Prints the dir that CONTAINS `build/cache` (the cwd `bs2 cache
+# prune` wants), one per line; SPARED notices go to stderr so the list stays
+# clean for `while read`.
+#
+# WHY it is shared: --cache-gc and --clean-cache each carried their own root
+# list, so a root could be reachable by one and invisible to the other. That is
+# exactly what happened — `--emit-gen-check` compiles with cwd inside
+# `build/emit_gen`, so bs2 parks a cache at `build/emit_gen/build/cache`, ONE
+# LEVEL DEEPER than the `packages/*/` glob reaches. It grew to 11 GB unpruned
+# while `make cache-gc` cheerfully reported "under the 12G size cap — nothing to
+# evict", filled the disk, and made the next `--emit-gen-check` fail with a
+# MISLEADING "generated pattern parser failed to compile/run" — an ENOSPC
+# wearing a grammar regression's clothes. One list means the next scratch tree
+# can't reopen the hole.
+#
+# The `src` sentinel (pdme.3) is applied HERE, so both consumers inherit it: a
+# package literally named `src` would make the parent-of-build a source dir, and
+# ad-hoc `find … -name build` one-liners have eaten those before.
+cache_owner_dirs() {
+  local root="${1:-$BOOTSTRAP_DIR}" d
+  # The bootstrap/package roots, then the diagnose.sh SCRATCH trees under
+  # build/<name>/ (emit_gen and any future sibling) — pure regenerable scratch,
+  # one cold re-run to rebuild.
+  for d in "$root" "$root"/packages/*/ "$root"/build/*/; do
+    d="${d%/}"
+    [ -d "$d/build/cache" ] || continue
+    if [ "$(basename "$d")" = "src" ]; then
+      log "[cache] SPARED $d/build/cache — owner is a src dir, refusing" >&2
+      continue
+    fi
+    printf '%s\n' "$d"
+  done
+}
+
 # Usage: --cache-gc [DAYS]   (default 30)
 mode_cache_gc() {
   local days="${1:-30}"
@@ -3190,11 +3225,10 @@ mode_cache_gc() {
   local cap_mb="${AVRA_CACHE_MAX_MB:-12288}"
   ensure_bs2
   local root
-  for root in "$BOOTSTRAP_DIR" "$BOOTSTRAP_DIR"/packages/*/; do
-    [ -d "$root/build/cache" ] || continue
+  while IFS= read -r root; do
     log "[cache-gc] $root"
     ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb="$cap_mb" )
-  done
+  done < <(cache_owner_dirs "$BOOTSTRAP_DIR")
   # Also reclaim the /tmp test scratch that escapes the per-root prune above.
   # Guard at 10m so an in-flight `bs2 test` (which touches its scratch every few
   # seconds) is spared while session-accumulated junk goes.
@@ -3268,23 +3302,15 @@ cache_stats_entries() {
 mode_clean_cache() {
   local root="${1:-$BOOTSTRAP_DIR}"
   [ -d "$root" ] || die "clean-cache: no such root: $root"
-  local d pkg_dir wiped=0
-  for d in "$root"/packages/*/build/cache; do
-    [ -d "$d" ] || continue
-    pkg_dir=$(basename "$(dirname "$(dirname "$d")")")
-    if [ "$pkg_dir" = "src" ]; then
-      log "[clean-cache] SPARED $d — parent is a src dir, refusing"
-      continue
-    fi
-    rm -rf "$d"
-    log "[clean-cache] wiped $d"
+  local d owner wiped=0
+  # The bootstrap/package roots + the build/<scratch>/ trees, from the SHARED
+  # enumeration cache-gc prunes (t-kbqq) — so the two can never disagree about
+  # which caches exist. The `src` sentinel lives there.
+  while IFS= read -r owner; do
+    rm -rf "$owner/build/cache"
+    log "[clean-cache] wiped $owner/build/cache"
     wiped=$(( wiped + 1 ))
-  done
-  if [ -d "$root/build/cache" ]; then
-    rm -rf "$root/build/cache"
-    log "[clean-cache] wiped $root/build/cache"
-    wiped=$(( wiped + 1 ))
-  fi
+  done < <(cache_owner_dirs "$root")
   # Legacy location: older compilers parked `bs2 compile` entries at
   # <pkg>/src/build/cache (the source-dir foot-gun); current compilers
   # cache at the package root, so anything here is unreachable junk.
