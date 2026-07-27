@@ -314,6 +314,39 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
     }
 }
 
+// t-47hc.19: `template_lit` owns the TEMPLATE token natively, and the desugar is now the
+// SHARED store-based desugar_template_store both parsers call — so interpolation shape and
+// both of its error paths are identical by construction.
+//
+// NOTE the `dbrace()` indirection: a literal `${` written in THIS file's string would be
+// real interpolation of the test's own scope, so the fixture sources are concatenated
+// (the scan_string_test precedent).
+fn dbrace() -> string { "$" + "{" }
+
+fn tpl_src(body: string) -> string {
+    "fn f() -> int {\n let x = 1\n " + body + "\n return 0\n}"
+}
+
+spec "t-47hc.19: grammar-native template_lit recovers == hand oracle" {
+    then "malformed interpolations REPORT and agree" {
+        // unterminated `${x` and an invalid sub-expression `${(}`
+        agree_error(tpl_src("let b = \"v=" + dbrace() + "x\"")) &&
+        agree_error(tpl_src("let b = \"v=" + dbrace() + "(}\""))
+    }
+    then "the recovered TREES agree with hand (strictly stronger than F-codes)" {
+        agree_tree(tpl_src("let b = \"v=" + dbrace() + "x\"")) &&
+        agree_tree(tpl_src("let b = \"v=" + dbrace() + "(}\""))
+    }
+    then "well-formed templates agree (plain, single, multiple, empty, format specs)" {
+        agree(tpl_src("let a = \"plain\"")) &&
+        agree(tpl_src("let b = \"v=" + dbrace() + "x}\"")) &&
+        agree(tpl_src("let c = \"" + dbrace() + "x} and " + dbrace() + "x}\"")) &&
+        agree(tpl_src("let d = \"\"")) &&
+        agree(tpl_src("let e = \"pi=" + dbrace() + "x:.2f} n=" + dbrace() + "x:d}\"")) &&
+        static_raw(tpl_src("let b = \"v=" + dbrace() + "x}\"")) == ""
+    }
+}
+
 // t-47hc.18b: `qualified_expr` (`@pkg::mod::name` + its struct-literal form) is native.
 // The `( "::" IDENT )+` carries `@expect("+", …)` so a bare `@name` reports the hand's
 // exact wording, not the emitter's generic required-repetition message.

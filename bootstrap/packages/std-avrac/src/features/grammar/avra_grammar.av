@@ -112,13 +112,14 @@ fn avra_expr_core() -> Grammar {
              | base:brace_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(template_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(ident_primary) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+
                    ( @when(allow_struct_lit) lb:"{" ( f:field_init )* "}" )?
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
+  template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
   map_literal  = "{" ( k:expression ":" v:expression ( "," )? )* "}"
                  @expect(":", "expected `:` after map key")

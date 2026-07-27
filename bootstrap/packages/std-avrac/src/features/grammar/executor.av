@@ -18,7 +18,7 @@
 use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
-use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState}
+use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
 use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
 
@@ -1246,9 +1246,8 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // The identifier-led primary (bare ident / struct-lit / table / feature-kw /
     // tagged-template) — FIRST is an IDENT.
     if name == "ident_primary" { return tok.kind == "IDENT" }
-    // An interpolated string's FIRST is the TEMPLATE token itself (ps3t.6.7).
-    if name == "template_expr" { return tok.kind == "TEMPLATE" }
-    // A brace primary (map / block) starts with `{` (ps3t.6.7 parser modes).
+    // (Interpolated strings and brace primaries are grammar-native now — template_lit
+    // t-47hc.19, brace_expr t-47hc.18 — so neither has a hand_starts entry.)
     // The ident-primary (bare ident / struct literal / qualified @pkg::T /
     // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
     // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
@@ -1692,7 +1691,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// whole quote to the hand parser handles the inner `~`→Splice by construction
 /// (ps3t.6.5.10).
 fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "template_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
+    name == "quote_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
 }
 
 /// The FIRST-set of a leaf expression — every token that can begin the
@@ -1729,7 +1728,7 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
 /// postfix_suffix / with_suffix does NOT.
 fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary" || name == "template_expr"
+    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary" 
 }
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
@@ -1806,7 +1805,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
         "lambda_body"   -> bp.parse_lambda_body()
         "lambda_block_body" -> bp.parse_block_expression()
         "ident_primary" -> bp.parse_ident_expr()
-        "template_expr" -> bp.parse_template_primary()
         "ident_expr"    -> bp.parse_primary()
         "more_primary"  -> bp.parse_primary()
         // The whole procedural leaf: prefix unary ops + `with`/splice + the
@@ -2016,6 +2014,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
         // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
+        "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
@@ -3152,6 +3151,17 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 /// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
 export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
     st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// A `"…${x}…"` template primary (t-47hc.19). The desugar itself is SHARED with the
+/// hand parser via desugar_template_store — one implementation, two call sites — so the
+/// concatenation shape and format-spec routing cannot drift. The error is reported on
+/// THIS side's channel, matching the hand's set_error wording.
+export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
+    match desugar_template_store(st.store, capval_tok_text(tcap)) {
+        .Ok(id) -> id
+        .Err(m) -> st.error_node(m)
+    }
 }
 
 /// `@pkg::mod::name` and its struct-literal form `@pkg::mod::Name { f: v }` (t-47hc.18b).
