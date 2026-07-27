@@ -1329,13 +1329,47 @@ fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool,
 /// Bounded — a non-consuming iteration breaks the loop.
 fn exec_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>) {
     let empty: List<string> = []
+    // t-47hc.28 `x{#cap}`: the cap is read ONCE, before the loop. Reading it per
+    // iteration would be wrong the moment the repetition's own captures share a
+    // label with the bound (self-limiting), and the count it stands for — "how many
+    // columns did the header declare" — is fixed by the time the bounded loop starts.
+    // `-1` means unbounded, which keeps the hot comparison a single int test.
+    let cap = if item.bound == "" { -1 } else { capval_len(env.get(item.bound)) }
+    mut taken = 0
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop.
     while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
+        if cap >= 0 && taken >= cap { return }
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
         bind(env, item.label, v, true)
+        taken = taken + 1
         if st.pos == before { return }
+    }
+}
+
+/// How many elements a capture holds — the value `x{#cap}` bounds against. TOTAL over
+/// `CapVal`: every list variant reports its length, a scalar is 1, and an absent
+/// capture is 0. Scalars cannot actually reach here (validate_bounds rejects a bound
+/// naming a non-list capture at grammar-parse time), but answering 1 rather than 0
+/// keeps this honest as a general "size of" should the validator ever loosen.
+fn capval_len(v: CapVal) -> int {
+    match v {
+        .Nil -> 0
+        .Toks(ts) -> ts.length
+        .Nodes(ns) -> ns.length
+        .SNodes(ns) -> ns.length
+        .PNodes(ns) -> ns.length
+        .TExprs(ts) -> ts.length
+        .Arms(a) -> a.length
+        .WArms(a) -> a.length
+        .FInits(f) -> f.length
+        .PEntries(p) -> p.length
+        .Fields(f) -> f.length
+        .Vars(v2) -> v2.length
+        .Anns(a) -> a.length
+        .TParams(tp) -> tp.length
+        _ -> 1
     }
 }
 

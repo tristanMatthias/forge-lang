@@ -47,11 +47,22 @@ fn render_seq(s: GSeq) -> string {
     out
 }
 
+/// NOTE: the item MARKERS (`^`, `@off`/`@on`, `@cut`, `@require`) are not rendered —
+/// a pre-existing gap in the "structure-only" contract above, so render→parse is not
+/// identity for a grammar using them. The repetition BOUND is rendered because it is
+/// part of the repetition itself rather than a marker on the item: dropping it would
+/// turn a capped loop into an unbounded one, which is a different grammar, not just a
+/// less-annotated one.
 fn render_item(it: GItem) -> string {
     mut out = ""
     if it.label != "" { out = it.label + ":" }
-    out = out + render_prim(it.prim) + render_rep(it.rep)
+    out = out + render_prim(it.prim) + render_rep(it.rep) + render_bound(it.bound)
     out
+}
+
+fn render_bound(b: string) -> string {
+    if b == "" { return "" }
+    "{#${b}}"
 }
 
 fn render_rep(r: GRep) -> string {

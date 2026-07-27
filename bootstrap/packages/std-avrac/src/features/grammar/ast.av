@@ -197,6 +197,27 @@ export type GItem = {
     // diagnostics and one for control flow. Inside a `@try` branch BEFORE a `@cut` it
     // degrades to plain reporting — the rollback already IS the abort.
     require: bool,
+    // t-47hc.28 BOUNDED REPETITION (`x{#cap}`): the name of a capture whose LIST
+    // LENGTH caps this repetition — "repeat `x`, at most `#cap` times". Empty = no
+    // bound (every item before this, and today's only behaviour).
+    //
+    // This is what a COLUMNAR sub-language needs and a plain `*` cannot say: a
+    // table's body rows take as many cells as the header row declared, so the count
+    // is not a constant in the grammar — it is a property of something already
+    // parsed. Captures inside `( … )*` ALREADY collect into parallel lists, so that
+    // count is already in hand as a capture's length; binding it needs no integer
+    // expressions inside the DSL and no attribute-evaluation engine, just this one
+    // name. (`match … table` is the first spender: its cell loop is literally
+    // `while i < value_count` — a BOUND, not the row-width VALIDATION it was long
+    // recorded as; that check belongs to the separate `table { }` literal.)
+    //
+    // Deliberately a field rather than a `GRep` variant: a bounded star IS a star —
+    // same list-collecting capture semantics, same FIRST-set guard, same emitted loop
+    // shape — differing only by one extra exit condition. Keeping `GRep` at four
+    // variants means no exhaustiveness churn across executor/emit/render. Legal only
+    // on `*`/`+` (rejected at grammar-parse time otherwise), and the named capture
+    // must be bound EARLIER in the same branch (validate_bounds).
+    bound: string,
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -264,9 +285,21 @@ export enum GAnnot {
 
 // ── Small constructors / probes (keep call sites readable) ──
 
+/// Is `s` one of `xs`? The feature's ONE string-membership helper — it had grown
+/// four private copies (`list_has` in executor.av, `ffs_has` in first_follow.av,
+/// `frag_name_in` in compose.av, and `str_in` in emit.av, which additionally treats
+/// `""` as absent). Lives here because ast.av is the contract module every one of
+/// those files already imports.
+export fn name_in(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s { return true }
+    }
+    false
+}
+
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", cut: false, require: false }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", cut: false, require: false, bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then
