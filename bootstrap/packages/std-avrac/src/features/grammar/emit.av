@@ -484,6 +484,8 @@ fn build_uses_sp_start(name: string) -> bool {
         // the list_comp sub-rule, entered AFTER `[` is consumed) — the two-level span
         // asymmetry matching hand parse_list_expr (@ `[`) vs parse_list_elements (@ body).
         name == "MkListLit" || name == "MkListComp" || name == "MkChannel" || name == "MkWhen" || name == "MkWhenStmt" ||
+        // MkMatchExpr spans from the `match` keyword, like the hand alloc_at.
+        name == "MkMatchExpr" ||
         name == "MkExprBlock" || name == "MkSpawn" || name == "MkIsolated" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
@@ -1521,6 +1523,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkWhenArm" -> "mk_when_arm(st, ${args[0]}, ${args[1]})"
         "MkWhenDefault" -> "mk_when_default(st, ${args[0]})"
         "MkWhen" -> "mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))"
+        "MkMatchExpr" -> "mk_match_expr(st, sp_start, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkWhenStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))))))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
@@ -1915,6 +1918,16 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // predicate used by the expression dispatch itself.
         if name == "expression" { return "tok_starts_expr_leaf(st.cur())" }
         if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
+        // The shared match-ARM fragment (features/match_expr/grammar.av) is DEFINED in the
+        // declaration dispatch view and referenced from the expression view's `match_expr`.
+        // Both generated parsers live in the `parse/` module namespace, which MERGES — so
+        // the expression parser calls the declaration parser's parse_match_arm directly,
+        // exactly as it already calls parse_pattern_or. Defining the rules in both views
+        // instead would emit two `parse_match_when_arm` functions into one namespace and
+        // fail the build with a duplicate-function FATAL. What crossing that boundary needs
+        // is a DECLARED FIRST, which is what these two lines are (t-47hc.25).
+        if name == "match_arm" { return "tok_starts_pattern(st.cur())" }
+        if name == "match_when_arm" { return "(st.cur().text == \"_\" || tok_starts_expr_leaf(st.cur()))" }
         // Any OTHER external rule has no declared FIRST, and falling back to `false`
         // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
         // `( r )?` is never taken, and the generated parser DROPS the whole construct
@@ -2161,7 +2174,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
@@ -2197,6 +2210,13 @@ fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
     // accumulator to ExprId.
     if r.name == "" {
         if name == "statement" || name == "declaration" { return "stmt" }
+        // The shared match-ARM fragment, external in the expression view (t-47hc.25).
+        // Without these the accumulator defaults to ExprId and the generated parser
+        // coerces arms with capval_to_expr — which does not even compile
+        // (`CapVal.WArms` wants List<WhenArm>), but a kind mismatch that DID compile
+        // would be a silent tree corruption, so declare them beside their FIRSTs.
+        if name == "match_arm" { return "arm" }
+        if name == "match_when_arm" { return "warm" }
         return "expr"
     }
     mut v2: List<string> = []

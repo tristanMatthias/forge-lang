@@ -112,6 +112,39 @@ that future `sql { }` / `regex { }` sublanguages share), routed from
 `parse_primary`; the block parser + desugar live in `parser.av`. No new AST
 node and no seed cycle — the emitted tree flows through the existing passes.
 
+## Validating a leaf migration (the gate order)
+
+A Phase-3 slice replaces an `@hand` leaf with real alternatives. That changes
+FIRST sets **globally**, not just in the rule you edited — so the feature's own
+tests are not sufficient. Run these, in this order:
+
+1. `make build-quick`
+2. **Regenerate the family's parser and READ THE DIFF** (`diagnose.sh
+   --emit-regen-{expr,decl,pat,type}`). This has caught every silent bug in this
+   area and no test has. Look for `while false { …_list.push(…) }` (an
+   undeclared external FIRST, silently dropping a whole repetition) and for
+   `capval_to_expr` where a typed coercion belongs (an external rule also loses
+   its result KIND, not just its FIRST).
+3. `diagnose.sh --emit-gen-check` — GENPASS across all five families.
+4. **`bs2 test features/grammar/tests/grammar_ambiguity_guard_test.av`** — the
+   one most easily forgotten, because it lives outside the feature you touched.
+   An `@hand` leaf is OPAQUE to the FIRST/FIRST analysis; making it native turns
+   its lead tokens concrete and can EXPOSE a pre-existing ordered-choice shadow
+   elsewhere in the grammar. That is usually intended (the ordered choice already
+   resolved that way), but it must be confirmed against the hand parser and then
+   allowlisted by exact rule + branch pair in `is_intended_shadow` — never by
+   loosening the predicate. Missing this is what turned #1029 red in CI.
+5. `features/grammar/tests/error_recovery_differential_test.av` — the recovery
+   TREE oracle, not just F-codes.
+6. Isolate-run any negative/diagnostic test you touched: **diff-test does not
+   cover the error text of invalid programs**. Note also that once the DSL
+   errors, the flip falls back to the authoritative hand parser, which then owns
+   the reporting — so at whole-program level a grammar's own `@expect` message is
+   generally NOT observable. Assert F-code agreement against the hand oracle plus
+   a structural check on the emitted parser instead.
+7. CI's cold `diff-test` is the authority on byte-identity; a local `PREBUILT=1`
+   run reuses caches that can mask real breakage.
+
 ## Status
 
 **Landed** (this PR): the seed parser, the executable generator + error-tolerant

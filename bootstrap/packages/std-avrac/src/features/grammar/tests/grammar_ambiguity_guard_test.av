@@ -30,7 +30,24 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     // differentially: `(x) -> { "a": 1 }` yields the same F0040 under both parsers).
     // Filtered by exact rule + branch pair, so any OTHER `{` overlap still trips.
     a.rule == "lambda_body" && a.i == 0 && a.j == 1 ||
-    a.rule == "statement" && a.i == 9 && a.j == 10
+    a.rule == "statement" && a.i == 9 && a.j == 10 ||
+    // t-47hc.25: the SAME class again, from the match_expr flip. `expression` now has a
+    // CONCRETE `match` in its FIRST where `@hand(match_expr)` was opaque, which EXPOSES
+    // (does not create) the pre-existing ordered choice: at a leading `match` in
+    // statement position, `match_stmt` wins over `expr_stmt`. That is what the hand
+    // parser does and what the ordered choice already did — verified directly: the tree
+    // is `(match n (0 -> 1; _ -> 2))`, a match STATEMENT, not `(expr (match …))`, and
+    // identical under AVRA_PARSER_DECL_FLIP=0. diff-test is byte-identical across the
+    // flip, which is the same evidence the list_expr and brace_expr entries above rest on.
+    //
+    // TWO branch pairs because `statement` is defined in two views with different arities:
+    //   5/10 — the production rule (break continue if for while MATCH defer errdefer
+    //          return stmt_block EXPR_STMT)
+    //   2/6  — the §2 emit-gen-check view (break continue MATCH defer errdefer return
+    //          EXPR_STMT)
+    // Pinned by exact rule + branch pair, so any OTHER `match` overlap still trips.
+    a.rule == "statement" && a.i == 5 && a.j == 10 ||
+    a.rule == "statement" && a.i == 2 && a.j == 6
 }
 
 // True iff `g` has no FIRST/FIRST ambiguity beyond the intended-shadow allowlist; on
