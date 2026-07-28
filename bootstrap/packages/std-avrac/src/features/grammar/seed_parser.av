@@ -738,6 +738,23 @@ fn validate_fallbacks(g: Grammar) -> string {
                     }
                     i = i + 1
                 }
+                // `@try` ANYWHERE in the rule disables the emitted fallback tail
+                // (emit_dispatch's case is gated on `!has_spec`) while the executor's
+                // fallback loop runs unconditionally after the dispatch loop. That is a
+                // silent ENGINE DIVERGENCE: on input matching no branch the interpreter
+                // reports the fallback's own `@expect`, the generated parser the
+                // alternation's generic "expected an expression". Reject the combination
+                // rather than ship a marker that means two different things depending on
+                // which engine reads it. Lifting this means teaching emit_dispatch to run
+                // the fallback before its `tried_spec ? Nil : error_node` fallthrough —
+                // at which point this check comes out and the pair becomes legal.
+                if seen == 1 {
+                    for b in branches {
+                        if b.speculative {
+                            return "rule `${r.name}` combines `@try` and `@fallback` — a speculative sibling suppresses the emitted fallback tail while the interpreter still runs it, so the two engines would disagree on the diagnostic"
+                        }
+                    }
+                }
             }
         }
     }
