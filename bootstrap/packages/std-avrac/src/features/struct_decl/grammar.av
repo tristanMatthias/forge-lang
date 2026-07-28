@@ -9,9 +9,18 @@
 use features.grammar.{parse_grammar, Grammar}
 
 /// The `type` declaration (struct form) and its field rule.
+///
+/// The RHS is ONE optional group holding a two-branch alternation, NOT two adjacent
+/// optional groups (t-myz7.1). Adjacent optionals are not exclusive: after the brace
+/// form completes, the alias group is still tried, and `type_expr`'s FIRST includes
+/// IDENT — so a following identifier-led declaration got eaten as this type's alias.
+/// Nested in one group the two branches are FIRST-disjoint (`{` vs `tok_starts_type`,
+/// which has no `{`), so exactly one runs and the group ends. The group stays optional
+/// because `type X =` with no RHS is a lenient edge BOTH parsers accept, pinned in
+/// diagnostic_equivalence_test.
 export fn avra_struct_decl_grammar() -> Grammar {
     let gp = grammar {
-  type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" )? ( talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
+  type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" | talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
   shape_decl  = "shape" shname:IDENT "=" "{" ( shfields:field ","? )* "}" -> MkShapeDecl(shname, shfields)
   field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
     }
