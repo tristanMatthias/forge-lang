@@ -96,7 +96,45 @@ spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
 // were unaffected — diff-test was green and every parity spec passed — which is exactly
 // why nothing else caught it.
 //
-// So `shape` is back on `@hand(decl_hand)` until the abort/resync primitive exists
-// (t-myz7.2). The parity work above stands: the fragment accepts what the hand accepts,
-// and that is what routing will spend once recovery can match too. Nothing here asserts
-// routing any more, because there is none to assert.
+// ROUTED AGAIN — under `@try` (t-myz7.2, #1061).
+//
+// The abort/resync primitive turned out to exist already. `@try` is exactly it: the
+// branch snapshots cursor + node store + diagnostics + the @hand delegate, commits only
+// if it reported nothing, and otherwise rolls back and falls through to the
+// `@peek(decl_lead) @hand(decl_hand)` branch below — which parses the malformed shape
+// precisely as it always did. The native rule owns VALID `shape` declarations; the five
+// malformed forms above recover through the hand parser, byte-for-byte.
+//
+// The five cases are IN the invalid corpus now (error_recovery_differential_test), so
+// they are what proves this rather than a claim about it: they fail with a bare
+// `shape_decl` branch and pass with the `@try`.
+//
+// What this asserts is the DISPATCH, structurally, on the emitted source — the failure
+// mode #1028 was caught on is a routed rule emitted AFTER the decl_hand gate, which
+// `decl_lead` then swallows first: correct output, no diagnostic, flip silently dead.
+spec "t-myz7.2: `shape` is routed onto the production path, speculatively" {
+    then "parse_shape_decl exists and dispatches BEFORE the decl_hand gate" {
+        let src = decl_src()
+        let shape_at = src.index_of("parse_shape_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("fn parse_shape_decl(st: PState) -> CapVal") &&
+            shape_at >= 0 && hand_at >= 0 && shape_at < hand_at
+    }
+
+    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+        let src = decl_src()
+        src.contains("s_last = parse_shape_decl(st)") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        // Routing adds a branch BEFORE the gate, so the tail must be untouched. A `@try`
+        // sibling used to delete it outright (the emit bug #1061 fixed) — pinned here too
+        // because this is the rule that adds the third one.
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
