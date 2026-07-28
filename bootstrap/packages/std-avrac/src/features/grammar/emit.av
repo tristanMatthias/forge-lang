@@ -1829,6 +1829,16 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // carries the `[with-start, next-token)` span rebind_with reads back.
         "MkFieldInit" -> "mk_field_init(st, ${args[0]}, ${args[1]})"
         "MkWithSuffix" -> "CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(${args[0]}_list)))"
+        // The GENERIC decl forms are distinguished by ARITY, not by name — same build
+        // name, one extra type-param list. These arms must come FIRST: emit dispatches
+        // on the name alone, so without them a 3-arg `MkEnumDecl` in a grammar renders
+        // the 2-arg call and passes the type-param list where the variants go. That
+        // asymmetry is why the executor's generic arms were dormant capability with no
+        // emit twin (t-47hc slice 10, t-myz7); both now call one shared core.
+        "MkFnDecl" if args.length == 5 -> "mk_fn_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}_list)"
+        "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
+        "MkEnumDecl" if args.length == 3 -> "mk_enum_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
+        "MkTypeParam" -> "mk_type_param(capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
@@ -2430,6 +2440,7 @@ fn build_kind(bn: string) -> string {
     // MkEVariant → Var).
     if bn == "MkFnDecl" || bn == "MkTypeDecl" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
     if bn == "MkParam" { return "pentry" }
+    if bn == "MkTypeParam" { return "tparam" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
@@ -2545,6 +2556,7 @@ fn kind_coerce(kind: string) -> string {
     if kind == "stmt" { return "capval_to_stmt" }
     if kind == "type" { return "capval_to_texpr" }
     if kind == "pentry" { return "capval_to_pentry" }
+    if kind == "tparam" { return "capval_to_tparam" }
     if kind == "field" { return "capval_to_field" }
     if kind == "variant" { return "capval_to_variant" }
     if kind == "arm" { return "capval_to_arm" }
@@ -2559,6 +2571,7 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "stmt" { return "StmtId" }
     if kind == "type" { return "TypeExpr" }
     if kind == "pentry" { return "ParamEntry" }
+    if kind == "tparam" { return "TypeParamEntry" }
     if kind == "field" { return "FieldEntry" }
     if kind == "variant" { return "Variant" }
     if kind == "arm" { return "MatchArm" }

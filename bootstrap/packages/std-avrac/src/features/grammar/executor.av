@@ -2778,36 +2778,22 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    The GENERIC arms (extra type-param list) stay inline — the 6.5.11
         //    whole-program grammar has no generic-decl slice. ──
         "MkParam" if args.length == 2 -> mk_param(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
-        "MkTypeParam" if args.length == 2 -> {
-            // `name ( ":" bound )?` — one generic type parameter. A single trait
-            // bound only (parse_type_param_entries; multi-bound `T: A + B` is a
-            // where-clause, out of scope), absent ⇒ "" (unbounded).
-            let bound = if capval_present(env.get(args[1])) { capval_tok_text(env.get(args[1])) } else { "" }
-            CapVal.TParam(TypeParamEntry { name: capval_tok_text(env.get(args[0])), bounds: bound })
-        }
+        "MkTypeParam" if args.length == 2 -> mk_type_param(capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
         "MkFnDecl" if args.length == 4 -> mk_fn_decl(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
-        "MkFnDecl" if args.length == 5 -> {
-            // Generic form: `fn name < tparams > ( params? ) ( "->" ret )? { body }`.
-            // Args shift by one for the type-param list (args[1]); the rest match
-            // the 4-arg form. parse_function_declaration stores parse_type_params
-            // here, rendered `<…>`.
-            let ret_vt = if capval_present(env.get(args[3])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[3]))) } else { ValueType.Void }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), ret_vt, capval_to_stmt_list(env.get(args[4])))))
-        }
+        // Generic form: `fn name < tparams > ( params? ) ( "->" ret )? { body }`.
+        // Args shift by one for the type-param list (args[1]); the rest match the
+        // 4-arg form. Shares mk_fn_decl_g with the emitted parser.
+        "MkFnDecl" if args.length == 5 -> mk_fn_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])))
         "MkField" if args.length == 2 -> mk_field(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
         "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
-        "MkTypeDecl" if args.length == 3 -> {
-            // Generic struct: `type Name < tparams > = { field* }` — the
-            // type-param list (args[1]) is stored + rendered `<…>`.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))))
-        }
+        // Generic struct: `type Name < tparams > = { field* }` — the type-param
+        // list (args[1]) is stored + rendered `<…>`. Shares mk_type_decl_g with emit.
+        "MkTypeDecl" if args.length == 3 -> mk_type_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))
         "MkEVariant" if args.length == 2 -> mk_evariant(capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         "MkEnumDecl" if args.length == 2 -> mk_enum_decl(st, capval_tok_text(env.get(args[0])), capval_to_var_list(env.get(args[1])))
-        "MkEnumDecl" if args.length == 3 -> {
-            // Generic enum: `enum Name < tparams > { variant* }` — the type-param
-            // list (args[1]) is stored + rendered `<…>`.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))))
-        }
+        // Generic enum: `enum Name < tparams > { variant* }` — the type-param list
+        // (args[1]) is stored + rendered `<…>`. Shares mk_enum_decl_g with emit.
+        "MkEnumDecl" if args.length == 3 -> mk_enum_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))
         "MkUse" if args.length == 3 -> mk_use(st, capval_present(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
         "MkUseBare" if args.length == 2 -> mk_use(st, false, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])))
         "MkUsePkg" if args.length == 3 -> mk_use_pkg(st, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
@@ -3376,6 +3362,37 @@ export fn mk_enum_decl(st: PState, name: string, vars: List<Variant>) -> CapVal 
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(name, no_tp, vars)))
 }
 
+/// The GENERIC siblings of the three decl cores above. Each is the same node with a
+/// real type-param list instead of the empty one — extracted so the executor and the
+/// EMITTED parser call ONE constructor rather than the executor building the node
+/// inline (which it did, arity-guarded) and emit having no twin at all. That asymmetry
+/// is why the generic arms were executor-only dormant capability: emit dispatches on
+/// build NAME, so a 3-arg `MkEnumDecl` in a grammar would have rendered the 2-arg call
+/// and passed the type-param list where the variants go. Cores + arity-guarded emit
+/// arms close it in lockstep (t-47hc slice 10, ticket t-myz7).
+export fn mk_fn_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, tps, params, ret_vt, body)))
+}
+
+/// `type Name < tparam* > = { field* }` (the 3-arg `MkTypeDecl` build's core).
+export fn mk_type_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, fields: List<FieldEntry>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, fields)))
+}
+
+/// `enum Name < tparam* > { variant* }` (the 3-arg `MkEnumDecl` build's core).
+export fn mk_enum_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, vars: List<Variant>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(name, tps, vars)))
+}
+
+/// `name ( ":" bound )?` — ONE generic type parameter (the `MkTypeParam` build's core).
+/// A single trait bound only, matching parse_type_param_entries; absent => "" (unbounded).
+/// Multi-bound `T: A + B` is a where-clause and out of scope.
+export fn mk_type_param(name: string, bound_cv: CapVal, has_bound: bool) -> CapVal {
+    let bound = if has_bound { capval_tok_text(bound_cv) } else { "" }
+    CapVal.TParam(TypeParamEntry { name: name, bounds: bound })
+}
+
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).
 export fn mk_trait_decl(st: PState, name: string, members: List<StmtId>) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(name, members)))
@@ -3734,7 +3751,20 @@ fn capval_to_ann_list(v: CapVal) -> List<Annotation> {
 }
 
 /// A capture as a type-parameter list (declaration generics, ps3t.6.5.7).
-fn capval_to_tparam_list(v: CapVal) -> List<TypeParamEntry> {
+/// ONE type parameter out of a capture — the singular sibling of
+/// capval_to_tparam_list, needed because the EMITTED parser coerces each element as
+/// it pushes (kind_coerce), where the executor folds the whole list at the build.
+export fn capval_to_tparam(st: PState, v: CapVal) -> TypeParamEntry {
+    match v {
+        .TParam(tp) -> tp
+        _ -> {
+            st.report("expected a type parameter")
+            TypeParamEntry { name: "", bounds: "" }
+        }
+    }
+}
+
+export fn capval_to_tparam_list(v: CapVal) -> List<TypeParamEntry> {
     match v {
         .TParams(tps) -> tps
         .TParam(tp) -> [tp]
