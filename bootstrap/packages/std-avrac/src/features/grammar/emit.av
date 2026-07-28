@@ -627,16 +627,32 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     // caller decides) instead of synthesising an error node. This mirrors
     // executor.exec_node's speculative arm one-for-one so the generated parser and
     // the interpreter agree — the same lockstep discipline as @when's mode preds.
+    //
+    // …but ONLY when the alternation has no UNGUARDED TAIL (t-myz7.2). The three tail
+    // forms below (bare-ref-to-a-hand-owning rule / `@fallback` / leading-`@hand`) exist
+    // precisely because the catch-all delegate must see a token no branch's FIRST
+    // matched — that is what routes a stray top-level token (`* 5`, `else`) into the
+    // hand parser's F0040 recovery instead of the alternation's own generic F0001. Those
+    // cases used to require `!has_spec`, which silently DELETED the tail the moment any
+    // sibling became `@try`: adding `@try use_decl` to `declaration` turned its
+    // `| statement` tail into a FIRST-guarded branch and regressed stray-token recovery
+    // across the board. The tail's role has nothing to do with speculation, so it now
+    // wins, and `tried_spec` is tracked only when there is no tail to fall into.
+    //
+    // No existing grammar moves: the two `@try`-bearing alternations (list_expr,
+    // paren_expr) both END in a full sequence, which is not a tail form under any of the
+    // three tests — so their emitted text is byte-identical either way.
     let has_spec = any_speculative(branches)
+    let track_spec = has_spec && !dispatch_has_tail(g, branches)
     mut out = ""
-    if has_spec { out = out + "    mut tried_spec = false\n" }
+    if track_spec { out = out + "    mut tried_spec = false\n" }
     mut tail = ""
     let last = branches.length - 1
     mut i = 0
     for b in branches {
         if b.speculative {
-            out = out + emit_speculative_branch(g, b)
-        } else if is_bare_ref(b) && i == last && !has_spec && rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) {
+            out = out + emit_speculative_branch(g, b, track_spec)
+        } else if is_bare_ref(b) && i == last && rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) {
             // UNGUARDED catch-all tail — ONLY when the referenced rule reaches an
             // `@hand` delegate that owns recovery (unary's `| postfix`, statement's
             // `| expr_stmt`). A pure-native last ref (`type_atom … | named_type`) falls
@@ -651,7 +667,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + emit_ref_result(b.items[lone_item_index(b)], "        ", true)
             out = out + "    }\n"
-        } else if b.fallback && i == last && !has_spec {
+        } else if b.fallback && i == last {
             // t-47hc.33 `@fallback`: the UNCONDITIONAL tail, emitted with no FIRST guard
             // and no trailing error node — the native twin of the trailing-`@hand` case
             // below. The branch itself owns the diagnostic for "nothing matched", which
@@ -660,7 +676,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // the alternation's generic "expected an expression".
             let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
             tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
-        } else if is_leading_hand(b) && i == last && !has_spec {
+        } else if is_leading_hand(b) && i == last {
             // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
             // every case earlier branches didn't match, INCLUDING error recovery
             // (its own diagnostics), exactly like the single-branch `x = @hand(f)`
@@ -693,18 +709,35 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         }
         i = i + 1
     }
-    if has_spec {
-        // A speculative dispatch never has an unguarded bare-ref tail: a rolled-
-        // back attempt yields Nil, and any non-speculative fallback is a guarded
-        // branch above (matching exec_node, which FIRST-guards every branch).
+    if tail != "" {
+        // The unguarded catch-all tail OWNS every token no branch matched, including
+        // one a rolled-back `@try` left behind — the delegate's recovery is exactly what
+        // the tail exists to reach.
+        out = out + tail
+    } else if has_spec {
+        // No tail: a rolled-back attempt is a clean "no match" (diags/had_error already
+        // restored) — yield Nil and let the caller decide, rather than synthesising a
+        // spurious parse error. Mirrors executor.exec_node's speculative arm.
         out = out + "    if tried_spec { return CapVal.Nil }\n"
         out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
-    } else if tail != "" {
-        out = out + tail
     } else {
         out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
     }
     out
+}
+
+/// True when this alternation's LAST branch is one of the three UNGUARDED-TAIL forms
+/// (the exact conditions the dispatch loop applies): a bare ref to a rule that owns its
+/// own recovery, an `@fallback`, or a leading-`@hand`. Read BEFORE the loop so a
+/// speculative dispatch knows whether it needs `tried_spec` at all — a dispatch with a
+/// tail never reads the flag, and emitting an unread `mut` would be dead code in every
+/// generated parser.
+fn dispatch_has_tail(g: Grammar, branches: List<GSeq>) -> bool {
+    if branches.length == 0 { return false }
+    let b = branches[branches.length - 1]
+    if b.speculative { return false }
+    if is_bare_ref(b) { return rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) }
+    b.fallback || is_leading_hand(b)
 }
 
 /// True when any branch is a `@try` speculative alternative.
@@ -728,9 +761,16 @@ fn any_speculative(branches: List<GSeq>) -> bool {
 /// exec_seq's FULL item vocabulary. Dispatch on `spec_branch_is_flat` so an existing
 /// flat @try emits BYTE-IDENTICALLY (the rich path is dormant until a grammar uses a
 /// complex @try branch — e.g. the paren spend's paren_tail).
-fn emit_speculative_branch(g: Grammar, b: GSeq) -> string {
-    if spec_branch_is_flat(b) { return emit_speculative_branch_flat(g, b) }
-    emit_speculative_branch_rich(g, b)
+fn emit_speculative_branch(g: Grammar, b: GSeq, track_spec: bool) -> string {
+    if spec_branch_is_flat(b) { return emit_speculative_branch_flat(g, b, track_spec) }
+    emit_speculative_branch_rich(g, b, track_spec)
+}
+
+/// The `tried_spec = true` marker line — emitted only when the enclosing dispatch
+/// actually READS the flag (no unguarded tail). See emit_dispatch's `track_spec`.
+fn spec_tracker_line(track_spec: bool) -> string {
+    if track_spec { return "        tried_spec = true\n" }
+    ""
 }
 
 /// A @try branch is FLAT when every token-bearing item is a One-rep terminal or rule
@@ -804,10 +844,10 @@ fn node_has_cut(node: GNode) -> bool {
 /// a rolled-back branch's bindings never leak (the emit twin of exec_node's env.caps
 /// snapshot). EMIT-ONLY: the executor already handles complex @try (exec_node's
 /// speculative arm over exec_seq), so no executor change accompanies this.
-fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
+fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string {
     let has_cut = seq_has_cut(b)
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
-    out = out + "        tried_spec = true\n"
+    out = out + spec_tracker_line(track_spec)
     out = out + "        let s_pos = st.pos\n"
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
@@ -838,9 +878,9 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq) -> string {
 /// `-> build` reads any labeled locals on commit. Unchanged from the original
 /// emit_speculative_branch — kept so an existing flat @try (list_expr) regens
 /// byte-identically.
-fn emit_speculative_branch_flat(g: Grammar, b: GSeq) -> string {
+fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string {
     mut out = "    if ${seq_first_guard(g, b, [])} {\n"
-    out = out + "        tried_spec = true\n"
+    out = out + spec_tracker_line(track_spec)
     out = out + "        let s_pos = st.pos\n"
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"

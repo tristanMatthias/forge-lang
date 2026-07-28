@@ -1,0 +1,72 @@
+// WHY: t-myz7.2 — a `@try` sibling must NOT delete an alternation's UNGUARDED TAIL.
+//
+// emit_dispatch has three tail forms (a bare ref to a rule that owns its own recovery,
+// an `@fallback`, a leading-`@hand`). The tail is the catch-all: it runs on a token NO
+// branch's FIRST matched, which is precisely how a stray top-level token reaches the
+// hand parser's recovery instead of the alternation's generic "expected an expression".
+//
+// All three used to be conditioned on `!has_spec`, so adding ANY `@try` branch silently
+// removed the tail and replaced it with a FIRST-guarded branch plus an error node. That
+// is not a theoretical hazard: adding `@try use_decl` to the production `declaration`
+// rule turned its `| statement` tail into a guarded branch and regressed stray-token
+// recovery from hand's F0040 to the alternation's F0001 on every stray form measured.
+//
+// The tail's role has nothing to do with speculation, so these specs pin the two facts
+// that keep them independent: a spec+tail alternation KEEPS its tail, and a spec-only
+// alternation still tracks `tried_spec` (a rolled-back attempt is a clean no-match, not
+// a synthesised error). Build-less fixture rules, per the emit-test convention — the
+// emitted SOURCE is what is under test, so no constructor cores are involved.
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn}
+
+fn emit_top(gsrc: string) -> string {
+    let gp = parse_grammar(gsrc)
+    for r in gp.grammar.rules {
+        if r.name == "top" { return emit_rule_fn(gp.grammar, r) }
+    }
+    ""
+}
+
+// An alternation with BOTH a `@try` branch and a bare-ref tail whose rule reaches an
+// `@hand` leaf — the shape of the production `declaration` rule.
+fn spec_plus_tail() -> string {
+    emit_top("top = @try lead | rest\nlead = \"use\" IDENT\nrest = @hand(quote_expr)")
+}
+
+// The same alternation with the tail REMOVED: a `@try` branch and a purely native
+// guarded one, which owns no recovery and so is never promoted to a tail.
+fn spec_only() -> string {
+    emit_top("top = @try lead | other\nlead = \"use\" IDENT\nother = \"mod\" IDENT")
+}
+
+spec "t-myz7.2: a @try sibling does not delete the unguarded tail" {
+    then "the speculative branch still emits its snapshot/commit/rollback scaffold" {
+        let src = spec_plus_tail()
+        src.contains("let s_pos = st.pos") &&
+            src.contains("let s_mark = st.store.mark()") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_to(s_pos, s_diags, s_err)")
+    }
+
+    then "the tail is UNGUARDED — the last act is the bare delegate call" {
+        let src = spec_plus_tail()
+        // The tail form: a fall-through call with no `if` guard and no error node
+        // after it. `parse_rest` is the LAST thing parse_top does.
+        src.contains("    parse_rest(st)\n}") && !src.contains("if tried_spec")
+    }
+
+    then "the tail form emits no tried_spec bookkeeping at all — no dead local" {
+        let src = spec_plus_tail()
+        !src.contains("mut tried_spec = false") && !src.contains("tried_spec = true")
+    }
+
+    // The other half: with no tail to fall into, the flag is still tracked, and a
+    // rolled-back attempt yields Nil rather than a spurious parse error. This is what
+    // `dispatch_has_tail` selects between — assert both sides so neither can be
+    // "simplified" away on the assumption the other is unreachable.
+    then "with NO tail, tried_spec is tracked and a rolled-back attempt yields Nil" {
+        let src = spec_only()
+        src.contains("mut tried_spec = false") &&
+            src.contains("tried_spec = true") &&
+            src.contains("if tried_spec { return CapVal.Nil }")
+    }
+}
