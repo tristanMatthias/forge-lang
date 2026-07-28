@@ -336,3 +336,139 @@ export fn grep_is_multi(r: GRep) -> bool {
         _ -> false
     }
 }
+
+// ── The UNGUARDED-TAIL predicate (t-zrn3) ────────────────────────────────────
+//
+// SHARED between the two engines, and that sharing is the point. An alternation's
+// LAST branch takes the UNGUARDED TAIL role when it is a bare ref to a rule that owns
+// its own recovery, an `@fallback`, or a leading-`@hand`. The tail runs on a token NO
+// branch's FIRST matched — which is how a stray top-level token (`then`, `)`, `* 5`)
+// reaches the hand parser's F0040 recovery instead of the alternation's generic F0001.
+//
+// emit_dispatch has always honoured the tail; exec_node did NOT, so the interpreter
+// answered F0001 where the hand parser and the generated parser both answered F0040 —
+// and because the production path re-parses a failed item with the interpreter, the
+// interpreter's answer is what shipped. Both engines now read THIS predicate, so they
+// cannot drift: #1061 had already fixed a tail-role bug on the emit side alone, which
+// is exactly the kind of one-sided fix a shared predicate prevents.
+//
+// Lives in ast.av rather than emit.av because emit.av is deliberately OUT of the
+// production compiler graph (only the regenerator imports it) while executor.av is on
+// it — so the shared home has to be the AST module both already depend on.
+
+fn str_list_has(xs: List<string>, s: string) -> bool {
+    for x in xs {
+        if x == s { return true }
+    }
+    false
+}
+
+/// True for a One repetition.
+export fn grep_is_one(r: GRep) -> bool { match r { .One -> true  _ -> false } }
+
+/// True for a `+` repetition.
+export fn grep_is_plus(r: GRep) -> bool { match r { .Plus -> true  _ -> false } }
+
+/// True for a nonterminal-reference primary.
+export fn gprim_is_ref(p: GPrim) -> bool { match p { .Ref(_) -> true  _ -> false } }
+
+/// True for an `@hand(fn)` escape-hatch primary.
+export fn gprim_is_hand(p: GPrim) -> bool { match p { .Hand(_) -> true  _ -> false } }
+
+/// The referenced rule name of a `.Ref` primary (else "").
+export fn gprim_ref_name(p: GPrim) -> string { match p { .Ref(n) -> n  _ -> "" } }
+
+/// Index of a branch's single VALUE item, skipping zero-width GATES (`@peek`/`@when`
+/// consume nothing, so `@peek(c) ref` is still a lone ref — just guarded). -1 when the
+/// branch carries none or more than one value item.
+export fn seq_lone_item_index(seq: GSeq) -> int {
+    mut idx = 0 - 1
+    mut i = 0
+    for it in seq.items {
+        match it.prim {
+            .Peek(_) -> {}
+            .Pred(_) -> {}
+            _ -> {
+                if idx >= 0 { return 0 - 1 }
+                idx = i
+            }
+        }
+        i = i + 1
+    }
+    idx
+}
+
+/// True for `| otherrule` — a lone One nonterminal branch with no build.
+export fn seq_is_bare_ref(seq: GSeq) -> bool {
+    let i = seq_lone_item_index(seq)
+    i >= 0 && grep_is_one(seq.items[i].rep) &&
+        gprim_is_ref(seq.items[i].prim) && gbuild_is_none(seq.build)
+}
+
+/// True for a branch whose FIRST item is a One `@hand` delegate AND whose remaining
+/// items are all NULLABLE (Star/Opt) postfix folds — the catch-all tail shape. A
+/// REQUIRED trailing item (One/Plus) would make the branch a genuine sequence whose
+/// `@hand` must NOT run on tokens outside its FIRST set, so such a branch is not a tail.
+export fn seq_is_leading_hand(seq: GSeq) -> bool {
+    if seq.items.length == 0 || !grep_is_one(seq.items[0].rep) || !gprim_is_hand(seq.items[0].prim) {
+        return false
+    }
+    mut i = 1
+    while i < seq.items.length {
+        if grep_is_one(seq.items[i].rep) || grep_is_plus(seq.items[i].rep) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+/// True when rule `name` reports its OWN diagnostics on an unmatched token, so it is
+/// safe as an unguarded tail. External refs (not a rule in THIS grammar) count — the
+/// separately-generated delegate reports for itself. A multi-branch dispatch always
+/// counts (it ends in an error node or a self-validating catch-all). A single sequence
+/// counts iff its LEADING primary does: `@hand` (the delegate reports) or another
+/// self-validating rule; a leading TERMINAL does not.
+export fn rule_owns_recovery(g: Grammar, name: string, visited: List<string>) -> bool {
+    if str_list_has(visited, name) { return false }
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    let idx = rule_index_of(g, name)
+    if idx < 0 { return true }
+    match g.rules[idx].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return false }
+            if branches.length > 1 { return true }
+            if branches[0].items.length == 0 { return false }
+            prim_owns_recovery(g, branches[0].items[0].prim, v2)
+        }
+    }
+}
+
+fn prim_owns_recovery(g: Grammar, prim: GPrim, visited: List<string>) -> bool {
+    match prim {
+        .Hand(_) -> true
+        .Ref(nm) -> rule_owns_recovery(g, nm, visited)
+        .Group(inner) -> match inner {
+            .Alt(brs) -> {
+                if brs.length == 0 { return false }
+                if brs.length > 1 { return true }
+                if brs[0].items.length == 0 { return false }
+                prim_owns_recovery(g, brs[0].items[0].prim, visited)
+            }
+        }
+        _ -> false
+    }
+}
+
+/// True when this alternation's LAST branch takes the UNGUARDED TAIL role. A
+/// speculative (`@try`) last branch never does — it can roll back, so there would be
+/// nothing to fall into.
+export fn dispatch_has_tail(g: Grammar, branches: List<GSeq>) -> bool {
+    if branches.length == 0 { return false }
+    let b = branches[branches.length - 1]
+    if b.speculative { return false }
+    if seq_is_bare_ref(b) { return rule_owns_recovery(g, gprim_ref_name(b.items[seq_lone_item_index(b)].prim), []) }
+    b.fallback || seq_is_leading_hand(b)
+}

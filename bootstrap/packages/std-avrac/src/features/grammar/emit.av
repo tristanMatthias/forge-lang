@@ -37,6 +37,9 @@
 // forest of special cases).
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
+// t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
+// The local wrappers below delegate to it so the two engines cannot drift.
+use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
 use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
@@ -726,19 +729,6 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     out
 }
 
-/// True when this alternation's LAST branch is one of the three UNGUARDED-TAIL forms
-/// (the exact conditions the dispatch loop applies): a bare ref to a rule that owns its
-/// own recovery, an `@fallback`, or a leading-`@hand`. Read BEFORE the loop so a
-/// speculative dispatch knows whether it needs `tried_spec` at all — a dispatch with a
-/// tail never reads the flag, and emitting an unread `mut` would be dead code in every
-/// generated parser.
-fn dispatch_has_tail(g: Grammar, branches: List<GSeq>) -> bool {
-    if branches.length == 0 { return false }
-    let b = branches[branches.length - 1]
-    if b.speculative { return false }
-    if is_bare_ref(b) { return rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) }
-    b.fallback || is_leading_hand(b)
-}
 
 /// True when any branch is a `@try` speculative alternative.
 fn any_speculative(branches: List<GSeq>) -> bool {
@@ -964,28 +954,9 @@ fn spec_bind(label: string, value: string) -> string {
 /// consume nothing, so `@peek(c) ref` is still a lone ref — just guarded). -1 when the
 /// branch carries none or more than one value item. The gate itself is already folded
 /// into seq_first_guard, so the shortcut paths below stay correct.
-fn lone_item_index(seq: GSeq) -> int {
-    mut idx = 0 - 1
-    mut i = 0
-    for it in seq.items {
-        match it.prim {
-            .Peek(_) -> {}
-            .Pred(_) -> {}
-            _ -> {
-                if idx >= 0 { return 0 - 1 }
-                idx = i
-            }
-        }
-        i = i + 1
-    }
-    idx
-}
+fn lone_item_index(seq: GSeq) -> int { seq_lone_item_index(seq) }
 
-fn is_bare_ref(seq: GSeq) -> bool {
-    let i = lone_item_index(seq)
-    i >= 0 && rep_is_one(seq.items[i].rep) &&
-        prim_is_ref(seq.items[i].prim) && build_is_none(seq.build)
-}
+fn is_bare_ref(seq: GSeq) -> bool { seq_is_bare_ref(seq) }
 
 /// True for `| @hand(fn)` — a lone One @hand-delegation branch (no build). As the
 /// LAST branch it is the unguarded tail (the delegate owns every unmatched case +
@@ -1009,19 +980,7 @@ fn is_bare_hand(seq: GSeq) -> bool {
 /// would bypass dispatch and diverge from executor.exec_node) — so such a branch is
 /// NOT a leading-hand tail; it must be FIRST-guarded like any other. Only nullable
 /// (Star/Opt) trailing items qualify.
-fn is_leading_hand(seq: GSeq) -> bool {
-    if seq.items.length == 0 || !rep_is_one(seq.items[0].rep) || !prim_is_hand(seq.items[0].prim) {
-        return false
-    }
-    mut i = 1
-    while i < seq.items.length {
-        if rep_is_one(seq.items[i].rep) || rep_is_plus(seq.items[i].rep) {
-            return false
-        }
-        i = i + 1
-    }
-    true
-}
+fn is_leading_hand(seq: GSeq) -> bool { seq_is_leading_hand(seq) }
 
 // ── Sequence statements (a dispatch branch's / general seq's body) ──
 
@@ -2426,38 +2385,8 @@ fn hand_name(prim: GPrim) -> string {
 ///    delegate reports) or another self-validating rule; a leading TERMINAL does not
 ///    (linear sequences emit the first terminal UNGUARDED, assuming the caller's
 ///    dispatch guaranteed it — false for an unguarded fallthrough).
-fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool {
-    if str_in(visited, name) { return false }
-    mut v2: List<string> = []
-    for x in visited { v2.push(x) }
-    v2.push(name)
-    let idx = rule_index_of(g, name)
-    if idx < 0 { return true }
-    match g.rules[idx].body {
-        .Alt(branches) -> {
-            if branches.length == 0 { return false }
-            if branches.length > 1 { return true }
-            if branches[0].items.length == 0 { return false }
-            prim_self_validates(g, branches[0].items[0].prim, v2)
-        }
-    }
-}
+fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool { rule_owns_recovery(g, name, visited) }
 
-fn prim_self_validates(g: Grammar, prim: GPrim, visited: List<string>) -> bool {
-    match prim {
-        .Hand(_) -> true
-        .Ref(nm) -> rule_self_validates(g, nm, visited)
-        .Group(inner) -> match inner {
-            .Alt(brs) -> {
-                if brs.length == 0 { return false }
-                if brs.length > 1 { return true }
-                if brs[0].items.length == 0 { return false }
-                prim_self_validates(g, brs[0].items[0].prim, visited)
-            }
-        }
-        _ -> false
-    }
-}
 
 fn rep_is_one(rep: GRep) -> bool { match rep { .One -> true  _ -> false } }
 fn rep_is_star(rep: GRep) -> bool { match rep { .Star -> true  _ -> false } }

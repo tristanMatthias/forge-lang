@@ -33,6 +33,15 @@ fn errcodes(env: string, source: string) -> string {
 
 fn static_raw(source: string) -> string { errcodes("AVRA_NO_STATIC_FALLBACK=1", source) }
 fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", source) }
+// t-zrn3 — the THIRD path, and the one users actually run. `static_raw` and the TREE
+// oracle below both disable the interpreter re-parse fallback, so between them they
+// measure the EMIT-generated parser and nothing else. The DEFAULT path is static →
+// had_error → re-parse with the INTERPRETER, so on every invalid input it is the
+// EXECUTOR's recovery that ships — and an executor-only divergence was invisible to
+// both oracles. It was real: exec_node FIRST-guarded a single-branch rule where emit
+// runs it unconditionally, so every stray top-level token reported the alternation's
+// generic F0001 instead of the hand parser's F0040, while both oracles stayed green.
+fn default_path(source: string) -> string { errcodes("", source) }
 fn agree(source: string) -> bool {
     let sr = static_raw(source)
     let hand = hand_oracle(source)
@@ -52,6 +61,24 @@ fn agree_error(source: string) -> bool {
     sr != "" && sr == hand_oracle(source)
 }
 
+// Agreement on ALL THREE parser paths at once: emit (fallback off), the DEFAULT
+// production path (fallback on, so the executor answers), and hand. Used for the cases
+// that characterise the executor's own recovery; `agree` stays emit-vs-hand so the
+// existing corpus keeps measuring exactly what it always did.
+fn agree_all(source: string) -> bool {
+    let hand = hand_oracle(source)
+    let sr = static_raw(source)
+    let dflt = default_path(source)
+    if sr != hand || dflt != hand {
+        println("three-path recovery mismatch")
+        println(source)
+        println("emit=" + sr)
+        println("default=" + dflt)
+        println("hand=" + hand)
+    }
+    sr == hand && dflt == hand
+}
+
 spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid corpus)" {
     // ps3t.6.7 slice 5b — the corpus GREW to a broad, category-diverse invalid set
     // (stray tokens, malformed decls of every keyword, control-flow, expressions,
@@ -64,6 +91,22 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
         agree("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
         agree("else\nfn b() -> int { 2 }")
+    }
+    // t-zrn3 — the same stray tokens as the block above, measured on ALL THREE paths.
+    // The block above compares emit against hand and passed throughout the entire period
+    // this was broken, because emit was never the one that was wrong. On the DEFAULT path
+    // every one of these reported F0001 "unexpected token `X`" where the hand parser
+    // reports F0040 "expected expression" — the executor's answer, shipped through the
+    // re-parse fallback. `->` is included as the pure case: a token that starts nothing
+    // at all, so it can only be answered by the tail.
+    then "stray top-level tokens agree on the DEFAULT path too, not just emit-vs-hand" {
+        agree_all("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n->\nfn b() -> int { 2 }") &&
+        agree_all("else\nfn b() -> int { 2 }") &&
+        agree_all("->\nfn b() -> int { 2 }")
     }
     then "malformed function declarations" {
         agree("fn () -> int { 1 }\nfn b() -> int { 2 }") &&
