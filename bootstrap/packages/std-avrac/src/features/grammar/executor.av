@@ -2788,6 +2788,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         // Generic struct: `type Name < tparams > = { field* }` — the type-param
         // list (args[1]) is stored + rendered `<…>`. Shares mk_type_decl_g with emit.
+        "MkTypeDeclAny" if args.length == 6 -> mk_type_decl_any(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), env.get(args[4]), capval_present(env.get(args[4])), capval_tok_list(env.get(args[5])))
         "MkTypeDecl" if args.length == 3 -> mk_type_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))
         "MkEVariant" if args.length == 2 -> mk_evariant(capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         "MkEnumDecl" if args.length == 2 -> mk_enum_decl(st, capval_tok_text(env.get(args[0])), capval_to_var_list(env.get(args[1])))
@@ -3391,6 +3392,51 @@ export fn mk_enum_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, va
 export fn mk_type_param(name: string, bound_cv: CapVal, has_bound: bool) -> CapVal {
     let bound = if has_bound { capval_tok_text(bound_cv) } else { "" }
     CapVal.TParam(TypeParamEntry { name: name, bounds: bound })
+}
+
+/// The WHOLE `type Name < tp > = …` declaration — every form the hand's
+/// `parse_type_declaration` produces, in one core, because the hand itself decides
+/// between them AFTER parsing the right-hand side and a grammar cannot branch on a
+/// parse RESULT.
+///
+/// Four outcomes, in the hand's own order:
+///   `= { field* }`               Stmt.TypeDecl        (fields captured, no alias)
+///   `= A | B`                    Stmt.UnionAliasDecl  (the TypeExpr came back .Union)
+///   `= Base without { f, g }`    Stmt.TypeDecl with a SYNTHETIC field list
+///   `= OtherType`                Stmt.NewtypeDecl     (the nominal wrapper)
+///
+/// The grammar reaches this with the brace form and the alias form as two OPTIONAL
+/// groups rather than two alternation branches: they are FIRST-disjoint after the `=`
+/// (`{` versus IDENT / `fn` / `[`), so exactly one fires, and left-factoring a shared
+/// `"type" name ( "<" tp ">" )? "="` prefix — which the DSL cannot do without a new
+/// CapVal to carry a partial declaration — is avoided entirely.
+///
+/// The `without` / `only` shape is CODEGEN-COUPLED: codegen/setup.av's
+/// `resolve_type_operator` walks exactly `__base`, then `__without` / `__only`, then the
+/// user's field names. The marker is `"__" + op`, never `__op`.
+///
+/// Both alias outcomes carry a `NodeRef.TypeRef` over an INGESTED type, matching the
+/// hand's `alloc_stmt(..., [NodeRef.TypeRef(self.glue_ingest_type(vt))])` — a leaf node
+/// here would drop the walker's only child.
+export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, fields: List<FieldEntry>, alias_cv: CapVal, has_alias: bool, op_cv: CapVal, has_op: bool, opf: List<Token>) -> CapVal {
+    if !has_alias {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, fields)))
+    }
+    let te = capval_to_texpr(st, alias_cv)
+    let vt = type_expr_to_vtype(te)
+    if has_op {
+        // `type X = Base without { a, b }` — the synthetic FieldEntry list codegen reads.
+        mut derived: List<FieldEntry> = []
+        derived.push(FieldEntry { name: "__base", resolved: vt })
+        derived.push(FieldEntry { name: "__" + capval_tok_text(op_cv), resolved: ValueType.Str })
+        for t in opf { derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown }) }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, derived)))
+    }
+    let ty_id = st.store.ingest_type(vt, byte_span_none())
+    match te {
+        .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
+        _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
+    }
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).

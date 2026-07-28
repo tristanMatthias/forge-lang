@@ -11,7 +11,7 @@ use features.grammar.{parse_grammar, Grammar}
 /// The `type` declaration (struct form) and its field rule.
 export fn avra_struct_decl_grammar() -> Grammar {
     let gp = grammar {
-  type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" "{" ( fields:field ","? )* "}" -> MkTypeDecl(tname, tparams, fields)
+  type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" )? ( talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
   field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
     }
     gp.grammar

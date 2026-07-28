@@ -1,0 +1,83 @@
+// WHY: t-47hc slice 10.5 (t-myz7) — the `type` keyword's NON-BRACE right-hand side.
+// 10.4 covered the struct form and pinned these as still hand-only; this closes them.
+//
+// `parse_type_declaration` produces FOUR different nodes, and the choice is not made from
+// tokens alone — after parsing the RHS the hand inspects the resulting TypeExpr:
+//
+//   = { field* }             Stmt.TypeDecl
+//   = A | B                  Stmt.UnionAliasDecl   (the TypeExpr came back .Union)
+//   = Base without { f, g }  Stmt.TypeDecl, SYNTHETIC field list
+//   = OtherType              Stmt.NewtypeDecl
+//
+// A grammar cannot branch on a parse RESULT, so the trifurcation lives in the builder —
+// `mk_type_decl_any` does exactly what the hand does after parsing, which is why it is one
+// core rather than four.
+//
+// THE SHAPE THAT MADE IT POSSIBLE. Two alternation branches would both start
+// `"type" name ( "<" tp ">" )? "="`, so the engines would commit to the first and fail at
+// the `{`. Left-factoring needs the tail to carry name+tparams, which needs a new CapVal.
+// Instead the brace form and the alias form are two OPTIONAL GROUPS in ONE sequence: they
+// are FIRST-disjoint after the `=` (`{` versus IDENT / `fn` / `[`), so exactly one fires
+// and no factoring is needed. `type P = {}` and a bare `type X =` both land on the
+// no-alias path and build the empty TypeDecl the hand builds.
+//
+// The `without` / `only` list is CODEGEN-COUPLED — codegen/setup.av's
+// `resolve_type_operator` walks `__base`, then `__without` / `__only`, then the field
+// names — so it is asserted by its rendered shape, not just by "it parsed".
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error")
+}
+
+spec "t-47hc slice 10.5: every non-brace `type` RHS builds the hand's node" {
+    then "a newtype wrapper is Stmt.NewtypeDecl, not a TypeDecl" {
+        // The node KIND is the point — an equal-but-wrong node would render differently.
+        agrees("type UserId = UUID\n") &&
+            dsl_program("type UserId = UUID\n").contains("newtype")
+    }
+
+    then "a union RHS is Stmt.UnionAliasDecl — decided from the parsed TypeExpr" {
+        agrees("type E = int | string\n") &&
+            dsl_program("type E = int | string\n").contains("union-alias")
+    }
+
+    then "`without` / `only` build the SYNTHETIC field list codegen walks" {
+        // resolve_type_operator reads these names positionally; a reordering or a
+        // renamed marker would be a silent codegen bug, not a parse error.
+        let w = dsl_program("type S = Base without { a, b }\n")
+        agrees("type S = Base without { a, b }\n") &&
+            agrees("type S = Base only { a }\n") &&
+            w.contains("__base:Base") && w.contains("__without:string")
+    }
+}
+
+spec "t-47hc slice 10.5: the brace form is unaffected by the added alias path" {
+    then "fields, generics, and the empty literal all still agree" {
+        // Both groups are optional, so an empty `{}` must still reach the no-alias path
+        // rather than being read as a missing RHS.
+        agrees("type P = { x: int, y: int }\n") &&
+            agrees("type Box<T> = { val: T }\n") &&
+            agrees("type P = {}\n")
+    }
+}
