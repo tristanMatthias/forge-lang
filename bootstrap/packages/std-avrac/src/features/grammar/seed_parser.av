@@ -447,6 +447,9 @@ export fn peek_cond_supported(cond: string) -> bool {
     // (t-47hc.24). See executor.lookahead_ok.
     // `if_let`: `if` immediately followed by `let` — the bind-fresh if-let form,
     // which stays the hand's. See executor.lookahead_ok.
+    // `ident_lbrace`: cur is an IDENT and the next token is `{` — the token twin of
+    // Parser.peek_after_ident_is_lbrace, which distinguishes the `~Name { … }`
+    // constructor-name splice from the greedy `~expr` form. See executor.lookahead_ok.
     cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace"
 }
 
@@ -1217,7 +1220,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

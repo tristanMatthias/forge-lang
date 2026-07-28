@@ -108,7 +108,7 @@ direction:
 
 ## 4. Per-slice gate list — MANDATORY, in order
 
-```
+```shell
 make build-quick
 bash scripts/diagnose.sh --emit-regen-{expr,stmt,decl,pat,type}   # and READ the diff
 bash scripts/diagnose.sh --emit-gen-check                          # GENPASS, ~13 min
