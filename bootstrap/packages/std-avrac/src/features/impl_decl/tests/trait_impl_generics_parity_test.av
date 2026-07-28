@@ -1,0 +1,90 @@
+// WHY: t-47hc slice 10.7 (t-myz7) — `trait` and `impl` accept generics.
+//
+// These two differ from enum / type / fn: their nodes have NOWHERE to put type params.
+// `Stmt.TraitDecl(name, members)` and the impl's `"Trait:Type"` encoding carry no
+// type-param list, and the hand does not build one — `parse_impl_declaration` calls
+// `skip_angle_brackets()` at three positions (after `impl`, after the target name, after
+// the `for` type) and throws the tokens away. So the grammar CONSUMES them unlabelled and
+// builds the same node, rather than capturing into a builder that has no field for them.
+//
+// A MEASURED NARROWING, pinned rather than hidden. `skip_angle_brackets` is a balanced
+// token skip — it tolerates anything between the angles. The DSL has no negated-terminal
+// class, so it cannot express "any token that is not `>`"; the rules use `tparam` for the
+// parameter positions and `type_expr` for the argument positions, which is precise and
+// handles nesting but is strictly narrower:
+//
+//     impl Foo<+> { … }    hand ACCEPTS (blind skip)    DSL REJECTS
+//     trait T<+> { … }     hand ACCEPTS (blind skip)    DSL REJECTS
+//
+// No valid program contains those, so this does not block routing — but it is a real
+// divergence and belongs on the record, the same way `type X =` was pinned in
+// diagnostic_equivalence_test until slice 10.5 closed it. If it ever needs closing, the
+// capability is a negated terminal class, not a change to these rules.
+//
+// `impl` with a GENERIC METHOD inside (`impl P { fn g<T>(x: T) … }`) fails in BOTH
+// engines. Not a gap — `impl_method` has no type params in the hand either.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error")
+}
+
+spec "t-47hc slice 10.7: `trait` accepts type params and builds the same node" {
+    then "a generic and a bounded trait agree with the hand" {
+        agrees("trait Conv<T> {\n    fn conv() -> T\n}\n") &&
+            agrees("trait C<T: Show> {\n    fn c() -> T\n}\n")
+    }
+
+    then "the non-generic trait, its assoc types and default methods are untouched" {
+        agrees("trait Show {\n    fn show() -> string\n}\n") &&
+            agrees("trait It {\n    type Item\n    fn next() -> int\n}\n") &&
+            agrees("trait D {\n    fn d() -> int {\n        return 1\n    }\n}\n")
+    }
+}
+
+spec "t-47hc slice 10.7: `impl` accepts type params AND type arguments" {
+    then "params on the impl, args on the target, and args after `for` all agree" {
+        // Three separate angle-bracket positions, which is why the hand skips three times.
+        agrees("impl<T> Show for Box<T> {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
+            agrees("impl Pair<int, string> {\n    fn m() -> int {\n        return 1\n    }\n}\n")
+    }
+
+    then "NESTED type arguments parse — the reason these use type_expr, not a flat IDENT" {
+        // `Box<List<T>>` is what rules out matching a single IDENT inside the angles.
+        agrees("impl<T> Show for Box<List<T>> {\n    fn show() -> string {\n        return x\n    }\n}\n")
+    }
+
+    then "the non-generic forms are untouched" {
+        agrees("impl Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
+            agrees("impl Point {\n    fn m() -> int {\n        return 1\n    }\n}\n")
+    }
+}
+
+spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
+    then "token soup between angles: the hand tolerates it, the DSL does not" {
+        // Measured, not assumed. Asserted so that if a future capability closes it, this
+        // fails loudly and gets converted to parity — exactly how `type X =` was handled.
+        dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error") &&
+            !hand_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+    }
+}
