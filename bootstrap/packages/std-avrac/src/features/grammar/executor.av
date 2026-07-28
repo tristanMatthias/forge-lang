@@ -1527,6 +1527,16 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
         // the shared CapEnv, so an abort inside a nested group stops this sequence too
         // — the executor twin of the generated parser's early `return`.
         if env.abort { return CapVal.Node(st.error_node_silent()) }
+        // A zero-width predicate (`@when` mode read / `@peek` lookahead) is NOT the base:
+        // it consumes nothing and captures nothing, so skip it when locating item 0 —
+        // exactly as the emit twin does with its `continue` BEFORE `idx` increments (so
+        // there the first token-bearing item is idx 0). Without this the two sides drift
+        // apart the moment a `fold_postfix_with` branch LEADS with a guard: the executor
+        // would seed the base from the guard's Nil capture, `capval_to_expr` would yield
+        // an error node, and every postfix chain folded over it renders `(. <error> b)`
+        // while the generated parser gets it right. `sp_start` needs no adjustment —
+        // predicates consume no tokens, so the base's start byte is unchanged.
+        if prim_is_pred(item.prim) { continue }
         // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
         // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
         if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
