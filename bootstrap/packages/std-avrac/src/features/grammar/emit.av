@@ -2295,6 +2295,12 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // `match_expr` — the same crossing match_arm makes, so it needs a declared FIRST.
         if name == "match_table_expr" { return "(st.cur().text == \"match\")" }
         if name == "pattern" { return "tok_starts_pattern(st.cur())" }
+        // t-47hc slice 10.13 — routing `fn` / `extern` / `trait` / `impl` makes their
+        // parameter lists reachable from the declaration view, and `param` is defined in
+        // the EXPRESSION view (it is paren_expr's typed-lambda parameter, shared rather
+        // than duplicated). Same crossing as `expression` and `type_expr` above. Its FIRST
+        // is a bare IDENT: `param = pname:IDENT ( ":" pt:type_expr )?`.
+        if name == "param" { return "st.cur().tk == Tk.Identifier" }
         // Any OTHER external rule has no declared FIRST, and falling back to `false`
         // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
         // `( r )?` is never taken, and the generated parser DROPS the whole construct
@@ -2589,6 +2595,15 @@ fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
         // (channel_expr) never noticed, for the same reason the scalar `p:pattern_or`
         // did not: its builder coerces at the use-site, via capval_to_texpr.
         if name == "type_expr" { return "type" }
+        // The PARAMETER, external in the declaration view (t-47hc slice 10.13 — routing
+        // `fn` / `extern` / `trait` / `impl`). `param` is defined in the EXPRESSION view
+        // (paren_expr's typed lambda) and shared rather than duplicated, so the four
+        // parameter lists cross the boundary. Without this the accumulator declares
+        // `List<ExprId>` and coerces each entry through `capval_to_expr`, which the
+        // builders reject as a layout conflict — the same trap as `tparam` above, one
+        // rule over. Declared BESIDE its FIRST in rule_first_guard; a cross-view
+        // reference always needs both.
+        if name == "param" { return "pentry" }
         return "expr"
     }
     mut v2: List<string> = []
