@@ -881,6 +881,82 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     true
 }
 
+/// True for the `@when` predicates that read the POSTFIX BASE rather than a parse MODE.
+/// Kept as its own list so `pred_ok` can route them, and so `modes_flag` stays a pure
+/// function of `ExprModes` (a base read needs the whole PState).
+export fn is_base_pred(flag: string) -> bool {
+    flag == "base_callable" || flag == "base_upper_ident"
+}
+
+/// Read a predicate off the accumulated POSTFIX BASE (`st.postfix_base`) — the base the
+/// `( postfix_suffix )*` loop is folding onto. Two of `postfix_step`'s eight entry-guard
+/// branches ask about the base rather than the token stream, and neither is expressible
+/// as a mode flag:
+///   `base_callable`    — the generic-call branch's `is_callable(result)`: only an Ident,
+///                        a QualifiedIdent, or a field access can take `<T>` type args, so
+///                        `a < b` stays a comparison.
+///   `base_upper_ident` — the `.Variant` half of `dot_is_postfix`: inside a match arm
+///                        (`allow_dot_postfix` off) a `.Upper` continuation is a postfix
+///                        only when the base is ITSELF an uppercase ident (an enum-type
+///                        prefix like `Foo.Bar`); otherwise it is the NEXT arm's pattern.
+///
+/// Reads the store directly rather than importing the hand parser's `is_callable` /
+/// `expr_is_upper_ident`: `parse_grammar` is reachable from comptime macro expansion, and
+/// a cross-module non-`@comptime` callee there resolves to a type_marker (F4005). The
+/// duplication is deliberate — see the note on seed_parser's `name_in`.
+///
+/// SHARED by both engines: emit.pred_guard emits a call to THIS function, exactly as the
+/// `@peek` guard emits `lookahead_ok(...)`, so interpreter and generated parser cannot
+/// disagree on a predicate's meaning.
+export fn base_pred(flag: string, st: PState) -> bool {
+    let e = st.store.exprs.get(st.postfix_base)
+    if flag == "base_callable" {
+        return match e {
+            .Ident(_) -> true
+            .QualifiedIdent(_) -> true
+            .FieldAccess(_, _) -> true
+            _ -> false
+        }
+    }
+    if flag == "base_upper_ident" {
+        return match e {
+            .Ident(n) -> grammar_starts_upper(n)
+            // The LAST path segment: a qualified type reference (`@std::…::Result`)
+            // begins with `@`, so testing the whole string reads every qualified name as
+            // lowercase — which stopped the chain at the type and leaked `.Err(c)` into
+            // the next match arm. Mirrors the hand's expr_is_upper_ident.
+            .QualifiedIdent(n) -> grammar_starts_upper(grammar_last_segment(n))
+            _ -> false
+        }
+    }
+    false
+}
+
+/// A `@when` predicate against the live PState — mode flags and base reads under one
+/// entry point, so `branch_pred_ok` has a single call and neither kind can be forgotten.
+export fn pred_ok(flag: string, st: PState) -> bool {
+    if is_base_pred(flag) { return base_pred(flag, st) }
+    modes_flag(st.modes, flag)
+}
+
+/// Uppercase-ASCII-initial test — Avra's type/variant naming convention.
+fn grammar_starts_upper(name: string) -> bool {
+    if name.length < 1 { return false }
+    let c = code_at(name, 0)
+    c >= 65 && c <= 90
+}
+
+/// The final `::` segment of a qualified path (the whole string when unqualified).
+fn grammar_last_segment(path: string) -> string {
+    mut start = 0
+    mut i = 0
+    while i + 1 < path.length {
+        if code_at(path, i) == 58 && code_at(path, i + 1) == 58 { start = i + 2 }
+        i = i + 1
+    }
+    path.substring(start, path.length)
+}
+
 /// Evaluate a `@peek(cond)` LOOKAHEAD predicate against the live token stream — the
 /// token-stream twin of modes_flag. Shared by the executor (branch_pred_ok) AND, via
 /// emit.peek_guard emitting the SAME `lookahead_ok(...)` call, the generated parser, so
@@ -1069,7 +1145,7 @@ export fn modes_with_flag_on(modes: ExprModes, flag: string) -> ExprModes {
 fn branch_pred_ok(seq: GSeq, st: PState) -> bool {
     for item in seq.items {
         match item.prim {
-            .Pred(flag) -> { if !modes_flag(st.modes, flag) { return false } }
+            .Pred(flag) -> { if !pred_ok(flag, st) { return false } }
             // `@peek(cond)` gates on an upcoming-token test rather than a mode — the
             // token-stream sibling; emit folds the equivalent guard (peek_guard).
             .Peek(cond) -> { if !lookahead_ok(cond, st) { return false } }

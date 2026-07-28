@@ -123,3 +123,38 @@ spec "t-47hc: @peek(ident_lbrace) lookahead" {
         run_grammar_expr(gp.grammar, "x +").had_error
     }
 }
+
+// t-47hc.30 — `@when` predicates over the POSTFIX BASE. Two of `postfix_step`'s eight
+// entry-guard branches ask about the base being folded onto rather than about a token or
+// a mode, so `@when` (which resolved against `ExprModes` only) could not express them:
+//   base_callable    — the generic-call branch's `is_callable(result)`, so `a < b` stays
+//                      a comparison and only Ident/QualifiedIdent/FieldAccess take `<T>`
+//   base_upper_ident — the `.Variant` half of `dot_is_postfix`
+// Landed DORMANT; the postfix_suffix flip spends them.
+//
+// The emit side is a CALL to the shared executor.base_pred (the @peek pattern) rather
+// than a field test, so the two engines share one definition. Asserted on the emitted
+// source, since a divergence here is exactly what shipped three times in #1032.
+
+spec "t-47hc.30: postfix-BASE predicates" {
+    then "both are accepted as @when predicates" {
+        !rejects("r = @when(base_callable) NUMBER") &&
+            !rejects("r = @when(base_upper_ident) NUMBER")
+    }
+    then "the emitted guard CALLS the shared executor fn, not a mode field" {
+        // A `st.modes.base_callable != 0` fallthrough would compile against a field that
+        // does not exist; the call form is what keeps both engines on one definition.
+        emitted("base_callable").contains("base_pred(\"base_callable\", st)") &&
+            !emitted("base_callable").contains("st.modes.base_callable")
+    }
+    then "base_upper_ident emits the same call shape" {
+        emitted("base_upper_ident").contains("base_pred(\"base_upper_ident\", st)")
+    }
+    then "a base predicate is READ-only — @off/@on still reject it" {
+        // Same asymmetry as at_quote_top/in_quote_body: readable, not settable.
+        rejects("r = @off(base_callable) NUMBER") && rejects("r = @on(base_callable) NUMBER")
+    }
+    then "the @when diagnostic lists the base predicates" {
+        err_of("r = @when(base_callble) NUMBER").contains("base_callable")
+    }
+}

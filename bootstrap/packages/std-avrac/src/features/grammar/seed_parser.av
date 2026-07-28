@@ -485,7 +485,8 @@ export fn off_flag_supported(flag: string) -> bool {
 export fn when_pred_supported(flag: string) -> bool {
     flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
         flag == "allow_it_sugar" || flag == "cell_mode" ||
-        flag == "at_quote_top" || flag == "in_quote_body"
+        flag == "at_quote_top" || flag == "in_quote_body" ||
+        flag == "base_callable" || flag == "base_upper_ident"
 }
 
 /// The parse-MODE flags a `@on(flag)` marker (GItem.mode_on) may turn ON — the
@@ -1201,7 +1202,7 @@ fn parse_primary(p: GP) -> GPrim {
             if when_pred_supported(fl) {
                 flag = fl
             } else {
-                p.fail("unknown `@when` predicate `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode / at_quote_top / in_quote_body)")
+                p.fail("unknown `@when` predicate `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode / at_quote_top / in_quote_body / base_callable / base_upper_ident)")
             }
         }
         else { p.fail("expected a flag name in `@when(flag)`") }

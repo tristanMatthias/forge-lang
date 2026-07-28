@@ -36,7 +36,7 @@
 // a build added there is added HERE, in lockstep (rule 8: one seam, not a
 // forest of special cases).
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
 //
@@ -1927,6 +1927,10 @@ fn pred_guard(flag: string) -> string {
     // The complement — see executor.modes_flag's in_quote_body case. Gates the splice
     // reading of `~`, which is what the `primary_base` leaf still owns.
     if flag == "in_quote_body" { return "st.modes.quote_depth > 0" }
+    // A POSTFIX-BASE predicate is not a mode field at all — emit a call to the SAME
+    // executor.base_pred the interpreter uses, exactly as peek_guard does for @peek, so
+    // the two engines share one definition instead of two spellings of it.
+    if is_base_pred(flag) { return "base_pred(\"${flag}\", st)" }
     "st.modes.${flag} != 0"
 }
 
