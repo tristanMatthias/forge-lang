@@ -19,13 +19,22 @@
 // Asserted with the fixture + `bs2 check` shell-out (the compile-error test pattern used
 // by qualified_ctor_arm_test), because what is under test is the PARSE, not the value.
 
-use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
+// The exit STATUS is part of the assertion, not just the text (caught in review on
+// #1039): swallowing it with `|| true` would let a positive fixture "pass" on any
+// diagnostic that merely fails to match the few substrings it greps for. `bs2 check`'s
+// output goes to a log so one run yields both; the status is prepended as a sentinel
+// line, which `clean` reads.
 fn check_out(name: string, src: string) -> string {
     let fixture = "build/_match_table_${name}.av"
+    let log = "build/_match_table_${name}.log"
     let _ = avra_selfhost_write_file(fixture, src)
-    avra_shell_exec("./build/bs2 check ${fixture} 2>&1 || true")
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
 }
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
 
 // 3 header columns => pattern column + 2 value columns, so each row supplies 2 cells.
 fn wide_out() -> string {
@@ -56,7 +65,8 @@ fn neg_out() -> string {
 spec "t-47hc.29: the match TABLE parses natively" {
     then "a row matching the header's declared width parses — no parse diagnostics" {
         let out = wide_out()
-        !out.contains("expected expression") &&
+        clean(out) &&
+            !out.contains("expected expression") &&
             !out.contains("unexpected `}`") &&
             !out.contains("expected `}` after match table")
     }
@@ -64,7 +74,8 @@ spec "t-47hc.29: the match TABLE parses natively" {
 
 spec "t-47hc.29: a table CELL is parse_primary, not primary_base" {
     then "a negative-literal cell stays a PARSE error — cells admit no prefix operators" {
-        neg_out().contains("expected expression")
+        let out = neg_out()
+        !clean(out) && out.contains("error[F0040]") && out.contains("expected expression")
     }
 }
 
@@ -104,14 +115,16 @@ fn null_cell_out() -> string {
 
 spec "t-47hc.29: `null` and `none` survive as table CELLS" {
     then "both spellings parse — the literal alternation keeps its token" {
-        !null_cell_out().contains("expected an expression")
+        let out = null_cell_out()
+        clean(out) && !out.contains("expected an expression")
     }
 }
 
 spec "t-47hc.29 slice 12: the match TABLE in EXPRESSION position parses natively" {
     then "a table used as a value parses — no parse diagnostics" {
         let out = expr_form_out()
-        !out.contains("expected expression") &&
+        clean(out) &&
+            !out.contains("expected expression") &&
             !out.contains("unexpected `}`") &&
             !out.contains("expected `}` after match table")
     }
