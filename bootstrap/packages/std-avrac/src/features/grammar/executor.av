@@ -959,7 +959,7 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let chain_rule = rule_seeds_postfix(g, r)
     let c_step_base = st.postfix_step_base
     let c_step_sp = st.postfix_step_sp
-    let v = exec_node(g, r.body, st, env, false, [])
+    let v = exec_node_at(g, r.body, st, env, false, [], true)
     if chain_rule { st.restore_postfix_chain(c_step_base, c_step_sp) }
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
@@ -1456,7 +1456,22 @@ fn exec_annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
     outer
 }
 
+/// A GROUP's alternation — never a rule body, so the no-match tail behaviours below stay
+/// off (see exec_node_at's `rule_body`).
 fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>) -> CapVal {
+    exec_node_at(g, node, st, env, multi, outer_annots, false)
+}
+
+/// `rule_body` is true ONLY when this alternation IS a rule's body (exec_rule), false for
+/// a GROUP inlined inside a sequence (exec_primary's `.Group`). The two no-match fallbacks
+/// below — the unguarded TAIL and the single-branch run — are RULE-level behaviours that
+/// mirror how emit lowers a rule (emit_single_branch / emit_dispatch). A GROUP is not
+/// lowered that way and has its own pinned semantics: a mandatory One group whose FIRST
+/// fails is NOT entered, it reports the alternation's no-branch error and the enclosing
+/// sequence carries on. `require_abort_test`'s "a @require on a group's LEAD item is
+/// unreachable when the group's FIRST fails" pins exactly that, and running a group's lone
+/// branch unconditionally would turn its two reports into one abort.
+fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, outer_annots: List<GAnnot>, rule_body: bool) -> CapVal {
     match node {
         .Alt(branches) -> {
             let empty: List<string> = []
@@ -1545,7 +1560,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
             //
             // Only a PLAIN branch qualifies: a `@try` needs its rollback scaffold above,
             // and a `@peek`/`@when` gate is a real precondition, not a dispatch guard.
-            if branches.length == 1 && !branches[0].speculative && branch_pred_ok(branches[0], st) {
+            if rule_body && branches.length == 1 && !branches[0].speculative && branch_pred_ok(branches[0], st) {
                 return exec_seq(g, branches[0], st, env, multi, outer_annots)
             }
             // …and the OTHER two tail forms, which `@fallback` above is one third of
@@ -1559,7 +1574,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
             // (`then` / `)` / `,` / `* 5` all reported F0001 where the hand parser and the
             // generated parser both reported F0040). `dispatch_has_tail` is the SHARED
             // predicate both engines read, so the two cannot drift again.
-            if dispatch_has_tail(g, branches) {
+            if rule_body && dispatch_has_tail(g, branches) {
                 return exec_seq(g, branches[branches.length - 1], st, env, multi, outer_annots)
             }
             // A rolled-back speculative attempt is a clean "no match" (diags/had_error
@@ -2729,7 +2744,21 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // NEXT line (the hand parser's `current_line != prev_line` guard) — is a
         // lexer-mode disambiguation for the gnarly-5% catalogue (ps3t.6.5.10).
         "MkReturn" if args.length == 1 -> mk_return_opt(st, env.get(args[0]))
-        "ExprStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0])))))
+        // A statement-position expression that FAILED recovers as a bare `Stmt.Error`,
+        // the twin of the hand parser's `parse_expression()?` yielding `.Err` — the
+        // enclosing list-parser then synchronises identically. Without it a failed
+        // expression is wrapped as `Stmt.Expr(Expr.Error)`, so a stray top-level token
+        // renders `(expr (error))` where the hand renders `<err>`.
+        //
+        // emit's apply_build twin has carried this check since the 5c recovery-tree work;
+        // the executor never needed it because `exec_node` FIRST-guarded its way out
+        // before ever reaching `expr_stmt` on a stray token. Giving the executor the
+        // unguarded tail (t-zrn3) makes that path reachable, which is what exposed the
+        // third instance of the same emit/executor asymmetry.
+        "ExprStmt" if args.length == 1 -> {
+            if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) }
+            else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0]))))) }
+        }
         // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) — each arm
         //    delegates to the SHARED constructor core (mk_block / mk_while /
         //    mk_if / mk_for_loop), so apply_build and the generated static
