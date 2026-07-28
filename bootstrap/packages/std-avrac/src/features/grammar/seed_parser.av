@@ -484,7 +484,13 @@ export fn peek_cond_supported(cond: string) -> bool {
     // registered `kw { … }` construct — i.e. the ident+`{` that really is a struct
     // literal, which a native struct-lit branch must gate on so it does not capture
     // `table { … }` or `grammar { … }` (t-47hc slice 8).
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "qdot_plain_field" || cond == "dot_plain_field"
+    // `dot_number`: cur is `.` and the next token is a NUMBER — the tuple-index reading
+    // `t.0`, kept apart from the `.field` branch that shares its FIRST token. See
+    // executor.lookahead_ok.
+    // `comma_not_rparen`: a `,` followed by another argument rather than the closing
+    // `)` — the trailing-comma guard for an argument list (DORMANT; landed with the
+    // call-form builders, spent when `f(args)` goes native).
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "qdot_plain_field" || cond == "dot_plain_field" || cond == "dot_number" || cond == "comma_not_rparen"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -520,7 +526,8 @@ export fn when_pred_supported(flag: string) -> bool {
     flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
         flag == "allow_it_sugar" || flag == "cell_mode" ||
         flag == "at_quote_top" || flag == "in_quote_body" ||
-        flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok"
+        flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok" ||
+        flag == "base_field_access"
 }
 
 /// The parse-MODE flags a `@on(flag)` marker (GItem.mode_on) may turn ON — the
@@ -1358,7 +1365,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, ident_lbrace_plain)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, ident_lbrace_plain, qdot_plain_field, dot_plain_field, dot_number, comma_not_rparen)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")
