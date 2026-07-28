@@ -1,0 +1,19 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry (see features/fn_decl/grammar.av for the full rationale).
+// The `impl` feature owns its declaration rule (both the inherent `impl T { … }`
+// and the trait form `impl Trait for T { … }`, distinguished by the optional
+// `for` segment) and its method rule.
+//
+// `impl_method` is separate from the trait's `method_member` because an impl
+// method's body is REQUIRED where a trait method's is optional — the two cannot
+// share one rule without making the body optional everywhere.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `impl` declaration and its method rule.
+export fn avra_impl_decl_grammar() -> Grammar {
+    let gp = grammar {
+  impl_decl   = "impl" itn:IDENT ( "for" ifortn:IDENT )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
+  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
+    }
+    gp.grammar
+}

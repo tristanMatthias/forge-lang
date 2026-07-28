@@ -1,0 +1,18 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry (see features/fn_decl/grammar.av for the full rationale).
+// The `type` feature owns its declaration rule and the `field` rule here.
+//
+// `field` lives with `type` rather than in the shared base because the struct
+// declaration is its primary definition site; `enum_decl`'s `variant` also
+// references it, which composes fine — cross-fragment nonterminal references
+// bind by name against the merged rule set.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `type` declaration (struct form) and its field rule.
+export fn avra_struct_decl_grammar() -> Grammar {
+    let gp = grammar {
+  type_decl   = "type" tname:IDENT "=" "{" ( fields:field ","? )* "}" -> MkTypeDecl(tname, fields)
+  field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
+    }
+    gp.grammar
+}
