@@ -440,6 +440,23 @@ spec "t-47hc.16: grammar-native paren_expr recovers == hand oracle" {
         agree_error("fn f() -> int {\n let id = (x: ) -> x\n return 0\n}") &&
         agree_error("fn f() -> int {\n let id = (x: int) ->\n return 0\n}")
     }
+    // t-oejs — NON-IDENT bases, deliberately. The ident and literal primaries take
+    // DIFFERENT paths into `paren_expr`, and an ident-only corpus let a real divergence
+    // hide: `(x) ->` agreed only because both sides were wrong the same way, while
+    // `(1) ->` (a native token base) diverged unnoticed. Every malformed paren form is
+    // now probed with a literal base as well as an ident one.
+    then "a missing lambda body keeps the binding rather than erasing it" {
+        agree_tree("let a = (1) ->") &&
+        agree_tree("let a = (x) ->") &&
+        agree_tree("let a = (1, 2) ->") &&
+        // The committed forms must be UNAFFECTED — a valid lambda still wins over the
+        // grouping fallback at every arity, typed and untyped.
+        agree_tree("let f = (x) -> x + 1") &&
+        agree_tree("let g = (a, b) -> a") &&
+        agree_tree("let h = (x: int) -> x") &&
+        agree_tree("let e = () -> 1") &&
+        agree_tree("let t = (1, 2)")
+    }
     then "every malformed paren form recovers to the identical tree" {
         agree_tree("fn f() -> int {\n let a = (1 + 2\n return a\n}") &&
         agree_tree("fn f() -> int {\n let pair = (1, 2\n return 0\n}") &&

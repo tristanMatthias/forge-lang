@@ -2415,6 +2415,37 @@ impl Parser {
     // with typed-lambda param detection (peek_after_ident_is_colon) and
     // allow_dot_postfix toggling — all internal to this hand method, so the
     // grammar only routes the `(` and needs no new mode/speculation primitive.
+    /// Speculatively consume `->` and parse a lambda BODY, returning null (with the
+    /// parser and its diagnostic bag restored) when the body is missing or malformed.
+    ///
+    /// Seeing `->` after `( … )` is NOT enough to commit to a lambda. The hand parser
+    /// used to consume it and propagate a body failure with `?`, which discarded the
+    /// whole parenthesised expression — and with it whatever the caller was building, so
+    /// `let a = (1) ->` collapsed to a bare error statement instead of `let a = (1)` plus
+    /// a separate report for the stray `->`. Rolling back lets each arity fall through to
+    /// its non-lambda reading (grouping / tuple), which is exactly what the grammar's
+    /// `@try` lambda alternatives in `paren_expr` do. Restoring the bag is what keeps the
+    /// abandoned attempt from adding a second diagnostic on top of the caller's (t-oejs).
+    fn try_lambda_body(self) -> ExprId? {
+        let s_state = self.save_state()
+        mut s_diags: List<Diagnostic> = []
+        for dg in self.bag.diagnostics { s_diags.push(dg) }
+        let s_bag = DiagnosticBag {
+            diagnostics: s_diags,
+            error_count: self.bag.error_count,
+            warning_count: self.bag.warning_count,
+        }
+        self.advance()
+        match self.parse_lambda_body() {
+            .Ok(body) -> body
+            .Err(_) -> {
+                self.restore_state(s_state)
+                self.bag = s_bag
+                null
+            }
+        }
+    }
+
     fn parse_paren_expr(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
         self.advance()
@@ -2426,10 +2457,11 @@ impl Parser {
             self.advance()
             // () -> expr  is a zero-arg lambda
             if self.check(Tk.Arrow) {
-                self.advance()
-                let body = self.parse_lambda_body()?
-                let empty_ps: List<ParamEntry> = []
-                return .Ok(self.alloc_at(Expr.Lambda(empty_ps, body), sp_start))
+                let body = self.try_lambda_body()
+                if body != null {
+                    let empty_ps: List<ParamEntry> = []
+                    return .Ok(self.alloc_at(Expr.Lambda(empty_ps, body!), sp_start))
+                }
             }
             let empty: List<ExprId> = []
             return .Ok(self.alloc_at(Expr.Tuple(empty), sp_start))
@@ -2461,12 +2493,13 @@ impl Parser {
             // (a, b) -> expr  is a lambda — the param exprs are consumed
             // as names (scalar ParamEntry data); their parsed rows orphan.
             if self.check(Tk.Arrow) {
-                self.advance()
-                mut combined_ids: List<ExprId> = [expr]
-                for tid in rest.ids { combined_ids.push(tid) }
-                let params = exprs_to_params(self.store, combined_ids)
-                let body = self.parse_lambda_body()?
-                return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
+                let body = self.try_lambda_body()
+                if body != null {
+                    mut combined_ids: List<ExprId> = [expr]
+                    for tid in rest.ids { combined_ids.push(tid) }
+                    let params = exprs_to_params(self.store, combined_ids)
+                    return .Ok(self.alloc_at(Expr.Lambda(params, body!), sp_start))
+                }
             }
             mut tuple_ids: List<ExprId> = [expr]
             for tid in rest.ids { tuple_ids.push(tid) }
@@ -2475,13 +2508,25 @@ impl Parser {
         if !self.consume(Tk.RightParen, "expected `)` after expression") {
             return .Err("parse error")
         }
-        // (x) -> expr  is a single-param lambda
+        // (x) -> expr  is a single-param lambda — SPECULATIVELY. Seeing `->` is not
+        // enough to commit: if the body is missing or malformed, this was never a
+        // lambda, and propagating that failure with `?` discards the whole
+        // parenthesised expression (and with it the binding the caller was building —
+        // `let a = (1) ->` became a bare error statement instead of `let a = (1)` plus
+        // a separate report for the stray `->`). Roll back to the GROUPING instead,
+        // leaving `->` unconsumed for the caller to report, which is exactly what the
+        // grammar's `@try` lambda alternative in `paren_expr` does for this input.
+        // Restoring the diagnostic bag is what keeps it to ONE report rather than the
+        // abandoned attempt's plus the caller's (t-oejs).
         if self.check(Tk.Arrow) {
-            self.advance()
-            let one: List<ExprId> = [expr]
-            let params = exprs_to_params(self.store, one)
-            let body = self.parse_lambda_body()?
-            return .Ok(self.alloc_at(Expr.Lambda(params, body), sp_start))
+            let body = self.try_lambda_body()
+            if body != null {
+                // Params are built only on the committed path: `exprs_to_params`
+                // allocates, so doing it before the body would orphan rows on rollback.
+                let one: List<ExprId> = [expr]
+                let params = exprs_to_params(self.store, one)
+                return .Ok(self.alloc_at(Expr.Lambda(params, body!), sp_start))
+            }
         }
         .Ok(self.alloc_at(Expr.Grouping(expr), sp_start))
     }
