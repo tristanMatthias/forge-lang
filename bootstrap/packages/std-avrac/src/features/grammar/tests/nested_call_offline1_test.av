@@ -1,0 +1,69 @@
+// WHY: the hand delegate must arrive at a leaf with its LINE state intact, not just its
+// position. `run_hand_expr` walks the delegate forward to the leaf's byte; that walk used
+// `advance_token()`, which moves the cursor but does NOT maintain `prev_line` (`advance()`
+// is literally `prev_line = current_line; advance_token()`). The hand's postfix entry
+// guard is newline-sensitive — `(` / `[` on a NEW line begins a new statement instead of
+// continuing a chain — so a delegate walked with the wrong helper holds a stale
+// `prev_line` and REFUSES a suffix that is genuinely on the same line.
+//
+// Harmless until the IDENT base went native (t-f9tn): the hand used to consume the callee
+// itself via `advance()`, setting `prev_line` on the way past. Once the grammar consumes
+// it off the shared token stream, the delegate is only walked as far as the `(`, so the
+// line state has to be maintained during that walk.
+//
+// THE TRAP THIS TEST EXISTS FOR: the failure is invisible on line 1, because a stale
+// `prev_line` still compares EQUAL to a real line-1 token. Every expression-level test in
+// this suite parses one string at a time, so its subject is always at token 0 on line 1 —
+// `parser_equivalence_test` structurally cannot reach this. Only a WHOLE FILE with the
+// expression somewhere other than the first line does. A blank first line is enough; so is
+// a comment, or any preceding item.
+//
+// Observed before the fix (`\nprintln(string(1))`):
+//   TRACE postfix_step tok=( cur_line=2 prev_line=1   → guard false → `(` refused
+//   error[F0001]: expected `)`
+// The inner call lost its own `(...)`, so the OUTER call-suffix met `(` where it wanted
+// `)`. It surfaced far from the cause, as `out1=parsefail` inside a CGU cache spec.
+
+use @std.avrac.parse.{parser_new}
+
+/// True when the whole FILE parses with no diagnostics.
+fn parses(src: string) -> bool {
+    mut p = parser_new(src)
+    let r = p.parse_file_program()
+    if r.ids == null { return false }
+    p.bag.diagnostics.length == 0
+}
+
+spec "a nested call parses wherever it sits in the file, not only on line 1" {
+    given "the call is the first thing in the file (the case every other test covers)" {
+        then "nested call on line 1 parses" {
+            parses("println(string(1))\n")
+        }
+    }
+    given "anything at all shifts the call off line 1" {
+        // Each of these moves the expression to line 2+ by a DIFFERENT means, so a fix
+        // that only handles one of them (e.g. only a preceding statement) still fails here.
+        then "a blank first line" {
+            parses("\nprintln(string(1))\n")
+        }
+        then "a leading comment" {
+            parses("// c\nprintln(string(1))\n")
+        }
+        then "a preceding statement" {
+            parses("println(string(1))\nprintln(string(2))\n")
+        }
+        then "a preceding declaration" {
+            parses("fn f(a: int) -> int { a }\nf(f(1))\n")
+        }
+        then "deeper nesting still folds" {
+            parses("fn f(a: int) -> int { a }\nf(f(f(1)))\n")
+        }
+    }
+    given "the shape that actually broke the build" {
+        then "the per-fn CGU no-main program parses" {
+            // Verbatim from codegen/tests/per_fn_cgu_run_test.av — top-level code with no
+            // `main`, which reached the suite as `out1=parsefail` rather than a parse error.
+            parses("fn add(a: int, b: int) -> int { a + b }\nfn twice(x: int) -> int { add(x, x) }\nprintln(string(twice(20) + 2))\n")
+        }
+    }
+}
