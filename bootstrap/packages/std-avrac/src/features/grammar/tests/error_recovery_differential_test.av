@@ -122,6 +122,23 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("mod 5\nfn f() -> int { 1 }") &&
         agree("mod {\nfn f() -> int { 1 }")
     }
+    // `enum` joins the routed set (t-47hc slice 10.11). It is the first routed keyword
+    // with real INTERNAL structure — a type-param list, a variant list, and payload
+    // fields — so the forms that can go wrong are not just "the name is missing": a
+    // half-closed generic list, a variant with an empty payload field, a non-IDENT where
+    // a variant belongs. Two malformed enums were already in the blocks above; these
+    // widen the coverage to the shapes routing actually reaches, BEFORE trusting it.
+    then "malformed enum declarations (the routed keyword)" {
+        agree("enum { A, B }\nfn f() -> int { 1 }") &&
+        agree("enum E\nfn f() -> int { 1 }") &&
+        agree("enum E {\nfn f() -> int { 1 }") &&
+        agree("enum E { A,\nfn f() -> int { 1 }") &&
+        agree("enum E { A(x: ) }\nfn f() -> int { 1 }") &&
+        agree("enum E { A( }\nfn f() -> int { 1 }") &&
+        agree("enum E< { A }\nfn f() -> int { 1 }") &&
+        agree("enum E<T { A }\nfn f() -> int { 1 }") &&
+        agree("enum E { 5 }\nfn f() -> int { 1 }")
+    }
     then "malformed bindings and control-flow statements" {
         agree("fn f() -> int {\n let x = \n return 1\n}") &&
         agree("fn f() -> int {\n let = 5\n return 1\n}") &&
@@ -237,6 +254,20 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_tree("mod\nfn f() -> int { 1 }") &&
         agree_tree("mod 5\nfn f() -> int { 1 }") &&
         agree_tree("mod {\nfn f() -> int { 1 }")
+    }
+    // The TREE half for `enum` — see the F-code block above. A partial enum node (a
+    // nameless declaration, a variant list truncated at the first bad variant) has the
+    // same F-codes as hand's `(error)` and a different tree, so both halves are needed.
+    then "malformed enum recovers to the same tree" {
+        agree_tree("enum { A, B }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E\nfn f() -> int { 1 }") &&
+        agree_tree("enum E {\nfn f() -> int { 1 }") &&
+        agree_tree("enum E { A,\nfn f() -> int { 1 }") &&
+        agree_tree("enum E { A(x: ) }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E { A( }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E< { A }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E<T { A }\nfn f() -> int { 1 }") &&
+        agree_tree("enum E { 5 }\nfn f() -> int { 1 }")
     }
     then "malformed statements + expressions recover to the same tree" {
         agree_tree("fn f() -> int {\n let x = \n return 1\n}") &&
