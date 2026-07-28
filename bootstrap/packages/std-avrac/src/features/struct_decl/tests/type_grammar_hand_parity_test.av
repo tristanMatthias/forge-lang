@@ -1,0 +1,68 @@
+// WHY: t-47hc slice 10.4 (t-myz7) — `type_decl`'s STRUCT form reaches hand parity on
+// generics, the same gap `enum_decl` closed in 10.3 and the same shape.
+//
+// Deliberately NOT the whole keyword. `parse_type_declaration` is bigger than
+// `parse_enum_declaration`: after the `=` it branches on `{`, and the non-brace side
+// yields two OTHER node kinds — `Stmt.Newtype` (`type UserId = UUID`) and
+// `Stmt.UnionAliasDecl` (`type E = A | B`) — plus `consume_name_or_splice`, which accepts
+// a `~`-spliced name inside a quote body. Those are a separate increment because they are
+// separate nodes, not a wider version of this one; folding them in here would make a
+// divergence ambiguous between "generics are wrong" and "the newtype branch is wrong".
+//
+// Measured before the change: `type Box<T> = { val: T }` and `type B<T: Show> = { v: T }`
+// were both `<dsl parse error>` while the hand parses them.
+//
+// NOT a gap, and recorded so a later increment does not chase it: a doc comment on a
+// struct FIELD fails in BOTH engines. Unlike enum variants — where the hand's
+// `parse_variant_list` skips `Tk.DocComment` and the fragment had to learn to — the hand's
+// field list has no such skip, so there is nothing to match.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+// Equality alone would hold if both sides broke to the same error string, so each case
+// also asserts the DSL actually produced a type declaration.
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error") && d.contains("type")
+}
+
+spec "t-47hc slice 10.4: the struct fragment accepts the hand's GENERIC forms" {
+    then "one type param, a bounded one, and several all agree with the hand" {
+        agrees("type Box<T> = { val: T }\n") &&
+            agrees("type B<T: Show> = { v: T }\n") &&
+            agrees("type Pair<A, B> = { a: A, b: B }\n")
+    }
+
+    then "the non-generic form is untouched" {
+        // One rule serves both: with no `<…>` the type-param capture is empty and the
+        // generic core builds the identical node the 2-arg one did.
+        agrees("type P = { x: int, y: int }\n")
+    }
+}
+
+spec "t-47hc slice 10.4: the forms this increment deliberately does NOT cover" {
+    then "newtype and union-alias are still hand-only — a separate node, a separate step" {
+        // Pinned so the next increment has a measured starting point rather than a guess,
+        // and so nobody mistakes this for parity on the whole keyword.
+        dsl_program("type UserId = UUID\n").contains("parse error") &&
+            !hand_program("type UserId = UUID\n").contains("parse error")
+    }
+}

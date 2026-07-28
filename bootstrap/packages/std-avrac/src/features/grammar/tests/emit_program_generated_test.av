@@ -39,7 +39,11 @@ spec "grammar emitter: renders the whole-program generated static parser" {
         let src = emit_all()
         src.contains("mk_block(st, sp_start, d_list)") &&
         src.contains("mk_fn_decl(st, capval_tok_text(name), params_list, ret, capval_present(ret), body_list)") &&
-        src.contains("mk_type_decl(st, capval_tok_text(tname), fields_list)") &&
+        // `type` carries an optional type-param list since t-47hc slice 10.4, so it
+        // lowers to the GENERIC core — one rule serves both forms, with an empty
+        // capture when no `<…>` is present. `enum` is the same shape (10.3) but was
+        // never asserted here.
+        src.contains("mk_type_decl_g(st, capval_tok_text(tname), tparams_list, fields_list)") &&
         // `use` SPLITS on the `@`-package prefix (t-47hc slice 10.1): the two branches
         // are FIRST-disjoint inside `use_tail`, so the package scope is its own capture
         // and each lowers to a distinct core rather than one call with a presence flag.
