@@ -1,0 +1,61 @@
+// WHY: t-47hc.33 form 1 — `expr?` (error propagation) is the first of `postfix_suffix`'s
+// eight forms to leave the `@hand` delegate and become a grammar alternative.
+//
+// The thing that makes a postfix form flippable at all is that the CHAIN's state is
+// already threaded on PState: `postfix_base` (the accumulated receiver) and
+// `postfix_sp_start` (the chain's start byte, the constant `lo` every suffix in
+// `a.b.c()` shares). A native form must use BOTH — a per-suffix `lo` would re-span every
+// chained expression, and skipping `set_postfix_base` would build the next suffix onto a
+// stale receiver and silently drop this one, since `fold_postfix_with_expr` reads only
+// the LAST suffix's node.
+//
+// The guard has to be the hand entry guard verbatim (`postfix_step`, parse/mod.av):
+// `check(Tk.Question) && allow_dot_postfix && current_line == prev_line`. Dropping any
+// conjunct changes what parses: without `allow_dot_postfix` a `?` inside a match arm is
+// eaten as a Try instead of ending the arm; without the line test a `?` opening the next
+// line is folded onto the previous expression.
+//
+// `@hand(postfix_suffix)` REMAINS the tail alternative, and that is load-bearing rather
+// than transitional: the hand body re-dispatches on the current token after its leading
+// `!` loop has consumed, WITHOUT re-testing the entry conditions, so `x!?` is one hand
+// step. A native `?` alternative cannot see that shape (its guard fires on `?`, and the
+// current token there is `!`), so it declines and the tail handles the compound case.
+
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
+
+fn postfix_rule_src() -> string {
+    let g = avra_expr_dispatch_grammar()
+    for gr in g.rules {
+        if gr.name == "postfix_suffix" { return emit_rule_fn(g, gr) }
+    }
+    ""
+}
+
+spec "t-47hc.33: `expr?` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_try_suffix(st)")
+    }
+    then "the guard carries the mode read — `?` in a match arm is not a Try" {
+        postfix_rule_src().contains("st.modes.allow_dot_postfix != 0")
+    }
+    then "and the token test" {
+        postfix_rule_src().contains("st.cur().tk == Tk.Question")
+    }
+    then "and the SAME-LINE test — a `?` opening the next line ends the chain" {
+        postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
+    }
+    then "the `@hand` tail is still there — it owns the forms not yet flipped" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+    then "the loop over the rule keeps its no-progress break" {
+        // The hand tail can return WITHOUT consuming (guard unmatched / generic-call
+        // speculation failed / trailing non-postfix arm). The break is the loop's exit;
+        // losing it when the rule went partly-native would spin forever.
+        let g = avra_expr_dispatch_grammar()
+        mut src = ""
+        for gr in g.rules {
+            if gr.name == "unary" { src = emit_rule_fn(g, gr) }
+        }
+        src.contains("if st.pos == __rep_before { break }")
+    }
+}

@@ -212,7 +212,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -228,7 +228,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -244,7 +244,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -260,7 +260,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -276,7 +276,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_variant_ctor(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -292,7 +292,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_match_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -308,7 +308,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_if_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -324,7 +324,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_spawn_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -340,7 +340,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_channel_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -356,7 +356,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_isolated_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -372,7 +372,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_when_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -387,7 +387,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
         let base = CapVal.Node(run_hand_expr("quote_expr", st))
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -403,7 +403,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_list_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -419,7 +419,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_brace_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -435,7 +435,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_qualified_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -451,7 +451,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_paren_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -467,7 +467,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut s_list: List<ExprId> = []
         let base = parse_template_lit(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -482,7 +482,7 @@ fn parse_unary(st: PState) -> CapVal {
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
         let base = CapVal.Node(run_hand_expr("ident_primary", st))
-        while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+        while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
             if st.pos == __rep_before { break }
@@ -496,7 +496,7 @@ fn parse_unary(st: PState) -> CapVal {
     mut p_list: List<ExprId> = []
     mut s_list: List<ExprId> = []
     let base = CapVal.Node(run_hand_expr("primary_base", st))
-    while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
+    while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
         let __rep_before = st.pos
         p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
         if st.pos == __rep_before { break }
@@ -576,6 +576,10 @@ fn parse_map_literal(st: PState) -> CapVal {
 }
 
 fn parse_postfix_suffix(st: PState) -> CapVal {
+    if st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) {
+        let _ = st.advance()
+        return CapVal.Node(mk_try_suffix(st))
+    }
     CapVal.Node(run_hand_expr("postfix_suffix", st))
 }
 
