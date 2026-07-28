@@ -54,10 +54,29 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
 
     then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
         let src = decl_src()
-        let use_at = src.index_of("return parse_use_decl(st)")
-        let mod_at = src.index_of("return parse_mod_decl(st)")
+        let use_at = src.index_of("parse_use_decl(st)")
+        let mod_at = src.index_of("parse_mod_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         use_at >= 0 && mod_at >= 0 && hand_at >= 0 && use_at < hand_at && mod_at < hand_at
+    }
+
+    // t-myz7.2: both branches are `@try`, and that is load-bearing, not incidental.
+    // A routed rule owns VALID input; the moment it REPORTS, the speculative scaffold
+    // rewinds the cursor, the node store, the diagnostics and the @hand delegate, and
+    // control falls into the `decl_hand` gate below — so error RECOVERY stays the hand
+    // parser's, byte-for-byte. Without it the generated parser recovers by building a
+    // partial node (a nameless `use`), which diverged from hand on 8 of 18 measured
+    // malformed forms (error_recovery_differential_test's routed-keyword blocks).
+    then "each routed branch is SPECULATIVE — it rolls back into the hand gate on error" {
+        let src = decl_src()
+        // The commit guard: keep the parse only when it added no diagnostic.
+        src.contains("s_last = parse_use_decl(st)") &&
+            src.contains("s_last = parse_mod_decl(st)") &&
+            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+            // …and the rollback restores all four pieces of state.
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
+            src.contains("st.restore_hand_state(s_hand)")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
