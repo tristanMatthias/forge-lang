@@ -84,6 +84,30 @@ fn expr_form_out() -> string {
         "fn main() { let _ = probe(E.A) }\n")
 }
 
+// `null` / `none` cells (caught in review on #1039). These are the one primary form that
+// is a literal ALTERNATION rather than a token CLASS, and the two emit differently: an
+// unlabelled alternation generates `advance(); CapVal.Nil` — token consumed, value dropped
+// — so capval_to_expr reported "expected an expression" for a cell the hand accepts as
+// Expr.None. Labelling alone does not fix it either; a branch with no build still yields
+// Nil, so `null_cell` carries an explicit `-> n` Var build. Both spellings pinned.
+fn null_cell_out() -> string {
+    check_out("nullcell",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) {\n" +
+        "    match e table { pat | v\n" +
+        "        .A | null\n" +
+        "        .B | none\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { probe(E.A) }\n")
+}
+
+spec "t-47hc.29: `null` and `none` survive as table CELLS" {
+    then "both spellings parse — the literal alternation keeps its token" {
+        !null_cell_out().contains("expected an expression")
+    }
+}
+
 spec "t-47hc.29 slice 12: the match TABLE in EXPRESSION position parses natively" {
     then "a table used as a value parses — no parse diagnostics" {
         let out = expr_form_out()

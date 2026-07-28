@@ -1086,8 +1086,7 @@ fn parse_table_cell(st: PState) -> CapVal {
         return CapVal.Node(literal_node(st, st.advance()))
     }
     if st.cur().text == "null" || st.cur().text == "none" {
-        let _ = st.advance()
-        return CapVal.Nil
+        return parse_null_cell(st)
     }
     if st.cur().tk == Tk.Dot {
         return parse_variant_ctor(st)
@@ -1126,5 +1125,10 @@ fn parse_table_cell(st: PState) -> CapVal {
         return parse_template_lit(st)
     }
     parse_brace_expr(st)
+}
+
+fn parse_null_cell(st: PState) -> CapVal {
+    let n = CapVal.Tok(st.advance())
+    n
 }
 

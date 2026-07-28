@@ -227,10 +227,21 @@ fn avra_expr_core() -> Grammar {
   // `parse_pattern_or` and `parse_match_arm` already make (its own FIRST is declared in
   // emit.rule_first_guard). Every branch is grammar-native or an @hand leaf ALREADY on the
   // production path, so cells cost no new leaf — which is what lets the flip retire one.
-  table_cell   = qualified_expr | NUMBER | STRING | BOOL | ( "null" | "none" ) | variant_ctor
+  // `n:` on the null/none alternation is LOAD-BEARING, not decoration. NUMBER/STRING/BOOL
+  // are token-CLASS primaries and emit `CapVal.Node(literal_node(…))` unlabelled, but a
+  // literal ALTERNATION emits `advance(); CapVal.Nil` — the token is consumed and the value
+  // dropped, so `capval_to_expr` reports "expected an expression" for a `null` cell that the
+  // hand parse_primary accepts as Expr.None. The label retains a `CapVal.Tok`, which
+  // capval_to_expr routes through the same `literal_node` (which builds Expr.None by `tk`).
+  // Caught in review on #1039; pinned by match_table_native_test.
+  table_cell   = qualified_expr | NUMBER | STRING | BOOL | null_cell | variant_ctor
                | @hand(ident_primary) | paren_expr | list_expr | match_expr | if_expr
                | spawn_expr | channel_expr | isolated_expr | when_expr | @hand(quote_expr)
                | template_lit | brace_expr
+  // A `-> n` Var build (the `eq_tail`/`-> ir` form): labelling alone still returns Nil,
+  // because a branch with no build yields Nil regardless. The build hands back the captured
+  // `CapVal.Tok`, which capval_to_expr routes through literal_node.
+  null_cell    = n:( "null" | "none" ) -> n
     }
     gp.grammar
 }
