@@ -1,5 +1,12 @@
 # Zero-`@hand`: the first-principles plan to retire the hand front end
 
+> **SUPERSEDED 2026-07-27.** The plan of record for t-47hc is
+> [`docs/2026_07_27_GRAMMAR_FRONTEND_ROADMAP.md`](../../docs/2026_07_27_GRAMMAR_FRONTEND_ROADMAP.md)
+> — it carries the slice list, the measured hours-per-slice, and the gate order.
+> This doc is retained for its ENGINE CO-DESIGN reasoning (why zero-`@hand` is the
+> goal and what each leaf costs); its sequencing and estimates are out of date.
+> Do not plan from this file.
+
 **Epic:** t-47hc (Grammar-Defined Front End). **Status of this doc:** the resolved
 engine co-design — the decision the epic was parked at (see t-47hc comments
 "DESIGN GATE REACHED" 2026-07-23 and "FIRST-PRINCIPLES ZERO-@hand PLAN" 2026-07-24).

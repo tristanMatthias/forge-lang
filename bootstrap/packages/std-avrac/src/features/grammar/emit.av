@@ -512,6 +512,7 @@ fn build_uses_sp_start(name: string) -> bool {
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
         name == "MkWithSuffix" ||
         name == "MkMapLit" ||
+        name == "MkSplice" ||
         name == "MkQualExpr"
 }
 
@@ -1679,6 +1680,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkTemplate" -> "CapVal.Node(mk_template(st, ${args[0]}))"
         "MkQualExpr" -> "CapVal.Node(mk_qualified(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), ${args[2]}, CapVal.FInits(${args[3]}_list)))"
         "MkMapLit" -> "CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
+        "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         // t-47hc.17 — `name: value` / shorthand `name`, and the `with { … }` suffix
@@ -2259,7 +2261,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }

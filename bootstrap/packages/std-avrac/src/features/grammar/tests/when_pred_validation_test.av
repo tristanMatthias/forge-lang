@@ -94,3 +94,32 @@ spec "t-47hc: @when validates its predicate name" {
             rejects("r = @on(in_quote_body) NUMBER")
     }
 }
+
+// `@peek(ident_lbrace)` — the token twin of Parser.peek_after_ident_is_lbrace, which the
+// hand parser uses to tell `~Name { … }` (splice the struct CONSTRUCTOR NAME) apart from
+// the greedy `~expr` splice. Landed ahead of the primary_base flip that will spend it,
+// because the flip needs a real diagnosis first (see t-47hc.5) and this half is
+// independently correct and testable.
+fn peek_rejects(cond: string) -> bool {
+    parse_grammar("r = @peek(${cond}) IDENT | NUMBER").error != ""
+}
+
+spec "t-47hc: @peek(ident_lbrace) lookahead" {
+    then "it is accepted as a @peek condition" {
+        !peek_rejects("ident_lbrace")
+    }
+    then "an unknown @peek condition is still rejected" {
+        peek_rejects("ident_lbrace_typo")
+    }
+    then "IDENT followed by `{` takes the gated branch" {
+        // `x {` — the shape `~Name { … }` hinges on. The gated branch consumes the IDENT.
+        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> Grouping(n) | n:NUMBER -> Grouping(n)")
+        !run_grammar_expr(gp.grammar, "x {").had_error
+    }
+    then "IDENT NOT followed by `{` does NOT take it" {
+        // `x +` — falls past the gated branch, and NUMBER cannot match an IDENT either,
+        // so the rule fails. That failure IS the evidence the lookahead discriminated.
+        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> Grouping(n) | n:NUMBER -> Grouping(n)")
+        run_grammar_expr(gp.grammar, "x +").had_error
+    }
+}

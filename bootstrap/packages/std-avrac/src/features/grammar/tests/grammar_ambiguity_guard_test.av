@@ -22,6 +22,16 @@ use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbig
 // trips the guard.
 fn is_intended_shadow(a: GAmbiguity) -> bool {
     a.rule == "in_rhs" && a.i == 0 && a.j == 1 ||
+    // t-47hc: `~` is TWO operators sharing one token, so a FIRST/FIRST overlap on
+    // `lit:~` between unary's branches 1 and 2 is unavoidable — and it is resolved by
+    // predicates the FIRST-set analysis cannot see (the guard deliberately does NOT
+    // exempt @when-led branches, which is why this needs naming):
+    //   branch 1  @when(at_quote_top)  `~` → BITNOT  (quote_depth == 0)
+    //   branch 2  @when(in_quote_body) `~` → SPLICE  (quote_depth  > 0)
+    // These are PROVABLY disjoint, not merely ordered: the two predicates are exact
+    // complements over one counter (executor.modes_flag), so at most one can ever hold.
+    // That is a stronger guarantee than the ordered-choice entries below rest on.
+    a.rule == "unary" && a.i == 1 && a.j == 2 ||
     // t-47hc.18: `brace_expr` went grammar-native, so its `{` is a CONCRETE FIRST where
     // `@hand(brace_expr)` used to be opaque. That EXPOSES two pre-existing ordered-choice
     // shadows (it does not create them): at a `{`, a lambda body and a statement are a
