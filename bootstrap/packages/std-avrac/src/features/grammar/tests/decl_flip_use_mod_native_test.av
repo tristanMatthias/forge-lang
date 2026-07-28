@@ -1,0 +1,106 @@
+// WHY: t-47hc slice 10 (t-myz7), INCREMENT 1 — `use` and `mod` leave `@hand(decl_hand)`.
+//
+// `@hand(decl_hand)` is not one leaf's worth of behaviour: `parse_declaration_hand`
+// owns the doc / annotation / `export` WRAPPING, the component-vs-expression IDENT
+// disambiguation, and the statement fall-through as well as the seven decl keywords.
+// So the flip is keyword-at-a-time, and `@hand(decl_hand)` survives as the
+// fall-through until the last keyword leaves. What this file pins is increment 1,
+// and the two properties that make it a real flip rather than a dormant edit:
+//
+//  1. DISPATCH ORDER. `declaration = use_decl | mod_decl | @peek(decl_lead)
+//     @hand(decl_hand) | statement`. If `use_decl` were emitted AFTER the decl_hand
+//     gate, `decl_lead` would swallow `use`/`mod` first (both are in its FIRST set,
+//     and still are — the gate is unchanged) and the native rules would be dead code:
+//     correct output, no diagnostic, flip silently disabled. That is exactly the
+//     failure mode #1028 was caught on, so it is asserted structurally, on the
+//     emitted source, rather than inferred.
+//
+//  2. THE TAIL IS STILL `statement`. Removing a branch from an alternation promotes
+//     whichever branch is now last into the UNGUARDED error-recovery role. Here
+//     nothing was removed — `@hand(decl_hand)` stays, FIRST-guarded — and the tail is
+//     the native `statement`, unchanged. Pinned so a later increment that DOES delete
+//     `decl_hand` has to confront this assertion rather than drift past it.
+//
+// Behaviourally, `use`/`mod` are the two decl keywords with no surface beyond the
+// simple form: no generics, and neither is `export`able (only fn/type/enum/trait/
+// extern are), so slice 9's fragment already accepted the whole language for them.
+// The forms below are the ones the compiler's own source uses.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+// Same status-plus-log shape as match_table_native_test: the exit code is half the
+// assertion, and `|| true` would throw it away.
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_decl_usemod_${name}.av"
+    let log = "build/_decl_usemod_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
+    then "both parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_use_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_mod_decl(st: PState) -> CapVal")
+    }
+
+    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+        let src = decl_src()
+        let use_at = src.index_of("return parse_use_decl(st)")
+        let mod_at = src.index_of("return parse_mod_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        use_at >= 0 && mod_at >= 0 && hand_at >= 0 && use_at < hand_at && mod_at < hand_at
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        // `parse_declaration`'s last act is the unguarded fall-through. It must
+        // remain `parse_statement(st)`; a future increment that deletes decl_hand
+        // has to keep it that way.
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
+
+// The `@`-package form, the plain dotted form, and `mod` — the three shapes the
+// compiler's own source uses, and the ones mk_use has to rebuild the path string for
+// (segments joined on ".", `@` re-prefixed).
+fn use_forms_out() -> string {
+    // `mod` is resolved, not just parsed, so the module has to exist on disk next to
+    // the fixture — otherwise the fixture fails at F3100 for a reason that has
+    // nothing to do with the parser.
+    let _ = avra_selfhost_write_file("build/_decl_usemod_helper.av", "export fn helper_v() -> int { 7 }\n")
+    check_out("forms",
+        "use @std.avrac.core.{avra_selfhost_read_file}\n" +
+        "mod _decl_usemod_helper\n" +
+        "fn main() { let _ = avra_selfhost_read_file(\"build/_decl_usemod_helper.av\") }\n")
+}
+
+// A doc comment still routes through the hand's recursive wrapping branch, which
+// re-enters `parse_declaration` — so the native `use_decl` has to be reachable from
+// INSIDE the hand path too, not just from the top.
+fn wrapped_use_out() -> string {
+    check_out("wrapped",
+        "/// documented import\n" +
+        "use @std.avrac.core.{avra_selfhost_read_file}\n" +
+        "fn main() { let _ = avra_selfhost_read_file(\"build/_decl_usemod_helper.av\") }\n")
+}
+
+spec "t-47hc slice 10.1: every `use` / `mod` form the compiler itself writes still parses" {
+    then "the `@pkg` path, a bare `mod`, and a multi-segment path all compile clean" {
+        clean(use_forms_out())
+    }
+
+    then "a doc-wrapped `use` still resolves — the hand's recursion re-enters the native rule" {
+        clean(wrapped_use_out())
+    }
+}
