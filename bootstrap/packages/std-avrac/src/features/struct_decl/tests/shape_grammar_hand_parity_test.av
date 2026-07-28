@@ -14,7 +14,13 @@
 // MkExport in 10.6, the generic decl arms in 10.2) — so it was added as one shared core
 // with an emit assertion, not just an executor arm that the interpreter would vouch for.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, avra_decl_dispatch_grammar, emit_parser_source_ex}
+
+// The PRODUCTION declaration parser source — the dispatch view the checked-in
+// gen_decl_parser.av is rendered from, which is not the whole-program view used above.
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -69,5 +75,47 @@ spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
 
     then "emit renders the shared core — the half an executor-only build would miss" {
         emit_parser_source(avra_program_grammar()).contains("mk_shape_decl(st, capval_tok_text(shname)")
+    }
+}
+
+// ROUTING (t-47hc slice 10.9). Parity above is measured through the INTERPRETER; this is
+// the separate claim that the PRODUCTION declaration parser reaches the native rule, which
+// is what actually changes the compiler. `shape` goes first because it is the smallest
+// keyword: one node, no generics, no cross-family references beyond `field`.
+//
+// It is asserted on the emitted source rather than by running a fixture, because a fixture
+// cannot tell the two paths apart on VALID input — that is the whole point of parity. What
+// distinguishes them is WHERE the dispatch sits.
+spec "t-47hc slice 10.9: `shape` is routed on the PRODUCTION path" {
+    then "the dispatch precedes the decl_hand gate — after it, it would be dead code" {
+        // `shape` is in `decl_lead`'s FIRST and still is, so emitting the native branch
+        // below the gate would leave it unreachable: correct output, no diagnostic, flip
+        // silently disabled. Same failure mode #1028 was caught on.
+        let src = decl_src()
+        let sh = src.index_of("return parse_shape_decl(st)")
+        let hand = src.index_of("run_hand_stmt(\"decl_hand\"")
+        sh >= 0 && hand >= 0 && sh < hand
+    }
+
+    then "the TAIL is still native `statement`, not a promoted @hand" {
+        // The constraint that governs the whole migration: an alternation's last branch is
+        // emitted UNGUARDED and owns error recovery. `@hand(decl_hand)` stays FIRST-guarded
+        // and `statement` stays last, so nothing was promoted. Re-read on the regenerated
+        // rule, not assumed — and error_recovery_differential stays 41/41 beside it.
+        let src = decl_src()
+        let hand = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail = src.index_of("    parse_statement(st)\n}")
+        tail >= 0 && hand >= 0 && tail > hand
+    }
+
+    then "the type-param accumulator is TypeParamEntry, not ExprId" {
+        // Routing is what exposed this: `tparam` is EXTERNAL in the declaration view, so
+        // rule_kind_v defaulted it to "expr" and coerced every type param through
+        // capval_to_expr. The same trap the `pattern` and `match_arm` external kinds were
+        // written for, and invisible until a native decl rule was actually reachable.
+        let src = decl_src()
+        src.contains("mut tparams_list: List<TypeParamEntry> = []") &&
+            src.contains("capval_to_tparam(st, parse_tparam(st))") &&
+            !src.contains("tparams_list.push(capval_to_expr(")
     }
 }
