@@ -19,7 +19,7 @@
 // which is precisely how three divergences shipped in #1032 — so the emit side is checked
 // against the emitted SOURCE and the executor side by RUNNING it.
 
-use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr}
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr, grammar_last_segment}
 
 fn rejects(grammar_src: string) -> bool {
     parse_grammar(grammar_src).error != ""
@@ -121,5 +121,239 @@ spec "t-47hc: @peek(ident_lbrace) lookahead" {
         // so the rule fails. That failure IS the evidence the lookahead discriminated.
         let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> Grouping(n) | n:NUMBER -> Grouping(n)")
         run_grammar_expr(gp.grammar, "x +").had_error
+    }
+}
+
+// t-47hc.30 — `@when` predicates over the POSTFIX BASE. Two of `postfix_step`'s eight
+// entry-guard branches ask about the base being folded onto rather than about a token or
+// a mode, so `@when` (which resolved against `ExprModes` only) could not express them:
+//   base_callable    — the generic-call branch's `is_callable(result)`, so `a < b` stays
+//                      a comparison and only Ident/QualifiedIdent/FieldAccess take `<T>`
+//   base_upper_ident — the `.Variant` half of `dot_is_postfix`
+// Landed DORMANT; the postfix_suffix flip spends them.
+//
+// The emit side is a CALL to the shared executor.base_pred (the @peek pattern) rather
+// than a field test, so the two engines share one definition. Asserted on the emitted
+// source, since a divergence here is exactly what shipped three times in #1032.
+
+spec "t-47hc.30: postfix-BASE predicates" {
+    then "both are accepted as @when predicates" {
+        !rejects("r = @when(base_callable) NUMBER") &&
+            !rejects("r = @when(base_upper_ident) NUMBER")
+    }
+    then "the emitted guard CALLS the shared executor fn, not a mode field" {
+        // A `st.modes.base_callable != 0` fallthrough would compile against a field that
+        // does not exist; the call form is what keeps both engines on one definition.
+        emitted("base_callable").contains("base_pred(\"base_callable\", st)") &&
+            !emitted("base_callable").contains("st.modes.base_callable")
+    }
+    then "base_upper_ident emits the same call shape" {
+        emitted("base_upper_ident").contains("base_pred(\"base_upper_ident\", st)")
+    }
+    then "the type segment of a QUALIFIED path is the part after the last `::`" {
+        grammar_last_segment("@std::avrac::core::Result") == "Result"
+    }
+    then "an UN-namespaced reference skips the `@` sigil rather than reading it" {
+        // `mk_qualified` builds `@` + the head name, so a single-segment reference has no
+        // `::` at all. Testing that raw sees `@`, reports lowercase, and answers false for
+        // EVERY un-namespaced type — silently stopping a `.Variant` chain.
+        grammar_last_segment("@Result") == "Result"
+    }
+    then "a bare name with neither sigil nor path is returned whole" {
+        grammar_last_segment("Result") == "Result" && grammar_last_segment("x") == "x"
+    }
+    then "the `@` skip does NOT fire once a `::` has already moved the start" {
+        // Only the LEADING sigil is a prefix; a `@` after a `::` is part of the segment.
+        grammar_last_segment("a::@b") == "@b"
+    }
+    then "a base predicate is READ-only — @off/@on still reject it" {
+        // Same asymmetry as at_quote_top/in_quote_body: readable, not settable.
+        rejects("r = @off(base_callable) NUMBER") && rejects("r = @on(base_callable) NUMBER")
+    }
+    then "the @when diagnostic lists the base predicates" {
+        err_of("r = @when(base_callble) NUMBER").contains("base_callable")
+    }
+    then "asked with NO postfix chain, it answers false instead of crashing" {
+        // A base predicate is validated by NAME, not by position, so nothing stops a
+        // grammar writing one on a branch that is not inside a `( postfix_suffix )*`
+        // loop — and branch_pred_ok then runs it with `postfix_base` still at the
+        // arena's NULL NICHE. Ids are 1-based, so dereferencing that reads index -1.
+        // Gated branch + ungated sibling: the sibling is what must match.
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        !run_grammar_expr(gp.grammar, "7").had_error
+    }
+    then "the same holds for the other base predicate" {
+        let gp = parse_grammar("r = @when(base_upper_ident) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        !run_grammar_expr(gp.grammar, "7").had_error
+    }
+    then "a SOLE base-gated branch fails cleanly rather than dereferencing the niche" {
+        // No sibling to fall through to: the rule must report, not read out of bounds.
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n)")
+        run_grammar_expr(gp.grammar, "7").had_error
+    }
+}
+
+// t-47hc.32 — `@bump(counter)`, the scoped COUNTER mode. `@on`/`@off` set a settable
+// BOOL for an item's sub-parse and restore it; `quote_depth` is an INT the hand
+// parse_quote bumps on entering a quote body and restores on leaving. Same save/restore
+// machinery, different cell type — which is the set side the `at_quote_top` /
+// `in_quote_body` READ predicates (#1033) were waiting on. Landed DORMANT; the
+// quote_expr flip spends it.
+
+fn bumped_src(inner: string) -> string {
+    // The bump scopes the GROUP, so the predicate inside observes the incremented value.
+    "r = \"[\" @bump(quote_depth) ( ${inner} ) \"]\" -> Grouping(x)"
+}
+
+spec "t-47hc.32: @bump(counter) scoped counter mode" {
+    then "it parses and validates against its own allowlist" {
+        !rejects("r = @bump(quote_depth) NUMBER")
+    }
+    then "an unknown counter is a HARD error naming the legal set" {
+        let e = err_of("r = @bump(quote_dpeth) NUMBER")
+        e.contains("quote_dpeth") && e.contains("quote_depth")
+    }
+    then "a settable BOOL is NOT a bumpable counter — the lists stay distinct" {
+        // allow_struct_lit is @off/@on-able; bumping it is meaningless, so reject.
+        rejects("r = @bump(allow_struct_lit) NUMBER")
+    }
+    then "a COUNTER is not @off/@on-able either — the asymmetry holds both ways" {
+        rejects("r = @off(quote_depth) NUMBER") && rejects("r = @on(quote_depth) NUMBER")
+    }
+    then "two set-markers on one item is rejected rather than silently dropped" {
+        // exec_item honours mode_off FIRST, so a co-present bump would be dead code.
+        rejects("r = @off(allow_struct_lit) @bump(quote_depth) NUMBER")
+    }
+    then "the emitted code CALLS the shared executor fn, not an inline increment" {
+        // Same lockstep rule as the base predicates: one definition, two engines.
+        let gp = parse_grammar(bumped_src("x:NUMBER"))
+        mut src = ""
+        for gr in gp.grammar.rules {
+            if gr.name == "r" { src = emit_rule_fn(gp.grammar, gr) }
+        }
+        src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")")
+    }
+    then "the emitted code RESTORES the saved modes after the item" {
+        let gp = parse_grammar(bumped_src("x:NUMBER"))
+        mut src = ""
+        for gr in gp.grammar.rules {
+            if gr.name == "r" { src = emit_rule_fn(gp.grammar, gr) }
+        }
+        src.contains("let __modes_") && src.contains("st.set_modes(__modes_")
+    }
+    then "the INTERPRETER composes with the read side: in_quote_body sees the bump" {
+        // At depth 0 `in_quote_body` is false, so this gated item only parses when the
+        // enclosing @bump incremented the counter. That is the read+set round trip.
+        let gp = parse_grammar(bumped_src("@when(in_quote_body) x:NUMBER"))
+        !run_grammar_expr(gp.grammar, "[ 7 ]").had_error
+    }
+    then "and the bump is RESTORED — outside it, in_quote_body is false again" {
+        // Same item gated OUTSIDE the bumped group: depth is back to 0, so it must fail.
+        let gp = parse_grammar("r = \"[\" @bump(quote_depth) ( a:NUMBER ) \"]\" @when(in_quote_body) b:NUMBER -> Grouping(a)")
+        run_grammar_expr(gp.grammar, "[ 7 ] 8").had_error
+    }
+}
+
+// The POSITION rules are shared by all three mode-SET markers, because all three are
+// generated in exactly one place (emit_item's save/set/inner/restore wrapper). A marker
+// in a position that BYPASSES emit_item is not an error at parse time — it is silently
+// dropped, and the parse then runs with the wrong mode. So each position that bypasses
+// emit_item must be rejected by the validator, for every marker, or the miss is invisible.
+
+spec "t-47hc.32: `@bump` obeys the same POSITION rules as @off/@on" {
+    then "it cannot appear on an expr-fold branch — the fold path bypasses emit_item" {
+        let e = err_of("r = a:NUMBER ( \"+\" b:NUMBER )* -> fold_logical(a, b)\n" +
+            "r2 = @bump(quote_depth) a:NUMBER ( \"+\" b:NUMBER )* -> fold_logical(a, b)")
+        e.contains("@bump") && e.contains("quote_depth")
+    }
+    then "it cannot wrap a @hand primary — the delegate owns its own mode handling" {
+        err_of("r = @bump(quote_depth) @hand(primary_base)").contains("@bump")
+    }
+    then "the diagnostic names @bump, not the @off it used to be mislabelled as" {
+        // The three-way marker/flag pick is what makes the message honest; a two-way
+        // `if mode_off != \"\" { \"@off\" } else { \"@on\" }` reported \"@on(\" + \"\" + \")\".
+        !err_of("r = @bump(quote_depth) @hand(primary_base)").contains("@on")
+    }
+}
+
+// A mode marker on a `@require` item would LEAK the mode. The emitted wrapper is
+// `save; set; <item>; restore`, and a failed `@require` returns early from INSIDE <item>
+// — so the restore never runs and every subsequent parse sees the set mode. Threading
+// cleanup through each emitted return path would mean the executor's `env.abort` and the
+// generated parser's early `return` both have to remember it; rejecting the combination
+// is one rule in one place, and it costs nothing (no grammar wants it).
+
+spec "t-47hc: a mode marker cannot ride a @require item" {
+    // `@require` binds BEFORE the mode markers in item order (`@cut @require ^ @off …`),
+    // so the co-located spelling is `@require @bump(f) <prim>` — one item carrying both.
+    then "@bump on a @require item is rejected" {
+        err_of("r = \"[\" @require @bump(quote_depth) \"]\"").contains("@require")
+    }
+    then "@off is too — the leak pre-dated @bump and is closed for all three" {
+        err_of("r = \"[\" @require @off(allow_struct_lit) \"]\"").contains("@require")
+    }
+    then "@on likewise" {
+        err_of("r = \"[\" @require @on(allow_struct_lit) \"]\"").contains("@require")
+    }
+    then "a @require with NO mode marker is still fine — the rule is the pair, not @require" {
+        !rejects("r = \"[\" a:NUMBER @require \"]\"")
+    }
+    then "a mode marker on a NON-required sibling of a @require item stays legal" {
+        // The check is per-ITEM. `@require \"in\" @off(f) e:expr` (the real for_stmt
+        // shape) has the marker on a different item, so it must not be swept up.
+        !rejects("r = \"for\" v:IDENT @require \"in\" @off(allow_struct_lit) e:NUMBER")
+    }
+}
+
+// t-47hc — the GENSYM counter on PState. A build action that DESUGARS (`if let` becomes
+// a temp binding plus a match) needs a fresh-name source. Format is core.gensym_name's
+// `$tag$N`, shared rather than re-spelled: the `$` is unforgeable by user source (the
+// lexer admits only letters/digits/`_` in identifiers), so a temp can never shadow or be
+// shadowed by a user binding.
+//
+// The subtle part, and the reason this is its own capability rather than a one-liner in
+// the flip: the counter lives on PState, NOT in ExprModes. ExprModes is saved/restored by
+// @off/@on/@bump and by speculative rollback; a hygiene counter must be MONOTONIC, since
+// rolling it back would re-mint an already-issued name. The hand parser documents the
+// same exclusion ("NOT snapshotted, by design: gensym_seq ONLY").
+
+use @std.avrac.features.grammar.{new_pstate, fresh_name}
+use @std.avrac.core.{is_gensym_name}
+
+spec "t-47hc: the gensym counter mints hygienic temps" {
+    then "a minted name is recognised as a gensym" {
+        is_gensym_name(fresh_name(new_pstate("x"), "iflet"))
+    }
+    then "it is unforgeable — the name carries the `$` the lexer cannot produce" {
+        fresh_name(new_pstate("x"), "iflet").contains("$")
+    }
+    then "the tag appears, so distinct desugars are distinguishable in a dump" {
+        fresh_name(new_pstate("x"), "iflet").contains("iflet")
+    }
+    then "successive mints on ONE state are distinct" {
+        let st = new_pstate("x")
+        let a = fresh_name(st, "t")
+        let b = fresh_name(st, "t")
+        let c = fresh_name(st, "t")
+        a != b && b != c && a != c
+    }
+    then "the counter is MONOTONIC — a later mint never reuses an earlier name" {
+        // The property backtracking must not break: were the counter restored on
+        // rollback, a retried branch would re-mint `$t$1` for a DIFFERENT binding and
+        // two distinct temps would collide.
+        let st = new_pstate("x")
+        let first = fresh_name(st, "t")
+        mut seen_again = false
+        mut i = 0
+        while i < 5 {
+            if fresh_name(st, "t") == first { seen_again = true }
+            i = i + 1
+        }
+        !seen_again
+    }
+    then "a FRESH state restarts the sequence — the counter is per-parse, not global" {
+        // Per-parse, so the same source always desugars to the same names (byte-identical
+        // output); global state would make emission order-dependent.
+        fresh_name(new_pstate("x"), "t") == fresh_name(new_pstate("y"), "t")
     }
 }

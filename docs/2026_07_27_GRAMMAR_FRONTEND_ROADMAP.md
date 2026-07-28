@@ -162,6 +162,30 @@ next to the code.** No new planning `.md` files for this epic.
 
 ---
 
+## 6. Stacking: what it costs
+
+Capabilities batch onto one branch; flips get one PR each (a single diverging IR bit
+cannot be attributed across two flips). Stacked PRs — base = the branch below, not
+integration — keep each diff reviewable in isolation, but they have one real cost:
+
+**CodeRabbit does not auto-review a stacked PR.** Auto-review is configured for the
+integration base branches only, so a PR targeting `claude/…` is skipped with
+"Auto reviews are disabled on base/target branches other than the default branch."
+
+That matters because review has caught something real on every PR in this series (three
+executor/emit divergences in #1032; an unpinned `~Name { … }` case in #1034). Losing it
+silently on stacked PRs would be a bad trade. So:
+
+- **Post `@coderabbitai review` on every stacked PR** right after opening it. One comment,
+  and the review runs normally.
+- Or re-target to integration once the PR below merges — but that delays review to the
+  point where the diff is largest, which is backwards.
+
+The standing merge rule ("CI green + CodeRabbit approved ⇒ merge") is unchanged; on a
+stacked PR, explicitly request the review and wait for approval before merging.
+
+---
+
 ## 6. Decisions already settled — do not relitigate
 
 - **"Invert the recursion"** (leaf calls back into the generated parser) was tried as
