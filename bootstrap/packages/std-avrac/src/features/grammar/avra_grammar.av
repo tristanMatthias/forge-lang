@@ -162,7 +162,9 @@ fn avra_expr_core() -> Grammar {
                  | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:IDENT -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
+                 | ^"(" @on_if(base_field_access, allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
                  | @hand(postfix_suffix)
+  call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
   // MARKER ORDER IS LOAD-BEARING on the two `.`-led branches. `.field` and `.0` share a
   // FIRST token, and the ambiguity guard exempts a pair only when the earlier branch LEADS
   // with `@peek` — first_follow.seq_is_peek_led inspects `items[0].prim` and nothing else.
