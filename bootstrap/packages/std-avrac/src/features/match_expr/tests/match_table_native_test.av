@@ -67,3 +67,28 @@ spec "t-47hc.29: a table CELL is parse_primary, not primary_base" {
         neg_out().contains("expected expression")
     }
 }
+
+// The EXPRESSION form (slice 12). It shares `build_table_arms` with the statement form, so
+// what this pins is the SECOND dispatch site: `match_expr`'s `@peek(match_table)` branch now
+// names `match_table_expr` instead of `@hand(match_expr)`, and the value it yields is a real
+// Expr.MatchExpr usable in value position.
+fn expr_form_out() -> string {
+    check_out("expr",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> map<string, string> {\n" +
+        "    match e table { pat | name | rank\n" +
+        "        .A | \"a\" | \"one\"\n" +
+        "        .B | \"b\" | \"two\"\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { let _ = probe(E.A) }\n")
+}
+
+spec "t-47hc.29 slice 12: the match TABLE in EXPRESSION position parses natively" {
+    then "a table used as a value parses — no parse diagnostics" {
+        let out = expr_form_out()
+        !out.contains("expected expression") &&
+            !out.contains("unexpected `}`") &&
+            !out.contains("expected `}` after match table")
+    }
+}

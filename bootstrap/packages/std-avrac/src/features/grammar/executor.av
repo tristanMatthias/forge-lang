@@ -2602,6 +2602,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
         }
         "MkMatchTable" if args.length == 4 -> mk_match_table(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
+        "MkMatchTableExpr" if args.length == 4 -> mk_match_table_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         "MkMatch" if args.length == 2 -> {
             // `match subject { arm* }` — statement-position match.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
@@ -3422,6 +3423,28 @@ export fn mk_match_table(st: PState, subject_cv: CapVal, cols_cv: CapVal, pats_c
         if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
     }
     CapVal.SNode(st.store.add_stmt(Stmt.Match(capval_to_expr(st, subject_cv), arms), byte_span_none(), refs))
+}
+
+/// The EXPRESSION twin of `mk_match_table` (t-47hc.29 slice 12). Identical arms — the
+/// table desugaring is shared via `build_table_arms` — so the two forms cannot drift; only
+/// the node kind and the span differ, exactly as `mk_match` / `mk_match_expr` differ.
+///
+/// SPAN: the hand's expression table path ends in `alloc_expr(node, span_from(sp_start),
+/// glue_match_arm_refs(arms))`, anchored at the `match` keyword, so this spans
+/// [sp_start, next-token) with mk_match_expr's `sp_start < 0` guard for the interpreter
+/// path (which has no sequence-start byte to pass). REFS are the arms' patterns only: the
+/// subject is a walker-opaque ExprId scalar and contributes no edge.
+export fn mk_match_table_expr(st: PState, sp_start: int, subject_cv: CapVal, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVal) -> CapVal {
+    let arms = build_table_arms(st, cols_cv, pats_cv, vals_cv)
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.MatchExpr(capval_to_expr(st, subject_cv), arms),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        refs
+    ))
 }
 
 /// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`

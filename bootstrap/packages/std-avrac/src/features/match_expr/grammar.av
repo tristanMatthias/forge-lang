@@ -113,6 +113,18 @@ export fn avra_match_table_grammar() -> Grammar {
   "                   ( p:pattern ( \"|\" )? ( v:table_cell ( \"|\" )? )*{#cols} ( \",\" )? )*\n" +
   "                   @require \"}\"\n" +
   "                   @expect(\"{\", \"expected `{` after match table\")\n" +
-  "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTable(subj, cols, p, v)\n"
+  "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTable(subj, cols, p, v)\n" +
+  // The EXPRESSION twin (slice 12). Byte-for-byte the same rule text — only the build
+  // differs, because the two forms differ only in node kind and span (the arms themselves
+  // are desugared by one shared `build_table_arms`). Defined HERE, beside the statement
+  // form, for the same reason: the `{#cols}` bound cannot survive a surface block. Both
+  // land in the declaration parser; `match_expr` calls this one across the merged `parse/`
+  // namespace, with its FIRST declared in emit.rule_first_guard.
+  "match_table_expr = \"match\" @off(allow_struct_lit) subj:expression \"table\"\n" +
+  "                   @require \"{\" IDENT ( \"|\" cols:IDENT )*\n" +
+  "                   ( p:pattern ( \"|\" )? ( v:table_cell ( \"|\" )? )*{#cols} ( \",\" )? )*\n" +
+  "                   @require \"}\"\n" +
+  "                   @expect(\"{\", \"expected `{` after match table\")\n" +
+  "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTableExpr(subj, cols, p, v)\n"
     ).grammar
 }

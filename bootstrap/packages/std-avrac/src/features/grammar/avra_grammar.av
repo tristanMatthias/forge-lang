@@ -159,10 +159,13 @@ fn avra_expr_core() -> Grammar {
   //   1. SUBJECTLESS `match { … }` builds Expr.When — the very node when_expr above
   //      builds — so it reuses MkWhen. Its arms are match_when_arm, NOT when_arm: the
   //      hand parse_when_arm_list takes `_` as the ONLY default, never `else`.
-  //   2. The TABLE sub-language stays @hand BY NATURE — its rows must supply exactly as
-  //      many values as the header row declared, which is data-dependent and not a
-  //      grammar rule at any level of DSL power. `@peek(match_table)` peels it off, so
-  //      the leaf is entered at the `match` keyword and is now narrowed to that one form.
+  //   2. The TABLE sub-language is GRAMMAR-NATIVE as of t-47hc.29. It was long recorded
+  //      here as "@hand BY NATURE — data-dependent and not a grammar rule at any level of
+  //      DSL power"; that was wrong. The row width is a BOUND, not a computation, and
+  //      `x{#cap}` expresses it. `@peek(match_table)` still peels the form off, but the
+  //      branch now names `match_table_expr` (features/match_expr/grammar.av) instead of
+  //      a hand leaf. Its statement twin is `match_table_stmt`; both share one builder
+  //      helper, so the two forms cannot drift.
   //   3. The ordinary form is PREDICTIVE (table already peeled) and owns both of its
   //      diagnostics via @require + @expect — exactly what the hand does with
   //      `consume(...) else return .Err`.
@@ -171,7 +174,7 @@ fn avra_expr_core() -> Grammar {
   // module namespace (like parse_pattern_or). Their FIRSTs are declared in
   // emit.rule_first_guard.
   match_expr   = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhen(a)
-               | @peek(match_table) @hand(match_expr)
+               | @peek(match_table) match_table_expr
                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatchExpr(subj, arms)
   // t-47hc.24 — the EXPRESSION `if`. The bind-fresh `if let v = x { … }` stays @hand:
   // it is not a parse at all but a DESUGARING (a fresh temp, a none-check condition, and

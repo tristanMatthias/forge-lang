@@ -514,7 +514,9 @@ fn build_uses_sp_start(name: string) -> bool {
         name == "MkWithSuffix" ||
         name == "MkMapLit" ||
         name == "MkSplice" ||
-        name == "MkQualExpr"
+        name == "MkQualExpr" ||
+        // The expression match TABLE anchors at the `match` keyword, like MkMatchExpr.
+        name == "MkMatchTableExpr"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -1740,6 +1742,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // re-chunks the cells by the header count, so the generated call passes the three
         // accumulators verbatim and shares one implementation with the interpreter.
         "MkMatchTable" -> "mk_match_table(st, ${args[0]}, CapVal.Toks(${args[1]}_list), CapVal.PNodes(${args[2]}_list), CapVal.Nodes(${args[3]}_list))"
+        // The EXPRESSION twin (slice 12): same three list captures, plus the `match`-keyword
+        // sp_start the hand anchors its span at.
+        "MkMatchTableExpr" -> "mk_match_table_expr(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), CapVal.PNodes(${args[2]}_list), CapVal.Nodes(${args[3]}_list))"
         // t-47hc.17 — `name: value` / shorthand `name`, and the `with { … }` suffix
         // that folds the accumulated list. Unlike the interpreter oracle (span-free),
         // the generated parser threads the real `sp_start`, so each partial `Expr.With`
@@ -2086,6 +2091,10 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // is the row-pattern reference from the same rule, and is the pattern family's
         // predicate, exactly as `pattern_or` above.
         if name == "table_cell" { return "tok_starts_expr_leaf(st.cur())" }
+        // `match_table_expr` is DEFINED in the declaration view (beside match_table_stmt, so
+        // the `{#cols}` stays in a string fragment) and CALLED from the expression view's
+        // `match_expr` — the same crossing match_arm makes, so it needs a declared FIRST.
+        if name == "match_table_expr" { return "(st.cur().text == \"match\")" }
         if name == "pattern" { return "tok_starts_pattern(st.cur())" }
         // Any OTHER external rule has no declared FIRST, and falling back to `false`
         // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
@@ -2333,7 +2342,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
