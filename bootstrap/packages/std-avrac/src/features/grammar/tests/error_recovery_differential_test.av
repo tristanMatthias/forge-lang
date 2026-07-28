@@ -81,6 +81,19 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("trait T { fn m( }\nfn f() -> int { 1 }") &&
         agree("impl for Foo { }\nfn f() -> int { 1 }")
     }
+    // `shape` is the ONE decl keyword currently ROUTED onto the production path
+    // (t-47hc slice 10.9, #1054), and until now the invalid corpus had no malformed
+    // `shape` at all — so the recovery guard was blind to exactly the keyword whose
+    // recovery had actually changed. Routing it looked clean partly because nothing
+    // tested it broken. Mirrors the malformed-`type` cases above, since `shape` shares
+    // `field` with it.
+    then "malformed shape declarations (the routed keyword)" {
+        agree("shape S = { x: , y: int }\nfn f() -> int { 1 }") &&
+        agree("shape S = { x: int\nfn f() -> int { 1 }") &&
+        agree("shape = { x: int }\nfn f() -> int { 1 }") &&
+        agree("shape S = \nfn f() -> int { 1 }") &&
+        agree("shape S { x: int }\nfn f() -> int { 1 }")
+    }
     then "malformed bindings and control-flow statements" {
         agree("fn f() -> int {\n let x = \n return 1\n}") &&
         agree("fn f() -> int {\n let = 5\n return 1\n}") &&

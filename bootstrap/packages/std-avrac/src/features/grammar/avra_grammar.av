@@ -318,9 +318,9 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = use_decl | mod_decl | shape_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | @peek(decl_lead) @hand(decl_hand) | statement
     }
-    compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_modules_grammar()), avra_struct_decl_grammar()), avra_generics_grammar())
+    compose_grammars(gp.grammar, avra_modules_grammar())
 }
 
 export fn avra_expr_grammar() -> Grammar {

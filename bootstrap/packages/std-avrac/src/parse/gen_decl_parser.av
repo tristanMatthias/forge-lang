@@ -15,9 +15,6 @@ export fn parse_declaration(st: PState) -> CapVal {
     if st.cur().text == "mod" {
         return parse_mod_decl(st)
     }
-    if st.cur().text == "shape" {
-        return parse_shape_decl(st)
-    }
     if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
     }
@@ -95,104 +92,6 @@ fn parse_mod_decl(st: PState) -> CapVal {
         CapVal.Tok(st.cur())
     }
     mk_module(st, capval_tok_text(mdname))
-}
-
-fn parse_type_decl(st: PState) -> CapVal {
-    mut tparams_list: List<TypeParamEntry> = []
-    mut fields_list: List<FieldEntry> = []
-    mut topf_list: List<Token> = []
-    mut talias: CapVal = CapVal.Nil
-    mut top: CapVal = CapVal.Nil
-    let _ = st.advance()
-    let tname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
-        CapVal.Tok(st.cur())
-    }
-    if st.cur().tk == Tk.Less {
-        let _ = st.advance()
-        tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-        while st.cur().tk == Tk.Comma {
-            let _ = st.advance()
-            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-        }
-        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-            st.report("expected >")
-        }
-    }
-    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
-        st.report("expected =")
-    }
-    if st.cur().tk == Tk.LeftBrace {
-        let _ = st.advance()
-        while st.cur().tk == Tk.Identifier {
-            fields_list.push(capval_to_field(st, parse_field(st)))
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-        }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
-        }
-    }
-    if tok_starts_type(st.cur()) {
-        talias = parse_type_expr(st)
-        if st.cur().text == "without" || st.cur().text == "only" {
-            top = CapVal.Tok(st.advance())
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected {")
-            }
-            while st.cur().tk == Tk.Identifier {
-                topf_list.push(st.advance())
-                if st.cur().tk == Tk.Comma { let _ = st.advance() }
-            }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected }")
-            }
-        }
-    }
-    mk_type_decl_any(st, capval_tok_text(tname), tparams_list, fields_list, talias, capval_present(talias), top, capval_present(top), topf_list)
-}
-
-fn parse_shape_decl(st: PState) -> CapVal {
-    mut shfields_list: List<FieldEntry> = []
-    let _ = st.advance()
-    let shname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
-        CapVal.Tok(st.cur())
-    }
-    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
-        st.report("expected =")
-    }
-    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
-    }
-    while st.cur().tk == Tk.Identifier {
-        shfields_list.push(capval_to_field(st, parse_field(st)))
-        if st.cur().tk == Tk.Comma { let _ = st.advance() }
-    }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
-    }
-    mk_shape_decl(st, capval_tok_text(shname), shfields_list)
-}
-
-fn parse_field(st: PState) -> CapVal {
-    let fname = CapVal.Tok(st.advance())
-    if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-        st.report("expected :")
-    }
-    let ftype = parse_type_expr(st)
-    mk_field(st, capval_tok_text(fname), ftype)
-}
-
-fn parse_tparam(st: PState) -> CapVal {
-    mut tpb: CapVal = CapVal.Nil
-    let tpn = CapVal.Tok(st.advance())
-    if st.cur().tk == Tk.Colon {
-        let _ = st.advance()
-        if st.cur().tk == Tk.Identifier { tpb = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
-        }
-    }
-    mk_type_param(capval_tok_text(tpn), tpb, capval_present(tpb))
 }
 
 fn parse_statement(st: PState) -> CapVal {

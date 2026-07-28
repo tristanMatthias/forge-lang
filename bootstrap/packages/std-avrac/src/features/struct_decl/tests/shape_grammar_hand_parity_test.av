@@ -78,44 +78,25 @@ spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
     }
 }
 
-// ROUTING (t-47hc slice 10.9). Parity above is measured through the INTERPRETER; this is
-// the separate claim that the PRODUCTION declaration parser reaches the native rule, which
-// is what actually changes the compiler. `shape` goes first because it is the smallest
-// keyword: one node, no generics, no cross-family references beyond `field`.
+// ROUTING — ATTEMPTED IN 10.9 (#1054), REVERTED HERE (t-myz7.2).
 //
-// It is asserted on the emitted source rather than by running a fixture, because a fixture
-// cannot tell the two paths apart on VALID input — that is the whole point of parity. What
-// distinguishes them is WHERE the dispatch sits.
-spec "t-47hc slice 10.9: `shape` is routed on the PRODUCTION path" {
-    then "the dispatch precedes the decl_hand gate — after it, it would be dead code" {
-        // `shape` is in `decl_lead`'s FIRST and still is, so emitting the native branch
-        // below the gate would leave it unreachable: correct output, no diagnostic, flip
-        // silently disabled. Same failure mode #1028 was caught on.
-        let src = decl_src()
-        let sh = src.index_of("return parse_shape_decl(st)")
-        let hand = src.index_of("run_hand_stmt(\"decl_hand\"")
-        sh >= 0 && hand >= 0 && sh < hand
-    }
-
-    then "the TAIL is still native `statement`, not a promoted @hand" {
-        // The constraint that governs the whole migration: an alternation's last branch is
-        // emitted UNGUARDED and owns error recovery. `@hand(decl_hand)` stays FIRST-guarded
-        // and `statement` stays last, so nothing was promoted. Re-read on the regenerated
-        // rule, not assumed — and error_recovery_differential stays 41/41 beside it.
-        let src = decl_src()
-        let hand = src.index_of("run_hand_stmt(\"decl_hand\"")
-        let tail = src.index_of("    parse_statement(st)\n}")
-        tail >= 0 && hand >= 0 && tail > hand
-    }
-
-    then "the type-param accumulator is TypeParamEntry, not ExprId" {
-        // Routing is what exposed this: `tparam` is EXTERNAL in the declaration view, so
-        // rule_kind_v defaulted it to "expr" and coerced every type param through
-        // capval_to_expr. The same trap the `pattern` and `match_arm` external kinds were
-        // written for, and invisible until a native decl rule was actually reachable.
-        let src = decl_src()
-        src.contains("mut tparams_list: List<TypeParamEntry> = []") &&
-            src.contains("capval_to_tparam(st, parse_tparam(st))") &&
-            !src.contains("tparams_list.push(capval_to_expr(")
-    }
-}
+// `shape` was routed onto the production declaration path and shipped green. It should
+// not have been: routing changed error RECOVERY, and the invalid corpus in
+// error_recovery_differential_test had no malformed `shape` at all — so the one guard
+// that watches the invalid half of a flip was blind to the only keyword that had flipped.
+// Adding those cases showed the regression immediately:
+//
+//     shape S = { x: , y: int }    routed: (shape S (x:<unknown>, y:int))   hand: (error)
+//     shape = { x: int }           routed: (shape  (x:int))                 hand: (error)
+//     shape S =                    routed: (shape S ())                     hand: (error)
+//
+// The generated parser is error-TOLERANT and builds partial nodes where
+// `parse_declaration_hand` ABORTS to a `Stmt.Error` and lets the caller synchronise. A
+// malformed shape reached downstream passes as a NAMELESS declaration. Valid programs
+// were unaffected — diff-test was green and every parity spec passed — which is exactly
+// why nothing else caught it.
+//
+// So `shape` is back on `@hand(decl_hand)` until the abort/resync primitive exists
+// (t-myz7.2). The parity work above stands: the fragment accepts what the hand accepts,
+// and that is what routing will spend once recovery can match too. Nothing here asserts
+// routing any more, because there is none to assert.
