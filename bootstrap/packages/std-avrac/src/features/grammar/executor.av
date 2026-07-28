@@ -18,6 +18,8 @@
 use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
+// t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
+use features.grammar.{dispatch_has_tail}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -1532,6 +1534,33 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
             // Checked AFTER the loop, so an earlier matching branch still wins.
             for fb in branches {
                 if fb.fallback { return exec_seq(g, fb, st, env, multi, outer_annots) }
+            }
+            // A SINGLE-branch alternation is run UNCONDITIONALLY by emit — there is
+            // nothing to dispatch between, so `emit_single_branch` (and emit_node_items'
+            // 1-branch case) emits the body with no FIRST guard and lets the branch's own
+            // item validation own the diagnostic. exec_node FIRST-guarded it instead, and
+            // that is where a stray token's recovery stopped: `expr_stmt = e:expression ->
+            // ExprStmt(e)` declined to run, so this arm's generic "unexpected token"
+            // replaced the expression ladder's own "expected expression" (t-zrn3).
+            //
+            // Only a PLAIN branch qualifies: a `@try` needs its rollback scaffold above,
+            // and a `@peek`/`@when` gate is a real precondition, not a dispatch guard.
+            if branches.length == 1 && !branches[0].speculative && branch_pred_ok(branches[0], st) {
+                return exec_seq(g, branches[0], st, env, multi, outer_annots)
+            }
+            // …and the OTHER two tail forms, which `@fallback` above is one third of
+            // (t-zrn3). A bare ref to a rule that owns its own recovery, or a
+            // leading-`@hand`, is equally the UNGUARDED TAIL: it runs on a token no
+            // branch's FIRST matched, which is how a stray top-level token reaches the
+            // hand parser's recovery. emit_dispatch honoured all three; this arm honoured
+            // only `@fallback`, so `declaration`'s `| statement` tail was reachable in the
+            // generated parser and unreachable here — and since a failed item is re-parsed
+            // with the INTERPRETER, this arm's generic "unexpected token" was what shipped
+            // (`then` / `)` / `,` / `* 5` all reported F0001 where the hand parser and the
+            // generated parser both reported F0040). `dispatch_has_tail` is the SHARED
+            // predicate both engines read, so the two cannot drift again.
+            if dispatch_has_tail(g, branches) {
+                return exec_seq(g, branches[branches.length - 1], st, env, multi, outer_annots)
             }
             // A rolled-back speculative attempt is a clean "no match" (diags/had_error
             // already restored) — let the caller (an enclosing alternation, a `*`/`?`, or
