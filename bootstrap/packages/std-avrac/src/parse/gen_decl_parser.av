@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_module, capval_present, capval_tok_text, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, Tk, SrcPos}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -22,33 +22,67 @@ export fn parse_declaration(st: PState) -> CapVal {
 }
 
 fn parse_use_decl(st: PState) -> CapVal {
-    mut useg_list: List<Token> = []
-    mut unames_list: List<Token> = []
-    mut uat: CapVal = CapVal.Nil
     let _ = st.advance()
+    let ut = parse_use_tail(st)
+    ut
+}
+
+fn parse_use_tail(st: PState) -> CapVal {
     if st.cur().tk == Tk.At {
-        uat = CapVal.Tok(st.advance())
-    }
-    if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
-        st.report("expected IDENT")
-    }
-    while st.cur().tk == Tk.Dot {
+        mut useg_list: List<Token> = []
+        mut unames_list: List<Token> = []
         let _ = st.advance()
-        if st.cur().tk == Tk.Identifier {
-            useg_list.push(st.advance())
+        let upkg = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+            st.report("expected IDENT")
+            CapVal.Tok(st.cur())
         }
+        if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
+            st.report("expected .")
+        }
+        if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+        while st.cur().tk == Tk.Dot {
+            let _ = st.advance()
+            if st.cur().tk == Tk.Identifier {
+                useg_list.push(st.advance())
+            }
+        }
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        while st.cur().tk == Tk.Identifier {
+            unames_list.push(st.advance())
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+        return mk_use_pkg(st, capval_tok_list(upkg), useg_list, unames_list)
     }
-    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+    if st.cur().tk == Tk.Identifier {
+        mut useg_list: List<Token> = []
+        mut unames_list: List<Token> = []
+        useg_list.push(st.advance())
+        while st.cur().tk == Tk.Dot {
+            let _ = st.advance()
+            if st.cur().tk == Tk.Identifier {
+                useg_list.push(st.advance())
+            }
+        }
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        while st.cur().tk == Tk.Identifier {
+            unames_list.push(st.advance())
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+        return mk_use(st, false, useg_list, unames_list)
     }
-    while st.cur().tk == Tk.Identifier {
-        unames_list.push(st.advance())
-        if st.cur().tk == Tk.Comma { let _ = st.advance() }
-    }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
-    }
-    mk_use(st, capval_present(uat), useg_list, unames_list)
+    CapVal.Node(st.error_node("expected an expression"))
 }
 
 fn parse_mod_decl(st: PState) -> CapVal {

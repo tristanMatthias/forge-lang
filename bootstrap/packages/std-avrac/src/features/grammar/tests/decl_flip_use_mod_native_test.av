@@ -95,6 +95,30 @@ fn wrapped_use_out() -> string {
         "fn main() { let _ = avra_selfhost_read_file(\"build/_decl_usemod_helper.av\") }\n")
 }
 
+// The ACCEPTANCE frontier, which is the thing a flip can silently widen. The hand
+// requires a scope AND a name after `@` (`consume(Tk.Dot)` then
+// `consume_identifier("expected package name")`), so `use @std.{x}` is a PARSE error.
+// A bare `( uat:"@" )?` in front of the shared dotted loop accepted it, because that
+// loop's segment is optional (it models the hand's `if check(LeftBrace) break`) —
+// measured as F3100 `package @std not found`, a RESOLVER code, meaning the parse had
+// already succeeded where the hand stops. Binding `( uat:"@" useg:IDENT "." )?` as one
+// group restores the frontier. This is the `table_cell`-vs-`primary_base` failure mode
+// from #1039, in the declaration family.
+fn at_no_name_out() -> string {
+    check_out("atnoname",
+        "use @std.{avra_selfhost_read_file}\n" +
+        "fn main() { let _ = 1 }\n")
+}
+
+spec "t-47hc slice 10.1: the `@`-package form still requires its name" {
+    then "`use @std.{x}` stays a PARSE error — the native rule did not widen the language" {
+        let out = at_no_name_out()
+        // F0001 is the LEXER/PARSER range. The point is that it never reaches
+        // resolution: an F3100 here would mean the parse wrongly succeeded.
+        !clean(out) && out.contains("error[F0001]") && !out.contains("error[F3100]")
+    }
+}
+
 spec "t-47hc slice 10.1: every `use` / `mod` form the compiler itself writes still parses" {
     then "the `@pkg` path, a bare `mod`, and a multi-segment path all compile clean" {
         clean(use_forms_out())
