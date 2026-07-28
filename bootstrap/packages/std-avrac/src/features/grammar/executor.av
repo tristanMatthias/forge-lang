@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name}
+use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -433,6 +433,10 @@ export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: strin
 /// pre-branch diagnostics; keep an explicit value-copy of the bag beside it.
 export type HandTryState = { parser: ParserState, bag: DiagnosticBag }
 
+/// Postfix-chain accumulator snapshot for a grammar `@try` — see save_postfix_state.
+/// Plain ids/offsets, so a value copy IS the snapshot.
+export type PostfixTryState = { base: ExprId, sp_start: int, step_base: ExprId, step_sp: int }
+
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
 
@@ -598,6 +602,38 @@ impl PState {
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+    }
+
+    /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try` — the sibling
+    /// of save_hand_state, for the same reason and against the same failure.
+    ///
+    /// `exec_seq` is error-TOLERANT: a speculative branch that mismatches a terminal
+    /// reports and keeps going, so its `-> build` STILL RUNS, on whatever the captures
+    /// happen to hold. When that build is a postfix step it calls `set_postfix_base` with
+    /// a row the rollback is about to discard via `truncate_to_mark`, leaving
+    /// `postfix_base` dangling past the end of the store. The next `base_pred` — which
+    /// dereferences it with `store.exprs.get(postfix_base)` — then indexes out of bounds.
+    ///
+    /// Latent until a speculative branch was ALSO a postfix step, which `f<T>(args)` is
+    /// the first to be. It is a no-op for every other `@try` in the grammar: the primary
+    /// speculations (list_comp, lambda, tuple) run BEFORE the enclosing chain calls
+    /// seed_postfix, so the accumulator they restore is the one about to be overwritten.
+    /// The generated parser never had the bug — it gates the builder call on the diag
+    /// count, so a doomed branch never builds at all.
+    fn save_postfix_state(self) -> PostfixTryState {
+        PostfixTryState {
+            base: self.postfix_base,
+            sp_start: self.postfix_sp_start,
+            step_base: self.postfix_step_base,
+            step_sp: self.postfix_step_sp,
+        }
+    }
+
+    fn restore_postfix_state(self, saved: PostfixTryState) {
+        self.postfix_base = saved.base
+        self.postfix_sp_start = saved.sp_start
+        self.postfix_step_base = saved.step_base
+        self.postfix_step_sp = saved.step_sp
     }
 
     /// Snapshot the threaded procedural delegate alongside a grammar `@try`.
@@ -924,7 +960,8 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 /// so the executor and the emitter cannot disagree about which rules need the snapshot.
 fn build_is_postfix_step(bn: string) -> bool {
     bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" ||
-        bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix"
+        bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" ||
+        bn == "MkGenericCallSuffix"
 }
 
 fn rule_has_postfix_step_build(g: Grammar, name: string) -> bool {
@@ -1529,6 +1566,7 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         let s_diags = st.diags.length
                         let s_err = st.had_error
                         let s_hand = st.save_hand_state()
+                        let s_postfix = st.save_postfix_state()
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
                         // permitted, to feed a `-> build`) cannot leak to a sibling.
@@ -1559,6 +1597,7 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
                         st.restore_hand_state(s_hand)
+                        st.restore_postfix_state(s_postfix)
                     } else {
                         return exec_seq(g, b, st, env, multi, outer_annots)
                     }
@@ -2712,6 +2751,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
         "MkCallArg" if args.length == 1 -> CapVal.Node(mk_call_arg(st, env.get(args[0])))
         "MkCallSuffix" if args.length == 1 -> CapVal.Node(mk_call_suffix(st, env.get(args[0])))
+        "MkGenericCallSuffix" if args.length == 2 -> CapVal.Node(mk_generic_call_suffix(st, capval_to_texpr_list(env.get(args[0])), env.get(args[1])))
         "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkIndexSuffix" if args.length == 2 -> CapVal.Node(mk_index_suffix(st, env.get(args[0]), env.get(args[1])))
         "MkNone" if args.length == 0 -> mk_none_cap(st)
@@ -4542,6 +4582,29 @@ export fn mk_call_suffix(st: PState, acap: CapVal) -> ExprId {
     postfix_step_node(st, Expr.Call(st.postfix_step_base, capval_to_node_list(acap)))
 }
 
+/// `f<T, U>(args)` — the explicit-type-argument call.
+///
+/// NOT `postfix_step_node`, which every sibling suffix uses. try_parse_generic_call ends
+/// in `alloc_leaf` (→ `intern_expr_leaf`), so the GenericCall row is INTERNED and carries
+/// NO byte span, while `postfix_step_node` would `add_expr` a freshly spanned row. The
+/// difference is observable: an interned row is shared by structural identity and a
+/// spanned one is not, and the span feeds every diagnostic anchored on this node. Chain
+/// threading still has to happen by hand, hence the explicit `set_postfix_base`.
+///
+/// The type arguments arrive as TypeExprs and are lowered through the SHARED
+/// type_expr_to_vtype, exactly as parse_type_name_list does — so `id<List<int>>(x)` yields
+/// `List(Int)` rather than a bare `List` with the `<int>` orphaned. Taking `List<TypeExpr>`
+/// rather than a CapVal follows MkNamed: a repeated type capture is already a
+/// `List<TypeExpr>` in the generated parser, so only the interpreter needs a conversion.
+export fn mk_generic_call_suffix(st: PState, targs: List<TypeExpr>, acap: CapVal) -> ExprId {
+    mut vts: List<ValueType> = []
+    for te in targs { vts.push(type_expr_to_vtype(te)) }
+    let rid = st.store.intern_expr_leaf(
+        Expr.GenericCall(st.postfix_step_base, vts, capval_to_node_list(acap)))
+    st.set_postfix_base(rid)
+    rid
+}
+
 export fn mk_try_suffix(st: PState) -> ExprId {
     postfix_step_node(st, Expr.Try(st.postfix_step_base))
 }
@@ -4775,6 +4838,11 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         .FieldAccess(obj, field) -> "(. ${dump_expr(store, obj)} ${field})"
         .Index(obj, idx) -> "([] ${dump_expr(store, obj)} ${dump_expr(store, idx)})"
         .Call(callee, cargs) -> "(call ${dump_expr(store, callee)}${dump_args(store, cargs)})"
+        // The turbofish call. Type args are rendered through the SHARED
+        // render_type_name_list, so a dump difference reflects a real ValueType
+        // difference and not a second spelling of one.
+        .GenericCall(callee, targs, cargs) ->
+            "(gcall ${dump_expr(store, callee)}<${render_type_name_list(targs)}>${dump_args(store, cargs)})"
         // Render Grouping EXPLICITLY (never unwrap) so the dump is a
         // lossless view of the tree — `((1))` must not collapse to `1`.
         .Grouping(e) -> "(group ${dump_expr(store, e)})"

@@ -1,0 +1,84 @@
+// WHY: a rolled-back `@try` must restore the POSTFIX CHAIN ACCUMULATOR too (t-47hc.33
+// form 8) — the exact sibling of the `@hand`-delegate gap in try_hand_rollback_test,
+// found the same way and fixed with the same shape.
+//
+// `exec_seq` is error-TOLERANT by design: a branch that mismatches a terminal REPORTS
+// and keeps going, so a speculative branch runs to the end of its sequence and its
+// `-> build` FIRES, on whatever the captures happen to hold. For every `@try` that
+// existed before this one that was harmless — MkLambda / MkTupleFR / MkListComp build a
+// node and nothing else. `MkGenericCallSuffix` is the first speculative build that is
+// ALSO a postfix step, and a postfix step calls `set_postfix_base`.
+//
+// So on `a < b` the executor would: enter the branch on `<`, parse `b` as a type, fail
+// to find `>`, report — then still build a GenericCall, point `postfix_base` at it, and
+// roll back, discarding that row via `truncate_to_mark`. `postfix_base` was left
+// dangling past the end of the store, and the next `base_pred` — which reads
+// `store.exprs.get(postfix_base)` — aborted the process with an out-of-bounds index.
+// `a < b` is not an exotic input; every comparison against a callable base hit it.
+//
+// The generated parser never had the bug: it gates the builder call on the diagnostic
+// count, so a doomed branch never builds. That asymmetry is why the executor needs its
+// own snapshot (`save_postfix_state` / `restore_postfix_state`) rather than a shared fix.
+//
+// Restoring is a NO-OP for every other `@try` in the grammar, which is what keeps this
+// byte-identical: the primary speculations run before the enclosing chain calls
+// seed_postfix, so the accumulator they restore is one that is about to be overwritten.
+
+use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar, dump_expr}
+use @std.avrac.parse.{parse_expression_native_probe}
+
+fn dsl(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    dump_expr(r.store, r.root)
+}
+
+fn hand(src: string) -> string {
+    let p = parse_expression_native_probe(src)
+    if p.had_error != 0 { return "<parse error>" }
+    dump_expr(p.store, p.root)
+}
+
+fn agree(src: string) -> bool {
+    let g = dsl(src)
+    let h = hand(src)
+    g == h && !g.contains("<unmodelled-variant>") && !h.contains("<unmodelled-variant>")
+}
+
+spec "a rolled-back generic-call speculation leaves the chain accumulator intact" {
+    given "a comparison whose LHS is callable — the branch enters, then must rewind" {
+        then "`a < b` is a comparison, not a generic call" {
+            // Before the fix this aborted the process rather than failing an assertion.
+            dsl("a < b") == "(< a b)"
+        }
+        then "and it agrees with the hand parser" {
+            agree("a < b")
+        }
+        then "a rewind followed by MORE input still parses" {
+            // The dangling base outlived the branch, so the crash landed on whatever
+            // predicate ran next rather than at the rewind itself.
+            agree("a < b && c == d") &&
+                agree("a < b || c > d") &&
+                agree("x < y + 1")
+        }
+        then "a field-access base rewinds too — base_callable admits FieldAccess" {
+            agree("a.b < c")
+        }
+        then "back-to-back rewinds do not accumulate" {
+            agree("a < b && c < d && e < f")
+        }
+    }
+    given "the same shapes where the speculation SUCCEEDS" {
+        then "the chain still advances — a rewind guard must not break the success path" {
+            agree("f<int>(x)") &&
+                agree("f<A, B>(x, y)") &&
+                agree("id<List<int>>(x)")
+        }
+        then "a generic call is chainable, so the accumulator really is threaded" {
+            agree("f<int>(x).y") &&
+                agree("f<int>(x)[0]")
+        }
+        then "a rewind BEFORE a success does not poison it" {
+            agree("a < b && f<int>(x)")
+        }
+    }
+}

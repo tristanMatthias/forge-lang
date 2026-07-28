@@ -271,3 +271,45 @@ spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
         u.contains("fn parse_unary_chain(st: PState) -> CapVal {")
     }
 }
+
+spec "t-47hc.33: `f<T>(args)` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_generic_call_suffix(st")
+    }
+    then "the guard carries the is_callable conjunct — `a < b` stays a comparison" {
+        postfix_rule_src().contains("base_pred(\"base_callable\", st)")
+    }
+    then "and the token test" {
+        postfix_rule_src().contains("st.cur().tk == Tk.Less")
+    }
+    then "the type arguments are TYPES, not expressions" {
+        // The capture is a repeated `type_expr`, so its accumulator must be declared
+        // `List<TypeExpr>` and filled through capval_to_texpr. Defaulting to
+        // `List<ExprId>` + capval_to_expr (what an UNDECLARED external rule kind gives)
+        // is a silent tree corruption, not a compile error, on any build that accepts it.
+        postfix_rule_src().contains("mut ta_list: List<TypeExpr>") &&
+            postfix_rule_src().contains("capval_to_texpr(st, parse_type_expr(st))")
+    }
+    then "the branch is SPECULATIVE — `<` is also the comparison operator" {
+        // Without the @try, `a < b` commits to a generic call on sight of `<` and the
+        // comparison operator becomes unparseable.
+        postfix_rule_src().contains("let s_pos = st.pos")
+    }
+    then "there is NO cut — the hand backtracks on every failure past the `<`" {
+        // try_parse_generic_call restores on a bad type list, a missing `(`, a bad arg
+        // list AND a missing `)`, so the branch never owns its diagnostics. A cut after
+        // `">" "("` would report where the hand re-reads the tokens as a comparison.
+        let g = avra_expr_dispatch_grammar()
+        mut src = ""
+        for gr in g.rules {
+            if gr.name == "postfix_suffix" { src = emit_rule_fn(g, gr) }
+        }
+        !src.contains("env.set_cut(true)")
+    }
+    then "the builder call is GATED on the diagnostic count" {
+        // The generated parser must not run the build for a doomed speculative branch:
+        // mk_generic_call_suffix advances the chain accumulator, and on a branch that is
+        // about to roll back that leaves postfix_base pointing past the truncated store.
+        postfix_rule_src().contains("if st.diags.length == s_diags && st.had_error == s_err")
+    }
+}
