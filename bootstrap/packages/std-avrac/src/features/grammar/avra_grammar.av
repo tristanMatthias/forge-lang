@@ -145,7 +145,15 @@ fn avra_expr_core() -> Grammar {
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
                  | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
+                 | @when(dot_postfix_ok) @peek(dot_plain_field) "." n:IDENT -> MkFieldAccess(n)
+                 | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @hand(postfix_suffix)
+  // Two sequences because the closing `]` message differs by whether a `..` was seen and
+  // `@expect` keys on the token. Dispatch is on `..` (FIRST), not speculation — the hand
+  // parses the index expression exactly once. The `]` branch is `@fallback` so it owns
+  // the message for a token that starts NEITHER (`a[1 2]`).
+  index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
+              | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
