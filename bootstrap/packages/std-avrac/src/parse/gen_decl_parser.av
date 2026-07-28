@@ -173,29 +173,30 @@ fn parse_type_decl(st: PState) -> CapVal {
     if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
         st.report("expected =")
     }
-    if st.cur().tk == Tk.LeftBrace {
-        let _ = st.advance()
-        while st.cur().tk == Tk.Identifier {
-            fields_list.push(capval_to_field(st, parse_field(st)))
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-        }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
-        }
-    }
-    if tok_starts_type(st.cur()) {
-        talias = parse_type_expr(st)
-        if st.cur().text == "without" || st.cur().text == "only" {
-            top = CapVal.Tok(st.advance())
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected {")
-            }
+    if st.cur().tk == Tk.LeftBrace || tok_starts_type(st.cur()) {
+        if st.cur().tk == Tk.LeftBrace {
+            let _ = st.advance()
             while st.cur().tk == Tk.Identifier {
-                topf_list.push(st.advance())
+                fields_list.push(capval_to_field(st, parse_field(st)))
                 if st.cur().tk == Tk.Comma { let _ = st.advance() }
             }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected }")
+            }
+        } else if tok_starts_type(st.cur()) {
+            talias = parse_type_expr(st)
+            if st.cur().text == "without" || st.cur().text == "only" {
+                top = CapVal.Tok(st.advance())
+                if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+                    st.report("expected {")
+                }
+                while st.cur().tk == Tk.Identifier {
+                    topf_list.push(st.advance())
+                    if st.cur().tk == Tk.Comma { let _ = st.advance() }
+                }
+                if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+                    st.report("expected }")
+                }
             }
         }
     }

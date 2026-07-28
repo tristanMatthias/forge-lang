@@ -74,10 +74,49 @@ spec "t-47hc slice 10.5: every non-brace `type` RHS builds the hand's node" {
 
 spec "t-47hc slice 10.5: the brace form is unaffected by the added alias path" {
     then "fields, generics, and the empty literal all still agree" {
-        // Both groups are optional, so an empty `{}` must still reach the no-alias path
-        // rather than being read as a missing RHS.
+        // The RHS is one optional group holding both forms, so an empty `{}` must still
+        // reach the brace branch rather than being read as a missing RHS.
         agrees("type P = { x: int, y: int }\n") &&
             agrees("type Box<T> = { val: T }\n") &&
             agrees("type P = {}\n")
+    }
+}
+
+
+// ── t-myz7.1: the two RHS forms are EXCLUSIVE ────────────────────────────────
+//
+// The RHS was two ADJACENT optional groups — `( "{" field* "}" )?` then
+// `( talias:type_expr … )?`. Adjacent optionals are not exclusive: after the brace form
+// completes, the alias group is STILL tried, and `type_expr`'s FIRST includes IDENT,
+// `fn`, `[`, `(`, `@` and `dyn`. So the declaration FOLLOWING a struct-form `type` got
+// consumed as its alias — `type T = { x: int }` followed by anything type-led swallowed
+// the next declaration whole, silently, with no parse error to show for it.
+//
+// Nesting the two in ONE optional group makes them branches of an alternation, which is
+// FIRST-dispatched: `{` picks the brace form, `tok_starts_type` picks the alias, and the
+// group ends either way. The group STAYS optional because a bare `type X =` is a lenient
+// edge both parsers accept (diagnostic_equivalence_test pins it).
+//
+// Each case here is a struct-form `type` followed by a declaration whose lead token is
+// in `type_expr`'s FIRST — the exact overlap that made the groups non-exclusive. They
+// are measured against the hand, so they fail if the following declaration is eaten.
+spec "t-myz7.1: a struct-form `type` does not swallow the declaration after it" {
+    then "a following IDENT-led declaration survives" {
+        agrees("type T = { x: int }\ntype U = { y: int }\n") &&
+            agrees("type T = { x: int }\nshape S = { z: int }\n")
+    }
+
+    then "a following `fn`-led declaration survives — `fn` starts a fn TYPE too" {
+        agrees("type T = { x: int }\nfn f() -> int { 1 }\n")
+    }
+
+    then "the multi-line brace form, which is how the compiler writes them, survives" {
+        agrees("type T = {\n  x: int\n}\ntype U = {\n  y: int\n}\n")
+    }
+
+    then "the alias form still reaches the alias branch and stops at its own end" {
+        agrees("type A = B\nfn zed() -> int { 1 }\n") &&
+            agrees("type L = [int]\nfn f() -> int { 1 }\n") &&
+            agrees("type F = fn(int) -> int\nfn f() -> int { 1 }\n")
     }
 }
