@@ -235,7 +235,7 @@ fn avra_expr_core() -> Grammar {
                | "[" ( a:expression ( "," a:expression )* )? ( "," )? "]" -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
   paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
-               | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" lb:lambda_body -> MkLambda(a, lb)
+               | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression

@@ -1,0 +1,110 @@
+// WHY: a rolled-back `@try` must restore the `@hand` DELEGATE too (t-3keo).
+//
+// The `@try` rollback rewinds PState — cursor, node-store mark, diags, had_error —
+// but a speculative branch can also run an `@hand` leaf, which advances a SEPARATE
+// procedural Parser threaded on `st.hand_delegate`. That parser is forward-only, so
+// rewinding `st.pos` without it leaves the two halves disagreeing about where the
+// input is, and the retry branch parses from the wrong place.
+//
+// The save/restore pair has existed all along (`save_hand_state` / `restore_hand_state`).
+// What was wrong was its ARMING: both engines asked "does some NON-speculative branch
+// LEAD with an @hand leaf" — a question about the RETRY branch — when the thing that
+// moves the delegate is the SPECULATIVE branch's own body reaching a hand leaf.
+//
+// `paren_expr` is where those come apart, and it is why the bug was invisible for so
+// long. Its native branches lead with the literal `"("`, so nothing armed; its `@try`
+// branches parse `a:expression`, which reaches `@hand(ident_primary)` on a bare IDENT
+// and nothing else. So `(v)` broke while `(1)`, `(true)`, `("s")`, `([1])` — native
+// primaries that never touch the delegate — all worked. That is the shape pinned below:
+// the IDENT case must now agree with its native-primary siblings.
+//
+// The rollback is unconditional now, which raised the question the old gate's comment
+// was really about: a lambda that has already consumed its `->` is no longer a
+// candidate for the grouping branch, and must recover as a lambda rather than rewind.
+// That is what `@cut` is for, and the grammar now says so directly —
+// `")" "->" @cut lb:lambda_body` — so a committed branch keeps its diagnostics and
+// never reaches the rollback at all. Error-recovery parity with the hand oracle
+// (error_recovery_differential_test) is the guard on that half.
+
+use @std.avrac.parse.{parse_expression_source}
+use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
+use @std.avrac.core.{render_expr}
+
+// A `(`-led or `[`-led statement following another statement inside a lambda block.
+// The leading statement is what leaves the delegate parked mid-block, so the
+// speculation on the SECOND statement is the one that has something to roll back.
+fn block_with(tail: string) -> string {
+    "(a: int) -> {\n    let v = 1\n    ${tail}\n}\n"
+}
+
+/// Render the static/generated parse of `src`, or "ERR" when it fails.
+fn tree_of(src: string) -> string {
+    let r = parse_expression_source(src)
+    if r.had_error != 0 || r.expr == null { return "ERR" }
+    render_expr(r.store, r.expr!)
+}
+
+fn parses(src: string) -> bool { tree_of(src) != "ERR" }
+
+spec "t-3keo: a speculative branch that moved the delegate rolls it back" {
+    then "the bare-IDENT paren parses — the exact regression" {
+        // Was: `parse error at 3:5: expected `)``. The `@try` lambda branch consumed
+        // `v` through @hand(ident_primary), failed at the absent `->`, and rolled back
+        // the cursor but not the delegate; the grouping retry then ran desynced.
+        tree_of(block_with("(v)")).contains("(group v)")
+    }
+    then "and agrees with the native primaries it used to differ from" {
+        // The discriminator that identified the bug: these never reach a hand leaf, so
+        // they always worked. Same syntactic position, same shape — the IDENT case
+        // having behaved differently was the whole tell.
+        parses(block_with("(1)")) && parses(block_with("(true)")) &&
+            parses(block_with("(\"s\")")) && parses(block_with("([1])")) &&
+            parses(block_with("(v + v)"))
+    }
+    then "the `[`-led form recovers too — it is the same rollback, not a paren quirk" {
+        // list_expr's `@try "[" cb:list_comp "]"` speculates the comprehension and hits
+        // the same seam, which is why the fix is in the rollback and not in paren_expr.
+        tree_of(block_with("[v]")).contains("(list (v))")
+    }
+    then "a nested speculation inside the rolled-back one also recovers" {
+        // The inner `@try` restores to its own snapshot while the outer restores to
+        // an earlier one; a shared/aliased save would leave the delegate at whichever
+        // ran last instead of at each branch's own entry point.
+        parses(block_with("((v))")) && parses(block_with("([v])"))
+    }
+}
+
+// These two are LOCKSTEP checks, not the guard — say so plainly, because they pass
+// on the broken tree. `run_grammar_expr` builds a PState with no threaded delegate,
+// so the interpreter never had a delegate to desync; the production static parser,
+// which does thread one, is where the bug lived and where the four assertions above
+// discriminate. Keeping them anyway pins the engines' agreement, which is the property
+// that would break if only one side's rollback were armed.
+spec "t-3keo: the INTERPRETER agrees — the two engines stay in lockstep" {
+    then "the interpreter parses the regression shape" {
+        // exec_node's speculative arm and emit's generated block are twins; arming the
+        // snapshot in only one would silently split the oracle from the production
+        // parser, which is the failure mode the whole grammar-flip program guards.
+        !run_grammar_expr(avra_expr_grammar(), block_with("(v)")).had_error
+    }
+    then "and the native-primary control, on the same engine" {
+        !run_grammar_expr(avra_expr_grammar(), block_with("(1)")).had_error
+    }
+}
+
+spec "t-3keo: `@cut` past `->` keeps a committed lambda committed" {
+    then "valid lambdas still parse — the cut did not swallow the body" {
+        parses("(x) -> x\n") && parses("(x: int) -> x\n") &&
+            parses("(x, y) -> x\n") && parses("() -> 1\n")
+    }
+    then "a lambda body that is itself a paren still parses" {
+        // `->` commits, then the body speculates on its own. The commit is per-branch,
+        // so the inner rollback must still be free to restore.
+        tree_of("(x) -> (x)\n").contains("group")
+    }
+    then "a grouping is NOT mistaken for a committed lambda" {
+        // The cut sits AFTER `->`, so a branch that never reaches `->` stays a
+        // candidate for the grouping retry — the property the regression above needs.
+        tree_of("(v)\n").contains("(group v)")
+    }
+}

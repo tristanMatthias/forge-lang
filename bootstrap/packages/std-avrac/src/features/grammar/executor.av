@@ -1459,19 +1459,22 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
         .Alt(branches) -> {
             let empty: List<string> = []
             mut tried_spec = false
-            // Snapshot the procedural delegate only if a failed native branch
-            // can retry through an @hand sibling. Native-only alternatives keep
-            // their established committed-recovery behavior after a hand leaf
-            // crosses a discriminator such as a lambda's `->`.
-            mut retry_hand = false
-            for rb in branches {
-                if !rb.speculative && rb.items.length > 0 {
-                    match rb.items[0].prim {
-                        .Hand(_) -> retry_hand = true
-                        _ -> {}
-                    }
-                }
-            }
+            // A rolled-back `@try` restores the delegate UNCONDITIONALLY (t-3keo).
+            //
+            // This used to be armed only when some NON-speculative branch LED with an
+            // `@hand` leaf — a question about the RETRY branch. But the thing that moves
+            // the delegate is the SPECULATIVE branch's own body reaching a hand leaf,
+            // which is unrelated. `paren_expr` is where the two come apart: its native
+            // branches lead with the literal `"("`, so nothing armed, while its `@try`
+            // branches parse `a:expression` and reach `@hand(ident_primary)` on any bare
+            // IDENT. The rollback then rewound `st.pos` and left the delegate ahead, so
+            // `(v)` failed to parse where `(1)` / `(true)` / `("s")` / `([1])` — native
+            // primaries that never touch the delegate — all succeeded.
+            //
+            // Restoring is simply what `@try` means: on failure the branch must leave no
+            // trace, and the delegate is part of the state it touched. `save_hand_state`
+            // already no-ops when no delegate is threaded, so an alternation that cannot
+            // reach one pays nothing.
             for b in branches {
                 if branch_pred_ok(b, st) && tok_starts_seq(g, b, st, empty) {
                     if b.speculative {
@@ -1484,7 +1487,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
-                        let s_hand = if retry_hand { st.save_hand_state() } else { null }
+                        let s_hand = st.save_hand_state()
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
                         // permitted, to feed a `-> build`) cannot leak to a sibling.
@@ -1514,7 +1517,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                         env.set_abort(false)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
-                        if retry_hand { st.restore_hand_state(s_hand) }
+                        st.restore_hand_state(s_hand)
                     } else {
                         return exec_seq(g, b, st, env, multi, outer_annots)
                     }

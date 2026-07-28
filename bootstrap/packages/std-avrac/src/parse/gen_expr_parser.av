@@ -943,6 +943,7 @@ fn parse_list_expr(st: PState) -> CapVal {
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        let s_hand = st.save_hand_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = CapVal.Tok(st.advance())
         let cb = parse_list_comp(st)
@@ -953,6 +954,7 @@ fn parse_list_expr(st: PState) -> CapVal {
         }
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
     }
     if st.cur().tk == Tk.LeftBracket {
         let sp_start = st.cur().pos
@@ -1025,6 +1027,8 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        mut s_cut = false
+        let s_hand = st.save_hand_state()
         let sp_start = st.cur().pos
         mut a_list: List<ExprId> = []
         let _ = st.advance()
@@ -1044,12 +1048,14 @@ fn parse_paren_expr(st: PState) -> CapVal {
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
             st.report("expected ->")
         }
+        if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
         let lb = parse_lambda_body(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
+        if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
             return CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(a_list), capval_to_expr(st, lb)))
         }
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
     }
     if st.cur().tk == Tk.LeftParen {
         tried_spec = true
@@ -1057,6 +1063,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        let s_hand = st.save_hand_state()
         let sp_start = st.cur().pos
         mut rest_list: List<ExprId> = []
         let _ = st.advance()
@@ -1082,6 +1089,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         }
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
     }
     if st.cur().tk == Tk.LeftParen {
         let sp_start = st.cur().pos
