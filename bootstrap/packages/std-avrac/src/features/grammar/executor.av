@@ -2807,13 +2807,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkMethod" if args.length == 4 -> mk_method(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
         "MkImpl" if args.length == 3 -> mk_impl(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), capval_to_stmt_list(env.get(args[2])))
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkExtern" if args.length == 3 -> {
-            // `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI
-            // signature → Stmt.ExternFn (parse_extern_declaration). An absent
-            // return type defaults to Void.
-            let ret_vt = if capval_present(env.get(args[2])) { type_expr_to_vtype(capval_to_texpr(st, env.get(args[2]))) } else { ValueType.Void }
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), ret_vt)))
-        }
+        "MkExtern" if args.length == 3 -> mk_extern_fn(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])))
         "MkExport" if args.length == 1 -> {
             // `export <decl>` — parse_declaration wraps the inner exportable
             // decl (fn / type / enum / extern) in a bare `@export` annotation
@@ -3437,6 +3431,19 @@ export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, 
         .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
         _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
     }
+}
+
+/// `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI signature
+/// (the `MkExtern` build's core). An absent return type defaults to Void, matching
+/// `parse_extern_declaration`.
+///
+/// Extracted for the same reason the generic decl cores were (slice 10.2): the executor
+/// had this build inline and emit had NO twin at all, so a grammar naming `MkExtern`
+/// worked in the interpreter — which is why decl_export_extern_test passes — and would
+/// have produced nothing usable in the generated parser. One core, both engines.
+export fn mk_extern_fn(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(name, params, ret_vt)))
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).
