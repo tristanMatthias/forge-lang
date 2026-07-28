@@ -1,0 +1,94 @@
+// WHY: t-47hc slice 8 (capability, landed DORMANT) — the `@peek(ident_lbrace_plain)`
+// predicate the native struct-literal branch will gate on.
+//
+// THE PROBLEM IT SOLVES. Three IDENT-led expression forms begin with the SAME two
+// tokens, `IDENT` then `{`:
+//
+//     Point { x: 1 }     a struct literal          → grammar-expressible
+//     table { … }        the table literal         → hand (char-level `table<Row>` lookahead)
+//     grammar { … }      a registered `kw { … }`   → hand (the feature owns the block)
+//
+// A grammar branch is dispatched on its FIRST TOKEN, so a native struct-literal
+// branch guarded only by `@peek(ident_lbrace)` would ENTER on all three and
+// capture the two that belong to the hand parser. The DSL has no guard negation
+// (`^` marks same-line, it is not `not`), so "ident+`{` but not those" needs its
+// own predicate — this one.
+//
+// WHY IT IS NOT A HEURISTIC. The registered-keyword half is answered by the
+// REGISTRY (`lookup_expr_parser`) — the same table `parse_ident_expr` consults —
+// so a package registering a new `kw { }` construct is excluded automatically and
+// the predicate cannot drift from the dispatch it mirrors. Only `table`, which is
+// built into `parse_ident_expr` rather than registry-driven, is named, exactly as
+// the hand parser names it.
+//
+// DORMANT: no production grammar references `ident_lbrace_plain` yet, so the
+// generated parsers regen byte-identical. This proves the predicate discriminates
+// correctly BEFORE the flip spends it — and because `peek_guard` emits a call to
+// the same `lookahead_ok` the interpreter runs, proving it here proves it for the
+// generated parser too.
+use @std.avrac.features.grammar.{lookahead_ok, new_pstate, parse_grammar, run_grammar_expr}
+
+// Ask the predicate DIRECTLY, over a PState built by `new_pstate` — which attaches
+// a real `@hand` delegate, and therefore a real feature Registry. That matters:
+// `run_grammar_expr` threads `hand_delegate: null`, and with no registry to consult
+// the predicate deliberately answers "not plain" for everything (see
+// executor.lookahead_ok), so a grammar-shaped probe over that entry could not
+// distinguish the registry case at all.
+//
+// `lookahead_ok` is also the exact function the EMITTED parser calls — `peek_guard`
+// emits `lookahead_ok("<cond>", st)` — so asserting it here covers the interpreter
+// and the generated parser at once, with no second transcription to keep in sync.
+fn said_plain(src: string) -> bool {
+    lookahead_ok("ident_lbrace_plain", new_pstate(src))
+}
+
+spec "t-47hc.8: ident_lbrace_plain ACCEPTS a real struct literal" {
+    then "a PascalCase constructor name is plain" {
+        said_plain("Point { }")
+    }
+    then "a lowercase name is plain too (struct-lit is not case-gated)" {
+        said_plain("x { }")
+    }
+    then "an ordinary name that merely resembles a keyword is plain" {
+        said_plain("Foo { }")
+    }
+}
+
+spec "t-47hc.8: ident_lbrace_plain REJECTS the two hand-owned IDENT forms" {
+    // These are the whole reason the predicate exists. If either of these ever
+    // reports plain, a native struct-lit branch would swallow it and the construct
+    // would stop parsing as itself.
+    then "`table { … }` is NOT plain — the table literal stays hand-owned" {
+        !said_plain("table { }")
+    }
+    then "a REGISTERED `kw { … }` construct is NOT plain — `grammar` owns its block" {
+        // Registry-driven: this holds because `grammar` is registered as an
+        // expr_keyword (features/grammar/mod.av), NOT because it is named in the
+        // predicate. Register another `kw { }` feature and it is excluded too,
+        // with no change here — which is the property that keeps this from being
+        // the string-matching heuristic CLAUDE.md forbids.
+        !said_plain("grammar { }")
+    }
+}
+
+spec "t-47hc.8: with NO registry available the predicate is CONSERVATIVE" {
+    then "no delegate ⇒ not plain, so the hand keeps every ident+`{` form" {
+        // The safe direction: a false negative leaves a struct literal to the hand
+        // (correct, byte-identical); a false positive would let a native branch
+        // swallow a construct whose feature owns the block. `run_grammar_expr`
+        // threads no delegate, so this is the live shape of that path.
+        let gp = parse_grammar("r = @peek(ident_lbrace_plain) n:IDENT \"{\" \"}\"")
+        run_grammar_expr(gp.grammar, "Point { }").had_error
+    }
+}
+
+spec "t-47hc.8: ident_lbrace_plain requires BOTH tokens" {
+    then "a bare IDENT with no `{` does not match" {
+        // Guards the `st.pos + 1 >= st.toks.length` bound: a lone IDENT at
+        // end-of-input must answer false, not read past the token list.
+        !said_plain("Point")
+    }
+    then "a non-IDENT leading token does not match" {
+        !said_plain("42 { }")
+    }
+}
