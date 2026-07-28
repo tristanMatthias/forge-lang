@@ -105,6 +105,22 @@ spec "t-47hc.34: the emitted set is GUARDED, and the guard is the shared one" {
         let restore = s.index_of("st.set_modes(__modes_")
         save >= 0 && save < g && restore > g
     }
+    then "the BARE-REFERENCE fast path honours the gate too" {
+        // A passthrough rule (`r = @on_if(p, f) child`) does NOT go through emit_item — it
+        // takes emit_ref_result's fast path, which had its OWN copy of the set line and so
+        // emitted an UNCONDITIONAL set while the interpreter gated it through `pred_ok`.
+        // That is engine divergence of exactly the kind this marker exists to prevent, and
+        // it is invisible to every test that only exercises a multi-item sequence.
+        // Both sites now share `mode_on_set_line`, so a guard cannot be added to one only.
+        let s = rule_src("r = @on_if(at_quote_top, allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+            s.contains("st.modes.quote_depth == 0") &&
+            s.index_of("st.modes.quote_depth == 0") < s.index_of("modes_with_flag_on")
+    }
+    then "and an unconditional `@on` on that SAME path stays unguarded" {
+        let s = rule_src("r = @on(allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") && !s.contains("if st.modes.quote_depth")
+    }
     then "an UNCONDITIONAL `@on` is emitted exactly as before — no guard" {
         // Byte-identity for every production grammar depends on this: `@on` must not
         // acquire an `if` just because `@on_if` now exists.

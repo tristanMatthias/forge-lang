@@ -378,14 +378,31 @@ fn emit_rule_body(g: Grammar, node: GNode) -> string {
 /// `as_return` prefixes `return ` (dispatch arms return; a single-branch tail is a
 /// bare expression). Empty mode_off (every production grammar) → the plain call,
 /// byte-identical.
+/// The `@on(flag)` / `@on_if(pred, flag)` SET line — ONE definition, because there are
+/// two emit sites (emit_item for a normal item, emit_ref_result for the bare-reference /
+/// passthrough fast path) and a guard added to only one of them is precisely the
+/// engine-divergence this marker exists to avoid: the interpreter gates every set through
+/// `pred_ok`, so an unconditional emit on either path makes the generated parser disagree
+/// with the interpreter for that rule shape. The guard string comes from the shared
+/// `pred_guard`, so a base predicate lands as a `base_pred(...)` CALL into the executor.
+fn mode_on_set_line(item: GItem, ind: string) -> string {
+    let set_on = "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n"
+    if item.mode_on_if == "" { return set_on }
+    "${ind}if ${pred_guard(item.mode_on_if)} {\n" +
+        "${ind}    st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n" +
+        "${ind}}\n"
+}
+
 fn emit_ref_result(item: GItem, ind: string, as_return: bool) -> string {
     let call = emit_ref_call(item.prim)
     let ret = if as_return { "return " } else { "" }
     if item.mode_on != "" {
         // The SET-ON twin of the mode_off branch below (mutually exclusive per
-        // GItem): re-enable the flag around the sub-parse, then restore.
+        // GItem): re-enable the flag around the sub-parse, then restore. The SET goes
+        // through mode_on_set_line so `@on_if`'s predicate gate applies HERE too — a
+        // passthrough rule (`r = @on_if(p, f) child`) reaches this path, not emit_item.
         return "${ind}let __m = st.modes\n" +
-            "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n" +
+            mode_on_set_line(item, ind) +
             "${ind}let __r = ${call}\n" +
             "${ind}st.set_modes(__m)\n" +
             "${ind}${ret}__r\n"
@@ -1155,11 +1172,8 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         // comes from the SHARED `pred_guard` — the same string `@when` emits — so the two
         // markers cannot disagree about what a predicate name means, and a base predicate
         // lands as a `base_pred(...)` CALL into the executor rather than a second spelling.
-        let set_on = "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n"
-        let set_line = if item.mode_on_if == "" { set_on }
-            else { "${ind}if ${pred_guard(item.mode_on_if)} {\n${ind}    st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n${ind}}\n" }
         return "${ind}let __modes_${idx} = st.modes\n" +
-            set_line +
+            mode_on_set_line(item, ind) +
             inner +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
