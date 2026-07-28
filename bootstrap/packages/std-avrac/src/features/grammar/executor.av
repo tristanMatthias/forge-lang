@@ -1321,10 +1321,19 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                     }
                 }
             }
-            // No branch committed. A rolled-back speculative attempt is a clean
-            // "no match" (diags/had_error already restored) — let the caller (an
-            // enclosing alternation, a `*`/`?`, or a required position) decide;
-            // do NOT synthesise a spurious parse error.
+            // No branch's FIRST matched. A `@fallback` branch is the UNCONDITIONAL tail:
+            // run it instead of reporting, so the RULE owns its diagnostic. This is the
+            // native twin of the trailing-`@hand` tail role (emit's is_leading_hand
+            // last-branch case), for a rule whose alternatives are all native — without
+            // it such a rule can only ever emit the generic message below, and the two
+            // closing-`]` diagnostics `index_tail` must reproduce are unreachable.
+            // Checked AFTER the loop, so an earlier matching branch still wins.
+            for fb in branches {
+                if fb.fallback { return exec_seq(g, fb, st, env, multi, outer_annots) }
+            }
+            // A rolled-back speculative attempt is a clean "no match" (diags/had_error
+            // already restored) — let the caller (an enclosing alternation, a `*`/`?`, or
+            // a required position) decide; do NOT synthesise a spurious parse error.
             if tried_spec { return CapVal.Nil }
             CapVal.Node(st.error_node("unexpected token `${st.cur().text}`"))
         }

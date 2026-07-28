@@ -191,6 +191,13 @@ export fn parse_grammar(src: string) -> GrammarParse {
         let be = validate_bounds(g)
         if be != "" { p.error = be }
     }
+    // t-47hc.33: `@fallback` must be the LAST alternative, and unique. Both violations
+    // are silent at runtime — a branch after it is simply never reached — so they are
+    // grammar errors rather than surprises in the generated parser.
+    if p.error == "" {
+        let fe = validate_fallbacks(g)
+        if fe != "" { p.error = fe }
+    }
     GrammarParse { grammar: g, error: p.error }
 }
 
@@ -273,6 +280,16 @@ fn at_try_marker(p: GP) -> bool {
     nxt.kind == "NAME" && nxt.text == "try"
 }
 
+/// `@fallback` — the UNCONDITIONAL-tail branch marker (t-47hc.33). Same leading position
+/// as `@try`, and mutually exclusive with it: a speculative branch is one that may roll
+/// back and let a sibling try, which is the opposite of being the last resort.
+fn at_fallback_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "fallback"
+}
+
 fn parse_seq(p: GP) -> GSeq {
     // A leading `@try` marks this alternative BOUNDED-BACKTRACKING (snapshot →
     // run → roll back + try the next branch on failure). Consumed here, before
@@ -282,6 +299,19 @@ fn parse_seq(p: GP) -> GSeq {
         let _ = p.advance()   // "@"
         let _ = p.advance()   // "try"
         speculative = true
+    }
+    // `@fallback` marks this alternative the UNCONDITIONAL tail — run when no earlier
+    // branch's FIRST matched, so the branch owns the rule's error message instead of the
+    // alternation's generic one. Same leading position as `@try`, and rejected alongside
+    // it: "may roll back so a sibling can try" and "is the last resort" cannot both hold.
+    mut fallback = false
+    if at_fallback_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "fallback"
+        fallback = true
+        if speculative {
+            p.fail("`@try` and `@fallback` cannot mark the same branch — a speculative branch rolls back so a SIBLING can run, which is the opposite of being the unconditional tail")
+        }
     }
     mut items: List<GItem> = []
     while seq_can_continue(p) {
@@ -361,7 +391,7 @@ fn parse_seq(p: GP) -> GSeq {
             seen_labels.push(lab_it.label)
         }
     }
-    GSeq { items, build, annots, speculative }
+    GSeq { items, build, annots, speculative, fallback }
 }
 
 /// True iff `name` is a local the generated speculative branch already binds
@@ -684,6 +714,36 @@ fn name_in(xs: List<string>, s: string) -> bool {
 /// A bound is only honoured against a LIST capture — one collected by a `*`/`+`, or
 /// by a label repeated across items. A scalar capture has no length, so naming one is
 /// rejected too rather than being counted as 1.
+/// `@fallback` must be the LAST alternative, and there may be only one. A guarded branch
+/// ordered AFTER it is dead — the fallback runs whenever nothing earlier matched, so the
+/// sibling can never be reached — and two fallbacks make "which is the tail" positional
+/// rather than declared. Both are silent misbehaviour at runtime, so they are grammar
+/// errors here.
+fn validate_fallbacks(g: Grammar) -> string {
+    for r in g.rules {
+        match r.body {
+            .Alt(branches) -> {
+                // COUNT first, then check position. Two fallbacks necessarily also
+                // violate "must be last", so checking position inside the loop would
+                // report that instead and the duplicate would never be named.
+                mut seen = 0
+                for b in branches { if b.fallback { seen = seen + 1 } }
+                if seen > 1 {
+                    return "rule `${r.name}` has more than one `@fallback` branch — only the last alternative can be the unconditional tail"
+                }
+                mut i = 0
+                for b in branches {
+                    if b.fallback && i != branches.length - 1 {
+                        return "`@fallback` must be the LAST alternative of rule `${r.name}` — a branch ordered after it is unreachable, since the fallback runs whenever no earlier branch matched"
+                    }
+                    i = i + 1
+                }
+            }
+        }
+    }
+    ""
+}
+
 fn validate_bounds(g: Grammar) -> string {
     // `parse_grammar` runs on the production parse path, so this pass must cost
     // effectively nothing for the grammars that DON'T use a bound — which today is

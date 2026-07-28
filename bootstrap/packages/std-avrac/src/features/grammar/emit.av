@@ -582,6 +582,15 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             out = out + emit_ref_result(b.items[lone_item_index(b)], "        ", true)
             out = out + "    }\n"
+        } else if b.fallback && i == last && !has_spec {
+            // t-47hc.33 `@fallback`: the UNCONDITIONAL tail, emitted with no FIRST guard
+            // and no trailing error node — the native twin of the trailing-`@hand` case
+            // below. The branch itself owns the diagnostic for "nothing matched", which
+            // is what lets a rule whose alternatives are ALL native reproduce a hand
+            // parser's own message (`index_tail`'s two closing-`]` wordings) instead of
+            // the alternation's generic "expected an expression".
+            let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+            tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
         } else if is_leading_hand(b) && i == last && !has_spec {
             // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
             // every case earlier branches didn't match, INCLUDING error recovery
@@ -922,6 +931,15 @@ fn is_leading_hand(seq: GSeq) -> bool {
 /// then one emission per item in order. A lone primary with no build is
 /// consumed BY its result (literal_node / run_hand), so it emits no statements.
 fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
+    emit_seq_stmts_from(g, seq, ind, 0)
+}
+
+/// emit_seq_stmts with an explicit starting item INDEX — see emit_seq_items_from.
+/// `idx_base = 1` is for an UNGUARDED branch (`@fallback`, t-47hc.33): nothing proved
+/// its first token, so that token must be VALIDATED like any later item instead of
+/// consumed unconditionally. Without it the tail swallows whatever is there and its
+/// `@expect` message — the entire reason the marker exists — is never emitted.
+fn emit_seq_stmts_from(g: Grammar, seq: GSeq, ind: string, idx_base: int) -> string {
     if is_lone_primary_result(seq) { return "" }
     let labels = list_labels_of(seq)
     let opts = opt_scalar_labels_of(seq, labels)
@@ -934,7 +952,7 @@ fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
     for s in opts {
         out = out + "${ind}mut ${s}: CapVal = CapVal.Nil\n"
     }
-    out = out + emit_seq_items(g, seq, seq.annots, ind, labels, opts)
+    out = out + emit_seq_items_from(g, seq, seq.annots, ind, labels, opts, idx_base, spec_none())
     out
 }
 
@@ -2155,7 +2173,7 @@ fn group_inner_seq(prim: GPrim) -> GSeq {
     }
 }
 
-fn empty_seq() -> GSeq { GSeq { items: [], build: GBuild.None, annots: [], speculative: false } }
+fn empty_seq() -> GSeq { GSeq { items: [], build: GBuild.None, annots: [], speculative: false, fallback: false } }
 
 /// A primary whose match yields a Token (a terminal or an all-terminal group)
 /// vs a node (a ref / hand rule).

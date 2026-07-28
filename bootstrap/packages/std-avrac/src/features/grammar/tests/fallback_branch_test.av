@@ -1,0 +1,84 @@
+// WHY: t-47hc.33 — `@fallback`, the UNCONDITIONAL-tail branch marker.
+//
+// An alternation picks the first branch whose FIRST matches; when none does, it reports
+// its own generic "unexpected token". The ONE exception was a trailing `@hand` branch,
+// which is emitted unguarded so the delegate owns error recovery. A rule whose
+// alternatives are ALL native had no equivalent — it could never own its own message.
+//
+// That blocks a real shape. `expr[i]` and `expr[a..b]` are one arm in the hand
+// `postfix_step`, but their closing-`]` diagnostics differ ("after index" vs "after
+// slice") and `@expect` keys on the token, so each needs its own sequence — a tail
+// sub-rule dispatching on `..`. The `]` branch's FIRST is `]`, so `a[1 2]` matched
+// neither and reported the alternation's generic message instead of the hand's
+// "expected `]` after index".
+//
+// Both engines: the interpreter by RUNNING a grammar whose input matches no branch's
+// FIRST, the generated parser by checking the emitted tail has no `if` guard.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr}
+
+fn rejects(src: string) -> bool { parse_grammar(src).error != "" }
+fn err_of(src: string) -> string { parse_grammar(src).error }
+
+fn rule_src(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// `tail`'s first branch takes `..`; the fallback owns everything else, including the
+// error message for a token that starts neither.
+const FB_G = "r = \"[\" t:tail -> Grouping(t)\n" +
+    "tail = \"..\" e:NUMBER \"]\" -> e\n" +
+    "     | @fallback c:\"]\" @expect(\"]\", \"expected `]` after index\") -> Grouping(c)"
+
+spec "t-47hc.33: `@fallback` is the unconditional tail" {
+    then "the guarded branch still wins when its FIRST matches" {
+        !run_grammar_expr(parse_grammar(FB_G).grammar, "[ .. 2 ]").had_error
+    }
+    then "the fallback runs when nothing earlier matched" {
+        !run_grammar_expr(parse_grammar(FB_G).grammar, "[ ]").had_error
+    }
+    then "and it OWNS the diagnostic — not the alternation's generic one" {
+        // The whole point: `[ 1` matches neither branch's FIRST, so before `@fallback`
+        // this said "unexpected token" and the rule could not reproduce the hand's
+        // wording no matter how its @expect was written.
+        let r = run_grammar_expr(parse_grammar(FB_G).grammar, "[ 1")
+        mut found = false
+        for d in r.diags { if d.contains("expected `]` after index") { found = true } }
+        r.had_error && found
+    }
+    then "the EMITTED tail carries no FIRST guard" {
+        // Guarded, it would fall past to the alternation's error node and the message
+        // above would be unreachable in the generated parser even though the
+        // interpreter produced it — exactly the engine drift this pair exists to stop.
+        let s = rule_src(FB_G, "tail")
+        s.contains("expected `]` after index") && !s.contains("expected an expression")
+    }
+}
+
+spec "t-47hc.33: `@fallback` placement is validated, not assumed" {
+    then "a branch ordered AFTER the fallback is rejected as unreachable" {
+        let e = err_of("r = @fallback a:NUMBER -> Grouping(a) | b:STRING -> Grouping(b)")
+        e.contains("@fallback") && e.contains("LAST")
+    }
+    then "two fallbacks are rejected" {
+        err_of("r = a:NUMBER -> Grouping(a) | @fallback b:STRING -> Grouping(b) | @fallback c:STRING -> Grouping(c)")
+            .contains("more than one")
+    }
+    then "`@try` and `@fallback` cannot mark the same branch" {
+        // A speculative branch rolls back so a SIBLING can run; the tail is the last
+        // resort. Marking both is a contradiction, not a compound behaviour.
+        rejects("r = a:NUMBER -> Grouping(a) | @try @fallback b:STRING -> Grouping(b)")
+    }
+    then "a lone fallback branch is fine — last of one is still last" {
+        !rejects("r = @fallback a:NUMBER -> Grouping(a)")
+    }
+    then "an unmarked grammar is untouched" {
+        // Byte-identity: no production grammar writes `@fallback` yet, so the emitted
+        // parsers must be exactly what they were.
+        !rejects("r = a:NUMBER -> Grouping(a) | b:STRING -> Grouping(b)")
+    }
+}

@@ -142,11 +142,20 @@ export enum GNode {
 /// next alternative — the grammar analogue of the hand parser's
 /// save_state/restore_state (f<T> generic-call vs `<` less-than). A non-`@try`
 /// branch stays predictive (first-match, no backtracking); default false.
+/// `fallback` (the `@fallback` branch marker, t-47hc.33) makes this alternative the
+/// UNCONDITIONAL tail: it runs when no earlier branch's FIRST matched, instead of the
+/// alternation reporting "expected an expression". Only a trailing `@hand` branch had
+/// that role before, which meant a rule whose alternatives are all NATIVE could not own
+/// its own error message — the `index_tail` shape, where `[i]` and `[a..b]` need the two
+/// different closing-`]` diagnostics the hand parser emits, and `@expect` keys on the
+/// token so each needs its own sequence. Must be the LAST branch (a guarded branch after
+/// it would be dead) and at most one; both enforced at grammar-parse time.
 export type GSeq = {
     items: List<GItem>,
     build: GBuild,
     annots: List<GAnnot>,
     speculative: bool,
+    fallback: bool,
 }
 
 /// A postfix item: an optional capture label + a repetition + a
