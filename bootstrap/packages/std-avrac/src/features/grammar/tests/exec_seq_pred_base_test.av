@@ -1,0 +1,73 @@
+// WHY: the executor and the emitted parser must agree on WHICH item of a
+// `fold_postfix_with` sequence is the postfix-chain BASE.
+//
+// `@when(flag)` and `@peek(cond)` are zero-width predicate ITEMS (`GPrim.Pred` /
+// `GPrim.Peek`) — they sit in `seq.items` like any other item but consume no token and
+// capture no value. emit.av skips them (`if prim_is_pred_e(item.prim) { continue }`
+// BEFORE its `idx` increments), so on the generated side the first token-bearing item is
+// idx 0 and `seed_postfix` fires on the real base. exec_seq used the RAW item index
+// instead, so a branch that LEADS with a guard seeded the base from the guard's `Nil`
+// capture: `capval_to_expr` turned that into an error node, and every postfix suffix
+// folded onto it — `a.b` rendered `(. <error> b)` from the executor while the generated
+// parser rendered `(. a b)`.
+//
+// The bug was LATENT because no production `fold_postfix_with` branch leads with a
+// guard today — `unary`'s guarded branches (`@when(at_quote_top) op:("~") …`) build
+// `Unary`, not `fold_postfix_with`. The `ident_primary` flip (t-f9tn) introduces the
+// first such branch, so this is the invariant it depends on.
+//
+// The probe composes a one-rule fragment ONTO the real expression grammar rather than
+// restating the postfix machinery: `postfix_suffix` and `with_suffix` resolve to the
+// production rules, and `run_grammar_expr` starts at `rules[0]` — the composed head —
+// so the probe rule is the entry point. Guarded and unguarded forms of the SAME rule
+// must agree; that equality is the whole contract, and it holds independently of what
+// the postfix forms themselves render.
+
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr, dump_expr, parse_grammar, compose_grammars}
+
+fn tree_for(rule_src: string, src: string) -> string {
+    let g = compose_grammars(parse_grammar(rule_src).grammar, avra_expr_grammar())
+    let r = run_grammar_expr(g, src)
+    dump_expr(r.store, r.root)
+}
+
+// Identical rules but for the leading zero-width guard. `at_quote_top` is true at
+// quote_depth 0, so the guard PASSES and the two must parse the same text identically.
+fn guarded(src: string) -> string {
+    tree_for("probe_guarded = @when(at_quote_top) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)", src)
+}
+fn unguarded(src: string) -> string {
+    tree_for("probe_plain = b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)", src)
+}
+
+fn agree(src: string) -> bool {
+    let g = guarded(src)
+    let u = unguarded(src)
+    if g != u {
+        println("pred-base mismatch for: " + src)
+        println("  guarded:   " + g)
+        println("  unguarded: " + u)
+    }
+    g == u
+}
+
+spec "exec_seq locates the postfix base past zero-width predicates" {
+    given "a fold_postfix_with branch that LEADS with a passing @when guard" {
+        then "a bare base is unaffected (no chain to fold)" {
+            agree("a")
+        }
+        then "a single postfix step folds onto the real base, not an error node" {
+            agree("a.b") &&
+            agree("a[0]")
+        }
+        then "chains fold onto the real base" {
+            agree("a.b.c")
+        }
+        then "the base is the IDENT itself, spelled out" {
+            // Pinned literally so a regression cannot hide behind both sides breaking
+            // together — the equality above would still hold if BOTH rendered an error.
+            guarded("a.b") == "(. a b)" &&
+            !guarded("a.b").contains("<error>")
+        }
+    }
+}
