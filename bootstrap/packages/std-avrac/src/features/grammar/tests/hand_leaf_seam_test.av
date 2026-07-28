@@ -1,0 +1,156 @@
+// WHY: t-47hc slice 7 — the feature-parser SEAM. Every `@hand(<leaf>)` delegate
+// is now a FREE FUNCTION over an explicit parse state, held in ONE table
+// (hand_leaves.av), instead of an `impl Parser` method reached through a
+// receiver inside a hardcoded `match` in the executor.
+//
+// That distinction is what unblocks the remaining leaf flips: a method is not a
+// value, so nothing could hold `bp.parse_quote` and hand it to a registry —
+// which is exactly what the per-feature fragment registry needs in order to let
+// a feature own its own leaf, the way `feature_grammar_fragments` already lets a
+// feature own its grammar fragment.
+//
+// These are PROPERTY invariants that must keep holding as leaves are ADDED and
+// (through Phase 3) DELETED — not a snapshot of today's fourteen names:
+//   1. the delegate is a first-class VALUE of the documented fn type,
+//   2. the two leaf CLASSES stay disjoint (nothing is both a statement and an
+//      expression leaf) and closed (an unknown name resolves to neither),
+//   3. the class predicates BOTH consumers read — the executor's dispatch and
+//      emit.av's rule-class routing — agree by construction, because they are
+//      now one table rather than two hand-synced copies, and
+//   4. dispatching THROUGH the table still parses byte-identically.
+use @std.avrac.features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.core.{render_expr_id, ExprId, StmtId}
+use @std.avrac.parse.{Parser}
+
+// The leaves the production grammars delegate through today. Used only to prove
+// the table RESOLVES each one — the invariants below are written so that adding
+// or deleting a leaf does not falsify them.
+fn known_expr_leaves() -> List<string> {
+    ["quote_expr", "match_expr", "if_expr", "list_expr", "paren_expr",
+     "ident_primary", "primary_base", "lambda_body", "lambda_block_body",
+     "ident_expr", "more_primary", "hand_unary", "call_leaf", "postfix_suffix"]
+}
+
+fn known_stmt_leaves() -> List<string> {
+    ["component_decl", "let_stmt", "return_stmt", "match_table", "stmt_hand", "decl_hand"]
+}
+
+fn run_render(input: string) -> string {
+    let gp = parse_grammar("r = \"->\" b:@hand(lambda_body) -> b")
+    let r = run_grammar_expr(gp.grammar, input)
+    render_expr_id(r.store, r.root)
+}
+
+spec "t-47hc.7: a hand leaf's delegate is a FREE FUNCTION VALUE over the parse state" {
+    // The seam property. Binding `.run` to a local of the explicit fn type is
+    // what a registry does when a feature hands over its own leaf; it only
+    // compiles because the delegate is a value, not a method on a receiver.
+    then "an expression delegate binds to `fn(Parser) -> Result<ExprId, string>`" {
+        let leaf = hand_expr_leaf("quote_expr")
+        let run: fn(Parser) -> Result<ExprId, string> = leaf!.run
+        // Hold it, pass it on, and confirm the value survives the round trip —
+        // the exact motion the fragment registry will make.
+        let held: fn(Parser) -> Result<ExprId, string> = run
+        leaf!.name == "quote_expr" && held == run
+    }
+    then "a statement delegate binds to `fn(Parser) -> Result<StmtId, string>`" {
+        let leaf = hand_stmt_leaf("decl_hand")
+        let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
+        leaf!.name == "decl_hand" && run == leaf!.run
+    }
+    then "each leaf record reports its OWN name (the lookup key round-trips)" {
+        mut ok = true
+        for n in known_expr_leaves() {
+            if hand_expr_leaf(n)!.name != n { ok = false }
+        }
+        for n in known_stmt_leaves() {
+            if hand_stmt_leaf(n)!.name != n { ok = false }
+        }
+        ok
+    }
+}
+
+spec "t-47hc.7: the leaf classes are disjoint, closed, and shared by both consumers" {
+    then "every production expression leaf resolves in the expression half" {
+        mut ok = true
+        for n in known_expr_leaves() {
+            if !is_hand_expr_leaf(n) { ok = false }
+        }
+        ok
+    }
+    then "every production statement leaf resolves in the statement half" {
+        mut ok = true
+        for n in known_stmt_leaves() {
+            if !is_hand_stmt_leaf(n) { ok = false }
+        }
+        ok
+    }
+    then "no leaf is BOTH a statement and an expression leaf (the classes are disjoint)" {
+        mut ok = true
+        for n in known_expr_leaves() {
+            if is_hand_stmt_leaf(n) { ok = false }
+        }
+        for n in known_stmt_leaves() {
+            if is_hand_expr_leaf(n) { ok = false }
+        }
+        ok
+    }
+    then "an unknown name resolves to NEITHER class and yields no delegate" {
+        // The closed-world property the executor's two error paths rely on:
+        // `run_hand_expr` / `run_hand_stmt` report "no hand rule" off exactly
+        // this null, so a typo in a grammar stays a diagnostic, not a crash.
+        hand_expr_leaf("no_such_leaf") == null
+            && hand_stmt_leaf("no_such_leaf") == null
+            && !is_hand_expr_leaf("no_such_leaf")
+            && !is_hand_stmt_leaf("no_such_leaf")
+    }
+    then "the class predicate agrees with the lookup it is derived from" {
+        // is_hand_*_leaf IS the table lookup, so the executor's dispatch and
+        // emit.av's rule-class routing cannot disagree — the drift that two
+        // hand-maintained copies (kept in sync by a comment) always risked.
+        mut ok = true
+        for n in known_expr_leaves() {
+            if is_hand_expr_leaf(n) != (hand_expr_leaf(n) != null) { ok = false }
+        }
+        for n in known_stmt_leaves() {
+            if is_hand_stmt_leaf(n) != (hand_stmt_leaf(n) != null) { ok = false }
+        }
+        ok
+    }
+}
+
+spec "t-47hc.7: seeds_postfix is a COLUMN of the leaf, not a parallel table" {
+    // Phase 3a base-threading: a leaf that yields a postfix-chain BASE must seed
+    // st.postfix_base so the grammar's `( postfix_suffix )*` fold wraps it. That
+    // used to be a separate `hand_seeds_postfix` name list which could silently
+    // disagree with the dispatch beside it; it is now a field on the same record.
+    then "the keyword-led and bracket primaries seed the postfix base" {
+        mut ok = true
+        for n in ["primary_base", "match_expr", "if_expr", "quote_expr", "list_expr", "paren_expr", "ident_primary"] {
+            if !hand_expr_leaf(n)!.seeds_postfix { ok = false }
+        }
+        ok
+    }
+    then "a MID-CHAIN or body leaf does NOT seed the base" {
+        mut ok = true
+        for n in ["postfix_suffix", "hand_unary", "call_leaf", "ident_expr", "more_primary", "lambda_body", "lambda_block_body"] {
+            if hand_expr_leaf(n)!.seeds_postfix { ok = false }
+        }
+        ok
+    }
+}
+
+spec "t-47hc.7: dispatching THROUGH the table parses identically" {
+    // The behavioural half: the executor now reaches the delegate via the table
+    // instead of a hardcoded `match name -> bp.<method>()`. Same parses.
+    then "a bare-expression body still parses as the expression" {
+        run_render("-> 5") == "5"
+    }
+    then "an arithmetic body still parses through" {
+        run_render("-> 1 + 2") == "(+ 1 2)"
+    }
+    then "a block body still routes into the hand statement machinery" {
+        run_render("-> { let x: int = 1\n x + 2 }") == "(block-expr (let x:int 1)\n(expr (+ x 2)))"
+    }
+}
