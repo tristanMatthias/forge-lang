@@ -971,14 +971,23 @@ fn grammar_starts_upper(name: string) -> bool {
     c >= 65 && c <= 90
 }
 
-/// The final `::` segment of a qualified path (the whole string when unqualified).
-fn grammar_last_segment(path: string) -> string {
+/// The TYPE-name segment of a qualified path — the last `::` segment, and for an
+/// UN-namespaced id the part after the leading `@`.
+///
+/// Both skips are needed. `mk_qualified` builds `@` + the head name, so a single-segment
+/// reference is `@Result` with no `::` at all; testing that raw would see `@` and report
+/// lowercase, which made `base_upper_ident` answer false for every un-namespaced type and
+/// silently stop a `.Variant` chain. The hand parser's `type_short_name` skips the same
+/// leading segment, which is the behaviour being mirrored.
+export fn grammar_last_segment(path: string) -> string {
     mut start = 0
     mut i = 0
     while i + 1 < path.length {
         if code_at(path, i) == 58 && code_at(path, i + 1) == 58 { start = i + 2 }
         i = i + 1
     }
+    // No `::` found and the path leads with `@` (`@Result`) — skip just the sigil.
+    if start == 0 && path.length > 0 && code_at(path, 0) == 64 { start = 1 }
     path.substring(start, path.length)
 }
 

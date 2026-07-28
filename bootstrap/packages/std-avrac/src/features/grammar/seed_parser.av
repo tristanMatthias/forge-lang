@@ -600,17 +600,30 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                 // so branch_is_expr_fold(inner) is false — the outer context is what matters.
                 let this_fold = in_fold || branch_is_expr_fold(b)
                 for item in b.items {
-                    // The two mode-SET markers are mutually exclusive on one item
-                    // (enforced at parse), share identical emit/exec positions, so
-                    // validate whichever is present with the same rule.
-                    let mk = if item.mode_off != "" { "@off" } else { "@on" }
-                    let fl = if item.mode_off != "" { item.mode_off } else { item.mode_on }
-                    if item.mode_off != "" || item.mode_on != "" {
+                    // The THREE mode-SET markers are mutually exclusive on one item
+                    // (enforced at parse) and share identical emit/exec positions, so
+                    // validate whichever is present with the same rule. `@bump` is here
+                    // for exactly the reason `@off`/`@on` are: emit_item is the ONLY
+                    // place the wrapper is generated, so a marker in a position that
+                    // bypasses emit_item is silently dropped rather than diagnosed.
+                    let mk = if item.mode_off != "" { "@off" } else if item.mode_on != "" { "@on" } else { "@bump" }
+                    let fl = if item.mode_off != "" { item.mode_off } else if item.mode_on != "" { item.mode_on } else { item.mode_bump }
+                    if item.mode_off != "" || item.mode_on != "" || item.mode_bump != "" {
                         if this_fold {
                             return "`${mk}(${fl})` cannot appear on (or inside a group of) an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the mode set"
                         }
                         if prim_is_hand_or_pred(item.prim) {
                             return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek` primary (rule `${rule}`)"
+                        }
+                        // A mode marker on a `@require` item would LEAK the set mode: the
+                        // emitted wrapper is `save; set; <item>; restore`, and a failed
+                        // `@require` emits an early `return` from inside <item>, skipping
+                        // the restore. Rather than thread cleanup through every emitted
+                        // return path, reject the combination — it has no use today, and a
+                        // silent mode leak into the rest of the parse is the worse failure.
+                        // (This closes the hole for @off/@on too, where it pre-existed.)
+                        if item.require {
+                            return "`${mk}(${fl})` cannot apply to a `@require` item (rule `${rule}`) — a failed require returns early and would skip the mode restore"
                         }
                     }
                     // A structural group is a NESTED sequence: recurse to validate its

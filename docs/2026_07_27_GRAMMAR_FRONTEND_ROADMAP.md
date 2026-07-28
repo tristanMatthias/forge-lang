@@ -182,7 +182,7 @@ silently on stacked PRs would be a bad trade. So:
   point where the diff is largest, which is backwards.
 
 The standing merge rule ("CI green + CodeRabbit approved ⇒ merge") is unchanged; on a
-stacked PR the approval simply has to be requested rather than awaited.
+stacked PR, explicitly request the review and wait for approval before merging.
 
 ---
 
