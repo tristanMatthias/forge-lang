@@ -2788,6 +2788,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         // Generic struct: `type Name < tparams > = { field* }` — the type-param
         // list (args[1]) is stored + rendered `<…>`. Shares mk_type_decl_g with emit.
+        "MkShapeDecl" if args.length == 2 -> mk_shape_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         "MkTypeDeclAny" if args.length == 6 -> mk_type_decl_any(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), env.get(args[4]), capval_present(env.get(args[4])), capval_tok_list(env.get(args[5])))
         "MkTypeDecl" if args.length == 3 -> mk_type_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_field_list(env.get(args[2])))
         "MkEVariant" if args.length == 2 -> mk_evariant(capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
@@ -3444,6 +3445,17 @@ export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, 
 export fn mk_extern_fn(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool) -> CapVal {
     let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(name, params, ret_vt)))
+}
+
+/// `shape Name = { field* }` (the `MkShapeDecl` build's core) — the STRUCTURAL sibling
+/// of `type`. Its own node (`Stmt.ShapeDecl`) and its own keyword, so it is a separate
+/// rule rather than a widening of `type_decl`: `shape` is in `decl_lead`'s FIRST but no
+/// fragment covered it, which is why it went unnoticed until the `type` measurement in
+/// slice 10.4 turned it up.
+///
+/// No type params — `parse_shape_declaration` has none, unlike every other decl keyword.
+export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ShapeDecl(name, fields)))
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).
