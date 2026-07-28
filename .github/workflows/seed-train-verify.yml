@@ -109,10 +109,28 @@ jobs:
           # LAST of those onto the fast-path, so #867's premise now holds:
           # per_shard is uniformly ~1.8GB, the governor sizes 4 shards, and the
           # nominal cap is binding again (measured: `tests` dir cold 208s@2 ->
-          # 112s@4, ~1.86x, min-avail 2.7GB). The governor still clamps by live
-          # MemAvailable, so 4 can only ever be LOWERED, never OOM. Bigger
-          # runner (hama) / self-tuning governor (x2hu) remain the ceiling.
-          AVRA_JOBS: "4"
+          # 112s@4, ~1.86x, min-avail 2.7GB). Bigger runner (hama) /
+          # self-tuning governor (x2hu) remain the ceiling.
+          #
+          # LOWERED 4 -> 3 (t-h6xv). "The governor clamps by live MemAvailable,
+          # so 4 can only ever be LOWERED, never OOM" did not hold: the clamp is
+          # (avail - 6144) / 1800, which on this runner's ~13.7GB yields 4.2 —
+          # so the cap bound and the clamp never engaged. That budgets
+          # 4*1800 + 6144 = 13.2GB against ~13.75GB: ~500MB of margin, and the
+          # min-avail 2.7GB above was already measured INSIDE it. The suite grew
+          # into that margin and the runner started dying mid-suite ("received a
+          # shutdown signal", ~90-120s in) on 2026-07-28 — three consecutive
+          # integration trains red from 20:05Z, and every seed-train-verify on a
+          # base after them. rc-strict runs the SAME suite on the SAME runner at
+          # AVRA_JOBS=2 and stayed green throughout, which is what isolates the
+          # fan-out rather than any one merge.
+          #
+          # 3 restores real headroom (3*1800 + 6144 = 11.5GB) at ~1.4x rather
+          # than ~1.86x speedup. The right fix is re-measuring per_shard_mb —
+          # the 1800 dates to 2026-07-21 and is the number that made the clamp
+          # inert — but that belongs in the governor with a clean measurement,
+          # not in a CI-unblocking change.
+          AVRA_JOBS: "3"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
