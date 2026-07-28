@@ -2310,6 +2310,18 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
 /// a new line = a new statement, `dot_is_postfix`) and mode-stateful
 /// (`allow_struct_lit` / `allow_dot_postfix` / `allow_it_sugar` / `quote_depth`),
 /// which the stateless token-grammar cannot reproduce byte-identically.
+/// The FIRST set of the TYPE family's `type_expr`, for the same reason
+/// `tok_starts_expr_leaf` exists: the dispatch-only declaration view leaves `type_expr`
+/// EXTERNAL so the generated declaration parser calls the separately generated type
+/// parser across the merged `parse/` namespace, and a crossing reference needs a declared
+/// FIRST (t-47hc slice 10.9). Mirrors `type_atom`'s alternatives — qualified_type `@`,
+/// fn_type `fn`, dyn_type `dyn`, list_type `[`, paren_type `(`, named_type IDENT.
+export fn tok_starts_type(tok: Token) -> bool {
+    if tok.kind == "IDENT" { return true }
+    let t = tok.text
+    t == "@" || t == "fn" || t == "dyn" || t == "[" || t == "("
+}
+
 export fn tok_starts_expr_leaf(tok: Token) -> bool {
     if tok.kind == "IDENT" || tok.kind == "NUMBER" || tok.kind == "STRING" || tok.kind == "BOOL" || tok.kind == "TEMPLATE" { return true }
     let t = tok.text
