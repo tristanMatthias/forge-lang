@@ -53,6 +53,20 @@ spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
         dsl_program("shape HasName = { name: string }\n").contains("shape")
     }
 
+    // Pinned because it is non-obvious enough that a reviewer proposed "fixing" it on
+    // #1053. Avra is NEWLINE-SENSITIVE and a field list is newline-separated, so the
+    // comma between fields is genuinely OPTIONAL — `parse_field_list` has no comma
+    // requirement, and the newline form is how almost every struct and shape in the tree
+    // is actually written. Tightening the rule to `field ( "," field )* ","?` would
+    // reject all of them. Parity means matching the hand in BOTH directions: narrowing is
+    // as much a defect here as the accidental widening #1046 had to fix.
+    then "commas between fields are OPTIONAL, exactly as the hand has them" {
+        agrees("shape S = { x: int y: int }\n") &&
+            agrees("shape S = {\n    x: int\n    y: int\n}\n") &&
+            agrees("shape S = { x: int, y: int }\n") &&
+            agrees("shape S = { x: int, y: int, }\n")
+    }
+
     then "emit renders the shared core — the half an executor-only build would miss" {
         emit_parser_source(avra_program_grammar()).contains("mk_shape_decl(st, capval_tok_text(shname)")
     }
