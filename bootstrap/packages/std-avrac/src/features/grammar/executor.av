@@ -508,6 +508,15 @@ impl PState {
         self.modes = modes_with_flag_off(self.modes, flag)
         saved
     }
+    /// The `@bump(counter)` twin: save modes, INCREMENT the named counter, return the
+    /// saved modes for restore_modes. Restore is the same call — the counter is an int
+    /// cell in ExprModes, so save/restore is identical to the bool markers and nesting
+    /// falls out for free (`quote { quote { } }` bumps to 2 and unwinds correctly).
+    fn push_mode_bump(self, counter: string) -> ExprModes {
+        let saved = self.modes
+        self.modes = modes_with_counter_bumped(self.modes, counter)
+        saved
+    }
     /// The `@on(flag)` SET-ON twin of push_mode_off: save modes, turn the flag ON,
     /// return the saved modes for restore_modes.
     fn push_mode_on(self, flag: string) -> ExprModes {
@@ -1128,6 +1137,16 @@ export fn modes_with_flag_off(modes: ExprModes, flag: string) -> ExprModes {
     modes
 }
 
+/// The `@bump(counter)` twin of modes_with_flag_off/on — INCREMENTS an int cell rather
+/// than setting a bool. `quote_depth` is the only one today: the read side already ships
+/// (`@when(at_quote_top)` is `== 0`, `@when(in_quote_body)` is `> 0`, #1033), and this is
+/// the set side those predicates were waiting on. Kept in lockstep with
+/// seed_parser.bump_counter_supported — a new bumpable counter is added in both.
+export fn modes_with_counter_bumped(modes: ExprModes, counter: string) -> ExprModes {
+    if counter == "quote_depth" { return modes with { quote_depth: modes.quote_depth + 1 } }
+    modes
+}
+
 /// The `@on(flag)` SET-ON twin of modes_with_flag_off — turns the named settable
 /// ExprModes flag TRUE. Kept in lockstep with seed_parser.on_flag_supported.
 export fn modes_with_flag_on(modes: ExprModes, flag: string) -> ExprModes {
@@ -1374,6 +1393,14 @@ fn exec_item_marked(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: boo
     // condition. Empty mode_off (every item today) is a zero-cost passthrough.
     if item.mode_off != "" {
         let saved = st.push_mode_off(item.mode_off)
+        let r = exec_item_body(g, item, st, env, multi, annots)
+        st.restore_modes(saved)
+        return r
+    }
+    // `@bump(counter)` counter-SET marker: increment for the item's sub-parse, then
+    // restore — the hand parse_quote's save/bump/restore around a quote body.
+    if item.mode_bump != "" {
+        let saved = st.push_mode_bump(item.mode_bump)
         let r = exec_item_body(g, item, st, env, multi, annots)
         st.restore_modes(saved)
         return r

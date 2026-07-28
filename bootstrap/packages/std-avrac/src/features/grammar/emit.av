@@ -687,7 +687,7 @@ fn spec_branch_is_flat(seq: GSeq) -> bool {
         // Checked BEFORE the pred skip so it can never be lost, exactly like @cut.
         if item.require { return false }
         if prim_is_pred_e(item.prim) { continue }
-        if item.mode_off != "" || item.mode_on != "" { return false }
+        if item.mode_off != "" || item.mode_on != "" || item.mode_bump != "" { return false }
         if !rep_is_one(item.rep) { return false }
         match item.prim {
             .Lit(_) -> {}
@@ -1064,6 +1064,14 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     if item.mode_off != "" {
         return "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
+            inner +
+            "${ind}st.set_modes(__modes_${idx})\n"
+    }
+    // `@bump(counter)` counter-SET marker: save modes, INCREMENT via
+    // modes_with_counter_bumped (the SAME fn the executor calls), emit the item, restore.
+    if item.mode_bump != "" {
+        return "${ind}let __modes_${idx} = st.modes\n" +
+            "${ind}st.set_modes(modes_with_counter_bumped(st.modes, \"${item.mode_bump}\"))\n" +
             inner +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
@@ -2147,7 +2155,7 @@ fn node_all_terminal(node: GNode) -> bool {
                 let item = b.items[0]
                 if !prim_is_terminal(item.prim) { return false }
                 if !rep_is_one(item.rep) { return false }
-                if item.cut || item.require || item.sameline || item.mode_off != "" || item.mode_on != "" { return false }
+                if item.cut || item.require || item.sameline || item.mode_off != "" || item.mode_on != "" || item.mode_bump != "" { return false }
             }
             true
         }

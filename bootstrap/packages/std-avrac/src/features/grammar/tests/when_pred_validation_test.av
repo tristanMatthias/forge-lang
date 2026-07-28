@@ -158,3 +158,64 @@ spec "t-47hc.30: postfix-BASE predicates" {
         err_of("r = @when(base_callble) NUMBER").contains("base_callable")
     }
 }
+
+// t-47hc.32 — `@bump(counter)`, the scoped COUNTER mode. `@on`/`@off` set a settable
+// BOOL for an item's sub-parse and restore it; `quote_depth` is an INT the hand
+// parse_quote bumps on entering a quote body and restores on leaving. Same save/restore
+// machinery, different cell type — which is the set side the `at_quote_top` /
+// `in_quote_body` READ predicates (#1033) were waiting on. Landed DORMANT; the
+// quote_expr flip spends it.
+
+fn bumped_src(inner: string) -> string {
+    // The bump scopes the GROUP, so the predicate inside observes the incremented value.
+    "r = \"[\" @bump(quote_depth) ( ${inner} ) \"]\" -> Grouping(x)"
+}
+
+spec "t-47hc.32: @bump(counter) scoped counter mode" {
+    then "it parses and validates against its own allowlist" {
+        !rejects("r = @bump(quote_depth) NUMBER")
+    }
+    then "an unknown counter is a HARD error naming the legal set" {
+        let e = err_of("r = @bump(quote_dpeth) NUMBER")
+        e.contains("quote_dpeth") && e.contains("quote_depth")
+    }
+    then "a settable BOOL is NOT a bumpable counter — the lists stay distinct" {
+        // allow_struct_lit is @off/@on-able; bumping it is meaningless, so reject.
+        rejects("r = @bump(allow_struct_lit) NUMBER")
+    }
+    then "a COUNTER is not @off/@on-able either — the asymmetry holds both ways" {
+        rejects("r = @off(quote_depth) NUMBER") && rejects("r = @on(quote_depth) NUMBER")
+    }
+    then "two set-markers on one item is rejected rather than silently dropped" {
+        // exec_item honours mode_off FIRST, so a co-present bump would be dead code.
+        rejects("r = @off(allow_struct_lit) @bump(quote_depth) NUMBER")
+    }
+    then "the emitted code CALLS the shared executor fn, not an inline increment" {
+        // Same lockstep rule as the base predicates: one definition, two engines.
+        let gp = parse_grammar(bumped_src("x:NUMBER"))
+        mut src = ""
+        for gr in gp.grammar.rules {
+            if gr.name == "r" { src = emit_rule_fn(gp.grammar, gr) }
+        }
+        src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")")
+    }
+    then "the emitted code RESTORES the saved modes after the item" {
+        let gp = parse_grammar(bumped_src("x:NUMBER"))
+        mut src = ""
+        for gr in gp.grammar.rules {
+            if gr.name == "r" { src = emit_rule_fn(gp.grammar, gr) }
+        }
+        src.contains("let __modes_") && src.contains("st.set_modes(__modes_")
+    }
+    then "the INTERPRETER composes with the read side: in_quote_body sees the bump" {
+        // At depth 0 `in_quote_body` is false, so this gated item only parses when the
+        // enclosing @bump incremented the counter. That is the read+set round trip.
+        let gp = parse_grammar(bumped_src("@when(in_quote_body) x:NUMBER"))
+        !run_grammar_expr(gp.grammar, "[ 7 ]").had_error
+    }
+    then "and the bump is RESTORED — outside it, in_quote_body is false again" {
+        // Same item gated OUTSIDE the bumped group: depth is back to 0, so it must fail.
+        let gp = parse_grammar("r = \"[\" @bump(quote_depth) ( a:NUMBER ) \"]\" @when(in_quote_body) b:NUMBER -> Grouping(a)")
+        run_grammar_expr(gp.grammar, "[ 7 ] 8").had_error
+    }
+}

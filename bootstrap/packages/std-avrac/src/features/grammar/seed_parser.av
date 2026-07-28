@@ -393,7 +393,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_cut_marker(p) || at_require_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -525,6 +525,25 @@ fn at_require_marker(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "require"
+}
+
+/// The COUNTERS a `@bump(counter)` marker may increment — an int cell in ExprModes, NOT
+/// a settable bool, which is why this is its own list rather than a reuse of
+/// off_flag_supported/on_flag_supported. The same read/set asymmetry already exists on
+/// the `@when` side (when_pred_supported is wider than off_flag_supported because it
+/// also admits values DERIVED from this counter). Lockstep with
+/// executor.modes_with_counter_bumped.
+export fn bump_counter_supported(counter: string) -> bool {
+    counter == "quote_depth"
+}
+
+/// True when the cursor is `@bump` — the counter-SET marker (t-47hc.32), the int twin of
+/// at_off_marker/at_on_marker. Same item-start treatment: it PREFIXES the item it scopes.
+fn at_bump_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "bump"
 }
 
 /// True when the cursor is `@on` — the SET-ON twin of at_off_marker. Same item-start
@@ -1079,12 +1098,36 @@ fn parse_labeled(p: GP) -> GItem {
         }
         p.expect_punct(")", "expected `)` to close `@on(flag)`")
     }
+    // t-47hc.32 counter-SET marker `@bump(counter)`: increment an ExprModes int cell for
+    // this item's sub-parse, then restore — the hand parse_quote's save/bump/restore
+    // around a quote body. Same STRICT grammar `@` `bump` `(` NAME `)`, validated against
+    // bump_counter_supported (its OWN list: a counter is not a settable bool).
+    mut mode_bump = ""
+    if at_bump_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "bump"
+        p.expect_punct("(", "expected `(` after `@bump`")
+        if p.peek().kind == "NAME" {
+            let cn = p.advance().text
+            if bump_counter_supported(cn) {
+                mode_bump = cn
+            } else {
+                p.fail("unknown `@bump` counter `${cn}` (expected quote_depth)")
+            }
+        } else {
+            p.fail("expected a counter name in `@bump(counter)`")
+        }
+        p.expect_punct(")", "expected `)` to close `@bump(counter)`")
+    }
     // Enforce the mutual-exclusion invariant the comments assert: emit_item /
     // exec_item honour mode_off FIRST and would silently drop a co-present
-    // mode_on, so reject `@off(x) @on(y)` on one item as a hard parse error
-    // rather than generate a dead mode-set.
+    // mode_on or mode_bump, so reject two set-markers on one item as a hard parse
+    // error rather than generate a dead mode-set.
     if mode_off != "" && mode_on != "" {
         p.fail("`@off` and `@on` cannot both apply to one item")
+    }
+    if mode_bump != "" && (mode_off != "" || mode_on != "") {
+        p.fail("`@bump` cannot share an item with `@off` or `@on`")
     }
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
@@ -1097,7 +1140,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, cut, require, bound: base.bound }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, cut, require, bound: base.bound }
 }
 
 // postfix = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?

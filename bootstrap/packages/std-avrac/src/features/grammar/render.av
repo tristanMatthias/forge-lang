@@ -47,7 +47,7 @@ fn render_seq(s: GSeq) -> string {
     out
 }
 
-/// NOTE: the item MARKERS (`^`, `@off`/`@on`, `@cut`, `@require`) are not rendered —
+/// NOTE: the item MARKERS (`^`, `@off`/`@on`/`@bump`, `@cut`, `@require`) are not rendered —
 /// a pre-existing gap in the "structure-only" contract above, so render→parse is not
 /// identity for a grammar using them. The repetition BOUND is rendered because it is
 /// part of the repetition itself rather than a marker on the item: dropping it would
