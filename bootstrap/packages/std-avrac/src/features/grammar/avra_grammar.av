@@ -125,7 +125,27 @@ fn avra_expr_core() -> Grammar {
   map_literal  = "{" ( k:expression ":" v:expression ( "," )? )* "}"
                  @expect(":", "expected `:` after map key")
                  @expect("}", "expected `}` after map") -> MkMapLit(k, v)
-  postfix_suffix = @hand(postfix_suffix)
+  // t-47hc.33 — the postfix chain, going native one FORM at a time. `@hand(postfix_suffix)`
+  // stays the TAIL alternative until all eight are grammar-owned, so it keeps the
+  // unguarded error-recovery role (t-47hc.31) and every form not yet flipped still runs
+  // the hand code verbatim. `--hand-leaves` therefore moves only on the commit that
+  // deletes the delegate, not on the intermediate ones.
+  //
+  // A native form reproduces the hand ENTRY GUARD exactly (postfix_step, parse/mod.av):
+  // token + same-line (`^`) + mode reads. Where the hand guard is WEAKER inside the body
+  // than at entry — it re-dispatches on the current token after the leading `!` loop has
+  // consumed, without re-testing same-line or dot_is_postfix — the delegate tail still
+  // covers that compound case, because a native alternative whose guard fails simply
+  // falls through to it.
+  postfix_suffix = @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
+                 | c:"catch" ( "(" @require b:IDENT @require ")" )? @require "{"
+                   @on(allow_dot_postfix) body:declaration* @require "}"
+                   @expect("IDENT", "expected error binding name after `catch (`")
+                   @expect(")", "expected `)` after catch binding")
+                   @expect("{", "expected `{` after catch")
+                   @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
+                 | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
+                 | @hand(postfix_suffix)
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)

@@ -1,0 +1,126 @@
+// WHY: t-47hc.33 — `postfix_suffix`'s eight forms leaving the `@hand` delegate for
+// grammar alternatives, one at a time. One spec per form; they accumulate here.
+//
+// The thing that makes a postfix form flippable at all is that the CHAIN's state is
+// already threaded on PState: `postfix_base` (the accumulated receiver) and
+// `postfix_sp_start` (the chain's start byte, the constant `lo` every suffix in
+// `a.b.c()` shares). A native form must use BOTH — a per-suffix `lo` would re-span every
+// chained expression, and skipping `set_postfix_base` would build the next suffix onto a
+// stale receiver and silently drop this one, since `fold_postfix_with_expr` reads only
+// the LAST suffix's node.
+//
+// The guard has to be the hand entry guard verbatim (`postfix_step`, parse/mod.av):
+// `check(Tk.Question) && allow_dot_postfix && current_line == prev_line`. Dropping any
+// conjunct changes what parses: without `allow_dot_postfix` a `?` inside a match arm is
+// eaten as a Try instead of ending the arm; without the line test a `?` opening the next
+// line is folded onto the previous expression.
+//
+// `@hand(postfix_suffix)` REMAINS the tail alternative, and that is load-bearing rather
+// than transitional: the hand body re-dispatches on the current token after its leading
+// `!` loop has consumed, WITHOUT re-testing the entry conditions, so `x!?` is one hand
+// step. A native `?` alternative cannot see that shape (its guard fires on `?`, and the
+// current token there is `!`), so it declines and the tail handles the compound case.
+// That is why `!` is the LAST form to flip, together with the delegate's deletion: every
+// OTHER hand arm either returns immediately or ends the if/else chain, so a native
+// single-iteration version of it is exactly equivalent.
+
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
+
+fn postfix_rule_src() -> string {
+    let g = avra_expr_dispatch_grammar()
+    for gr in g.rules {
+        if gr.name == "postfix_suffix" { return emit_rule_fn(g, gr) }
+    }
+    ""
+}
+
+spec "t-47hc.33: `expr?` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_try_suffix(st)")
+    }
+    then "the guard carries the mode read — `?` in a match arm is not a Try" {
+        postfix_rule_src().contains("st.modes.allow_dot_postfix != 0")
+    }
+    then "and the token test" {
+        postfix_rule_src().contains("st.cur().tk == Tk.Question")
+    }
+    then "and the SAME-LINE test — a `?` opening the next line ends the chain" {
+        postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
+    }
+    then "the `@hand` tail is still there — it owns the forms not yet flipped" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+    then "the loop over the rule keeps its no-progress break" {
+        // The hand tail can return WITHOUT consuming (guard unmatched / generic-call
+        // speculation failed / trailing non-postfix arm). The break is the loop's exit;
+        // losing it when the rule went partly-native would spin forever.
+        let g = avra_expr_dispatch_grammar()
+        mut src = ""
+        for gr in g.rules {
+            if gr.name == "unary" { src = emit_rule_fn(g, gr) }
+        }
+        src.contains("if st.pos == __rep_before { break }")
+    }
+}
+
+// Form 3 — `expr?.field`, optional chaining WITHOUT a call. Branch-only: no sub-rule, so
+// no new generated function — the `?.m(args)` sibling builds a DIFFERENT node
+// (Expr.OptionalMethodCall, from an argument list under `it`-sugar) and stays hand-owned,
+// and `@peek(qdot_plain_field)` is what separates them before the branch is entered.
+
+spec "t-47hc.33: `expr?.field` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_opt_chain(st,")
+    }
+    then "it is gated by the lookahead, not by the `?.` token alone" {
+        // Without the peek the branch would swallow `?.m(args)` and build the wrong node.
+        postfix_rule_src().contains("lookahead_ok(\"qdot_plain_field\", st)")
+    }
+    then "the field terminal is IDENT — a reserved-keyword field stays hand-owned" {
+        // consume_field_name also accepts Tk.KwReserved, and the grammar's "KW" kind is
+        // EVERY keyword, so matching it here would be wider than the hand.
+        postfix_rule_src().contains("st.cur().tk == Tk.Identifier")
+    }
+    then "the `@hand` tail is still reachable for the excluded cases" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+}
+
+// Form 2 — `expr catch { … }` / `expr catch (e) { … }` (spec Axis 12.5-12.6). Unlike the
+// `?` form this one has REAL structure: an optional binding, a statement-list body under
+// `allow_dot_postfix`, and four abort points whose messages are the hand parser's.
+
+spec "t-47hc.33: `expr catch { … }` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_catch_suffix(st,")
+    }
+    then "the body parses under allow_dot_postfix ON, and RESTORES after" {
+        // The hand saves/sets/restores around parse_statement_list_ids; a leak here
+        // would silently change how the REST of the enclosing expression parses.
+        postfix_rule_src().contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") &&
+            postfix_rule_src().contains("st.set_modes(__modes_")
+    }
+    then "the four abort messages are the hand parser's, verbatim" {
+        let s = postfix_rule_src()
+        s.contains("expected error binding name after `catch (`") &&
+            s.contains("expected `)` after catch binding") &&
+            s.contains("expected `{` after catch") &&
+            s.contains("expected `}` after catch body")
+    }
+    then "each of them ABORTS rather than reporting and continuing" {
+        // `@require`: the hand returns .Err("parse error"), so the rest of the sequence
+        // must not run and consume tokens belonging to whatever follows.
+        postfix_rule_src().contains("return CapVal.Node(st.error_node_silent())")
+    }
+    then "the binding is OPTIONAL — bare `catch {` needs no parens" {
+        postfix_rule_src().contains("if st.cur().tk == Tk.LeftParen {")
+    }
+    then "the mode restore precedes the closing-brace check — no leak on abort" {
+        // Ordering matters: were the `}` abort emitted INSIDE the @on wrapper, a missing
+        // `}` would return with allow_dot_postfix still forced on.
+        let s = postfix_rule_src()
+        let restore = s.index_of("st.set_modes(__modes_")
+        let close = s.index_of("expected `}` after catch body")
+        restore >= 0 && close >= 0 && restore < close
+    }
+}

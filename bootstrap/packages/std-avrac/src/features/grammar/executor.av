@@ -632,13 +632,18 @@ fn list_has(xs: List<string>, s: string) -> bool {
     false
 }
 
-/// Does `tok` start `prim`? Structural, cycle-guarded FIRST membership.
-fn tok_starts_prim(g: Grammar, prim: GPrim, tok: Token, visited: List<string>) -> bool {
+/// Does the CURRENT token start `prim`? Structural, cycle-guarded FIRST membership.
+///
+/// Takes the whole PState rather than a bare Token (t-47hc.33) because `^` is part of a
+/// sequence's FIRST — see tok_starts_seq. Every call site already passed `st.cur()`, so
+/// this is the same question with the state the newline gate needs in reach.
+fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -> bool {
+    let tok = st.cur()
     match prim {
         .Lit(t) -> tok.text == t
         .Named(name) -> tok.kind == name
-        .Ref(name) -> tok_starts_rule(g, name, tok, visited)
-        .Group(inner) -> tok_starts_node(g, inner, tok, visited)
+        .Ref(name) -> tok_starts_rule(g, name, st, visited)
+        .Group(inner) -> tok_starts_node(g, inner, st, visited)
         .Hand(hf) -> hand_starts(hf, tok)
         // A `@when` predicate is zero-width — it starts no token. It never
         // reaches here for a LEADING position (tok_starts_seq skips it); this
@@ -655,21 +660,21 @@ fn prim_is_pred(prim: GPrim) -> bool {
     match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
 }
 
-fn tok_starts_rule(g: Grammar, name: string, tok: Token, visited: List<string>) -> bool {
+fn tok_starts_rule(g: Grammar, name: string, st: PState, visited: List<string>) -> bool {
     if list_has(visited, name) { return false }   // cycle guard
     mut v2: List<string> = []
     for x in visited { v2.push(x) }
     v2.push(name)
     let r = lookup_rule(g, name)
     if r.name == "" { return false }
-    tok_starts_node(g, r.body, tok, v2)
+    tok_starts_node(g, r.body, st, v2)
 }
 
-fn tok_starts_node(g: Grammar, node: GNode, tok: Token, visited: List<string>) -> bool {
+fn tok_starts_node(g: Grammar, node: GNode, st: PState, visited: List<string>) -> bool {
     match node {
         .Alt(branches) -> {
             for b in branches {
-                if tok_starts_seq(g, b, tok, visited) { return true }
+                if tok_starts_seq(g, b, st, visited) { return true }
             }
             false
         }
@@ -678,13 +683,19 @@ fn tok_starts_node(g: Grammar, node: GNode, tok: Token, visited: List<string>) -
 
 /// FIRST of a sequence: the first item's FIRST, extended through any
 /// nullable (Opt/Star) leading items.
-fn tok_starts_seq(g: Grammar, seq: GSeq, tok: Token, visited: List<string>) -> bool {
+fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> bool {
     for item in seq.items {
         // A `@when` predicate is zero-width: it contributes no FIRST token and
         // never stops the scan — skip past it to the next item. (Its mode gate
         // is checked separately in branch_pred_ok, ANDed onto the branch.)
         if prim_is_pred(item.prim) { continue }
-        if tok_starts_prim(g, item.prim, tok, visited) { return true }
+        // `^` is part of the FIRST, not just of the item's own match (t-47hc.33). A
+        // same-line item cannot start on a token that sits on the next line, so a branch
+        // led by one must NOT be selected there — it has to fall through to its siblings
+        // instead of being entered and then failing mid-sequence. Emit's twin is the
+        // same_line_wrap in seq_first_guard; keeping the two in lockstep is what stops
+        // the interpreter and the generated parser picking different branches.
+        if tok_starts_prim(g, item.prim, st, visited) && sameline_ok(st, item) { return true }
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
             .One -> return false
@@ -910,7 +921,7 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 /// Kept as its own list so `pred_ok` can route them, and so `modes_flag` stays a pure
 /// function of `ExprModes` (a base read needs the whole PState).
 export fn is_base_pred(flag: string) -> bool {
-    flag == "base_callable" || flag == "base_upper_ident"
+    flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok"
 }
 
 /// Read a predicate off the accumulated POSTFIX BASE (`st.postfix_base`) — the base the
@@ -952,6 +963,32 @@ export fn base_pred(flag: string, st: PState) -> bool {
             .FieldAccess(_, _) -> true
             _ -> false
         }
+    }
+    // The `.` arm's ENTIRE entry-guard conjunct from the hand postfix_step:
+    //   check(Tk.Dot) && dot_is_postfix(result) && (!cell_mode || same_line)
+    // Folded into ONE predicate rather than spelled as `@when(cell_mode)` + `^` + a base
+    // read, because `dot_is_postfix` is not a conjunction of those — it is a decision
+    // TREE (cross-line-uppercase rejects outright; otherwise allow_dot_postfix short-
+    // circuits true; otherwise a lowercase field is always a field; only an uppercase
+    // field with the flag off consults the base). Expressing that as separate markers
+    // would need a negated `@when`, which the DSL does not have and should not grow for
+    // one caller. `peek_next_is_upper` reads the SOURCE char after the `.` in the hand;
+    // on the token stream the next token's first char is the same question.
+    if flag == "dot_postfix_ok" {
+        if st.cur().tk != Tk.Dot { return false }
+        let same_line = st.pos == 0 ||
+            st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line
+        // cell_mode confines a `.` postfix to its own line (table cells).
+        if st.modes.cell_mode != 0 && !same_line { return false }
+        let next_upper = st.pos + 1 < st.toks.length && grammar_starts_upper(st.toks[st.pos + 1].text)
+        // A bare `.UpperIdent` opening a NEW line is a fresh enum-ctor statement, not a
+        // postfix on the previous expression (forge-crafting-intepreters-3r6q).
+        if !same_line && next_upper { return false }
+        if st.modes.allow_dot_postfix != 0 { return true }
+        // Inside a match arm: `.lower` is always a field, `.Upper` only when the base is
+        // itself an uppercase ident (an enum-TYPE prefix like `Foo.Bar`).
+        if !next_upper { return true }
+        return base_pred("base_upper_ident", st)
     }
     if flag == "base_upper_ident" {
         return match e {
@@ -1044,6 +1081,39 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // past the ident for the first non-space char; on the token stream the whitespace is
     // already gone, so "the next token is `{`" is the same question — the same equivalence
     // ident_colon relies on.
+    // `?.field` WITHOUT a call — the half of the hand's QuestionDot arm that builds
+    // `Expr.OptionalChain`. Three conjuncts, each excluding a case the hand keeps:
+    //   - the field must lex as IDENT, because consume_field_name also accepts a
+    //     RESERVED keyword and the grammar's "KW" kind is every keyword, not just those;
+    //   - a same-line `(` after it is `?.m(args)` => Expr.OptionalMethodCall, a different
+    //     node built from an arg list with `it`-sugar;
+    //   - a CROSS-line `(` is not a call at all (the hand checks prev_line there too), so
+    //     that stays this branch.
+    // Everything excluded falls through to the `@hand` tail, which handles it verbatim.
+    // `.field` that is NOT an enum construction. The hand builds `Expr.EnumCtor` when the
+    // base is a PascalCase Ident / qualified path with a PascalCase last segment AND a `(`
+    // follows the field name; that form needs an argument list, so it stays hand-owned.
+    // Everything else with an IDENT field name is a plain FieldAccess.
+    if cond == "dot_plain_field" {
+        if st.cur().tk != Tk.Dot { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        // consume_field_name also accepts a RESERVED keyword; the grammar's "KW" kind is
+        // every keyword, so that case is left to the hand rather than matched too widely.
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
+        // A `(` follows: this is an enum ctor only if the BASE reads as a type name.
+        return !base_pred("base_upper_ident", st)
+    }
+    if cond == "qdot_plain_field" {
+        if st.cur().tk != Tk.QuestionDot { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        let after = st.toks[st.pos + 2]
+        if after.tk != Tk.LeftParen { return true }
+        return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line != st.store.lines.to_linecol(after.pos).line
+    }
     if cond == "ident_lbrace" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -1263,7 +1333,7 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                 }
             }
             for b in branches {
-                if branch_pred_ok(b, st) && tok_starts_seq(g, b, st.cur(), empty) {
+                if branch_pred_ok(b, st) && tok_starts_seq(g, b, st, empty) {
                     if b.speculative {
                         // Snapshot the cursor + node store + diagnostics, run the
                         // branch, and commit only if it added no diagnostic;
@@ -1310,10 +1380,19 @@ fn exec_node(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, oute
                     }
                 }
             }
-            // No branch committed. A rolled-back speculative attempt is a clean
-            // "no match" (diags/had_error already restored) — let the caller (an
-            // enclosing alternation, a `*`/`?`, or a required position) decide;
-            // do NOT synthesise a spurious parse error.
+            // No branch's FIRST matched. A `@fallback` branch is the UNCONDITIONAL tail:
+            // run it instead of reporting, so the RULE owns its diagnostic. This is the
+            // native twin of the trailing-`@hand` tail role (emit's is_leading_hand
+            // last-branch case), for a rule whose alternatives are all native — without
+            // it such a rule can only ever emit the generic message below, and the two
+            // closing-`]` diagnostics `index_tail` must reproduce are unreachable.
+            // Checked AFTER the loop, so an earlier matching branch still wins.
+            for fb in branches {
+                if fb.fallback { return exec_seq(g, fb, st, env, multi, outer_annots) }
+            }
+            // A rolled-back speculative attempt is a clean "no match" (diags/had_error
+            // already restored) — let the caller (an enclosing alternation, a `*`/`?`, or
+            // a required position) decide; do NOT synthesise a spurious parse error.
             if tried_spec { return CapVal.Nil }
             CapVal.Node(st.error_node("unexpected token `${st.cur().text}`"))
         }
@@ -1410,7 +1489,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
         match item.prim {
             .Ref(rname) -> {
                 let seen: List<string> = []
-                if !tok_starts_rule(g, rname, st.cur(), seen) {
+                if !tok_starts_rule(g, rname, st, seen) {
                     handle_missing(st, rule_first_literal(g, rname), annots)
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
@@ -1467,7 +1546,7 @@ fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool,
             v
         }
         .Opt -> {
-            if tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
+            if tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item) {
                 let v = exec_primary(g, item.prim, st, env, multi, annots)
                 bind(env, item.label, v, multi)
                 return v
@@ -1521,7 +1600,7 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     mut taken = already
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop.
-    while tok_starts_prim(g, item.prim, st.cur(), empty) && sameline_ok(st, item) {
+    while tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item) {
         if cap >= 0 && taken >= cap { return }
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
@@ -2410,6 +2489,16 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
+        // ── Native `postfix_suffix` steps (t-47hc.33) ──
+        // These take NO `sp_start` build arg: they read `st.postfix_sp_start`, the chain
+        // start the `( postfix_suffix )*` loop threads. So unlike every sibling above,
+        // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
+        // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
+        "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
+        "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
+        "MkFieldAccess" if args.length == 1 -> CapVal.Node(mk_field_access(st, env.get(args[0])))
+        "MkCatchSuffix" if args.length == 3 -> CapVal.Node(mk_catch_suffix(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
         "MkTuple" if args.length == 1 -> CapVal.Node(mk_tuple(st, 0 - 1, env.get(args[0])))
@@ -3901,6 +3990,85 @@ export fn fold_postfix_with_expr(st: PState, sp_start: int, baseCap: CapVal, pCa
         acc = rebind_with(st, sp_start, acc, s)
     }
     acc
+}
+
+/// ONE native `postfix_suffix` step's shared tail (t-47hc.33): stamp `node` with the
+/// CHAIN's span and re-seed the base so the next `( postfix_suffix )*` iteration folds
+/// onto it.
+///
+/// Two things every native suffix must get right, both of which the `@hand` delegate
+/// (`parse_postfix_suffix`) did for free:
+///
+///   1. The span is `[postfix_sp_start, next-token)` — the chain's start byte, NOT this
+///      suffix's. Every suffix in `a.b.c()` shares one `lo`, which is what the hand's
+///      `alloc_at(result, sp_start)` does with a `sp_start` held constant across the
+///      whole `postfix_step` loop. A per-suffix `lo` would span `.c()` alone and every
+///      chained expression's SrcPos would shift.
+///   2. `set_postfix_base` — the accumulator IS the parse state. `fold_postfix_with_expr`
+///      reads only the LAST suffix's node, so a step that skipped this would build its
+///      successor onto a stale base and silently drop the intervening suffixes.
+fn postfix_step_node(st: PState, node: Expr) -> ExprId {
+    let rid = st.store.add_expr(node, byte_span(st.postfix_sp_start, st.cur().pos), [])
+    st.set_postfix_base(rid)
+    rid
+}
+
+/// `expr?` — error propagation (t-47hc.33 form 1), the hand postfix_step's
+/// `if self.check(Tk.Question)` arm. No captures: the whole suffix is the token, and
+/// the subject is the threaded base.
+/// `expr?.field` — optional chaining WITHOUT a call (t-47hc.33 form 3). The `?.m(args)`
+/// sibling builds a different node (`Expr.OptionalMethodCall`, from an arg list under
+/// `it`-sugar) and stays with the `@hand` tail; `@peek(qdot_plain_field)` is what keeps
+/// the two apart before the branch is entered.
+export fn mk_opt_chain(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.OptionalChain(st.postfix_base, capval_tok_text(ncap)))
+}
+
+/// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
+/// `int()`s it, so a float-shaped `.0.1` lexes as one NUMBER and would differ; the
+/// grammar terminal is the same NUMBER kind, so the same lexeme reaches `int` here.
+export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.TupleIndex(st.postfix_base, int(capval_tok_text(tcap))))
+}
+
+/// `expr.field` — plain field access (t-47hc.33 form 4). The ENUM-CONSTRUCTOR reading of
+/// the same syntax (`Type.Variant(args)`, when the base is a PascalCase ident and a `(`
+/// follows) builds a different node from an argument list, and stays with the `@hand`
+/// tail; `@peek(dot_plain_field)` keeps the two apart before the branch is entered.
+export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.FieldAccess(st.postfix_base, capval_tok_text(ncap)))
+}
+
+export fn mk_try_suffix(st: PState) -> ExprId {
+    postfix_step_node(st, Expr.Try(st.postfix_base))
+}
+
+/// `expr catch { … }` / `expr catch (e) { … }` (t-47hc.33 form 2, spec Axis 12.5-12.6).
+///
+/// Three details the hand arm carries that are easy to lose:
+///   - The line/col stamped into the node are the `catch` KEYWORD's, captured before
+///     anything is consumed. They come off the captured token's byte offset here, which
+///     is the same position through the shared LineIndex.
+///   - The handler `Expr.Block` is INTERNED (`alloc_leaf` → `intern_expr_leaf`), not
+///     `add_expr`'d. `mk_expr_block` would allocate a fresh spanned row instead, so the
+///     handler cannot be routed through the `block_expr` rule.
+///   - An ABSENT `(e)` binding is the empty string, which is what `capval_tok_text`
+///     yields for a `Nil` capture.
+export fn mk_catch_suffix(st: PState, ccap: CapVal, bcap: CapVal, bodycap: CapVal) -> ExprId {
+    let lc = st.store.lines.to_linecol(capval_tok_pos(ccap))
+    let handler_id = st.store.intern_expr_leaf(Expr.Block(capval_to_stmt_list(bodycap)))
+    postfix_step_node(st, Expr.Catch(st.postfix_base, capval_tok_text(bcap), handler_id, lc.line, lc.col))
+}
+
+/// A scalar token capture's SOURCE BYTE OFFSET — the anchor for a build that needs the
+/// keyword's own position rather than the sequence's. Non-token captures answer 0, the
+/// start of file, which `to_linecol` maps to 1:1 (a build that reaches this arm has a
+/// grammar bug, and a wild offset would be worse than a deterministic one).
+export fn capval_tok_pos(v: CapVal) -> int {
+    match v {
+        .Tok(t) -> t.pos
+        _ -> 0
+    }
 }
 
 /// Rebuild a partial `Expr.With(_, overrides)` with `recv` as the receiver, spanned
