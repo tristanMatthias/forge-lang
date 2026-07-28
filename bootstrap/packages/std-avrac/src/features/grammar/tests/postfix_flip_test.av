@@ -299,12 +299,31 @@ spec "t-47hc.33: `f<T>(args)` is grammar-native" {
         // try_parse_generic_call restores on a bad type list, a missing `(`, a bad arg
         // list AND a missing `)`, so the branch never owns its diagnostics. A cut after
         // `">" "("` would report where the hand re-reads the tokens as a comparison.
+        //
+        // Assert on `s_cut`, the marker the EMITTER produces — `seq_has_cut` drives a
+        // `mut s_cut` declaration plus its commit guard, and emits neither when no
+        // branch of the rule cuts. Do NOT assert on `env.set_cut`: that is the
+        // INTERPRETER's vocabulary (CapEnv, executor.av) and never appears in emitted
+        // source at all, so such a check passes unconditionally and would not notice a
+        // `@cut` being added here later. This one fails the moment one is.
         let g = avra_expr_dispatch_grammar()
         mut src = ""
         for gr in g.rules {
             if gr.name == "postfix_suffix" { src = emit_rule_fn(g, gr) }
         }
-        !src.contains("env.set_cut(true)")
+        !src.contains("s_cut")
+    }
+    then "POSITIVE CONTROL: `s_cut` really is what a cut emits" {
+        // Without this, the assertion above is only as good as the marker name — a
+        // rename would silently turn it back into a check that cannot fail. paren_expr
+        // DOES cut (`")" "->" @cut lb:lambda_body`), so its emitted source must contain
+        // the marker that postfix_suffix's must not.
+        let g = avra_expr_dispatch_grammar()
+        mut src = ""
+        for gr in g.rules {
+            if gr.name == "paren_expr" { src = emit_rule_fn(g, gr) }
+        }
+        src.contains("s_cut")
     }
     then "the builder call is GATED on the diagnostic count" {
         // The generated parser must not run the build for a doomed speculative branch:
