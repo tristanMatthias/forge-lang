@@ -1,0 +1,22 @@
+// WHY: t-47hc slice 10.3 — the shared TYPE-PARAMETER rule, owned by the feature that
+// owns generics (see features/fn_decl/grammar.av for the fragment-registry rationale).
+//
+// `tparam` is the one decl sub-structure that is not owned by any single keyword: fn,
+// type, enum, trait and impl all take the same `<T, U: Bound>` list, and each of their
+// fragments references this rule by name across the merged rule set — exactly as
+// `enum_decl`'s `variant` already references `struct_decl`'s `field`. Defining it once
+// here is what keeps widening the remaining keywords a per-feature edit instead of five
+// copies of the same list drifting apart.
+//
+// ONE trait bound only, matching the hand's `parse_type_param_entries` — an absent bound
+// is "" (unbounded), and multi-bound `T: A + B` is a where-clause, out of scope for both.
+// The builder is `MkTypeParam`, whose emit/executor lockstep landed dormant in slice 10.2.
+use features.grammar.{parse_grammar, Grammar}
+
+/// One generic type parameter: `T` or `T: Bound`.
+export fn avra_generics_grammar() -> Grammar {
+    let gp = grammar {
+  tparam      = tpn:IDENT ( ":" tpb:IDENT )? -> MkTypeParam(tpn, tpb)
+    }
+    gp.grammar
+}

@@ -11,7 +11,7 @@ use features.grammar.{parse_grammar, Grammar}
 /// The `enum` declaration and its variant rule (bare or payload-carrying).
 export fn avra_enum_decl_grammar() -> Grammar {
     let gp = grammar {
-  enum_decl   = "enum" ename:IDENT "{" ( vars:variant ","? )* "}" -> MkEnumDecl(ename, vars)
+  enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )* ( vars:variant ","? ( DOC )* )* "}" -> MkEnumDecl(ename, tparams, vars)
   variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
     }
     gp.grammar

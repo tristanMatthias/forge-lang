@@ -1,0 +1,71 @@
+// WHY: t-47hc slice 10.3 (t-myz7) — `enum_decl`'s fragment now accepts what the HAND
+// accepts, which is the precondition for routing it off `@hand(decl_hand)`.
+//
+// Slice 9 moved the decl rules into per-feature fragments, but the rules it moved were
+// the SIMPLE forms inherited from avra_program_grammar. `parse_enum_declaration` accepts
+// two things they did not, and both were measured as `<dsl parse error>` before this:
+//
+//   generics       `enum Opt<T> { … }` / `enum E<T: Show> { … }` / `enum R<T, E> { … }`
+//   doc comments   `parse_variant_list` skips `Tk.DocComment` before every variant
+//
+// Routing a keyword natively BEFORE closing its gap would not be a partial win — it
+// would break the compiler, whose own source is full of both forms. So parity is
+// asserted here, against the hand, as its own step.
+//
+// The DOC skip is deliberately OUTSIDE `variant` rather than at its head. Putting it in
+// `variant` would add DOC to that rule's FIRST, and the repetition would then re-enter on
+// a doc comment that precedes the closing brace — consuming it and then demanding a
+// variant name it will never get. `( DOC )* ( vars:variant ","? ( DOC )* )*` keeps the
+// loop's continue-check on IDENT and lets the last iteration absorb a trailing doc.
+//
+// `tparam` lives in features/generics, not here: fn / type / enum / trait / impl all take
+// the same `<T, U: Bound>` list, so it is shared sub-structure the way `field` is.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+// Equality alone would still hold if BOTH sides broke to the same error string, so every
+// case also asserts the DSL actually parsed.
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error") && d.contains("enum")
+}
+
+spec "t-47hc slice 10.3: the enum fragment accepts the hand's GENERIC forms" {
+    then "one type param, a bounded one, and several all agree with the hand" {
+        agrees("enum Opt<T> { Some(v: T), None }\n") &&
+            agrees("enum E<T: Show> { A }\n") &&
+            agrees("enum R<T, E> { Ok(v: T), Err(e: E) }\n")
+    }
+
+    then "the non-generic form is untouched" {
+        // The same rule serves both: with no `<…>` the type-param capture is empty and
+        // the generic core builds the identical node the 2-arg one did.
+        agrees("enum E { A, B }\n")
+    }
+}
+
+spec "t-47hc slice 10.3: DOC comments between variants are skipped, as the hand skips them" {
+    then "a doc comment before the first, between two, and before the closing brace" {
+        agrees("enum E {\n    /// the a\n    A,\n    B\n}\n") &&
+            agrees("enum E {\n    A,\n    /// the b\n    B\n}\n") &&
+            agrees("enum E {\n    A\n    /// trailing\n}\n")
+    }
+}

@@ -30,6 +30,8 @@ use features.enum_decl.{avra_enum_decl_grammar}
 use features.trait_decl.{avra_trait_decl_grammar}
 use features.impl_decl.{avra_impl_decl_grammar}
 use features.modules.{avra_modules_grammar}
+// t-47hc slice 10.3 — `tparam`, shared by every generic decl keyword.
+use features.generics.{avra_generics_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -669,6 +671,7 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
         avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
         avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_modules_grammar(),      // use_decl, mod_decl
+        avra_generics_grammar(),     // tparam — shared by every generic decl keyword
     ]
 }
 
