@@ -1,0 +1,131 @@
+// WHY: t-47hc.29 — the `match_table` flip. The table sub-language is now GRAMMAR-NATIVE
+// (`match_table_stmt` in features/match_expr/grammar.av + `table_cell` in avra_expr_core),
+// so `@hand(match_table)` is retired and --hand-leaves drops 8 -> 7.
+//
+// Two things were genuinely at risk here, and neither is visible in ordinary code:
+//
+//  1. The ROW WIDTH is a BOUND, not a computation. The header's first column names the
+//     pattern column, so `#cols` is exactly the hand's `value_count = header_count - 1`,
+//     and `( v:table_cell … )*{#cols}` clamps each row to it. The roadmap called this
+//     "data-dependent and therefore not a grammar rule at any level of DSL power"; it is a
+//     bound, and t-47hc.28's bounded repetition expresses it.
+//
+//  2. Cells are hand `parse_primary`, NOT `@hand(primary_base)`. primary_base is
+//     `parse_leaf_common(false)` = quote splice + PREFIX ops + parse_primary — a strict
+//     SUPERSET. Pointing cells at it would start ACCEPTING `-1` in a cell and silently
+//     widen the accepted language. The negative below is the guard, and it was measured
+//     against the hand before the flip: `| 1` reaches typecheck, `| -1` is F0040.
+//
+// Asserted with the fixture + `bs2 check` shell-out (the compile-error test pattern used
+// by qualified_ctor_arm_test), because what is under test is the PARSE, not the value.
+
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+// The exit STATUS is part of the assertion, not just the text (caught in review on
+// #1039): swallowing it with `|| true` would let a positive fixture "pass" on any
+// diagnostic that merely fails to match the few substrings it greps for. `bs2 check`'s
+// output goes to a log so one run yields both; the status is prepended as a sentinel
+// line, which `clean` reads.
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_match_table_${name}.av"
+    let log = "build/_match_table_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+// 3 header columns => pattern column + 2 value columns, so each row supplies 2 cells.
+fn wide_out() -> string {
+    check_out("wide",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) {\n" +
+        "    match e table { pat | name | rank\n" +
+        "        .A | \"a\" | \"one\"\n" +
+        "        .B | \"b\" | \"two\"\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { probe(E.A) }\n")
+}
+
+// Same shape, one value column, cells holding a NEGATIVE literal.
+fn neg_out() -> string {
+    check_out("neg",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) {\n" +
+        "    match e table { pat | delta\n" +
+        "        .A | -1\n" +
+        "        .B | 2\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { probe(E.A) }\n")
+}
+
+spec "t-47hc.29: the match TABLE parses natively" {
+    then "a row matching the header's declared width parses — no parse diagnostics" {
+        let out = wide_out()
+        clean(out) &&
+            !out.contains("expected expression") &&
+            !out.contains("unexpected `}`") &&
+            !out.contains("expected `}` after match table")
+    }
+}
+
+spec "t-47hc.29: a table CELL is parse_primary, not primary_base" {
+    then "a negative-literal cell stays a PARSE error — cells admit no prefix operators" {
+        let out = neg_out()
+        !clean(out) && out.contains("error[F0040]") && out.contains("expected expression")
+    }
+}
+
+// The EXPRESSION form (slice 12). It shares `build_table_arms` with the statement form, so
+// what this pins is the SECOND dispatch site: `match_expr`'s `@peek(match_table)` branch now
+// names `match_table_expr` instead of `@hand(match_expr)`, and the value it yields is a real
+// Expr.MatchExpr usable in value position.
+fn expr_form_out() -> string {
+    check_out("expr",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> map<string, string> {\n" +
+        "    match e table { pat | name | rank\n" +
+        "        .A | \"a\" | \"one\"\n" +
+        "        .B | \"b\" | \"two\"\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { let _ = probe(E.A) }\n")
+}
+
+// `null` / `none` cells (caught in review on #1039). These are the one primary form that
+// is a literal ALTERNATION rather than a token CLASS, and the two emit differently: an
+// unlabelled alternation generates `advance(); CapVal.Nil` — token consumed, value dropped
+// — so capval_to_expr reported "expected an expression" for a cell the hand accepts as
+// Expr.None. Labelling alone does not fix it either; a branch with no build still yields
+// Nil, so `null_cell` carries an explicit `-> n` Var build. Both spellings pinned.
+fn null_cell_out() -> string {
+    check_out("nullcell",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) {\n" +
+        "    match e table { pat | v\n" +
+        "        .A | null\n" +
+        "        .B | none\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { probe(E.A) }\n")
+}
+
+spec "t-47hc.29: `null` and `none` survive as table CELLS" {
+    then "both spellings parse — the literal alternation keeps its token" {
+        let out = null_cell_out()
+        clean(out) && !out.contains("expected an expression")
+    }
+}
+
+spec "t-47hc.29 slice 12: the match TABLE in EXPRESSION position parses natively" {
+    then "a table used as a value parses — no parse diagnostics" {
+        let out = expr_form_out()
+        clean(out) &&
+            !out.contains("expected expression") &&
+            !out.contains("unexpected `}`") &&
+            !out.contains("expected `}` after match table")
+    }
+}

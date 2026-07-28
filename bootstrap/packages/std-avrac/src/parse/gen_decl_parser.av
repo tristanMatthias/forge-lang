@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, Tk, SrcPos}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -192,7 +192,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
     }
     if lookahead_ok("match_table", st) && (st.cur().text == "match") {
-        return CapVal.SNode(run_hand_stmt("match_table", st))
+        return parse_match_table_stmt(st)
     }
     if st.cur().text == "match" {
         mut arms_list: List<MatchArm> = []
@@ -330,5 +330,106 @@ fn parse_match_arm(st: PState) -> CapVal {
     let b = parse_expression(st)
     st.set_modes(__modes_3)
     mk_arm(st, p, g, b)
+}
+
+fn parse_match_table_stmt(st: PState) -> CapVal {
+    mut cols_list: List<Token> = []
+    mut p_list: List<PatId> = []
+    mut v_list: List<ExprId> = []
+    let _ = st.advance()
+    let __modes_1 = st.modes
+    st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+    let subj = parse_expression(st)
+    st.set_modes(__modes_1)
+    if st.cur().text == "table" { let _ = st.advance() } else {
+        st.report("expected table")
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after match table")
+        return CapVal.Node(st.error_node_silent())
+    }
+    if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
+        st.report("expected IDENT")
+    }
+    while st.cur().tk == Tk.Pipe {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+    }
+    while tok_starts_pattern(st.cur()) {
+        p_list.push(capval_to_pat(st, parse_pattern(st)))
+        if st.cur().tk == Tk.Pipe {
+            let _ = st.advance()
+        }
+        mut __bnd_2 = 0
+        while tok_starts_expr_leaf(st.cur()) {
+            if __bnd_2 >= cols_list.length { break }
+            v_list.push(capval_to_expr(st, parse_table_cell(st)))
+            if st.cur().tk == Tk.Pipe {
+                let _ = st.advance()
+            }
+            __bnd_2 = __bnd_2 + 1
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+        }
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after match table")
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_match_table(st, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))
+}
+
+fn parse_match_table_expr(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut cols_list: List<Token> = []
+    mut p_list: List<PatId> = []
+    mut v_list: List<ExprId> = []
+    let _ = st.advance()
+    let __modes_1 = st.modes
+    st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+    let subj = parse_expression(st)
+    st.set_modes(__modes_1)
+    if st.cur().text == "table" { let _ = st.advance() } else {
+        st.report("expected table")
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after match table")
+        return CapVal.Node(st.error_node_silent())
+    }
+    if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
+        st.report("expected IDENT")
+    }
+    while st.cur().tk == Tk.Pipe {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+    }
+    while tok_starts_pattern(st.cur()) {
+        p_list.push(capval_to_pat(st, parse_pattern(st)))
+        if st.cur().tk == Tk.Pipe {
+            let _ = st.advance()
+        }
+        mut __bnd_2 = 0
+        while tok_starts_expr_leaf(st.cur()) {
+            if __bnd_2 >= cols_list.length { break }
+            v_list.push(capval_to_expr(st, parse_table_cell(st)))
+            if st.cur().tk == Tk.Pipe {
+                let _ = st.advance()
+            }
+            __bnd_2 = __bnd_2 + 1
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+        }
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after match table")
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_match_table_expr(st, sp_start, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))
 }
 
