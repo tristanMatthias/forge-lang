@@ -1250,6 +1250,30 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // (which parses it correctly, byte-identically), whereas a false positive
     // would let a native branch swallow a `kw { … }` construct whose feature owns
     // the block. Absence of information must never widen what the grammar claims.
+    // `IDENT` immediately followed by a TEMPLATE — a TAGGED TEMPLATE, `` tag`…` ``
+    // (t-47hc slice 8). Needed because a grammar branch is dispatched on its FIRST
+    // TOKEN only: without this, an `n:IDENT t:TEMPLATE` branch would be ENTERED on
+    // every identifier and then fail matching the second token, rather than falling
+    // through to the plain-identifier branch beside it. (That is the exact failure
+    // #1037 hit and documented on the `.`-led postfix forms.)
+    // A PLAIN identifier — an IDENT that is NOT the head of any other IDENT-led form,
+    // i.e. not followed by `{` and not followed by a TEMPLATE (t-47hc slice 8).
+    // Load-bearing, not an optimisation: without it the bare-identifier branch is
+    // entered on `table {` / `grammar {` too, yields a bare `Ident`, and leaves the
+    // `{ … }` unconsumed — so those constructs would silently stop reaching the
+    // `@hand(primary_base)` tail that parses them. Excluding both suffixed shapes here
+    // is what makes the fall-through to the hand parser correct by construction.
+    if cond == "ident_plain" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return true }
+        let nx = st.toks[st.pos + 1]
+        return nx.text != "{" && nx.kind != "TEMPLATE"
+    }
+    if cond == "ident_template" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].kind == "TEMPLATE"
+    }
     if cond == "ident_lbrace_plain" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -2024,7 +2048,17 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     bp.allow_it_sugar = st.modes.allow_it_sugar
     bp.quote_depth = st.modes.quote_depth
     bp.cell_mode = st.modes.cell_mode
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
+    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
+    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
+    // statement rather than continuing a chain — so a delegate walked here with
+    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
+    // in fact on the same line. Before the IDENT base went native this was harmless:
+    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
+    // way past. Now the grammar consumes it off the shared token stream and the
+    // delegate only gets walked to the `(`, so the line state has to be maintained here.
+    // Invisible on line 1, where a stale line still compares equal to the real one.
+    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
     let bp_diag_before = bp.bag.diagnostics.length
     // Dispatch to the real hand-parser entry — the leaf's delegate, a free
     // function taking `bp` as its explicit parse state, so `bp`'s cursor advances
@@ -2410,7 +2444,17 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     bp.decl_flip = false
     bp.expr_flip = false
     bp.expr_static = false
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
+    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
+    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
+    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
+    // statement rather than continuing a chain — so a delegate walked here with
+    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
+    // in fact on the same line. Before the IDENT base went native this was harmless:
+    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
+    // way past. Now the grammar consumes it off the shared token stream and the
+    // delegate only gets walked to the `(`, so the line state has to be maintained here.
+    // Invisible on line 1, where a stale line still compares equal to the real one.
+    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
     // Phase 3a base-threading: seed the delegate's postfix accumulator from PState so
     // parse_postfix_suffix runs its step on the grammar-threaded base. Harmless for
     // every other name — only parse_postfix_suffix reads bp.postfix_base.
