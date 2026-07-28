@@ -1149,8 +1149,17 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // `@on(flag)` mode-SET marker: the SET-ON twin — save modes, set the flag ON via
     // modes_with_flag_on (the SAME fn the executor calls), emit the item, restore.
     if item.mode_on != "" {
+        // `@on_if(pred, flag)` (t-47hc.34): the SET is guarded, the save/restore is not.
+        // Restoring modes that were never changed is a no-op, so hoisting the save out of
+        // the branch keeps this a single emitted shape instead of two. The guard itself
+        // comes from the SHARED `pred_guard` — the same string `@when` emits — so the two
+        // markers cannot disagree about what a predicate name means, and a base predicate
+        // lands as a `base_pred(...)` CALL into the executor rather than a second spelling.
+        let set_on = "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n"
+        let set_line = if item.mode_on_if == "" { set_on }
+            else { "${ind}if ${pred_guard(item.mode_on_if)} {\n${ind}    st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n${ind}}\n" }
         return "${ind}let __modes_${idx} = st.modes\n" +
-            "${ind}st.set_modes(modes_with_flag_on(st.modes, \"${item.mode_on}\"))\n" +
+            set_line +
             inner +
             "${ind}st.set_modes(__modes_${idx})\n"
     }

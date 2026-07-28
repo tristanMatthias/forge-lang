@@ -189,6 +189,19 @@ export type GItem = {
     // parse_quote bumps it on entering a quote body and restores on leaving. Empty = no
     // bump. Mutually exclusive with mode_off/mode_on on one item.
     mode_bump: string,
+    // t-47hc.34 CONDITIONAL mode-SET (`@on_if(pred, flag)`): the name of a `@when`
+    // PREDICATE gating `mode_on`. Empty = the set is unconditional (every `@on` today).
+    //
+    // The hand parser has shapes where a mode is set only when a condition holds —
+    // `allow_it_sugar = is_method || saved_it` around a call's argument list, where
+    // is_method asks whether the RECEIVER is a field access. Spelling that as two
+    // grammar branches makes them share a FIRST token, split only by a `@when`, which
+    // the ambiguity guard rejects (correctly: `@when` reads ambient state, so it does
+    // not partition the INPUT the way `@peek`/`@try` do). And it cannot move into the
+    // builder either, because the mode PROPAGATES into nested sub-parses — the very
+    // thing a build-time decision cannot reproduce. So the set itself has to be
+    // conditional, which is this field.
+    mode_on_if: string,
     // t-47hc.21 COMMIT POINT (`@cut`, the PEG cut): when true, reaching this item
     // COMMITS the enclosing `@try` branch. Past the cut a diagnostic is a real
     // parse error — reported and recovered from — instead of the "wrong branch,
@@ -302,7 +315,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", cut: false, require: false, bound: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then
