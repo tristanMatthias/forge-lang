@@ -19,6 +19,7 @@ use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use features.grammar.{code_at, is_ident_start_code}
+use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
 use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
@@ -1591,8 +1592,8 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // (pure rules + a `@hand(component_decl)` alternative) routes each to
         // the right builder.
         .Hand(hf) -> {
-            if is_stmt_hand(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
-            else if is_expr_hand(hf) { CapVal.Node(run_hand_expr(hf, st)) }
+            if is_hand_stmt_leaf(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
+            else if is_hand_expr_leaf(hf) { CapVal.Node(run_hand_expr(hf, st)) }
             else { CapVal.Node(run_hand(hf, st)) }
         }
         // A `@when` predicate is zero-width — the branch gate already decided
@@ -1705,24 +1706,12 @@ fn hand_starts(name: string, tok: Token) -> bool {
     false
 }
 
-/// True for the hand rules that build a STATEMENT/DECLARATION (delegated to
-/// the real hand parser via `run_hand_stmt`), vs the expression hand rules
-/// (`ident`/`number`) served by `run_hand`. This is the escape hatch for the
-/// gnarly-5% forms the pure grammar deliberately does NOT re-express:
-/// `component` (stateful registry mutation + char-level lookahead + raw
-/// bodies), `let … else` (a hygienic block-expr DESUGAR minting a fresh temp
-/// name — build_let_else — which a stateless token-grammar can't reproduce
-/// byte-identically), and `return` (NEWLINE-SENSITIVE: a bodyless `return\n<expr>`
-/// is ReturnEmpty + a separate statement, decided by the hand parser's
-/// current_line != prev_line guard — a lexer-mode disambiguation, ps3t.6.5.10).
-fn is_stmt_hand(name: string) -> bool {
-    name == "component_decl" || name == "let_stmt" || name == "return_stmt" ||
-    name == "match_table" ||
-    // ps3t.6.7 G.4 — the whole-statement / whole-declaration dispatch leaves the
-    // production statement/declaration flips delegate to (parse_statement /
-    // parse_declaration).
-    name == "stmt_hand" || name == "decl_hand"
-}
+// Which names are STATEMENT/DECLARATION hand rules (delegated via
+// `run_hand_stmt`) vs EXPRESSION ones (`run_hand_expr`), and the delegate each
+// one runs, live in the shared hand-leaf table — hand_leaves.av, which also
+// records WHY each form is an escape hatch the pure grammar does not re-express.
+// One seam, read by both this executor and emit.av, instead of a local
+// `name == "…" || …` chain here and a hand-synced copy there.
 
 /// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
 /// parser (ps3t.6.5.7 component / ps3t.6.5.10 gnarly-5%). A `Parser` is built
@@ -1733,7 +1722,11 @@ fn is_stmt_hand(name: string) -> bool {
 /// mini swap-in: proving the generated parser can hand off to `@hand` code
 /// over a shared store (the foundation 6.5.12 generalises).
 export fn run_hand_stmt(name: string, st: PState) -> StmtId {
-    if !is_stmt_hand(name) {
+    // ONE table lookup answers both "is this a statement leaf?" and "which
+    // parser?" — the class check and the dispatch used to be separate scans over
+    // the same six names.
+    let leaf = hand_stmt_leaf(name)
+    if leaf == null {
         st.report("no hand statement rule `${name}`")
         return st.store.stmts.add_leaf(Stmt.Error)
     }
@@ -1782,24 +1775,12 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     bp.cell_mode = st.modes.cell_mode
     while bp.current_start < start_byte && !bp.is_at_end() { bp.advance_token() }
     let bp_diag_before = bp.bag.diagnostics.length
-    // Dispatch to the real hand-parser entry (method calls on the local `bp`,
-    // so its cursor advances in place for the resync below). Each builds into
-    // bp's (== the DSL's) shared store.
-    let result = match name {
-        "component_decl" -> bp.parse_component_decl()
-        "let_stmt"       -> bp.parse_let_statement()
-        "return_stmt"    -> bp.parse_return_statement()
-        "match_table"    -> bp.parse_match_statement()
-        // The whole statement dispatch (block, if/while/for/match/defer/errdefer/
-        // return). The *_hand entry so bp does NOT re-flip THIS statement (only its
-        // nested bodies flip, via bp's own delegate); the position-faithful oracle.
-        "stmt_hand"      -> bp.parse_statement_hand()
-        // The whole declaration dispatch (doc/annotation/export wrapping + the decl
-        // keywords + the component-vs-expression IDENT disambiguation + the
-        // statement fall-through). The *_hand entry, same recursion guard.
-        "decl_hand"      -> bp.parse_declaration_hand()
-        _                -> .Err("no hand statement rule `${name}`")
-    }
+    // Dispatch to the real hand-parser entry — the leaf's delegate, a free
+    // function taking `bp` as its explicit parse state, so `bp`'s cursor advances
+    // in place for the resync below. Each builds into bp's (== the DSL's) shared
+    // store.
+    let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
+    let result = run(bp)
     // Resync the DSL token cursor past everything the hand parser consumed (its
     // cursor now sits on the next token's byte offset) — on BOTH success AND
     // failure: a failed hand parse still advanced `bp`, so leaving st.pos on the
@@ -2074,17 +2055,10 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     DslStmtResult { stmt, stop_byte: st.cur().pos, had_error: st.had_error, diag }
 }
 
-/// True for hand rules that build an EXPRESSION via REAL hand delegation
-/// (`run_hand_expr` → ExprId over the shared store) — distinct from the
-/// leaf-building `run_hand` (`ident`/`number`). `quote_expr` — the `quote { … }`
-/// construct — is the case: it's parser-mode-STATEFUL (`parse_quote` bumps the
-/// `quote_depth` counter so a leading `~` inside the body is `Expr.Splice`, not
-/// bitwise-NOT), a mode the stateless token-grammar can't carry. Delegating the
-/// whole quote to the hand parser handles the inner `~`→Splice by construction
-/// (ps3t.6.5.10).
-fn is_expr_hand(name: string) -> bool {
-    name == "quote_expr" || name == "ident_expr" || name == "more_primary" || name == "hand_unary" || name == "call_leaf" || name == "primary_base" || name == "postfix_suffix" || name == "match_expr" || name == "if_expr" || name == "list_expr" || name == "paren_expr" || name == "lambda_body" || name == "lambda_block_body" || name == "ident_primary"
-}
+// Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
+// ExprId over the shared store) — as distinct from the leaf-building `run_hand`
+// (`ident`/`number`) — is the expression half of the shared hand-leaf table in
+// hand_leaves.av, alongside each delegate and the reason it stays hand-parsed.
 
 /// The FIRST-set of a leaf expression — every token that can begin the
 /// procedural unary/postfix/primary layer the DSL delegates wholesale via
@@ -2113,21 +2087,20 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
 /// cursor past what it consumed. This is the ExprId sibling of `run_hand_stmt`.
 /// `parse_quote` tracks `quote_depth` internally, so
 /// a `~` splice in the quote body is decided identically to the oracle parse.
-/// True iff an @hand expression rule produces a POSTFIX-CHAIN BASE that the
-/// grammar's `( postfix_suffix )*` loop then wraps — so run_hand_expr must seed
-/// st.postfix_base from its result (emit skips the seed for @hand bases, so the
-/// base self-seeds here, exactly as `primary_base` does). primary_base + every
-/// keyword-led primary (Phase 3a-11) qualifies; a mid-chain rule like
-/// postfix_suffix / with_suffix does NOT.
-fn hand_seeds_postfix(name: string) -> bool {
-    name == "primary_base" || name == "match_expr" || name == "if_expr" || name == "quote_expr" || name == "list_expr" || name == "paren_expr" || name == "ident_primary" 
-}
+///
+/// A leaf that produces a POSTFIX-CHAIN BASE (which the grammar's
+/// `( postfix_suffix )*` loop then wraps) must seed `st.postfix_base` from its
+/// result — emit skips the seed for @hand bases, so the base self-seeds here.
+/// That is the `seeds_postfix` COLUMN of the leaf record, so it can no longer
+/// drift from the delegate beside it.
 
 export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // Split preconditions so each reports its OWN cause (a bad rule name vs a
     // missing source), and rely solely on error_node — which reports the
-    // message itself — so each diagnostic is recorded exactly once.
-    if !is_expr_hand(name) {
+    // message itself — so each diagnostic is recorded exactly once. ONE table
+    // lookup serves the class check, the dispatch, and the postfix-seed column.
+    let leaf = hand_expr_leaf(name)
+    if leaf == null {
         return st.error_node("no hand expression rule `${name}`")
     }
     if st.src == "" {
@@ -2180,45 +2153,11 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // every other name — only parse_postfix_suffix reads bp.postfix_base.
     bp.postfix_base = st.postfix_base
     bp.postfix_sp_start = st.postfix_sp_start
-    let result = match name {
-        "quote_expr"    -> bp.parse_quote()
-        // Keyword-led expression primaries (Phase 3a-11) — the grammar's `unary`
-        // rule dispatches each keyword FIRST to its feature parser, the same call
-        // parse_primary's `if check(Kw) -> parse_<kw>_expression()` chain makes.
-        "match_expr"    -> bp.parse_match_expression()
-        "if_expr"       -> bp.parse_if_expression()
-        "list_expr"     -> bp.parse_list_expr()
-        "paren_expr"    -> bp.parse_paren_expr()
-        // The lambda BODY (t-47hc paren_expr flip prep — DORMANT delegate). parse_lambda_body
-        // (closures/parser.av) = a block `{ … }` (parse_block_expression → Expr.Block over a
-        // statement list) OR a bare expression. Block-as-expression is not grammar-native
-        // (couples to the statement machinery), so the paren flip's lambda body delegates
-        // here rather than re-expressing it — the deliberate @hand(lambda_body) leaf.
-        "lambda_body"   -> bp.parse_lambda_body()
-        "lambda_block_body" -> bp.parse_block_expression()
-        "ident_primary" -> bp.parse_ident_expr()
-        "ident_expr"    -> bp.parse_primary()
-        "more_primary"  -> bp.parse_primary()
-        // The whole procedural leaf: prefix unary ops + `with`/splice + the
-        // newline-sensitive postfix chain + every primary form (parse/mod.av
-        // parse_unary → parse_call → parse_primary). The DSL owns only the
-        // declarative binary/infix ladder ABOVE this (ps3t.6.7 Step C).
-        "hand_unary"    -> bp.parse_unary()
-        // The `with`-BASE leaf (Phase 3a-3): `parse_unary` WITHOUT the `with` loop —
-        // splice/prefix + postfix chain + primary. The grammar's `unary` rule folds
-        // the `with` postfix over this via `with_suffix` + fold_with_expr. NOT
-        // parse_call: the `~` splice/BitNot prefix (parse_call can't parse `~`) must
-        // stay here so splice-in-quote stays byte-identical.
-        "call_leaf"     -> bp.parse_unary_leaf()
-        // Phase 3a: the primary base (splice/prefix + parse_primary, NO postfix
-        // chain) and ONE postfix step over the threaded base. The grammar's `unary`
-        // rule owns the postfix loop as `( postfix_suffix )*` over `primary_base`.
-        "primary_base"   -> bp.parse_primary_base()
-        "postfix_suffix" -> bp.parse_postfix_suffix()
-        // One `with { … }` postfix step → a PARTIAL Expr.With (placeholder receiver,
-        // rebound by fold_with_expr). The partial's span carries this step's end byte.
-        _               -> .Err("no hand expression rule `${name}`")
-    }
+    // Dispatch to the leaf's delegate — a free function taking `bp` as its
+    // explicit parse state. Which parse each leaf opts out of, and why, is
+    // documented on the delegates in hand_leaves.av.
+    let run: fn(Parser) -> Result<ExprId, string> = leaf!.run
+    let result = run(bp)
     while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
     // Phase 3a base-threading (write-back): primary_base seeds the postfix
     // accumulator on PState (sp_start = the base's start byte, the chain's constant
@@ -2226,7 +2165,7 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // the NEXT ( postfix_suffix )* iteration — and the interpreter's fresh-parser
     // path — sees it. Threaded via PState so both the shared-delegate production
     // path and the equivalence-test path carry the base across the grammar loop.
-    if hand_seeds_postfix(name) {
+    if leaf!.seeds_postfix {
         match result {
             .Ok(id) -> st.seed_postfix(id, start_byte)
             .Err(_) -> {}
