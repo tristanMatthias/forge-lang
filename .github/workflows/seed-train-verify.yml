@@ -125,12 +125,34 @@ jobs:
           # AVRA_JOBS=2 and stayed green throughout, which is what isolates the
           # fan-out rather than any one merge.
           #
-          # 3 restores real headroom (3*1800 + 6144 = 11.5GB) at ~1.4x rather
-          # than ~1.86x speedup. The right fix is re-measuring per_shard_mb —
-          # the 1800 dates to 2026-07-21 and is the number that made the clamp
-          # inert — but that belongs in the governor with a clean measurement,
-          # not in a CI-unblocking change.
-          AVRA_JOBS: "3"
+          # 3 was expected to restore real headroom (3*1800 + 6144 = 11.5GB
+          # against ~13.9GB) at ~1.4x rather than ~1.86x speedup. IT DID NOT
+          # HOLD EITHER. It passed twice — #1060's own verify (9m16s) and
+          # #1048's (9m10s) — and then #1065 died with the identical signature:
+          #
+          #   fixed point holds — bs2 and bs3 emit byte-identical 1099338-line IR
+          #   seed-train verify: running the spec suite
+          #   [per-file] shard concurrency: jobs=3 (metadata fast-path, MemAvailable ~13957MB)
+          #   ##[error]The runner has received a shutdown signal.
+          #
+          # ~4 minutes into the suite, AFTER the fixed point held, on a PR whose
+          # cold diff-test passed — so the compiler was fine and the suite is
+          # simply at the edge at 3. "Passes twice, then dies" is what being
+          # inside the noise band looks like, not a flake to re-run.
+          #
+          # LOWERED 3 -> 2 (t-h6xv). That budgets 2*1800 + 6144 = 9.7GB against
+          # ~13.9GB and matches rc-strict, which runs the SAME suite on the SAME
+          # runner class at 2 and has stayed green throughout — the comparison
+          # that isolated the fan-out in the first place now sets the value.
+          #
+          # This is the SECOND time a headroom estimate derived from
+          # per_shard_mb = 1800 has been wrong in the same direction, which is
+          # itself evidence about the number rather than about the ceiling. The
+          # real fix is still re-measuring it (2026-07-21 vintage; the number
+          # that made the clamp inert), plus making the clamp bite independently
+          # of the ceiling so it cannot go silently inert again. Both belong in
+          # the governor with a clean measurement, not in a CI-unblocking change.
+          AVRA_JOBS: "2"
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an
