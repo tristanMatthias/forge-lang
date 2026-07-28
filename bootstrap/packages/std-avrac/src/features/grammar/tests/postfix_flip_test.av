@@ -86,6 +86,30 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
     }
 }
 
+// Form 4 — `expr.field`. The lesson this form encodes: a branch is dispatched on its
+// FIRST TOKEN ONLY. A `"." t:NUMBER` branch is therefore ENTERED on every `.`, including
+// `.field`, and then fails on the NUMBER — it does NOT fall through to the `@hand` tail.
+// Any `.`-led branch needs a SECOND-token lookahead, which is what @peek(dot_plain_field)
+// is. Getting that wrong broke comptime expansion (which generates `.field` everywhere)
+// while build-quick, --emit-regen-expr and --emit-gen-check all stayed green.
+
+spec "t-47hc.33: `expr.field` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_field_access(st,")
+    }
+    then "it is gated on the SECOND token, not just the dot" {
+        postfix_rule_src().contains("lookahead_ok(\"dot_plain_field\", st)")
+    }
+    then "and on the whole hand entry-guard conjunct" {
+        // dot_is_postfix is a decision TREE, not a conjunction of markers, so it is one
+        // shared base predicate rather than @when(cell_mode) + ^ + a base read.
+        postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
+    }
+    then "the enum-ctor reading stays hand-owned — it needs an argument list" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+}
+
 // Form 2 — `expr catch { … }` / `expr catch (e) { … }` (spec Axis 12.5-12.6). Unlike the
 // `?` form this one has REAL structure: an optional binding, a statement-list body under
 // `allow_dot_postfix`, and four abort points whose messages are the hand parser's.
