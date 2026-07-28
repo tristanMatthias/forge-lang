@@ -2182,11 +2182,6 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // is the row-pattern reference from the same rule, and is the pattern family's
         // predicate, exactly as `pattern_or` above.
         if name == "table_cell" { return "tok_starts_expr_leaf(st.cur())" }
-        // t-47hc slice 10.9 — routing the decl keywords makes `field`\'s `ftype:type_expr`
-        // reachable from the declaration view, where the TYPE family is deliberately not
-        // composed (dispatch-only) so the generated declaration parser calls the
-        // separately generated type parser. Same crossing as `expression` above, same fix.
-        if name == "type_expr" { return "tok_starts_type(st.cur())" }
         // `match_table_expr` is DEFINED in the declaration view (beside match_table_stmt, so
         // the `{#cols}` stays in a string fragment) and CALLED from the expression view's
         // `match_expr` — the same crossing match_arm makes, so it needs a declared FIRST.
@@ -2502,12 +2497,6 @@ fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
         // A scalar `p:pattern_or` (match_arm) never noticed because the builder coerces at
         // the use-site; both are declared here so the next repeat cannot re-open the trap.
         if name == "pattern" || name == "pattern_or" { return "pat" }
-        // The GENERIC type parameter, external in the declaration view (t-47hc slice
-        // 10.9). Without this a repeated `tparams:tparam` capture declares
-        // `List<ExprId>` and coerces each entry through `capval_to_expr` — caught the
-        // moment `declaration` first named a native decl rule, and the same trap the
-        // `pattern` and `match_arm` entries above were written for.
-        if name == "tparam" { return "tparam" }
         return "expr"
     }
     mut v2: List<string> = []
