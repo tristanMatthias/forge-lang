@@ -17,7 +17,7 @@
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
 use features.grammar.{parse_grammar, Grammar, compose_grammars}
-use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar}
+use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -208,6 +208,26 @@ fn avra_expr_core() -> Grammar {
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
   param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
+  // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
+  // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
+  // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
+  // (`!`, `-`, `not`, `~`) BEFORE delegating to parse_primary — a strict superset. Measured
+  // against the hand: a cell of `1` reaches typecheck, a cell of `-1` is
+  // `error[F0040]: expected expression`. Binding cells to primary_base would start
+  // ACCEPTING `-1` and silently widen the language.
+  //
+  // It lives HERE, in the expression family, rather than beside its `match_table_stmt`
+  // caller: every alternative below is LOCAL to this view but EXTERNAL to the statement
+  // view, so defining it there would demand a declared FIRST for all seventeen. Defined
+  // once here it is emitted as `parse_table_cell` into the expression parser and CALLED
+  // from the declaration parser across the merged `parse/` namespace — the same crossing
+  // `parse_pattern_or` and `parse_match_arm` already make (its own FIRST is declared in
+  // emit.rule_first_guard). Every branch is grammar-native or an @hand leaf ALREADY on the
+  // production path, so cells cost no new leaf — which is what lets the flip retire one.
+  table_cell   = qualified_expr | NUMBER | STRING | BOOL | ( "null" | "none" ) | variant_ctor
+               | @hand(ident_primary) | paren_expr | list_expr | match_expr | if_expr
+               | spawn_expr | channel_expr | isolated_expr | when_expr | @hand(quote_expr)
+               | template_lit | brace_expr
     }
     gp.grammar
 }
@@ -360,14 +380,27 @@ fn avra_stmt_common_grammar() -> Grammar {
   // exactly as many values as the header row declared — data-dependent, so not a grammar
   // rule at any level of DSL power.
   match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
-                // The TABLE sub-language is peeled off by lookahead (`@peek(match_table)`
-                // scans to the body brace and asks whether `table` precedes it), so the hand
-                // leaf is entered at the `match` keyword and parses the whole statement — no
-                // subject threading, and the leaf is now named for the ONLY thing it does.
-                // Its rows must supply exactly as many values as the header row declared,
-                // which is data-dependent and therefore not a grammar rule at any level of
-                // DSL power; this one stays hand by nature, not by expedience.
-                | @peek(match_table) @hand(match_table)
+                // The TABLE sub-language, peeled off by lookahead (`@peek(match_table)` scans
+                // to the body brace and asks whether `table` precedes it) and now GRAMMAR-
+                // NATIVE (t-47hc.29). The old comment here claimed the row width was "data-
+                // dependent and therefore not a grammar rule at any level of DSL power" —
+                // that was wrong, and it is what made Phase 4 look structurally impossible.
+                // The width is a BOUND, not a computation: the header's first column names
+                // the pattern column and the rest are the value columns, so `#cols` IS the
+                // hand's `value_count`, and `x{#cols}` (t-47hc.28) expresses it exactly.
+                //
+                // Header and rows live in ONE branch because a repetition bound may only
+                // name a capture collected earlier in the same branch (validate_bounds) and
+                // exec_rule mints a fresh CapEnv per rule — so the cells arrive flattened and
+                // MkMatchTable re-chunks them by the header count.
+                // The rule itself lives in the feature's own fragment (match_expr/grammar.av,
+                // t-47hc.8) and is built from a grammar STRING, not a surface `grammar { }`
+                // block: its row width is `( … )*{#cols}`, and `#` is not an Avra token, so a
+                // `{#cols}` written HERE dies in the lexer (F0001 `unexpected character '#'`)
+                // long before parse_grammar ever sees it. Bounded repetition is therefore
+                // spendable only from string-built fragments today — the reference below keeps
+                // this dogfooded block free of the sigil.
+                | @peek(match_table) match_table_stmt
                 // With table peeled off, the ordinary form no longer needs to speculate: it
                 // is PREDICTIVE and owns BOTH of its diagnostics. Previously the `@try` was
                 // load-bearing only because a table header had to be able to roll back
@@ -423,7 +456,7 @@ export fn avra_stmt_flip_grammar() -> Grammar {
     // match_when_arm unresolved, the DSL would error on every `match` statement, and the
     // flip would silently fall back to the hand parser: correct output, no diagnostic,
     // and the flip quietly disabled. Caught in review on #1028.
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(stmt, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_arm_grammar())
+    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(stmt, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_arm_grammar()), avra_match_table_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
@@ -491,8 +524,11 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
     // (t-47hc.25). Composed LAST so the statement rules keep leading the merged
     // rule set — the emitted function order is observable.
     compose_grammars(
-        compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()),
-        avra_match_arm_grammar()
+        compose_grammars(
+            compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()),
+            avra_match_arm_grammar()
+        ),
+        avra_match_table_grammar()
     )
 }
 

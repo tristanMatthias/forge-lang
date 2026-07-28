@@ -3,7 +3,7 @@
 // This is the PRODUCTION expression parser under AVRA_PARSER_EXPR_STATIC=1 (ps3t.6.7
 // Step G); parse/tests/gen_expr_parser_regen_test.av asserts it equals
 // emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_match_expr, mk_if_expr, capval_to_arm, tok_starts_pattern, modes_with_flag_off, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_splice, base_pred, modes_with_counter_bumped, mk_try_suffix, mk_catch_suffix, mk_opt_chain, mk_tuple_index, mk_field_access, mk_qualified, capval_toks, mk_template}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_match_expr, mk_if_expr, capval_to_arm, tok_starts_pattern, modes_with_flag_off, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_splice, base_pred, modes_with_counter_bumped, mk_try_suffix, mk_catch_suffix, mk_opt_chain, mk_tuple_index, mk_field_access, mk_qualified, capval_toks, mk_template, literal_node}
 use core.{ExprId, StmtId, Stmt, SrcPos, Tk, ParamEntry, WhenArm, MatchArm, FieldInit}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -1070,5 +1070,61 @@ fn parse_param(st: PState) -> CapVal {
         pt = parse_type_expr(st)
     }
     mk_param(st, capval_tok_text(pname), pt, capval_present(pt))
+}
+
+fn parse_table_cell(st: PState) -> CapVal {
+    if st.cur().tk == Tk.At {
+        return parse_qualified_expr(st)
+    }
+    if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {
+        return CapVal.Node(literal_node(st, st.advance()))
+    }
+    if st.cur().tk == Tk.String {
+        return CapVal.Node(literal_node(st, st.advance()))
+    }
+    if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {
+        return CapVal.Node(literal_node(st, st.advance()))
+    }
+    if st.cur().text == "null" || st.cur().text == "none" {
+        let _ = st.advance()
+        return CapVal.Nil
+    }
+    if st.cur().tk == Tk.Dot {
+        return parse_variant_ctor(st)
+    }
+    if st.cur().tk == Tk.Identifier {
+        return CapVal.Node(run_hand_expr("ident_primary", st))
+    }
+    if lookahead_ok("lparen_ident_colon", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen {
+        return parse_paren_expr(st)
+    }
+    if st.cur().tk == Tk.LeftBracket {
+        return parse_list_expr(st)
+    }
+    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" {
+        return parse_match_expr(st)
+    }
+    if lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" {
+        return parse_if_expr(st)
+    }
+    if st.cur().text == "spawn" {
+        return parse_spawn_expr(st)
+    }
+    if st.cur().text == "channel" {
+        return parse_channel_expr(st)
+    }
+    if st.cur().text == "isolated" {
+        return parse_isolated_expr(st)
+    }
+    if st.cur().text == "when" {
+        return parse_when_expr(st)
+    }
+    if st.cur().text == "quote" {
+        return CapVal.Node(run_hand_expr("quote_expr", st))
+    }
+    if st.cur().tk == Tk.Template {
+        return parse_template_lit(st)
+    }
+    parse_brace_expr(st)
 }
 

@@ -2662,6 +2662,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             if capval_present(env.get(args[1])) { guard = capval_to_expr(st, env.get(args[1])) }
             CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
         }
+        "MkMatchTable" if args.length == 4 -> mk_match_table(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         "MkMatch" if args.length == 2 -> {
             // `match subject { arm* }` — statement-position match.
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
@@ -3415,6 +3416,68 @@ export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal
 /// Generated-parser twin of the `MkMatch` executor build.
 export fn mk_match(st: PState, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
     let arms = capval_to_arm_list(arms_cv)
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.SNode(st.store.add_stmt(Stmt.Match(capval_to_expr(st, subject_cv), arms), byte_span_none(), refs))
+}
+
+/// t-47hc.29 — the match TABLE's arms, desugared exactly as the hand
+/// `parse_match_table_arms` / `parse_match_table_rows` do (features/match_expr/parser.av).
+///
+/// The header's FIRST column names the PATTERN column and is DISCARDED; the rest are the
+/// value columns, so `#cols` IS the hand's `value_count = header_count - 1`. That identity
+/// is what lets the grammar express the row width as a bounded repetition `x{#cols}`
+/// (t-47hc.28) rather than the data-dependent `while i < value_count` loop the roadmap
+/// once read as inexpressible.
+///
+/// Rows arrive FLATTENED — one alternation branch owns the whole table, because a repetition
+/// bound may only name a capture collected earlier in the SAME branch and `exec_rule` mints a
+/// fresh CapEnv per rule. So the cells are re-chunked here by `cols.length`, which is sound
+/// precisely because the cap guarantees no row exceeds it; a SHORT row (the hand's
+/// `if check(RightBrace) break`) is tolerated by clamping, never by reading past the end.
+///
+/// Each key is `Expr.String` whose lexeme KEEPS its surrounding quotes — the hand writes
+/// `"\"${col}\""` because codegen's `strip_quotes` removes them again. Dropping them here
+/// would silently change every generated map key. Keys, values and bodies are all
+/// span-free `alloc_leaf` rows, matching the hand.
+fn build_table_arms(st: PState, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVal) -> List<MatchArm> {
+    let cols = capval_tok_list(cols_cv)
+    let pats = capval_to_pat_list(pats_cv)
+    let vals = capval_to_node_list(vals_cv)
+    mut out: List<MatchArm> = []
+    // `header_count < 2` (i.e. no value columns) yields NO arms — the hand's early return.
+    if cols.length == 0 { return out }
+    mut r = 0
+    while r < pats.length {
+        mut ids: List<ExprId> = []
+        mut c = 0
+        while c < cols.length {
+            let at = r * cols.length + c
+            if at >= vals.length { break }
+            ids.push(st.store.add_expr(Expr.String("\"${cols[c].text}\""), byte_span_none(), []))
+            ids.push(vals[at])
+            c = c + 1
+        }
+        let pid = pats[r]
+        out.push(MatchArm {
+            pattern: st.store.pats.get(pid),
+            pattern_id: pid,
+            guard_id: none,
+            body_id: st.store.add_expr(Expr.MapLit(ids), byte_span_none(), []),
+        })
+        r = r + 1
+    }
+    out
+}
+
+/// The statement-form match TABLE (t-47hc.29). Node construction is byte-identical to
+/// `mk_match` — `Stmt.Match` with `byte_span_none()` and one PatRef per arm — because the
+/// hand's table path ends in the very same `alloc_stmt(node, byte_span_none(),
+/// glue_match_arm_refs(arms))`. Only where the ARMS come from differs.
+export fn mk_match_table(st: PState, subject_cv: CapVal, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVal) -> CapVal {
+    let arms = build_table_arms(st, cols_cv, pats_cv, vals_cv)
     mut refs: List<NodeRef> = []
     for arm in arms {
         if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }

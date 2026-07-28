@@ -69,3 +69,50 @@ export fn avra_match_arm_grammar() -> Grammar {
     }
     gp.grammar
 }
+
+/// t-47hc.29 — a match-table CELL. This is `parse_primary` (parse/mod.av:2528) and
+/// deliberately NOT `@hand(primary_base)`.
+///
+/// The distinction is load-bearing and was MEASURED, not assumed. `@hand(primary_base)`
+/// resolves to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX
+/// operators (`!`, `-`, `not`, `~`) *before* delegating to `parse_primary` — so it is a
+/// strict SUPERSET of what a cell may contain. Checked against the hand:
+///
+///     .A | "a" | 1      parses (reaches typecheck)
+///     .A | "a" | -1     error[F0040]: expected expression
+///
+/// Binding cells to `primary_base` would therefore start ACCEPTING `-1` in a table cell,
+/// silently widening the accepted language — the same failure mode the `match_when_arm`
+/// note above guards against. So the cell enumerates `parse_primary`'s own dispatch, in
+/// its own order, minus prefix ops, minus the postfix chain, minus `with`.
+///
+/// Every branch here is either grammar-native already or an @hand leaf that is ALREADY on
+/// the production path (`ident_primary`, `quote_expr`), so expressing cells natively costs
+/// no new leaf — which is what lets the `match_table` flip actually retire one.
+/// Built from a STRING, not a `grammar { }` surface block — deliberately, and this is the
+/// one thing to know before editing it.
+///
+/// `match_table_stmt`'s row width is `( … )*{#cols}`, and `#` is not an Avra token. A
+/// surface block is lexed by the ordinary Avra lexer on its way to `parse_grammar`, so a
+/// `{#cols}` written there dies as `error[F0001]: unexpected character '#'` before the
+/// grammar parser ever runs (verified with a minimal repro). A string is handed to
+/// `parse_grammar` verbatim and lexed by the grammar's OWN tokenizer, which does know `#`.
+/// So bounded repetition — shipped in the engine since t-47hc.28 — is spendable only from
+/// string-built fragments until `#` becomes a token. Every other `{#cap}` in the tree is
+/// likewise inside a string (features/grammar/tests/bounded_repetition_test.av).
+///
+/// The CELLS live in `avra_expr_core`'s `table_cell` (features/grammar/avra_grammar.av),
+/// not here: every alternative a cell may take is local to the expression view but external
+/// to the statement view, so defining them beside this rule would demand a declared FIRST
+/// for all seventeen. This rule references `table_cell` as one external rule with one
+/// declared FIRST — the shape the roadmap meant by "the table flip spends the cells".
+export fn avra_match_table_grammar() -> Grammar {
+    parse_grammar(
+  "match_table_stmt = \"match\" @off(allow_struct_lit) subj:expression \"table\"\n" +
+  "                   @require \"{\" IDENT ( \"|\" cols:IDENT )*\n" +
+  "                   ( p:pattern ( \"|\" )? ( v:table_cell ( \"|\" )? )*{#cols} ( \",\" )? )*\n" +
+  "                   @require \"}\"\n" +
+  "                   @expect(\"{\", \"expected `{` after match table\")\n" +
+  "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTable(subj, cols, p, v)\n"
+    ).grammar
+}
