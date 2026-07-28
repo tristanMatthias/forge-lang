@@ -110,6 +110,69 @@ spec "t-47hc.33: `expr.field` is grammar-native" {
     }
 }
 
+// Form 5 — `expr[i]` / `expr[a..b]`, the FIRST form that RECURSES into `expression`.
+//
+// That recursion is why `snap_postfix_step` exists. The chain accumulator
+// (`st.postfix_base`) is threaded through `( postfix_suffix )*`, but a nested expression
+// runs its OWN postfix loop, which seeds and overwrites it. Building the receiver from
+// the live accumulator therefore folded onto whatever the INNER expression last
+// produced: `stats[i]` became `Index(i, i)` — the loop counter indexed by itself — which
+// surfaced as F1206 "cannot index a `int`" in modules nobody had touched.
+//
+// The suffix always folds onto the base as of the moment it was ENTERED, so that is what
+// is frozen, at the top of the rule fn, before any item runs. Inert for the forms that
+// consume tokens only, where the snapshot and the live value are equal.
+
+spec "t-47hc.33: the chain base is frozen at step ENTRY" {
+    then "the rule freezes it before any item runs" {
+        postfix_rule_src().contains("st.snap_postfix_step()")
+    }
+    then "and the freeze is the FIRST statement — before anything can recurse" {
+        let s = postfix_rule_src()
+        s.index_of("st.snap_postfix_step()") < s.index_of("if ")
+    }
+    then "both engines agree on WHICH rules need it" {
+        // emit's rule_has_postfix_step_build_e and executor's rule_has_postfix_step_build
+        // carry the same build-name list in separate modules. If they drift, one engine
+        // snapshots and the other does not — the exact divergence class this suite exists
+        // for. A rule with no postfix-step build must emit no snapshot at all.
+        let g = avra_expr_dispatch_grammar()
+        mut with_suffix_src = ""
+        for gr in g.rules {
+            if gr.name == "with_suffix" { with_suffix_src = emit_rule_fn(g, gr) }
+        }
+        !with_suffix_src.contains("snap_postfix_step")
+    }
+}
+
+spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_index_suffix(st,")
+    }
+    then "the index expression is same-line gated — a `[` on a NEW line is a list literal" {
+        postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
+    }
+    then "the two closing-`]` messages are the hand parser's, kept distinct" {
+        // One arm in the hand, two sequences here: @expect keys on the token, so each
+        // wording needs its own sequence. Dispatch is on `..`, not speculation — the hand
+        // parses the index expression exactly once and a @try would parse it twice.
+        let g = avra_expr_dispatch_grammar()
+        mut tail = ""
+        for gr in g.rules {
+            if gr.name == "index_tail" { tail = emit_rule_fn(g, gr) }
+        }
+        tail.contains("expected `]` after slice") && tail.contains("expected `]` after index")
+    }
+    then "the `]` branch is the unguarded @fallback tail — it owns `a[1 2]`" {
+        let g = avra_expr_dispatch_grammar()
+        mut tail = ""
+        for gr in g.rules {
+            if gr.name == "index_tail" { tail = emit_rule_fn(g, gr) }
+        }
+        !tail.contains("expected an expression")
+    }
+}
+
 // Form 2 — `expr catch { … }` / `expr catch (e) { … }` (spec Axis 12.5-12.6). Unlike the
 // `?` form this one has REAL structure: an optional binding, a statement-list body under
 // `allow_dot_postfix`, and four abort points whose messages are the hand parser's.
