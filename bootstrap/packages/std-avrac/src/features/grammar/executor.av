@@ -2427,6 +2427,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
         // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkCatchSuffix" if args.length == 3 -> CapVal.Node(mk_catch_suffix(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
         "MkTuple" if args.length == 1 -> CapVal.Node(mk_tuple(st, 0 - 1, env.get(args[0])))
@@ -3946,6 +3947,34 @@ fn postfix_step_node(st: PState, node: Expr) -> ExprId {
 /// the subject is the threaded base.
 export fn mk_try_suffix(st: PState) -> ExprId {
     postfix_step_node(st, Expr.Try(st.postfix_base))
+}
+
+/// `expr catch { … }` / `expr catch (e) { … }` (t-47hc.33 form 2, spec Axis 12.5-12.6).
+///
+/// Three details the hand arm carries that are easy to lose:
+///   - The line/col stamped into the node are the `catch` KEYWORD's, captured before
+///     anything is consumed. They come off the captured token's byte offset here, which
+///     is the same position through the shared LineIndex.
+///   - The handler `Expr.Block` is INTERNED (`alloc_leaf` → `intern_expr_leaf`), not
+///     `add_expr`'d. `mk_expr_block` would allocate a fresh spanned row instead, so the
+///     handler cannot be routed through the `block_expr` rule.
+///   - An ABSENT `(e)` binding is the empty string, which is what `capval_tok_text`
+///     yields for a `Nil` capture.
+export fn mk_catch_suffix(st: PState, ccap: CapVal, bcap: CapVal, bodycap: CapVal) -> ExprId {
+    let lc = st.store.lines.to_linecol(capval_tok_pos(ccap))
+    let handler_id = st.store.intern_expr_leaf(Expr.Block(capval_to_stmt_list(bodycap)))
+    postfix_step_node(st, Expr.Catch(st.postfix_base, capval_tok_text(bcap), handler_id, lc.line, lc.col))
+}
+
+/// A scalar token capture's SOURCE BYTE OFFSET — the anchor for a build that needs the
+/// keyword's own position rather than the sequence's. Non-token captures answer 0, the
+/// start of file, which `to_linecol` maps to 1:1 (a build that reaches this arm has a
+/// grammar bug, and a wild offset would be worse than a deterministic one).
+export fn capval_tok_pos(v: CapVal) -> int {
+    match v {
+        .Tok(t) -> t.pos
+        _ -> 0
+    }
 }
 
 /// Rebuild a partial `Expr.With(_, overrides)` with `recv` as the receiver, spanned

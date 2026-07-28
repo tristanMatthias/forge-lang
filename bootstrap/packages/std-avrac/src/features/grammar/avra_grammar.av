@@ -138,6 +138,12 @@ fn avra_expr_core() -> Grammar {
   // covers that compound case, because a native alternative whose guard fails simply
   // falls through to it.
   postfix_suffix = @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
+                 | c:"catch" ( "(" @require b:IDENT @require ")" )? @require "{"
+                   @on(allow_dot_postfix) body:declaration* @require "}"
+                   @expect("IDENT", "expected error binding name after `catch (`")
+                   @expect(")", "expected `)` after catch binding")
+                   @expect("{", "expected `{` after catch")
+                   @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
                  | @hand(postfix_suffix)
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)

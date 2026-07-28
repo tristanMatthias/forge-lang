@@ -1,5 +1,5 @@
-// WHY: t-47hc.33 form 1 — `expr?` (error propagation) is the first of `postfix_suffix`'s
-// eight forms to leave the `@hand` delegate and become a grammar alternative.
+// WHY: t-47hc.33 — `postfix_suffix`'s eight forms leaving the `@hand` delegate for
+// grammar alternatives, one at a time. One spec per form; they accumulate here.
 //
 // The thing that makes a postfix form flippable at all is that the CHAIN's state is
 // already threaded on PState: `postfix_base` (the accumulated receiver) and
@@ -20,6 +20,9 @@
 // `!` loop has consumed, WITHOUT re-testing the entry conditions, so `x!?` is one hand
 // step. A native `?` alternative cannot see that shape (its guard fires on `?`, and the
 // current token there is `!`), so it declines and the tail handles the compound case.
+// That is why `!` is the LAST form to flip, together with the delegate's deletion: every
+// OTHER hand arm either returns immediately or ends the if/else chain, so a native
+// single-iteration version of it is exactly equivalent.
 
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
 
@@ -57,5 +60,44 @@ spec "t-47hc.33: `expr?` is grammar-native" {
             if gr.name == "unary" { src = emit_rule_fn(g, gr) }
         }
         src.contains("if st.pos == __rep_before { break }")
+    }
+}
+
+// Form 2 — `expr catch { … }` / `expr catch (e) { … }` (spec Axis 12.5-12.6). Unlike the
+// `?` form this one has REAL structure: an optional binding, a statement-list body under
+// `allow_dot_postfix`, and four abort points whose messages are the hand parser's.
+
+spec "t-47hc.33: `expr catch { … }` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_catch_suffix(st,")
+    }
+    then "the body parses under allow_dot_postfix ON, and RESTORES after" {
+        // The hand saves/sets/restores around parse_statement_list_ids; a leak here
+        // would silently change how the REST of the enclosing expression parses.
+        postfix_rule_src().contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") &&
+            postfix_rule_src().contains("st.set_modes(__modes_")
+    }
+    then "the four abort messages are the hand parser's, verbatim" {
+        let s = postfix_rule_src()
+        s.contains("expected error binding name after `catch (`") &&
+            s.contains("expected `)` after catch binding") &&
+            s.contains("expected `{` after catch") &&
+            s.contains("expected `}` after catch body")
+    }
+    then "each of them ABORTS rather than reporting and continuing" {
+        // `@require`: the hand returns .Err("parse error"), so the rest of the sequence
+        // must not run and consume tokens belonging to whatever follows.
+        postfix_rule_src().contains("return CapVal.Node(st.error_node_silent())")
+    }
+    then "the binding is OPTIONAL — bare `catch {` needs no parens" {
+        postfix_rule_src().contains("if st.cur().tk == Tk.LeftParen {")
+    }
+    then "the mode restore precedes the closing-brace check — no leak on abort" {
+        // Ordering matters: were the `}` abort emitted INSIDE the @on wrapper, a missing
+        // `}` would return with allow_dot_postfix still forced on.
+        let s = postfix_rule_src()
+        let restore = s.index_of("st.set_modes(__modes_")
+        let close = s.index_of("expected `}` after catch body")
+        restore >= 0 && close >= 0 && restore < close
     }
 }
