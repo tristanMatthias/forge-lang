@@ -1,0 +1,67 @@
+// WHY: t-47hc slice 10.10 (t-myz7) — two builder-level cleanups, neither of which changes
+// what any grammar currently parses.
+//
+// 1. `MkExport` gets its EMIT twin. It is the last of the four builds this slice found in
+//    the executor-only state (the generic decl arms in 10.2, `MkExtern` in 10.6,
+//    `MkShapeDecl` in 10.8 — that one was missing from both). Emit dispatches on the build
+//    NAME, so an executor-only build works under the interpreter oracle and emits nothing
+//    usable. `MkExport` is what the `export`-WRAPPING increment spends, so the core lands
+//    dormant BEFORE the flip, which is the shape the roadmap uses throughout.
+//
+//    What it deliberately does NOT do: `parse_declaration_hand` also calls
+//    `store.stmts.record_pos(inner_id, …)` to stamp the WRAPPED declaration's position
+//    before wrapping. That is a side-table write needing the inner item's line/col at
+//    build time, on a node the builder receives already-built. The wrapping increment has
+//    to solve it; pinning the gap here means it starts from a known fact.
+//
+// 2. `MkTypeRHS` now DELEGATES to `mk_type_decl_any` instead of reimplementing it. Slice
+//    10.5 grew that core to cover every `type` right-hand side the hand produces, which
+//    made `MkTypeRHS` (from #832, predating it) a second implementation of the same
+//    trifurcation — my duplication to remove, not inherited debt. The older one was also
+//    subtly wrong: it built the alias nodes with `add_leaf` where the hand uses
+//    `alloc_stmt(..., [NodeRef.TypeRef(...)])`, dropping the walker's only child.
+
+use @std.avrac.features.grammar.{avra_program_grammar, emit_parser_source, parse_grammar, run_grammar_stmt}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+// A one-rule grammar naming the build, emitted. Nothing in the tree spends `MkExport`
+// yet, so this is the only way to see what emit renders for it.
+fn emit_one(rule: string) -> string {
+    emit_parser_source(parse_grammar(rule).grammar)
+}
+
+fn run_one(rule: string, src: string) -> string {
+    let r = run_grammar_stmt(parse_grammar(rule).grammar, src)
+    if r.had_error { return "<parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> render_stmt_ids(r.store, [r.root])
+    }
+}
+
+spec "t-47hc slice 10.10: MkExport has an emit twin, not just an executor arm" {
+    then "emit renders the shared core" {
+        // Fails without the emit arm — the build name would fall through and render
+        // nothing callable, which is exactly the state MkExtern was in before 10.6.
+        let src = emit_one(
+            "g = \"export\" inner:sub -> MkExport(inner)\n" +
+            "sub = \"mod\" m:IDENT -> MkModule(m)\n")
+        src.contains("mk_export_decl(st, inner)")
+    }
+
+    then "the executor still wraps in a bare @export annotation" {
+        // The behaviour the core preserves: an Annotated node with one empty-args
+        // `export` annotation around the inner declaration.
+        let out = run_one(
+            "g = \"export\" inner:sub -> MkExport(inner)\n" +
+            "sub = \"mod\" m:IDENT -> MkModule(m)\n",
+            "export mod inner\n")
+        out.contains("export") && out.contains("inner") && !out.contains("parse error")
+    }
+}
+
+// The delegation's BEHAVIOUR is not re-asserted here. `decl_type_op_test` is the canonical
+// guard for `MkTypeRHS` — it composes the whole type family so `base:type_expr` resolves,
+// and covers the operator form, both no-operator splits, and the canonical renders. It is
+// 4/4 before and after the delegation, which is the evidence that matters. Writing a second
+// set of the same assertions here would be the very duplication this increment removes.

@@ -2838,41 +2838,22 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkImpl" if args.length == 3 -> mk_impl(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), capval_to_stmt_list(env.get(args[2])))
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkExtern" if args.length == 3 -> mk_extern_fn(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])))
-        "MkExport" if args.length == 1 -> {
-            // `export <decl>` — parse_declaration wraps the inner exportable
-            // decl (fn / type / enum / extern) in a bare `@export` annotation
-            // (empty args) so name resolution can enforce visibility.
-            let no_args: List<ExprId> = []
-            let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, env.get(args[0])))))
-        }
+        "MkExport" if args.length == 1 -> mk_export_decl(st, env.get(args[0]))
+        // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the non-brace RHS
+        // only, kept for the grammar-string consumers that predate `MkTypeDeclAny`
+        // (decl_type_op_test). It DELEGATES rather than reimplementing: slice 10.5 grew
+        // `mk_type_decl_any` to cover every `type` RHS the hand produces, which made this
+        // arm a second implementation of the same trifurcation — and the older one was
+        // subtly wrong, building the alias nodes with `add_leaf` where the hand uses
+        // `alloc_stmt(..., [NodeRef.TypeRef(...)])`, so the walker's only child was
+        // dropped. One core, one behaviour.
+        //
+        // No type params and no brace fields at this arity: an empty list and an absent
+        // alias flag reproduce exactly what this arm built before.
         "MkTypeRHS" if args.length == 4 -> {
-            // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the
-            // full non-brace RHS. A present operator builds the synthetic-marker
-            // TypeDecl parse_type_declaration emits: a `__base` field carrying
-            // the underlying type, a `__without`/`__only` marker (Str), then the
-            // user-listed field names (Unknown) — the exact shape
-            // resolve_type_operator walks. With NO operator it degrades to the
-            // union/newtype split (same as MkTypeAlias).
-            let name = capval_tok_text(env.get(args[0]))
-            let base_te = capval_to_texpr(st, env.get(args[1]))
-            let base_vt = type_expr_to_vtype(base_te)
-            if capval_present(env.get(args[2])) {
-                let op = capval_tok_text(env.get(args[2]))
-                mut derived: List<FieldEntry> = [FieldEntry { name: "__base", resolved: base_vt }, FieldEntry { name: "__" + op, resolved: ValueType.Str }]
-                match env.get(args[3]) {
-                    .Toks(ts) -> { for t in ts { derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown }) } }
-                    .Tok(t) -> derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown })
-                    _ -> {}
-                }
-                let no_tp: List<TypeParamEntry> = []
-                CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, no_tp, derived)))
-            } else {
-                match base_te {
-                    .Union(_, _) -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.UnionAliasDecl(name, base_vt)))
-                    _ -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.NewtypeDecl(name, base_vt)))
-                }
-            }
+            let no_tp: List<TypeParamEntry> = []
+            let no_fields: List<FieldEntry> = []
+            mk_type_decl_any(st, capval_tok_text(env.get(args[0])), no_tp, no_fields, env.get(args[1]), true, env.get(args[2]), capval_present(env.get(args[2])), capval_tok_list(env.get(args[3])))
         }
         "MkTypeAlias" if args.length == 2 -> {
             // `type Name = <type_expr>` (NON-brace RHS). A Union RHS
@@ -3485,6 +3466,28 @@ export fn mk_extern_fn(st: PState, name: string, params: List<ParamEntry>, ret_c
 /// No type params — `parse_shape_declaration` has none, unlike every other decl keyword.
 export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ShapeDecl(name, fields)))
+}
+
+/// `export <decl>` — the inner exportable declaration wrapped in a bare `@export`
+/// annotation (empty args) so name resolution can enforce visibility (the `MkExport`
+/// build's core).
+///
+/// Extracted for the third time in this slice for the same reason: `MkExport` existed in
+/// the EXECUTOR only, and emit dispatches on the build NAME, so a grammar naming it would
+/// have worked under the interpreter oracle and emitted nothing usable. It is what the
+/// `export`-WRAPPING increment spends, so the core lands before the flip does — the
+/// dormant-capability shape the roadmap uses everywhere else.
+///
+/// NOT the whole of the hand's export branch, and the gap is deliberate:
+/// `parse_declaration_hand` also calls `store.stmts.record_pos(inner_id, …)` to stamp the
+/// WRAPPED declaration's source position before wrapping. That is a side-table write on a
+/// node the builder receives already-built, and reproducing it needs the inner item's
+/// line/col at build time. The wrapping increment has to solve that; this core is the
+/// half that is unambiguous.
+export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
+    let no_args: List<ExprId> = []
+    let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).
