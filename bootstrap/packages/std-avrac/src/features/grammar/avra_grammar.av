@@ -690,7 +690,7 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
 export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
-  declaration = fn_decl | type_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
+  declaration = fn_decl | extern_decl | type_decl | shape_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
   param       = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)

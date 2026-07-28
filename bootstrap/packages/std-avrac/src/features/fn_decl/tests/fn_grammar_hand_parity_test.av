@@ -1,0 +1,73 @@
+// WHY: t-47hc slice 10.6 (t-myz7) — `fn` reaches hand parity: generics, and the bodyless
+// `extern fn` signature.
+//
+// Generics are the same shape enum (10.3) and type (10.4) used, deliberately: one `.One`
+// plus one `.Star` on `tparams`, never two `.One`s, which is what keeps it clear of
+// t-gnk7 (the executor REPLACES where emit ACCUMULATES).
+//
+// `extern fn` is its OWN rule rather than a widening of `fn_decl`, because it leads with a
+// different keyword and so is FIRST-disjoint — no left-factoring needed, unlike `type`'s
+// two right-hand sides in 10.5. It also builds a different node (`Stmt.ExternFn`, bodyless)
+// and defaults an absent return to Void.
+//
+// THE PART THAT WAS ALREADY BROKEN, and why `decl_export_extern_test` did not catch it:
+// `MkExtern` existed in the EXECUTOR only. Emit had no twin, and emit dispatches on the
+// build name, so a grammar naming `MkExtern` worked under the interpreter — which is all
+// that test exercises — and would have produced nothing usable in the generated parser.
+// Same asymmetry as the generic decl builders in 10.2, closed the same way: one shared
+// `mk_extern_fn` core that both engines call.
+//
+// `MkExport` has the identical gap and is still executor-only. It is what the `export`
+// WRAPPING increment will spend, so it needs the same treatment then.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error")
+}
+
+spec "t-47hc slice 10.6: `fn` accepts the hand's GENERIC forms" {
+    then "one type param, a bounded one, and several all agree with the hand" {
+        agrees("fn id<T>(x: T) -> T {\n    return x\n}\n") &&
+            agrees("fn p<T: Show>(x: T) {\n}\n") &&
+            agrees("fn m<A, B>(a: A, b: B) {\n}\n")
+    }
+
+    then "the non-generic forms are untouched" {
+        agrees("fn f(x: int) -> int {\n    return x\n}\n") &&
+            agrees("fn g() {\n}\n") &&
+            agrees("fn h(a: int) {\n}\n")
+    }
+}
+
+spec "t-47hc slice 10.6: `extern fn` is native, in BOTH engines" {
+    then "a bodyless signature agrees with the hand, with and without a return type" {
+        agrees("extern fn puts(s: string) -> int\n") &&
+            agrees("extern fn abrt()\n")
+    }
+
+    then "emit renders the shared core — the half that was missing" {
+        // The executor-only state would still have passed the parity assertions above,
+        // since those run the interpreter. This is the half that was absent.
+        emit_parser_source(avra_program_grammar()).contains("mk_extern_fn(st, capval_tok_text(ename)")
+    }
+}

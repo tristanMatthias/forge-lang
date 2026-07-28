@@ -1840,6 +1840,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
         "MkEnumDecl" if args.length == 3 -> "mk_enum_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
         "MkTypeParam" -> "mk_type_param(capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
+        "MkExtern" -> "mk_extern_fn(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}))"
+        "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
@@ -2439,7 +2441,7 @@ fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
     if bn == "MkField" { return "field" }

@@ -1,0 +1,73 @@
+// WHY: t-47hc slice 10.8 (t-myz7) — `shape`, the structural sibling of `type`.
+//
+// Found by accident: while measuring `type`'s gaps in 10.4 I probed
+// `shape HasName = { name: string }` and the DSL rejected it outright. `shape` is in
+// `decl_lead`'s FIRST — so `@hand(decl_hand)` has always handled it — but NO fragment
+// covered it, and it was on nobody's list of decl keywords to migrate. It is now.
+//
+// It is its own rule, not a widening of `type_decl`: its own keyword, its own node
+// (`Stmt.ShapeDecl`), and — alone among the decl keywords — NO type params.
+// `parse_shape_declaration` is `shape NAME = { field* }` and nothing else.
+//
+// The builder had to be created in BOTH engines. `MkShapeDecl` existed in neither, which
+// is the third time this slice has found a build present on one side only (MkExtern and
+// MkExport in 10.6, the generic decl arms in 10.2) — so it was added as one shared core
+// with an emit assertion, not just an executor arm that the interpreter would vouch for.
+
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+fn dsl_program(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_program(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+fn agrees(src: string) -> bool {
+    let d = dsl_program(src)
+    d == hand_program(src) && !d.contains("parse error")
+}
+
+spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
+    then "one field, several fields, and an empty shape all agree with the hand" {
+        agrees("shape HasName = { name: string }\n") &&
+            agrees("shape P = { x: int, y: int }\n") &&
+            agrees("shape E = {}\n")
+    }
+
+    then "the node is a ShapeDecl, not a TypeDecl" {
+        // `shape` and `type` differ only by keyword in surface syntax; if the rule built
+        // the wrong node the render would say `type`, and equality with the hand would
+        // still be the thing that catches it — but assert the kind directly too.
+        dsl_program("shape HasName = { name: string }\n").contains("shape")
+    }
+
+    // Pinned because it is non-obvious enough that a reviewer proposed "fixing" it on
+    // #1053. Avra is NEWLINE-SENSITIVE and a field list is newline-separated, so the
+    // comma between fields is genuinely OPTIONAL — `parse_field_list` has no comma
+    // requirement, and the newline form is how almost every struct and shape in the tree
+    // is actually written. Tightening the rule to `field ( "," field )* ","?` would
+    // reject all of them. Parity means matching the hand in BOTH directions: narrowing is
+    // as much a defect here as the accidental widening #1046 had to fix.
+    then "commas between fields are OPTIONAL, exactly as the hand has them" {
+        agrees("shape S = { x: int y: int }\n") &&
+            agrees("shape S = {\n    x: int\n    y: int\n}\n") &&
+            agrees("shape S = { x: int, y: int }\n") &&
+            agrees("shape S = { x: int, y: int, }\n")
+    }
+
+    then "emit renders the shared core — the half an executor-only build would miss" {
+        emit_parser_source(avra_program_grammar()).contains("mk_shape_decl(st, capval_tok_text(shname)")
+    }
+}

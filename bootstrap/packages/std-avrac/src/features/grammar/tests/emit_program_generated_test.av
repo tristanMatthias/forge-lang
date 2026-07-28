@@ -38,7 +38,12 @@ spec "grammar emitter: renders the whole-program generated static parser" {
     then "the declaration builds lower to the SHARED constructor cores" {
         let src = emit_all()
         src.contains("mk_block(st, sp_start, d_list)") &&
-        src.contains("mk_fn_decl(st, capval_tok_text(name), params_list, ret, capval_present(ret), body_list)") &&
+        // `fn` carries an optional type-param list since t-47hc slice 10.6, so it lowers
+        // to the GENERIC core — one rule serves both forms, with an empty capture when
+        // no `<…>` is present. `extern fn` is a SEPARATE rule (different lead keyword,
+        // bodyless, different node), and its core was executor-only until 10.6.
+        src.contains("mk_fn_decl_g(st, capval_tok_text(name), tparams_list, params_list, ret, capval_present(ret), body_list)") &&
+        src.contains("mk_extern_fn(st, capval_tok_text(ename)") &&
         // `type` lowers to ONE core covering every RHS the hand produces (10.5): the
         // brace form, the newtype wrapper, the union alias, and the `without` / `only`
         // operators. The hand picks between them AFTER parsing the RHS — from the
