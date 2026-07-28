@@ -1310,23 +1310,40 @@ fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
             let p = branches[0].items[0].prim
             if prim_is_hand(p) { return true }
             match p {
-                .Ref(nm) -> rule_is_bare_hand(g, nm)
+                .Ref(nm) -> rule_reaches_hand(g, nm)
                 _ -> false
             }
         }
     }
 }
 
-/// True iff rule `name` is EXACTLY `name = @hand(f)` — a pure delegate with no other
-/// structure. Only such a rule is transparent for the no-progress guard above: any
-/// extra items or alternatives mean the rule does its own consuming, so the caller's
-/// loop can no longer assume the hand step is the sole source of progress.
-fn rule_is_bare_hand(g: Grammar, name: string) -> bool {
+/// True iff rule `name` has ANY `@hand` alternative — i.e. it can return WITHOUT
+/// consuming a token, so a `( name )*` loop over it needs the no-progress break or it
+/// spins forever.
+///
+/// A hand delegate is the only production that can do this. `postfix_suffix`'s
+/// `parse_postfix_suffix` returns the base UNCHANGED for its three former loop-exit
+/// paths (entry guard not matched, generic-call speculation failed, trailing non-postfix
+/// arm); the break is what turns that into the hand `while` loop's exit. A NATIVE
+/// alternative cannot: it is entered only when its FIRST holds and then consumes.
+///
+/// Widened from "the rule is EXACTLY `name = @hand(f)`" for t-47hc.33, which flips
+/// `postfix_suffix`'s forms to native one at a time while keeping `@hand(postfix_suffix)`
+/// as the tail alternative. Under the old bare-hand test the very first native
+/// alternative silently DROPPED the break from every `( postfix_suffix )*` loop in the
+/// generated parser — an infinite loop the moment the hand tail declined to consume.
+/// Byte-identical today: every rule the old test admitted is still admitted (a bare hand
+/// rule is a rule with a hand alternative), and no other repeated rule has one.
+fn rule_reaches_hand(g: Grammar, name: string) -> bool {
     let i = rule_index_of(g, name)
     if i < 0 { return false }
     match g.rules[i].body {
-        .Alt(branches) -> branches.length == 1 && branches[0].items.length == 1 &&
-            prim_is_hand(branches[0].items[0].prim)
+        .Alt(branches) -> {
+            for b in branches {
+                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
+            }
+            false
+        }
     }
 }
 
@@ -1689,6 +1706,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkQualExpr" -> "CapVal.Node(mk_qualified(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), ${args[2]}, CapVal.FInits(${args[3]}_list)))"
         "MkMapLit" -> "CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
+        // Native `postfix_suffix` steps (t-47hc.33). No `sp_start` arg — the builder
+        // reads `st.postfix_sp_start`, so these are deliberately absent from
+        // build_uses_sp_start and no `let sp_start = …` is emitted for them.
+        "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
         "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         // t-47hc.17 — `name: value` / shorthand `name`, and the `with { … }` suffix
@@ -1990,7 +2011,15 @@ fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             // `@peek` is the same zero-width AND-conjunct, via the lookahead guard.
             .Peek(cond) -> preds.push(peek_guard(cond))
             _ -> {
-                parts.push(prim_first_guard(g, item.prim, visited))
+                // `^` is part of the DISPATCH condition, not just of the item's own
+                // match (t-47hc.33). A branch led by a same-line item cannot start on a
+                // token that sits on the next line, so folding the gate in here is what
+                // makes the branch fall through to its siblings instead of being entered
+                // and then failing mid-sequence. Byte-identical for every grammar today:
+                // same_line_wrap returns the guard unchanged for an unmarked item, and
+                // the only `^` in a production grammar (`return ^( e:expression )?`) sits
+                // AFTER a mandatory item, so this scan has already returned.
+                parts.push(same_line_wrap(item, prim_first_guard(g, item.prim, visited)))
                 match item.rep {
                     .One -> return combine_pred_guard(preds, parts)
                     .Plus -> return combine_pred_guard(preds, parts)
@@ -2273,7 +2302,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }

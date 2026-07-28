@@ -1,0 +1,88 @@
+// WHY: t-47hc.33 — two DSL gaps the `postfix_suffix` flip walked into, both of which
+// let a grammar edit compile clean and then misbehave at runtime. Neither is specific to
+// postfix; both are properties of how a rule with MIXED alternatives (native + `@hand`)
+// is dispatched and looped.
+//
+// 1. `^` (same-line) was honoured only on `?`/`*`/`+` items. On a MANDATORY item it was
+//    dropped from both engines: emit's seq_first_guard never wrapped it, and the
+//    executor's exec_item checks sameline_ok nowhere. So a branch led by a `^` item was
+//    ENTERED on a next-line token and then failed mid-sequence, instead of falling
+//    through to its siblings. `^` is part of a branch's FIRST — that is what this pins.
+//
+// 2. The `( r )*` no-progress break was emitted only when `r` was EXACTLY `r = @hand(f)`.
+//    A hand delegate is the one production that can return without consuming (postfix's
+//    parse_postfix_suffix does it for three distinct exit paths), so the break is what
+//    ends the loop. Adding a single native alternative to such a rule silently DELETED
+//    the break from every loop over it — an infinite loop in the generated parser, with
+//    nothing in the grammar diff to suggest it.
+//
+// Both are asserted on BOTH engines: the interpreter by RUNNING it, the generated parser
+// by inspecting the emitted source. Asserting one alone is how three divergences shipped
+// in #1032.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr}
+
+fn rule_src(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// `gate`'s FIRST branch is led by a `^`-marked NUMBER; its SECOND wants a STRING. So a
+// NUMBER on the same line as `[` takes branch 1, and a NUMBER on the NEXT line must fall
+// through to branch 2 — which cannot match it, making the parse error the evidence that
+// the branch was skipped rather than entered-and-failed.
+const SAMELINE_G = "r = \"[\" g:gate \"]\" -> Grouping(g)\n" +
+    "gate = ^a:NUMBER -> Grouping(a) | s:STRING -> Grouping(s)"
+
+spec "t-47hc.33: `^` gates BRANCH SELECTION, not just the item" {
+    then "a same-line token takes the ^-led branch" {
+        let gp = parse_grammar(SAMELINE_G)
+        !run_grammar_expr(gp.grammar, "[ 1 ]").had_error
+    }
+    then "a NEXT-LINE token does not — it falls through to the sibling" {
+        // Before the fix this parsed clean: the branch was selected on FIRST alone and
+        // the mandatory item never re-checked the line, so `^` was a no-op here.
+        let gp = parse_grammar(SAMELINE_G)
+        run_grammar_expr(gp.grammar, "[\n1 ]").had_error
+    }
+    then "the EMITTED dispatch guard carries the same line comparison" {
+        // The lockstep half: the generated parser must skip the branch for the same
+        // reason, not merely fail inside it.
+        rule_src(SAMELINE_G, "gate").contains("to_linecol(st.toks[st.pos - 1].pos).line")
+    }
+    then "an UNMARKED branch guard is untouched — no stray line test" {
+        // Byte-identity: every production grammar today is unmarked at this position,
+        // so the wrap must be inert unless `^` is actually written.
+        !rule_src("r = \"[\" g:gate \"]\" -> Grouping(g)\ngate = a:NUMBER -> Grouping(a)", "gate")
+            .contains("to_linecol")
+    }
+}
+
+// `suffix` is the shape the postfix flip creates: one native alternative plus a `@hand`
+// tail. The loop over it lives in `r`.
+const MIXED_G = "r = b:NUMBER ( p:suffix )* -> Grouping(b)\n" +
+    "suffix = s:STRING -> Grouping(s) | @hand(primary_base)"
+
+spec "t-47hc.33: the no-progress break survives a rule going PARTLY native" {
+    then "a bare `@hand` rule loops with the break — the established shape" {
+        rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = @hand(primary_base)", "r")
+            .contains("__rep_before")
+    }
+    then "and it is STILL emitted once the rule grows a native alternative" {
+        // The regression: under the old bare-hand test this returned false, and the
+        // emitted `while` had no exit for the case the hand tail consumes nothing.
+        rule_src(MIXED_G, "r").contains("__rep_before")
+    }
+    then "the break is a real `break`, not just the saved position" {
+        rule_src(MIXED_G, "r").contains("if st.pos == __rep_before { break }")
+    }
+    then "a fully NATIVE repeated rule still emits no break" {
+        // The narrow case must stay narrow: a native alternative always consumes when
+        // its FIRST holds, so the loop needs no guard and the emitted text is unchanged.
+        !rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = s:STRING -> Grouping(s)", "r")
+            .contains("__rep_before")
+    }
+}
