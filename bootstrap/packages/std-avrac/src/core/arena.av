@@ -735,6 +735,33 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
     }
 }
 
+/// Adopt `shared`'s ARENAS while keeping `own`'s `lines` — the store handle a
+/// SUB-PARSE needs (t-47hc.33).
+///
+/// A sub-parse (a template `${…}` fragment, a pipeline-merged module file) must
+/// allocate into the entry parse's arenas so its ids are valid there, and the
+/// blunt way to arrange that is `p.store = shared`. That is wrong in one respect:
+/// a NodeStore also carries the LineIndex for the text its byte offsets index
+/// into, and the sub-parse's tokens are offsets into ITS OWN source, not the
+/// entry file's. Adopting the entry index wholesale resolves every position in
+/// the sub-parse against unrelated text.
+///
+/// The consequence is not cosmetic. The grammar engines derive line numbers from
+/// `store.lines` — both the recorded per-statement `SrcPos` and, load-bearingly,
+/// the `^` SAMELINE gate that decides whether a `(` / `[` / `.` on the next line
+/// continues a postfix chain or ends it. Under a foreign index two tokens on
+/// different lines can collapse onto one, and `f(x)\n(y + z)` parses as a CALL.
+/// (The hand parser is immune: it counts newlines as it scans, so it never
+/// consults the index. The mismatch is therefore invisible until a form goes
+/// native — which is how it surfaced.)
+///
+/// Every field but `lines` is reference-like (arenas, roots, the side tables), so
+/// the copy SHARES all of them: rows the sub-parse allocates are visible through
+/// the caller's handle, exactly as a direct assignment would give.
+export fn share_arenas_keep_lines(shared: NodeStore, own: NodeStore) -> NodeStore {
+    shared with { lines: own.lines }
+}
+
 /// Store-boundary conversion for typed ids: a C-side map slot holds
 /// only i64, so an id crossing that boundary round-trips through its
 /// raw index HERE — inside the node model, where @opaque permits the

@@ -1,0 +1,153 @@
+// WHY: a SUB-PARSE measures lines against its OWN source, not the entry file's
+// (t-47hc.33).
+//
+// A NodeStore carries two unrelated things: the arenas, and the LineIndex for the
+// text its byte offsets index into. A sub-parse — a template `${…}` fragment, a
+// pipeline-merged module file — must borrow the arenas so its ids are valid in the
+// entry parse, and the blunt way to do that (`p.store = shared`) silently borrows
+// the LineIndex too. The sub-parse's tokens are offsets into ITS OWN source, so
+// every position it records then resolves against unrelated text.
+//
+// The hand parser never noticed: it counts newlines as it scans and never consults
+// the index. The GRAMMAR engines do consult it — for the recorded per-statement
+// `SrcPos` and, load-bearingly, for the `^` SAMELINE gate that decides whether a
+// `(` / `[` on the next line continues a postfix chain. So the mismatch stayed
+// invisible until a form went native.
+//
+// `share_arenas_keep_lines` (core/arena.av) is the fix: arenas from the shared
+// store, LineIndex from the sub-parse's own. These tests pin both halves — the
+// store-level contract, and the end-to-end positions a template fragment records.
+
+use @std.avrac.parse.{parse_program_source, parse_program_source_shared}
+use @std.avrac.core.{Stmt, StmtId, NodeStore, SrcPos, new_node_store, build_line_index, share_arenas_keep_lines, stmt_unwrap}
+
+// A first line long enough that EVERY byte offset a short fragment can produce
+// falls inside it. That is what makes the assertions below decisive rather than
+// coincidental: read through the ENTRY file's index, every fragment position
+// collapses to line 1, so any answer of 2 or 3 can only have come from the
+// fragment's own index.
+const PAD = "// pad ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n"
+
+// `$` is spliced in so this file's OWN template desugar leaves the fixture's
+// interpolation alone (the same trick component_decl's fixtures use).
+const DOLLAR: string = "$"
+
+// The fragment is `ap((a: int) -> {\n        let one = a\n        one\n    })`, whose
+// OWN lines are 1 (`ap(…{`), 2 (`let one`), 3 (`one`).
+const TMPL_SRC = PAD +
+    "fn ap(f: fn(int) -> int) -> int { f(1) }\n" +
+    "fn main() {\n" +
+    "    println(\"" + DOLLAR + "{ap((a: int) -> {\n" +
+    "        let one = a\n" +
+    "        one\n" +
+    "    })}\")\n" +
+    "}\n"
+
+/// The recorded line of the `let <name>` row, or 0 when no such row exists.
+fn let_line(store: NodeStore, name: string) -> int {
+    mut i = 1
+    while i <= store.stmts.count() {
+        let id = StmtId(i)
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Let(n, _, _) -> {
+                if n == name { return store.stmts.pos_of(id).line }
+            }
+            _ -> {}
+        }
+        i = i + 1
+    }
+    0
+}
+
+spec "t-47hc.33: a template fragment records FRAGMENT-relative positions" {
+    then "the source parses cleanly (the fixture itself is valid)" {
+        !parse_program_source(TMPL_SRC).had_error
+    }
+    then "the lambda body's `let` carries its line WITHIN the fragment, not the file's" {
+        // 2 is the `let one = a` line of the fragment. Through the entry file's
+        // index the same offset lands in the padded first line — so a 1 here is
+        // exactly the bug, and no other value is reachable by accident.
+        let_line(parse_program_source(TMPL_SRC).store, "one") == 2
+    }
+    then "a binding OUTSIDE any fragment still uses the FILE's lines" {
+        // The other half of the contract: only the sub-parse switches index. A
+        // top-level binding must still report its real position in the file, which
+        // the padding makes large and unmistakable.
+        let src = TMPL_SRC + "fn tail() {\n    let outer = 1\n    println(\"" + DOLLAR + "{outer}\")\n}\n"
+        let_line(parse_program_source(src).store, "outer") > 3
+    }
+}
+
+// A template inside a MERGED file — the compiler's own shape (core/ast.av is a
+// merged file, and `render_match_arm_list` is exactly this construct). Two
+// sub-parses nest here: the merged file borrows the entry store, and the template
+// fragment inside it borrows that. The fragment's own lines are 1 `ap(…{`,
+// 2 `let nested`, 3 `nested`.
+const MERGED_SRC = "fn ap(f: fn(int) -> int) -> int { f(1) }\n" +
+    "fn merged_fn() {\n" +
+    "    println(\"" + DOLLAR + "{ap((a: int) -> {\n" +
+    "        let nested = a\n" +
+    "        nested\n" +
+    "    })}\")\n" +
+    "}\n"
+
+spec "t-47hc.33: sub-parses NEST without inheriting the wrong LineIndex" {
+    then "a template inside a pipeline-merged file still uses the FRAGMENT's lines" {
+        // The merged file (`mod` files, package entries, sibling files, the test
+        // runner's imports) allocates into the ENTRY parse's arenas via
+        // parse_program_source_shared. Driven directly here because that is the
+        // seam: the entry store's LineIndex describes ONLY the padded line, so an
+        // inherited index collapses every offset below it to 1.
+        let entry = new_node_store(build_line_index(PAD))
+        let res = parse_program_source_shared(MERGED_SRC, "merged.av", entry)
+        !res.had_error && let_line(res.store, "nested") == 2
+    }
+    then "and the merged rows really did land in the ENTRY store" {
+        // The other half: keeping our own LineIndex must not cost us the shared
+        // arenas. If the copy ever deep-copied, the ids above would belong to a
+        // private store and the entry parse would never see the merged rows.
+        let entry = new_node_store(build_line_index(PAD))
+        let before = entry.stmts.count()
+        let _ = parse_program_source_shared(MERGED_SRC, "merged.av", entry)
+        entry.stmts.count() > before && let_line(entry, "nested") == 2
+    }
+}
+
+spec "t-47hc.33: share_arenas_keep_lines borrows arenas but not the LineIndex" {
+    then "the LineIndex comes from the sub-parse's own store" {
+        // Two sources whose line breaks disagree at the same byte offset: offset 5
+        // is line 1 of `own` (one long line) and line 3 of `shared`.
+        let shared = new_node_store(build_line_index("a\nb\nc\nd\n"))
+        let own = new_node_store(build_line_index("aaaaaaaaaa"))
+        share_arenas_keep_lines(shared, own).lines.to_linecol(5).line == 1
+    }
+    then "and NOT from the shared store, which answers differently" {
+        let shared = new_node_store(build_line_index("a\nb\nc\nd\n"))
+        shared.lines.to_linecol(5).line == 3
+    }
+    then "rows added through the result are visible in the SHARED store" {
+        // The whole point of adopting the shared store: the sub-parse's ids must be
+        // valid in the entry arena. Every field but `lines` is reference-like, so
+        // the copy shares them — if it ever deep-copied, ids would dangle.
+        let shared = new_node_store(build_line_index("a\nb\n"))
+        let own = new_node_store(build_line_index("aaaaaaaaaa"))
+        let sub = share_arenas_keep_lines(shared, own)
+        let before = shared.stmts.count()
+        let id = sub.stmts.add_leaf(Stmt.Break)
+        shared.stmts.count() == before + 1 && match stmt_unwrap(shared, shared.stmts.get(id)) {
+            .Break -> true
+            _ -> false
+        }
+    }
+    then "a position recorded through the result is readable from the SHARED store" {
+        let shared = new_node_store(build_line_index("a\nb\n"))
+        let own = new_node_store(build_line_index("aaaaaaaaaa"))
+        let sub = share_arenas_keep_lines(shared, own)
+        let id = sub.stmts.add_leaf(Stmt.Continue)
+        // Offset 5: line 1 by `own`'s index (what the sub-parse must use), line 3
+        // by `shared`'s. The recorded row proves which index was consulted.
+        let lc = sub.lines.to_linecol(5)
+        sub.stmts.record_pos(id, SrcPos { line: lc.line, col: lc.col, file: "" })
+        shared.stmts.pos_of(id).line == 1
+    }
+}

@@ -14,7 +14,7 @@
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser, lookup_expr_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name}
-use core.{NodeStore, StoreMark, new_node_store, build_line_index}
+use core.{NodeStore, StoreMark, new_node_store, build_line_index, share_arenas_keep_lines}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // ps3t.6.5.12 (parser swap-in): the hand parser delegates a whole type
@@ -408,7 +408,11 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
 /// stamped with its source `file` and span as the parser allocates it.
 export fn parse_program_source_shared(source: string, file: string, store: NodeStore) -> ProgramParseResult {
     mut parser = parser_new_with_file(source, file)
-    parser.store = store
+    // Arenas from the entry parse, LineIndex from THIS file. A merged file's token
+    // offsets index into its own `source`; adopting the entry file's index would
+    // resolve every position here against the wrong text — including the `^`
+    // sameline gate. See `share_arenas_keep_lines`.
+    parser.store = share_arenas_keep_lines(store, parser.store)
     parser.records_roots = 0
     parser.parse_file_program()
 }
@@ -600,7 +604,10 @@ fn template_split_format(s: string) -> FormatSplit {
 /// them by id — no re-ingest at the template boundary.
 fn parse_template_expr(source: string, store: NodeStore) -> Result<ExprId, string> {
     mut p = parser_new(source)
-    p.store = store
+    // Arenas from the caller, LineIndex from THIS fragment — `parser_new` already
+    // built the latter, and the fragment's token offsets index into `source`, not
+    // into the outer file. See `share_arenas_keep_lines`.
+    p.store = share_arenas_keep_lines(store, p.store)
     p.parse_expression()
 }
 
