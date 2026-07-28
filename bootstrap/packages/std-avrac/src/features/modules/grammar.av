@@ -1,0 +1,17 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry (see features/fn_decl/grammar.av for the full rationale).
+// The modules feature owns BOTH module-system declarations: `use` (with its
+// optional `@`-package prefix, dotted path segments, and braced name list) and
+// the bare `mod` declaration. They live in one fragment because one feature
+// (features/modules) owns both keywords — `use_feature()` and `mod_feature()`
+// are registered from the same directory.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `use` and `mod` declarations.
+export fn avra_modules_grammar() -> Grammar {
+    let gp = grammar {
+  use_decl    = "use" ( uat:"@" )? useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUse(uat, useg, unames)
+  mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
+    }
+    gp.grammar
+}

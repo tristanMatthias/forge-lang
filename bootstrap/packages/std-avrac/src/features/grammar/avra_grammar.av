@@ -16,8 +16,20 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar, compose_grammars}
+use features.grammar.{parse_grammar, Grammar, compose_grammars, compose_fragments}
 use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar}
+// t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
+// that owns the keyword (the same colocation `match_expr` already has for
+// patterns). Imported here rather than assembled in features/mod.av because this
+// file is where the whole-program grammar is composed; features/mod.av's
+// `feature_grammar_fragments` re-exports the same list, so there is ONE
+// definition of "which features contribute decl fragments".
+use features.fn_decl.{avra_fn_decl_grammar}
+use features.struct_decl.{avra_struct_decl_grammar}
+use features.enum_decl.{avra_enum_decl_grammar}
+use features.trait_decl.{avra_trait_decl_grammar}
+use features.impl_decl.{avra_impl_decl_grammar}
+use features.modules.{avra_modules_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 /// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
@@ -559,6 +571,29 @@ export fn avra_type_flip_grammar() -> Grammar {
     gp.grammar
 }
 
+/// t-47hc slice 9 — the DECL-keyword fragment registry: every feature that owns a
+/// declaration keyword contributes its rule(s) from its own directory, and this
+/// is the ONE list they are collected in. Adding a decl keyword is one line here
+/// plus a `grammar { }` block in the feature — never an edit to the central
+/// grammar body, which is the property the `decl_hand` flip spends.
+///
+/// Ordering is irrelevant to meaning (nonterminals bind by name after the flat
+/// merge) but IS stable here, so the composed rule list is deterministic.
+///
+/// `param` is deliberately NOT here: it is referenced by `fn_decl`,
+/// `method_member` and `impl_method`, so no single feature owns it — it stays in
+/// the shared base beside the expression ladder and the type spine.
+export fn feature_decl_grammar_fragments() -> List<Grammar> {
+    [
+        avra_fn_decl_grammar(),      // fn_decl
+        avra_struct_decl_grammar(),  // type_decl, field
+        avra_enum_decl_grammar(),    // enum_decl, variant
+        avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
+        avra_impl_decl_grammar(),    // impl_decl, impl_method
+        avra_modules_grammar(),      // use_decl, mod_decl
+    ]
+}
+
 /// The UNIFIED whole-program Avra grammar (ps3t.6.5.7 / the 6.5.11 composed
 /// slice): declarations on top, folding into a `program`, with one canonical
 /// version of each shared rule (declarations + their sub-structure, the
@@ -575,20 +610,7 @@ export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
   declaration = fn_decl | type_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
-  fn_decl     = "fn" name:IDENT "(" ( params:param ( "," params:param )* )? ")" ( "->" ret:type_expr )? "{" ( body:statement )* "}" -> MkFnDecl(name, params, ret, body)
-  type_decl   = "type" tname:IDENT "=" "{" ( fields:field ","? )* "}" -> MkTypeDecl(tname, fields)
-  enum_decl   = "enum" ename:IDENT "{" ( vars:variant ","? )* "}" -> MkEnumDecl(ename, vars)
-  trait_decl  = "trait" trname:IDENT "{" ( tmembers:trait_member )* "}" -> MkTraitDecl(trname, tmembers)
-  impl_decl   = "impl" itn:IDENT ( "for" ifortn:IDENT )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
-  use_decl    = "use" ( uat:"@" )? useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUse(uat, useg, unames)
-  mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
-  field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
-  variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
   param       = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
-  trait_member  = assoc_member | method_member
-  assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
-  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
-  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
   defer_stmt  = "defer" de:expression -> MkDefer(de)
@@ -620,5 +642,15 @@ export fn avra_program_grammar() -> Grammar {
               | "(" ( ca:expression ( "," ca:expression )* )? ")" -> call_suffix(ca)
   primary     = NUMBER | STRING | "true" | "false" | @hand(quote_expr) | IDENT
     }
-    gp.grammar
+    // The DECLARATION rules are no longer here: each decl keyword's rule is owned
+    // by its own feature (features/<name>/grammar.av) and collected through the
+    // registry, exactly as the pattern rules already are. `declaration` above
+    // still names them — cross-fragment nonterminal references bind by name
+    // against the merged rule set, so the composed grammar is the same language.
+    // This block stays FIRST so `program` remains the start symbol.
+    mut frags: List<Grammar> = [gp.grammar]
+    for g in feature_decl_grammar_fragments() {
+        frags.push(g)
+    }
+    compose_fragments(frags)
 }
