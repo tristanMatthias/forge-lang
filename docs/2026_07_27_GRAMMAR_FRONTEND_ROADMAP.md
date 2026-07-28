@@ -62,19 +62,19 @@ preference.
 | ✅ | `@when(in_quote_body)` + predicate validation (#1033) | — | 8 | done |
 | ✅ | `@peek(ident_lbrace)` | — | 8 | done |
 | ✅ | **splice goes native** | spends `in_quote_body` | 8 | done |
-| 1 | **`primary_base` deletion** | error-production for the trailing `else` | **7** | 2h |
-| 2 | `@when` over the postfix BASE (t-47hc.30) | new — reads `st.postfix_base` | 7 | 1.5h |
-| 3 | **`postfix_suffix` flip** | spends #2 | **6** | 2.5h |
-| 4 | **`primary_base`-dependent: `match_table`** (t-47hc.29) | spends `x{#cap}` + #1 | **5** | 2.5h |
-| 5 | **`match_expr` table form** | spends #4 | **4** | 1.5h |
-| 6 | scoped COUNTER mode (`@on`/`@off` on an int) | new | 4 | 1.5h |
-| 7 | **`quote_expr` flip** | spends #6 | **3** | 2.5h |
-| 8 | gensym counter on PState | new | 3 | 1h |
-| 9 | **`if_expr` / if-let flip** (t-47hc.26) | spends #8 | **2** | 2h |
-| 10 | feature-parser SEAM: fn over parse state, not `impl Parser` | new — architectural | 2 | 3h |
-| 11 | **`ident_primary` flip** (t-47hc.27) | spends #10 | **1** | 2.5h |
-| 12 | fragment REGISTRY for decl keywords | spends #10 | 1 | 2h |
-| 13 | **`decl_hand` flip** | spends #12 | **0** | 2.5h |
+| 1 | `@when` over the postfix BASE (t-47hc.30) | new — reads `st.postfix_base` | 8 | 1.5h |
+| 2 | **`postfix_suffix` flip** | spends #1 | **7** | 2.5h |
+| 3 | scoped COUNTER mode (`@on`/`@off` on an int) | new | 7 | 1.5h |
+| 4 | **`quote_expr` flip** | spends #3 | **6** | 2.5h |
+| 5 | gensym counter on PState | new | 6 | 1h |
+| 6 | **`if_expr` / if-let flip** (t-47hc.26) | spends #5 | **5** | 2h |
+| 7 | feature-parser SEAM: fn over parse state, not `impl Parser` | new — architectural | 5 | 3h |
+| 8 | **`ident_primary` flip** (t-47hc.27) | spends #7 | **4** | 2.5h |
+| 9 | fragment REGISTRY for decl keywords | spends #7 | 4 | 2h |
+| 10 | **`decl_hand` flip** | spends #9 | **3** | 2.5h |
+| 11 | **`match_table` flip** (t-47hc.29) | spends `x{#cap}` + #12's cells | **2** | 2.5h |
+| 12 | **`match_expr` table form** | spends #11 | **1** | 1.5h |
+| 13 | **`primary_base` deletion** — the alternation's TAIL, so it goes LAST | none (see below) | **0** | 2h |
 | 14 | **delete the hand core** — driver + lexer to an oracle-only build | — | 0 | 3h |
 
 **Subtotal: ~32 h.** Plus the observed 1-in-3 failure rate on flips (7 flips remain →
@@ -86,8 +86,9 @@ of background grinding** at the current cadence.
 
 ### The commitment
 
-- **Slice 1 drops the count to 7.** That is the next visible movement, and it is 2 hours.
-- **Slices 1–5 (≈10 h) get to 4 leaves** — half the burndown.
+- **Slice 2 drops the count to 7.** The first visible movement is one capability + one
+  flip, ~4 h — the count does not move on slice 1, which is a dormant capability.
+- **Slices 1–6 (≈12 h) get to 5 leaves.**
 - **Slices 1–13 (≈29 h) get to 0 leaves.**
 - **Slice 14 (3 h) is the payoff**: the ~2,456 lines delete in one commit.
 
@@ -98,8 +99,20 @@ direction:
 
 1. **Slice 10 (the seam) is the one real design step**, not a mechanical edit. It is the
    only line item where 3h could become 8h. Everything else is a known shape.
-2. **`primary_base`'s trailing `else`** may need genuine error-production support in the
-   DSL rather than a rule. If so slice 1 grows and slice 4 waits on it.
+2. **The TAIL-ROLE constraint (measured 2026-07-28, and it set the order above).**
+   A rule's LAST `@hand` branch is emitted **unguarded** — deliberately: it owns error
+   recovery for every token no earlier branch matched (`emit.av` ~585, and the comment
+   there says guarding it "would divert a stray token (e.g. `* 5`) to a DSL error
+   instead of the hand parser's recovery — the recovery-tree oracle's exact catch").
+   That role is **positional, not intrinsic**: deleting the current tail silently
+   promotes whichever branch is now last into a job it was not written for. Measured on
+   `unary` — removing `@hand(primary_base)` promotes `@hand(ident_primary)`, and
+   `* 5` becomes `undefined variable *` (F3000); recovery goes 41/41 → **26/41**.
+   Consequence: **within an alternation, the tail leaf is deleted LAST.** Once every
+   other `@hand` in that group is gone the last branch is native, emit's FIRST-guarded
+   + existing no-match-error path applies, and no new capability is needed. Per-slice
+   check: after any deletion, read the regenerated rule's tail and confirm no other
+   `@hand` got promoted — one grep.
 3. **The comptime path has no differential oracle.** Every flip touching quote/splice/
    macro-adjacent code risks a `value_to_expr_node` shape mismatch that only the
    `features/quote_expr/tests` and `std-cli/cmdgen` suites catch.
