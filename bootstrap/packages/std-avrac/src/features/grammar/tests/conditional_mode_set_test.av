@@ -1,0 +1,181 @@
+// WHY: t-47hc.34 — `@on_if(pred, flag)`, the CONDITIONAL mode-SET.
+//
+// `@on(flag)` sets a mode for an item's sub-parse unconditionally. The hand parser has
+// shapes where the set itself is conditional — a call's argument list runs under
+// `allow_it_sugar = is_method || saved_it`, where `is_method` asks whether the RECEIVER
+// is a field access (parse/mod.av postfix_step). There was no way to write that.
+//
+// Spelling it as two branches does not work, and the reason is worth stating because it
+// is the whole justification for a new marker rather than a grammar workaround:
+//
+//     | @when(base_field_access) "(" @on(allow_it_sugar) args ")" -> …
+//     | "(" args ")" -> …
+//
+// Both branches lead with `(`, so grammar_ambiguity_guard flags them — correctly. The
+// guard exempts an overlapping pair only when the earlier branch is `@try`-speculative or
+// LEADS with `@peek`, because those inspect the INPUT and therefore partition it. A
+// `@when` reads ambient state, so on the shared token BOTH branches remain candidates.
+// There is no allowlist; loosening the guard would blind it to real shadowing.
+//
+// Nor can the decision move into the builder. `allow_it_sugar` PROPAGATES into nested
+// sub-parses for the duration of the argument list — `xs.map(f(it))` applies the sugar
+// inside `f(...)` too, because the inner call sees the outer's saved flag. A build-time
+// read of the receiver would see the INNER call's receiver and skip it. The mode has to
+// genuinely be set during the sub-parse.
+//
+// Landed DORMANT: no production grammar spends it yet, so every generated parser is
+// byte-identical. The `f(args)` flip (t-47hc.33) spends it.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn, run_grammar_expr}
+
+fn rejects(src: string) -> bool { parse_grammar(src).error != "" }
+fn err_of(src: string) -> string { parse_grammar(src).error }
+
+fn rule_src(grammar_src: string, rule: string) -> string {
+    let gp = parse_grammar(grammar_src)
+    for gr in gp.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
+// `dot_postfix_ok` is a BASE predicate — deliberately chosen over a mode flag so the
+// emitted guard has to route through `base_pred`, which is the lockstep property.
+const G_BASE = "r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) e:NUMBER \"]\" -> Grouping(e)"
+// A MODE predicate, to prove the other emit shape.
+const G_MODE = "r = \"[\" @on_if(allow_struct_lit, allow_dot_postfix) e:NUMBER \"]\" -> Grouping(e)"
+
+spec "t-47hc.34: `@on_if(pred, flag)` parses and is validated in BOTH halves" {
+    then "a well-formed marker is accepted" {
+        !rejects(G_BASE) && !rejects(G_MODE)
+    }
+    then "an unknown PREDICATE is rejected, naming what it must be" {
+        // The half that would otherwise degrade quietly: an unrecognised predicate makes
+        // `modes_flag` answer TRUE for everything, so the gate would admit every branch.
+        let e = err_of("r = @on_if(allow_strct_lit, allow_it_sugar) NUMBER")
+        e.contains("@on_if") && e.contains("predicate")
+    }
+    then "an unknown FLAG is rejected too" {
+        err_of("r = @on_if(allow_struct_lit, allow_it_sguar) NUMBER").contains("@on_if")
+    }
+    then "a READ-ONLY predicate is still not a settable FLAG" {
+        // `at_quote_top` is derived from a counter — legal to READ, never to SET. The two
+        // halves validate against different lists precisely so this stays rejected.
+        rejects("r = @on_if(allow_struct_lit, at_quote_top) NUMBER")
+    }
+    then "but that same name IS legal in the predicate half" {
+        !rejects("r = @on_if(at_quote_top, allow_it_sugar) NUMBER")
+    }
+    then "a missing comma is a parse error, not a silent one-arg read" {
+        rejects("r = @on_if(allow_struct_lit allow_it_sugar) NUMBER")
+    }
+    then "`@on` and `@on_if` cannot both mark the same item" {
+        // They write the SAME field, so accepting the pair would silently keep only the
+        // second — a mode that looks gated and is not, or the reverse.
+        let e = err_of("r = @on(allow_it_sugar) @on_if(allow_struct_lit, allow_it_sugar) NUMBER")
+        e.contains("@on") && e.contains("same item")
+    }
+}
+
+spec "t-47hc.34: the emitted set is GUARDED, and the guard is the shared one" {
+    then "a BASE predicate emits a base_pred CALL, not a mode-field read" {
+        // The lockstep property: emit must not re-spell a predicate the executor owns.
+        // A `st.modes.dot_postfix_ok != 0` fallthrough would compile against a field that
+        // does not exist — the exact failure that shipped an empty `st.modes. != 0` in
+        // t-47hc.33 when a base predicate was missing from one of the two allowlists.
+        let s = rule_src(G_BASE, "r")
+        s.contains("base_pred(\"dot_postfix_ok\", st)") && !s.contains("st.modes.dot_postfix_ok")
+    }
+    then "a MODE predicate emits the mode-field read" {
+        rule_src(G_MODE, "r").contains("st.modes.allow_struct_lit != 0")
+    }
+    then "the SET is inside the guard" {
+        let s = rule_src(G_BASE, "r")
+        let g = s.index_of("base_pred(\"dot_postfix_ok\", st)")
+        let set = s.index_of("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
+        g >= 0 && set >= 0 && g < set
+    }
+    then "the SAVE and RESTORE are NOT inside the guard" {
+        // Restoring modes that were never changed is a no-op, so hoisting the save out
+        // keeps one emitted shape instead of two. But it only works if the save really
+        // does precede the guard and the restore really does follow the item.
+        let s = rule_src(G_BASE, "r")
+        let save = s.index_of("let __modes_")
+        let g = s.index_of("base_pred(\"dot_postfix_ok\", st)")
+        let restore = s.index_of("st.set_modes(__modes_")
+        save >= 0 && save < g && restore > g
+    }
+    then "the BARE-REFERENCE fast path honours the gate too" {
+        // A passthrough rule (`r = @on_if(p, f) child`) does NOT go through emit_item — it
+        // takes emit_ref_result's fast path, which had its OWN copy of the set line and so
+        // emitted an UNCONDITIONAL set while the interpreter gated it through `pred_ok`.
+        // That is engine divergence of exactly the kind this marker exists to prevent, and
+        // it is invisible to every test that only exercises a multi-item sequence.
+        // Both sites now share `mode_on_set_line`, so a guard cannot be added to one only.
+        let s = rule_src("r = @on_if(at_quote_top, allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+            s.contains("st.modes.quote_depth == 0") &&
+            s.index_of("st.modes.quote_depth == 0") < s.index_of("modes_with_flag_on")
+    }
+    then "and an unconditional `@on` on that SAME path stays unguarded" {
+        let s = rule_src("r = @on(allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") && !s.contains("if st.modes.quote_depth")
+    }
+    then "an UNCONDITIONAL `@on` is emitted exactly as before — no guard" {
+        // Byte-identity for every production grammar depends on this: `@on` must not
+        // acquire an `if` just because `@on_if` now exists.
+        let s = rule_src("r = \"[\" @on(allow_it_sugar) e:NUMBER \"]\" -> Grouping(e)", "r")
+        s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
+            !s.contains("if base_pred") && !s.contains("if st.modes.allow_struct_lit")
+    }
+}
+
+spec "t-47hc.34: the interpreter honours the gate in both directions" {
+    then "the guarded grammar still parses its input" {
+        // The mode is invisible to this input's shape, so the parse must be unaffected
+        // whichever way the predicate answers — the point is that it does not CRASH or
+        // change what is accepted, only what the sub-parse's modes are.
+        !run_grammar_expr(parse_grammar(G_BASE).grammar, "[ 7 ]").had_error
+    }
+    then "and so does the mode-predicate form" {
+        !run_grammar_expr(parse_grammar(G_MODE).grammar, "[ 7 ]").had_error
+    }
+    then "a FALSE predicate SKIPS the set — proven by what the sub-parse accepts" {
+        // Two arms that accept DIFFERENT tokens, selected by a `@when` read of the very
+        // flag under test, so which arm ran is observable from whether the parse succeeds
+        // rather than from anything internal. `dot_postfix_ok` consults the postfix BASE,
+        // unseeded here, so the predicate is FALSE: the flag must stay off, the guarded
+        // arm must decline, and the STRING-expecting fallback must reject a NUMBER.
+        let g = parse_grammar("r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
+            "      | @fallback b:STRING -> Grouping(b)")
+        g.error == "" && run_grammar_expr(g.grammar, "[ 7 ]").had_error
+    }
+    then "and the UNCONDITIONAL `@on` on the same grammar accepts it — the control" {
+        // Identical but for the marker. If this also failed, the assertion above would be
+        // proving nothing (the grammar could simply be broken); if this passed while the
+        // one above did too, the gate would not be gating.
+        let g = parse_grammar("r = \"[\" @on(allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
+            "      | @fallback b:STRING -> Grouping(b)")
+        g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ]").had_error
+    }
+    then "a TRUE predicate performs the set — the other direction" {
+        // `at_quote_top` is true at quote_depth 0, i.e. always in a bare run. Same
+        // grammar, predicate true, so the NUMBER-accepting arm must win.
+        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
+            "      | @fallback b:STRING -> Grouping(b)")
+        g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ]").had_error
+    }
+    then "and the set is RESTORED after the item, not leaked" {
+        // A sibling read AFTER the marked item must see the flag back off.
+        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" u:after -> Grouping(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
+            "      | @fallback b:STRING -> Grouping(b)\n" +
+            "after = @when(allow_it_sugar) c:STRING -> Grouping(c)\n" +
+            "      | @fallback d:NUMBER -> Grouping(d)")
+        // `after` takes NUMBER only when the flag is OFF again. A leak would demand STRING.
+        g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ] 9").had_error
+    }
+}

@@ -423,7 +423,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -594,6 +594,15 @@ fn at_on_marker(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "on"
+}
+
+/// True when the cursor is `@on_if` — the CONDITIONAL twin of at_on_marker (t-47hc.34).
+/// A distinct NAME from `on`, so the two detectors cannot both fire on one marker.
+fn at_on_if_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "on_if"
 }
 
 // ── @off / @on mode-SET marker POSITION validation (t-47hc) ──
@@ -1183,6 +1192,7 @@ fn parse_labeled(p: GP) -> GItem {
     // allow_dot_postfix inside `(...)`). Same STRICT grammar `@` `on` `(` NAME `)`,
     // validated against on_flag_supported. mode_off and mode_on can't both be set.
     mut mode_on = ""
+    mut mode_on_if = ""
     if at_on_marker(p) {
         let _ = p.advance()   // "@"
         let _ = p.advance()   // "on"
@@ -1198,6 +1208,36 @@ fn parse_labeled(p: GP) -> GItem {
             p.fail("expected a flag name in `@on(flag)`")
         }
         p.expect_punct(")", "expected `)` to close `@on(flag)`")
+    }
+    // t-47hc.34 CONDITIONAL mode-SET `@on_if(pred, flag)`: set `flag` for this item's
+    // sub-parse ONLY when `pred` holds, then restore. STRICT `@` `on_if` `(` NAME `,`
+    // NAME `)`. Both names are validated, each against the list that already owns it —
+    // the predicate against when_pred_supported (the same list `@when` uses) and the flag
+    // against on_flag_supported (the same list `@on` uses) — so a typo in either half is
+    // a hard grammar-parse error rather than a guard that silently never fires.
+    if at_on_if_marker(p) {
+        // Both markers write `mode_on`, so accepting the pair would silently keep only
+        // the second — a mode that looks gated and is not, or the reverse.
+        if mode_on != "" { p.fail("`@on` and `@on_if` cannot both mark the same item — they set the same flag") }
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "on_if"
+        p.expect_punct("(", "expected `(` after `@on_if`")
+        if p.peek().kind == "NAME" {
+            let pr = p.advance().text
+            if when_pred_supported(pr) { mode_on_if = pr }
+            else { p.fail("unknown `@on_if` predicate `${pr}` — it must be a `@when` predicate name") }
+        } else {
+            p.fail("expected a predicate name in `@on_if(pred, flag)`")
+        }
+        p.expect_punct(",", "expected `,` between the predicate and the flag in `@on_if(pred, flag)`")
+        if p.peek().kind == "NAME" {
+            let fl = p.advance().text
+            if on_flag_supported(fl) { mode_on = fl }
+            else { p.fail("unknown `@on_if` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)") }
+        } else {
+            p.fail("expected a flag name in `@on_if(pred, flag)`")
+        }
+        p.expect_punct(")", "expected `)` to close `@on_if(pred, flag)`")
     }
     // t-47hc.32 counter-SET marker `@bump(counter)`: increment an ExprModes int cell for
     // this item's sub-parse, then restore — the hand parse_quote's save/bump/restore
@@ -1241,7 +1281,7 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, cut, require, bound: base.bound }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, bound: base.bound }
 }
 
 // postfix = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?

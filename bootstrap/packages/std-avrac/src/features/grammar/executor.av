@@ -1681,6 +1681,14 @@ fn exec_item_marked(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: boo
     // `@on(flag)` mode-SET marker: the SET-ON twin — set the flag ON for the item's
     // sub-parse, then restore (parse_paren_expr's `allow_dot_postfix = true`).
     if item.mode_on != "" {
+        // `@on_if(pred, flag)` (t-47hc.34): the set is CONDITIONAL. The predicate is
+        // read through the SAME `pred_ok` a `@when` guard uses, so the two markers can
+        // never disagree about what a name means. A false predicate leaves the modes
+        // untouched — NOT set-then-restore, which would be observably identical here but
+        // would diverge the moment a sub-parse read the flag mid-item.
+        if item.mode_on_if != "" && !pred_ok(item.mode_on_if, st) {
+            return exec_item_body(g, item, st, env, multi, annots)
+        }
         let saved = st.push_mode_on(item.mode_on)
         let r = exec_item_body(g, item, st, env, multi, annots)
         st.restore_modes(saved)
