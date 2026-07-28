@@ -1192,6 +1192,30 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // (which parses it correctly, byte-identically), whereas a false positive
     // would let a native branch swallow a `kw { … }` construct whose feature owns
     // the block. Absence of information must never widen what the grammar claims.
+    // `IDENT` immediately followed by a TEMPLATE — a TAGGED TEMPLATE, `` tag`…` ``
+    // (t-47hc slice 8). Needed because a grammar branch is dispatched on its FIRST
+    // TOKEN only: without this, an `n:IDENT t:TEMPLATE` branch would be ENTERED on
+    // every identifier and then fail matching the second token, rather than falling
+    // through to the plain-identifier branch beside it. (That is the exact failure
+    // #1037 hit and documented on the `.`-led postfix forms.)
+    // A PLAIN identifier — an IDENT that is NOT the head of any other IDENT-led form,
+    // i.e. not followed by `{` and not followed by a TEMPLATE (t-47hc slice 8).
+    // Load-bearing, not an optimisation: without it the bare-identifier branch is
+    // entered on `table {` / `grammar {` too, yields a bare `Ident`, and leaves the
+    // `{ … }` unconsumed — so those constructs would silently stop reaching the
+    // `@hand(primary_base)` tail that parses them. Excluding both suffixed shapes here
+    // is what makes the fall-through to the hand parser correct by construction.
+    if cond == "ident_plain" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return true }
+        let nx = st.toks[st.pos + 1]
+        return nx.text != "{" && nx.kind != "TEMPLATE"
+    }
+    if cond == "ident_template" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].kind == "TEMPLATE"
+    }
     if cond == "ident_lbrace_plain" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }

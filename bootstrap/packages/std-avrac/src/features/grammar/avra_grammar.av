@@ -126,8 +126,12 @@ fn avra_expr_core() -> Grammar {
              | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:@hand(ident_primary) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+  struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
+  tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+
                    ( @when(allow_struct_lit) lb:"{" ( f:field_init )* "}" )?
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
