@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use features.grammar.{code_at, is_ident_start_code}
@@ -422,7 +422,7 @@ export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, hand_delegate: Parser? }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, hand_delegate: Parser? }
 
 /// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
 /// aliases the parser's mutable bag record, so it cannot by itself preserve the
@@ -516,6 +516,22 @@ impl PState {
         let saved = self.modes
         self.modes = modes_with_counter_bumped(self.modes, counter)
         saved
+    }
+    /// Mint a hygienic temp name for a build action's desugar (`if let`, `let-else`).
+    /// The format is core.gensym_name's — `$tag$N` — and the `$` is the whole point: the
+    /// lexer admits only letters / digits / `_` in identifiers, so user source can NEVER
+    /// produce a `$`-bearing name and the temp cannot shadow or be shadowed.
+    ///
+    /// `gensym_seq` lives on PState and NOT in ExprModes, deliberately. ExprModes is
+    /// saved/restored by the `@off`/`@on`/`@bump` markers and by speculative rollback; a
+    /// hygiene counter must be MONOTONIC, because rolling it back would re-mint an
+    /// already-issued name. The hand parser documents the same exclusion on save_state
+    /// ("NOT snapshotted, by design: gensym_seq ONLY"), and the `@try` path here
+    /// snapshots named fields rather than the whole PState, so this is correct by
+    /// construction rather than by remembering.
+    fn fresh(self, tag: string) -> string {
+        self.gensym_seq = self.gensym_seq + 1
+        gensym_name(tag, self.gensym_seq)
     }
     /// The `@on(flag)` SET-ON twin of push_mode_off: save modes, turn the flag ON,
     /// return the saved modes for restore_modes.
@@ -714,7 +730,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: d }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: d }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -740,7 +756,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -775,7 +791,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -799,7 +815,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -828,7 +844,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -1135,6 +1151,13 @@ export fn modes_with_flag_off(modes: ExprModes, flag: string) -> ExprModes {
     if flag == "allow_it_sugar" { return modes with { allow_it_sugar: false } }
     if flag == "cell_mode" { return modes with { cell_mode: false } }
     modes
+}
+
+/// Mint a hygienic temp name — the free-function form of PState.fresh, so a grammar
+/// BUILD ACTION and the emitted parser can both call it by the same name. Shared, not
+/// re-spelled: the counter must be one sequence per parse or two desugars could collide.
+export fn fresh_name(st: PState, tag: string) -> string {
+    st.fresh(tag)
 }
 
 /// The `@bump(counter)` twin of modes_with_flag_off/on — INCREMENTS an int cell rather
@@ -1847,7 +1870,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1865,7 +1888,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     let te = capval_to_texpr(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1890,7 +1913,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1908,7 +1931,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
     let pat = capval_to_pat(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1932,7 +1955,7 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1952,7 +1975,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
 /// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1975,7 +1998,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2023,7 +2046,7 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {

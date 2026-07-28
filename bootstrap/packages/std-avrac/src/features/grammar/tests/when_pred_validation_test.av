@@ -219,3 +219,56 @@ spec "t-47hc.32: @bump(counter) scoped counter mode" {
         run_grammar_expr(gp.grammar, "[ 7 ] 8").had_error
     }
 }
+
+// t-47hc — the GENSYM counter on PState. A build action that DESUGARS (`if let` becomes
+// a temp binding plus a match) needs a fresh-name source. Format is core.gensym_name's
+// `$tag$N`, shared rather than re-spelled: the `$` is unforgeable by user source (the
+// lexer admits only letters/digits/`_` in identifiers), so a temp can never shadow or be
+// shadowed by a user binding.
+//
+// The subtle part, and the reason this is its own capability rather than a one-liner in
+// the flip: the counter lives on PState, NOT in ExprModes. ExprModes is saved/restored by
+// @off/@on/@bump and by speculative rollback; a hygiene counter must be MONOTONIC, since
+// rolling it back would re-mint an already-issued name. The hand parser documents the
+// same exclusion ("NOT snapshotted, by design: gensym_seq ONLY").
+
+use @std.avrac.features.grammar.{new_pstate, fresh_name}
+use @std.avrac.core.{is_gensym_name}
+
+spec "t-47hc: the gensym counter mints hygienic temps" {
+    then "a minted name is recognised as a gensym" {
+        is_gensym_name(fresh_name(new_pstate("x"), "iflet"))
+    }
+    then "it is unforgeable — the name carries the `$` the lexer cannot produce" {
+        fresh_name(new_pstate("x"), "iflet").contains("$")
+    }
+    then "the tag appears, so distinct desugars are distinguishable in a dump" {
+        fresh_name(new_pstate("x"), "iflet").contains("iflet")
+    }
+    then "successive mints on ONE state are distinct" {
+        let st = new_pstate("x")
+        let a = fresh_name(st, "t")
+        let b = fresh_name(st, "t")
+        let c = fresh_name(st, "t")
+        a != b && b != c && a != c
+    }
+    then "the counter is MONOTONIC — a later mint never reuses an earlier name" {
+        // The property backtracking must not break: were the counter restored on
+        // rollback, a retried branch would re-mint `$t$1` for a DIFFERENT binding and
+        // two distinct temps would collide.
+        let st = new_pstate("x")
+        let first = fresh_name(st, "t")
+        mut seen_again = false
+        mut i = 0
+        while i < 5 {
+            if fresh_name(st, "t") == first { seen_again = true }
+            i = i + 1
+        }
+        !seen_again
+    }
+    then "a FRESH state restarts the sequence — the counter is per-parse, not global" {
+        // Per-parse, so the same source always desugars to the same names (byte-identical
+        // output); global state would make emission order-dependent.
+        fresh_name(new_pstate("x"), "t") == fresh_name(new_pstate("y"), "t")
+    }
+}
