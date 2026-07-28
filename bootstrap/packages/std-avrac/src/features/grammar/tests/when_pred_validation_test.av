@@ -173,6 +173,24 @@ spec "t-47hc.30: postfix-BASE predicates" {
     then "the @when diagnostic lists the base predicates" {
         err_of("r = @when(base_callble) NUMBER").contains("base_callable")
     }
+    then "asked with NO postfix chain, it answers false instead of crashing" {
+        // A base predicate is validated by NAME, not by position, so nothing stops a
+        // grammar writing one on a branch that is not inside a `( postfix_suffix )*`
+        // loop — and branch_pred_ok then runs it with `postfix_base` still at the
+        // arena's NULL NICHE. Ids are 1-based, so dereferencing that reads index -1.
+        // Gated branch + ungated sibling: the sibling is what must match.
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        !run_grammar_expr(gp.grammar, "7").had_error
+    }
+    then "the same holds for the other base predicate" {
+        let gp = parse_grammar("r = @when(base_upper_ident) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        !run_grammar_expr(gp.grammar, "7").had_error
+    }
+    then "a SOLE base-gated branch fails cleanly rather than dereferencing the niche" {
+        // No sibling to fall through to: the rule must report, not read out of bounds.
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n)")
+        run_grammar_expr(gp.grammar, "7").had_error
+    }
 }
 
 // t-47hc.32 — `@bump(counter)`, the scoped COUNTER mode. `@on`/`@off` set a settable

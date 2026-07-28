@@ -934,6 +934,16 @@ export fn is_base_pred(flag: string) -> bool {
 /// `@peek` guard emits `lookahead_ok(...)`, so interpreter and generated parser cannot
 /// disagree on a predicate's meaning.
 export fn base_pred(flag: string, st: PState) -> bool {
+    // NO BASE YET => the predicate is false, not a crash. `postfix_base` holds
+    // `ExprId(0)` — the arena's NULL NICHE — until `seed_postfix` runs, and arena ids
+    // are 1-based (`get` indexes `raw() - 1`), so dereferencing it reads index -1.
+    // Compared, never peeled: ids are opaque handles (F3106 gates `.raw()` to `core`),
+    // and `ExprId(0)` is the same sentinel every PState constructor here writes.
+    // Nothing stops a grammar from writing `@when(base_callable)` on a branch outside a
+    // postfix chain: the predicate is validated by NAME, not by position, and
+    // `branch_pred_ok` runs it wherever it appears. "Is the base callable" has one honest
+    // answer when there is no base.
+    if st.postfix_base == ExprId(0) { return false }
     let e = st.store.exprs.get(st.postfix_base)
     if flag == "base_callable" {
         return match e {
