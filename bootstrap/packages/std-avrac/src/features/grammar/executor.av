@@ -2595,6 +2595,10 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
         "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
+        // t-47hc slice 8 — the two IDENT-led primaries the `ident_primary` flip needs.
+        // Dormant until a grammar references them.
+        "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
+        "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
         // ── Native `postfix_suffix` steps (t-47hc.33) ──
@@ -4010,6 +4014,34 @@ export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
         .Ok(id) -> id
         .Err(m) -> st.error_node(m)
     }
+}
+
+/// `Name { f: v, … }` — a plain (unqualified) STRUCT LITERAL, the grammar-expressible
+/// branch of the hand `parse_ident_expr` (t-47hc slice 8). The nominal sibling of
+/// `mk_qualified`'s struct-literal half: same `Expr.StructLit` payload and the same
+/// `capval_to_finit_list` field decoding, with the name taken from one IDENT instead
+/// of rebuilt from `@pkg::mod::` segments.
+///
+/// Unlike `mk_qualified` there is no `lb` capture to distinguish an EMPTY literal
+/// from a bare ident, because the two are separate grammar branches here: this
+/// builder is reached only when the `{` was actually matched, so `Name {}` (no
+/// fields) is still a StructLit with an empty field list, exactly as the hand
+/// parser builds it.
+export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
+    st.store.add_expr(Expr.StructLit(capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// A TAGGED TEMPLATE — ``tag`…` `` — the hand `parse_ident_expr`'s template branch
+/// (t-47hc slice 8). Desugars to a CALL of the tag with the interpolated template as
+/// its single argument, which is exactly what the hand builds:
+///     Expr.Call(Expr.Ident(tag), [desugar_template(raw)])
+/// The template argument goes through the same `desugar_template_store` that
+/// `mk_template` uses, so an interpolated tagged template lowers identically to a
+/// bare one — only the surrounding call differs.
+export fn mk_tagged_template(st: PState, sp_start: int, ncap: CapVal, tcap: CapVal) -> ExprId {
+    let tag_id = st.store.exprs.add_leaf(Expr.Ident(capval_tok_text(ncap)))
+    let arg_id = mk_template(st, tcap)
+    st.store.add_expr(Expr.Call(tag_id, [arg_id]), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `@pkg::mod::name` and its struct-literal form `@pkg::mod::Name { f: v }` (t-47hc.18b).
