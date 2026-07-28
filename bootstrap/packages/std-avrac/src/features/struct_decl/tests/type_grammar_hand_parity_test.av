@@ -58,11 +58,9 @@ spec "t-47hc slice 10.4: the struct fragment accepts the hand's GENERIC forms" {
     }
 }
 
-spec "t-47hc slice 10.4: the forms this increment deliberately does NOT cover" {
-    then "newtype and union-alias are still hand-only — a separate node, a separate step" {
-        // Pinned so the next increment has a measured starting point rather than a guess,
-        // and so nobody mistakes this for parity on the whole keyword.
-        dsl_program("type UserId = UUID\n").contains("parse error") &&
-            !hand_program("type UserId = UUID\n").contains("parse error")
-    }
-}
+// The non-brace right-hand sides — newtype, union-alias, and the `without` / `only`
+// type operators — were pinned here as still hand-only while 10.4 was the head, so that
+// 10.5 would start from a measured fact instead of a guess. 10.5 closed them, so that
+// assertion is now false BY DESIGN and its coverage lives in
+// struct_decl/tests/type_alias_forms_parity_test.av. Deleted rather than inverted: a
+// "these are covered elsewhere" assertion tests nothing.

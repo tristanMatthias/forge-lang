@@ -7,13 +7,16 @@
 // partial trees + string diags) and the hand parser's fail-fast F-codes reconcile
 // cleanly only on MISSING-REQUIRED-TERMINAL malformations, where both fail-fast.
 // This test asserts accept/reject PARITY over that curated corpus. The hand
-// parser also has LENIENT EDGES — it tolerates some partial/empty forms a clean
-// grammar rejects — which are NOT parity and are PINNED here as documented,
-// tested boundary facts (not hidden surprises), deferred to validation on the
-// EMITTED parser during the 6.5.12 swap-in where both share the fail-fast model.
+// parser also had LENIENT EDGES — partial/empty forms it tolerated and a clean
+// grammar rejected — pinned here as documented boundary facts rather than hidden
+// surprises. The one that was pinned (`type X =`) is now PARITY: t-47hc slice
+// 10.5 widened `type`'s fragment to the hand's whole right-hand side, which
+// closed it. Any edge pinned here in future should be read the same way — a
+// divergence waiting to be closed by a flip, not a permanent carve-out.
 
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
 
 // True when the DSL (executor over the whole-program grammar) reports an error.
 fn dsl_rejects(src: string) -> bool {
@@ -30,6 +33,25 @@ fn agree(src: string) -> bool { dsl_rejects(src) == hand_rejects(src) }
 
 // Both parsers CLEARLY reject `src` (used for missing-required-terminal cases).
 fn both_reject(src: string) -> bool { dsl_rejects(src) && hand_rejects(src) }
+
+// The rendered tree, for the one case where "both accepted" is not a strong enough
+// claim — a converged edge has to build the SAME node, or it is just two different
+// kinds of acceptance.
+fn dsl_render(src: string) -> string {
+    let r = run_grammar_stmt(avra_program_grammar(), src)
+    if r.had_error { return "<dsl parse error>" }
+    match r.store.stmts.get(r.root) {
+        .Block(ids) -> render_stmt_ids(r.store, ids)
+        _ -> "<not a program block>"
+    }
+}
+
+fn hand_render(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
 
 spec "ps3t.6.5.9: DSL and hand parser agree on accept/reject (diagnostic equivalence)" {
     given "well-formed declarations are ACCEPTED by both (no false rejects)" {
@@ -51,12 +73,18 @@ spec "ps3t.6.5.9: DSL and hand parser agree on accept/reject (diagnostic equival
         then "a missing type name `type = { }` is rejected by both" { both_reject("type = { }") }
         then "a field with no type `type T = { x: }` is rejected by both" { both_reject("type T = { x: }") }
     }
-    given "the hand parser's LENIENT EDGES (pinned, NOT parity — deferred to 6.5.12)" {
-        then "`type X =` (empty RHS): the hand parser TOLERATES it, the DSL rejects it" {
-            // The canonical lenient-edge case from the 6.5.9 finding: parse_type_expr
-            // accepts the empty/partial RHS (returns .Ok) while a clean grammar rejects
-            // it. Pinned so the boundary is a known, tested fact, not a surprise.
-            dsl_rejects("type X =") && !hand_rejects("type X =")
+    // The 6.5.9 lenient-edge case, CLOSED by t-47hc slice 10.5 rather than deferred to
+    // 6.5.12. It used to read "the hand TOLERATES `type X =`, the DSL rejects it" — a
+    // pinned divergence. Widening `type`'s fragment to cover the hand's whole right-hand
+    // side made both groups (`= { … }` and `= <type>`) optional, so an empty RHS now
+    // lands on the same no-alias path in both engines and builds the same empty
+    // `Stmt.TypeDecl`. That is convergence, not over-acceptance — asserted below as
+    // agreement on the NODE, not merely on the verdict, and the neighbouring
+    // `type = { }` / `type T = { x: }` cases still reject in both.
+    given "the hand parser's former LENIENT EDGE is now parity (t-47hc slice 10.5)" {
+        then "`type X =` (empty RHS) is ACCEPTED by both, and builds the same node" {
+            !dsl_rejects("type X =") && !hand_rejects("type X =") &&
+                dsl_render("type X =") == hand_render("type X =")
         }
     }
 }

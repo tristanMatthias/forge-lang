@@ -1836,6 +1836,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // asymmetry is why the executor's generic arms were dormant capability with no
         // emit twin (t-47hc slice 10, t-myz7); both now call one shared core.
         "MkFnDecl" if args.length == 5 -> "mk_fn_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}_list)"
+        "MkTypeDeclAny" -> "mk_type_decl_any(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}, capval_present(${args[4]}), ${args[5]}_list)"
         "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
         "MkEnumDecl" if args.length == 3 -> "mk_enum_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
         "MkTypeParam" -> "mk_type_param(capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
@@ -2438,7 +2439,7 @@ fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkTypeDecl" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
     if bn == "MkField" { return "field" }
