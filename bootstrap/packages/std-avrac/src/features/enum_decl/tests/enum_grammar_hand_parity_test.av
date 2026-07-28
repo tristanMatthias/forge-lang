@@ -21,7 +21,7 @@
 // `tparam` lives in features/generics, not here: fn / type / enum / trait / impl all take
 // the same `<T, U: Bound>` list, so it is shared sub-structure the way `field` is.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -67,5 +67,55 @@ spec "t-47hc slice 10.3: DOC comments between variants are skipped, as the hand 
         agrees("enum E {\n    /// the a\n    A,\n    B\n}\n") &&
             agrees("enum E {\n    A,\n    /// the b\n    B\n}\n") &&
             agrees("enum E {\n    A\n    /// trailing\n}\n")
+    }
+}
+
+// ── ROUTING (t-47hc slice 10.11) ──────────────────────────────────────────────
+//
+// The parity above is the precondition; this is the flip. `enum` joins `use` / `mod` /
+// `shape` on the production declaration path as a `@try` branch — native for VALID
+// input, rolling back into `@hand(decl_hand)` the moment it reports, so error recovery
+// stays the hand parser's byte-for-byte (t-myz7.2, #1061).
+//
+// Nine malformed enum forms are in the invalid corpus (error_recovery_differential_test)
+// covering the shapes routing actually reaches: a missing name, a truncated generic
+// list, an empty payload field, a non-IDENT variant. Those measure the flip; what this
+// spec pins is the DISPATCH, structurally on the emitted source — a routed rule emitted
+// AFTER the decl_hand gate is dead code that produces correct output and no diagnostic,
+// which is the failure mode #1028 was caught on.
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+spec "t-47hc slice 10.11: `enum` is routed onto the production path, speculatively" {
+    then "parse_enum_decl and parse_variant exist and dispatch BEFORE the decl_hand gate" {
+        let src = decl_src()
+        let enum_at = src.index_of("parse_enum_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("fn parse_enum_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_variant(st: PState) -> CapVal") &&
+            enum_at >= 0 && hand_at >= 0 && enum_at < hand_at
+    }
+
+    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+        let src = decl_src()
+        src.contains("s_last = parse_enum_decl(st)") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the variant list lowers to the SHARED cores, not an executor-only build" {
+        // The recurring trap this slice has hit four times: an executor-only build passes
+        // every interpreter-driven parity spec above and emits nothing usable.
+        let src = decl_src()
+        src.contains("mk_evariant(capval_tok_text(vname), vfields_list)") &&
+            src.contains("vars_list.push(capval_to_variant(st, parse_variant(st)))")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 }
