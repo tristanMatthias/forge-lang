@@ -23,6 +23,7 @@ use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
 use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
+use features.closures.{expr_contains_it, wrap_in_it_lambda}
 
 extern fn avra_gensym() -> int
 
@@ -520,6 +521,29 @@ impl PState {
         self.postfix_step_base = self.postfix_base
         self.postfix_step_sp = self.postfix_sp_start
     }
+    /// Put the per-step FREEZE back exactly as a chain rule found it (t-47hc.33).
+    ///
+    /// The snapshot above freezes ONE step, but the freeze slot is PState state, not a
+    /// stack — so a nested chain's own `snap_postfix_step` overwrites the OUTER step's
+    /// frozen base before that step's build reads it. `f((p) -> p.name)` built
+    /// `Call(p, …)` (the lambda body's chain won the slot) and the resolver then rejected
+    /// a perfectly good program with `undefined variable p`. Nesting is the norm, not the
+    /// exception — every suffix that recurses into `expression` (`[i]`, `(args)`) does it.
+    ///
+    /// The invariant that makes it sound is CHAIN NEUTRALITY: a chain rule (`unary`, build
+    /// `fold_postfix_with`) leaves the freeze exactly as it found it, so an inner chain is
+    /// invisible to the outer step whose build has yet to run — the hand parser gets this
+    /// for free by keeping `rid` as a LOCAL of parse_call. Restored at chain EXIT, after
+    /// the fold, so the rule's own `( postfix_suffix )*` loop still threads normally.
+    ///
+    /// DELIBERATELY only the freeze. `postfix_base` self-heals — every step's build ends in
+    /// `postfix_step_node`, which re-seeds it — and `postfix_sp_start` is the chain's SPAN
+    /// anchor, so restoring it would move recorded positions and is a separate, IR-visible
+    /// change rather than part of this correctness fix.
+    fn restore_postfix_chain(self, step_base: ExprId, step_sp: int) {
+        self.postfix_step_base = step_base
+        self.postfix_step_sp = step_sp
+    }
     /// The `@off(flag)` mode-SET marker's set half: save the current modes, clear
     /// the named flag, return the SAVED modes for restore_modes. The executor twin
     /// of the hand parser's `saved = allow_struct_lit; allow_struct_lit = false`.
@@ -898,7 +922,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 /// so the executor and the emitter cannot disagree about which rules need the snapshot.
 fn build_is_postfix_step(bn: string) -> bool {
     bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" ||
-        bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix"
+        bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix"
 }
 
 fn rule_has_postfix_step_build(g: Grammar, name: string) -> bool {
@@ -925,8 +949,16 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     if rule_has_postfix_step_build(g, name) { st.snap_postfix_step() }
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
+    // Chain neutrality (see PState.restore_postfix_chain): a chain rule restores the four
+    // chain fields on exit so a NESTED chain — every `[i]` index, every `(args)` argument —
+    // is invisible to the outer step whose build has yet to run. Emit's twin is the
+    // save/restore wrapper around the generated `parse_<rule>` fn.
     mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false, abort: false }
+    let chain_rule = rule_seeds_postfix(g, r)
+    let c_step_base = st.postfix_step_base
+    let c_step_sp = st.postfix_step_sp
     let v = exec_node(g, r.body, st, env, false, [])
+    if chain_rule { st.restore_postfix_chain(c_step_base, c_step_sp) }
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     // bare terminal yields a `Tok`, so coerce that to a literal Expr node
     // HERE, at the rule boundary — otherwise a rule reference captured in a
@@ -970,7 +1002,7 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 /// Kept as its own list so `pred_ok` can route them, and so `modes_flag` stays a pure
 /// function of `ExprModes` (a base read needs the whole PState).
 export fn is_base_pred(flag: string) -> bool {
-    flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok"
+    flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok" || flag == "base_field_access"
 }
 
 /// Read a predicate off the accumulated POSTFIX BASE (`st.postfix_base`) — the base the
@@ -1038,6 +1070,16 @@ export fn base_pred(flag: string, st: PState) -> bool {
         // itself an uppercase ident (an enum-TYPE prefix like `Foo.Bar`).
         if !next_upper { return true }
         return base_pred("base_upper_ident", st)
+    }
+    // `obj.method(...)` vs `f(...)`. The hand sets `allow_it_sugar = is_method || saved_it`
+    // where is_method is "the receiver is a FieldAccess". That disjunction is exactly two
+    // grammar alternatives: this predicate picks the one that turns the mode ON, and the
+    // unguarded sibling leaves it at whatever it already was.
+    if flag == "base_field_access" {
+        return match st.store.exprs.get(st.postfix_base) {
+            .FieldAccess(_, _) -> true
+            _ -> false
+        }
     }
     if flag == "base_upper_ident" {
         return match e {
@@ -1143,6 +1185,22 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // base is a PascalCase Ident / qualified path with a PascalCase last segment AND a `(`
     // follows the field name; that form needs an argument list, so it stays hand-owned.
     // Everything else with an IDENT field name is a plain FieldAccess.
+    // `,` that is followed by ANOTHER argument, not by the closing `)` — the
+    // trailing-comma guard. `f(a, b,)` is legal (parse_arg_list_ids_inner advances past
+    // the comma and stops when `)` follows), so the argument loop must NOT enter on a
+    // trailing separator: without this it consumed the `,` and then demanded an
+    // expression at `)`, turning a valid call into `(call f (a, b, (error)))`.
+    if cond == "comma_not_rparen" {
+        if st.cur().tk != Tk.Comma { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].tk != Tk.RightParen
+    }
+    // `.0` tuple index — a second-token guard, same reason every `.`-led branch needs one.
+    if cond == "dot_number" {
+        if st.cur().tk != Tk.Dot { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].kind == "NUMBER"
+    }
     if cond == "dot_plain_field" {
         if st.cur().tk != Tk.Dot { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -1522,6 +1580,18 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
 
 /// True iff a sequence's build is `fold_postfix_with` — its item 0 is the postfix-chain
 /// BASE that must seed st.postfix_base before the ( postfix_suffix )* repetition runs.
+/// True for THE chain rule — the one whose single branch folds a postfix chain
+/// (`unary`). Its four chain fields are saved and restored around the rule body so a
+/// nested chain can't be seen by the outer one (PState.restore_postfix_chain).
+fn rule_seeds_postfix(g: Grammar, r: Rule) -> bool {
+    match r.body {
+        .Alt(branches) -> {
+            for b in branches { if seq_seeds_postfix(b) { return true } }
+            false
+        }
+    }
+}
+
 fn seq_seeds_postfix(seq: GSeq) -> bool {
     match seq.build {
         .Call(name, _) -> name == "fold_postfix_with"
@@ -2515,6 +2585,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
         // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkCallArg" if args.length == 1 -> CapVal.Node(mk_call_arg(st, env.get(args[0])))
+        "MkCallSuffix" if args.length == 1 -> CapVal.Node(mk_call_suffix(st, env.get(args[0])))
+        "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkIndexSuffix" if args.length == 2 -> CapVal.Node(mk_index_suffix(st, env.get(args[0]), env.get(args[1])))
         "MkNone" if args.length == 0 -> mk_none_cap(st)
         "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
@@ -4164,6 +4237,30 @@ export fn mk_index_suffix(st: PState, icap: CapVal, tcap: CapVal) -> ExprId {
 /// as PRESENT, so `[i]` and `[a..b]` could not be told apart by the thing that decides.
 export fn mk_none_cap(st: PState) -> CapVal {
     CapVal.Nil
+}
+
+/// ONE call argument, reproducing parse_arg_list_ids_inner's `it` sugar: under
+/// `allow_it_sugar` an argument that MENTIONS `it` becomes `(it) -> arg`, so
+/// `xs.map(it * 2)` means `xs.map((it) -> it * 2)`. An argument that is already a lambda
+/// is left alone — wrapping it would double-bind.
+export fn mk_call_arg(st: PState, ecap: CapVal) -> ExprId {
+    let id = capval_to_expr(st, ecap)
+    if st.modes.allow_it_sugar == 0 { return id }
+    match st.store.exprs.get(id) {
+        .Lambda(_, _) -> id
+        _ -> {
+            if expr_contains_it(st.store, st.store.exprs.get(id)) {
+                return st.store.intern_expr_leaf(wrap_in_it_lambda(id))
+            }
+            id
+        }
+    }
+}
+
+/// `expr(args)`. The receiver is the chain base as of this step's ENTRY, not the live
+/// accumulator — the argument list recurses into `expression` and runs its own chain.
+export fn mk_call_suffix(st: PState, acap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.Call(st.postfix_step_base, capval_to_node_list(acap)))
 }
 
 export fn mk_try_suffix(st: PState) -> ExprId {

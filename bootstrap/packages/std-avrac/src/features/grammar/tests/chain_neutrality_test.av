@@ -1,0 +1,59 @@
+// WHY: t-47hc.33 — the postfix CHAIN is state on PState, and a chain that recurses into
+// `expression` must leave that state exactly as it found it.
+//
+// The hand parser keeps the chain's two cursors as LOCALS of parse_call (`rid`, the
+// accumulated receiver, and `sp_start`, the chain's start byte), so a nested chain — the
+// index inside `xs[…]`, every argument inside `f(…)` — simply cannot disturb the outer
+// one. The grammar engine threads the same two cursors through PState fields instead
+// (`postfix_base` / `postfix_sp_start`, plus the per-step freeze `postfix_step_base` /
+// `postfix_step_sp`), and PState fields are SLOTS, not a stack.
+//
+// So the moment a native suffix recursed into `expression`, the inner chain started
+// overwriting the outer step's frozen receiver before that step's build read it. `xs[o.j]`
+// built `Index(o, …)` — the subscript's own `o.j` chain won the slot — and the receiver
+// was simply the wrong node, with nothing structurally wrong to see.
+//
+// It bites HARDEST where the inner chain is large: an argument list that contains a lambda
+// whose body is itself a chain produced `Call(p, …)` and a resolver error (`undefined
+// variable p`) pointing at the call site. That form is not native yet (see t-47hc.33), but
+// the index form recurses exactly the same way and is.
+//
+// The fix is chain neutrality: the chain rule saves the four fields on entry and restores
+// them after its fold. These are the BEHAVIOURAL assertions for it — postfix_flip_test
+// pins the emitted shape, this pins what the shape has to achieve, run through the
+// interpreter over the real production grammar.
+
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.core.{render_expr_id}
+
+fn r(src: string) -> string {
+    let out = run_grammar_expr(avra_expr_grammar(), src)
+    render_expr_id(out.store, out.root)
+}
+
+spec "t-47hc.33: a nested chain does not steal the outer step's receiver" {
+    then "an index whose SUBSCRIPT is a chain keeps its own receiver" {
+        // The regression, minimally: `o.j` is a whole nested chain in subscript position.
+        // Pre-fix this rendered `(index o (field o j))` — the subscript's base as receiver.
+        r("xs[o.j]") == "(index xs (field o j))"
+    }
+    then "a SLICE whose bounds are chains keeps its own receiver" {
+        r("xs[a.i..b.k]") == "(slice xs (field a i)..(field b k))"
+    }
+    then "nested indexes do not drift" {
+        r("a[b[c.d]]") == "(index a (index b (field c d)))"
+    }
+    then "a chain CONTINUES correctly after a nested one closes" {
+        // The restore must not undo the outer chain's own threading: `.e` folds onto the
+        // index, not onto the subscript's `c.d`.
+        r("a[c.d].e") == "(field (index a (field c d)) e)"
+    }
+}
+
+spec "t-47hc.33: `t.0` reads as a tuple index, not a field" {
+    then "a NUMBER after the dot is a tuple index" { r("t.0") == "(tuple-idx t 0)" }
+    then "an IDENT after the dot is still a field" { r("t.x") == "(field t x)" }
+    then "and a chained receiver still resolves to the chain, not its parts" {
+        r("a.b.0") == "(tuple-idx (field a b) 0)"
+    }
+}

@@ -301,7 +301,32 @@ fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
     // recurses into `expression` (`[i]`, `(args)`, `<T>(args)`) folds onto whatever the
     // NESTED chain last produced: `stats[i]` built `Index(i, i)`.
     let snap = if rule_has_postfix_step_build_e(g, r) { "    st.snap_postfix_step()\n" } else { "" }
-    "fn parse_${r.name}(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
+    let body = "fn parse_${r.name}(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
+    if !rule_seeds_postfix_e(g, r) { return body }
+    // CHAIN NEUTRALITY (emit twin of exec_rule's save/restore; see
+    // PState.restore_postfix_chain). The chain rule saves its four chain fields and puts
+    // them back on exit, so a NESTED chain — the `expression` inside `[i]`, every `(args)`
+    // argument — cannot overwrite the frozen base an outer suffix step has yet to build
+    // from. Emitted as a WRAPPER around the real rule fn rather than inline, because the
+    // body has many `return` points and the restore must run after EVERY one of them.
+    let inner = "fn parse_${r.name}_chain(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
+    "fn parse_${r.name}(st: PState) -> CapVal {\n" +
+        "    let c_step_base = st.postfix_step_base\n" +
+        "    let c_step_sp = st.postfix_step_sp\n" +
+        "    let out = parse_${r.name}_chain(st)\n" +
+        "    st.restore_postfix_chain(c_step_base, c_step_sp)\n" +
+        "    out\n}\n" + inner
+}
+
+/// Emit twin of executor.rule_seeds_postfix — THE chain rule (`unary`), whose single
+/// branch build is `fold_postfix_with`.
+fn rule_seeds_postfix_e(g: Grammar, r: Rule) -> bool {
+    match r.body {
+        .Alt(branches) -> {
+            for b in branches { if seq_seeds_postfix_e(b) { return true } }
+            false
+        }
+    }
 }
 
 /// Emit twin of executor.rule_has_postfix_step_build. The build-name list is duplicated
@@ -314,7 +339,7 @@ fn rule_has_postfix_step_build_e(g: Grammar, r: Rule) -> bool {
                 match b.build {
                     .Call(bn, _) -> {
                         if bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkIndexSuffix" || bn == "MkOptChain" ||
-                            bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" { return true }
+                            bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" { return true }
                     }
                     _ -> {}
                 }
@@ -1756,6 +1781,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // reads `st.postfix_sp_start`, so these are deliberately absent from
         // build_uses_sp_start and no `let sp_start = …` is emitted for them.
         "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
+        "MkCallArg" -> "CapVal.Node(mk_call_arg(st, ${args[0]}))"
+        "MkCallSuffix" -> "CapVal.Node(mk_call_suffix(st, CapVal.Nodes(${args[0]}_list)))"
+        "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
         "MkIndexSuffix" -> "CapVal.Node(mk_index_suffix(st, ${args[0]}, ${args[1]}))"
         "MkNone" -> "mk_none_cap(st)"
         "MkOptChain" -> "CapVal.Node(mk_opt_chain(st, ${args[0]}))"
@@ -2367,7 +2395,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkCallArg" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }

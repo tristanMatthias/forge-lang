@@ -35,6 +35,15 @@ fn gated_errs(flag: string, src: string) -> bool {
     run_grammar_expr(gp.grammar, src).had_error
 }
 
+/// The `@peek` twin of `emitted` — two alternatives so the guard is actually emitted.
+fn emitted_peek(cond: string) -> string {
+    let gp = parse_grammar("gated = @peek(${cond}) NUMBER | STRING")
+    for gr in gp.grammar.rules {
+        if gr.name == "gated" { return emit_rule_fn(gp.grammar, gr) }
+    }
+    ""
+}
+
 fn emitted(flag: string) -> string {
     // TWO alternatives: with a single branch the emitter elides the guard
     // entirely (nothing to discriminate), so the predicate would be untestable.
@@ -149,6 +158,20 @@ spec "t-47hc.30: postfix-BASE predicates" {
     }
     then "base_upper_ident emits the same call shape" {
         emitted("base_upper_ident").contains("base_pred(\"base_upper_ident\", st)")
+    }
+    then "base_field_access is a base predicate too, on the SAME shape" {
+        // The call form's `it`-sugar split (`allow_it_sugar = is_method || saved_it`).
+        // Both allowlists have to know it: executor.is_base_pred routes the guard to
+        // base_pred, and seed_parser.when_pred_supported admits the name at all. Miss the
+        // SECOND and the marker parses clean but `pred_guard` falls back to the mode-field
+        // form, emitting `st.modes. != 0` — an EMPTY field name, which is a parse error in
+        // the generated file that surfaces a whole package away as a bare F3100.
+        !rejects("r = @when(base_field_access) NUMBER") &&
+            emitted("base_field_access").contains("base_pred(\"base_field_access\", st)") &&
+            !emitted("base_field_access").contains("st.modes.")
+    }
+    then "and an unknown base-sounding predicate is still REJECTED" {
+        rejects("r = @when(base_field_acess) NUMBER")
     }
     then "the type segment of a QUALIFIED path is the part after the last `::`" {
         grammar_last_segment("@std::avrac::core::Result") == "Result"
@@ -355,5 +378,29 @@ spec "t-47hc: the gensym counter mints hygienic temps" {
         // Per-parse, so the same source always desugars to the same names (byte-identical
         // output); global state would make emission order-dependent.
         fresh_name(new_pstate("x"), "t") == fresh_name(new_pstate("y"), "t")
+    }
+}
+
+// The `@peek` cond allowlist is the twin of the `@when` one above, and it fails the same
+// way: `parse_labeled` validates the name against `peek_cond_supported` and a MISS leaves
+// the cond as the empty string — `lookahead_ok("", st)`, a guard that answers for no
+// token in particular. The branch then enters on its FIRST token alone, which for a
+// `.`-led branch means EVERY `.` in the program.
+
+spec "t-47hc.33: the @peek cond allowlist admits the postfix conds" {
+    then "the four postfix conds are accepted" {
+        !rejects("r = @peek(dot_plain_field) NUMBER") &&
+            !rejects("r = @peek(qdot_plain_field) NUMBER") &&
+            !rejects("r = @peek(dot_number) NUMBER") &&
+            !rejects("r = @peek(comma_not_rparen) NUMBER")
+    }
+    then "a typo is REJECTED rather than silently emptied" {
+        rejects("r = @peek(dot_nubmer) NUMBER")
+    }
+    then "an accepted cond reaches the emitted guard by NAME" {
+        // The empty-cond failure is invisible in the grammar and only shows up as a
+        // mis-dispatched branch, so assert the name actually lands in the guard.
+        let s = emitted_peek("dot_number")
+        s.contains("lookahead_ok(\"dot_number\", st)") && !s.contains("lookahead_ok(\"\", st)")
     }
 }

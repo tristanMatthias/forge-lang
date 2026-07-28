@@ -157,9 +157,16 @@ fn avra_expr_core() -> Grammar {
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
                  | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
-                 | @when(dot_postfix_ok) @peek(dot_plain_field) "." n:IDENT -> MkFieldAccess(n)
+                 | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:IDENT -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
+                 | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
                  | @hand(postfix_suffix)
+  // MARKER ORDER IS LOAD-BEARING on the two `.`-led branches. `.field` and `.0` share a
+  // FIRST token, and the ambiguity guard exempts a pair only when the earlier branch LEADS
+  // with `@peek` — first_follow.seq_is_peek_led inspects `items[0].prim` and nothing else.
+  // Both guards are zero-width and ANDed, so `@peek @when` and `@when @peek` accept exactly
+  // the same inputs; only the first spelling tells the guard the overlap is resolved by
+  // LOOKAHEAD (which partitions the input) rather than by ambient state (which does not).
   // Two sequences because the closing `]` message differs by whether a `..` was seen and
   // `@expect` keys on the token. Dispatch is on `..` (FIRST), not speculation — the hand
   // parses the index expression exactly once. The `]` branch is `@fallback` so it owns

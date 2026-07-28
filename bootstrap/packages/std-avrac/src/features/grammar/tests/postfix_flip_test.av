@@ -211,3 +211,63 @@ spec "t-47hc.33: `expr catch { … }` is grammar-native" {
         restore >= 0 && close >= 0 && restore < close
     }
 }
+
+// Form 6 — `t.0`, the tuple index. It shares its FIRST token with `.field`, which is
+// already native, so it is second-token dispatched via `@peek(dot_number)` — and the peek
+// must LEAD the branch, or the ambiguity guard sees an unresolved overlap (it inspects
+// only `items[0].prim`).
+
+spec "t-47hc.33: `t.0` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_tuple_index(st,")
+    }
+    then "and it is second-token dispatched, not FIRST-token dispatched" {
+        // `.` is shared with `.field`: dispatch is on the branch's FIRST TOKEN ALONE, so
+        // without `@peek(dot_number)` this branch would be entered for EVERY `.` and then
+        // fail at `expected NUMBER` instead of falling through to the field-access
+        // sibling — comptime expansion writes `.field` everywhere, so the whole compiler
+        // stops building. That failure mode is invisible to build-quick, --emit-gen-check
+        // and diff-test alike; the peek is what keeps the two `.` readings apart.
+        postfix_rule_src().contains("lookahead_ok(\"dot_number\", st)")
+    }
+}
+
+// The invariant the recursing forms forced into the open: CHAIN NEUTRALITY.
+
+spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
+    then "the chain rule saves and restores the per-step FREEZE" {
+        // `postfix_step_base` freezes ONE step's receiver, but it is a PState SLOT, not a
+        // stack — so the chain a suffix recurses into (`xs[<expr>]` today, an argument list
+        // once the call form lands) used to overwrite the frozen base before the outer
+        // step's build read it, leaving the suffix folded onto the WRONG node. The hand
+        // parser has no such hazard because its `rid` is a LOCAL of parse_call.
+        let g = avra_expr_dispatch_grammar()
+        mut u = ""
+        for gr in g.rules {
+            if gr.name == "unary" { u = emit_rule_fn(g, gr) }
+        }
+        u.contains("let c_step_base = st.postfix_step_base") &&
+            u.contains("let c_step_sp = st.postfix_step_sp") &&
+            u.contains("st.restore_postfix_chain(c_step_base, c_step_sp)")
+    }
+    then "the restore runs AFTER the fold, not before it" {
+        // Restoring early would undo the chain's own ( postfix_suffix )* threading and
+        // the fold would pick up the pre-chain base.
+        let g = avra_expr_dispatch_grammar()
+        mut u = ""
+        for gr in g.rules {
+            if gr.name == "unary" { u = emit_rule_fn(g, gr) }
+        }
+        u.index_of("parse_unary_chain(st)") < u.index_of("st.restore_postfix_chain(")
+    }
+    then "the wrapper delegates to a SEPARATE fn rather than inlining the restore" {
+        // The body has many `return` points and the restore has to run after every one
+        // of them — a wrapper is the only shape that gets that for free.
+        let g = avra_expr_dispatch_grammar()
+        mut u = ""
+        for gr in g.rules {
+            if gr.name == "unary" { u = emit_rule_fn(g, gr) }
+        }
+        u.contains("fn parse_unary_chain(st: PState) -> CapVal {")
+    }
+}
