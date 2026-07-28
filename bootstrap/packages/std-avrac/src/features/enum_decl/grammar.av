@@ -1,0 +1,18 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry (see features/fn_decl/grammar.av for the full rationale).
+// The `enum` feature owns its declaration rule and its `variant` rule here.
+//
+// `variant` references `field` (payload fields), which the `type` feature owns
+// in features/struct_decl/grammar.av — the cross-fragment reference binds by
+// name after the merge, exactly as `match_arm` already references `pattern_or`
+// across the two match fragments.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `enum` declaration and its variant rule (bare or payload-carrying).
+export fn avra_enum_decl_grammar() -> Grammar {
+    let gp = grammar {
+  enum_decl   = "enum" ename:IDENT "{" ( vars:variant ","? )* "}" -> MkEnumDecl(ename, vars)
+  variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
+    }
+    gp.grammar
+}

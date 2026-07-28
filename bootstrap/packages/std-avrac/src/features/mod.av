@@ -11,7 +11,7 @@ use features.enum_decl.{enum_decl_feature}
 use features.extern_decl.{extern_decl_feature}
 use features.fn_decl.{fn_decl_feature}
 use features.for_stmt.{for_feature, for_in_feature}
-use features.grammar.{grammar_feature, Grammar}
+use features.grammar.{grammar_feature, Grammar, feature_decl_grammar_fragments}
 use features.if_stmt.{if_stmt_feature}
 use features.impl_decl.{impl_decl_feature}
 use features.is_keyword.{is_keyword_feature}
@@ -119,8 +119,16 @@ export fn init_features(reg: Registry) {
 /// (guarded by `fragment_rule_conflicts` in the registry spec), so the assembly
 /// is a clean union with a well-defined start symbol.
 export fn feature_grammar_fragments() -> List<Grammar> {
-    [
+    mut all: List<Grammar> = [
         avra_pat_grammar(),        // match_expr — pattern syntax (`pattern_or` …)
         avra_match_arm_grammar(),  // match_expr — match/when ARM syntax (`match_arm`, `match_when_arm`)
     ]
+    // t-47hc slice 9 — the DECLARATION-keyword fragments (fn / type / enum /
+    // trait / impl / use+mod), each owned by its feature. Collected from the ONE
+    // list in features/grammar/avra_grammar.av rather than restated here, so the
+    // whole-program grammar and this registry view cannot drift apart.
+    for g in feature_decl_grammar_fragments() {
+        all.push(g)
+    }
+    all
 }

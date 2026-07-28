@@ -8,7 +8,7 @@
 // other fragments (a clean union with a well-defined start symbol) — so this
 // spec is the gate that keeps the modular assembly honest, not a snapshot.
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_type_grammar, compose_fragments, fragment_rule_conflicts, Grammar}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_type_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
 
 // The shared cross-cutting base (owned by no single feature) followed by every
 // per-feature fragment the registry collects — the composer's full input.
@@ -40,6 +40,59 @@ fn has_rule(gs: List<Grammar>, name: string) -> bool {
         }
     }
     false
+}
+
+// The declaration keywords whose rules are now OWNED by their feature rather
+// than by the central grammar body. Listed by rule name so the assertions below
+// stay true as more decl keywords migrate (a new one is added here plus one line
+// in `feature_decl_grammar_fragments`).
+fn migrated_decl_rules() -> List<string> {
+    ["fn_decl", "type_decl", "enum_decl", "trait_decl", "impl_decl", "use_decl", "mod_decl",
+     // the sub-structure each decl keyword owns alongside its top rule
+     "field", "variant", "trait_member", "assoc_member", "method_member", "impl_method"]
+}
+
+spec "t-47hc.9: the DECL keywords are feature-owned fragments, not central rules" {
+    // The slice-9 property: a decl keyword's grammar lives in its own feature
+    // directory. This is what makes the `decl_hand` flip an exercise in adding
+    // registry entries rather than editing one central file.
+    then "every migrated decl rule is supplied by the decl-fragment registry" {
+        mut ok = true
+        for r in migrated_decl_rules() {
+            if !has_rule(feature_decl_grammar_fragments(), r) { ok = false }
+        }
+        ok
+    }
+    then "the decl fragments are rule-disjoint from each other" {
+        fragment_rule_conflicts(feature_decl_grammar_fragments()).length == 0
+    }
+    then "the top-level registry re-exports them (ONE definition, no drift)" {
+        // features/mod.av's feature_grammar_fragments collects the decl
+        // fragments from the same list the whole-program grammar composes, so
+        // the two views cannot disagree about which features contribute.
+        mut ok = true
+        for r in migrated_decl_rules() {
+            if !has_rule(feature_grammar_fragments(), r) { ok = false }
+        }
+        ok
+    }
+    then "the composed whole-program grammar still defines every decl rule" {
+        // The union is preserved — moving a rule out of the central body and
+        // into a fragment must not change the language, only its ownership.
+        let prog = avra_program_grammar()
+        mut ok = true
+        for r in migrated_decl_rules() {
+            if !has_rule([prog], r) { ok = false }
+        }
+        // …and `declaration` + the start symbol stay in the central base.
+        ok && has_rule([prog], "declaration") && prog.rules[0].name == "program"
+    }
+    then "`param` stays in the SHARED base — no single feature owns it" {
+        // Referenced by fn_decl, method_member and impl_method, so it belongs
+        // beside the expression ladder and type spine, not in one feature.
+        has_rule([avra_program_grammar()], "param")
+            && !has_rule(feature_decl_grammar_fragments(), "param")
+    }
 }
 
 spec "t-47hc.8: feature grammar-fragment registry assembles cleanly" {

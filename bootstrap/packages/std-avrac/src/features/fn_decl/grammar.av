@@ -1,0 +1,29 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry. The `fn` feature OWNS its declaration rule here, colocated
+// with its parser/codegen/resolver/typeck/tests, instead of living in the
+// central features/grammar/avra_grammar.av monolith. This is the same motion
+// `match_expr` already made for patterns (avra_pat_grammar), now applied to the
+// declaration family — the step the `decl_hand` flip spends: once every decl
+// keyword owns its own fragment, retiring the monolithic `@hand(decl_hand)`
+// dispatch is adding rules to a registry rather than editing one central file.
+//
+// `param` deliberately stays in the shared base: it is referenced by `fn_decl`,
+// `method_member` (trait) and `impl_method` (impl), so no single feature owns
+// it — the same call already made for the expression precedence ladder and the
+// type-atom spine.
+//
+// Authored as a `grammar { }` surface block (desugars to parse_grammar(<body>),
+// features/grammar/parser.av) — identical IR to the hand-written call, so no
+// seed cycle.
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `fn` declaration: name, parenthesised parameter list, optional `->` return
+/// type, and a braced statement body. References `param` and `type_expr` from the
+/// shared base and `statement` from the statement family — all bound by name
+/// after the flat merge (features/grammar/compose.av `compose_fragments`).
+export fn avra_fn_decl_grammar() -> Grammar {
+    let gp = grammar {
+  fn_decl     = "fn" name:IDENT "(" ( params:param ( "," params:param )* )? ")" ( "->" ret:type_expr )? "{" ( body:statement )* "}" -> MkFnDecl(name, params, ret, body)
+    }
+    gp.grammar
+}

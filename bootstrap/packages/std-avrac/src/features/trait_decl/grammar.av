@@ -1,0 +1,17 @@
+// WHY: t-47hc slice 9 — the decl-keyword half of the per-feature grammar
+// FRAGMENT registry (see features/fn_decl/grammar.av for the full rationale).
+// The `trait` feature owns its declaration rule AND its member sub-structure:
+// the associated-type member (`type Item`) and the method member, whose body is
+// OPTIONAL (`tmlb` present distinguishes a defaulted method from a signature).
+use features.grammar.{parse_grammar, Grammar}
+
+/// The `trait` declaration and its member rules.
+export fn avra_trait_decl_grammar() -> Grammar {
+    let gp = grammar {
+  trait_decl  = "trait" trname:IDENT "{" ( tmembers:trait_member )* "}" -> MkTraitDecl(trname, tmembers)
+  trait_member  = assoc_member | method_member
+  assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
+  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
+    }
+    gp.grammar
+}
