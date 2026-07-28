@@ -230,7 +230,16 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // primary_base owns error recovery, so NO FIRST-guard on the branch). The
         // postfix loop's FIRST-set is Tk-dispatched with a no-progress break.
         src.contains("let base = CapVal.Node(run_hand_expr(\"primary_base\", st))") &&
-        src.contains("while st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == \"catch\" {") &&
+        // t-47hc.33: the loop guard is the UNION of `postfix_suffix`'s branch FIRSTs, so
+        // it GROWS as forms go native — the `?` form contributes its full entry guard
+        // (mode + token + same-line) and `catch` its keyword, both ordered before the
+        // `@hand` tail's raw postfix-op set. It stays a SUPERSET of the hand entry guard,
+        // which is what the loop needs: the per-branch guards inside parse_postfix_suffix
+        // do the precise work, and the no-progress break ends the chain. Asserted as the
+        // native prefix plus the unchanged hand tail rather than one long literal, so a
+        // later form adding a disjunct does not require rewriting the whole string.
+        src.contains("while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
+        src.contains("st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == \"catch\" {") &&
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
         // `with_suffix = @hand(…)`), so each of the 19 FIRST-disjoint bases CALLS the one
         // generated fn instead of re-inlining run_hand_expr.
