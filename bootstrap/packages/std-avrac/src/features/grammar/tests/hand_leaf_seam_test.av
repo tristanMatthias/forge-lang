@@ -15,10 +15,11 @@
 //   2. the two leaf CLASSES stay disjoint (nothing is both a statement and an
 //      expression leaf) and closed (an unknown name resolves to neither),
 //   3. the class predicates BOTH consumers read — the executor's dispatch and
-//      emit.av's rule-class routing — agree by construction, because they are
-//      now one table rather than two hand-synced copies, and
+//      emit.av's rule-class routing, including the CapVal `hand_kind` (t-sjf9) —
+//      agree by construction, because they are now one table rather than several
+//      hand-synced copies, and
 //   4. dispatching THROUGH the table still parses byte-identically.
-use @std.avrac.features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
+use @std.avrac.features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf, hand_kind}
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
 use @std.avrac.core.{render_expr_id, ExprId, StmtId}
 use @std.avrac.parse.{Parser}
@@ -117,6 +118,35 @@ spec "t-47hc.7: the leaf classes are disjoint, closed, and shared by both consum
             if is_hand_stmt_leaf(n) != (hand_stmt_leaf(n) != null) { ok = false }
         }
         ok
+    }
+}
+
+spec "t-sjf9: the emitter's CapVal kind agrees with the dispatcher's class" {
+    // emit.av's `hand_kind` was the SIXTH table keyed on the leaf name, and the
+    // one copy that was not faithful: it omitted `stmt_hand`, so it answered
+    // "expr" for a leaf the executor dispatches through run_hand_stmt (→ StmtId).
+    // Dormant, because `hand_kind` is only consulted where a leaf is captured as
+    // a LIST element and no grammar captures `stmt_hand` that way — but a
+    // StmtId coerced through the expression element type would surface far from
+    // its cause. `hand_kind` now derives from the same table, so the two cannot
+    // disagree; this pins that as a property over every leaf, including the ones
+    // a future slice adds.
+    then "every STATEMENT leaf is a statement leaf to BOTH consumers" {
+        mut ok = true
+        for n in known_stmt_leaves() {
+            if hand_kind(n) != "stmt" { ok = false }
+        }
+        ok
+    }
+    then "every EXPRESSION leaf is an expression leaf to BOTH consumers" {
+        mut ok = true
+        for n in known_expr_leaves() {
+            if hand_kind(n) != "expr" { ok = false }
+        }
+        ok
+    }
+    then "`stmt_hand` — the leaf the omitted entry got wrong — is a statement to both" {
+        is_hand_stmt_leaf("stmt_hand") && hand_kind("stmt_hand") == "stmt"
     }
 }
 

@@ -196,7 +196,7 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
                         rep_is_one(branches[0].items[0].rep) && build_is_none(branches[0].build) {
                         match branches[0].items[0].prim {
                             .Hand(hf) -> {
-                                if is_expr_hand_name(hf) { return "run_hand_expr(\"${hf}\", st)" }
+                                if is_hand_expr_leaf(hf) { return "run_hand_expr(\"${hf}\", st)" }
                             }
                             _ -> {}
                         }
@@ -1773,18 +1773,16 @@ fn build_fn(name: string) -> string {
 // ── @hand → the run_hand* family (executor.exec_primary's Hand dispatch) ──
 
 fn emit_hand_result(hf: string) -> string {
-    if is_stmt_hand_name(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
-    if is_expr_hand_name(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
+    if is_hand_stmt_leaf(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
+    if is_hand_expr_leaf(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
     "CapVal.Node(run_hand(\"${hf}\", st))"
 }
 
-// The rule classes come from the shared hand-leaf table (hand_leaves.av), the
-// same one the executor dispatches through — so the emitted parser and the
-// interpreter cannot disagree about which class a leaf belongs to. These were
-// two hand-maintained copies of executor.av's predicates, kept in sync by a
-// comment; adding a leaf now touches ONE table (rule 8's one seam).
-fn is_stmt_hand_name(n: string) -> bool { is_hand_stmt_leaf(n) }
-fn is_expr_hand_name(n: string) -> bool { is_hand_expr_leaf(n) }
+// The rule classes come straight from the shared hand-leaf table
+// (hand_leaves.av), the same one the executor dispatches through — so the
+// emitted parser and the interpreter cannot disagree about which class a leaf
+// belongs to. These were hand-maintained copies of executor.av's predicates,
+// kept in sync by a comment; adding a leaf now touches ONE table (rule 8).
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -2337,8 +2335,21 @@ fn build_kind(bn: string) -> string {
     "expr"
 }
 
-fn hand_kind(hf: string) -> string {
-    if hf == "return_stmt" || hf == "let_stmt" || hf == "decl_hand" || hf == "component_decl" || hf == "match_table" { return "stmt" }
+/// The CapVal kind an `@hand` leaf yields — derived from the shared hand-leaf
+/// table (hand_leaves.av), the same seam the emitted dispatch and the executor's
+/// dispatch read, so a leaf cannot be a statement to the dispatcher and an
+/// expression to the emitter.
+///
+/// It was the LAST of the six parallel leaf-name tables the seam collapsed
+/// (t-47hc slice 7), left behind because it is not a faithful copy: it omitted
+/// `stmt_hand`, so `hand_kind("stmt_hand")` said "expr" while
+/// `is_hand_stmt_leaf("stmt_hand")` said true. That was dormant — this is
+/// consulted only where a leaf is captured as a LIST element (a `( s:@hand(f) )*`
+/// repetition), and no grammar captures `stmt_hand` that way — but it is exactly
+/// the kind of drift that surfaces later as a StmtId coerced through the
+/// expression element type, far from its cause (t-sjf9).
+export fn hand_kind(hf: string) -> string {
+    if is_hand_stmt_leaf(hf) { return "stmt" }
     "expr"
 }
 
