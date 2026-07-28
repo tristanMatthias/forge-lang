@@ -296,7 +296,32 @@ export fn emit_rule_fn(g: Grammar, r: Rule) -> string {
 }
 
 fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
-    "fn parse_${r.name}(st: PState) -> CapVal {\n${emit_rule_body(g, r.body)}}\n"
+    // A rule whose branches build POSTFIX STEPS freezes the chain accumulator on entry —
+    // the emit twin of exec_rule's snap_postfix_step call. Without it a suffix that
+    // recurses into `expression` (`[i]`, `(args)`, `<T>(args)`) folds onto whatever the
+    // NESTED chain last produced: `stats[i]` built `Index(i, i)`.
+    let snap = if rule_has_postfix_step_build_e(g, r) { "    st.snap_postfix_step()\n" } else { "" }
+    "fn parse_${r.name}(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
+}
+
+/// Emit twin of executor.rule_has_postfix_step_build. The build-name list is duplicated
+/// rather than shared because emit and the executor are deliberately separate modules;
+/// the pair is asserted in postfix_flip_test.
+fn rule_has_postfix_step_build_e(g: Grammar, r: Rule) -> bool {
+    match r.body {
+        .Alt(branches) -> {
+            for b in branches {
+                match b.build {
+                    .Call(bn, _) -> {
+                        if bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkIndexSuffix" || bn == "MkOptChain" ||
+                            bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" { return true }
+                    }
+                    _ -> {}
+                }
+            }
+            false
+        }
+    }
 }
 
 // ── Rule body: single-branch (pass-through / fold / general) or dispatch ──
@@ -1729,6 +1754,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // reads `st.postfix_sp_start`, so these are deliberately absent from
         // build_uses_sp_start and no `let sp_start = …` is emitted for them.
         "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
+        "MkIndexSuffix" -> "CapVal.Node(mk_index_suffix(st, ${args[0]}, ${args[1]}))"
+        "MkNone" -> "mk_none_cap(st)"
         "MkOptChain" -> "CapVal.Node(mk_opt_chain(st, ${args[0]}))"
         "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
         "MkFieldAccess" -> "CapVal.Node(mk_field_access(st, ${args[0]}))"

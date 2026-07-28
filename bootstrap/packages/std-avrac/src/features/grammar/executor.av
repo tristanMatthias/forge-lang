@@ -423,7 +423,7 @@ export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, hand_delegate: Parser? }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser? }
 
 /// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
 /// aliases the parser's mutable bag record, so it cannot by itself preserve the
@@ -500,6 +500,25 @@ impl PState {
     }
     fn set_postfix_base(self, base: ExprId) {
         self.postfix_base = base
+    }
+
+    /// Freeze the chain accumulator for ONE `postfix_suffix` step (t-47hc.33).
+    ///
+    /// A suffix that RECURSES into `expression` — `[i]`, `(args)`, `<T>(args)` — runs a
+    /// whole nested chain, whose own `( postfix_suffix )*` loop calls seed_postfix /
+    /// set_postfix_base and overwrites `postfix_base`. By the time the outer build runs,
+    /// the accumulator points at whatever the INNER expression last produced: `stats[i]`
+    /// built `Index(i, i)`, the loop counter indexed by itself.
+    ///
+    /// The suffix always folds onto the base as of the moment it was ENTERED, so that is
+    /// what gets frozen here — at the top of the generated/interpreted rule, before any
+    /// item runs. No restore is needed: the next step re-snapshots, and the live
+    /// `postfix_base` keeps threading the chain as before. Inert for a suffix that
+    /// consumes tokens only (`?`, `catch`, `?.field`, `.field`), where the snapshot and
+    /// the live value are equal.
+    fn snap_postfix_step(self) {
+        self.postfix_step_base = self.postfix_base
+        self.postfix_step_sp = self.postfix_sp_start
     }
     /// The `@off(flag)` mode-SET marker's set half: save the current modes, clear
     /// the named flag, return the SAVED modes for restore_modes. The executor twin
@@ -742,7 +761,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: d }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -768,7 +787,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -803,7 +822,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -827,7 +846,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -856,7 +875,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -874,7 +893,36 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 /// expression family already relied on use-site coercion (operator
 /// captures stay `Tok`, folds/ctors coerce their node args, and the
 /// run entry coerces the root), so this is behaviour-preserving for it.
+/// True iff any branch of rule `name` builds a POSTFIX STEP — the family whose builds
+/// fold onto the threaded chain accumulator rather than onto a capture. Kept as one list
+/// so the executor and the emitter cannot disagree about which rules need the snapshot.
+fn build_is_postfix_step(bn: string) -> bool {
+    bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" ||
+        bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix"
+}
+
+fn rule_has_postfix_step_build(g: Grammar, name: string) -> bool {
+    let idx = rule_index_of(g, name)
+    if idx < 0 { return false }
+    match g.rules[idx].body {
+        .Alt(branches) -> {
+            for b in branches {
+                match b.build {
+                    .Call(bn, _) -> if build_is_postfix_step(bn) { return true }
+                    _ -> {}
+                }
+            }
+            false
+        }
+    }
+}
+
 fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
+    // Freeze the chain accumulator BEFORE any item runs (t-47hc.33). See
+    // PState.snap_postfix_step: a suffix that recurses into `expression` would otherwise
+    // build onto whatever the nested chain last produced. Emit's twin is the
+    // `st.snap_postfix_step()` line at the top of the generated rule fn.
+    if rule_has_postfix_step_build(g, name) { st.snap_postfix_step() }
     let r = lookup_rule(g, name)
     if r.name == "" { return CapVal.Node(st.error_node("unknown rule `${name}`")) }
     mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false, abort: false }
@@ -1949,7 +1997,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1967,7 +2015,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     let te = capval_to_texpr(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -1992,7 +2040,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2010,7 +2058,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
     let pat = capval_to_pat(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2034,7 +2082,7 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2054,7 +2102,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
 /// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2077,7 +2125,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2125,7 +2173,7 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let stmt = capval_to_stmt(st, parse(st))
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
@@ -2434,6 +2482,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
         // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkIndexSuffix" if args.length == 2 -> CapVal.Node(mk_index_suffix(st, env.get(args[0]), env.get(args[1])))
+        "MkNone" if args.length == 0 -> mk_none_cap(st)
         "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
         "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkFieldAccess" if args.length == 1 -> CapVal.Node(mk_field_access(st, env.get(args[0])))
@@ -3947,7 +3997,7 @@ export fn fold_postfix_with_expr(st: PState, sp_start: int, baseCap: CapVal, pCa
 ///      reads only the LAST suffix's node, so a step that skipped this would build its
 ///      successor onto a stale base and silently drop the intervening suffixes.
 fn postfix_step_node(st: PState, node: Expr) -> ExprId {
-    let rid = st.store.add_expr(node, byte_span(st.postfix_sp_start, st.cur().pos), [])
+    let rid = st.store.add_expr(node, byte_span(st.postfix_step_sp, st.cur().pos), [])
     st.set_postfix_base(rid)
     rid
 }
@@ -3960,14 +4010,14 @@ fn postfix_step_node(st: PState, node: Expr) -> ExprId {
 /// `it`-sugar) and stays with the `@hand` tail; `@peek(qdot_plain_field)` is what keeps
 /// the two apart before the branch is entered.
 export fn mk_opt_chain(st: PState, ncap: CapVal) -> ExprId {
-    postfix_step_node(st, Expr.OptionalChain(st.postfix_base, capval_tok_text(ncap)))
+    postfix_step_node(st, Expr.OptionalChain(st.postfix_step_base, capval_tok_text(ncap)))
 }
 
 /// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
 /// `int()`s it, so a float-shaped `.0.1` lexes as one NUMBER and would differ; the
 /// grammar terminal is the same NUMBER kind, so the same lexeme reaches `int` here.
 export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
-    postfix_step_node(st, Expr.TupleIndex(st.postfix_base, int(capval_tok_text(tcap))))
+    postfix_step_node(st, Expr.TupleIndex(st.postfix_step_base, int(capval_tok_text(tcap))))
 }
 
 /// `expr.field` — plain field access (t-47hc.33 form 4). The ENUM-CONSTRUCTOR reading of
@@ -3975,11 +4025,30 @@ export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
 /// follows) builds a different node from an argument list, and stays with the `@hand`
 /// tail; `@peek(dot_plain_field)` keeps the two apart before the branch is entered.
 export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
-    postfix_step_node(st, Expr.FieldAccess(st.postfix_base, capval_tok_text(ncap)))
+    postfix_step_node(st, Expr.FieldAccess(st.postfix_step_base, capval_tok_text(ncap)))
+}
+
+/// `expr[i]` / `expr[a..b]` (t-47hc.33 form 5) — the FIRST form that recurses into
+/// `expression`, which is what made `snap_postfix_step` necessary: the receiver is the
+/// chain base as of this step's ENTRY, not whatever the nested index expression left in
+/// the live accumulator.
+export fn mk_index_suffix(st: PState, icap: CapVal, tcap: CapVal) -> ExprId {
+    let i = capval_to_expr(st, icap)
+    if capval_present(tcap) {
+        return postfix_step_node(st, Expr.Slice(st.postfix_step_base, i, capval_to_expr(st, tcap)))
+    }
+    postfix_step_node(st, Expr.Index(st.postfix_step_base, i))
+}
+
+/// The ABSENT half of an optional tail, spelled explicitly: a branch with no build
+/// returns its last item's value (here the `]` token), which `capval_present` would read
+/// as PRESENT, so `[i]` and `[a..b]` could not be told apart by the thing that decides.
+export fn mk_none_cap(st: PState) -> CapVal {
+    CapVal.Nil
 }
 
 export fn mk_try_suffix(st: PState) -> ExprId {
-    postfix_step_node(st, Expr.Try(st.postfix_base))
+    postfix_step_node(st, Expr.Try(st.postfix_step_base))
 }
 
 /// `expr catch { … }` / `expr catch (e) { … }` (t-47hc.33 form 2, spec Axis 12.5-12.6).
@@ -3996,7 +4065,7 @@ export fn mk_try_suffix(st: PState) -> ExprId {
 export fn mk_catch_suffix(st: PState, ccap: CapVal, bcap: CapVal, bodycap: CapVal) -> ExprId {
     let lc = st.store.lines.to_linecol(capval_tok_pos(ccap))
     let handler_id = st.store.intern_expr_leaf(Expr.Block(capval_to_stmt_list(bodycap)))
-    postfix_step_node(st, Expr.Catch(st.postfix_base, capval_tok_text(bcap), handler_id, lc.line, lc.col))
+    postfix_step_node(st, Expr.Catch(st.postfix_step_base, capval_tok_text(bcap), handler_id, lc.line, lc.col))
 }
 
 /// A scalar token capture's SOURCE BYTE OFFSET — the anchor for a build that needs the
