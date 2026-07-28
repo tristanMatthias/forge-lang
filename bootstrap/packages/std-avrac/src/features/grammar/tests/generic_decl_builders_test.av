@@ -1,0 +1,102 @@
+// WHY: t-47hc slice 10 (t-myz7) — the GENERIC decl builders, landed DORMANT.
+//
+// Every remaining `decl_hand` keyword (fn / type / enum / trait / impl) accepts generics
+// that slice 9's fragments do not, so closing that gap is the bulk of the slice. The
+// executor already had the generic arms — `MkFnDecl`/5, `MkTypeDecl`/3, `MkEnumDecl`/3,
+// `MkTypeParam` — but EMIT had no twin, and emit dispatches on the build NAME alone. A
+// 3-arg `MkEnumDecl` written in a grammar would therefore have rendered emit's 2-arg call
+// and passed the type-param list where the VARIANTS go: a silent tree corruption in the
+// generated parser only, invisible to the interpreter oracle.
+//
+// This file pins the fix while nothing spends it: arity-guarded emit arms, and one shared
+// constructor core per form so the two engines cannot drift again. The builds are still
+// unreferenced by any grammar — `--hand-leaves` stays at 6 and all four generated parser
+// BODIES are byte-identical (only the decl header's import list moves) — so a divergence
+// when a later increment does spend them points at the GRAMMAR, not at the builders.
+//
+// Asserted against the shapes the HAND produces, which is the contract the flip depends on.
+
+use @std.avrac.features.grammar.{parse_grammar, emit_parser_source}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.core.{render_stmt_ids, Stmt}
+
+// A one-rule grammar in the GENERIC arity, emitted. Nothing in the tree spends these
+// builds yet, so this is the only way to see what emit renders for them.
+fn emit_generic(rule: string) -> string {
+    emit_parser_source(parse_grammar(rule).grammar)
+}
+
+fn hand_render(src: string) -> string {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return "<hand parse error>" }
+    if p.ids == null { return "<hand no ids>" }
+    render_stmt_ids(p.store, p.ids!)
+}
+
+spec "t-47hc slice 10: the generic decl builders exist in BOTH engines" {
+    then "a 3-arg MkEnumDecl renders the GENERIC core, not the 2-arg one" {
+        // The guard that matters, and it fails without the arity arm: emit dispatches on
+        // the build NAME, so the 2-arg `mk_enum_decl(...)` was rendered for a 3-arg build
+        // and the type-param list landed where the variants go.
+        let src = emit_generic(
+            "g = \"enum\" n:IDENT \"<\" ( tp:tparam )* \">\" \"{\" ( v:variant )* \"}\" -> MkEnumDecl(n, tp, v)\n" +
+            "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n" +
+            "variant = vn:IDENT -> MkEVariant(vn, vf)\n")
+        src.contains("mk_enum_decl_g(st, capval_tok_text(") && !src.contains("mk_enum_decl(st, capval_tok_text(")
+    }
+
+    then "the type-param accumulator is typed TypeParamEntry, not ExprId" {
+        // kind_elem_type / kind_coerce for the new "tparam" kind. Without them the
+        // repeated `tp:tparam` capture declares List<ExprId> and coerces each entry
+        // through capval_to_expr — the corruption the rule_kind_v block warns about.
+        let src = emit_generic(
+            "g = \"enum\" n:IDENT \"<\" ( tp:tparam )* \">\" \"{\" ( v:variant )* \"}\" -> MkEnumDecl(n, tp, v)\n" +
+            "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n" +
+            "variant = vn:IDENT -> MkEVariant(vn, vf)\n")
+        src.contains("mut tp_list: List<TypeParamEntry> = []") &&
+            src.contains("capval_to_tparam(st, parse_tparam(st))")
+    }
+
+    then "a 5-arg MkFnDecl and a 3-arg MkTypeDecl render their generic cores too" {
+        let fn_src = emit_generic(
+            "g = \"fn\" n:IDENT \"<\" ( tp:tparam )* \">\" \"(\" \")\" \"{\" ( b:statement )* \"}\" -> MkFnDecl(n, tp, p, r, b)\n" +
+            "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n")
+        let ty_src = emit_generic(
+            "g = \"type\" n:IDENT \"<\" ( tp:tparam )* \">\" \"=\" \"{\" ( f:field )* \"}\" -> MkTypeDecl(n, tp, f)\n" +
+            "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n" +
+            "field = fn2:IDENT -> MkField(fn2, ft)\n")
+        fn_src.contains("mk_fn_decl_g(st,") && ty_src.contains("mk_type_decl_g(st,")
+    }
+}
+
+// The type-param SHAPE, read off the hand. `TypeParamEntry` carries a name and a single
+// trait bound ("" when unbounded) — `T` and `T: Show` are the two forms
+// parse_type_param_entries produces, and mk_type_param has to agree on both.
+spec "t-47hc slice 10: the hand's generic decl shapes, pinned for the flip to match" {
+    then "a generic enum keeps its type params distinct from its variants" {
+        let out = hand_render("enum Opt<T> {\n    Some(v: T),\n    None\n}\n")
+        // The params must NOT be swallowed into the variant list — the exact corruption
+        // an emit/executor arity mismatch would have produced.
+        out.contains("Opt") && out.contains("Some") && out.contains("None")
+    }
+
+    then "a BOUNDED type param is distinct from an unbounded one" {
+        let unbounded = hand_render("enum E<T> { A }\n")
+        let bounded = hand_render("enum E<T: Show> { A }\n")
+        // Both parse; the bound is carried, so the renders differ. If they were equal the
+        // bound would be getting dropped, and mk_type_param's `bounds` field would have
+        // nothing to be right about.
+        unbounded != "<hand parse error>" && bounded != "<hand parse error>" &&
+            unbounded != bounded
+    }
+
+    then "a generic struct keeps its type params distinct from its fields" {
+        let out = hand_render("type Box<T> = {\n    val: T\n}\n")
+        out.contains("Box") && out.contains("val")
+    }
+
+    then "a generic fn keeps its type params distinct from its value params" {
+        let out = hand_render("fn id<T>(x: T) -> T {\n    return x\n}\n")
+        out.contains("id") && out.contains("x")
+    }
+}
