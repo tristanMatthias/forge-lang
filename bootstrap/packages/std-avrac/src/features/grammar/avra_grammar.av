@@ -293,11 +293,32 @@ fn avra_expr_core() -> Grammar {
 /// job was to hand them straight back to this same grammar. The gate keeps the
 /// component shape on the hand path and lets the rest reach `statement` directly,
 /// which is where they were always going to be parsed.
+/// t-47hc slice 10 (t-myz7) — the `decl_hand` flip, INCREMENT 1: `use` and `mod`.
+///
+/// The flip is deliberately keyword-at-a-time, because `@hand(decl_hand)` is not one
+/// thing — `parse_declaration_hand` owns the doc/annotation/`export` WRAPPING, the
+/// component-vs-expression IDENT disambiguation, and the statement fall-through as
+/// well as the seven decl keywords. Each keyword moves out from under it on its own,
+/// gated on its own; `@hand(decl_hand)` stays as the fall-through for the ones not
+/// yet native, and is deleted when the last one leaves.
+///
+/// `use` / `mod` go first because they are the two with no surface beyond the simple
+/// form: neither takes generics, neither is `export`able (only fn/type/enum/trait/
+/// extern are), so slice 9's fragment already accepts the whole language for them —
+/// nothing to widen. The keywords with real surface (fn's generics, type/enum/trait's
+/// bodies) come in later increments.
+///
+/// The modules fragment is composed HERE rather than at the call sites, so the rules
+/// travel with the rule that references them. `declaration` is composed into five
+/// different views (expr / stmt-flip / decl-flip / decl-dispatch / program); if
+/// `use_decl` were external to any of them, emit would demand a declared FIRST for it
+/// in `rule_first_guard` — the cross-view cost `table_cell` already pays. Keeping the
+/// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | @peek(decl_lead) @hand(decl_hand) | statement
     }
-    gp.grammar
+    compose_grammars(gp.grammar, avra_modules_grammar())
 }
 
 export fn avra_expr_grammar() -> Grammar {

@@ -8,9 +8,46 @@
 use features.grammar.{parse_grammar, Grammar}
 
 /// The `use` and `mod` declarations.
+///
+/// `use` SPLITS on the `@`-package prefix, and the split is load-bearing twice over.
+///
+/// FRONTIER. The hand (`parse_use_declaration`) requires a scope AND a name after
+/// `@` — `consume(Tk.Dot, …)` then `consume_identifier("expected package name")` —
+/// so `use @std.{x}` is a parse ERROR there. Writing the prefix as a bare
+/// `( uat:"@" )?` in front of the shared dotted loop ACCEPTS it, because that loop's
+/// segment is optional (it has to be, to model the hand's `if check(LeftBrace)
+/// break` on a trailing dot). Measured before the split: `use @std.{x}` reached
+/// F3100 `package @std not found` — a RESOLVER code, meaning the parse had already
+/// succeeded where the hand stops at F0001. The `@` branch spells the scope out as
+/// its own mandatory `upkg:IDENT "."`, which is exactly the hand's two consumes.
+///
+/// Note what does NOT work: `( "." useg:IDENT )+` for "at least one more segment".
+/// The `+` loop re-enters on the TRAILING dot of `@std.core.{…}` and then demands an
+/// IDENT it will never get — so the one import form the entire compiler is written in
+/// would fail. The trailing dot has to stay absorbed by an optional segment INSIDE
+/// the loop, which is why the mandatory segment is lifted out in front of it.
+///
+/// SHAPE. The obvious fix — `( uat:"@" useg:IDENT "." )?` as one optional group —
+/// is WRONG in a way that only the executor shows. `bind` REPLACES for a `.One`
+/// item and APPENDS for a repetition item, so a label bound by TWO `.One` items in
+/// one branch loses the first: the group's `std` was overwritten by the mandatory
+/// `core`, and `composed_program_test` caught `(use @core …)` against the hand's
+/// `(use @std.core …)`. Emit does not have the bug (it declares one `_list` per
+/// repeated label and pushes at both sites), so this is an executor/emit lockstep
+/// gap — general, pre-existing, and NOT fixable here: `exec_*` is also the live
+/// production parser for the type family, so changing its capture semantics is a
+/// production-parser change by construction (CLAUDE.md t-47hc.10). Both branches
+/// below therefore bind `useg` with at most ONE `.One` item plus repetitions — the
+/// shape both engines already agree on. Filed separately.
+///
+/// `use_tail` exists so the two branches are FIRST-disjoint (`@` vs IDENT). Kept on
+/// `use_decl` itself they would share the `"use"` FIRST, the engines would commit to
+/// branch one, and every non-package import would fail on the mandatory `@`.
 export fn avra_modules_grammar() -> Grammar {
     let gp = grammar {
-  use_decl    = "use" ( uat:"@" )? useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUse(uat, useg, unames)
+  use_decl    = "use" ut:use_tail -> ut
+  use_tail    = "@" upkg:IDENT "." useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUsePkg(upkg, useg, unames)
+              | useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUseBare(useg, unames)
   mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
     }
     gp.grammar

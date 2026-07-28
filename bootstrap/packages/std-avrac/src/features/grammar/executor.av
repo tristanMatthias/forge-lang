@@ -2809,6 +2809,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))))
         }
         "MkUse" if args.length == 3 -> mk_use(st, capval_present(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
+        "MkUseBare" if args.length == 2 -> mk_use(st, false, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])))
+        "MkUsePkg" if args.length == 3 -> mk_use_pkg(st, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
         "MkModule" if args.length == 1 -> mk_module(st, capval_tok_text(env.get(args[0])))
         // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkAssocType" if args.length == 1 -> mk_assoc_type(st, capval_tok_text(env.get(args[0])))
@@ -3459,6 +3461,18 @@ export fn mk_use(st: PState, at_present: bool, segs: List<Token>, names: List<To
     for t in segs { path = if path == "" { t.text } else { path + "." + t.text } }
     if at_present { path = "@" + path }
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown))))
+}
+
+/// The `@pkg`-prefixed `use` (the `MkUsePkg` build's core). The package SCOPE is a
+/// separate capture from the path segments — not another `useg` — because a label
+/// bound by two `.One` items is REPLACED, not accumulated, by the executor's `bind`
+/// (emit declares one `_list` and pushes at both sites, so the two engines would
+/// disagree). Joining here keeps the divergence impossible rather than merely untested.
+export fn mk_use_pkg(st: PState, pkg: List<Token>, segs: List<Token>, names: List<Token>) -> CapVal {
+    mut all: List<Token> = []
+    for t in pkg { all.push(t) }
+    for t in segs { all.push(t) }
+    mk_use(st, true, all, names)
 }
 
 /// Generated-parser twin of the `MkArm` executor build.
