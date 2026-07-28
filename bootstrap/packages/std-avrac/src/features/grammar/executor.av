@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name}
+use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 use features.grammar.{code_at, is_ident_start_code}
@@ -1167,6 +1167,39 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == "{"
+    }
+    // `Ident {` that is a PLAIN STRUCT LITERAL — i.e. `ident_lbrace` MINUS the two
+    // IDENT-led forms that share those exact two tokens but mean something else
+    // (t-47hc slice 8). The hand `parse_ident_expr` (parse/mod.av) tests all three
+    // in this order, so a native struct-literal branch must exclude the other two
+    // or it silently captures them:
+    //   1. `table { … }` / `table<Row> { … }` — the TABLE literal, checked FIRST by
+    //      the hand precisely because it also starts ident+`{`.
+    //   2. a REGISTERED `kw { … }` feature construct (`grammar { … }` today) —
+    //      dispatched to the feature's own parse_expr, which owns the block.
+    // Both stay with the `@hand` tail; only what is left is a struct literal.
+    //
+    // The registered-keyword half is answered by the REGISTRY, not by matching
+    // names: `lookup_expr_parser` is the same table `parse_ident_expr` consults,
+    // so a package registering a new `kw { }` construct is excluded automatically
+    // and this predicate can never drift from the dispatch it mirrors. (`table` is
+    // not registry-driven — it is built into parse_ident_expr — so it is named
+    // here exactly as the hand names it, which is transcription, not a heuristic.)
+    //
+    // With NO delegate threaded there is no registry to consult, so the answer is
+    // CONSERVATIVE: not plain. Failing toward the hand parser is the safe
+    // direction — a false negative merely leaves a struct literal to the hand
+    // (which parses it correctly, byte-identically), whereas a false positive
+    // would let a native branch swallow a `kw { … }` construct whose feature owns
+    // the block. Absence of information must never widen what the grammar claims.
+    if cond == "ident_lbrace_plain" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].text != "{" { return false }
+        let name = st.cur().text
+        if name == "table" { return false }
+        if st.hand_delegate == null { return false }
+        return lookup_expr_parser(st.hand_delegate!.features, name) == null
     }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
