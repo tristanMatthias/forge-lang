@@ -1,0 +1,76 @@
+// WHY: t-47hc slice 8 (capability, landed DORMANT) — the two builders the
+// `ident_primary` flip needs, proven against the hand parser's own output BEFORE
+// the flip spends them.
+//
+// `parse_ident_expr` (parse/mod.av) has five branches. Two are hand-owned and stay
+// that way (`table { … }` and a registered `kw { … }` — see ident_lbrace_plain_test).
+// Of the three that are grammar-expressible, two need a builder that did not exist:
+//
+//     Point { x: 1 }   → Expr.StructLit(name, field_inits)          MkStructLit
+//     tag`hi {x}`      → Expr.Call(Expr.Ident(tag), [template])     MkTaggedTemplate
+//
+// (The third, a bare `Ident`, already has one.)
+//
+// These assertions are the REAL contract of the flip: the flip is only correct if a
+// native branch builds the same node the hand builds. Checking that here — while
+// the builders are dormant and nothing can regress — means a later diff-test
+// divergence points at the GRAMMAR (branch order, guards) rather than leaving the
+// builder shape as an open question too.
+//
+// DORMANT: no production grammar names either build, so the generated parsers regen
+// byte-identical and `--hand-leaves` stays at 8.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+use @std.avrac.core.{render_expr_id}
+
+fn render(g: string, src: string) -> string {
+    let gp = parse_grammar(g)
+    let r = run_grammar_expr(gp.grammar, src)
+    render_expr_id(r.store, r.root)
+}
+
+// The struct-literal shape the flip will use, minus the `@peek(ident_lbrace_plain)`
+// guard (which is proven separately and would be inert here — run_grammar_expr
+// threads no delegate, so the predicate deliberately answers "not plain").
+fn struct_g() -> string {
+    "r = n:IDENT \"{\" ( f:field_init )* \"}\" -> MkStructLit(n, f)\n" +
+    "field_init = fn:IDENT ( \":\" fv:r_val )? ( \",\" )? -> MkFieldInit(fn, fv)\n" +
+    "r_val = v:NUMBER"
+}
+
+fn tagged_g() -> string { "r = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)" }
+
+spec "t-47hc.8: MkStructLit builds the hand's Expr.StructLit" {
+    then "a single-field literal carries name and field" {
+        render(struct_g(), "Point { x: 1 }") == "(struct Point (x=1))"
+    }
+    then "a multi-field literal keeps SOURCE ORDER" {
+        // Field order is observable — codegen stamps struct slots positionally, so a
+        // reordering builder would be a silent layout bug rather than a parse error.
+        render(struct_g(), "Point { x: 1, y: 2 }") == "(struct Point (x=1, y=2))"
+    }
+    then "an EMPTY literal is still a StructLit, not a bare ident" {
+        // The case mk_qualified needs its `lb` capture to distinguish. Here the `{`
+        // is matched by the branch itself, so `Point {}` cannot collapse to `Point`.
+        render(struct_g(), "Point { }") == "(struct Point ())"
+    }
+    then "a lowercase name builds a StructLit too (struct-lit is not case-gated)" {
+        render(struct_g(), "cfg { x: 1 }") == "(struct cfg (x=1))"
+    }
+}
+
+spec "t-47hc.8: MkTaggedTemplate builds the hand's Call(Ident(tag), [template])" {
+    then "a tagged template is a CALL of the tag with the template as its argument" {
+        // The hand: `Expr.Call(alloc(Expr.Ident(name)), [desugar_template(raw)])`.
+        render(tagged_g(), "sql`SELECT 1`") == "(call sql (\"SELECT 1\"))"
+    }
+    then "the argument is EXACTLY what the incumbent bare-template builder produces" {
+        // The assertion that actually pins the contract: `mk_tagged_template`
+        // delegates its argument to the same `mk_template` the untagged form uses,
+        // so the tagged node must be the bare node wrapped in a call — for an
+        // interpolated template as much as a plain one. Written as a differential
+        // against MkTemplate rather than a hardcoded shape, so it stays true if
+        // template lowering ever changes.
+        let untagged = render("r = t:TEMPLATE -> MkTemplate(t)", "`id {x}`")
+        render(tagged_g(), "sql`id {x}`") == "(call sql (" + untagged + "))"
+    }
+}
