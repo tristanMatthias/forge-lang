@@ -480,7 +480,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `ident_lbrace`: cur is an IDENT and the next token is `{` — the token twin of
     // Parser.peek_after_ident_is_lbrace, which distinguishes the `~Name { … }`
     // constructor-name splice from the greedy `~expr` form. See executor.lookahead_ok.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "qdot_plain_field" || cond == "dot_plain_field"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -516,7 +516,7 @@ export fn when_pred_supported(flag: string) -> bool {
     flag == "allow_struct_lit" || flag == "allow_dot_postfix" ||
         flag == "allow_it_sugar" || flag == "cell_mode" ||
         flag == "at_quote_top" || flag == "in_quote_body" ||
-        flag == "base_callable" || flag == "base_upper_ident"
+        flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok"
 }
 
 /// The parse-MODE flags a `@on(flag)` marker (GItem.mode_on) may turn ON — the
@@ -1335,7 +1335,7 @@ fn parse_primary(p: GP) -> GPrim {
             if when_pred_supported(fl) {
                 flag = fl
             } else {
-                p.fail("unknown `@when` predicate `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode / at_quote_top / in_quote_body / base_callable / base_upper_ident)")
+                p.fail("unknown `@when` predicate `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode / at_quote_top / in_quote_body / base_callable / base_upper_ident / dot_postfix_ok)")
             }
         }
         else { p.fail("expected a flag name in `@when(flag)`") }

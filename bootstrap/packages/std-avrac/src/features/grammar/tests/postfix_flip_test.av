@@ -63,6 +63,29 @@ spec "t-47hc.33: `expr?` is grammar-native" {
     }
 }
 
+// Form 3 — `expr?.field`, optional chaining WITHOUT a call. Branch-only: no sub-rule, so
+// no new generated function — the `?.m(args)` sibling builds a DIFFERENT node
+// (Expr.OptionalMethodCall, from an argument list under `it`-sugar) and stays hand-owned,
+// and `@peek(qdot_plain_field)` is what separates them before the branch is entered.
+
+spec "t-47hc.33: `expr?.field` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_opt_chain(st,")
+    }
+    then "it is gated by the lookahead, not by the `?.` token alone" {
+        // Without the peek the branch would swallow `?.m(args)` and build the wrong node.
+        postfix_rule_src().contains("lookahead_ok(\"qdot_plain_field\", st)")
+    }
+    then "the field terminal is IDENT — a reserved-keyword field stays hand-owned" {
+        // consume_field_name also accepts Tk.KwReserved, and the grammar's "KW" kind is
+        // EVERY keyword, so matching it here would be wider than the hand.
+        postfix_rule_src().contains("st.cur().tk == Tk.Identifier")
+    }
+    then "the `@hand` tail is still reachable for the excluded cases" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+}
+
 // Form 2 — `expr catch { … }` / `expr catch (e) { … }` (spec Axis 12.5-12.6). Unlike the
 // `?` form this one has REAL structure: an optional binding, a statement-list body under
 // `allow_dot_postfix`, and four abort points whose messages are the hand parser's.

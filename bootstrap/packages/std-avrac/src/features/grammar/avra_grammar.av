@@ -144,6 +144,7 @@ fn avra_expr_core() -> Grammar {
                    @expect(")", "expected `)` after catch binding")
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
+                 | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
                  | @hand(postfix_suffix)
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)

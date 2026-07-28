@@ -921,7 +921,7 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
 /// Kept as its own list so `pred_ok` can route them, and so `modes_flag` stays a pure
 /// function of `ExprModes` (a base read needs the whole PState).
 export fn is_base_pred(flag: string) -> bool {
-    flag == "base_callable" || flag == "base_upper_ident"
+    flag == "base_callable" || flag == "base_upper_ident" || flag == "dot_postfix_ok"
 }
 
 /// Read a predicate off the accumulated POSTFIX BASE (`st.postfix_base`) — the base the
@@ -963,6 +963,32 @@ export fn base_pred(flag: string, st: PState) -> bool {
             .FieldAccess(_, _) -> true
             _ -> false
         }
+    }
+    // The `.` arm's ENTIRE entry-guard conjunct from the hand postfix_step:
+    //   check(Tk.Dot) && dot_is_postfix(result) && (!cell_mode || same_line)
+    // Folded into ONE predicate rather than spelled as `@when(cell_mode)` + `^` + a base
+    // read, because `dot_is_postfix` is not a conjunction of those — it is a decision
+    // TREE (cross-line-uppercase rejects outright; otherwise allow_dot_postfix short-
+    // circuits true; otherwise a lowercase field is always a field; only an uppercase
+    // field with the flag off consults the base). Expressing that as separate markers
+    // would need a negated `@when`, which the DSL does not have and should not grow for
+    // one caller. `peek_next_is_upper` reads the SOURCE char after the `.` in the hand;
+    // on the token stream the next token's first char is the same question.
+    if flag == "dot_postfix_ok" {
+        if st.cur().tk != Tk.Dot { return false }
+        let same_line = st.pos == 0 ||
+            st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line
+        // cell_mode confines a `.` postfix to its own line (table cells).
+        if st.modes.cell_mode != 0 && !same_line { return false }
+        let next_upper = st.pos + 1 < st.toks.length && grammar_starts_upper(st.toks[st.pos + 1].text)
+        // A bare `.UpperIdent` opening a NEW line is a fresh enum-ctor statement, not a
+        // postfix on the previous expression (forge-crafting-intepreters-3r6q).
+        if !same_line && next_upper { return false }
+        if st.modes.allow_dot_postfix != 0 { return true }
+        // Inside a match arm: `.lower` is always a field, `.Upper` only when the base is
+        // itself an uppercase ident (an enum-TYPE prefix like `Foo.Bar`).
+        if !next_upper { return true }
+        return base_pred("base_upper_ident", st)
     }
     if flag == "base_upper_ident" {
         return match e {
@@ -1055,6 +1081,39 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // past the ident for the first non-space char; on the token stream the whitespace is
     // already gone, so "the next token is `{`" is the same question — the same equivalence
     // ident_colon relies on.
+    // `?.field` WITHOUT a call — the half of the hand's QuestionDot arm that builds
+    // `Expr.OptionalChain`. Three conjuncts, each excluding a case the hand keeps:
+    //   - the field must lex as IDENT, because consume_field_name also accepts a
+    //     RESERVED keyword and the grammar's "KW" kind is every keyword, not just those;
+    //   - a same-line `(` after it is `?.m(args)` => Expr.OptionalMethodCall, a different
+    //     node built from an arg list with `it`-sugar;
+    //   - a CROSS-line `(` is not a call at all (the hand checks prev_line there too), so
+    //     that stays this branch.
+    // Everything excluded falls through to the `@hand` tail, which handles it verbatim.
+    // `.field` that is NOT an enum construction. The hand builds `Expr.EnumCtor` when the
+    // base is a PascalCase Ident / qualified path with a PascalCase last segment AND a `(`
+    // follows the field name; that form needs an argument list, so it stays hand-owned.
+    // Everything else with an IDENT field name is a plain FieldAccess.
+    if cond == "dot_plain_field" {
+        if st.cur().tk != Tk.Dot { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        // consume_field_name also accepts a RESERVED keyword; the grammar's "KW" kind is
+        // every keyword, so that case is left to the hand rather than matched too widely.
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
+        // A `(` follows: this is an enum ctor only if the BASE reads as a type name.
+        return !base_pred("base_upper_ident", st)
+    }
+    if cond == "qdot_plain_field" {
+        if st.cur().tk != Tk.QuestionDot { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.pos + 2 >= st.toks.length { return true }
+        let after = st.toks[st.pos + 2]
+        if after.tk != Tk.LeftParen { return true }
+        return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line != st.store.lines.to_linecol(after.pos).line
+    }
     if cond == "ident_lbrace" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -2436,6 +2495,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
         // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
+        "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
+        "MkFieldAccess" if args.length == 1 -> CapVal.Node(mk_field_access(st, env.get(args[0])))
         "MkCatchSuffix" if args.length == 3 -> CapVal.Node(mk_catch_suffix(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
@@ -3954,6 +4016,29 @@ fn postfix_step_node(st: PState, node: Expr) -> ExprId {
 /// `expr?` — error propagation (t-47hc.33 form 1), the hand postfix_step's
 /// `if self.check(Tk.Question)` arm. No captures: the whole suffix is the token, and
 /// the subject is the threaded base.
+/// `expr?.field` — optional chaining WITHOUT a call (t-47hc.33 form 3). The `?.m(args)`
+/// sibling builds a different node (`Expr.OptionalMethodCall`, from an arg list under
+/// `it`-sugar) and stays with the `@hand` tail; `@peek(qdot_plain_field)` is what keeps
+/// the two apart before the branch is entered.
+export fn mk_opt_chain(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.OptionalChain(st.postfix_base, capval_tok_text(ncap)))
+}
+
+/// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
+/// `int()`s it, so a float-shaped `.0.1` lexes as one NUMBER and would differ; the
+/// grammar terminal is the same NUMBER kind, so the same lexeme reaches `int` here.
+export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.TupleIndex(st.postfix_base, int(capval_tok_text(tcap))))
+}
+
+/// `expr.field` — plain field access (t-47hc.33 form 4). The ENUM-CONSTRUCTOR reading of
+/// the same syntax (`Type.Variant(args)`, when the base is a PascalCase ident and a `(`
+/// follows) builds a different node from an argument list, and stays with the `@hand`
+/// tail; `@peek(dot_plain_field)` keeps the two apart before the branch is entered.
+export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.FieldAccess(st.postfix_base, capval_tok_text(ncap)))
+}
+
 export fn mk_try_suffix(st: PState) -> ExprId {
     postfix_step_node(st, Expr.Try(st.postfix_base))
 }
