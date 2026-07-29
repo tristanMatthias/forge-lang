@@ -488,8 +488,10 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `t.0`, kept apart from the `.field` branch that shares its FIRST token. See
     // executor.lookahead_ok.
     // `comma_not_rparen`: a `,` followed by another argument rather than the closing
-    // `)` — the trailing-comma guard for an argument list (DORMANT; landed with the
-    // call-form builders, spent when `f(args)` goes native).
+    // `)` — the trailing-comma guard for an argument list. LIVE: spent by the native
+    // call form, and reused verbatim by every argument list since (generic call,
+    // enum ctor, optional method call), which is why `f(a, b,)` closes instead of
+    // looking for a fourth argument.
     cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen"
 }
 

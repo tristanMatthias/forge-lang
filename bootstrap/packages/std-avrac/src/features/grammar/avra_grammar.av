@@ -155,7 +155,8 @@ fn avra_expr_core() -> Grammar {
   // consumed, without re-testing same-line or dot_is_postfix — the delegate tail still
   // covers that compound case, because a native alternative whose guard fails simply
   // falls through to it.
-  postfix_suffix = @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
+  postfix_suffix = @when(allow_dot_postfix) ^"!" -> MkForceUnwrap()
+                 | @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
                  | c:"catch" ( "(" @require b:IDENT @require ")" )? @require "{"
                    @on(allow_dot_postfix) body:declaration* @require "}"
                    @expect("IDENT", "expected error binding name after `catch (`")
