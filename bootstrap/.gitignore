@@ -25,6 +25,13 @@ packages/std-avrac/src/build/**/*.avra-sha256
 # Build cache artifacts created when running builds from inside the package
 # (e.g. `cd packages/std-avrac && bs2 build`) — NOT source, must stay ignored.
 packages/std-avrac/src/build/cache/
+# Test-run artifacts that land in the SAME directory as the build-driver source:
+# per-shard object files and shard logs from `bs2 test`. The re-include above is
+# for the .av source module only, and without these two lines it also re-includes
+# every .o the test runner drops there — which a `git add` over src/ then sweeps
+# into the commit (19 of them, twice in one session, both caught only on review).
+packages/std-avrac/src/build/*.o
+packages/std-avrac/src/build/test_shards/
 dogfood_progress.csv
 
 # Generated language reference (rebuild with 'avra lang')
