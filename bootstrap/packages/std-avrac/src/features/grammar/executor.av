@@ -2789,7 +2789,20 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
     // grammar terminal (NUMBER/STRING/…) must produce the SAME id the hand parser
     // does or two `5`s diverge. `store.intern_expr_leaf` is `store.exprs.add_leaf`'s
     // interning twin (arena.av); non-eligible content falls through to add_leaf inside.
-    if t.kind == "NUMBER" { return st.store.intern_expr_leaf(Expr.Number(t.text)) }
+    // `Tk.Float` folds INTO the coarse "NUMBER" kind (real_lex.av: both `.Number` and
+    // `.Float` map to it, "the lexeme carries the dot"), so the KIND alone cannot tell
+    // `2` from `2.0` — the split must come off the TOKEN, exactly as hand parse_primary
+    // does it (`Tk.Number -> Expr.Number`, `Tk.Float -> Expr.FloatLit`). Building every
+    // NUMBER as `Expr.Number` silently truncated a float literal to its integer part:
+    // `f(2.0)` lowered to `call %fn_ptr(i64 2)` with no `avra_float_parse` at all, so
+    // the callee reinterpreted the i64 as a double (~1e-323) and returned a wrong
+    // NUMBER rather than crashing (t-9bz3). Only literals reaching a build through this
+    // core were affected — a float via a binding was fine, which is what made it look
+    // like a codegen bug rather than a parse one.
+    if t.kind == "NUMBER" {
+        if t.tk == Tk.Float { return st.store.intern_expr_leaf(Expr.FloatLit(t.text)) }
+        return st.store.intern_expr_leaf(Expr.Number(t.text))
+    }
     if t.kind == "STRING" { return st.store.intern_expr_leaf(Expr.String(t.text)) }
     if t.kind == "BOOL" { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
     // `null` / `none` are keyword tokens (Tk.KwNull/KwNone → the generic "KW" grammar
