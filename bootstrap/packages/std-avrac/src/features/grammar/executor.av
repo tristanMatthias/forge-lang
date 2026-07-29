@@ -2814,10 +2814,16 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
 /// default. A static method (no leading `self`) is returned unchanged. Keeps
 /// the DSL's built AST structurally equal to the hand parser's, not merely
 /// render-equal (render_param_list omits param types).
-fn retype_self_param(params: List<ParamEntry>, target: string) -> List<ParamEntry> {
+/// `st` is needed because retyping `self` must maintain the F1d DUAL: a param in a
+/// type-carrying position owns a real type ROW alongside its vtype, and rewriting the
+/// vtype without re-ingesting leaves `ty_id` pointing at the pre-retype type — or, as
+/// here, at nothing at all. The hand parser stamps both; so must this.
+/// (f1a_container_duals_test's "self's ty_id carries the impl header type".)
+fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> List<ParamEntry> {
     if params.length == 0 { return params }
     if params[0].name != "self" { return params }
-    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: vtype_from_name(target) }]
+    let self_vt = vtype_from_name(target)
+    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: self_vt, ty_id: st.store.ingest_type(self_vt, byte_span_none()) }]
     mut i = 1
     while i < params.length {
         out.push(params[i])
@@ -3925,7 +3931,7 @@ export fn mk_impl(st: PState, header: string, for_cv: CapVal, has_for: bool, met
     mut mangled_ids: List<StmtId> = []
     for id in methods {
         match st.store.stmts.get(id) {
-            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(ps, target), rv, bd)))
+            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(st, ps, target), rv, bd)))
             _ -> mangled_ids.push(id)
         }
     }
