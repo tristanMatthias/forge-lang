@@ -1,0 +1,69 @@
+// t-drl0 — the PROCESS-WIDE sibling of the per-fold comptime memory budget
+// (features/comptime/tests/comptime_mem_budget_test.av).
+//
+// WHY THIS EXISTS: a runaway anywhere in the compiler — a quadratic re-lex, a
+// pathological monomorphization, an unbounded collection outside a comptime fold
+// — used to end as a kernel SIGKILL. On a small box that frequently took the
+// whole container with it, so the failure was not just fatal but UNDIAGNOSABLE:
+// no message, no phase, no exit code worth reading. The compiler now polls its
+// own RSS from the allocation hot paths and stops itself first, with an F4014
+// naming the ceiling, the measured resident size, and the phase it died in.
+//
+// The ceiling is AVRA_MEM_LIMIT_MB (default: 75% of MemAvailable at startup;
+// 0 disables). These specs force it low so the trap fires in milliseconds, and
+// force it high to prove ordinary compiles don't false-trip.
+//
+// The large input is a REAL file from the compiler's own source rather than a
+// generated fixture. Generating one in-process was a trap twice over: `{` opens
+// an interpolation in an ordinary string (so the obvious fixture builder emits
+// no braces at all and yields a few bytes of nonsense), and string `+` copies,
+// so a loop long enough to matter makes the TEST BINARY the memory hog instead
+// of the compiler under test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+/// A checked-in source file large enough that parsing it costs well over
+/// 100 MiB — the compiler's generated expression parser.
+const BIG_FILE: string = "packages/std-avrac/src/parse/gen_expr_parser.av"
+/// A trivially small one, for the no-false-trip direction.
+const SMALL_FILE: string = "packages/std-avrac/src/parse/gen_keyword_scanner.av"
+
+/// Compile-check `file` with the process memory ceiling forced to `mb` MiB.
+/// `timeout` bounds a regression (guard removed → a genuine OOM/hang) so it
+/// fails loudly instead of wedging the suite.
+fn check_with_mem_limit(mb: string, file: string) -> string {
+    avra_shell_exec("AVRA_MEM_LIMIT_MB=${mb} timeout 300 ./build/bs2 check '${file}' 2>&1 || true")
+}
+
+spec "t-drl0: the compiler bounds its own memory instead of being OOM-killed" {
+    then "a compile past the ceiling reports F4014, not a signal death" {
+        let out = check_with_mem_limit("1", BIG_FILE)
+        out.contains("F4014") && out.contains("memory ceiling exceeded")
+    }
+    then "the report always names a PHASE, so the failure is attributable" {
+        // A 1 MiB ceiling trips on the first poll, which lands during start-up —
+        // before any pass has stamped itself. That window must still report a
+        // phase (the seeded default) rather than a bare byte count.
+        let out = check_with_mem_limit("1", BIG_FILE)
+        out.contains("phase:")
+    }
+    then "a ceiling above start-up RSS attributes the trip to the PARSE phase" {
+        // Comfortably above the ~50 MiB start-up baseline and comfortably below
+        // what parsing this file reaches, so the trip is attributable to the
+        // input rather than to start-up — and names the file being read.
+        let out = check_with_mem_limit("150", BIG_FILE)
+        out.contains("phase: parse ") && out.contains("gen_expr_parser.av")
+    }
+    then "the report states the ceiling it enforced, so it can be raised" {
+        let out = check_with_mem_limit("1", BIG_FILE)
+        out.contains("AVRA_MEM_LIMIT_MB")
+    }
+    then "an ordinary compile UNDER the ceiling is untouched (no false trip)" {
+        let out = check_with_mem_limit("8192", SMALL_FILE)
+        !out.contains("F4014")
+    }
+    then "AVRA_MEM_LIMIT_MB=0 disables the ceiling entirely" {
+        let out = check_with_mem_limit("0", BIG_FILE)
+        !out.contains("F4014")
+    }
+}

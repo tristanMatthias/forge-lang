@@ -556,6 +556,19 @@ spawning, so a stale artifact can no longer mask a crashed child (the old
 
 Do NOT rebuild `bs2` (or clear caches) while a sweep is running; the runner re-invokes `./build/bs2` per compile and a mid-sweep rebuild silently invalidates the run.
 
+**The compiler bounds its OWN memory now (F4014, t-drl0) — the watchdog is the outer net, not the first line.** `bs2` polls its resident size from the allocation hot paths and, past a ceiling, stops itself with a real diagnostic:
+
+```
+error[F4014]: compiler memory ceiling exceeded — 11055 MiB resident (ceiling 11054 MiB)
+  phase: parse packages/std-avrac/src/parse/gen_expr_parser.av
+```
+
+The `phase:` line is the point — a runaway is now attributable to the file/pass that caused it, instead of arriving as a bare SIGKILL (or a container restart). Ceiling = `AVRA_MEM_LIMIT_MB` (default: 75% of `MemAvailable` sampled at startup; `0` disables). RSS is MEASURED, not accounted, because the compiler links LLVM and LLVM allocates through C++ `new` — an allocation-accounting scheme would miss the largest consumer. Guard: `build/tests/memory_ceiling_test.av`. **An F4014 on a normal input is a COMPILER BUG, not a box-too-small problem — read the phase and fix it; don't just raise the ceiling.**
+
+Two things this changed that you'd otherwise trip over:
+- `source_newer_than` (diagnose.sh) now watches `runtime.c` / `llvm_wrapper.c`, not just `*.av`. `build/seed` already keyed its C inputs (`seed_inputs_hash`); `build/bs2` did NOT, so a runtime.c edit rebuilt `runtime.o` and then silently re-linked the PREVIOUS bs2 — you'd be testing the code you just replaced. If a C-side change appears to do nothing, check `ls -la build/bs2 build/runtime.o` before believing it.
+- `parse_or_fail` parses AT `ctx.path`, so single-file commands (`bs2 check foo.av`) no longer report their phase as `<stdin>`.
+
 **The memory watchdog — WRAP EVERY HEAVY RUN (`make guarded` / `diagnose.sh --guarded`, t-lqzr).** `make sweep` covers the full *test* suite, but the two heaviest runs — **`make diff-test`** (TWO concurrent whole-compiler selfhost compiles) and any **cold `make build` / `make test`** — have repeatedly OOM-killed the *whole container*, not just the command (multiple restarts across sessions; the box is simply too small for the peak, there is NO code bug to chase). The durable fix is a watchdog that caps the blast radius: it polls `MemAvailable` every ~0.4s and, below a floor, SIGKILLs the heavy procs (`bs2`/`llc`/`cc1plus`/`clang`/`cc1`) so the *compile* dies and the container lives. **Rules for the small box:**
 - **Never run `make diff-test`, a cold `make build`/`make test`, or a parallel `bs2 test <dir>` UNGUARDED.** Wrap them: `make guarded CMD="make diff-test" FLOOR=5500` (or `bash scripts/diagnose.sh --guarded 5500 -- make diff-test`). `--guarded` pins `AVRA_JOBS=1` / `AVRA_TEST_JOBS=1` / `DIFF_TEST_JOBS=1` (all overridable), starts the watchdog, runs the command, and ALWAYS tears the watchdog down. `5500` is the proven floor here.
 - **`AVRA_JOBS` is the shard knob, NOT `AVRA_TEST_JOBS` (t-vj3v).** They are different mechanisms and pinning one does nothing to the other: `AVRA_JOBS` caps how many shard PROCESSES `bs2 test <dir>` spawns (read by `parse_jobs_env` as the ceiling in `compute_shard_jobs`, which memory can lower further) — that is the memory-dominant one, ~1.8GB per metadata shard and ~6GB per whole-program shard. `AVRA_TEST_JOBS` caps worker THREADS running test files *inside* one already-assembled shard binary; it is comparatively cheap and does not change the shard count at all (`AVRA_TEST_JOBS=1 bs2 test tests` still reports `jobs=4`). CLAUDE.md pointed at the wrong one for months, so the documented advice produced no effect and the run OOM'd anyway.

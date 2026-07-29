@@ -516,12 +516,19 @@ static void rc_reclaim(void* user_ptr) {
 // per-fold budget when a comptime fold is on the stack.
 int64_t avra_comptime_active(void);
 static void avra_comptime_charge(int64_t bytes);
+// t-drl0: process-wide RSS ceiling (defined next to the comptime budget it
+// mirrors). Amortised — a relaxed increment on all but every 65536th call.
+static void avra_mem_poll(void);
 
 void* avra_rc_alloc(int64_t payload_size) {
     size_t payload = (size_t)payload_size;
     // ps3t.5.4: charge comptime-active allocations against the per-fold ceiling
     // so a runaway fold trips a diagnostic before it can OOM the compiler.
     if (avra_comptime_active()) avra_comptime_charge((int64_t)payload_size);
+    // t-drl0: and against the process-wide ceiling, so a runaway ANYWHERE (this
+    // is the compiler's single hottest allocation path) reports instead of
+    // getting the whole container SIGKILLed.
+    avra_mem_poll();
     // Fast path: a small object straight from the region (no malloc, no rc_set).
     void* ruser = rc_region_try_alloc(payload);
     if (ruser) {
@@ -1478,11 +1485,13 @@ typedef struct {
 // graceful diagnostic + exit (matching avra_rc_alloc) rather than an unguarded
 // null-deref. Centralised so every array alloc/grow site is covered uniformly.
 static void* avra_arr_xmalloc(size_t bytes) {
+    avra_mem_poll();   // t-drl0: the other bulk allocator — list growth
     void* p = malloc(bytes);
     if (!p) { avra_runtime_errorf("out of memory (array alloc %zu bytes)", bytes); exit(1); }
     return p;
 }
 static void* avra_arr_xrealloc(void* old, size_t bytes) {
+    avra_mem_poll();   // t-drl0: geometric growth is how a runaway list gets big
     void* p = realloc(old, bytes);
     if (!p) { avra_runtime_errorf("out of memory (array grow %zu bytes)", bytes); exit(1); }
     return p;
@@ -4924,6 +4933,144 @@ static void avra_comptime_charge(int64_t bytes) {
 // True once the active fold has allocated past the ceiling. The interpreter
 // polls this per statement and traps (→ F4007) instead of continuing to OOM.
 int64_t avra_comptime_mem_exceeded(void) { return avra_comptime_mem_exceeded_v; }
+
+// ─── Process memory ceiling (t-drl0) ─────────────────────────────
+//
+// The comptime budget above bounds ONE fold. This is its process-wide sibling:
+// it bounds the whole compiler, so a runaway anywhere — a quadratic re-lex, a
+// pathological monomorphization, an unbounded collection — reports a diagnostic
+// and exits, instead of being SIGKILLed by the kernel's OOM killer.
+//
+// WHY THIS LIVES IN THE COMPILER AND NOT IN A WRAPPER SCRIPT: an external
+// watchdog can only observe the process from outside, so it kills a black box.
+// It cannot name the phase, cannot be tested, cannot ship to users, and on a
+// small box it races the kernel — which frequently wins and takes the whole
+// container down with it. A ceiling the compiler enforces itself turns "the
+// machine died" into a normal, reproducible compiler error with an F-code.
+//
+// MEASURED, NOT ACCOUNTED: we poll real RSS from /proc/self/statm rather than
+// instrumenting every allocation. Two reasons. (1) Accuracy: the compiler links
+// LLVM, which allocates through C++ `new` and never touches avra_rc_alloc — an
+// allocation-accounting scheme would miss the single largest consumer. RSS sees
+// every byte, whoever allocated it. (2) Cost: charging every alloc pays on the
+// hottest path in the compiler; polling once every 1<<16 allocations makes the
+// check a single relaxed increment plus a rare ~2µs file read.
+//
+// Default ceiling: 75% of MemAvailable sampled at first use — i.e. "most of
+// what this box can actually give us", so a legitimately heavy build still
+// completes while a runaway trips before the kernel notices. AVRA_MEM_LIMIT_MB
+// overrides it; 0 disables the ceiling entirely.
+#define AVRA_MEM_POLL_MASK ((int64_t)0xFFFF)   // poll every 65536 allocations
+
+static _Atomic int64_t avra_mem_poll_ctr = 0;
+static _Atomic int64_t avra_mem_tripped = 0;
+static _Atomic int64_t avra_mem_peak_kb = 0;
+// Phase label for the report — set by the compiler as it moves through its
+// passes, so the diagnostic can say WHERE the memory went. Plain pointer to a
+// string literal / leaked copy; read-mostly, single writer.
+//
+// Seeded with a real label rather than NULL: a ceiling low enough to trip during
+// process start-up (registry construction, before any pass stamps itself) would
+// otherwise report with no phase at all, which reads like the phase machinery is
+// broken. "startup" is the honest answer for that window.
+static _Atomic(const char*) avra_mem_phase = "startup (before parse)";
+
+// Resident set size in KiB, or -1 where /proc is unavailable (non-Linux).
+static int64_t avra_mem_rss_kb(void) {
+#ifdef __linux__
+    FILE* f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    long long total_pages = 0, resident_pages = 0;
+    int n = fscanf(f, "%lld %lld", &total_pages, &resident_pages);
+    fclose(f);
+    if (n != 2) return -1;
+    return (int64_t)resident_pages * (int64_t)(sysconf(_SC_PAGESIZE) / 1024);
+#else
+    return -1;
+#endif
+}
+
+// MemAvailable in KiB — what the kernel thinks we can still get without
+// swapping. 0 when unknown.
+static int64_t avra_mem_available_kb(void) {
+#ifdef __linux__
+    FILE* f = fopen("/proc/meminfo", "r");
+    if (!f) return 0;
+    char key[64];
+    long long val = 0;
+    int64_t out = 0;
+    while (fscanf(f, "%63s %lld kB\n", key, &val) == 2) {
+        if (strcmp(key, "MemAvailable:") == 0) { out = (int64_t)val; break; }
+    }
+    fclose(f);
+    return out;
+#else
+    return 0;
+#endif
+}
+
+// The ceiling in KiB; 0 means "no ceiling". Read once, cached.
+int64_t avra_mem_limit_kb(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v;
+    const char* e = getenv("AVRA_MEM_LIMIT_MB");
+    if (e && *e) {
+        v = strtoll(e, NULL, 10) * 1024;
+        if (v < 0) v = 0;
+    } else {
+        int64_t avail = avra_mem_available_kb();
+        // 75% of what's available at startup. Below ~1GiB available we'd only
+        // produce false trips on an already-doomed box, so stay out of the way.
+        v = (avail > 1024 * 1024) ? (avail / 4) * 3 : 0;
+    }
+    atomic_store(&cached, v);
+    return v;
+}
+
+void avra_mem_phase_set(const char* label) {
+    atomic_store_explicit(&avra_mem_phase, label, memory_order_relaxed);
+}
+
+int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
+
+// Report and terminate. Rendered in the same shape as a CompileError header so
+// it reads like every other compiler diagnostic (ZERO RAW ERRORS policy) — the
+// runtime cannot construct a DiagnosticBag from an arbitrary allocation site,
+// but it can and does speak the same language.
+static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb) {
+    const char* phase = atomic_load_explicit(&avra_mem_phase, memory_order_relaxed);
+    fflush(stdout);
+    fprintf(stderr,
+        "\nerror[F4014]: compiler memory ceiling exceeded — %lld MiB resident (ceiling %lld MiB)\n",
+        (long long)(rss_kb / 1024), (long long)(limit_kb / 1024));
+    if (phase && *phase) fprintf(stderr, "  phase: %s\n", phase);
+    fprintf(stderr,
+        "  help: this is the compiler stopping itself before the OS OOM-killer does.\n"
+        "        Raise or disable the ceiling with AVRA_MEM_LIMIT_MB=<mb> (0 = no ceiling).\n"
+        "        If the input is not enormous, this is a compiler bug — the phase above\n"
+        "        is where the memory went; capture it with a spec test.\n");
+    fflush(stderr);
+    _exit(1);
+}
+
+// Poll hook, called from the allocation hot paths. Amortised: a relaxed
+// increment on all but every 65536th call.
+static void avra_mem_poll(void) {
+    int64_t limit_kb = avra_mem_limit_kb();
+    if (limit_kb <= 0) return;
+    int64_t n = atomic_fetch_add_explicit(&avra_mem_poll_ctr, 1, memory_order_relaxed);
+    if ((n & AVRA_MEM_POLL_MASK) != 0) return;
+    int64_t rss = avra_mem_rss_kb();
+    if (rss < 0) return;
+    int64_t prev = atomic_load_explicit(&avra_mem_peak_kb, memory_order_relaxed);
+    if (rss > prev) atomic_store_explicit(&avra_mem_peak_kb, rss, memory_order_relaxed);
+    if (rss < limit_kb) return;
+    // Latch: the first thread to cross reports; others fall through to _exit.
+    if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
+    avra_mem_ceiling_report(rss, limit_kb);
+}
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
 // that runs past this can only be non-terminating (a real one folds in far

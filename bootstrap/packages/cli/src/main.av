@@ -75,7 +75,7 @@ use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
-use @std.avrac.parse.{parse_expression_source, parse_program_source}
+use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
 use @std.avrac.core.{render_expr, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
@@ -223,7 +223,12 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext)
 /// Returns the parsed program + its parse-time store on success —
 /// the caller continues from there.
 fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
-    let parsed = parse_program_source(source)
+    // t-drl0: parse AT the path the caller already knows. Every caller builds
+    // `ctx` from a real file (`fa.path`), so dropping it here made single-file
+    // commands parse as "<stdin>" — which is what an F4014 memory-ceiling report
+    // then named as its phase. `parse_program_source` is exactly
+    // `parse_program_source_at(source, "")`, so this only fills the name in.
+    let parsed = parse_program_source_at(source, ctx.path)
     if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) {
             render_bag_ctx(ctx, parsed.bag)
