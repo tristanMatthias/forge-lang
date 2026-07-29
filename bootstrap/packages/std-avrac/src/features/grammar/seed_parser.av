@@ -492,7 +492,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // call form, and reused verbatim by every argument list since (generic call,
     // enum ctor, optional method call), which is why `f(a, b,)` closes instead of
     // looking for a fourth argument.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "quote_arm" || cond == "quote_type"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —

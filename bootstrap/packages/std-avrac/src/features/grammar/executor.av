@@ -1388,6 +1388,22 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "if_let" {
         return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
     }
+    // t-bwjg: the two quote kinds whose BODY is not a block expression, split so each can
+    // be routed on its own. `type` parses a type_expr into an Expr.TypeLit carrier and is
+    // NATIVE (quote_type_expr); `arm` builds a synthetic single-armed MatchExpr envelope
+    // and is still the hand's. Both are checked BEFORE `quote` is consumed, so the plain
+    // block-bodied branch's FIRST stays a bare `quote`. The hand decides the same thing
+    // one token later, in parse_quote_kind.
+    if cond == "quote_arm" {
+        if st.cur().text != "quote" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == "arm"
+    }
+    if cond == "quote_type" {
+        if st.cur().text != "quote" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == "type"
+    }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
@@ -2348,8 +2364,19 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
+    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
+    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
+    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
+    // none of them would match the names the hand parser produces for the same source.
+    // The delegate is the right home because it is the exact Parser `run_hand_expr`
+    // dispatches into, so a hand-parsed leaf and a native build action advance the same
+    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
+    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
+    if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
@@ -2368,8 +2395,19 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
 /// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
+    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
+    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
+    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
+    // none of them would match the names the hand parser produces for the same source.
+    // The delegate is the right home because it is the exact Parser `run_hand_expr`
+    // dispatches into, so a hand-parsed leaf and a native build action advance the same
+    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
+    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, parse(st))
+    if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
@@ -2807,6 +2845,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
+        "MkQuoteArm" if args.length == 4 -> mk_quote_arm(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
+        "MkQuoteType" if args.length == 2 -> mk_quote_type(st, 0 - 1, env.get(args[0]), env.get(args[1]))
+        "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
@@ -3272,6 +3313,99 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 
 /// Grammar-native `spawn { ... }`, preserving the hand parser's span and
 /// walker-opaque body id.
+/// Grammar-native `quote { … }` / `quote stmt|stmts|decl { … }` (t-bwjg).
+///
+/// Mirrors the hand `Parser.parse_quote` for the BLOCK-BODIED kinds only. The two
+/// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
+/// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
+/// `@peek(quote_type)` and `@peek(quote_arm)`, each routed to its own native rule, so
+/// this build never sees either.
+///
+/// `kind_cv` is the OPTIONAL kind keyword; absent means the hand's default, `"expr"`
+/// (parse_quote_kind's fallthrough). `Expr.Quote`'s body is an ExprId SCALAR and is
+/// walker-opaque, so this allocs as a LEAF with no child refs — matching the hand's
+/// `alloc_at`, which passes none either. Adding an edge here would give the walker a
+/// child the hand never registered.
+/// Grammar-native `quote type { <type> }` (t-bwjg slice 4b).
+///
+/// Mirrors hand `parse_quote` + `parse_quote_type_body` EXACTLY, and the two spans are
+/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{` (the hand
+/// takes `sp_start` at the brace, inside parse_quote_type_body), while the outer
+/// `Expr.Quote` spans from the `quote` keyword. `lb_cv` is the captured `{` token, which
+/// is the only way the build can recover that inner byte.
+///
+/// NOTE the deliberate difference from `mk_channel`, the other build that carries a
+/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge) because
+/// its hand twin does. `parse_quote_type_body` does NOT — it is a plain `alloc_at` with
+/// no refs — so ingesting here would add a type-table row and a walker edge the hand
+/// never created, and the IR would diverge.
+/// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
+///
+/// Mirrors hand `parse_quote_arm_body` exactly. The arm is wrapped in a SYNTHETIC
+/// single-armed `Expr.MatchExpr` so the `Quote(kind, body)` shape stays uniform across
+/// every kind; the lowering pass picks the arm back out via the `arm` discriminator.
+///
+/// THREE things here are byte-identity-critical and each has a hand line behind it:
+///
+/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr`. The hand uses
+///    `alloc_leaf`, which IS `intern_expr_leaf` — an interned row, so repeated
+///    `quote arm`s share one `Expr.None`. Using add_expr would mint a fresh row each
+///    time and the arena would diverge.
+/// 2. The edge set is EXACTLY `[PatRef(pat_id)]`. `MatchArm` is a MIXED walker node:
+///    only the pattern is a walked child, while guard and body ride as walker-opaque
+///    `ExprId` scalars, and the subject is opaque too. Adding any of them would hand the
+///    walker a child set the hand never built — the same rule mk_match_expr documents.
+/// 3. The inner MatchExpr spans from the `{` (the hand's sp_start is taken inside
+///    parse_quote_arm_body), while the outer Quote spans from the `quote` keyword.
+export fn mk_quote_arm(st: PState, sp_start: int, lb_cv: CapVal, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let pat_id = capval_to_pat(st, pat_cv)
+    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
+    let arm = MatchArm {
+        pattern: st.store.pats.get(pat_id),
+        pattern_id: pat_id,
+        guard_id: guard,
+        body_id: capval_to_expr(st, body_cv)
+    }
+    let arms: List<MatchArm> = [arm]
+    let subject_id = st.store.intern_expr_leaf(Expr.None)
+    let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
+    let lb = capval_tok_pos(lb_cv)
+    let inner = st.store.add_expr(
+        Expr.MatchExpr(subject_id, arms),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        edges
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("arm", inner),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_quote_type(st: PState, sp_start: int, lb_cv: CapVal, t_cv: CapVal) -> CapVal {
+    let vt = type_expr_to_vtype(capval_to_texpr(st, t_cv))
+    let lb = capval_tok_pos(lb_cv)
+    let body = st.store.add_expr(
+        Expr.TypeLit(vt),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        []
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("type", body),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_quote(st: PState, sp_start: int, kind_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let kind = if capval_present(kind_cv) { capval_tok_text(kind_cv) } else { "expr" }
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote(kind, capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
 export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
     CapVal.Node(st.store.add_expr(
         Expr.Spawn(capval_to_expr(st, body_cv)),
