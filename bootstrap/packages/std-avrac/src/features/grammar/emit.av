@@ -342,7 +342,8 @@ fn rule_has_postfix_step_build_e(g: Grammar, r: Rule) -> bool {
                 match b.build {
                     .Call(bn, _) -> {
                         if bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkIndexSuffix" || bn == "MkOptChain" ||
-                            bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" { return true }
+                            bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" ||
+                            bn == "MkGenericCallSuffix" { return true }
                     }
                     _ -> {}
                 }
@@ -1799,6 +1800,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
         "MkCallArg" -> "CapVal.Node(mk_call_arg(st, ${args[0]}))"
         "MkCallSuffix" -> "CapVal.Node(mk_call_suffix(st, CapVal.Nodes(${args[0]}_list)))"
+        // The type-arg capture is ALREADY a `List<TypeExpr>` here (same as MkNamed's
+        // gen_args), so it passes raw — only the interpreter routes through
+        // capval_to_texpr_list.
+        "MkGenericCallSuffix" -> "CapVal.Node(mk_generic_call_suffix(st, ${args[0]}_list, CapVal.Nodes(${args[1]}_list)))"
         "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
         "MkIndexSuffix" -> "CapVal.Node(mk_index_suffix(st, ${args[0]}, ${args[1]}))"
         "MkNone" -> "mk_none_cap(st)"
@@ -2402,7 +2407,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkTaggedTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkTaggedTemplate" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
@@ -2472,6 +2477,14 @@ fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
         // moment `declaration` first named a native decl rule, and the same trap the
         // `pattern` and `match_arm` entries above were written for.
         if name == "tparam" { return "tparam" }
+        // The TYPE family, external in the expression view. `f<T, U>(args)` (t-47hc.33
+        // form 8) is the first rule to REPEAT a type capture (`( ta:type_expr … )*`), and
+        // without this its accumulator declares `List<ExprId>` and coerces each type
+        // argument through `capval_to_expr` — the identical trap the `pattern`, `tparam`
+        // and `match_arm` entries above were written for. The scalar `elem:type_expr`
+        // (channel_expr) never noticed, for the same reason the scalar `p:pattern_or`
+        // did not: its builder coerces at the use-site, via capval_to_texpr.
+        if name == "type_expr" { return "type" }
         return "expr"
     }
     mut v2: List<string> = []

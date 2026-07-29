@@ -167,8 +167,38 @@ fn avra_expr_core() -> Grammar {
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
                  | ^"(" @on_if(base_field_access, allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
+                 | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
                  | @hand(postfix_suffix)
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
+  // The `f<T>(args)` branch is the ONE speculative form in the chain, and every marker on
+  // it is chosen against try_parse_generic_call (features/generics/parser.av) rather than
+  // against its `(`-led neighbour:
+  //   `@try` and NO `@cut`. `<` is also the comparison operator, so the branch must be
+  //     able to un-decide: `a < b` is not a generic call. The hand backtracks on EVERY
+  //     failure past the `<` — a type list that doesn't close, a missing `(`, a bad arg
+  //     list, a missing `)` all hit the same `restore_state` — so there is no point at
+  //     which it owns its diagnostics, and a `@cut` would invent one. Placing a cut after
+  //     `">" "("` reads as the natural commit point and is exactly the divergence to
+  //     avoid: it would report on `f<int>(` + garbage where the hand rolls back and lets
+  //     the tokens re-read as a comparison chain. A rolled-back `@try` falls through to
+  //     the `@hand` tail, which re-runs the same hand code and reaches the same answer.
+  //   No `@require` / `@expect` for the same reason: inside a `@try` before a cut they
+  //     degrade to plain reporting (the rollback already IS the abort), so they would be
+  //     dead markers that only suggest a commit point exists.
+  //   No `^`. The `[` and `(` branches are same-line gated; the hand's `Tk.Less` arm is
+  //     not (`check(Tk.Less) && is_callable(result)` is the whole entry guard), so adding
+  //     one here would reject a line-broken turbofish the hand accepts.
+  //   `@when(base_callable)` is the `is_callable(result)` conjunct — Ident, QualifiedIdent
+  //     or FieldAccess. It reads the folded BASE, not a mode, which is why it is a
+  //     base_pred (executor.av) shared by both engines rather than a modes_flag.
+  //   The type list is OPTIONAL as a whole: parse_type_name_list returns early on `>`, so
+  //     `f<>(x)` parses, and a bare `ta:type_expr ( "," ta:type_expr )*` would reject it.
+  //   No `@on_if(base_field_access, allow_it_sugar)`. The plain-call branch carries it
+  //     because parse_postfix's `(` arm sets `allow_it_sugar = is_method || saved_it`;
+  //     try_parse_generic_call never touches the mode, so the sugar must stay at whatever
+  //     the enclosing context already had. `call_arg` is still the right body — the hand
+  //     reaches the same arg list through parse_arg_list_ids, which sets allow_dot_postfix
+  //     and leaves the it-wrap to the same `allow_it_sugar` read mk_call_arg performs.
   // MARKER ORDER IS LOAD-BEARING on the two `.`-led branches. `.field` and `.0` share a
   // FIRST token, and the ambiguity guard exempts a pair only when the earlier branch LEADS
   // with `@peek` — first_follow.seq_is_peek_led inspects `items[0].prim` and nothing else.
