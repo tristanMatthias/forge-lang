@@ -160,6 +160,10 @@ export fn parse_declaration(st: PState) -> CapVal {
     parse_statement(st)
 }
 
+fn parse_body_item(st: PState) -> CapVal {
+    parse_declaration(st)
+}
+
 fn parse_use_decl(st: PState) -> CapVal {
     let _ = st.advance()
     let ut = parse_use_tail(st)
@@ -427,8 +431,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected {")
     }
-    while st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
-        body_list.push(capval_to_stmt(st, parse_statement(st)))
+    while st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") || st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
+        body_list.push(capval_to_stmt(st, parse_body_item(st)))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")
@@ -545,8 +549,8 @@ fn parse_method_member(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.LeftBrace {
         tmlb = CapVal.Tok(st.advance())
-        while st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
-            tmbody_list.push(capval_to_stmt(st, parse_statement(st)))
+        while st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") || st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
+            tmbody_list.push(capval_to_stmt(st, parse_body_item(st)))
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected }")
@@ -643,8 +647,8 @@ fn parse_impl_method(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected {")
     }
-    while st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
-        imbody_list.push(capval_to_stmt(st, parse_statement(st)))
+    while st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") || st.cur().text == "break" || st.cur().text == "continue" || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur()) {
+        imbody_list.push(capval_to_stmt(st, parse_body_item(st)))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")

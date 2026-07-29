@@ -13,7 +13,7 @@ use features.grammar.{parse_grammar, Grammar}
 export fn avra_impl_decl_grammar() -> Grammar {
     let gp = grammar {
   impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
-  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:statement )* "}" -> MkMethod(imname, imparams, imret, imbody)
+  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" ( imbody:body_item )* "}" -> MkMethod(imname, imparams, imret, imbody)
     }
     gp.grammar
 }

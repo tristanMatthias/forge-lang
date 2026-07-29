@@ -399,6 +399,11 @@ fn avra_expr_core() -> Grammar {
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
   declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
+  // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
+  // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`
+  // here silently drops the component instantiation, which decl_lead_gate_test caught.
+  body_item   = declaration
     }
     compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_modules_grammar()), avra_struct_decl_grammar()), avra_generics_grammar()), avra_enum_decl_grammar()), avra_fn_decl_grammar()), avra_trait_decl_grammar()), avra_impl_decl_grammar())
 }
@@ -771,6 +776,13 @@ export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
   declaration = fn_decl | extern_decl | type_decl | shape_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
+  // t-20wd — the BODY nonterminal, defined per VIEW. This §2 `declaration` is
+  // declarations-ONLY (no `statement` tail), so a body here must be a statement list.
+  // The production view (avra_decl_edge_grammar) defines it as `declaration`, whose tail
+  // IS `statement` — a superset that also reaches the `decl_lead` component gate, which
+  // is what a fn body needs and what the hand parser does. The two views never compose
+  // each other, so each owns its own definition and the shared fragments stay body-agnostic.
+  body_item   = statement
   param       = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
