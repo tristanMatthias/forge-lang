@@ -387,9 +387,11 @@ DIFF & ANALYSIS
   --guarded [FLOOR_MB] -- <cmd...>
                        RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
                        Starts the memory watchdog (--memguard), runs <cmd>,
-                       and ALWAYS tears the watchdog down. Also forces
-                       AVRA_TEST_JOBS=1 and DIFF_TEST_JOBS=1 (both
-                       overridable) so neither runner fans out. Use this for
+                       and ALWAYS tears the watchdog down. Also pins
+                       AVRA_JOBS=1 (shard PROCESSES — the memory-dominant
+                       knob), AVRA_TEST_JOBS=1 (in-process test threads) and
+                       DIFF_TEST_JOBS=1 (corpus fan-out); all three are
+                       overridable, so no runner fans out. Use this for
                        diff-test / bs2 test / cold builds so a memory spike
                        kills the compile, NOT the whole container.
                        e.g. --guarded 5500 -- make diff-test
@@ -3017,11 +3019,26 @@ mode_memguard() {
 
 # The RECOMMENDED way to run ANY heavy build/test on the small box: wrap it
 # in the watchdog, guaranteed torn down when the command finishes (or is
-# interrupted). Also forces single-concurrency test execution
-# (AVRA_TEST_JOBS=1, the other half of the OOM fix — overridable) so
-# `bs2 test` can't fan out parallel shards under the wrapper. Returns the
-# command's OWN exit status; on a non-zero exit it points at the trip log
-# so an OOM kill is unambiguous.
+# interrupted). Also pins every fan-out knob to 1 (all overridable) so no
+# runner under the wrapper can multiply its own peak. Returns the command's
+# OWN exit status; on a non-zero exit it points at the trip log so an OOM
+# kill is unambiguous.
+#
+# t-vj3v: the THREE knobs are distinct mechanisms, and pinning one does not
+# constrain the others — this mode used to set only AVRA_TEST_JOBS while
+# claiming `bs2 test` "can't fan out parallel shards", which was false:
+#
+#   AVRA_JOBS       shard PROCESS concurrency — `bs2 test <dir>` spawning N
+#                   shard binaries. Read by parse_jobs_env (cli/src/main.av)
+#                   as the CEILING in compute_shard_jobs; memory can lower
+#                   it further. THIS is the knob that governs the fan-out,
+#                   and it is the memory-dominant one (~1.8GB per metadata
+#                   shard, ~6GB per whole-program one).
+#   AVRA_TEST_JOBS  in-process test parallelism — test FILES run as
+#                   @deferred_init units across worker THREADS inside one
+#                   already-assembled shard binary. Cheap by comparison.
+#   DIFF_TEST_JOBS  diff-test corpus fan-out (NOT its two selfhost compiles,
+#                   which --diff-test serializes when this is 1).
 #
 # Usage: --guarded [FLOOR_MB] -- <command> [args...]
 #   diagnose.sh --guarded 5500 -- make diff-test
@@ -3032,18 +3049,23 @@ mode_guarded() {
   if [ "${1:-}" != "--" ] && [ $# -ge 1 ]; then floor="$1"; shift; fi
   [ "${1:-}" = "--" ] && shift
   [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
+  # The load-bearing one: without it `bs2 test <dir>` still spawns up to 8
+  # shard processes under the watchdog and trips the floor it was wrapped to
+  # avoid. Override (AVRA_JOBS=3 --guarded …) when the box has the headroom
+  # and you want the wall-clock back.
+  export AVRA_JOBS="${AVRA_JOBS:-1}"
   export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
   # Same reasoning, for the other heavy runner under this wrapper: diff-test's
   # two selfhost compiles peak at ~12GB CONCURRENTLY, which trips the very
   # watchdog this mode starts. Serializing them is the difference between the
   # gate running and the gate being unrunnable on a ≤16GB box; it costs one
-  # extra compile (~30s). Overridable, like AVRA_TEST_JOBS.
+  # extra compile (~30s). Overridable, like the others.
   export DIFF_TEST_JOBS="${DIFF_TEST_JOBS:-1}"
   mode_memguard "$floor" &
   local guard=$!
   # Reap the watchdog however the command (or this script) exits.
   trap 'kill "$guard" 2>/dev/null' EXIT INT TERM
-  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS DIFF_TEST_JOBS=$DIFF_TEST_JOBS — running: $*"
+  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_JOBS=$AVRA_JOBS AVRA_TEST_JOBS=$AVRA_TEST_JOBS DIFF_TEST_JOBS=$DIFF_TEST_JOBS — running: $*"
   "$@"
   local rc=$?
   kill "$guard" 2>/dev/null
