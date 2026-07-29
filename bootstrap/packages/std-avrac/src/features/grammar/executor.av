@@ -1388,6 +1388,18 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "if_let" {
         return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
     }
+    // t-bwjg: `quote type` / `quote arm` — the two quote kinds whose BODY is not a block
+    // expression. `type` parses a type_expr into an Expr.TypeLit carrier; `arm` parses a
+    // pattern/guard/body into a synthetic single-armed MatchExpr envelope. Both stay on
+    // the (narrowed) @hand(quote_expr) leaf, so the native branch must decline them —
+    // checked BEFORE consuming `quote`, so the native branch's FIRST stays a plain
+    // `quote`. The hand decides it one token later, in parse_quote_kind.
+    if cond == "quote_special" {
+        if st.cur().text != "quote" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        let nxt = st.toks[st.pos + 1].text
+        return nxt == "type" || nxt == "arm"
+    }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
@@ -2807,6 +2819,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
+        "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
@@ -3272,6 +3285,28 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 
 /// Grammar-native `spawn { ... }`, preserving the hand parser's span and
 /// walker-opaque body id.
+/// Grammar-native `quote { … }` / `quote stmt|stmts|decl { … }` (t-bwjg).
+///
+/// Mirrors the hand `Parser.parse_quote` for the BLOCK-BODIED kinds only. The two
+/// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
+/// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
+/// `@peek(quote_special)` and stay on the narrowed @hand leaf, so this build never
+/// sees them.
+///
+/// `kind_cv` is the OPTIONAL kind keyword; absent means the hand's default, `"expr"`
+/// (parse_quote_kind's fallthrough). `Expr.Quote`'s body is an ExprId SCALAR and is
+/// walker-opaque, so this allocs as a LEAF with no child refs — matching the hand's
+/// `alloc_at`, which passes none either. Adding an edge here would give the walker a
+/// child the hand never registered.
+export fn mk_quote(st: PState, sp_start: int, kind_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let kind = if capval_present(kind_cv) { capval_tok_text(kind_cv) } else { "expr" }
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote(kind, capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
 export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
     CapVal.Node(st.store.add_expr(
         Expr.Spawn(capval_to_expr(st, body_cv)),

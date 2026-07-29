@@ -1,0 +1,164 @@
+// WHY: t-bwjg — `quote { … }` and the block-bodied kinds (`stmt` / `stmts` / `decl`) are
+// grammar-native. The two NON-block kinds stay on a narrowed `@hand(quote_expr)`:
+//   `quote type { <type> }`  → an Expr.TypeLit carrier, parsed by parse_type_expr
+//   `quote arm { pat -> b }` → a synthetic single-armed MatchExpr envelope
+// `@peek(quote_special)` is what declines them, and it is checked BEFORE `quote` is
+// consumed so the native branch's FIRST stays a plain `quote`.
+//
+// THE TRAP THIS FILE EXISTS FOR, and why the gate list here is unusual: the previous
+// attempt at a quote-adjacent leaf (the primary_base splice, t-47hc.5 comment 2026-07-27)
+// built green and passed build-quick, --emit-gen-check AND diff-test while being broken —
+// because `@comptime` → `@expand` → `value_to_expr_node` is covered by NONE of them. An
+// INT spliced correctly; STRING, FLOAT and BOOL did not. So the assertions below are
+// deliberately about the QUOTE BODY surviving lowering, not just about parsing, and the
+// feature suite (features/quote_expr/tests/*) is part of this slice's gate rather than an
+// afterthought.
+
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_ids}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source}
+
+/// The rendered whole-program tree under one parser mode — the same shape
+/// error_recovery_differential's `rtree` uses.
+fn tree(static_raw: bool, source: string) -> string {
+    mut p = parser_new(source)
+    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let r = p.parse_file_program()
+    if r.ids == null { return "<null>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+
+/// Native and hand build the SAME tree, and the source is valid under both.
+fn agree(source: string) -> bool {
+    let sr = tree(true, source)
+    let hand = tree(false, source)
+    if sr != hand {
+        println("quote tree mismatch")
+        println(source)
+        println(sr)
+        println(hand)
+    }
+    sr == hand
+}
+
+/// Diagnostic count under one mode — an invalid quote form must REPORT on both paths,
+/// not be silently accepted by either (the t-6u9b lesson: two parsers agreeing on
+/// SILENCE is the one outcome a differential oracle cannot interpret).
+fn diags(static_raw: bool, source: string) -> int {
+    mut p = parser_new(source)
+    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let r = p.parse_file_program()
+    r.bag.diagnostics.length
+}
+
+fn agree_bad(source: string) -> bool {
+    let a = diags(true, source)
+    let b = diags(false, source)
+    if a == 0 || b == 0 || a != b {
+        println("quote recovery divergence static=${string(a)} hand=${string(b)}")
+        println(source)
+    }
+    a > 0 && a == b && agree(source)
+}
+
+fn wrap(body: string) -> string { "fn f() -> int {\n let q = ${body}\n return 0\n}\n" }
+
+spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
+    given "every valid block-bodied form" {
+        then "the default `expr` kind agrees with hand" {
+            agree(wrap("quote { 1 + 2 }")) &&
+            agree(wrap("quote { }"))
+        }
+        then "the explicit block kinds agree with hand" {
+            agree(wrap("quote stmt { let a = 1 }")) &&
+            agree(wrap("quote stmts { let a = 1\n let b = 2 }")) &&
+            agree(wrap("quote decl { fn g() -> int { 1 } }"))
+        }
+        then "a quote is still a postfix BASE, not a special case" {
+            // The native branch is `base:quote_expr ( postfix_suffix )* ( with_suffix )*`
+            // exactly like its spawn/isolated/when siblings — so a suffix on a quote must
+            // fold the same way it did through the hand leaf.
+            agree(wrap("quote { 1 }.kind"))
+        }
+    }
+    given "the two kinds the native rule must DECLINE" {
+        // These reach the narrowed @hand(quote_expr) via @peek(quote_special). If the peek
+        // ever stopped declining them, the native rule would try `block_expr` on a type or
+        // an arm body and the tree would change — so agreement here is the routing proof.
+        then "`quote type` still parses through the hand leaf" {
+            agree(wrap("quote type { int }")) &&
+            agree(wrap("quote type { List<int> }")) &&
+            agree(wrap("quote type { fn(int) -> int }"))
+        }
+        then "`quote arm` still parses through the hand leaf" {
+            agree("fn f(v: int) -> int {\n let q = quote arm { 1 -> 2 }\n return 0\n}\n")
+        }
+    }
+    given "nesting — the reason this needs the scoped COUNTER and not a boolean" {
+        // `@bump(quote_depth)` increments an INT cell across the body and restores it
+        // after. The already-native splice branches read that cell:
+        //   @when(at_quote_top)  "~" → bitnot   (depth 0)
+        //   @when(in_quote_body) "~" → splice   (depth > 0)
+        // A boolean flag would be indistinguishable from an int for ONE level and wrong
+        // for two, so a flat quote proves nothing here — the nested case is the assertion.
+        then "a splice inside a nested quote agrees with hand" {
+            agree("fn f(x: int) -> int {\n let q = quote { quote { ~x } }\n return 0\n}\n")
+        }
+        then "`~` OUTSIDE any quote is still bitnot, not a splice" {
+            agree("fn f(x: int) -> int {\n let y = ~x\n return y\n}\n")
+        }
+        then "the counter is RESTORED after the body, so a later `~` is bitnot again" {
+            // HONEST SCOPE, measured: this does NOT discriminate against dropping `@bump`
+            // — removing the marker removes the bump and the restore together, so `~y`
+            // reads as bitnot either way and this stays green. (Verified by running the
+            // negative control: deleting `@bump` fails the nested-splice case and the
+            // emitted-source check, not this one.) What it DOES guard is a future emit
+            // change that bumps without restoring — then `~y` would be read as a splice
+            // and this diverges. Kept for that, not claimed as proof of the marker.
+            agree("fn f(y: int) -> int {\n let q = quote { 1 }\n let z = ~y\n return z\n}\n")
+        }
+    }
+    given "malformed quote forms" {
+        // Both paths must REPORT, the same number of times, and recover to the same tree.
+        then "truncated quote headers and bodies are reported on BOTH paths" {
+            agree_bad(wrap("quote")) &&
+            agree_bad(wrap("quote {")) &&
+            agree_bad(wrap("quote stmt")) &&
+            agree_bad(wrap("quote stmt {"))
+        }
+        then "malformed hand-routed kinds are reported on BOTH paths" {
+            agree_bad(wrap("quote type")) &&
+            agree_bad(wrap("quote type {")) &&
+            agree_bad(wrap("quote arm {"))
+        }
+        then "an unknown kind word falls to the default `expr` reading, like hand" {
+            // `parse_quote_kind` only recognises stmt/stmts/decl/type/arm; anything else
+            // falls through to "expr" and is then parsed as the body's opening token —
+            // which is not `{`, so it is an error. Agreement is the point, not the code.
+            agree_bad(wrap("quote badkind { 1 }"))
+        }
+    }
+}
+
+// The ROUTING assertion, on the EMITTED SOURCE rather than by inference. t-47hc's routing
+// discipline (slice 10) records the failure mode this catches: if the native rule's parse
+// fn were emitted AFTER the `@hand` gate, the gate would swallow `quote` first and the
+// native rule would be dead code with correct output and no diagnostic (#1028). Here the
+// order is deliberately the OTHER way round — the hand gate is guarded by
+// @peek(quote_special) and must come FIRST, with the unguarded native branch after it.
+spec "t-bwjg: the emitted dispatch routes quote correctly" {
+    then "the native rule fn is emitted at all" {
+        emit_parser_source(avra_expr_dispatch_grammar()).contains("fn parse_quote_expr(")
+    }
+    then "the native rule bumps and RESTORES the counter around the body" {
+        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")") &&
+        src.contains("mk_quote(st, sp_start,")
+    }
+    then "the guarded HAND gate precedes the unguarded native branch" {
+        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        let gate = src.index_of("lookahead_ok(\"quote_special\", st)")
+        let native = src.index_of("parse_quote_expr(st)")
+        gate >= 0 && native >= 0 && gate < native
+    }
+}
