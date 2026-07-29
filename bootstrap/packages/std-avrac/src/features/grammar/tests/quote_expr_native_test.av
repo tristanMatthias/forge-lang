@@ -1,9 +1,13 @@
-// WHY: t-bwjg — `quote { … }` and the block-bodied kinds (`stmt` / `stmts` / `decl`) are
-// grammar-native. The two NON-block kinds stay on a narrowed `@hand(quote_expr)`:
-//   `quote type { <type> }`  → an Expr.TypeLit carrier, parsed by parse_type_expr
-//   `quote arm { pat -> b }` → a synthetic single-armed MatchExpr envelope
-// `@peek(quote_special)` is what declines them, and it is checked BEFORE `quote` is
-// consumed so the native branch's FIRST stays a plain `quote`.
+// WHY: t-bwjg — EVERY `quote` shape is grammar-native, and `@hand(quote_expr)` is retired
+// from the production path (`--hand-leaves` 5 -> 4). Three rules, because the three bodies
+// are structurally different:
+//   quote_expr      `quote { … }` / `stmt` / `stmts` / `decl`  → a block expression
+//   quote_type_expr `quote type { <type> }`                    → an Expr.TypeLit carrier
+//   quote_arm_expr  `quote arm { pat (if g)? -> b ,? }`        → a synthetic single-armed
+//                                                                 MatchExpr envelope
+// `@peek(quote_type)` / `@peek(quote_arm)` do the routing, both checked BEFORE `quote` is
+// consumed so the plain rule's FIRST stays a bare `quote` and it can serve as the
+// unguarded catch-all.
 //
 // THE TRAP THIS FILE EXISTS FOR, and why the gate list here is unusual: the previous
 // attempt at a quote-adjacent leaf (the primary_base splice, t-47hc.5 comment 2026-07-27)
@@ -81,16 +85,17 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
             agree(wrap("quote { 1 }.kind"))
         }
     }
-    given "the two kinds the native rule must DECLINE" {
-        // These reach the narrowed @hand(quote_expr) via @peek(quote_special). If the peek
-        // ever stopped declining them, the native rule would try `block_expr` on a type or
-        // an arm body and the tree would change — so agreement here is the routing proof.
-        then "`quote type` still parses through the hand leaf" {
+    given "the two kinds with a NON-block body, each on its own native rule" {
+        // These are declined by the block-bodied rule via @peek(quote_type)/@peek(quote_arm)
+        // and routed to quote_type_expr / quote_arm_expr. If a peek ever stopped declining
+        // them, the plain rule would try `block_expr` on a type or an arm body and the tree
+        // would change — so agreement with the hand oracle here is the routing proof.
+        then "`quote type` parses identically to the hand" {
             agree(wrap("quote type { int }")) &&
             agree(wrap("quote type { List<int> }")) &&
             agree(wrap("quote type { fn(int) -> int }"))
         }
-        then "`quote arm` still parses through the hand leaf" {
+        then "`quote arm` parses identically to the hand" {
             agree("fn f(v: int) -> int {\n let q = quote arm { 1 -> 2 }\n return 0\n}\n")
         }
     }
@@ -126,7 +131,7 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
             agree_bad(wrap("quote stmt")) &&
             agree_bad(wrap("quote stmt {"))
         }
-        then "malformed hand-routed kinds are reported on BOTH paths" {
+        then "malformed `type` / `arm` forms are reported on BOTH paths" {
             agree_bad(wrap("quote type")) &&
             agree_bad(wrap("quote type {")) &&
             agree_bad(wrap("quote arm {"))
@@ -168,8 +173,15 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         arm_gate >= 0 && type_gate >= 0 && native >= 0 &&
         arm_gate < native && type_gate < native
     }
-    then "`quote type` lowers to its own native rule, not to the hand leaf" {
+    then "both non-block kinds lower to their own native rules, not to a hand leaf" {
         let src = emit_parser_source(avra_expr_dispatch_grammar())
-        src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,")
+        src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,") &&
+        src.contains("fn parse_quote_arm_expr(") && src.contains("mk_quote_arm(st, sp_start,")
+    }
+    then "no quote shape reaches a hand leaf any more" {
+        // The whole point of the slice: `quote` must not appear as an @hand dispatch in the
+        // emitted production parser at all. `--hand-leaves` reports 4 rather than 5 because
+        // of exactly this line.
+        !emit_parser_source(avra_expr_dispatch_grammar()).contains("run_hand_expr(\"quote_expr\"")
     }
 }

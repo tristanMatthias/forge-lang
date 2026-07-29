@@ -2823,6 +2823,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
+        "MkQuoteArm" if args.length == 4 -> mk_quote_arm(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         "MkQuoteType" if args.length == 2 -> mk_quote_type(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
@@ -3295,8 +3296,8 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 /// Mirrors the hand `Parser.parse_quote` for the BLOCK-BODIED kinds only. The two
 /// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
 /// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
-/// `@peek(quote_type)` (routed to the native quote_type_expr) and `@peek(quote_arm)`
-/// (still the hand's), so this build never sees either.
+/// `@peek(quote_type)` and `@peek(quote_arm)`, each routed to its own native rule, so
+/// this build never sees either.
 ///
 /// `kind_cv` is the OPTIONAL kind keyword; absent means the hand's default, `"expr"`
 /// (parse_quote_kind's fallthrough). `Expr.Quote`'s body is an ExprId SCALAR and is
@@ -3316,6 +3317,49 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 /// its hand twin does. `parse_quote_type_body` does NOT — it is a plain `alloc_at` with
 /// no refs — so ingesting here would add a type-table row and a walker edge the hand
 /// never created, and the IR would diverge.
+/// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
+///
+/// Mirrors hand `parse_quote_arm_body` exactly. The arm is wrapped in a SYNTHETIC
+/// single-armed `Expr.MatchExpr` so the `Quote(kind, body)` shape stays uniform across
+/// every kind; the lowering pass picks the arm back out via the `arm` discriminator.
+///
+/// THREE things here are byte-identity-critical and each has a hand line behind it:
+///
+/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr`. The hand uses
+///    `alloc_leaf`, which IS `intern_expr_leaf` — an interned row, so repeated
+///    `quote arm`s share one `Expr.None`. Using add_expr would mint a fresh row each
+///    time and the arena would diverge.
+/// 2. The edge set is EXACTLY `[PatRef(pat_id)]`. `MatchArm` is a MIXED walker node:
+///    only the pattern is a walked child, while guard and body ride as walker-opaque
+///    `ExprId` scalars, and the subject is opaque too. Adding any of them would hand the
+///    walker a child set the hand never built — the same rule mk_match_expr documents.
+/// 3. The inner MatchExpr spans from the `{` (the hand's sp_start is taken inside
+///    parse_quote_arm_body), while the outer Quote spans from the `quote` keyword.
+export fn mk_quote_arm(st: PState, sp_start: int, lb_cv: CapVal, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let pat_id = capval_to_pat(st, pat_cv)
+    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
+    let arm = MatchArm {
+        pattern: st.store.pats.get(pat_id),
+        pattern_id: pat_id,
+        guard_id: guard,
+        body_id: capval_to_expr(st, body_cv)
+    }
+    let arms: List<MatchArm> = [arm]
+    let subject_id = st.store.intern_expr_leaf(Expr.None)
+    let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
+    let lb = capval_tok_pos(lb_cv)
+    let inner = st.store.add_expr(
+        Expr.MatchExpr(subject_id, arms),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        edges
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("arm", inner),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
 export fn mk_quote_type(st: PState, sp_start: int, lb_cv: CapVal, t_cv: CapVal) -> CapVal {
     let vt = type_expr_to_vtype(capval_to_texpr(st, t_cv))
     let lb = capval_tok_pos(lb_cv)

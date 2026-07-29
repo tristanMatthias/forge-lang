@@ -3,7 +3,7 @@
 // This is the PRODUCTION expression parser under AVRA_PARSER_EXPR_STATIC=1 (ps3t.6.7
 // Step G); parse/tests/gen_expr_parser_regen_test.av asserts it equals
 // emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_quote, mk_quote_type, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_match_expr, mk_if_expr, capval_to_arm, tok_starts_pattern, modes_with_flag_off, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_splice, base_pred, modes_with_counter_bumped, mk_try_suffix, mk_catch_suffix, mk_opt_chain, mk_tuple_index, mk_field_access, mk_index_suffix, mk_none_cap, mk_qualified, capval_toks, mk_template, mk_struct_lit, mk_tagged_template, literal_node, mk_call_arg, mk_call_suffix, mk_generic_call_suffix, mk_enum_ctor_suffix, mk_opt_method_call, mk_force_unwrap}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, run_hand_expr, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_quote, mk_quote_type, mk_quote_arm, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_match_expr, mk_if_expr, capval_to_arm, tok_starts_pattern, modes_with_flag_off, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_splice, base_pred, modes_with_counter_bumped, mk_try_suffix, mk_catch_suffix, mk_opt_chain, mk_tuple_index, mk_field_access, mk_index_suffix, mk_none_cap, mk_qualified, capval_toks, mk_template, mk_struct_lit, mk_tagged_template, literal_node, mk_call_arg, mk_call_suffix, mk_generic_call_suffix, mk_enum_ctor_suffix, mk_opt_method_call, mk_force_unwrap}
 use core.{ExprId, StmtId, Stmt, SrcPos, Tk, ParamEntry, WhenArm, MatchArm, FieldInit}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -393,7 +393,8 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
-        let base = CapVal.Node(run_hand_expr("quote_expr", st))
+        let base = parse_quote_arm_expr(st)
+        st.seed_postfix(capval_to_expr(st, base), sp_start)
         while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().text == "catch" || lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot) || lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot) || lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || (st.cur().tk == Tk.LeftBracket) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || lookahead_ok("dot_number", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || (st.cur().tk == Tk.LeftParen) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || base_pred("base_callable", st) && (st.cur().tk == Tk.Less) || st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == "catch" {
             let __rep_before = st.pos
             p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
@@ -1010,6 +1011,38 @@ fn parse_quote_type_expr(st: PState) -> CapVal {
     mk_quote_type(st, sp_start, lb, t)
 }
 
+fn parse_quote_arm_expr(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut g: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().text == "arm" { let _ = st.advance() } else {
+        st.report("expected arm")
+    }
+    let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
+        st.report("expected {")
+        CapVal.Tok(st.cur())
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    let p = parse_pattern_or(st)
+    st.set_modes(__modes_3)
+    if st.cur().text == "if" {
+        let _ = st.advance()
+        g = parse_expression(st)
+    }
+    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+        st.report("expected ->")
+    }
+    let b = parse_expression(st)
+    if st.cur().tk == Tk.Comma {
+        let _ = st.advance()
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_quote_arm(st, sp_start, lb, p, g, b)
+}
+
 fn parse_quote_expr(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut k: CapVal = CapVal.Nil
@@ -1438,7 +1471,7 @@ fn parse_table_cell(st: PState) -> CapVal {
         return parse_when_expr(st)
     }
     if lookahead_ok("quote_arm", st) && (st.cur().text == "quote") {
-        return CapVal.Node(run_hand_expr("quote_expr", st))
+        return parse_quote_arm_expr(st)
     }
     if lookahead_ok("quote_type", st) && (st.cur().text == "quote") {
         return parse_quote_type_expr(st)
