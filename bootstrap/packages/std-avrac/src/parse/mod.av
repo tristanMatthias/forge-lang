@@ -397,11 +397,13 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
 /// they came from — diagnostics in the bundled program can then
 /// cite the originating *_test.av rather than a `<test>` placeholder.
 export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
-    // t-drl0: same phase stamp as parse_program_source_shared — this is the
-    // SINGLE-FILE entry (`bs2 check foo.av`), which never goes through the
-    // module walker, so stamping only the shared entry left the commonest
-    // invocation reporting an F4014 with no phase at all.
-    avra_mem_phase_set(if file == "" { "parse <stdin>" } else { "parse ${file}" })
+    // t-drl0: same phase stamp as parse_program_source_shared, but ONLY when a name
+    // is actually known. `file == ""` is the ENTRY-FILE parse — deliberately unnamed,
+    // because `SrcPos.file` is what distinguishes an entry node from a merged-module
+    // node and the operand-span sharpening keys off it. The CLI knows that file's real
+    // path and stamps the phase itself before calling in (parse_or_fail), so
+    // overwriting it here with "<stdin>" would just throw that name away.
+    if file != "" { avra_mem_phase_set("parse ${file}") }
     mut parser = parser_new_with_file(source, file)
     parser.parse_file_program()
 }
