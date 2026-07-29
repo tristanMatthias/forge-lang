@@ -15,6 +15,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_use_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
@@ -23,6 +24,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "mod" {
         let s_pos = st.pos
@@ -30,6 +32,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_mod_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
@@ -38,6 +41,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "shape" {
         let s_pos = st.pos
@@ -45,6 +49,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_shape_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
@@ -53,6 +58,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "enum" {
         let s_pos = st.pos
@@ -60,6 +66,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_enum_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
@@ -68,6 +75,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "type" {
         let s_pos = st.pos
@@ -75,6 +83,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_type_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
@@ -83,6 +92,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
     }
     if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))

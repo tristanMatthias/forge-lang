@@ -848,19 +848,39 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     // existing grammar regenerates byte-identically.
     if has_cut { out = out + "        mut s_cut = false\n" }
     out = out + "        let s_hand = st.save_hand_state()\n"
+    // t-drl0 / t-x2fb: the postfix-chain accumulator is part of the state a `@try`
+    // touches. An item that runs `st.seed_postfix(...)` does so DURING parsing, before
+    // any build is gated on the diagnostic count — so a branch destined to roll back can
+    // still point `postfix_base` at a row `truncate_to_mark` then discards, and the next
+    // dereference indexes past the end of the store (a hard `index N out of bounds`
+    // crash, not a wrong parse). #1065 fixed exactly this in exec_node
+    // (save_postfix_state / restore_postfix_state) and left emit without it; the
+    // executor's note that "the generated parser never had the bug" was wrong — the
+    // generated parser gates the BUILDER on the diag count, but a doomed branch's nested
+    // `parse_expression` reseeds the accumulator regardless of any builder.
+    out = out + "        let s_postfix = st.save_postfix_state()\n"
     // Same span prelude as the flat path / the non-speculative branch: a span-stamping
     // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
     if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
-    out = out + emit_seq_stmts(g, b, "        ")
+    // t-x2fb: a CUT-BEARING branch gets a `while true { … break }` scaffold so the cut
+    // abort (`if !s_cut { break }`, emit_item) has somewhere to jump — straight to the
+    // shared rollback below, skipping the provably-wasted remainder. Non-cut branches
+    // emit exactly as before, so every generated parser except the ONE cut-bearing branch
+    // in the whole grammar (paren_expr's lambda alternative) stays byte-identical.
+    let bi = if has_cut { "            " } else { "        " }
+    if has_cut { out = out + "        while true {\n" }
+    out = out + emit_seq_stmts(g, b, bi)
     // Past a `@cut` the branch OWNS its diagnostics — commit regardless of what it
     // reported, so the error is kept instead of being read as "wrong branch".
     let guard = if has_cut { "s_cut || (st.diags.length == s_diags && st.had_error == s_err)" } else { "st.diags.length == s_diags && st.had_error == s_err" }
-    out = out + "        if ${guard} {\n"
-    out = out + "            return ${emit_seq_result(g, b)}\n"
-    out = out + "        }\n"
+    out = out + "${bi}if ${guard} {\n"
+    out = out + "${bi}    return ${emit_seq_result(g, b)}\n"
+    out = out + "${bi}}\n"
+    if has_cut { out = out + "            break\n        }\n" }
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
     out = out + "        st.restore_hand_state(s_hand)\n"
+    out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"
     out
 }
@@ -878,6 +898,17 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
     out = out + "        let s_hand = st.save_hand_state()\n"
+    // t-drl0 / t-x2fb: the postfix-chain accumulator is part of the state a `@try`
+    // touches. An item that runs `st.seed_postfix(...)` does so DURING parsing, before
+    // any build is gated on the diagnostic count — so a branch destined to roll back can
+    // still point `postfix_base` at a row `truncate_to_mark` then discards, and the next
+    // dereference indexes past the end of the store (a hard `index N out of bounds`
+    // crash, not a wrong parse). #1065 fixed exactly this in exec_node
+    // (save_postfix_state / restore_postfix_state) and left emit without it; the
+    // executor's note that "the generated parser never had the bug" was wrong — the
+    // generated parser gates the BUILDER on the diag count, but a doomed branch's nested
+    // `parse_expression` reseeds the accumulator regardless of any builder.
+    out = out + "        let s_postfix = st.save_postfix_state()\n"
     out = out + "        mut s_last: CapVal = CapVal.Nil\n"
     // A span-stamping build (`mk_assign`/`fold_logical`/`Block`/…) reads `sp_start`,
     // the rule-entry byte — the twin of the non-speculative branch's prelude
@@ -908,6 +939,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
     out = out + "        st.restore_hand_state(s_hand)\n"
+    out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"
     out
 }
@@ -1092,7 +1124,10 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
         // idx slot, so the first token-bearing item stays the guard token (idx 0).
         if prim_is_pred_e(item.prim) { continue }
         let abortable = ctx != spec_pre_cut()
-        out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable, ctx)
+        // `seq.speculative` is true ONLY for a branch's own item list — a nested group's
+        // sequence is never speculative — so it is exactly the "safe to `break`" test the
+        // cut abort needs (t-x2fb).
+        out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable, ctx, seq.speculative)
         // Phase 3a base-threading (twin of exec_seq's hook): after a grammar-BUILT base
         // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
         // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
@@ -1114,7 +1149,7 @@ fn prim_is_pred_e(prim: GPrim) -> bool {
 /// One item. `idx == 0` is the branch's guard token (already matched by the
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
-fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
+fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int, cut_breaks: bool) -> string {
     // `@cut` COMMIT POINT (t-47hc.21): the twin of exec_item's `env.cut = true`.
     // `s_cut` is a `mut` local of the enclosing speculative branch's block, so the
     // write reaches it from a nested group too (groups emit inline). Emitted BEFORE
@@ -1127,7 +1162,41 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // roll back to the `"+"` sibling). `s_diags`/`s_err` are the enclosing
     // speculative branch's entry snapshot, already in scope.
     let cut_pre = if item.cut { "${ind}if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }\n" } else { "" }
-    let inner = cut_pre + emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
+    // t-x2fb: ABORT A DOOMED BRANCH AT ITS CUT, instead of parsing on and discarding the
+    // result. The commit guard below is `s_cut || (no new diagnostics)`; diagnostics only
+    // ever GROW, so once `s_cut` is false here the second disjunct is false too and can
+    // never recover — the branch is provably going to roll back, and every item past this
+    // point is provably wasted.
+    //
+    // The waste is not a constant factor. The wasted item is typically a full
+    // sub-expression parse — `paren_expr`'s cut-guarded lambda BODY parses the entire
+    // remaining expression — so a doomed branch parses the whole suffix, discards it, and
+    // the caller parses that same suffix again: 2x per parenthesised group, i.e. 2^n.
+    // Measured `parse_paren_expr` entries for `if a == 1 && (b == 2) || …`, n terms:
+    // 7,15,31,63,255,1023,4095 (exactly 2^n - 1) BEFORE, 3,4,5,6,8,10,12 (exactly n) AFTER.
+    // It only bites when the ENCLOSING construct ALSO fails — a successful outer parse
+    // never re-descends — which is why no gate caught it: diff-test compiles only VALID
+    // programs, so the whole safety net is blind to this class by construction.
+    //
+    // `break` targets the `while true` scaffold emit_speculative_branch_rich wraps a
+    // cut-bearing branch in, landing on the shared rollback. Emitted ONLY at the BRANCH's
+    // own top level (`cut_breaks`): inside a nested group `break` would bind to that
+    // group's own repeat loop instead — a silent miscompile rather than a build error.
+    let cut_abort = if item.cut && cut_breaks { "${ind}if !s_cut { break }\n" } else { "" }
+    // The cut markers sit OUTSIDE the mode wrapper below, and that placement is load-bearing.
+    // `cut_abort` is a `break`, and a wrapper emits its restore (`st.set_modes(__modes_N)`)
+    // AFTER the item body — so a `break` emitted INSIDE the wrapper jumps straight past its
+    // own restore. The branch rollback cannot compensate: it restores pos / store mark /
+    // diags / hand / postfix state and deliberately not `st.modes`, so the next alternative
+    // would parse with a leaked `@on`/`@off`/`@bump` flag. That is the same silent-miscompile
+    // class as the `cut_breaks` guard above — wrong output, no build error — and the reason
+    // both live here rather than inside emit_item_body.
+    //
+    // Hoisting is byte-identical for every grammar today: no production item carries a `@cut`
+    // AND a mode marker, so one side or the other is always empty. It closes the trap for the
+    // first item that carries both.
+    let cut_marks = cut_pre + cut_abort
+    let body = emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
@@ -1140,17 +1209,19 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // production grammar today) returns the item's code unchanged → generated parsers
     // stay byte-identical.
     if item.mode_off != "" {
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@bump(counter)` counter-SET marker: save modes, INCREMENT via
     // modes_with_counter_bumped (the SAME fn the executor calls), emit the item, restore.
     if item.mode_bump != "" {
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_counter_bumped(st.modes, \"${item.mode_bump}\"))\n" +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@on(flag)` mode-SET marker: the SET-ON twin — save modes, set the flag ON via
@@ -1162,12 +1233,13 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         // comes from the SHARED `pred_guard` — the same string `@when` emits — so the two
         // markers cannot disagree about what a predicate name means, and a base predicate
         // lands as a `base_pred(...)` CALL into the executor rather than a second spelling.
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             mode_on_set_line(item, ind) +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
-    inner
+    cut_marks + body
 }
 
 fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
