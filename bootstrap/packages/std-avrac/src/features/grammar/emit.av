@@ -1473,11 +1473,27 @@ fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
     }
 }
 
-/// True iff rule `name` has ANY `@hand` alternative — i.e. it can return WITHOUT
-/// consuming a token, so a `( name )*` loop over it needs the no-progress break or it
-/// spins forever.
+/// True iff rule `name` has an alternative that can return WITHOUT consuming a token,
+/// so a `( name )*` loop over it needs the no-progress break or it spins forever.
 ///
-/// A hand delegate is the only production that can do this. `postfix_suffix`'s
+/// TWO productions can do this, and the second was missed until the delegate was
+/// actually deleted (t-47hc.33.2):
+///
+///   - a `@hand` delegate, which may decline and return the base unchanged; and
+///   - a SPECULATIVE `@try` branch, which is entered when its FIRST holds and then
+///     ROLLS BACK on failure, restoring the cursor it started from. `postfix_suffix`'s
+///     `<T>(args)` generic call is exactly that: `a < b` enters on the `<` and un-decides.
+///
+/// The old comment here asserted the opposite — "a NATIVE alternative cannot: it is
+/// entered only when its FIRST holds and then consumes" — which is true of every native
+/// form EXCEPT a speculative one. While `@hand(postfix_suffix)` was still the tail the
+/// error was masked: the hand disjunct alone kept the predicate true, so the break was
+/// emitted anyway. Deleting the delegate dropped it, leaving `a < b` to spin.
+///
+/// Widening it is DORMANT on any grammar that still has the hand tail (a rule with both
+/// keeps returning true), so it is byte-identical until the deletion spends it.
+///
+/// `postfix_suffix`'s
 /// `parse_postfix_suffix` returns the base UNCHANGED for its three former loop-exit
 /// paths (entry guard not matched, generic-call speculation failed, trailing non-postfix
 /// arm); the break is what turns that into the hand `while` loop's exit. A NATIVE
@@ -1497,6 +1513,8 @@ fn rule_reaches_hand(g: Grammar, name: string) -> bool {
         .Alt(branches) -> {
             for b in branches {
                 if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
+                // A rolled-back `@try` consumes nothing — same hazard as a declining hand.
+                if b.speculative { return true }
             }
             false
         }
