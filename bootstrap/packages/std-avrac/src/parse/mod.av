@@ -2643,6 +2643,23 @@ impl Parser {
                 let empty: List<ExprId> = []
                 return .Ok(self.alloc_at(Expr.EnumCtor("", variant, empty), sp_start))
             }
+            // The `.` is ALREADY CONSUMED, so falling through here would hand the
+            // rest of the dispatch a token stream missing a token the user wrote —
+            // and whatever follows would parse as if the `.` were never there. That
+            // is a SILENT DROP (t-6u9b): `let x = .(1)` parsed as `(group 1)` with
+            // ZERO diagnostics, so the compiler accepted text it had discarded.
+            // It hid because the recovery oracles compare the two parsers to EACH
+            // OTHER — both swallow it, both agree, the tree spec passes vacuously.
+            // Only a diagnostic-COUNT assertion on invalid input catches this shape.
+            //
+            // Reporting is right rather than merely rewinding: in PRIMARY position
+            // (no operand to the left — a postfix `.field` is `dot_is_postfix`'s job,
+            // and `..` lexes as Tk.DotDot) a `.` can ONLY open the variant shorthand,
+            // so a non-identifier after it has no other reading. F0040 is the same
+            // code the tail already gives a bare trailing `.`; this only names the
+            // cause instead of saying "expected expression".
+            self.report(DiagCode.ExpectedExpression, "expected a variant name after `.`")
+            return .Err("parse error")
         }
 
         if self.check(Tk.Identifier) {
