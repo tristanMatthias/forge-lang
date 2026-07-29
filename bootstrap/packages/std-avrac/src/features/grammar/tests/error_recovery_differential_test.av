@@ -182,6 +182,33 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("enum E<T { A }\nfn f() -> int { 1 }") &&
         agree("enum E { 5 }\nfn f() -> int { 1 }")
     }
+    // `type` joins the routed set (t-47hc slice 10.12) — the last and largest of the
+    // decl keywords, and the one that needed two fixes before it could go: the RHS forms
+    // made exclusive (t-myz7.1) and the executor's missing unguarded tail (t-zrn3). The
+    // second one is why `type T =` followed by a `fn` declaration is here: `tok_starts_type`
+    // includes `fn`, so the alias branch is entered on the following declaration's lead
+    // token and the remainder becomes a stray-token item — the exact shape that exposed
+    // the executor gap. It is measured on all three paths by the block above.
+    then "malformed type declarations (the routed keyword)" {
+        // The bare-RHS EDGE, on all three paths. `type T =` with nothing after it is
+        // ACCEPTED — by the HAND parser too, which is what makes it parity rather than a
+        // hole; diagnostic_equivalence_test pins the node both build. What varies is the
+        // FOLLOWER: `let`/EOF leave it alone, `mod`/`use` are consumed as the alias and
+        // fail in the resolver, and `}` / `)` fail in the parser. Each of those is the
+        // hand's own behaviour, reproduced. (Raised in review on #1068 as a possible
+        // hole — measured instead of argued, and kept as coverage.)
+        agree_all("type T =") &&
+        agree_all("type T =\nlet q = 1\n") &&
+        agree_all("type T =\nmod foo\n") &&
+        agree_all("type T =\n}\n") &&
+        agree_all("type T =\n)\n") &&
+        agree("type T =\nfn f() -> int { 1 }") &&
+        agree("type T< = { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T<A = { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T = int without\nfn f() -> int { 1 }") &&
+        agree("type T = int only { \nfn f() -> int { 1 }")
+    }
     then "malformed bindings and control-flow statements" {
         agree("fn f() -> int {\n let x = \n return 1\n}") &&
         agree("fn f() -> int {\n let = 5\n return 1\n}") &&
@@ -311,6 +338,15 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_tree("enum E< { A }\nfn f() -> int { 1 }") &&
         agree_tree("enum E<T { A }\nfn f() -> int { 1 }") &&
         agree_tree("enum E { 5 }\nfn f() -> int { 1 }")
+    }
+    // The TREE half for `type` — see the F-code block above.
+    then "malformed type recovers to the same tree" {
+        agree_tree("type T =\nfn f() -> int { 1 }") &&
+        agree_tree("type T< = { x: int }\nfn f() -> int { 1 }") &&
+        agree_tree("type T<A = { x: int }\nfn f() -> int { 1 }") &&
+        agree_tree("type T { x: int }\nfn f() -> int { 1 }") &&
+        agree_tree("type T = int without\nfn f() -> int { 1 }") &&
+        agree_tree("type T = int only { \nfn f() -> int { 1 }")
     }
     then "malformed statements + expressions recover to the same tree" {
         agree_tree("fn f() -> int {\n let x = \n return 1\n}") &&
