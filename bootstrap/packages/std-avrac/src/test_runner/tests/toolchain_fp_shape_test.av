@@ -1,0 +1,63 @@
+// t-n832 — the fixture-cache key must be UNFORGEABLE.
+//
+// The toolchain fp lives in a process-global, write-once memo shared by every
+// cached_fixture_capture call, and it is an input to the cache key (hence the
+// on-disk capture filename). Before this guard the memo was trusted on the
+// sole condition that it was non-empty, so ANY writer — in practice the
+// write-once spec's own probe value, whenever it won the cold publish — became
+// the fingerprint for the rest of the process.
+//
+// Why that was invisible rather than loud: the key is a sha256 nobody reads,
+// and a wrong key does not error. It silently addresses a DIFFERENT cache
+// slot, one that never changes when the compiler changes. Captures written
+// under it get replayed on later runs as if current, so a fixture's stdout
+// from an OLDER compiler answers for a newer one. The symptom is a bare
+// assertion FAIL with nothing in the diff to explain it, reproducible only
+// under the shard ordering that lets the probe win — green in isolation every
+// single time (quote_stmt_list_splice:50, comptime_fold, cli_metadata:18 on
+// rc-strict).
+//
+// The invariant: a real fp is sha256_hex output, exactly 64 lowercase hex
+// chars. This spec pins the predicate that enforces it. It fails against the
+// old `memoed != ""` check, which accepted every case below.
+
+use @std.avrac.test_runner.{is_toolchain_fp_shaped, warm_toolchain_fp}
+use @std.crypto.{sha256_hex}
+
+spec "t-n832: only a real fingerprint may key a fixture capture" {
+    then "the probe value that caused the flake is rejected" {
+        // The literal string the write-once spec publishes. This is the case
+        // that actually poisoned CI.
+        is_toolchain_fp_shaped("4szi1-probe-cafebabe") == false
+            && is_toolchain_fp_shaped("4szi1-second-must-not-stick") == false
+    }
+    then "an empty memo is rejected (the cold-memo case)" {
+        is_toolchain_fp_shaped("") == false
+    }
+    then "real sha256_hex output is accepted" {
+        // The shape check must not reject the values it exists to protect,
+        // or every capture would recompute forever and the memo is pointless.
+        is_toolchain_fp_shaped(sha256_hex("anything")) == true
+            && is_toolchain_fp_shaped(sha256_hex("")) == true
+    }
+    then "the live memo holds a real fingerprint" {
+        // End-to-end: whatever won the publish in THIS process must satisfy
+        // the predicate. Catches a regression where some other writer starts
+        // poisoning the memo, which is the class of bug this guards.
+        is_toolchain_fp_shaped(warm_toolchain_fp()) == true
+    }
+    then "wrong length is rejected even when every char is hex" {
+        // 63 and 65 hex chars: length alone must not be assumed from content.
+        is_toolchain_fp_shaped("abc123") == false
+            && is_toolchain_fp_shaped(sha256_hex("x") + "a") == false
+    }
+    then "a 64-char non-hex string is rejected" {
+        // Exactly 64 chars but not hex — the case a bare length check misses.
+        // 'z' is outside 0-9a-f; uppercase too, since sha256_hex is lowercase.
+        let sixty_four_z = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" + "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        let upper = "ABCDEF0123456789ABCDEF0123456789" + "ABCDEF0123456789ABCDEF0123456789"
+        sixty_four_z.length == 64 && upper.length == 64
+            && is_toolchain_fp_shaped(sixty_four_z) == false
+            && is_toolchain_fp_shaped(upper) == false
+    }
+}
