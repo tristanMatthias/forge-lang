@@ -18,13 +18,21 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
 
-/// Compile `source` and return its emitted IR with the two path-dependent header
-/// lines stripped (so two fixtures at different paths compare cleanly), or a
-/// sentinel on failure.
+/// Compile `source` and return its emitted IR with the path-dependent header lines
+/// stripped (so two fixtures at different paths compare cleanly), or a sentinel on
+/// failure.
+///
+/// `@src_file` joined `ModuleID` / `source_filename` in that set when single-file
+/// parses started carrying their real path (t-3fwc): it embeds the source path as a
+/// string constant, so two fixtures that differ ONLY in filename produced two
+/// different IRs and this equality failed for a reason that has nothing to do with
+/// struct-init codegen. Verified before widening the filter — with it stripped the
+/// two modules are byte-identical, so the omitted-field store is present exactly as
+/// this spec asserts.
 fn norm_ir(tag: string, source: string) -> string {
     let path = "/tmp/avra_omitnull_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' >/dev/null 2>&1 && grep -vE '^;|ModuleID|source_filename' '${path}.ll' || echo __COMPILE_FAILED__")
+    avra_shell_exec("./build/bs2 compile '${path}' >/dev/null 2>&1 && grep -vE '^;|ModuleID|source_filename|^@src_file' '${path}.ll' || echo __COMPILE_FAILED__")
 }
 
 spec "an omitted nullable struct field is codegen-initialized to null (arena-stale fix)" {

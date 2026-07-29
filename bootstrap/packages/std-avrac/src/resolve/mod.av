@@ -207,7 +207,10 @@ fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
 /// (the store's LineIndex belongs to the ENTRY file, so a module row's
 /// byte offsets cannot be converted through it).
 fn rs_at_expr(r: Resolver, id: ExprId) -> Resolver {
-    if r.source_file != "" { return r }
+    // IDENTITY against the store's entry file, not `!= ""` (t-3fwc). See the twin in
+    // typeck's tc_at_expr: the empty-file proxy meant "unnamed, therefore entry", and
+    // it stopped holding when single-file parses began carrying their real path.
+    if r.source_file != "" && r.source_file != r.nodes.entry_file { return r }
     let lc = r.nodes.expr_linecol(id)
     if lc.line == 0 { return r }
     r with { source_line: lc.line, source_col: lc.col }

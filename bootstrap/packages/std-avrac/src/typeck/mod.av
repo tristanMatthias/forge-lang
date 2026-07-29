@@ -1013,7 +1013,15 @@ export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: s
 ///     byte offsets cannot be converted through it (the F0 multi-file
 ///     constraint that gave stmts their own pos column).
 export fn tc_at_expr(tc: TC, id: ExprId) -> TC {
-    if tc.current_file != "" { return tc }
+    // Keep the statement stamp for a MODULE-file row, whose byte offsets index its
+    // own source rather than this store's `lines` — sharpening it would produce a
+    // confidently wrong caret. The test is IDENTITY against the store's entry file
+    // (t-3fwc): the older `!= ""` proxy meant "unnamed, therefore entry", which held
+    // only while the entry file was parsed with no path. Once `parse_or_fail` began
+    // passing `ctx.path`, every entry row looked like a module row and no diagnostic
+    // ever sharpened — 17 span tests, and the reason `let x: string = f()` carets the
+    // `let` instead of the `f()`.
+    if tc.current_file != "" && tc.current_file != tc.nodes.entry_file { return tc }
     let lc = tc.nodes.expr_linecol(id)
     if lc.line == 0 { return tc }
     tc with { current_line: lc.line, current_col: lc.col }

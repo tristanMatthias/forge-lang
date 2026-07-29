@@ -393,6 +393,15 @@ export type NodeStore = {
     // an entry, so the table is empty for an ordinary program. The presence of
     // an id IS the fact (`from_macro`), read via `.has`, so the reverse shim
     // restores provenance instead of flattening every node to non-macro.
+    // The path the ENTRY source was parsed from, or "" when the store has no
+    // file (an unnamed / in-memory parse). This is NOT decoration: `lines`
+    // indexes the entry source ALONE, so a row's byte offsets are meaningful
+    // against it only when the row came from this file. Consumers that sharpen
+    // a diagnostic by re-reading `expr_linecol` must therefore ask "is this row
+    // the ENTRY file?" — identity against this field — rather than the older
+    // proxy "is the row's file EMPTY?", which held only while the entry file
+    // happened to be parsed unnamed (t-3fwc).
+    entry_file: string,
     provenance: SparseTable<StmtId, bool>,
     // Per-arg inferred types (F3b). A bare `ExprId` Call arg has no inline
     // `.ty` slot, but the monomorphizer needs each arg's typeck-inferred type
@@ -726,6 +735,8 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         pats: new_pat_arena(),
         types: new_type_arena(),
         lines,
+        // Filled in by parser_new_with_file, which is where the path is known.
+        entry_file: "",
         roots,
         provenance,
         arg_tys,
