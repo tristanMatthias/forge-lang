@@ -325,6 +325,68 @@ shared executor in place. Before changing anything under
 through it; if it does, your change is a production-parser change, not a
 test-only one.
 
+### ROUTING a rule onto the production path — the discipline (t-47hc slice 10)
+
+Moving a keyword out from under `@hand(decl_hand)` (or any leaf) has a failure
+mode that no green build can show you: **routing is invisible on VALID input by
+construction.** The native rule and the hand parser agree there — that is what
+parity work bought — so diff-test, every parity spec, and the comptime smoke can
+all be green while error RECOVERY has silently regressed. The invalid corpus is
+the only witness, and a keyword absent from it gets routed on no evidence at all.
+`shape` shipped that way (#1054) and had to be un-routed (#1059); `use`/`mod`
+shipped that way too and diverged from the hand on 8 of 18 malformed forms.
+
+The sequence that works, in order:
+
+1. **Add malformed cases to `error_recovery_differential_test` FIRST**, for the
+   exact keyword, in BOTH specs (F-code and recovery-TREE). They must FAIL with the
+   rule routed naively and PASS after. A guard that cannot fail is worth nothing.
+2. **Route it as `@try`, never bare.** `@try` is the abort primitive: the branch
+   snapshots cursor + node store + diagnostics + the `@hand` delegate, commits only
+   if it reported nothing, and otherwise rolls back into the `@hand` gate below —
+   so the native rule owns VALID input and recovery stays the hand parser's,
+   byte-for-byte. A bare branch is error-TOLERANT and builds partial nodes (a
+   nameless `use`, a segment-less `mod`) where the hand ABORTS to `Stmt.Error`.
+3. **Re-read the TAIL.** The alternation's last branch is the unguarded catch-all;
+   adding or removing a branch can change which one that is. `dispatch_has_tail`
+   (ast.av) is the shared predicate — assert the tail structurally in the routing
+   spec, as `decl_flip_use_mod_native_test` does.
+4. **Assert the dispatch on the EMITTED SOURCE**, not by inference: the rule's
+   parse fn must appear BEFORE the `decl_hand` gate, or `decl_lead` swallows the
+   keyword first and the native rule is dead code with correct output and no
+   diagnostic (the #1028 failure mode).
+5. **Check the builds lower to the SHARED cores.** An executor-only build passes
+   every interpreter-driven parity spec and emits nothing usable — found four
+   separate times in this slice.
+6. **A new builder means a header edit.** `gen_decl_file.av`'s import list is
+   fixed; a missing symbol is a hard undefined-symbol error, not a warning. Because
+   the compiler contains the parser it generates, the order is: widen the header →
+   `git checkout HEAD -- parse/gen_decl_parser.av` → rebuild → regen → rebuild.
+
+### THREE parsers, and the oracles only watch two of them
+
+There are three implementations, and knowing which one a given command exercises
+is the difference between a real measurement and a false one:
+
+| env | which parser |
+|---|---|
+| `AVRA_PARSER_DECL_FLIP=0` | the HAND parser — the oracle |
+| `AVRA_NO_STATIC_FALLBACK=1` | the EMIT-generated static parser, raw |
+| `AVRA_PARSER_DECL_STATIC=0` | the grammar EXECUTOR (interpreter) |
+| *(none)* | **production**: static → `had_error` → re-parse the item with the EXECUTOR |
+
+Both recovery oracles disable the fallback, so between them they measure **emit
+and nothing else** — while on any invalid input the DEFAULT path is answered by
+the EXECUTOR. An executor-only divergence is therefore invisible to them, which is
+how `exec_node`'s missing unguarded tail shipped for months with four affected
+inputs sitting in the corpus (t-zrn3, #1067). `agree_all` in that test is the
+third comparison; use it for anything that characterises executor recovery.
+
+Corollary for emit/executor lockstep: when the two disagree, **check both
+directions.** emit had a tail-role bug fixed alone in #1061; the executor had the
+mirror of the same rule. Shared predicates live in `ast.av` — reachable from
+executor.av (production) where emit.av deliberately is not.
+
 ## CRITICAL RULE: Test cycle hygiene
 
 The full `make test` is ~60s warm (19s suite + selfhost check; cold
