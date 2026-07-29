@@ -63,10 +63,11 @@ spec "t-47hc.33: `expr?` is grammar-native" {
     }
 }
 
-// Form 3 — `expr?.field`, optional chaining WITHOUT a call. Branch-only: no sub-rule, so
-// no new generated function — the `?.m(args)` sibling builds a DIFFERENT node
-// (Expr.OptionalMethodCall, from an argument list under `it`-sugar) and stays hand-owned,
-// and `@peek(qdot_plain_field)` is what separates them before the branch is entered.
+// Form 3 — `expr?.field`, optional chaining WITHOUT a call. The `?.m(args)` sibling builds
+// a DIFFERENT node (Expr.OptionalMethodCall, from an argument list under `it`-sugar); it is
+// native now too, and `@peek(qdot_plain_field)` vs `@peek(qdot_method_call)` — the same
+// same-line test read in opposite directions — is what separates them before either branch
+// is entered.
 
 spec "t-47hc.33: `expr?.field` is grammar-native" {
     then "the production rule emits the native builder" {
@@ -364,5 +365,35 @@ spec "t-47hc.33: `Type.Variant(args)` is grammar-native" {
         // Both go through builders, so the assertion is that this rule still snapshots
         // the chain base the spanned helper reads.
         postfix_rule_src().contains("st.snap_postfix_step()")
+    }
+}
+
+spec "t-47hc.33: `expr?.m(args)` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_opt_method_call(st")
+    }
+    then "it is gated on the SAME-LINE `(`, not on `?.` alone" {
+        // The hand gates the call on `current_line == prev_line`: a `(` opening the NEXT
+        // line is a new statement, and the `?.` reading stays a plain chain. This peek is
+        // the exact complement of qdot_plain_field's last clause.
+        postfix_rule_src().contains("lookahead_ok(\"qdot_method_call\", st)")
+    }
+    then "the method-call branch is dispatched BEFORE the plain-chain branch" {
+        // Both lead with `?.`. They are disjoint only because the two peeks test the same
+        // line relation in opposite directions — and only while this one is consulted first.
+        let s = postfix_rule_src()
+        s.index_of("lookahead_ok(\"qdot_method_call\", st)") < s.index_of("lookahead_ok(\"qdot_plain_field\", st)")
+    }
+    then "`it` sugar is turned ON unconditionally for the arg list" {
+        // NOT the plain call's @on_if(base_field_access, …) disjunction: a `?.` receiver is
+        // a method receiver by construction, so the hand sets allow_it_sugar = true flat.
+        // Losing this silently un-sugars `xs?.map(it * 2)`.
+        postfix_rule_src().contains("modes_with_flag_on")
+    }
+    then "the two `?.` readings build DIFFERENT nodes" {
+        // OptionalMethodCall desugars to the if-let shape; OptionalChain has its own node.
+        // Confusing them drops the argument list, which no span or token check would catch.
+        let s = postfix_rule_src()
+        s.contains("mk_opt_method_call(st") && s.contains("mk_opt_chain(st,")
     }
 }
