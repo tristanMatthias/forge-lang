@@ -13,7 +13,7 @@
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
 use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser, lookup_expr_parser}
-use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name}
+use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index, share_arenas_keep_lines}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
@@ -3089,8 +3089,11 @@ impl Parser {
     /// because the dot disambiguates. Use only for `expr.<name>` /
     /// `expr?.<name>` sites — binding sites must call
     /// `consume_identifier` instead so reserved names are rejected.
+    // The acceptance set is `tk_is_field_name` (core/ast.av), NOT an inline pair of
+    // checks: the grammar's `FIELDNAME` terminal reads the same predicate, so the two
+    // front ends cannot drift on which names may follow a `.` (t-47hc.33.1).
     fn consume_field_name(self, message: string) -> Result<string, string> {
-        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) { return .Ok(self.take_lexeme()) }
+        if tk_is_field_name(self.current_kind) { return .Ok(self.take_lexeme()) }
         self.set_error(message)
         .Err("parse error")
     }

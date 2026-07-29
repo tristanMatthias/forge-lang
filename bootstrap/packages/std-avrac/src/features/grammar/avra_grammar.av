@@ -165,10 +165,10 @@ fn avra_expr_core() -> Grammar {
                    @expect(")", "expected `)` after catch binding")
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
-                 | @peek(qdot_method_call) "?." n:IDENT "(" @on(allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
-                 | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
-                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:IDENT "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
-                 | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:IDENT -> MkFieldAccess(n)
+                 | @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
+                 | @peek(qdot_plain_field) "?." n:FIELDNAME -> MkOptChain(n)
+                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
+                 | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
                  | ^"(" @on_if(base_field_access, allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
@@ -204,6 +204,15 @@ fn avra_expr_core() -> Grammar {
   //     the enclosing context already had. `call_arg` is still the right body — the hand
   //     reaches the same arg list through parse_arg_list_ids, which sets allow_dot_postfix
   //     and leaves the it-wrap to the same `allow_it_sugar` read mk_call_arg performs.
+  // FIELDNAME, not IDENT, in every field-name position (t-47hc.33.1). `consume_field_name`
+  // accepts a reserved-but-inactive keyword as well as an identifier, so `x.ref` /
+  // `x?.owned` / `Type.move(1)` are legal field access the hand has always parsed. The DSL
+  // could not spell that set: `IDENT` is `Tk.Identifier` alone (too narrow) and the coarse
+  // `KW` kind is EVERY keyword (far too wide, and it would swallow `x.if`, which the hand
+  // rejects). `FIELDNAME` reads the shared `tk_is_field_name` — the hand's own predicate —
+  // in the executor, and lowers to the same Tk pair in emit. Widening these four branches
+  // is what lets the `@hand(postfix_suffix)` tail go: until it landed, every `.`-led native
+  // branch declined on a reserved-keyword field and the delegate silently covered for it.
   // MARKER ORDER IS LOAD-BEARING on the two `.`-led branches. `.field` and `.0` share a
   // FIRST token, and the ambiguity guard exempts a pair only when the earlier branch LEADS
   // with `@peek` — first_follow.seq_is_peek_led inspects `items[0].prim` and nothing else.

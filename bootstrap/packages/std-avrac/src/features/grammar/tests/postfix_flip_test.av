@@ -18,19 +18,25 @@
 // `@hand(postfix_suffix)` REMAINS the tail alternative, and that is load-bearing rather
 // than transitional. Every FORM is native now — `?`, `catch`, `?.field`, `?.m(args)`,
 // `.field`, `.0`, `[i]`, `(args)`, `<T>(args)`, `Type.Variant(args)`, `!` — and the
-// delegate STILL cannot be deleted, for two reasons that a native `!` does not touch:
+// delegate STILL cannot be deleted, for reasons that a native `!` does not touch:
 //
-//   1. `consume_field_name` accepts `Tk.KwReserved`, so `x.if` / `x?.match` field access
-//      is hand-only. Every native `.`-led branch matches IDENT, deliberately: the DSL's
-//      "KW" kind is EVERY keyword, which would match far wider than the hand.
-//   2. The hand runs `!` as a LOOP and then falls through to the `?`/`catch` dispatch in
-//      the SAME step WITHOUT re-testing the entry guard, so `x!` followed by a NEXT-LINE
-//      `?` is one hand step. The native chain re-enters and its `?` guard requires
-//      same-line, so it declines and the tail picks the shape up.
+//   1. RESOLVED by t-47hc.33.1 — the `FIELDNAME` terminal. `consume_field_name` accepts
+//      `Tk.KwReserved` as well as an identifier, and the native `.`-led branches used to
+//      match `IDENT` alone, so `x.ref` / `x?.owned` fell to the delegate. NOTE the
+//      example this comment carried before was WRONG: it said `x.if` / `x?.match`, but
+//      `if` and `match` are ACTIVE keywords (Tk.KwIf / Tk.KwMatch) which the hand REJECTS
+//      in field position. The reserved family is `async await yield move ref unsafe macro
+//      systems bare hardware owned borrow` (parse/token_table.av) — and getting that
+//      backwards mattered, because it made the gap look like the DSL matching too WIDELY
+//      when in fact `IDENT` was too NARROW. See reserved_kw_field_test.
+//   2. STILL OPEN (t-47hc.33.2). The hand runs `!` as a LOOP and then falls through to
+//      the `?`/`catch` dispatch in the SAME step WITHOUT re-testing the entry guard, so
+//      `x!` followed by a NEXT-LINE `?` is one hand step. The native chain re-enters and
+//      its `?` guard requires same-line, so it declines and the tail picks the shape up.
 //
 // So the earlier note here — "`!` is the LAST form to flip, together with the delegate's
 // deletion" — was half right. `!` is last, but deleting the delegate is its own piece of
-// work: a reserved-keyword field terminal plus a decision on the cross-line compound.
+// work, and only the cross-line compound is left of it.
 
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
 
@@ -85,10 +91,14 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
         // Without the peek the branch would swallow `?.m(args)` and build the wrong node.
         postfix_rule_src().contains("lookahead_ok(\"qdot_plain_field\", st)")
     }
-    then "the field terminal is IDENT — a reserved-keyword field stays hand-owned" {
-        // consume_field_name also accepts Tk.KwReserved, and the grammar's "KW" kind is
-        // EVERY keyword, so matching it here would be wider than the hand.
-        postfix_rule_src().contains("st.cur().tk == Tk.Identifier")
+    then "the field terminal is FIELDNAME — a reserved-keyword field is native too" {
+        // Was IDENT, which is `Tk.Identifier` ALONE and therefore NARROWER than
+        // consume_field_name — so `?.ref` / `?.owned` declined here and fell to the
+        // `@hand` tail. t-47hc.33.1 widened it to the shared `tk_is_field_name` set.
+        // Asserted as the full disjunction, not the `Tk.Identifier` substring: that
+        // prefix matches BOTH spellings, so it would have passed against the old
+        // IDENT-only guard and proved nothing.
+        postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
     }
     then "the `@hand` tail is still reachable for the excluded cases" {
         postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
@@ -425,13 +435,17 @@ spec "t-47hc.33: `expr!` is grammar-native" {
         start >= 0 && s.substring(0, start).contains("st.modes.allow_dot_postfix != 0")
     }
     then "the `@hand` tail SURVIVES — this form does not retire it" {
-        // Two reasons, both load-bearing:
-        //   1. consume_field_name accepts Tk.KwReserved, so `x.if` / `x?.match` field
-        //      access is still hand-only — every native `.`-led branch matches IDENT.
-        //   2. The hand runs `!` as a LOOP and then falls through to the `?`/`catch`
-        //      dispatch WITHOUT re-testing the entry guard, so `x!` followed by a
-        //      NEXT-LINE `?` is one hand step; the native chain re-entry declines it.
-        // Deleting the delegate needs both closed, not just a native `!`.
+        // ONE reason left. The reserved-keyword-field gap that used to be listed first
+        // here is CLOSED by t-47hc.33.1 (the FIELDNAME terminal) — and the example it
+        // carried was wrong anyway: `if` / `match` are ACTIVE keywords (Tk.KwIf /
+        // Tk.KwMatch) which the hand REJECTS in field position, so they were never
+        // evidence of the gap. The reserved family is `async await yield move ref
+        // unsafe macro systems bare hardware owned borrow`.
+        //
+        // What survives: the hand runs `!` as a LOOP and then falls through to the
+        // `?`/`catch` dispatch WITHOUT re-testing the entry guard, so `x!` followed by
+        // a NEXT-LINE `?` is one hand step; the native chain re-entry re-guards it.
+        // Deleting the delegate needs that closed (t-47hc.33.2).
         postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }

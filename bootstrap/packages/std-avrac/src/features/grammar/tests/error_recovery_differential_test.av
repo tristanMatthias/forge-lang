@@ -763,3 +763,44 @@ spec "t-6u9b: no token is discarded without a diagnostic" {
         rdiags(true, "fn f() -> E {\n return .Some(1)\n}") == 0
     }
 }
+
+// t-47hc.33.1 — a field name that is a RESERVED-but-inactive keyword.
+//
+// `consume_field_name` accepts `Tk.KwReserved` (`ref` `owned` `move` `borrow` …) as well
+// as an identifier, so `s.ref` PARSES and fails later in typeck as `no field \`ref\``.
+// That is a semantic error, not a syntactic one, and the distinction is the whole point:
+// if a front end rejected `s.ref` at PARSE time it would report a syntax F-code instead,
+// and the user would see a different error for the same program.
+//
+// The parse is unreachable in a *valid* program — a field named `ref` cannot be DECLARED
+// (`type S = { ref: int }` is F0001, "reserved keyword ... cannot be used as an
+// identifier"), so no type ever has one. That is exactly why this belongs here rather
+// than in the diff-test corpus: the corpus needs programs that COMPILE, and none of these
+// do. IR equality can never cover this path; F-code agreement is the only oracle for it.
+//
+// These pass today because `@hand(postfix_suffix)` still catches what the native branches
+// decline. They are here for t-47hc.33.2, which deletes that delegate: at that moment the
+// native `.`-led branches become the only path, and without the FIELDNAME terminal from
+// t-47hc.33.1 every one of these flips from a typeck F-code to a parse F-code. Deleting
+// the delegate with this spec red is the regression it exists to stop.
+spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
+    then "`.ref` reports the SEMANTIC error, identically on all three paths" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.ref))\n}")
+    }
+    then "and so do the other reserved spellings" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.owned))\n}") &&
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.move))\n}")
+    }
+    then "chained past a reserved field name" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.ref.a))\n}")
+    }
+    then "the optional-chain form agrees too" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s?.borrow))\n}")
+    }
+    then "an ACTIVE keyword after the dot is a PARSE error — and still agrees" {
+        // The other half of the FIELDNAME contract. `if` is Tk.KwIf, not KwReserved, so
+        // both front ends must REJECT it; a branch matching the DSL's coarse `KW` kind
+        // would have accepted it and diverged here.
+        agree_error("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.if))\n}")
+    }
+}
