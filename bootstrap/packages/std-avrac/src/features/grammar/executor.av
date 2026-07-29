@@ -15,7 +15,7 @@
 // emitters. Here they build `Expr` for the expression slice: literals,
 // `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
-use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
+use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list, FORCE_UNWRAP_FN}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -961,7 +961,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 fn build_is_postfix_step(bn: string) -> bool {
     bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" ||
         bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" ||
-        bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix"
+        bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap"
 }
 
 fn rule_has_postfix_step_build(g: Grammar, name: string) -> bool {
@@ -1270,6 +1270,20 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         let after = st.toks[st.pos + 2]
         if after.tk != Tk.LeftParen { return true }
         return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line != st.store.lines.to_linecol(after.pos).line
+    }
+    // The EXACT COMPLEMENT of qdot_plain_field: `?.` IDENT with a SAME-LINE `(`.
+    // qdot_plain_field returns TRUE (a plain optional chain) when the `(` opens the NEXT
+    // line, because the hand gates the call on `current_line == prev_line` — a `(` on the
+    // following line is a new statement, not this call's argument list. Both halves read
+    // the same two token positions, so keeping them mutually exclusive is a matter of
+    // testing the same line relation in opposite directions, which is what this does.
+    if cond == "qdot_method_call" {
+        if st.cur().tk != Tk.QuestionDot { return false }
+        if st.pos + 2 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        let after = st.toks[st.pos + 2]
+        if after.tk != Tk.LeftParen { return false }
+        return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line == st.store.lines.to_linecol(after.pos).line
     }
     if cond == "ident_lbrace" {
         if st.cur().kind != "IDENT" { return false }
@@ -2760,6 +2774,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // the INTERPRETER's spans here are real rather than `0 - 1` span-free — the
         // anchor is parse state, not a rule-entry byte exec_rule would have to supply.
         "MkTrySuffix" if args.length == 0 -> CapVal.Node(mk_try_suffix(st))
+        "MkForceUnwrap" if args.length == 0 -> CapVal.Node(mk_force_unwrap(st))
         "MkCallArg" if args.length == 1 -> CapVal.Node(mk_call_arg(st, env.get(args[0])))
         "MkCallSuffix" if args.length == 1 -> CapVal.Node(mk_call_suffix(st, env.get(args[0])))
         "MkGenericCallSuffix" if args.length == 2 -> CapVal.Node(mk_generic_call_suffix(st, capval_to_texpr_list(env.get(args[0])), env.get(args[1])))
@@ -2767,6 +2782,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkIndexSuffix" if args.length == 2 -> CapVal.Node(mk_index_suffix(st, env.get(args[0]), env.get(args[1])))
         "MkNone" if args.length == 0 -> mk_none_cap(st)
         "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
+        "MkOptMethodCall" if args.length == 2 -> CapVal.Node(mk_opt_method_call(st, env.get(args[0]), env.get(args[1])))
         "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkFieldAccess" if args.length == 1 -> CapVal.Node(mk_field_access(st, env.get(args[0])))
         "MkEnumCtorSuffix" if args.length == 2 -> CapVal.Node(mk_enum_ctor_suffix(st, env.get(args[0]), env.get(args[1])))
@@ -4530,8 +4546,27 @@ fn postfix_step_node(st: PState, node: Expr) -> ExprId {
 /// the subject is the threaded base.
 /// `expr?.field` — optional chaining WITHOUT a call (t-47hc.33 form 3). The `?.m(args)`
 /// sibling builds a different node (`Expr.OptionalMethodCall`, from an arg list under
-/// `it`-sugar) and stays with the `@hand` tail; `@peek(qdot_plain_field)` is what keeps
-/// the two apart before the branch is entered.
+/// `it`-sugar) and is native too. `@peek(qdot_plain_field)` and `@peek(qdot_method_call)`
+/// — the same same-line test read in opposite directions — keep the two apart before
+/// either branch is entered.
+/// `expr?.m(args)` — the optional METHOD CALL, the sibling mk_opt_chain declines.
+///
+/// A different NODE, not a different spelling: `?.field` keeps `Expr.OptionalChain`, while
+/// this builds `Expr.OptionalMethodCall`, which has no dedicated codegen and desugars to
+/// the if-let shape (`{ let $t = recv; if $t != none { $t!.m(args) } else none }`). Getting
+/// the two confused would silently drop the argument list.
+///
+/// `it`-sugar is ON for the argument list, UNCONDITIONALLY — the hand sets
+/// `allow_it_sugar = true` here rather than the plain call's `is_method || saved_it`
+/// disjunction, which is why the branch carries a bare `@on(allow_it_sugar)` where the
+/// call form carries `@on_if(base_field_access, allow_it_sugar)`. The receiver of a `?.`
+/// call is a method receiver by construction, so the condition is already decided.
+///
+/// SPANNED via postfix_step_node, matching the hand's alloc_at.
+export fn mk_opt_method_call(st: PState, ncap: CapVal, acap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.OptionalMethodCall(st.postfix_step_base, capval_tok_text(ncap), capval_to_node_list(acap)))
+}
+
 export fn mk_opt_chain(st: PState, ncap: CapVal) -> ExprId {
     postfix_step_node(st, Expr.OptionalChain(st.postfix_step_base, capval_tok_text(ncap)))
 }
@@ -4645,6 +4680,23 @@ export fn mk_generic_call_suffix(st: PState, targs: List<TypeExpr>, acap: CapVal
         Expr.GenericCall(st.postfix_step_base, vts, capval_to_node_list(acap)))
     st.set_postfix_base(rid)
     rid
+}
+
+/// `expr!` — force-unwrap. A no-op pass-through at runtime (nullability is not tracked in
+/// the value tag), encoded as `Call(Ident($force_unwrap), [subject])` with a FRESH interned
+/// callee leaf, exactly as the hand builds it.
+///
+/// The hand runs `!` as a LOOP and then FALLS THROUGH to the `?`/`catch`/`.` dispatch in
+/// the SAME step, without re-testing the entry guard — so `x!?` is one hand step. This
+/// branch is a single step instead, and the chain loop re-enters for whatever follows.
+/// That is equivalent on one line (the re-entry guard measures same-line against the `!`
+/// just consumed, which passes) and `x!!` simply becomes two steps building the same two
+/// nodes. It is NOT equivalent when the follower sits on the next line — `x!` then a bare
+/// `?` — where the hand consumes without re-testing and the re-entry declines. The `@hand`
+/// tail still covers that, which is one of the reasons it cannot be deleted yet.
+export fn mk_force_unwrap(st: PState) -> ExprId {
+    let callee = st.store.intern_expr_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+    postfix_step_node(st, Expr.Call(callee, [st.postfix_step_base]))
 }
 
 export fn mk_try_suffix(st: PState) -> ExprId {
@@ -4893,6 +4945,13 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
             "(ctor ${type_name}.${variant}${dump_args(store, cargs)})"
         // Render Grouping EXPLICITLY (never unwrap) so the dump is a
         // lossless view of the tree — `((1))` must not collapse to `1`.
+        // Both `?.` readings. NEITHER was modelled before, so the existing `?.field`
+        // form compared `<unmodelled-variant>` against itself and asserted nothing — the
+        // same hole closed for GenericCall and EnumCtor. They must render DIFFERENTLY:
+        // dropping an argument list turns one into the other.
+        .OptionalChain(obj, field) -> "(?. ${dump_expr(store, obj)} ${field})"
+        .OptionalMethodCall(obj, method, cargs) ->
+            "(?.call ${dump_expr(store, obj)} ${method}${dump_args(store, cargs)})"
         .Grouping(e) -> "(group ${dump_expr(store, e)})"
         .Error -> "<error>"
         .Missing -> "<missing>"

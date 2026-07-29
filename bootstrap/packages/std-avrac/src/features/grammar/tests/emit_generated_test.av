@@ -238,7 +238,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // do the precise work, and the no-progress break ends the chain. Asserted as the
         // native prefix plus the unchanged hand tail rather than one long literal, so a
         // later form adding a disjunct does not require rewriting the whole string.
-        src.contains("while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
+        // CAVEAT, learned the hard way: the "append-safe" note above only holds for a
+        // form added at the END. The union is emitted in BRANCH ORDER, so a form added as
+        // the FIRST alternative changes the LEADING disjunct — `!` (t-47hc.33, the last
+        // form to flip) did exactly that, moving the head from Tk.Question to Tk.Bang.
+        // `!` and `?` carry the same mode+same-line guard shape and their FIRST tokens are
+        // disjoint, so the order between them is free; the head is pinned here only to
+        // keep the assertion specific rather than to fix a required order.
+        src.contains("while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
         src.contains("st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == \"catch\" {") &&
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
         // `with_suffix = @hand(…)`), so each of the 19 FIRST-disjoint bases CALLS the one

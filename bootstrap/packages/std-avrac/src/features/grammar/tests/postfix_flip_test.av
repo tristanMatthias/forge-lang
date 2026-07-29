@@ -16,13 +16,21 @@
 // line is folded onto the previous expression.
 //
 // `@hand(postfix_suffix)` REMAINS the tail alternative, and that is load-bearing rather
-// than transitional: the hand body re-dispatches on the current token after its leading
-// `!` loop has consumed, WITHOUT re-testing the entry conditions, so `x!?` is one hand
-// step. A native `?` alternative cannot see that shape (its guard fires on `?`, and the
-// current token there is `!`), so it declines and the tail handles the compound case.
-// That is why `!` is the LAST form to flip, together with the delegate's deletion: every
-// OTHER hand arm either returns immediately or ends the if/else chain, so a native
-// single-iteration version of it is exactly equivalent.
+// than transitional. Every FORM is native now — `?`, `catch`, `?.field`, `?.m(args)`,
+// `.field`, `.0`, `[i]`, `(args)`, `<T>(args)`, `Type.Variant(args)`, `!` — and the
+// delegate STILL cannot be deleted, for two reasons that a native `!` does not touch:
+//
+//   1. `consume_field_name` accepts `Tk.KwReserved`, so `x.if` / `x?.match` field access
+//      is hand-only. Every native `.`-led branch matches IDENT, deliberately: the DSL's
+//      "KW" kind is EVERY keyword, which would match far wider than the hand.
+//   2. The hand runs `!` as a LOOP and then falls through to the `?`/`catch` dispatch in
+//      the SAME step WITHOUT re-testing the entry guard, so `x!` followed by a NEXT-LINE
+//      `?` is one hand step. The native chain re-enters and its `?` guard requires
+//      same-line, so it declines and the tail picks the shape up.
+//
+// So the earlier note here — "`!` is the LAST form to flip, together with the delegate's
+// deletion" — was half right. `!` is last, but deleting the delegate is its own piece of
+// work: a reserved-keyword field terminal plus a decision on the cross-line compound.
 
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
 
@@ -63,10 +71,11 @@ spec "t-47hc.33: `expr?` is grammar-native" {
     }
 }
 
-// Form 3 — `expr?.field`, optional chaining WITHOUT a call. Branch-only: no sub-rule, so
-// no new generated function — the `?.m(args)` sibling builds a DIFFERENT node
-// (Expr.OptionalMethodCall, from an argument list under `it`-sugar) and stays hand-owned,
-// and `@peek(qdot_plain_field)` is what separates them before the branch is entered.
+// Form 3 — `expr?.field`, optional chaining WITHOUT a call. The `?.m(args)` sibling builds
+// a DIFFERENT node (Expr.OptionalMethodCall, from an argument list under `it`-sugar); it is
+// native now too, and `@peek(qdot_plain_field)` vs `@peek(qdot_method_call)` — the same
+// same-line test read in opposite directions — is what separates them before either branch
+// is entered.
 
 spec "t-47hc.33: `expr?.field` is grammar-native" {
     then "the production rule emits the native builder" {
@@ -364,5 +373,65 @@ spec "t-47hc.33: `Type.Variant(args)` is grammar-native" {
         // Both go through builders, so the assertion is that this rule still snapshots
         // the chain base the spanned helper reads.
         postfix_rule_src().contains("st.snap_postfix_step()")
+    }
+}
+
+spec "t-47hc.33: `expr?.m(args)` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_opt_method_call(st")
+    }
+    then "it is gated on the SAME-LINE `(`, not on `?.` alone" {
+        // The hand gates the call on `current_line == prev_line`: a `(` opening the NEXT
+        // line is a new statement, and the `?.` reading stays a plain chain. This peek is
+        // the exact complement of qdot_plain_field's last clause.
+        postfix_rule_src().contains("lookahead_ok(\"qdot_method_call\", st)")
+    }
+    then "the method-call branch is dispatched BEFORE the plain-chain branch" {
+        // Both lead with `?.`. They are disjoint only because the two peeks test the same
+        // line relation in opposite directions — and only while this one is consulted first.
+        let s = postfix_rule_src()
+        s.index_of("lookahead_ok(\"qdot_method_call\", st)") < s.index_of("lookahead_ok(\"qdot_plain_field\", st)")
+    }
+    then "`it` sugar is turned ON unconditionally for the arg list" {
+        // NOT the plain call's @on_if(base_field_access, …) disjunction: a `?.` receiver is
+        // a method receiver by construction, so the hand sets allow_it_sugar = true flat.
+        // Losing this silently un-sugars `xs?.map(it * 2)`.
+        //
+        // SCOPED to this branch. A bare contains("modes_with_flag_on") over the whole rule
+        // passes on other branches that also set modes, so it would prove nothing about
+        // `?.m(args)` — the same vacuous-assertion trap as the `s_cut` check above.
+        let s = postfix_rule_src()
+        let method_start = s.index_of("lookahead_ok(\"qdot_method_call\", st)")
+        let chain_start = s.index_of("lookahead_ok(\"qdot_plain_field\", st)")
+        method_start >= 0 && chain_start > method_start &&
+            s.substring(method_start, chain_start).contains("modes_with_flag_on")
+    }
+    then "the two `?.` readings build DIFFERENT nodes" {
+        // OptionalMethodCall desugars to the if-let shape; OptionalChain has its own node.
+        // Confusing them drops the argument list, which no span or token check would catch.
+        let s = postfix_rule_src()
+        s.contains("mk_opt_method_call(st") && s.contains("mk_opt_chain(st,")
+    }
+}
+
+spec "t-47hc.33: `expr!` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_force_unwrap(st)")
+    }
+    then "it carries the hand entry guard — mode read AND same-line" {
+        // `check(Tk.Bang) && allow_dot_postfix && current_line == prev_line`.
+        let s = postfix_rule_src()
+        let start = s.index_of("st.cur().tk == Tk.Bang")
+        start >= 0 && s.substring(0, start).contains("st.modes.allow_dot_postfix != 0")
+    }
+    then "the `@hand` tail SURVIVES — this form does not retire it" {
+        // Two reasons, both load-bearing:
+        //   1. consume_field_name accepts Tk.KwReserved, so `x.if` / `x?.match` field
+        //      access is still hand-only — every native `.`-led branch matches IDENT.
+        //   2. The hand runs `!` as a LOOP and then falls through to the `?`/`catch`
+        //      dispatch WITHOUT re-testing the entry guard, so `x!` followed by a
+        //      NEXT-LINE `?` is one hand step; the native chain re-entry declines it.
+        // Deleting the delegate needs both closed, not just a native `!`.
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }
