@@ -155,10 +155,21 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")") &&
         src.contains("mk_quote(st, sp_start,")
     }
-    then "the guarded HAND gate precedes the unguarded native branch" {
+    then "both guarded gates precede the unguarded native branch" {
+        // Ordered choice: `quote arm` (still the hand's) and `quote type` (native, its own
+        // rule) are BOTH peek-guarded and must be emitted BEFORE the unguarded
+        // `parse_quote_expr` catch-all — otherwise the plain branch consumes `quote` first
+        // and the two special kinds become dead code with no diagnostic (the #1028 failure
+        // mode). Asserted on the EMITTED SOURCE rather than inferred from the grammar text.
         let src = emit_parser_source(avra_expr_dispatch_grammar())
-        let gate = src.index_of("lookahead_ok(\"quote_special\", st)")
+        let arm_gate = src.index_of("lookahead_ok(\"quote_arm\", st)")
+        let type_gate = src.index_of("lookahead_ok(\"quote_type\", st)")
         let native = src.index_of("parse_quote_expr(st)")
-        gate >= 0 && native >= 0 && gate < native
+        arm_gate >= 0 && type_gate >= 0 && native >= 0 &&
+        arm_gate < native && type_gate < native
+    }
+    then "`quote type` lowers to its own native rule, not to the hand leaf" {
+        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,")
     }
 }

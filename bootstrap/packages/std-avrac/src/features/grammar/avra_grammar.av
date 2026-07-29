@@ -122,7 +122,8 @@ fn avra_expr_core() -> Grammar {
              | base:channel_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:isolated_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:when_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(quote_special) base:@hand(quote_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_arm) base:@hand(quote_expr) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_type) base:quote_type_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:quote_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:list_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:brace_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
@@ -220,12 +221,17 @@ fn avra_expr_core() -> Grammar {
   variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
   // t-bwjg — `quote { … }` and the block-bodied kinds. `quote type { <type> }` and
-  // `quote arm { pat -> body }` are DECLINED by @peek(quote_special) above and stay on
-  // the narrowed @hand(quote_expr) leaf: their bodies are not block expressions (a
-  // TypeLit carrier and a synthetic single-armed MatchExpr envelope respectively).
+  // `quote type { … }` is routed to quote_type_expr by @peek(quote_type) above, and
+  // `quote arm { pat -> body }` is DECLINED by @peek(quote_arm) and stays on the narrowed
+  // @hand(quote_expr) leaf — its body is a synthetic single-armed MatchExpr envelope, not
+  // a block expression.
   // @bump(quote_depth) reproduces the hand's bump/restore around the body, which is
   // what the already-native splice branches (@when(at_quote_top) / @when(in_quote_body))
   // read — so a NESTED quote still sees the right depth.
+  // `quote type { <type> }` — native as of slice 4b. @bump wraps the TYPE parse so a
+  // splice inside it (`quote type { ~T }`, quote_splice_type_ident_test) still sees a
+  // nonzero depth; the braces themselves do not care.
+  quote_type_expr = "quote" "type" lb:"{" @bump(quote_depth) t:type_expr "}" -> MkQuoteType(lb, t)
   quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:block_expr -> MkQuote(k, body)
   spawn_expr   = "spawn" body:block_expr -> MkSpawn(body)
   isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
@@ -317,7 +323,7 @@ fn avra_expr_core() -> Grammar {
                | @peek(ident_plain) IDENT
                | paren_expr | list_expr | match_expr | if_expr
                | spawn_expr | channel_expr | isolated_expr | when_expr
-               | @peek(quote_special) @hand(quote_expr) | quote_expr
+               | @peek(quote_arm) @hand(quote_expr) | @peek(quote_type) quote_type_expr | quote_expr
                | template_lit | brace_expr
   // A `-> n` Var build (the `eq_tail`/`-> ir` form): labelling alone still returns Nil,
   // because a branch with no build yields Nil regardless. The build hands back the captured

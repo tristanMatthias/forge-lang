@@ -1388,17 +1388,21 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "if_let" {
         return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
     }
-    // t-bwjg: `quote type` / `quote arm` — the two quote kinds whose BODY is not a block
-    // expression. `type` parses a type_expr into an Expr.TypeLit carrier; `arm` parses a
-    // pattern/guard/body into a synthetic single-armed MatchExpr envelope. Both stay on
-    // the (narrowed) @hand(quote_expr) leaf, so the native branch must decline them —
-    // checked BEFORE consuming `quote`, so the native branch's FIRST stays a plain
-    // `quote`. The hand decides it one token later, in parse_quote_kind.
-    if cond == "quote_special" {
+    // t-bwjg: the two quote kinds whose BODY is not a block expression, split so each can
+    // be routed on its own. `type` parses a type_expr into an Expr.TypeLit carrier and is
+    // NATIVE (quote_type_expr); `arm` builds a synthetic single-armed MatchExpr envelope
+    // and is still the hand's. Both are checked BEFORE `quote` is consumed, so the plain
+    // block-bodied branch's FIRST stays a bare `quote`. The hand decides the same thing
+    // one token later, in parse_quote_kind.
+    if cond == "quote_arm" {
         if st.cur().text != "quote" { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        let nxt = st.toks[st.pos + 1].text
-        return nxt == "type" || nxt == "arm"
+        return st.toks[st.pos + 1].text == "arm"
+    }
+    if cond == "quote_type" {
+        if st.cur().text != "quote" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == "type"
     }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
@@ -2819,6 +2823,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
+        "MkQuoteType" if args.length == 2 -> mk_quote_type(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
@@ -3290,14 +3295,42 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 /// Mirrors the hand `Parser.parse_quote` for the BLOCK-BODIED kinds only. The two
 /// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
 /// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
-/// `@peek(quote_special)` and stay on the narrowed @hand leaf, so this build never
-/// sees them.
+/// `@peek(quote_type)` (routed to the native quote_type_expr) and `@peek(quote_arm)`
+/// (still the hand's), so this build never sees either.
 ///
 /// `kind_cv` is the OPTIONAL kind keyword; absent means the hand's default, `"expr"`
 /// (parse_quote_kind's fallthrough). `Expr.Quote`'s body is an ExprId SCALAR and is
 /// walker-opaque, so this allocs as a LEAF with no child refs — matching the hand's
 /// `alloc_at`, which passes none either. Adding an edge here would give the walker a
 /// child the hand never registered.
+/// Grammar-native `quote type { <type> }` (t-bwjg slice 4b).
+///
+/// Mirrors hand `parse_quote` + `parse_quote_type_body` EXACTLY, and the two spans are
+/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{` (the hand
+/// takes `sp_start` at the brace, inside parse_quote_type_body), while the outer
+/// `Expr.Quote` spans from the `quote` keyword. `lb_cv` is the captured `{` token, which
+/// is the only way the build can recover that inner byte.
+///
+/// NOTE the deliberate difference from `mk_channel`, the other build that carries a
+/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge) because
+/// its hand twin does. `parse_quote_type_body` does NOT — it is a plain `alloc_at` with
+/// no refs — so ingesting here would add a type-table row and a walker edge the hand
+/// never created, and the IR would diverge.
+export fn mk_quote_type(st: PState, sp_start: int, lb_cv: CapVal, t_cv: CapVal) -> CapVal {
+    let vt = type_expr_to_vtype(capval_to_texpr(st, t_cv))
+    let lb = capval_tok_pos(lb_cv)
+    let body = st.store.add_expr(
+        Expr.TypeLit(vt),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        []
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("type", body),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
 export fn mk_quote(st: PState, sp_start: int, kind_cv: CapVal, body_cv: CapVal) -> CapVal {
     let kind = if capval_present(kind_cv) { capval_tok_text(kind_cv) } else { "expr" }
     CapVal.Node(st.store.add_expr(
