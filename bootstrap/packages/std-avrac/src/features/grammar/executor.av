@@ -2364,8 +2364,19 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
+    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
+    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
+    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
+    // none of them would match the names the hand parser produces for the same source.
+    // The delegate is the right home because it is the exact Parser `run_hand_expr`
+    // dispatches into, so a hand-parsed leaf and a native build action advance the same
+    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
+    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
+    if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
@@ -2384,8 +2395,19 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
 /// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
+    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
+    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
+    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
+    // none of them would match the names the hand parser produces for the same source.
+    // The delegate is the right home because it is the exact Parser `run_hand_expr`
+    // dispatches into, so a hand-parsed leaf and a native build action advance the same
+    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
+    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
     let expr = capval_to_expr(st, parse(st))
+    if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
