@@ -20,6 +20,8 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
+// The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
+use core.{tk_is_field_name}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -719,11 +721,27 @@ fn list_has(xs: List<string>, s: string) -> bool {
 /// Takes the whole PState rather than a bare Token (t-47hc.33) because `^` is part of a
 /// sequence's FIRST — see tok_starts_seq. Every call site already passed `st.cur()`, so
 /// this is the same question with the state the newline gate needs in reach.
+/// Match a NAMED terminal against a token. Every terminal but one is a `kind`
+/// string straight out of `tk_to_grammar_kind` (real_lex.av); `FIELDNAME` is the
+/// exception, and it exists because that mapping is too COARSE to spell what the
+/// hand accepts after a `.` — `Tk.KwReserved` folds into `KW` along with every
+/// other keyword, so `IDENT` is narrower than `consume_field_name` and `KW` is
+/// vastly wider. `FIELDNAME` reads the shared `tk_is_field_name` (core/ast.av)
+/// instead, which is the hand's own predicate (t-47hc.33.1).
+///
+/// LOCKSTEP: emit's `named_tk_guard` must lower `FIELDNAME` to the SAME Tk set.
+/// That pairing is asserted by reserved_kw_field_test — the two engines drifting
+/// is the recurring failure mode in this slice (`base_field_access`, `dot_number`).
+fn named_tok_matches(name: string, tok: Token) -> bool {
+    if name == "FIELDNAME" { return tk_is_field_name(tok.tk) }
+    tok.kind == name
+}
+
 fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -> bool {
     let tok = st.cur()
     match prim {
         .Lit(t) -> tok.text == t
-        .Named(name) -> tok.kind == name
+        .Named(name) -> named_tok_matches(name, tok)
         .Ref(name) -> tok_starts_rule(g, name, st, visited)
         .Group(inner) -> tok_starts_node(g, inner, st, visited)
         .Hand(hf) -> hand_starts(hf, tok)
@@ -1243,9 +1261,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "dot_plain_field" {
         if st.cur().tk != Tk.Dot { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        // consume_field_name also accepts a RESERVED keyword; the grammar's "KW" kind is
-        // every keyword, so that case is left to the hand rather than matched too widely.
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        // The field name is whatever `consume_field_name` accepts — an identifier OR a
+        // reserved-but-inactive keyword (`x.ref`, `x.owned`). Reading the shared
+        // `tk_is_field_name` rather than the grammar's coarse `kind` is what lets the
+        // native branch cover the hand's full acceptance set (t-47hc.33.1).
+        if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         if st.pos + 2 >= st.toks.length { return true }
         if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
         // A `(` follows: this is an enum ctor only if the BASE reads as a type name.
@@ -1259,13 +1279,13 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "dot_enum_ctor" {
         if st.cur().tk != Tk.Dot { return false }
         if st.pos + 2 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         return st.toks[st.pos + 2].tk == Tk.LeftParen
     }
     if cond == "qdot_plain_field" {
         if st.cur().tk != Tk.QuestionDot { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         if st.pos + 2 >= st.toks.length { return true }
         let after = st.toks[st.pos + 2]
         if after.tk != Tk.LeftParen { return true }
@@ -1280,7 +1300,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "qdot_method_call" {
         if st.cur().tk != Tk.QuestionDot { return false }
         if st.pos + 2 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         let after = st.toks[st.pos + 2]
         if after.tk != Tk.LeftParen { return false }
         return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line == st.store.lines.to_linecol(after.pos).line
@@ -1963,7 +1983,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             CapVal.Node(st.missing_node())
         }
         .Named(name) -> {
-            if st.cur().kind == name { return CapVal.Tok(st.advance()) }
+            if named_tok_matches(name, st.cur()) { return CapVal.Tok(st.advance()) }
             handle_missing(st, name, annots)
             CapVal.Node(st.missing_node())
         }

@@ -1,0 +1,118 @@
+// WHY: t-47hc.33.1 — the grammar could not spell what `consume_field_name` accepts, and
+// that gap is one of the two reasons `@hand(postfix_suffix)` could not be deleted.
+//
+// The hand accepts an identifier OR a RESERVED-but-inactive keyword after a `.`:
+//
+//     fn consume_field_name(self, message) -> Result<string, string> {
+//         if tk_is_field_name(self.current_kind) { return .Ok(self.take_lexeme()) }
+//
+// `Tk.KwReserved` is `async await yield move ref unsafe macro systems bare hardware
+// owned borrow` (parse/token_table.av) — names held out of the value namespace but legal
+// as STRUCT FIELDS. `x.ref` and `x.owned` are field access the hand has always parsed,
+// and they are not exotic: `ref` and `owned` are the kind of name a real record carries.
+//
+// The DSL had no way to say that. Its terminals are the coarse `kind` strings that
+// `tk_to_grammar_kind` (real_lex.av) folds tokens into, and the fold is lossy in both
+// directions here: `IDENT` is `Tk.Identifier` ALONE (too narrow — it declines `x.ref`),
+// while `KW` is EVERY keyword (far too wide — it would accept `x.if`, which the hand
+// REJECTS). So every native `.`-led branch was written to match `IDENT` and decline the
+// rest, and `@hand(postfix_suffix)` quietly covered the difference. Delete the delegate
+// with that still true and `x.ref` stops parsing.
+//
+// `FIELDNAME` is the terminal that closes it: the executor matches it through the SHARED
+// `tk_is_field_name` (core/ast.av — the hand's own predicate, so the two front ends
+// cannot drift), and emit lowers it to the same Tk pair inline.
+//
+// WHAT MAKES THESE TESTS FAIL BEFORE THE FIX, which matters more than usual here: with
+// the `@hand` tail still in place, `x.ref` parses correctly EITHER WAY — natively after
+// the fix, via the delegate before it. A test that only renders `x.ref` therefore passes
+// against the bug and proves nothing. The load-bearing assertions are the ones on the
+// PEEK CONDS, which are exactly the gates that decide whether a native branch is entered
+// at all: `dot_plain_field(".ref")` is FALSE before this change and TRUE after. The
+// render tests below are the complement — they pin that widening the gate did not change
+// the tree that comes out.
+
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_expr_dispatch_grammar, run_grammar_expr, new_pstate, lookahead_ok, emit_rule_fn, Grammar}
+use @std.avrac.core.{render_expr_id, tk_is_field_name, Tk}
+
+fn r(src: string) -> string {
+    let out = run_grammar_expr(avra_expr_grammar(), src)
+    render_expr_id(out.store, out.root)
+}
+
+fn peek(cond: string, src: string) -> bool {
+    lookahead_ok(cond, new_pstate(src))
+}
+
+fn postfix_rule_src() -> string {
+    let g = avra_expr_dispatch_grammar()
+    for gr in g.rules {
+        if gr.name == "postfix_suffix" { return emit_rule_fn(g, gr) }
+    }
+    ""
+}
+
+spec "t-47hc.33.1: the shared predicate IS consume_field_name's acceptance set" {
+    then "a plain identifier is a field name" { tk_is_field_name(Tk.Identifier) }
+    then "a reserved-but-inactive keyword is a field name" { tk_is_field_name(Tk.KwReserved) }
+    then "an ACTIVE keyword is NOT — this is the half `KW` would have got wrong" {
+        // The whole reason the DSL's KW kind was unusable. `if` lexes as Tk.KwIf, not
+        // KwReserved, and the hand rejects `x.if`; a KW-matching branch would accept it.
+        !tk_is_field_name(Tk.KwIf) && !tk_is_field_name(Tk.KwMatch) && !tk_is_field_name(Tk.KwReturn)
+    }
+    then "and neither is a non-name token" {
+        !tk_is_field_name(Tk.Number) && !tk_is_field_name(Tk.LeftParen) && !tk_is_field_name(Tk.Eof)
+    }
+}
+
+spec "t-47hc.33.1: the `.`-led peek conds admit a reserved-keyword field name" {
+    // THE failing-first assertions. Each of these returned false before FIELDNAME landed,
+    // which is precisely how the native branch declined and the hand tail took over.
+    then "dot_plain_field accepts `.ref`" { peek("dot_plain_field", ".ref") }
+    then "dot_plain_field accepts `.owned`" { peek("dot_plain_field", ".owned") }
+    then "dot_plain_field still accepts a plain identifier" { peek("dot_plain_field", ".name") }
+    then "dot_plain_field still REJECTS an active keyword — `x.if` stays a parse error" {
+        !peek("dot_plain_field", ".if")
+    }
+    then "dot_enum_ctor accepts a reserved name before the `(`" {
+        peek("dot_enum_ctor", ".move(1)")
+    }
+    then "dot_enum_ctor still rejects an active keyword" { !peek("dot_enum_ctor", ".if(1)") }
+}
+
+spec "t-47hc.33.1: the `?.`-led peek conds admit one too" {
+    then "qdot_plain_field accepts `?.ref`" { peek("qdot_plain_field", "?.ref") }
+    then "qdot_plain_field still accepts an identifier" { peek("qdot_plain_field", "?.name") }
+    then "qdot_plain_field still rejects an active keyword" { !peek("qdot_plain_field", "?.if") }
+    then "qdot_method_call accepts `?.borrow(x)`" { peek("qdot_method_call", "?.borrow(x)") }
+    then "qdot_method_call still rejects an active keyword" { !peek("qdot_method_call", "?.if(x)") }
+}
+
+spec "t-47hc.33.1: widening the gate does not change the tree" {
+    // The complement of the peek specs: the native branch must build what the hand built.
+    then "a reserved-keyword field reads as a field access" { r("x.ref") == "(field x ref)" }
+    then "and so does `owned`" { r("x.owned") == "(field x owned)" }
+    then "chained, with an identifier field either side" {
+        r("a.ref.b") == "(field (field a ref) b)"
+    }
+    then "an optional chain onto a reserved name" { r("x?.ref") == "(?. x ref)" }
+    then "a plain identifier field is untouched" { r("x.name") == "(field x name)" }
+    then "a reserved name is still a field, not a call, without parens" {
+        r("s.move") == "(field s move)"
+    }
+}
+
+spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
+    // The executor and the generated parser are different code paths; an executor-only
+    // change passes every interpreter-driven spec above and emits nothing usable. This
+    // asserts the emit side lowered FIELDNAME to the same Tk set.
+    then "the emitted field branches test Tk.KwReserved" {
+        postfix_rule_src().contains("Tk.KwReserved")
+    }
+    then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
+        postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
+    }
+    then "the `@hand` tail is STILL present — deleting it is t-47hc.33.2, not this ticket" {
+        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    }
+}

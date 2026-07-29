@@ -706,8 +706,8 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
     if lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot) {
         mut a_list: List<ExprId> = []
         let _ = st.advance()
-        let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+            st.report("expected FIELDNAME")
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
@@ -734,8 +734,8 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
     }
     if lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot) {
         let _ = st.advance()
-        let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+            st.report("expected FIELDNAME")
             CapVal.Tok(st.cur())
         }
         return CapVal.Node(mk_opt_chain(st, n))
@@ -743,8 +743,8 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
     if lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
         mut a_list: List<ExprId> = []
         let _ = st.advance()
-        let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+            st.report("expected FIELDNAME")
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
@@ -768,8 +768,8 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
     }
     if lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
         let _ = st.advance()
-        let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+            st.report("expected FIELDNAME")
             CapVal.Tok(st.cur())
         }
         return CapVal.Node(mk_field_access(st, n))

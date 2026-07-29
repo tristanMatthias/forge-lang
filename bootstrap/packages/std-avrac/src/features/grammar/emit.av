@@ -2048,6 +2048,13 @@ fn tk_guard(text: string) -> string {
 /// vocabulary keeps the `.kind` string compare (defensive; the set is closed).
 fn named_tk_guard(tok: string) -> string {
     if tok == "IDENT"    { return "st.cur().tk == Tk.Identifier" }
+    // The one terminal that is NOT a `tk_to_grammar_kind` kind string: the field-name
+    // set `consume_field_name` accepts. Spelled inline as the Tk disjunction rather
+    // than as a call to `tk_is_field_name` because the generated file's import header
+    // (gen_expr_file.av) is fixed and a guard is emitted into FIRST chains where a
+    // bare comparison composes; the executor's `named_tok_matches` reads the shared
+    // predicate, and reserved_kw_field_test asserts the two stay the same set.
+    if tok == "FIELDNAME" { return "(st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved)" }
     if tok == "NUMBER"   { return "(st.cur().tk == Tk.Number || st.cur().tk == Tk.Float)" }
     if tok == "STRING"   { return "st.cur().tk == Tk.String" }
     if tok == "BOOL"     { return "(st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse)" }

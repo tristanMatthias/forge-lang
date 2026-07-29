@@ -3009,6 +3009,27 @@ export enum Tk {
     Error
 }
 
+/// The token kinds that may spell a FIELD NAME after `.` / `?.` — the single
+/// definition of `Parser.consume_field_name`'s acceptance set (t-47hc.33.1).
+///
+/// `Tk.KwReserved` is the reserved-but-inactive family (`async` `await` `yield`
+/// `move` `ref` `unsafe` `macro` `systems` `bare` `hardware` `owned` `borrow`,
+/// parse/token_table.av). Those names are held out of the value namespace, but a
+/// STRUCT FIELD called `ref` or `owned` is legal and reachable — `x.ref` parses —
+/// so field position accepts them alongside a plain identifier.
+///
+/// It lives HERE, in core, because both front ends must agree on it and neither
+/// can own it: the hand parser reads it through `consume_field_name`, and the
+/// grammar engines read it through the `FIELDNAME` terminal (executor's
+/// `named_tok_matches`, emit's `named_tk_guard`). Before this predicate the
+/// grammar could only spell `IDENT` — `Tk.Identifier` alone — because the DSL's
+/// coarse `KW` kind is EVERY keyword and would have matched far wider than the
+/// hand. That gap is why `@hand(postfix_suffix)` had to stay: the native `.`-led
+/// branches declined on `x.ref` and the delegate picked it up.
+export fn tk_is_field_name(tk: Tk) -> bool {
+    tk == Tk.Identifier || tk == Tk.KwReserved
+}
+
 // Bridge: convert Tk keyword to the string used by the feature registry.
 // Returns "" for non-keyword tokens.
 /// Map a keyword Tk variant back to its source-form string. Used by

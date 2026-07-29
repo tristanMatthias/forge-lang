@@ -25,13 +25,19 @@ packages/std-avrac/src/build/**/*.avra-sha256
 # Build cache artifacts created when running builds from inside the package
 # (e.g. `cd packages/std-avrac && bs2 build`) — NOT source, must stay ignored.
 packages/std-avrac/src/build/cache/
-# Test-run artifacts that land in the SAME directory as the build-driver source:
-# per-shard object files and shard logs from `bs2 test`. The re-include above is
-# for the .av source module only, and without these two lines it also re-includes
-# every .o the test runner drops there — which a `git add` over src/ then sweeps
-# into the commit (19 of them, twice in one session, both caught only on review).
+# Test-run artifacts that land in the SAME directory as the build-driver source.
+# The `!packages/std-avrac/src/build/**` re-include above exists for the .av SOURCE
+# module, but it also un-ignores every artifact a run with cwd INSIDE the package
+# drops here — which the blanket `**/build/` would otherwise have caught. A
+# `bs2 test` from `packages/std-avrac/src` leaves per-CGU objects and a shard log
+# right next to the source, and a plain `git add` over src/ then sweeps them into
+# the commit (19 files, observed independently on #1077 and twice in one session
+# on #1083 — caught on review both times, which is not a control).
 packages/std-avrac/src/build/*.o
 packages/std-avrac/src/build/test_shards/
+packages/std-avrac/src/build/coverage/
+packages/std-avrac/src/build/sweep/
+packages/std-avrac/src/build/memguard/
 dogfood_progress.csv
 
 # Generated language reference (rebuild with 'avra lang')
