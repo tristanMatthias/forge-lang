@@ -190,6 +190,18 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     // token and the remainder becomes a stray-token item — the exact shape that exposed
     // the executor gap. It is measured on all three paths by the block above.
     then "malformed type declarations (the routed keyword)" {
+        // The bare-RHS EDGE, on all three paths. `type T =` with nothing after it is
+        // ACCEPTED — by the HAND parser too, which is what makes it parity rather than a
+        // hole; diagnostic_equivalence_test pins the node both build. What varies is the
+        // FOLLOWER: `let`/EOF leave it alone, `mod`/`use` are consumed as the alias and
+        // fail in the resolver, and `}` / `)` fail in the parser. Each of those is the
+        // hand's own behaviour, reproduced. (Raised in review on #1068 as a possible
+        // hole — measured instead of argued, and kept as coverage.)
+        agree_all("type T =") &&
+        agree_all("type T =\nlet q = 1\n") &&
+        agree_all("type T =\nmod foo\n") &&
+        agree_all("type T =\n}\n") &&
+        agree_all("type T =\n)\n") &&
         agree("type T =\nfn f() -> int { 1 }") &&
         agree("type T< = { x: int }\nfn f() -> int { 1 }") &&
         agree("type T<A = { x: int }\nfn f() -> int { 1 }") &&
