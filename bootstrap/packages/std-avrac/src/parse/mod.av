@@ -772,7 +772,12 @@ export fn parser_new(source: string) -> Parser {
 /// so downstream diagnostics can cite the originating file even after bundling.
 export fn parser_new_with_file(source: string, file: string) -> Parser {
     // The normal path owns a fresh store; its line index is built once here.
-    let store = new_node_store(build_line_index(source)) with { entry_file: file }
+    // `mut` + field assignment, NOT `with`: a `with` on NodeStore COPIES a struct that
+    // owns the arenas, and a copy there is both wasteful and RC-visible (apply_overrides
+    // retains shared aliases). Assigning the one field in place keeps the store identity
+    // the parser and every downstream pass share.
+    mut store = new_node_store(build_line_index(source))
+    store.entry_file = file
     // Record WHICH file `lines` indexes (t-3fwc). Diagnostics sharpen a caret by
     // re-reading a node's byte offset against this index, which is only valid for
     // rows from this file; without the name they cannot tell an entry row from a
