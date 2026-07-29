@@ -4976,15 +4976,36 @@ static _Atomic int64_t avra_mem_peak_kb = 0;
 static _Atomic(const char*) avra_mem_phase = "startup (before parse)";
 
 // Resident set size in KiB, or -1 where /proc is unavailable (non-Linux).
+//
+// RAW SYSCALLS, NOT stdio. This runs from inside avra_rc_alloc — the allocator's
+// hot path — so `fopen` is doubly wrong there: it MALLOCS (the stream buffer),
+// which re-enters the allocator we were called from, and it takes stdio locks. In
+// the in-process parallel test runner that is a lock held across threads on the
+// hottest path in the compiler; and the spec crash guard `siglongjmp`s out of
+// deliberate SIGABRT/SIGFPE, which can unwind straight past an `fclose` and strand
+// both the lock and the fd. open/read/close allocate nothing, lock nothing, and are
+// safe to abandon mid-flight. (The first version of this used fopen/fscanf and the
+// crash-isolation specs went red in the parallel suite while passing in isolation —
+// the signature of exactly this.)
 static int64_t avra_mem_rss_kb(void) {
 #ifdef __linux__
-    FILE* f = fopen("/proc/self/statm", "r");
-    if (!f) return -1;
-    long long total_pages = 0, resident_pages = 0;
-    int n = fscanf(f, "%lld %lld", &total_pages, &resident_pages);
-    fclose(f);
-    if (n != 2) return -1;
-    return (int64_t)resident_pages * (int64_t)(sysconf(_SC_PAGESIZE) / 1024);
+    int fd = open("/proc/self/statm", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    char buf[128];
+    ssize_t n;
+    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return -1;
+    buf[n] = '\0';
+    // "<size> <resident> …" — skip the first field, parse the second.
+    const char* p = buf;
+    while (*p == ' ') p++;
+    while (*p >= '0' && *p <= '9') p++;
+    while (*p == ' ') p++;
+    int64_t resident_pages = 0;
+    if (!(*p >= '0' && *p <= '9')) return -1;
+    while (*p >= '0' && *p <= '9') { resident_pages = resident_pages * 10 + (*p - '0'); p++; }
+    return resident_pages * (int64_t)(sysconf(_SC_PAGESIZE) / 1024);
 #else
     return -1;
 #endif
@@ -4992,18 +5013,26 @@ static int64_t avra_mem_rss_kb(void) {
 
 // MemAvailable in KiB — what the kernel thinks we can still get without
 // swapping. 0 when unknown.
+// Raw syscalls for the same reason as avra_mem_rss_kb: this is reached from the
+// allocator's hot path (via the ceiling's lazy init) and must not re-enter malloc.
 static int64_t avra_mem_available_kb(void) {
 #ifdef __linux__
-    FILE* f = fopen("/proc/meminfo", "r");
-    if (!f) return 0;
-    char key[64];
-    long long val = 0;
+    int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char buf[4096];
+    ssize_t n;
+    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    const char* p = strstr(buf, "MemAvailable:");
+    if (!p) return 0;
+    p += 13;                                   // past the key
+    while (*p == ' ' || *p == '\t') p++;
     int64_t out = 0;
-    while (fscanf(f, "%63s %lld kB\n", key, &val) == 2) {
-        if (strcmp(key, "MemAvailable:") == 0) { out = (int64_t)val; break; }
-    }
-    fclose(f);
-    return out;
+    if (!(*p >= '0' && *p <= '9')) return 0;
+    while (*p >= '0' && *p <= '9') { out = out * 10 + (*p - '0'); p++; }
+    return out;                                // /proc/meminfo reports kB
 #else
     return 0;
 #endif
