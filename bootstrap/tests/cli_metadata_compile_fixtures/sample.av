@@ -56,6 +56,17 @@ fn main() -> int {
     // every meta.bin a downstream consumer might want lands on disk.
     let rc_lib = avra_shell_exec_status("cd ${avrac_dir} && ${bs2} build --lib --emit_metadata > /tmp/cli_meta_lib.log 2>&1")
     probe("avrac_lib_build_rc_zero", rc_lib == 0)
+    // On failure, SURFACE the build log. Without this the probe reports only
+    // "rc != 0" and the reason is in a /tmp file no CI run ever shows — which is
+    // exactly how this fixture went three diagnosis rounds on a machine that
+    // cannot reproduce it. The meta.bin probes below do NOT substitute: this
+    // fixture deliberately does not wipe caches (0qmm), so they can pass on
+    // artifacts an earlier shard left behind even when THIS build failed.
+    if rc_lib != 0 {
+        println("--- rc=${rc_lib}; tail of the lib build log ---")
+        println(avra_shell_exec("tail -40 /tmp/cli_meta_lib.log 2>&1 || echo '(no log)'"))
+        println("--- end lib build log ---")
+    }
     probe("avrac_meta_present", avra_selfhost_file_exists(package_meta_path_for(avrac_dir, bs2)) != 0)
     probe("std_lsp_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-lsp", bs2)) != 0)
     probe("std_json_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-json", bs2)) != 0)
