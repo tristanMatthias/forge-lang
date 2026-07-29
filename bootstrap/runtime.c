@@ -5067,8 +5067,29 @@ int64_t avra_mem_limit_kb(void) {
     return v;
 }
 
+// COPY the label; do NOT retain the caller's pointer.
+//
+// Every caller passes an INTERPOLATED Avra string ("parse ${file}"), which is
+// refcounted and freed as soon as the caller drops it — while the ceiling may
+// report arbitrarily later, from an allocation deep inside the very parse that
+// label describes. Storing the caller's pointer was a use-after-free waiting for
+// the one report that matters; the label would be freed memory precisely when the
+// compiler is under memory pressure and most likely to have reused it.
+//
+// A fixed static buffer, not strdup: this must not allocate (the report path is
+// reached from the allocator) and must not grow without bound (a per-file phase
+// stamp fires once per source file). A concurrent set can interleave bytes, which
+// at worst garbles the label text — it stays NUL-terminated and in-bounds, so the
+// failure mode is a cosmetically wrong phase, never a crash.
+static char avra_mem_phase_buf[1024] = "startup (before parse)";
+
 void avra_mem_phase_set(const char* label) {
-    atomic_store_explicit(&avra_mem_phase, label, memory_order_relaxed);
+    if (!label) return;
+    size_t n = strlen(label);
+    if (n >= sizeof(avra_mem_phase_buf)) n = sizeof(avra_mem_phase_buf) - 1;
+    memcpy(avra_mem_phase_buf, label, n);
+    avra_mem_phase_buf[n] = '\0';
+    atomic_store_explicit(&avra_mem_phase, avra_mem_phase_buf, memory_order_relaxed);
 }
 
 int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
