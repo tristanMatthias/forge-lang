@@ -10,6 +10,7 @@ use list_ops.{list_concat}
 use parse.{Parser}
 use diagnostics.{DiagCode}
 use core.{Tk}
+use core.{build_if_let_expr, build_if_let_stmt}
 
 
 // The shared `if let <binding> = <subject>` prefix, in both positions:
@@ -78,23 +79,9 @@ impl Parser {
             self.advance()
             else_opt = self.parse_statement()?
         }
-        let bind_id = self.iflet_bind_row(h.tmp, h.binding)
-        // Prepend the unwrap-bind to the then-block: a parsed then-Block's
-        // row list is reused verbatim; any other stmt shape wraps as the
-        // block's second row.
-        let new_then = match self.stmt_of(then_id) {
-            .Block(body) -> Stmt.Block(self.iflet_prepend(bind_id, body))
-            _ -> {
-                let two: List<StmtId> = [bind_id, then_id]
-                Stmt.Block(two)
-            }
-        }
-        let new_then_id = self.alloc_stmt_leaf(new_then)
-        let cond_id = self.iflet_cond_row(h.tmp)
-        let inner_if_id = self.alloc_stmt_leaf(Stmt.If(cond_id, new_then_id, else_opt))
-        let outer_let_id = self.alloc_binding_stmt(Stmt.Let(h.tmp, ValueType.Unknown, h.subject_id), ValueType.Unknown)
-        let outer: List<StmtId> = [outer_let_id, inner_if_id]
-        .Ok(self.alloc_stmt_leaf(Stmt.Block(outer)))
+        // Rows built by the SHARED core (core/arena.av) so the grammar frontend's
+        // native `if let` lowers to exactly these — see build_if_let_stmt's header.
+        .Ok(build_if_let_stmt(self.store, h.tmp, h.binding, h.subject_id, then_id, else_opt))
     }
 
     // Expression-position `if let v = x { THEN } else { ELSE }`. Same
@@ -105,7 +92,6 @@ impl Parser {
     fn parse_if_let_expression(self) -> Result<ExprId, string> {
         let h = self.parse_if_let_header()?
         let then_id = self.parse_block_expression()?
-        let then_expr = self.expr_of(then_id)
         // Else mirrors `parse_if_expression`: block / `else if` / bare expr;
         // a missing else yields the same `0` default a plain if-expr uses
         // (a real child row, exactly as the canonical ingest records it).
@@ -129,25 +115,8 @@ impl Parser {
             let void_else_rows: List<StmtId> = []
             else_id = self.alloc_leaf(Expr.Block(void_else_rows))
         }
-        let bind_id = self.iflet_bind_row(h.tmp, h.binding)
-        // Prepend the unwrap-bind to the then-block. Flipped Expr.Block holds
-        // List<StmtId> (walker-opaque leaf) — the rows ARE the structure, so
-        // a parsed then-Block's rows are reused verbatim.
-        let new_then = match then_expr {
-            .Block(body) -> Expr.Block(list_concat([bind_id], body))
-            _ -> {
-                let then_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(then_id))
-                Expr.Block([bind_id, then_stmt_id])
-            }
-        }
-        let new_then_id = self.alloc_leaf(new_then)
-        let cond_id = self.iflet_cond_row(h.tmp)
-        let inner_if = Expr.IfExpr(cond_id, new_then_id, else_id)
-        let inner_if_id = self.alloc_leaf(inner_if)
-        let outer_let_id = self.alloc_binding_stmt(Stmt.Let(h.tmp, ValueType.Unknown, h.subject_id), ValueType.Unknown)
-        let inner_if_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(inner_if_id))
-        let outer: List<StmtId> = [outer_let_id, inner_if_stmt_id]
-        .Ok(self.alloc_leaf(Expr.Block(outer)))
+        // Rows built by the SHARED core (core/arena.av) — see build_if_let_expr.
+        .Ok(build_if_let_expr(self.store, h.tmp, h.binding, h.subject_id, then_id, else_id))
     }
 
     // The `let <binding> = __tmp!` row shared by both if-let desugars:

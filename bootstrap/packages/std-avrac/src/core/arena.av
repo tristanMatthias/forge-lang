@@ -61,6 +61,8 @@ use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
 use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index, SrcPos, src_pos_none}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 use core.{content_id_for}
+use core.{FORCE_UNWRAP_FN, BinOp}
+use list_ops.{list_concat}
 
 /// The C int-keyed map primitive (int -> int), declared per-module the same
 /// way side_table.av / registry.av declare it (extern decls don't cross
@@ -768,3 +770,90 @@ export fn share_arenas_keep_lines(shared: NodeStore, own: NodeStore) -> NodeStor
 /// peel — keeping every consumer free of the representation. The
 /// inverse is the id's plain constructor (`ExprId(key)`).
 export fn expr_id_store_key(id: ExprId) -> int { id.raw() }
+
+/// ── The `if let` bind-fresh desugar, as a SHARED CORE over the NodeStore (t-bwjg
+/// slice 6) ────────────────────────────────────────────────────────────────────────
+///
+/// `if let v = x { THEN } else { ELSE }` lowers to
+///
+///     { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
+///
+/// The temp evaluates the subject exactly once; `v` is a fresh immutable binding of the
+/// unwrapped value (the force-unwrap is only reached on the present branch, so it never
+/// traps); the block scope keeps the temp from leaking.
+///
+/// WHY THESE LIVE HERE rather than on Parser: the grammar frontend needs the SAME rows,
+/// and t-47hc's routing discipline is explicit that a native build and its hand twin must
+/// lower to a shared core rather than to two hand-kept-in-sync copies ("check the builds
+/// lower to the SHARED cores" — an executor-only build passed every interpreter-driven
+/// parity spec while emitting nothing usable, four separate times). Every Parser alloc
+/// involved was already a thin `self.store.*` delegation, so nothing is lost by moving
+/// down to the store: `alloc_leaf` is `intern_expr_leaf`, `alloc_stmt_leaf` is
+/// `add_stmt_leaf`, and `alloc_binding_stmt` is `add_stmt` + `ingest_type`.
+///
+/// The TMP NAME is NOT minted here. It is passed in, because the two callers get it from
+/// the same shared hygiene sequence but reach it differently (`Parser.fresh` vs
+/// `PState.fresh` / `fresh_name`), and a core that minted its own would need a counter of
+/// its own — which is exactly the duplication that let the two sequences drift apart.
+
+/// The `let <binding> = __tmp!` row: the present value, force-unwrapped. The unwrap-call
+/// subtree is [callee, subject] — Call walker order — under the Let row.
+export fn iflet_bind_row_in(store: NodeStore, tmp: string, binding: string) -> StmtId {
+    let subject_id = store.intern_expr_leaf(Expr.Ident(tmp))
+    let callee_id = store.intern_expr_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+    let unwrap_id = store.intern_expr_leaf(Expr.Call(callee_id, [subject_id]))
+    iflet_binding_stmt_in(store, Stmt.Let(binding, ValueType.Unknown, unwrap_id))
+}
+
+/// The `__tmp != none` condition row.
+export fn iflet_cond_row_in(store: NodeStore, tmp: string) -> ExprId {
+    let left_id = store.intern_expr_leaf(Expr.Ident(tmp))
+    let right_id = store.intern_expr_leaf(Expr.None)
+    store.intern_expr_leaf(Expr.Binary(left_id, BinOp.Ne, right_id))
+}
+
+/// A binding stmt carrying the `Unknown` annotation's TypeRef edge — the store-level twin
+/// of `alloc_binding_stmt`, kept beside its siblings so the edge shape stays in one place.
+export fn iflet_binding_stmt_in(store: NodeStore, node: Stmt) -> StmtId {
+    store.add_stmt(node, byte_span_none(), [NodeRef.TypeRef(store.ingest_type(ValueType.Unknown, byte_span_none()))])
+}
+
+/// Prepend the unwrap-bind row to a then-BLOCK's rows, or wrap a non-block then in a
+/// two-row block. Flipped `Expr.Block` holds `List<StmtId>` (a walker-opaque leaf), so a
+/// parsed then-block's rows are reused verbatim rather than rebuilt.
+export fn iflet_then_expr_in(store: NodeStore, bind_id: StmtId, then_id: ExprId) -> ExprId {
+    let new_then = match store.exprs.get(then_id) {
+        .Block(body) -> Expr.Block(list_concat([bind_id], body))
+        _ -> Expr.Block([bind_id, store.add_stmt_leaf(Stmt.Expr(then_id))])
+    }
+    store.intern_expr_leaf(new_then)
+}
+
+/// The whole expression-position desugar. `else_id` is the caller's already-parsed else
+/// (a real child row in every case — a missing `else` arrives as an empty `Expr.Block`,
+/// NOT a `0` literal, so an `if let` whose then-branch diverges stays effect-only rather
+/// than being typed by a synthesized int).
+export fn build_if_let_expr(store: NodeStore, tmp: string, binding: string, subject_id: ExprId, then_id: ExprId, else_id: ExprId) -> ExprId {
+    let bind_id = iflet_bind_row_in(store, tmp, binding)
+    let new_then_id = iflet_then_expr_in(store, bind_id, then_id)
+    let cond_id = iflet_cond_row_in(store, tmp)
+    let inner_if_id = store.intern_expr_leaf(Expr.IfExpr(cond_id, new_then_id, else_id))
+    let outer_let_id = iflet_binding_stmt_in(store, Stmt.Let(tmp, ValueType.Unknown, subject_id))
+    let inner_if_stmt_id = store.add_stmt_leaf(Stmt.Expr(inner_if_id))
+    store.intern_expr_leaf(Expr.Block([outer_let_id, inner_if_stmt_id]))
+}
+
+/// The STATEMENT-position twin. Same rows, but the then/else are statements and the
+/// result is a `Stmt.Block`.
+export fn build_if_let_stmt(store: NodeStore, tmp: string, binding: string, subject_id: ExprId, then_id: StmtId, else_opt: StmtId?) -> StmtId {
+    let bind_id = iflet_bind_row_in(store, tmp, binding)
+    let new_then = match store.stmts.get(then_id) {
+        .Block(body) -> Stmt.Block(list_concat([bind_id], body))
+        _ -> Stmt.Block([bind_id, then_id])
+    }
+    let new_then_id = store.add_stmt_leaf(new_then)
+    let cond_id = iflet_cond_row_in(store, tmp)
+    let inner_if_id = store.add_stmt_leaf(Stmt.If(cond_id, new_then_id, else_opt))
+    let outer_let_id = iflet_binding_stmt_in(store, Stmt.Let(tmp, ValueType.Unknown, subject_id))
+    store.add_stmt_leaf(Stmt.Block([outer_let_id, inner_if_id]))
+}
