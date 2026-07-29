@@ -1,0 +1,50 @@
+// WHY: `table_cell` was the LAST `@hand(ident_primary)` reference. Retiring it (t-a3m0)
+// replaced that leaf with the three native IDENT branches the `unary` flip introduced —
+// struct literal, tagged template, bare identifier — leaving no hand fallback for the
+// IDENT-led forms a cell can hold.
+//
+// The risk that made this worth a spec: `table { }` and a registered `kw { }` are IDENT-led
+// but deliberately NOT matched by any of the three native branches (`ident_lbrace_plain`
+// excludes them by consulting the registry, which is the whole reason that predicate
+// exists). Before this change they reached `@hand(ident_primary)`; after it they do not.
+// Nothing in the suite covered a `table { }` CELL, so the behaviour had to be measured by
+// hand — which is exactly the gap this file closes.
+//
+// The probe is `bs2 check` on a whole fixture with the status as the assertion, mirroring
+// `match_table_native_test`'s `check_out`: grepping output alone would let a fixture "pass"
+// on any diagnostic whose text happens not to match.
+
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file}
+
+/// Compile a match-table whose single value column holds `cell`, and report whether the
+/// whole file checked clean. The table shape is `match_table_native_test`'s, so a failure
+/// here is about the CELL and not about table syntax.
+fn cell_ok(name: string, cell: string) -> bool {
+    let src = "enum E { A, B }\n" +
+        "type Point = { x: int }\n" +
+        "fn probe(e: E) {\n" +
+        "    match e table { pat | v\n" +
+        "        .A | ${cell}\n" +
+        "        .B | ${cell}\n" +
+        "    }\n" +
+        "}\n" +
+        "fn main() { probe(E.A) }\n"
+    let fixture = "build/_cell_${name}.av"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec_status("./build/bs2 check '${fixture}' > '${fixture}.log' 2>&1") == 0
+}
+
+spec "IDENT-led table cells survive the ident_primary retirement" {
+    given "forms the three native branches own" {
+        then "a struct literal cell parses" {
+            cell_ok("struct", "Point { x: 1 }")
+        }
+    }
+    given "IDENT-led forms NO native branch matches — the ones that used to reach the leaf" {
+        // `ident_lbrace_plain` deliberately declines these (it consults the registry), so
+        // they are the cases that could have regressed when the hand fallback went away.
+        then "a table literal cell still parses" {
+            cell_ok("table", "table { }")
+        }
+    }
+}

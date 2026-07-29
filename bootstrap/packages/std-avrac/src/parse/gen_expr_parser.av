@@ -1237,8 +1237,14 @@ fn parse_table_cell(st: PState) -> CapVal {
     if st.cur().tk == Tk.Dot {
         return parse_variant_ctor(st)
     }
-    if st.cur().tk == Tk.Identifier {
-        return CapVal.Node(run_hand_expr("ident_primary", st))
+    if lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) {
+        return parse_struct_lit_expr(st)
+    }
+    if lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) {
+        return parse_tagged_template(st)
+    }
+    if lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) {
+        return CapVal.Node(literal_node(st, st.advance()))
     }
     if lookahead_ok("lparen_ident_colon", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen {
         return parse_paren_expr(st)

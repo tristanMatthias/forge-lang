@@ -270,7 +270,10 @@ fn avra_expr_core() -> Grammar {
   // capval_to_expr routes through the same `literal_node` (which builds Expr.None by `tk`).
   // Caught in review on #1039; pinned by match_table_native_test.
   table_cell   = qualified_expr | NUMBER | STRING | BOOL | null_cell | variant_ctor
-               | @hand(ident_primary) | paren_expr | list_expr | match_expr | if_expr
+               | @peek(ident_lbrace_plain) @when(allow_struct_lit) struct_lit_expr
+               | @peek(ident_template) tagged_template
+               | @peek(ident_plain) IDENT
+               | paren_expr | list_expr | match_expr | if_expr
                | spawn_expr | channel_expr | isolated_expr | when_expr | @hand(quote_expr)
                | template_lit | brace_expr
   // A `-> n` Var build (the `eq_tail`/`-> ir` form): labelling alone still returns Nil,
