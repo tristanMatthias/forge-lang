@@ -26,7 +26,12 @@
 // 2^20 the unfixed compiler does not finish, so a regression fails loudly instead of
 // wedging the suite.
 
-extern fn avra_shell_exec(cmd: string) -> string
+// avra_shell_exec_status, NOT the popen-based avra_shell_exec: the assertion here
+// IS the exit status, and extracting it from a compound `cmd; echo rc=$?` through
+// popen is the unreliable pattern this repo already ruled out (PR #1039). `timeout`
+// reports 124 when it expires, which is precisely the regression signal — before the
+// fix a 20-term recovery is 2^20 and never returns.
+extern fn avra_shell_exec_status(cmd: string) -> int
 use @std.avrac.test_runner.{write_fixture}
 
 /// An UNTERMINATED `if` whose condition is `n` parenthesised `||` terms — the shape
@@ -43,27 +48,27 @@ fn unterminated_if(n: int) -> string {
     "fn f() {\n    if " + cond + " {\n"
 }
 
-/// Compile-check the fixture under a wall-clock bound and report what happened.
-/// `timeout` returns 124 on expiry, which is the regression signal.
-fn check_bounded(tag: string, secs: string, source: string) -> string {
+/// Compile-check the fixture under a wall-clock bound, returning bs2's exit status
+/// (124 if `timeout` expired — the regression signal).
+fn check_bounded(tag: string, secs: string, source: string) -> int {
     let path = "/tmp/avra_x2fb_${tag}.av"
     write_fixture(path, source)
-    avra_shell_exec("timeout ${secs} ./build/bs2 check '${path}' >/dev/null 2>&1; echo rc=$?")
+    avra_shell_exec_status("timeout ${secs} ./build/bs2 check '${path}' >/dev/null 2>&1")
 }
 
 spec "t-x2fb: a doomed @try aborts at its cut instead of parsing the whole suffix" {
     then "20 parenthesised terms in an unterminated `if` finish fast (2^20 before)" {
-        let out = check_bounded("n20", "30", unterminated_if(20))
-        out.contains("rc=1")
+        let rc = check_bounded("n20", "30", unterminated_if(20))
+        rc == 1
     }
     then "30 terms still finish — the cost is linear, so more terms stay cheap" {
-        let out = check_bounded("n30", "30", unterminated_if(30))
-        out.contains("rc=1")
+        let rc = check_bounded("n30", "30", unterminated_if(30))
+        rc == 1
     }
     then "the equivalent VALID program is unaffected (it never re-descended)" {
         let src = unterminated_if(20) + "    }\n}\n"
-        let out = check_bounded("valid", "30", src)
-        out.contains("rc=1") || out.contains("rc=0")
+        let rc = check_bounded("valid", "30", src)
+        rc == 1 || rc == 0
     }
     then "a real lambda still parses — the cut abort must not break the committed path" {
         // Every lambda FORM the cut-bearing branch can commit: typed params, the
@@ -71,18 +76,18 @@ spec "t-x2fb: a doomed @try aborts at its cut instead of parsing the whole suffi
         // STANDALONE lambda's parameter types are not inferable — an untyped `(x) -> …`
         // here is an F1000 type error, not a parse failure, and asserting on it would
         // test the type checker rather than this branch.
-        let out = check_bounded("lambda", "30",
+        let rc = check_bounded("lambda", "30",
             "fn f() {\n" +
             "    let g = (x: int) -> x + 1\n" +
             "    let h = (a: int, b: int) -> a + b\n" +
             "    let z = () -> 7\n" +
             "    let n = g(1) + h(2, 3) + z()\n" +
             "}\n")
-        out.contains("rc=0")
+        rc == 0
     }
     then "a parenthesised expression that is NOT a lambda still parses as grouping" {
-        let out = check_bounded("group", "30",
+        let rc = check_bounded("group", "30",
             "fn f(a: int, b: int) -> int {\n    let x = (a + b) * 2\n    return x\n}\n")
-        out.contains("rc=0")
+        rc == 0
     }
 }
