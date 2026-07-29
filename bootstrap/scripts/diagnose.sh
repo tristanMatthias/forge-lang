@@ -226,13 +226,23 @@ else
   STAT_MTIME="stat -f %m"
 fi
 
+# The C LINK INPUTS count as sources (t-drl0). Every binary this gates — bs2,
+# bs2_O0, bs2_debug — links runtime.o + llvm_wrapper.o, so editing either C file
+# changes the binary's behaviour just as surely as editing a `.av` file does.
+# Watching only `*.av` meant a runtime.c edit rebuilt runtime.o (and the seed,
+# which DOES key its C inputs via seed_inputs_hash) while silently re-serving the
+# previous bs2 — the compiler you just changed, running the code you just
+# replaced. Exactly the misattribution the seed_inputs_hash comment describes,
+# one binary further down the chain.
 source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
   local target_mtime
   target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
   local newest_src
-  newest_src=$(find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec $STAT_MTIME {} + 2>/dev/null | sort -rn | head -1)
+  newest_src=$( { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec $STAT_MTIME {} + 2>/dev/null
+                  $STAT_MTIME "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null
+                } | sort -rn | head -1)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
   [ "$newest_src" -ge "$target_mtime" ]
 }

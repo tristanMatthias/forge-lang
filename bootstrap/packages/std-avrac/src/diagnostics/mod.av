@@ -448,6 +448,18 @@ export enum DiagCode {
     /// signature — the engine keys queries by `(family, int arg)` and
     /// the v1 adapter's early-cutoff hash is string-keyed.
     QueryBadShape
+    /// F4014 — the compiler's own resident memory crossed the process
+    /// ceiling (AVRA_MEM_LIMIT_MB, default 75% of MemAvailable at
+    /// startup). The process-wide sibling of F4007's per-fold budget:
+    /// it bounds a runaway ANYWHERE — a quadratic re-lex, a
+    /// pathological monomorphization — so the compiler stops itself
+    /// with an attributable diagnostic instead of being SIGKILLed by
+    /// the OS OOM-killer, which on a small box can take the whole
+    /// container with it. Reported from the runtime (runtime.c,
+    /// avra_mem_ceiling_report) because it fires at an arbitrary
+    /// allocation site where no DiagnosticBag is in scope; this entry
+    /// keeps the code registered and explainable alongside its peers.
+    CompilerMemoryCeiling
     /// F4100 — a `component` instance's body contains a nested
     /// `ComponentBlock` whose type isn't declared in the parent's
     /// `children { ... }` schema. The compiler refuses to splice
@@ -568,6 +580,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .DeriveUnknownCapability -> ErrorDef { code: "F4011", help: "check the capability name against the registered set — the registry in features/derive_registry/mod.av is the source of truth" }
         .ExpandCycle -> ErrorDef { code: "F4012", help: "a macro is emitting a declaration that carries its own @expand/@derive annotation — break the cycle by emitting the declaration without the annotation, or precompute the result" }
         .QueryBadShape -> ErrorDef { code: "F4013", help: "write the query as `fn name(ctx: QueryCtx<string>, arg: int) -> Result<string, QueryCycle>`; for non-string value types, wrap the engine by hand (db_new + a custom content hash) until per-type hashing lands" }
+        .CompilerMemoryCeiling -> ErrorDef { code: "F4014", help: "the compiler stopped itself before the OS OOM-killer could — raise or disable the ceiling with AVRA_MEM_LIMIT_MB=<mb> (0 = no ceiling); if the input isn't enormous this is a compiler bug, and the `phase:` line names where the memory went" }
         .ComponentChildInvalid -> ErrorDef { code: "F4100", help: "the parent's `children { ... }` schema doesn't include this child type — add a slot, or remove the nesting" }
         .ComponentTokenBodyNeedsMacro -> ErrorDef { code: "F4101", help: "a raw token body needs a macro to parse it — annotate the component definition with `@expand(<macro_fn>)`" }
         .QueryCycleDetected  -> ErrorDef { code: "F3900", help: "a query transitively requested itself — break the cycle (e.g. a type that contains itself by value), or, for a legitimately recursive query, opt the query family into fixpoint iteration" }

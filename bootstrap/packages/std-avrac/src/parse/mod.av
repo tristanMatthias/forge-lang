@@ -37,6 +37,9 @@ extern fn avra_process_env_get(name: string) -> string
 // A byte view of the source string, built once per Parser (see the `source_bytes`
 // field) so the generated operator scanner reads raw bytes allocation-free.
 extern fn avra_bytes_from_string(s: string) -> bytes
+// t-drl0: label the current phase for the process-wide memory ceiling, so an
+// F4014 report names where the memory went instead of just how much.
+extern fn avra_mem_phase_set(label: string)
 
 /// Output of `parse_expression_source`. `expr` is null on parse
 /// failure; consult `had_error` / `error_message` for the cause.
@@ -394,6 +397,11 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
 /// they came from — diagnostics in the bundled program can then
 /// cite the originating *_test.av rather than a `<test>` placeholder.
 export fn parse_program_source_at(source: string, file: string) -> ProgramParseResult {
+    // t-drl0: same phase stamp as parse_program_source_shared — this is the
+    // SINGLE-FILE entry (`bs2 check foo.av`), which never goes through the
+    // module walker, so stamping only the shared entry left the commonest
+    // invocation reporting an F4014 with no phase at all.
+    avra_mem_phase_set(if file == "" { "parse <stdin>" } else { "parse ${file}" })
     mut parser = parser_new_with_file(source, file)
     parser.parse_file_program()
 }
@@ -407,6 +415,10 @@ export fn parse_program_source_at(source: string, file: string) -> ProgramParseR
 /// entry program's tree. Positions ride the arena rows — each node is
 /// stamped with its source `file` and span as the parser allocates it.
 export fn parse_program_source_shared(source: string, file: string, store: NodeStore) -> ProgramParseResult {
+    // t-drl0: name the phase for the process memory ceiling. If the compiler
+    // trips F4014 while parsing, the report says WHICH file it was reading —
+    // the difference between "the build died" and a reproducible bug report.
+    avra_mem_phase_set("parse ${file}")
     mut parser = parser_new_with_file(source, file)
     // Arenas from the entry parse, LineIndex from THIS file. A merged file's token
     // offsets index into its own `source`; adopting the entry file's index would
