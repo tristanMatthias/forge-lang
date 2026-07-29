@@ -1183,7 +1183,20 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // own top level (`cut_breaks`): inside a nested group `break` would bind to that
     // group's own repeat loop instead — a silent miscompile rather than a build error.
     let cut_abort = if item.cut && cut_breaks { "${ind}if !s_cut { break }\n" } else { "" }
-    let inner = cut_pre + cut_abort + emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
+    // The cut markers sit OUTSIDE the mode wrapper below, and that placement is load-bearing.
+    // `cut_abort` is a `break`, and a wrapper emits its restore (`st.set_modes(__modes_N)`)
+    // AFTER the item body — so a `break` emitted INSIDE the wrapper jumps straight past its
+    // own restore. The branch rollback cannot compensate: it restores pos / store mark /
+    // diags / hand / postfix state and deliberately not `st.modes`, so the next alternative
+    // would parse with a leaked `@on`/`@off`/`@bump` flag. That is the same silent-miscompile
+    // class as the `cut_breaks` guard above — wrong output, no build error — and the reason
+    // both live here rather than inside emit_item_body.
+    //
+    // Hoisting is byte-identical for every grammar today: no production item carries a `@cut`
+    // AND a mode marker, so one side or the other is always empty. It closes the trap for the
+    // first item that carries both.
+    let cut_marks = cut_pre + cut_abort
+    let body = emit_item_body(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
     // `@off(flag)` mode-SET marker: the emit twin of exec_item's push/restore —
     // save modes, clear the flag via modes_with_flag_off (the SAME fn the executor
     // calls, so they can't disagree), emit the item, restore. `__modes_${idx}` is
@@ -1196,17 +1209,19 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     // production grammar today) returns the item's code unchanged → generated parsers
     // stay byte-identical.
     if item.mode_off != "" {
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@bump(counter)` counter-SET marker: save modes, INCREMENT via
     // modes_with_counter_bumped (the SAME fn the executor calls), emit the item, restore.
     if item.mode_bump != "" {
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_counter_bumped(st.modes, \"${item.mode_bump}\"))\n" +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@on(flag)` mode-SET marker: the SET-ON twin — save modes, set the flag ON via
@@ -1218,12 +1233,13 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         // comes from the SHARED `pred_guard` — the same string `@when` emits — so the two
         // markers cannot disagree about what a predicate name means, and a base predicate
         // lands as a `base_pred(...)` CALL into the executor rather than a second spelling.
-        return "${ind}let __modes_${idx} = st.modes\n" +
+        return cut_marks +
+            "${ind}let __modes_${idx} = st.modes\n" +
             mode_on_set_line(item, ind) +
-            inner +
+            body +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
-    inner
+    cut_marks + body
 }
 
 fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
