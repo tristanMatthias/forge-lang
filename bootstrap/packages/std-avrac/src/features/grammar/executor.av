@@ -961,7 +961,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 fn build_is_postfix_step(bn: string) -> bool {
     bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" ||
         bn == "MkFieldAccess" || bn == "MkTupleIndex" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" ||
-        bn == "MkGenericCallSuffix"
+        bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix"
 }
 
 fn rule_has_postfix_step_build(g: Grammar, name: string) -> bool {
@@ -1250,6 +1250,17 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
         // A `(` follows: this is an enum ctor only if the BASE reads as a type name.
         return !base_pred("base_upper_ident", st)
+    }
+    // The EXACT COMPLEMENT of dot_plain_field's last clause (t-47hc.33 form 6): the
+    // `Type.Variant(args)` reading the `.field` branch declines. Deliberately does NOT
+    // test the base itself — `@when(base_upper_ident)` on the branch does that, so the
+    // two halves of `dot_plain_field`'s `!base_pred(...)` stay ONE predicate rather than
+    // being restated here and drifting. Shape only: `.` IDENT `(`.
+    if cond == "dot_enum_ctor" {
+        if st.cur().tk != Tk.Dot { return false }
+        if st.pos + 2 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        return st.toks[st.pos + 2].tk == Tk.LeftParen
     }
     if cond == "qdot_plain_field" {
         if st.cur().tk != Tk.QuestionDot { return false }
@@ -2758,6 +2769,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkOptChain" if args.length == 1 -> CapVal.Node(mk_opt_chain(st, env.get(args[0])))
         "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkFieldAccess" if args.length == 1 -> CapVal.Node(mk_field_access(st, env.get(args[0])))
+        "MkEnumCtorSuffix" if args.length == 2 -> CapVal.Node(mk_enum_ctor_suffix(st, env.get(args[0]), env.get(args[1])))
         "MkCatchSuffix" if args.length == 3 -> CapVal.Node(mk_catch_suffix(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
@@ -4539,6 +4551,36 @@ export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
     postfix_step_node(st, Expr.FieldAccess(st.postfix_step_base, capval_tok_text(ncap)))
 }
 
+/// `Type.Variant(args)` — the ENUM-CTOR reading of `.` (t-47hc.33 form 6), the sibling
+/// the `.field` branch above declines whenever `dot_plain_field` sees a `(` after a
+/// type-shaped base.
+///
+/// The base is NOT a child here: `Expr.EnumCtor` carries the type NAME as a string, so
+/// the receiver is consumed into `enum_type` and the node is a leaf whose only edges are
+/// its argument ids. That is why the whole reading has to be one branch — a `.field`
+/// step followed by a call step would build `Call(FieldAccess(Type, Variant), args)`,
+/// a method call on a type, which is a different node and a different program.
+///
+/// UNLIKE mk_generic_call_suffix, this DOES use postfix_step_node: the hand `alloc_at`s
+/// the ctor with the chain's `[base-start, next-token)` span, where the generic call is
+/// `alloc_leaf`-interned and span-free. Same family, opposite allocation — matching each
+/// one to its hand arm is the whole job.
+///
+/// The name reads off the frozen step base, mirroring the hand's match on `result`:
+/// a bare `Ident` contributes its own text, a `QualifiedIdent` its full `::` path (the
+/// renderer emits resolved ctors that way, and the LAST segment is what
+/// `base_upper_ident` gated on). Anything else cannot reach here — the branch's
+/// `@when(base_upper_ident)` already rejected it — so an empty name would be a grammar
+/// bug, and an empty `enum_type` is exactly the untyped `.Variant` primary's encoding.
+export fn mk_enum_ctor_suffix(st: PState, ncap: CapVal, acap: CapVal) -> ExprId {
+    let type_name = match st.store.exprs.get(st.postfix_step_base) {
+        .Ident(n) -> n
+        .QualifiedIdent(n) -> n
+        _ -> ""
+    }
+    postfix_step_node(st, Expr.EnumCtor(type_name, capval_tok_text(ncap), capval_to_node_list(acap)))
+}
+
 /// `expr[i]` / `expr[a..b]` (t-47hc.33 form 5) — the FIRST form that recurses into
 /// `expression`, which is what made `snap_postfix_step` necessary: the receiver is the
 /// chain base as of this step's ENTRY, not whatever the nested index expression left in
@@ -4843,6 +4885,12 @@ export fn dump_expr(store: NodeStore, id: ExprId) -> string {
         // difference and not a second spelling of one.
         .GenericCall(callee, targs, cargs) ->
             "(gcall ${dump_expr(store, callee)}<${render_type_name_list(targs)}>${dump_args(store, cargs)})"
+        // The enum constructor. The type name is a STRING on the node, not a child, so it
+        // is printed rather than recursed into — and printing it is the point: an empty
+        // enum_type (the untyped `.Variant` primary) must not compare equal to a typed
+        // `Type.Variant`, which is exactly the distinction the postfix reading carries.
+        .EnumCtor(type_name, variant, cargs) ->
+            "(ctor ${type_name}.${variant}${dump_args(store, cargs)})"
         // Render Grouping EXPLICITLY (never unwrap) so the dump is a
         // lossless view of the tree — `((1))` must not collapse to `1`.
         .Grouping(e) -> "(group ${dump_expr(store, e)})"

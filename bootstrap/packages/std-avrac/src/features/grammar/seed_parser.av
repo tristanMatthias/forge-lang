@@ -490,7 +490,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `comma_not_rparen`: a `,` followed by another argument rather than the closing
     // `)` — the trailing-comma guard for an argument list (DORMANT; landed with the
     // call-form builders, spent when `f(args)` goes native).
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "dot_plain_field" || cond == "dot_number" || cond == "comma_not_rparen"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -1405,7 +1405,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, ident_lbrace_plain, ident_template, ident_plain, qdot_plain_field, dot_plain_field, dot_number, comma_not_rparen)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, ident_lbrace_plain, ident_template, ident_plain, qdot_plain_field, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

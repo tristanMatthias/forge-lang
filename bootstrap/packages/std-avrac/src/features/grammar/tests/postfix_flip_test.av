@@ -105,7 +105,10 @@ spec "t-47hc.33: `expr.field` is grammar-native" {
         // shared base predicate rather than @when(cell_mode) + ^ + a base read.
         postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
     }
-    then "the enum-ctor reading stays hand-owned — it needs an argument list" {
+    then "the `@hand` tail is still there for the forms not yet flipped" {
+        // Was "the enum-ctor reading stays hand-owned" until form 6 flipped it. The
+        // `.`-led readings are now BOTH native and separated by their peeks; the tail
+        // remains for `!` and the compound shapes it re-dispatches into.
         postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }
@@ -330,5 +333,36 @@ spec "t-47hc.33: `f<T>(args)` is grammar-native" {
         // mk_generic_call_suffix advances the chain accumulator, and on a branch that is
         // about to roll back that leaves postfix_base pointing past the truncated store.
         postfix_rule_src().contains("if st.diags.length == s_diags && st.had_error == s_err")
+    }
+}
+
+spec "t-47hc.33: `Type.Variant(args)` is grammar-native" {
+    then "the production rule emits the native builder" {
+        postfix_rule_src().contains("mk_enum_ctor_suffix(st")
+    }
+    then "it is gated on the SHAPE — `.` IDENT `(`" {
+        postfix_rule_src().contains("lookahead_ok(\"dot_enum_ctor\", st)")
+    }
+    then "and on the BASE reading as a type name" {
+        // Without this, `obj.method(1)` — a lowercase receiver — would build an EnumCtor
+        // instead of a Call. That is a different node, not a different spelling.
+        postfix_rule_src().contains("base_pred(\"base_upper_ident\", st)")
+    }
+    then "and it carries the `.` arm's whole entry guard" {
+        postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
+    }
+    then "the ctor branch is dispatched BEFORE the plain-field branch" {
+        // Both lead with `.`. dot_plain_field DECLINES when a `(` follows a type-shaped
+        // base (`!base_pred("base_upper_ident")`), so the two are disjoint by
+        // construction — but only while the ctor branch is reached first. Reversing them
+        // would let `.field` claim `Type.Variant(` before the ctor branch is consulted.
+        let s = postfix_rule_src()
+        s.index_of("lookahead_ok(\"dot_enum_ctor\", st)") < s.index_of("lookahead_ok(\"dot_plain_field\", st)")
+    }
+    then "the ctor is SPANNED, not interned — it uses the postfix-step node helper" {
+        // The hand alloc_at's this one (unlike the generic call, which alloc_leaf's).
+        // Both go through builders, so the assertion is that this rule still snapshots
+        // the chain base the spanned helper reads.
+        postfix_rule_src().contains("st.snap_postfix_step()")
     }
 }

@@ -163,6 +163,7 @@ fn avra_expr_core() -> Grammar {
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
                  | @peek(qdot_plain_field) "?." n:IDENT -> MkOptChain(n)
+                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:IDENT "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
                  | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:IDENT -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
