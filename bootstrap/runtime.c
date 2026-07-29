@@ -5021,9 +5021,18 @@ int64_t avra_mem_limit_kb(void) {
         if (v < 0) v = 0;
     } else {
         int64_t avail = avra_mem_available_kb();
-        // 75% of what's available at startup. Below ~1GiB available we'd only
+        // 90% of what's available at startup. Below ~1GiB available we'd only
         // produce false trips on an already-doomed box, so stay out of the way.
-        v = (avail > 1024 * 1024) ? (avail / 4) * 3 : 0;
+        //
+        // 90, not 75: this ceiling exists to beat the OOM killer to a RUNAWAY, and a
+        // runaway grows without bound — it trips any ceiling. Setting the bar low
+        // buys nothing against that and costs real builds. The first 75% default
+        // false-tripped a legitimate whole-program test shard on a 16 GiB box, which
+        // peaks around 11.4 GiB of ~15.1 GiB available (75.5%) — a known-heavy path
+        // (snw0), not a bug. Killing it turned a working suite into 5 failed shards.
+        // 90% still fires well before the kernel does, with headroom for the rest of
+        // the system.
+        v = (avail > 1024 * 1024) ? (avail / 10) * 9 : 0;
     }
     atomic_store(&cached, v);
     return v;

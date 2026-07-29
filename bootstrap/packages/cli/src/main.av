@@ -75,7 +75,7 @@ use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
-use @std.avrac.parse.{parse_expression_source, parse_program_source, parse_program_source_at}
+use @std.avrac.parse.{parse_expression_source, parse_program_source}
 use @std.avrac.core.{render_expr, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression, execute_program_stmts}
@@ -104,6 +104,9 @@ extern fn avra_bytes_to_hex(b: bytes) -> string
 // j568: stderr tee — capture a compile's diagnostics so the cache can
 // replay them on a hit. begin/end bracket the pipeline; write_raw
 // replays captured text verbatim (it already carries newlines).
+// t-drl0: label the current phase for the F4014 process memory ceiling, so a
+// runaway names the file it died reading instead of just how much it used.
+extern fn avra_mem_phase_set(label: string)
 extern fn avra_stderr_tee_begin()
 extern fn avra_stderr_tee_end() -> string
 extern fn avra_stderr_write_raw(s: string)
@@ -223,12 +226,23 @@ fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext)
 /// Returns the parsed program + its parse-time store on success —
 /// the caller continues from there.
 fn parse_or_fail(source: string, ctx: RenderContext) -> ParsedProgram {
-    // t-drl0: parse AT the path the caller already knows. Every caller builds
-    // `ctx` from a real file (`fa.path`), so dropping it here made single-file
-    // commands parse as "<stdin>" — which is what an F4014 memory-ceiling report
-    // then named as its phase. `parse_program_source` is exactly
-    // `parse_program_source_at(source, "")`, so this only fills the name in.
-    let parsed = parse_program_source_at(source, ctx.path)
+    // t-drl0: name the phase for the F4014 memory ceiling from the path the caller
+    // already has, WITHOUT changing what the parser is told.
+    //
+    // The obvious version of this — `parse_program_source_at(source, ctx.path)` —
+    // is a REGRESSION, and shipped as one in #1076. The entry file is parsed with an
+    // EMPTY file name on purpose: `SrcPos.file` is what distinguishes an entry-file
+    // node from a merged-module node, and the operand-span sharpening keys off it.
+    // Filling it in re-pointed every single-file diagnostic at its enclosing
+    // statement instead of the offending operand (`want(\n no_such + 1)` caretted
+    // 3:5, the call head, instead of 4:9, the argument). Guarded by
+    // resolve/tests/operand_span_resolve_test.av and the typeck operand-span specs
+    // — 20 of them across the suite, which is how it was caught.
+    //
+    // The phase label needs the name; the PARSE does not. So stamp it here and leave
+    // `parse_program_source` alone.
+    avra_mem_phase_set(if ctx.path == "" { "parse <stdin>" } else { "parse ${ctx.path}" })
+    let parsed = parse_program_source(source)
     if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) {
             render_bag_ctx(ctx, parsed.bag)
