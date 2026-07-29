@@ -23,7 +23,7 @@ use features.modules.{
     resolve_module_files, modules_dirname, find_packages_dir,
     dedup_modules,
 }
-use parse.{parse_program_source_shared}
+use parse.{parse_program_source_shared, byte_at_str}
 use core.{NodeStore, StmtId}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{basename_no_ext}
@@ -839,10 +839,52 @@ export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> 
 /// so the first call's result holds for the whole process.
 fn read_or_compute_toolchain_fp(cache_dir: string) -> string {
     let memoed = avra_test_toolchain_fp_get()
-    if memoed != "" { return memoed }
+    // Trust the memo only when it is SHAPED like a real fingerprint, never
+    // merely because it is non-empty. The memo is process-global and
+    // write-once, and it feeds every fixture cache KEY — hence the on-disk
+    // capture filenames. A value that did not come from
+    // compute_or_read_toolchain_fp_sidecar (a spec probing the write-once
+    // contract is the one real source) would otherwise key every capture in
+    // this process under a string that NEVER changes when the toolchain
+    // does, so a capture produced by an OLDER compiler replays as current —
+    // an invisible stale hit, since the key is a hash nobody eyeballs
+    // (t-n832; the poisoned run reported a bare assertion FAIL with no diff
+    // to explain it). Every real fp is sha256_hex output.
+    if is_toolchain_fp_shaped(memoed) { return memoed }
     let computed = compute_or_read_toolchain_fp_sidecar(cache_dir)
+    // Write-once: if a foreign value already won the publish this set is a
+    // no-op, so we recompute per call rather than key on a value we cannot
+    // trust. That is the pre-memo cost, paid only in the poisoned process.
     avra_test_toolchain_fp_set(computed)
     computed
+}
+
+/// A real toolchain fp is `sha256_hex` output — exactly 64 lowercase hex
+/// chars (the sidecar contract: "plain hex (64 chars)"). Anything else did
+/// not come from the sidecar path and must never key a fixture capture.
+/// Shape, not provenance, is the strongest check available here: the memo
+/// crosses a C boundary that carries no origin.
+export fn is_toolchain_fp_shaped(fp: string) -> bool {
+    if fp.length != 64 { return false }
+    mut i = 0
+    while i < 64 {
+        let b = byte_at_str(fp, i)
+        let is_digit = b >= 48 && b <= 57      // '0'..'9'
+        let is_hex_af = b >= 97 && b <= 102    // 'a'..'f' (sha256_hex is lowercase)
+        if is_digit || is_hex_af { i = i + 1 } else { return false }
+    }
+    true
+}
+
+/// Publish the REAL toolchain fp into the process-global memo, returning it.
+/// Idempotent (the memo is write-once), so calling it early is always safe.
+///
+/// Exists for the write-once spec, which must NOT be the memo's first
+/// writer: a probe value winning the cold publish is exactly the t-n832
+/// poisoning above. Warming first makes that spec's probe set a guaranteed
+/// no-op instead of a process-wide cache-key corruption.
+export fn warm_toolchain_fp() -> string {
+    read_or_compute_toolchain_fp(fixture_stdout_cache_dir())
 }
 
 /// The cold-path sidecar logic. Computes the fingerprint from disk

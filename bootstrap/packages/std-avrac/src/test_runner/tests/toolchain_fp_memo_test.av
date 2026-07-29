@@ -21,16 +21,36 @@
 // win the write) or already warmed (a sibling won) — once published the
 // value is immutable, so there is no race between get() and the later set.
 
+// t-n832 — this spec USED to publish its probe value into the memo whenever
+// it ran first (a cold memo, i.e. whenever no sibling fixture had warmed it
+// yet). That was not harmless: the memo is write-once and is an input to
+// every fixture cache KEY, so the probe became the toolchain fingerprint for
+// the whole process — a key that never changes when the compiler does. Every
+// capture written under it replayed on later runs as though current, and a
+// stale capture surfaced as a bare assertion FAIL with no source diff to
+// explain it (quote_stmt_list_splice / comptime_fold / cli_metadata, red on
+// rc-strict across runs but green in isolation every time).
+//
+// Two things now prevent that, and this spec still passes under both:
+//   1. read_or_compute_toolchain_fp trusts the memo only when it is SHAPED
+//      like sha256_hex output, so a probe can no longer key anything.
+//   2. warm_toolchain_fp() below publishes the REAL fp first, so this spec
+//      is never the first writer and its probe set is a proven no-op.
+
+use @std.avrac.test_runner.{warm_toolchain_fp}
+
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
 
 spec "4szi.1: toolchain fp memo is write-once (first writer wins)" {
     then "a set publishes a non-empty value" {
-        // Our set wins only if the memo is still cold; otherwise it is a
-        // no-op and the value is whatever a sibling fixture already wrote.
-        // Either way the memo is now non-empty.
+        // Warm with the REAL fp FIRST so this spec cannot be the memo's
+        // first writer (t-n832). Our probe set is then a no-op whether the
+        // memo was cold or a sibling had already warmed it, and the
+        // published value is a genuine fingerprint either way.
+        let real = warm_toolchain_fp()
         avra_test_toolchain_fp_set("4szi1-probe-cafebabe")
-        avra_test_toolchain_fp_get() != ""
+        real != "" && avra_test_toolchain_fp_get() == real
     }
     then "a second distinct set never changes the published value (write-once)" {
         // Capture whatever is published (ours, or a sibling's first write),
