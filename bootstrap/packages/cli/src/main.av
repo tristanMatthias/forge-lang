@@ -2106,7 +2106,14 @@ fn run_build_command(args: BuildArgs) {
             // sees whole IR either way, and so a whole-compiler `.ll` isn't
             // copied byte-for-byte a second time.
             if avra_shell_exec_status(atomic_install_cmd(ll_out, ll_path)) != 0 {
+                // A failed install is a failed build, so it owes the same
+                // stale-entry cleanup as the two exits above: leaving an
+                // EARLIER run's artifact at the entry path lets a later
+                // consumer read it as this build's output — the exact
+                // trust-by-existence shape libbuild_stale_ll_test pins. The
+                // install having failed does not make that artifact ours.
                 let _ = avra_remove_file(ll_out)
+                remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
                 fail("error: could not install ${ll_out} at ${ll_path}")
             }
             let metadata = ""
