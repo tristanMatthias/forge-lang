@@ -4094,6 +4094,31 @@ fn build_table_arms(st: PState, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVa
     mut out: List<MatchArm> = []
     // `header_count < 2` (i.e. no value columns) yields NO arms — the hand's early return.
     if cols.length == 0 { return out }
+    // t-qhbz: REQUIRE the declared width. The row's cell repetition is `*{#cols}`, and a
+    // `{#cap}` bound is AT MOST N — never a requirement (`item_bound_cap` stops at the cap
+    // but nothing demands it). So a token starting none of `table_cell`'s alternatives —
+    // a prefix operator like `-1`, which cells deliberately exclude — simply ENDS the row
+    // rather than reporting, and the outer row loop then consumes it as the NEXT row's
+    // `p:pattern`, because a negative literal IS a valid pattern. Everything is consumed
+    // and nothing complains, so
+    //
+    //     match e table { pat | delta
+    //         .A | -1
+    //         .B | 2
+    //     }
+    //
+    // checked CLEAN on both native engines (pats=[.A, -1, 2], vals=[.B]) while the hand
+    // parser rejected it F0040. A latent hole since t-47hc.29 — unreachable until fn
+    // bodies were routed natively, because a hand-parsed body never got here.
+    //
+    // This is the one place that knows BOTH the header's value-column count and the
+    // flattened cell count, so it is where the width becomes checkable. `cols` holds only
+    // the VALUE columns (the header's leading IDENT — the pattern column — is matched
+    // unlabelled), so a well-formed table has exactly one cell per row per value column.
+    if vals.length != pats.length * cols.length {
+        st.report("expected expression")
+        return out
+    }
     mut r = 0
     while r < pats.length {
         mut ids: List<ExprId> = []
