@@ -56,6 +56,29 @@ fn main() -> int {
     // every meta.bin a downstream consumer might want lands on disk.
     let rc_lib = avra_shell_exec_status("cd ${avrac_dir} && ${bs2} build --lib --emit_metadata > /tmp/cli_meta_lib.log 2>&1")
     probe("avrac_lib_build_rc_zero", rc_lib == 0)
+    if rc_lib != 0 {
+        // CAPTURE the build output. This probe has failed in CI with rc != 0
+        // while every meta.bin probe below PASSED — the build produced
+        // everything it should have and only its exit code was wrong. The log
+        // was written and then never read, so the rc alone named none of the
+        // six `fail(...)` sites it could have come from. Same dump the
+        // std_avrac_lib_build fixture carries, for the same reason: these two
+        // shell out `bs2 build --lib` on the SAME package, so the failure
+        // moves between them and whichever one loses needs the evidence.
+        //
+        // Tail only: a successful build prints thousands of warning lines and
+        // every `fail(...)` in the driver is the LAST thing written.
+        println("--- build exited ${string(rc_lib)}; tail of /tmp/cli_meta_lib.log ---")
+        println(avra_shell_exec("tail -40 /tmp/cli_meta_lib.log 2>/dev/null"))
+        // `failed to pre-build a path-dep` is one of those six exits, and its
+        // real diagnostic lives in per-dep logs the driver keeps ONLY on
+        // failure (it removes them on success). Without this the parent's
+        // message just names a directory that is gone by the time anyone
+        // reads the CI log.
+        println("--- surviving per-dep logs (kept only on failure) ---")
+        println(avra_shell_exec("tail -n 25 ${avrac_dir}/build/pre_deps.*/*.log 2>/dev/null | head -200"))
+        println("--- end build log ---")
+    }
     probe("avrac_meta_present", avra_selfhost_file_exists(package_meta_path_for(avrac_dir, bs2)) != 0)
     probe("std_lsp_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-lsp", bs2)) != 0)
     probe("std_json_meta_present", avra_selfhost_file_exists(package_meta_path_for("${pwd}/packages/std-json", bs2)) != 0)
