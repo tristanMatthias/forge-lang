@@ -1,0 +1,86 @@
+// WHY: t-47hc.31 — `@peek(ident_plain)` must decline an identifier followed by `{` only
+// when a SIBLING BRANCH actually takes it, and that depends on `allow_struct_lit`.
+//
+// THE BUG. The predicate excluded a following `{` unconditionally, on the reasoning that
+// the `IDENT {` forms belong to the sibling struct-literal branch or to the hand parser.
+// True with `allow_struct_lit` ON. With it OFF — a `match` subject, an `if`/`while`
+// condition, all of which parse their header with `@off(allow_struct_lit)` — the
+// struct-literal branch is gated out and NOTHING owns `IDENT {`. So the `x` in
+// `match x { … }` fell through every native branch to the `@hand(primary_base)` tail.
+//
+// WHY IT WENT UNNOTICED. That tail parses it correctly, so nothing was ever wrong on
+// valid input: the hand absorbed the whole class silently. It only becomes visible when
+// the tail is taken away, which is exactly what retiring the `primary_base` leaf does —
+// at which point every mode-gated subject in the language reports `unexpected token`.
+// The measurement: with the tail removed, `match x { 1 -> 2 }`, `if a { 1 }` and
+// `Foo { x: 1 }` all failed in the interpreter while `Foo`, `foo(1)` and `when { … }`
+// parsed. Three separate predicate gaps, one masking tail.
+//
+// WHAT THESE SPECS PIN. The predicate directly, over grammars small enough that WHICH
+// branch ran is decidable from whether the parse succeeds — the `conditional_mode_set`
+// idiom. Every one of them FAILS against the unconditional-decline version, which is the
+// property that makes them worth having.
+//
+// An end-to-end assertion through `avra_expr_grammar()` is deliberately NOT here: while
+// the `@hand(primary_base)` tail is still in `unary`, `match x { … }` parses either way
+// and such a spec would pass without measuring anything (the t-6u9b vacuous-agreement
+// shape this whole ticket is about). It belongs to the commit that deletes the tail.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
+
+// A header that parses its subject with the mode OFF — the `match`/`if`/`while` shape,
+// reduced to the two tokens that matter. `sub` accepts an identifier ONLY if
+// `ident_plain` admits it, so a decline is observable as a failed parse.
+const G_OFF: string = "r = \"if\" @off(allow_struct_lit) c:sub \"{\" \"}\" -> Grouping(c)\n" +
+    "sub = @peek(ident_plain) n:IDENT -> Grouping(n)"
+
+// The same grammar with the mode left ON (its default), so the sibling struct-literal
+// branch is live and `ident_plain` must keep declining.
+const G_ON: string = "r = c:sub \"{\" \"}\" -> Grouping(c)\n" +
+    "sub = @peek(ident_plain) n:IDENT -> Grouping(n)"
+
+fn parses(grammar_src: string, input: string) -> bool {
+    let g = parse_grammar(grammar_src)
+    g.error == "" && !run_grammar_expr(g.grammar, input).had_error
+}
+
+spec "t-47hc.31: with allow_struct_lit OFF, `IDENT {` is a plain identifier" {
+    then "the subject of a mode-gated header parses" {
+        // The regression, minimally. Pre-fix this reported `unexpected token` — no branch
+        // owned `a`, because ident_plain saw the `{` and declined on behalf of a
+        // struct-literal branch that the `@off` had just gated out.
+        parses(G_OFF, "if a { }")
+    }
+    then "…and so does a PascalCase one — the predicate is not case-gated" {
+        parses(G_OFF, "if Foo { }")
+    }
+}
+
+spec "t-47hc.31: with allow_struct_lit ON the predicate still declines" {
+    then "an identifier followed by `{` is NOT plain — the struct-lit branch owns it" {
+        // The other direction, and the reason the fix is a mode READ rather than dropping
+        // the `{` exclusion: were this to pass, the bare-identifier branch would enter on
+        // `Foo {`, yield a bare Ident, and leave the braces for whoever came next.
+        !parses(G_ON, "Foo { }")
+    }
+    then "a bare identifier with no `{` is plain either way — the control" {
+        // Without this, the spec above could be green because the grammar is broken
+        // rather than because the predicate declined.
+        parses("r = c:sub -> Grouping(c)\nsub = @peek(ident_plain) n:IDENT -> Grouping(n)", "Foo")
+    }
+}
+
+spec "t-47hc.31: a FEATURE-owned `IDENT {` declines regardless of the mode" {
+    // These stay `@hand(primary_base)`'s in both modes: `parse_ident_expr` owns them and
+    // decides them before any postfix. A mode read must not hand them to a native branch.
+    then "`table { … }` is never plain" {
+        !parses(G_OFF, "if table { }")
+    }
+    then "a REGISTERED `kw { … }` construct is never plain" {
+        // Registry-driven — `grammar` is registered as an expr_keyword, and the answer
+        // comes from `lookup_expr_parser`, not from a name written into the predicate.
+        // This also pins the lazily-materialised delegate: with no registry to consult
+        // the predicate answers conservatively and this passes for the wrong reason, so
+        // the spec above ("if a { }" parses) is what keeps it honest.
+        !parses(G_OFF, "if grammar { }")
+    }
+}

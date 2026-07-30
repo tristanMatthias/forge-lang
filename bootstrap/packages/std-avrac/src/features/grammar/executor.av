@@ -638,6 +638,39 @@ impl PState {
         self.postfix_step_sp = saved.step_sp
     }
 
+    /// The `@hand` delegate, built ON FIRST USE. Production threads one in at
+    /// construction and this returns it unchanged; the interpreter entries construct with
+    /// `null` and materialise here, which is what lets a REGISTRY-driven `@peek` predicate
+    /// (`ident_lbrace_plain` asking `lookup_expr_parser` whether a feature owns
+    /// `name { … }`) get a truthful answer on the oracle paths instead of the conservative
+    /// one that routed the form to the `@hand` tail and left the native branch it guards
+    /// unmeasured (t-47hc.31).
+    ///
+    /// LAZY, not eager, and that is not a micro-optimisation: `parser_new_with_store`
+    /// builds a full feature Registry (~53 registrations), and `run_grammar_expr` is
+    /// called per ASSERTION across the oracle suite — attaching one at every entry grew
+    /// the grammar suite's peak past 12 GB and tripped the watchdog. Only a parse that
+    /// actually meets an `IDENT {` reaches this, so the rest pay nothing.
+    ///
+    /// The delegate always starts at byte 0, so it is never AHEAD of the grammar cursor
+    /// and `run_hand_expr`'s forward-advance is still monotonic no matter when it is
+    /// built — including inside a `@try` that later rolls back.
+    ///
+    /// A token-only entry has no source for a hand parser to read, so it stays null and
+    /// the registry question keeps its conservative answer.
+    fn delegate(self) -> Parser? {
+        if self.hand_delegate != null { return self.hand_delegate }
+        if self.src == "" { return null }
+        mut d = parser_new_with_store(self.src, self.file, self.store)
+        d.records_roots = 0
+        d.stmt_flip = false
+        d.decl_flip = false
+        d.expr_flip = false
+        d.expr_static = false
+        self.hand_delegate = d
+        self.hand_delegate
+    }
+
     /// Snapshot the threaded procedural delegate alongside a grammar `@try`.
     /// A speculative native branch may call an expression `@hand` leaf, which
     /// advances this parser independently of `PState.pos`; rolling back only the
@@ -835,6 +868,11 @@ export fn new_pstate(src: string) -> PState {
     // positions are visited monotonically (predictive LL, no backtracking), so the
     // delegate advances each token once. Tree-equivalent to the fresh-parser path
     // (only line/span accounting differs, which dump-based equivalence ignores).
+    //
+    // EAGER here, unlike PState.delegate()'s lazy materialisation: this is the
+    // generated-parser setup, where `@hand` leaves are the common case and
+    // `run_hand_expr` reads `hand_delegate` directly — deferring it would just hand
+    // every leaf the fresh-parser fallback this exists to avoid.
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.stmt_flip = false
@@ -1186,6 +1224,48 @@ export fn grammar_last_segment(path: string) -> string {
     path.substring(start, path.length)
 }
 
+/// The `IDENT {` forms a FEATURE owns, which stay `@hand(primary_base)`'s: `table`
+/// (parse_ident_expr checks it before any postfix) and any name a feature registered an
+/// expression parser for (`grammar { … }`, …).
+///
+/// No delegate means no registry to consult, and the answer is CONSERVATIVE — treat the
+/// name as feature-owned, so a native branch can never swallow a construct whose feature
+/// owns the block. `PState.delegate()` materialises one from the source, so that only
+/// happens on the token-only entries, where an `@hand` rule is unavailable by contract
+/// anyway. It used to happen on `run_grammar_expr` too, and that is why the struct-literal
+/// branch was unreachable in every interpreter oracle — `Foo { x: 1 }` fell past it to the
+/// `@hand(primary_base)` tail, so the specs covering struct literals were measuring the
+/// hand parser (t-47hc.31, the t-6u9b vacuous-agreement shape).
+fn ident_lbrace_is_feature_form(st: PState) -> bool {
+    let name = st.cur().text
+    if name == "table" { return true }
+    let d = st.delegate()
+    if d == null { return true }
+    lookup_expr_parser(d!.features, name) != null
+}
+
+/// Does some OTHER `IDENT {`-led branch own the form at the cursor? The shared half of
+/// the two sibling predicates below, so they cannot disagree about who takes an
+/// identifier followed by `{`: a feature form (above) belongs to the hand, anything else
+/// is a STRUCT LITERAL — and only when `allow_struct_lit` is on, which is the gate
+/// `unary`'s struct-lit branch carries itself.
+///
+/// The mode read is what `ident_plain` was missing. With `allow_struct_lit` OFF — a
+/// `match` subject, an `if`/`while` condition — NO branch owns `IDENT {`, so the `x` in
+/// `match x { … }` is a plain identifier and nothing else. `ident_plain` declined anyway
+/// (it excluded a following `{` unconditionally) and the `@hand(primary_base)` tail
+/// absorbed every one of them, which is why removing that tail turned every mode-gated
+/// subject into `unexpected token`.
+fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
+    if st.cur().kind != "IDENT" { return false }
+    if st.pos + 1 >= st.toks.length { return false }
+    if st.toks[st.pos + 1].text != "{" { return false }
+    if ident_lbrace_is_feature_form(st) { return true }
+    // Through modes_flag, the same reader `@when(allow_struct_lit)` uses on the
+    // struct-lit branch — so the two cannot answer differently.
+    modes_flag(st.modes, "allow_struct_lit")
+}
+
 /// Evaluate a `@peek(cond)` LOOKAHEAD predicate against the live token stream — the
 /// token-stream twin of modes_flag. Shared by the executor (branch_pred_ok) AND, via
 /// emit.peek_guard emitting the SAME `lookahead_ok(...)` call, the generated parser, so
@@ -1371,7 +1451,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
             && tok_starts_word(st.toks[st.pos + 2])
             && st.toks[st.pos + 3].text == ">"
             && st.toks[st.pos + 4].text == "{" { return false }
-        return nx.text != "{" && nx.kind != "TEMPLATE"
+        if nx.kind == "TEMPLATE" { return false }
+        // Decline a following `{` only when a sibling branch actually takes it. See
+        // ident_lbrace_owned_elsewhere: with `allow_struct_lit` off nobody does, and a
+        // blanket decline sent the subject of every `match`/`if`/`while` to the tail.
+        return nx.text != "{" || !ident_lbrace_owned_elsewhere(st)
     }
     if cond == "ident_template" {
         if st.cur().kind != "IDENT" { return false }
@@ -1382,10 +1466,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
         if st.toks[st.pos + 1].text != "{" { return false }
-        let name = st.cur().text
-        if name == "table" { return false }
-        if st.hand_delegate == null { return false }
-        return lookup_expr_parser(st.hand_delegate!.features, name) == null
+        return !ident_lbrace_is_feature_form(st)
     }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
