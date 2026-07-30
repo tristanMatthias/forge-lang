@@ -1,0 +1,136 @@
+// WHY: t-5s7l — two concurrent `bs2 build --lib` on the SAME package must both
+// succeed. This is the failing-first witness for the shared-entry race; until it
+// exists, every claim about that race (including several of mine) is inference.
+//
+// The race: the lib build removes the shared entry `<entry>.ll` before spawning its
+// child compile — the 18z8 freshness guarantee, "an artifact after the compile is
+// necessarily the child's fresh output". That unlink is correct in isolation and
+// wrong under concurrency: `entry_path` is SHARED per package, so a sibling build
+// can unlink the entry while this one is mid-flight, and the post-compile artifact
+// check then fails with nothing actually wrong in the tree. pdme.7 already names
+// this path — "the shared `<entry>.ll` is the one path the cache can't defend".
+//
+// This is the mechanism behind the rc-strict flake cluster (t-n832): several test
+// fixtures each shell out `bs2 build --lib --emit_metadata` on @std/avrac, the suite
+// runs them across parallel shards, and the failure set rotates run to run —
+// cli_metadata, std_avrac_lib_build, query_surface — none reproducible in isolation.
+//
+// Deliberately a DIRECT measurement, not a proxy: the suite has been diagnosed from
+// log archaeology three times over, and each round produced a confident wrong
+// attribution. Two builds, one package, both exit codes asserted.
+//
+// Throwaway /tmp package per pid so the probe is shard-safe and touches no shared
+// build state of its own — the thing under test is contention on ONE package, which
+// this fixture creates and owns.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_selfhost_file_exists, avra_getpid,
+}
+
+/// Materialise a throwaway [lib] package. Small on purpose: the race is in the
+/// orchestration around the child compile, not in how long the child takes, and a
+/// big package would make this spec dominate the suite's wall clock.
+fn conc_mk_pkg(slug: string) -> string {
+    let dir = "/tmp/avra_libconc_${slug}_${string(avra_getpid())}"
+    let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/src'")
+    let _ = avra_selfhost_write_file("${dir}/avra.toml",
+        "[package]\nname = \"@test/libconc-${slug}\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"libconc-${slug}\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av",
+        "export fn one() -> int { 1 }\nexport fn two() -> int { one() + 1 }\n")
+    dir
+}
+
+/// Run N `bs2 build --lib` on `dir` CONCURRENTLY and return their exit codes,
+/// space-separated in completion-independent order (rc.<i> files, read by index).
+///
+/// The env strip mirrors libbuild_stale_ll_test: the child must not inherit the test
+/// runner's metadata/lib environment, and AVRA_COMPILER is stripped so the child
+/// re-exec resolves to this same bs2 via argv[0].
+fn conc_build_n(dir: string, n: int) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let bs2 = "${root}/build/bs2"
+    let strip = "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_LIB_PKG_ROOT -u AVRA_COMPILER"
+    // `&` + `wait`: the builds must OVERLAP. Sequential runs cannot exhibit the race
+    // and would make this spec vacuously green — the failure mode this file exists to
+    // avoid, and the one that let three separate bugs through this week.
+    mut launch = ""
+    mut i = 0
+    while i < n {
+        // `$?` is NOT escaped: Avra interpolates only on `${`, so a bare `$?` passes
+        // through verbatim and the SHELL expands it. Escaping it wrote the literal
+        // two characters into rc.<i> and the spec compared "$? $?" against "0 0" —
+        // failing for a reason that had nothing to do with the race it exists to
+        // measure. Caught by running it; a guard that cannot report the thing it
+        // guards is worth nothing.
+        launch = launch + "( cd '${dir}' && ${strip} '${bs2}' build --lib --emit_metadata > '${dir}/log.${string(i)}' 2>&1 ; echo $? > '${dir}/rc.${string(i)}' ) & "
+        i = i + 1
+    }
+    let _ = avra_shell_exec("${launch} wait")
+    mut out = ""
+    mut j = 0
+    while j < n {
+        let p = "${dir}/rc.${string(j)}"
+        let rc = if avra_selfhost_file_exists(p) == 1 { avra_selfhost_read_file(p).trim() } else { "MISSING" }
+        out = out + rc + " "
+        j = j + 1
+    }
+    out.trim()
+}
+
+/// Concatenated build logs, for surfacing WHY on failure rather than a bare FAIL.
+fn conc_logs(dir: string, n: int) -> string {
+    mut out = ""
+    mut i = 0
+    while i < n {
+        let p = "${dir}/log.${string(i)}"
+        if avra_selfhost_file_exists(p) == 1 {
+            out = out + "--- build ${string(i)} ---\n" + avra_selfhost_read_file(p) + "\n"
+        }
+        i = i + 1
+    }
+    out
+}
+
+spec "t-5s7l: concurrent `bs2 build --lib` on ONE package" {
+    then "two simultaneous builds both succeed" {
+        let dir = conc_mk_pkg("two")
+        let rcs = conc_build_n(dir, 2)
+        let ok = rcs == "0 0"
+        if !ok {
+            println("concurrent lib build rcs = [${rcs}] (expected `0 0`)")
+            println(conc_logs(dir, 2))
+        }
+        ok
+    }
+    then "four simultaneous builds all succeed" {
+        // Four, because the suite runs more than two shards and the window the
+        // unlink opens is narrow — a 2-way race can pass by luck often enough to
+        // look green. Widening the contention is what makes this a measurement
+        // rather than a coin flip.
+        let dir = conc_mk_pkg("four")
+        let rcs = conc_build_n(dir, 4)
+        let ok = rcs == "0 0 0 0"
+        if !ok {
+            println("concurrent lib build rcs = [${rcs}] (expected `0 0 0 0`)")
+            println(conc_logs(dir, 4))
+        }
+        ok
+    }
+    then "the entry .ll exists and is non-empty after the dust settles" {
+        // The freshness half of 18z8 must survive whatever fix makes the above
+        // pass: a build that reports success must leave real IR at the entry path,
+        // not an empty file or a hole left by a sibling's unlink.
+        let dir = conc_mk_pkg("artifact")
+        let rcs = conc_build_n(dir, 2)
+        let ll = "${dir}/src/lib.av.ll"
+        let present = avra_selfhost_file_exists(ll) == 1
+        let body = if present { avra_selfhost_read_file(ll) } else { "" }
+        let ok = rcs == "0 0" && present && body.contains("define")
+        if !ok {
+            println("post-race artifact check failed: rcs=[${rcs}] present=${string(present)} bytes=${string(body.length)}")
+        }
+        ok
+    }
+}
