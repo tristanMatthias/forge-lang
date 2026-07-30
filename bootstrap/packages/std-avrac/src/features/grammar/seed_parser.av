@@ -675,7 +675,7 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                             return "`${mk}(${fl})` cannot appear on (or inside a group of) an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the mode set"
                         }
                         if prim_is_hand_or_pred(item.prim) {
-                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek` primary (rule `${rule}`)"
+                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek`/`@gensym` primary (rule `${rule}`)"
                         }
                         // A mode marker on a `@require` item would LEAK the set mode: the
                         // emitted wrapper is `save; set; <item>; restore`, and a failed
@@ -1124,7 +1124,8 @@ fn branch_is_expr_fold(b: GSeq) -> bool {
 }
 
 /// True for the primaries a @off marker must not wrap: a `@hand` delegate (manages
-/// its own parser modes) and a `@when` predicate (zero-width, consumes nothing).
+/// its own parser modes), and the zero-width ones that consume nothing — `@when`,
+/// `@peek`, and `@gensym`.
 fn prim_is_hand_or_pred(prim: GPrim) -> bool {
     match prim {
         .Hand(_) -> true

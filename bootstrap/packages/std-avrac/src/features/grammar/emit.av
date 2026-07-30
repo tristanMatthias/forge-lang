@@ -1298,6 +1298,22 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
         // of the shared `gensym_token`, so the generated parser and the interpreter mint
         // the same name from the same counter.
         .Gensym(tag) -> {
+            // The capture shapes, in the same order and for the same reasons as the
+            // .Ref/.Hand arms above. `@gensym` rejects a repetition suffix on ITSELF,
+            // but an enclosing GROUP may still repeat (`( t:@gensym(x) "," )*`), and
+            // then `list_labels_of` puts the label in the list set via `under_multi`
+            // and `list_decl_type` declares `t_list: List<Token>`. Emitting a plain
+            // `let` there would leave that list permanently empty while the executor's
+            // generic `bind()` filled it — an engine divergence, in the feature whose
+            // whole design is about not having those.
+            if str_in(list_labels, item.label) {
+                return "${ind}${item.label}_list.push(gensym_token(st, \"${tag}\"))\n"
+            }
+            // An optional group (`( t:@gensym(x) )?`) pre-declares `mut t` in the
+            // enclosing scope; a `let` here would SHADOW it and leave it Nil.
+            if str_in(opts, item.label) {
+                return "${ind}${item.label} = CapVal.Tok(gensym_token(st, \"${tag}\"))\n"
+            }
             if item.label == "" { return "${ind}let _ = gensym_token(st, \"${tag}\")\n" }
             "${ind}let ${item.label} = CapVal.Tok(gensym_token(st, \"${tag}\"))\n"
         }
