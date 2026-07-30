@@ -1849,6 +1849,35 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // function-scope isolation the generated parser gets for free from `s_cut`
     // being a local. Groups share the env, so a cut nested in one propagates up.
     if item.cut && st.diags.length == env.cut_diags && st.had_error == env.cut_err { env.set_cut(true) }
+    // t-a9oy: ABORT A DOOMED BRANCH AT ITS CUT — the executor mirror of emit's
+    // `if !s_cut { break }` (emit.av `cut_abort`, t-x2fb). WITHOUT this the executor
+    // sets the commit flag above and then parses every remaining item anyway before
+    // the speculative arm discards them, which for `paren_expr`'s cut-guarded lambda
+    // BODY is a parse of the entire remaining expression: 2x per parenthesised group,
+    // i.e. 2^n. Measured on `fn f() { if (…) || … {` with n terms, executor vs emit at
+    // n=12: 9848ms vs 38ms; n=16 did not finish inside 60s.
+    //
+    // The commit guard is `cut || (no new diagnostics)` and diagnostics only ever GROW,
+    // so once the flag is still false HERE the second disjunct can never recover — the
+    // branch is provably going to roll back and everything past this point is wasted.
+    // `env.cut` is sticky within the branch (a FRESH flag per speculative arm, restored
+    // after), so an earlier cut that did commit correctly suppresses the abort, exactly
+    // as emit's `s_cut` local does.
+    //
+    // Routed via the EXISTING `@require` abort channel rather than a new one: exec_seq
+    // already stops on it and the speculative arm's rollback already clears it
+    // (`env.set_abort(false)`), so a doomed branch lands on the same rollback path emit's
+    // `break` targets. Silent error node — the branch is being discarded, so reporting
+    // here would add a diagnostic the emit side never produces.
+    //
+    // WHY THIS WAS INVISIBLE (t-zrn3): both recovery oracles disable the static fallback,
+    // so between them they measure emit and nothing else — while on invalid input the
+    // DEFAULT production path re-parses the item with THIS executor. emit got the t-x2fb
+    // fix; its mirror here was missed.
+    if item.cut && !env.cut {
+        env.set_abort(true)
+        return CapVal.Node(st.error_node_silent())
+    }
     // `@require`: a mismatch on this terminal ABORTS the rule. Detected by whether the
     // item reported — exec_primary's handle_missing already emits the sequence's
     // `@expect` message, so `@require` adds control flow only, never a second seam for
