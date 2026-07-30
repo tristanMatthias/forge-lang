@@ -3786,7 +3786,25 @@ export fn mk_return_opt(st: PState, val_cv: CapVal) -> CapVal {
 export fn mk_fn_decl(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
     let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
     let no_tp: List<TypeParamEntry> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, no_tp, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
+}
+
+/// A `Stmt.Function`'s walker edge set: EXACTLY one `TypeRef` for the bare return-type
+/// field. Body rows are id payloads and contribute no edges — the hand's
+/// `fn_decl/parser.av` says so verbatim ("the bare return-type field contributes a
+/// TypeRef (body rows are id payloads — no edges)"), and this must match it or the two
+/// parsers disagree about the tree's shape.
+///
+/// The native builders used `add_leaf`, which records ZERO edges, so every routed fn was
+/// stored as a LEAF: `children_of()` came back empty and the L1 non-leaf side-table
+/// counted 0 where the hand counted 3 (`nonleaf=0` vs `nonleaf=3`,
+/// core/tests/side_table_test.av). `dense=` matched throughout, which is the tell that
+/// the STATEMENTS were all present and only their edges were missing.
+///
+/// Void counts: a fn with no declared return still ingests a row for `Void` and carries
+/// its TypeRef, exactly as the hand does, so `fn c() { return }` is non-leaf too.
+fn fn_decl_edges(st: PState, ret_vt: ValueType) -> NodeEdges {
+    NodeEdges { refs: [NodeRef.TypeRef(st.store.ingest_type(ret_vt, byte_span_none()))] }
 }
 
 /// `type Name = { field* }` (the `MkTypeDecl` build's core, non-generic slice).
@@ -3811,7 +3829,8 @@ export fn mk_enum_decl(st: PState, name: string, vars: List<Variant>) -> CapVal 
 /// arms close it in lockstep (t-47hc slice 10, ticket t-myz7).
 export fn mk_fn_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
     let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, tps, params, ret_vt, body)))
+    // Same edge set as the non-generic core — the type-param list is a payload, not an edge.
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, tps, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
 }
 
 /// `type Name < tparam* > = { field* }` (the 3-arg `MkTypeDecl` build's core).
