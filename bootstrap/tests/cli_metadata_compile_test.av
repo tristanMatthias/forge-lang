@@ -8,7 +8,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-9ixv (closed).
 
-use @std.avrac.test_runner.{cached_fixture_run}
+use @std.avrac.test_runner.{cached_fixture_run, probe_ok}
 
 fn cmc_run() -> string {
     cached_fixture_run("tests/cli_metadata_compile_fixtures/sample.av")
@@ -16,36 +16,36 @@ fn cmc_run() -> string {
 
 spec "9ixv regression: @std/avrac --lib --emit_metadata pre-builds cleanly" {
     then "build rc is zero" {
-        cmc_run().contains("PROBE avrac_lib_build_rc_zero: ok")
+        probe_ok("cli_metadata_compile", "avrac_lib_build_rc_zero", cmc_run())
     }
     then "@std/avrac's own meta.bin lands" {
-        cmc_run().contains("PROBE avrac_meta_present: ok")
+        probe_ok("cli_metadata_compile", "avrac_meta_present", cmc_run())
     }
     then "@std/lsp's meta.bin lands as a transitive pre-build" {
-        cmc_run().contains("PROBE std_lsp_meta_present: ok")
+        probe_ok("cli_metadata_compile", "std_lsp_meta_present", cmc_run())
     }
     then "@std/json's meta.bin lands" {
-        cmc_run().contains("PROBE std_json_meta_present: ok")
+        probe_ok("cli_metadata_compile", "std_json_meta_present", cmc_run())
     }
     then "@std/cli's meta.bin lands" {
-        cmc_run().contains("PROBE std_cli_meta_present: ok")
+        probe_ok("cli_metadata_compile", "std_cli_meta_present", cmc_run())
     }
     then "@std/crypto's meta.bin lands" {
-        cmc_run().contains("PROBE std_crypto_meta_present: ok")
+        probe_ok("cli_metadata_compile", "std_crypto_meta_present", cmc_run())
     }
 }
 
 spec "9ixv regression: cli/main.av compiles via metadata fast-path" {
     then "compile rc is zero" {
-        cmc_run().contains("PROBE cli_compile_rc_zero: ok")
+        probe_ok("cli_metadata_compile", "cli_compile_rc_zero", cmc_run())
     }
     then "main.av.ll is emitted" {
-        cmc_run().contains("PROBE cli_main_ll_present: ok")
+        probe_ok("cli_metadata_compile", "cli_main_ll_present", cmc_run())
     }
     then "AVRA_DEPS_OUT sidecar records the producer .o paths" {
-        cmc_run().contains("PROBE cli_deps_sidecar_present: ok")
+        probe_ok("cli_metadata_compile", "cli_deps_sidecar_present", cmc_run())
     }
     then "deps sidecar lists at least five @std/* producers" {
-        cmc_run().contains("PROBE cli_deps_at_least_five_producers: ok")
+        probe_ok("cli_metadata_compile", "cli_deps_at_least_five_producers", cmc_run())
     }
 }

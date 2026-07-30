@@ -5,7 +5,7 @@
 //
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
-use @std.avrac.test_runner.{cached_fixture_run}
+use @std.avrac.test_runner.{cached_fixture_run, probe_ok}
 
 fn sa_run() -> string {
     cached_fixture_run("tests/std_avrac_lib_build_fixtures/sample.av")
@@ -13,18 +13,18 @@ fn sa_run() -> string {
 
 spec "std-avrac lib build: full bootstrap library compiles cleanly" {
     then "bs2 build --lib --emit_metadata succeeds on @std/avrac" {
-        sa_run().contains("PROBE std_avrac_build_rc_zero: ok")
+        probe_ok("std_avrac_lib_build", "std_avrac_build_rc_zero", sa_run())
     }
     then "metadata.bin lands alongside the cached IR" {
-        sa_run().contains("PROBE avrac_meta_bin_present: ok")
+        probe_ok("std_avrac_lib_build", "avrac_meta_bin_present", sa_run())
     }
     then "the .ll cache entry lands" {
-        sa_run().contains("PROBE avrac_ll_present: ok")
+        probe_ok("std_avrac_lib_build", "avrac_ll_present", sa_run())
     }
     then "every codegen fn is qualified under @std::avrac::" {
-        sa_run().contains("PROBE symbols_qualified_under_at_std_avrac: ok")
+        probe_ok("std_avrac_lib_build", "symbols_qualified_under_at_std_avrac", sa_run())
     }
     then "no codegen fn leaks out at the un-qualified namespace level" {
-        sa_run().contains("PROBE no_unqualified_codegen_fns: ok")
+        probe_ok("std_avrac_lib_build", "no_unqualified_codegen_fns", sa_run())
     }
 }

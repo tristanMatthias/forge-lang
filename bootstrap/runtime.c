@@ -5011,11 +5011,10 @@ static int64_t avra_mem_rss_kb(void) {
 #endif
 }
 
-// MemAvailable in KiB — what the kernel thinks we can still get without
-// swapping. 0 when unknown.
+// One /proc/meminfo field in KiB; 0 when unknown.
 // Raw syscalls for the same reason as avra_mem_rss_kb: this is reached from the
 // allocator's hot path (via the ceiling's lazy init) and must not re-enter malloc.
-static int64_t avra_mem_available_kb(void) {
+static int64_t avra_meminfo_kb(const char* key) {
 #ifdef __linux__
     int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
     if (fd < 0) return 0;
@@ -5025,17 +5024,74 @@ static int64_t avra_mem_available_kb(void) {
     close(fd);
     if (n <= 0) return 0;
     buf[n] = '\0';
-    const char* p = strstr(buf, "MemAvailable:");
+    const char* p = strstr(buf, key);
     if (!p) return 0;
-    p += 13;                                   // past the key
+    p += strlen(key);                          // past the key
     while (*p == ' ' || *p == '\t') p++;
     int64_t out = 0;
     if (!(*p >= '0' && *p <= '9')) return 0;
     while (*p >= '0' && *p <= '9') { out = out * 10 + (*p - '0'); p++; }
     return out;                                // /proc/meminfo reports kB
 #else
+    (void)key;
     return 0;
 #endif
+}
+
+// What the kernel thinks we can still get without swapping. 0 when unknown.
+static int64_t avra_mem_available_kb(void) { return avra_meminfo_kb("MemAvailable:"); }
+
+// The box's total RAM. 0 when unknown. Unlike MemAvailable this does not move
+// under load, which is exactly why the ceiling floors itself against it.
+static int64_t avra_mem_total_kb(void) { return avra_meminfo_kb("MemTotal:"); }
+
+// Derive the ceiling (KiB, 0 = none) from a MemAvailable / MemTotal pair.
+//
+// PURE and separately callable so the policy can be tested at the numbers that
+// actually broke, instead of only at whatever the test box happens to report —
+// on a quiet machine every plausible policy agrees, so an end-to-end assertion
+// there proves nothing.
+//
+// Two rules:
+//
+// (1) 90% of what's available at startup. Below ~1GiB available we'd only produce
+//     false trips on an already-doomed box, so stay out of the way. 90, not 75:
+//     this ceiling exists to beat the OOM killer to a RUNAWAY, and a runaway grows
+//     without bound — it trips any ceiling. Setting the bar low buys nothing
+//     against that and costs real builds. The first 75% default false-tripped a
+//     legitimate whole-program test shard on a 16 GiB box, which peaks around
+//     11.4 GiB of ~15.1 GiB available (75.5%) — a known-heavy path (snw0), not a
+//     bug. Killing it turned a working suite into 5 failed shards.
+//
+// (2) …but FLOOR that against half of MemTotal, because MemAvailable is sampled
+//     ONCE, at startup, and under a parallel build it measures the NEIGHBOURS
+//     rather than anything about this process. A child that starts while sibling
+//     shards hold memory bakes a low ceiling for its whole life — even as they
+//     finish and the memory comes back.
+//
+//     Not hypothetical: this is what made `bs2 build --lib` on @std/avrac fail
+//     intermittently in CI, and it took several runs to see, because the build's
+//     ARTIFACTS were all fine (cache hits) and only its exit code was wrong:
+//
+//         error[F4014]: compiler memory ceiling exceeded
+//                       — 3443 MiB resident (ceiling 3441 MiB)
+//           phase: parse src/typeck/typeenv_cache.av
+//
+//     3441 MiB is 90% of a transiently-low ~3.8 GiB reading; compiling the whole
+//     compiler legitimately peaks around 3.4 GiB, so the ceiling landed UNDER a
+//     known-good build. Raising the percentage would not have fixed it — the same
+//     dip at 95% still lands under a heavy build. The derivation was the defect,
+//     which is the 75%→90% lesson above repeating one scale down.
+//
+//     MemTotal does not move under load. Half of it sits well above any legitimate
+//     build here and still far below a runaway, which by definition grows past any
+//     bound. So: track availability when the box is genuinely quiet, but never
+//     conclude from a neighbour's spike that this process may use less than the box
+//     could always have given it.
+int64_t avra_mem_ceiling_for(int64_t avail_kb, int64_t total_kb) {
+    int64_t from_avail = (avail_kb > 1024 * 1024) ? (avail_kb / 10) * 9 : 0;
+    int64_t floor_kb = (total_kb > 0) ? total_kb / 2 : 0;
+    return (from_avail > floor_kb) ? from_avail : floor_kb;
 }
 
 // The ceiling in KiB; 0 means "no ceiling". Read once, cached.
@@ -5049,19 +5105,7 @@ int64_t avra_mem_limit_kb(void) {
         v = strtoll(e, NULL, 10) * 1024;
         if (v < 0) v = 0;
     } else {
-        int64_t avail = avra_mem_available_kb();
-        // 90% of what's available at startup. Below ~1GiB available we'd only
-        // produce false trips on an already-doomed box, so stay out of the way.
-        //
-        // 90, not 75: this ceiling exists to beat the OOM killer to a RUNAWAY, and a
-        // runaway grows without bound — it trips any ceiling. Setting the bar low
-        // buys nothing against that and costs real builds. The first 75% default
-        // false-tripped a legitimate whole-program test shard on a 16 GiB box, which
-        // peaks around 11.4 GiB of ~15.1 GiB available (75.5%) — a known-heavy path
-        // (snw0), not a bug. Killing it turned a working suite into 5 failed shards.
-        // 90% still fires well before the kernel does, with headroom for the rest of
-        // the system.
-        v = (avail > 1024 * 1024) ? (avail / 10) * 9 : 0;
+        v = avra_mem_ceiling_for(avra_mem_available_kb(), avra_mem_total_kb());
     }
     atomic_store(&cached, v);
     return v;

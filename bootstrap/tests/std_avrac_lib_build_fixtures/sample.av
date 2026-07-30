@@ -37,8 +37,32 @@ fn main() -> int {
     // build ran from-scratch or from-cache. On warm runs the wipe
     // forced ~12s of unnecessary recompilation.
 
-    let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata")
+    // CAPTURE the build output. This probe has now failed twice in CI —
+    // rc != 0 while every artifact probe below PASSED, i.e. the build produced
+    // everything it should have and only its exit code was wrong — and both
+    // times the investigation stalled because the output went nowhere and the
+    // rc alone names none of the four `fail(...)` sites it could have come
+    // from. An assertion that discards its evidence turns a reproducible CI
+    // failure into a guessing exercise; the driver has several distinct
+    // failure exits and only the message tells them apart.
+    let build_log = "/tmp/std_avrac_lib_build.log"
+    let rc = avra_shell_exec_status("cd ${std_avrac} && ${bs2} build --lib --emit_metadata > ${build_log} 2>&1")
     probe("std_avrac_build_rc_zero", rc == 0)
+    if rc != 0 {
+        // Tail only: a successful build prints thousands of warning lines, and
+        // every `fail(...)` in the driver is the LAST thing written.
+        println("--- build exited ${string(rc)}; tail of ${build_log} ---")
+        println(avra_shell_exec("tail -40 ${build_log} 2>/dev/null"))
+        // One of the driver's failure exits is `failed to pre-build a
+        // path-dep`, whose real diagnostic lives in per-dep logs the driver
+        // deliberately does NOT clean up on failure (it cleans them only on
+        // success). Dump them here too: @std/avrac has five path-deps, and
+        // without this the parent's message just names a directory that is
+        // gone by the time anyone reads the CI log.
+        println("--- surviving per-dep logs (kept only on failure) ---")
+        println(avra_shell_exec("tail -n 25 ${std_avrac}/build/pre_deps.*/*.log 2>/dev/null | head -200"))
+        println("--- end build log ---")
+    }
 
     probe("avrac_meta_bin_present", avra_selfhost_file_exists(package_meta_path_for(std_avrac, bs2)) != 0)
 
