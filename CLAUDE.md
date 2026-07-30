@@ -582,7 +582,7 @@ false-PASS trap above is documented; its inverse reads far more convincingly and
 session. Under `PREBUILT=1`, **NEW is your WORKING TREE while OLD is a REF** (the base branch), so
 the two sides differ by your edits *plus every base commit your branch predates*. Any such commit
 that changes emitted IR is reported as a divergence caused by your change. The caught instance:
-#1076 briefly made the entry parse fill in `SrcPos.file` (`parse_program_source_at(source,
+PR #1076 briefly made the entry parse fill in `SrcPos.file` (`parse_program_source_at(source,
 ctx.path)`), and `Ctx.source_file` — assigned from `pos.file` (codegen/blocks.av), not from any
 build-time constant — feeds `@src_file` into `avra_null_deref_trap`. A branch based before #1076
 therefore emitted `@src_file = [1 x i8] zeroinitializer` while the OLD oracle at the newer base
