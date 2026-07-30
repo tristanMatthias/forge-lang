@@ -69,6 +69,9 @@ spec "t-9bz3: a float literal in argument position stays a float" {
             "    let d = (n: int) -> n * 2\n" +
             "    println(string(d(21)))\n" +
             "}\n")
-        out.contains("42")
+        // `contains("42")` ALONE is vacuous here: "42.0" contains "42", so flipping
+        // every NUMBER to FloatLit would leave it green — the exact over-correction
+        // this case exists to catch. Reject the float rendering explicitly.
+        out.contains("42") && !out.contains("42.")
     }
 }

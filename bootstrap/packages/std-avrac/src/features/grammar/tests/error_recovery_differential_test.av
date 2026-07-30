@@ -424,15 +424,15 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     }
     // The TREE half for the last four keywords — see the F-code block above.
     then "malformed fn / extern / trait / impl recover to the same tree" {
-        agree_tree("fn a<T() -> int { 1 }\nfn b() -> int { 2 }") &&
-        agree_tree("extern fn () -> int\nfn b() -> int { 2 }") &&
-        agree_tree("extern fn a(\nfn b() -> int { 2 }") &&
-        agree_tree("extern a() -> int\nfn b() -> int { 2 }") &&
-        agree_tree("trait { fn m() }\nfn f() -> int { 1 }") &&
-        agree_tree("trait T {\nfn f() -> int { 1 }") &&
-        agree_tree("trait T { type }\nfn f() -> int { 1 }") &&
-        agree_tree("impl Foo {\nfn f() -> int { 1 }") &&
-        agree_tree("impl Foo { fn m( }\nfn f() -> int { 1 }")
+        agree_bad("fn a<T() -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("extern fn () -> int\nfn b() -> int { 2 }") &&
+        agree_bad("extern fn a(\nfn b() -> int { 2 }") &&
+        agree_bad("extern a() -> int\nfn b() -> int { 2 }") &&
+        agree_bad("trait { fn m() }\nfn f() -> int { 1 }") &&
+        agree_bad("trait T {\nfn f() -> int { 1 }") &&
+        agree_bad("trait T { type }\nfn f() -> int { 1 }") &&
+        agree_bad("impl Foo {\nfn f() -> int { 1 }") &&
+        agree_bad("impl Foo { fn m( }\nfn f() -> int { 1 }")
     }
     then "malformed statements + expressions recover to the same tree" {
         agree_bad("fn f() -> int {\n let x = \n return 1\n}") &&
