@@ -16,6 +16,7 @@ use core.{Expr, Stmt, StmtId, NodeStore, ParamEntry, FieldInit, MatchArm, WhenAr
 use codegen.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit}
 use codegen.{emit_expr, emit_block_loop_ctx}
 use core.{stmt_unwrap}
+use list_ops.{list_map}
 use codegen.{analyze_releasable_expr}
 use core.{avra_llvm_set_linkonce_odr}
 
