@@ -24,7 +24,7 @@
 // `impl` with a GENERIC METHOD inside (`impl P { fn g<T>(x: T) … }`) fails in BOTH
 // engines. Not a gap — `impl_method` has no type params in the hand either.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -86,5 +86,55 @@ spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
         // fails loudly and gets converted to parity — exactly how `type X =` was handled.
         dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error") &&
             !hand_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+    }
+}
+
+// ── ROUTING (t-47hc slice 10.13) ─────────────────────────────────────────────
+//
+// `trait` and `impl` leave `@hand(decl_hand)` as `@try` branches — native for VALID
+// input, rolling back into the hand gate the moment they report, so error recovery stays
+// the hand parser's byte-for-byte (t-myz7.2, #1061). With these two the LAST decl keyword
+// is native; `@hand(decl_hand)` survives only for the doc/annotation/`export` wrapping
+// and the component-vs-expression IDENT disambiguation, which is why --hand-leaves does
+// not move on this slice.
+//
+// Seven malformed trait/impl forms are in the invalid corpus
+// (error_recovery_differential_test), F-code and recovery-TREE both.
+fn decl_src_routing() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path" {
+    then "both parse fns exist and dispatch BEFORE the decl_hand gate" {
+        let src = decl_src_routing()
+        let tr_at = src.index_of("parse_trait_decl(st)")
+        let im_at = src.index_of("parse_impl_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("fn parse_trait_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_impl_decl(st: PState) -> CapVal") &&
+            tr_at >= 0 && im_at >= 0 && hand_at >= 0 && tr_at < hand_at && im_at < hand_at
+    }
+
+    then "both branches are SPECULATIVE — on any diagnostic they roll back into the gate" {
+        let src = decl_src_routing()
+        src.contains("s_last = parse_trait_decl(st)") &&
+            src.contains("s_last = parse_impl_decl(st)") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the member lists lower to the SHARED cores, not executor-only builds" {
+        // The trap this slice hit four separate times: an executor-only build passes every
+        // interpreter-driven parity spec above and emits nothing usable.
+        let src = decl_src_routing()
+        src.contains("mk_trait_decl(") && src.contains("mk_trait_method(") &&
+            src.contains("mk_assoc_type(") && src.contains("mk_impl(") && src.contains("mk_method(")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        let src = decl_src_routing()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 }

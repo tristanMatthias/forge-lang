@@ -1,0 +1,77 @@
+// t-9bz3 — a FLOAT LITERAL must survive as a float through the grammar's shared
+// leaf builder, `literal_node` (executor.av).
+//
+// `Tk.Float` folds INTO the coarse "NUMBER" grammar kind (real_lex.av maps both
+// `.Number` and `.Float` to it — "the lexeme carries the dot"), so the KIND alone
+// cannot distinguish `2` from `2.0`. `literal_node` built every NUMBER as
+// `Expr.Number`, truncating the literal to its integer part. `f(2.0)` lowered to
+//
+//     call i64 %fn_ptr(i64 2)          <- no avra_float_parse at all
+//
+// so the callee reinterpreted the i64 as a double (~1e-323, effectively zero) and
+// returned a WRONG NUMBER instead of crashing: `(x: float) -> x + 1.5` applied to
+// `2.0` gave 1.5 rather than 3.5, and `x * 10.0` gave 0 rather than 20. Exit code 0,
+// nothing trapped.
+//
+// Two properties made it hard to see, and both are pinned below:
+//   - a float reaching the same closure through a BINDING was fine, so it looked
+//     like a codegen bug rather than a parse one;
+//   - `let factor = 10.0` lowered correctly, so floats were not broken generally —
+//     only a literal built through this shared core.
+//
+// This is a RUNTIME guard on purpose. The difftest corpus (lambda_param_types.av)
+// already covers the shape, but only under `make diff-test`, which is not part of
+// `make test` — so a regression here would not surface in the suite. The value
+// assertions below fail loudly on the truncation, since 1.5 != 3.5.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "t-9bz3: a float literal in argument position stays a float" {
+    then "a float LITERAL passed to a closure keeps its fractional part" {
+        let out = write_fixture_and_run("/tmp/avra_t9bz3_literal_arg.av",
+            "fn main() {\n" +
+            "    let f = (x: float) -> x + 1.5\n" +
+            "    println(string(f(2.0)))\n" +
+            "}\n")
+        // 3.5, not 1.5 — 1.5 is the truncated-to-int-2 result (i64 2 read as a
+        // denormal double ~= 0, so 0 + 1.5).
+        out.contains("3.5")
+    }
+    then "the same float through a BINDING also works (was already correct)" {
+        // Pins the asymmetry that disguised the bug: the binding path was fine, so
+        // a regression that breaks only the literal must not be mistaken for a
+        // general float failure.
+        let out = write_fixture_and_run("/tmp/avra_t9bz3_binding_arg.av",
+            "fn main() {\n" +
+            "    let f = (x: float) -> x + 1.5\n" +
+            "    let a = 2.0\n" +
+            "    println(string(f(a)))\n" +
+            "}\n")
+        out.contains("3.5")
+    }
+    then "a float literal MULTIPLIED by a captured float is not zero" {
+        // The scale(2.0) shape from the corpus: truncation made this 0, which is a
+        // silently plausible number — worth its own assertion.
+        let out = write_fixture_and_run("/tmp/avra_t9bz3_capture_mul.av",
+            "fn main() {\n" +
+            "    let factor = 10.0\n" +
+            "    let scale = (x: float) -> x * factor\n" +
+            "    println(string(scale(2.0)))\n" +
+            "}\n")
+        out.contains("20")
+    }
+    then "an INT literal argument is still an int (the fix must not over-correct)" {
+        // The split is on the TOKEN (Tk.Float vs Tk.Number), so an integer literal
+        // must keep building Expr.Number. Guards against flipping every NUMBER to
+        // FloatLit, which would print 42.0 (or a float-formatted value) here.
+        let out = write_fixture_and_run("/tmp/avra_t9bz3_int_arg.av",
+            "fn main() {\n" +
+            "    let d = (n: int) -> n * 2\n" +
+            "    println(string(d(21)))\n" +
+            "}\n")
+        // `contains("42")` ALONE is vacuous here: "42.0" contains "42", so flipping
+        // every NUMBER to FloatLit would leave it green — the exact over-correction
+        // this case exists to catch. Reject the float rendering explicitly.
+        out.contains("42") && !out.contains("42.")
+    }
+}

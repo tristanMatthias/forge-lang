@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_export_decl, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_texpr, tok_starts_type, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, Tk, SrcPos, TypeParamEntry}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -94,10 +94,82 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.restore_hand_state(s_hand)
         st.restore_postfix_state(s_postfix)
     }
+    if st.cur().text == "extern" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_extern_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "fn" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_fn_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "trait" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_trait_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "impl" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_impl_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.restore_postfix_state(s_postfix)
+    }
     if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
     }
     parse_statement(st)
+}
+
+fn parse_body_item(st: PState) -> CapVal {
+    parse_declaration(st)
 }
 
 fn parse_use_decl(st: PState) -> CapVal {
@@ -324,6 +396,335 @@ fn parse_variant(st: PState) -> CapVal {
         }
     }
     mk_evariant(capval_tok_text(vname), vfields_list)
+}
+
+fn parse_fn_decl(st: PState) -> CapVal {
+    mut tparams_list: List<TypeParamEntry> = []
+    mut params_list: List<ParamEntry> = []
+    mut body_list: List<StmtId> = []
+    mut ret: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let name = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected >")
+        }
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected (")
+    }
+    if st.cur().tk == Tk.Identifier {
+        params_list.push(capval_to_pentry(st, parse_param(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            params_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected )")
+    }
+    if st.cur().tk == Tk.Arrow {
+        let _ = st.advance()
+        ret = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_body_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_fn_decl_g(st, capval_tok_text(name), tparams_list, params_list, ret, capval_present(ret), body_list)
+}
+
+fn parse_extern_decl(st: PState) -> CapVal {
+    mut eparams_list: List<ParamEntry> = []
+    mut eret: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().text == "fn" { let _ = st.advance() } else {
+        st.report("expected fn")
+    }
+    let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected (")
+    }
+    if st.cur().tk == Tk.Identifier {
+        eparams_list.push(capval_to_pentry(st, parse_param(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            eparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected )")
+    }
+    if st.cur().tk == Tk.Arrow {
+        let _ = st.advance()
+        eret = parse_type_expr(st)
+    }
+    mk_extern_fn(st, capval_tok_text(ename), eparams_list, eret, capval_present(eret))
+}
+
+fn parse_trait_decl(st: PState) -> CapVal {
+    mut tmembers_list: List<StmtId> = []
+    let _ = st.advance()
+    let trname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        let _ = parse_tparam(st)
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            let _ = parse_tparam(st)
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected >")
+        }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    while st.cur().text == "type" || st.cur().text == "fn" {
+        tmembers_list.push(capval_to_stmt(st, parse_trait_member(st)))
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_trait_decl(st, capval_tok_text(trname), tmembers_list)
+}
+
+fn parse_trait_member(st: PState) -> CapVal {
+    if st.cur().text == "type" {
+        return parse_assoc_member(st)
+    }
+    if st.cur().text == "fn" {
+        return parse_method_member(st)
+    }
+    CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_assoc_member(st: PState) -> CapVal {
+    let _ = st.advance()
+    let atname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    mk_assoc_type(st, capval_tok_text(atname))
+}
+
+fn parse_method_member(st: PState) -> CapVal {
+    mut tmparams_list: List<ParamEntry> = []
+    mut tmbody_list: List<StmtId> = []
+    mut tmret: CapVal = CapVal.Nil
+    mut tmlb: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let tmname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected (")
+    }
+    if st.cur().tk == Tk.Identifier {
+        tmparams_list.push(capval_to_pentry(st, parse_param(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            tmparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected )")
+    }
+    if st.cur().tk == Tk.Arrow {
+        let _ = st.advance()
+        tmret = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.LeftBrace {
+        tmlb = CapVal.Tok(st.advance())
+        let __pre_err = st.had_error
+        mut __any_err = __pre_err
+        while true {
+            if st.at_end() || st.cur().text == "}" { break }
+            let __sp = st.cur().pos
+            st.clear_error()
+            let __cv = parse_body_item(st)
+            if st.had_error {
+                __any_err = true
+                st.synchronize_stmt()
+                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+                let __elc = st.store.lines.to_linecol(__sp)
+                let __e = st.store.stmts.add_leaf(Stmt.Error)
+                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+                tmbody_list.push(__e)
+                st.clear_error()
+                continue
+            }
+            let __sid = capval_to_stmt(st, __cv)
+            let __lc = st.store.lines.to_linecol(__sp)
+            st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+            tmbody_list.push(__sid)
+        }
+        if __any_err { st.note_had_error() }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+    }
+    mk_trait_method(st, capval_tok_text(tmname), tmparams_list, tmret, capval_present(tmret), capval_present(tmlb), tmbody_list)
+}
+
+fn parse_impl_decl(st: PState) -> CapVal {
+    mut imethods_list: List<StmtId> = []
+    mut ifortn: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        let _ = parse_tparam(st)
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            let _ = parse_tparam(st)
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected >")
+        }
+    }
+    let itn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        let _ = parse_type_expr(st)
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            let _ = parse_type_expr(st)
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected >")
+        }
+    }
+    if st.cur().text == "for" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { ifortn = CapVal.Tok(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+        if st.cur().tk == Tk.Less {
+            let _ = st.advance()
+            let _ = parse_type_expr(st)
+            while st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+                let _ = parse_type_expr(st)
+            }
+            if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+                st.report("expected >")
+            }
+        }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    while st.cur().text == "fn" {
+        imethods_list.push(capval_to_stmt(st, parse_impl_method(st)))
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_impl(st, capval_tok_text(itn), ifortn, capval_present(ifortn), imethods_list)
+}
+
+fn parse_impl_method(st: PState) -> CapVal {
+    mut imparams_list: List<ParamEntry> = []
+    mut imbody_list: List<StmtId> = []
+    mut imret: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let imname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected (")
+    }
+    if st.cur().tk == Tk.Identifier {
+        imparams_list.push(capval_to_pentry(st, parse_param(st)))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            imparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected )")
+    }
+    if st.cur().tk == Tk.Arrow {
+        let _ = st.advance()
+        imret = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_body_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            imbody_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        imbody_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_method(st, capval_tok_text(imname), imparams_list, imret, capval_present(imret), imbody_list)
 }
 
 fn parse_statement(st: PState) -> CapVal {

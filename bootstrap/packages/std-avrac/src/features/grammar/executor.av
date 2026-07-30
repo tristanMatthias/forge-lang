@@ -1351,6 +1351,26 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return true }
         let nx = st.toks[st.pos + 1]
+        // A TYPED table literal `table<Row> { … }` is NOT a bare ident followed by a
+        // comparison — decline so it falls through to `@hand(ident_primary)`, which owns
+        // every IDENT-led disambiguation (parse_ident_expr checks the table form BEFORE
+        // any postfix). The sibling `ident_lbrace_plain` right below already excludes the
+        // UNTYPED `table { … }` for exactly this reason; the typed form was missed.
+        //
+        // Consequence of the miss: `table` was consumed as a plain IDENT and the `<` left
+        // to the postfix generic-call speculation, which parses `Row`, finds `>`, expects
+        // `(`, sees `{`, and rolls back — leaving `table` as a bare reference, i.e.
+        // `undefined variable table`. Only in STATEMENT position, because a `let`
+        // initializer reaches the hand first, which is what made it look positional
+        // rather than a predicate gap (tests/table_cells_test.av, reachable once #1075
+        // routed fn bodies natively).
+        //
+        // Token-level mirror of the hand's `peek_is_table_row_type`: `<` IDENT `>` `{`.
+        // emit lowers `@peek` to this same `lookahead_ok`, so both engines get the fix.
+        if st.cur().text == "table" && nx.text == "<" && st.pos + 4 < st.toks.length
+            && tok_starts_word(st.toks[st.pos + 2])
+            && st.toks[st.pos + 3].text == ">"
+            && st.toks[st.pos + 4].text == "{" { return false }
         return nx.text != "{" && nx.kind != "TEMPLATE"
     }
     if cond == "ident_template" {
@@ -1849,6 +1869,35 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // function-scope isolation the generated parser gets for free from `s_cut`
     // being a local. Groups share the env, so a cut nested in one propagates up.
     if item.cut && st.diags.length == env.cut_diags && st.had_error == env.cut_err { env.set_cut(true) }
+    // t-a9oy: ABORT A DOOMED BRANCH AT ITS CUT — the executor mirror of emit's
+    // `if !s_cut { break }` (emit.av `cut_abort`, t-x2fb). WITHOUT this the executor
+    // sets the commit flag above and then parses every remaining item anyway before
+    // the speculative arm discards them, which for `paren_expr`'s cut-guarded lambda
+    // BODY is a parse of the entire remaining expression: 2x per parenthesised group,
+    // i.e. 2^n. Measured on `fn f() { if (…) || … {` with n terms, executor vs emit at
+    // n=12: 9848ms vs 38ms; n=16 did not finish inside 60s.
+    //
+    // The commit guard is `cut || (no new diagnostics)` and diagnostics only ever GROW,
+    // so once the flag is still false HERE the second disjunct can never recover — the
+    // branch is provably going to roll back and everything past this point is wasted.
+    // `env.cut` is sticky within the branch (a FRESH flag per speculative arm, restored
+    // after), so an earlier cut that did commit correctly suppresses the abort, exactly
+    // as emit's `s_cut` local does.
+    //
+    // Routed via the EXISTING `@require` abort channel rather than a new one: exec_seq
+    // already stops on it and the speculative arm's rollback already clears it
+    // (`env.set_abort(false)`), so a doomed branch lands on the same rollback path emit's
+    // `break` targets. Silent error node — the branch is being discarded, so reporting
+    // here would add a diagnostic the emit side never produces.
+    //
+    // WHY THIS WAS INVISIBLE (t-zrn3): both recovery oracles disable the static fallback,
+    // so between them they measure emit and nothing else — while on invalid input the
+    // DEFAULT production path re-parses the item with THIS executor. emit got the t-x2fb
+    // fix; its mirror here was missed.
+    if item.cut && !env.cut {
+        env.set_abort(true)
+        return CapVal.Node(st.error_node_silent())
+    }
     // `@require`: a mismatch on this terminal ABORTS the rule. Detected by whether the
     // item reported — exec_primary's handle_missing already emits the sequence's
     // `@expect` message, so `@require` adds control flow only, never a second seam for
@@ -2789,7 +2838,20 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
     // grammar terminal (NUMBER/STRING/…) must produce the SAME id the hand parser
     // does or two `5`s diverge. `store.intern_expr_leaf` is `store.exprs.add_leaf`'s
     // interning twin (arena.av); non-eligible content falls through to add_leaf inside.
-    if t.kind == "NUMBER" { return st.store.intern_expr_leaf(Expr.Number(t.text)) }
+    // `Tk.Float` folds INTO the coarse "NUMBER" kind (real_lex.av: both `.Number` and
+    // `.Float` map to it, "the lexeme carries the dot"), so the KIND alone cannot tell
+    // `2` from `2.0` — the split must come off the TOKEN, exactly as hand parse_primary
+    // does it (`Tk.Number -> Expr.Number`, `Tk.Float -> Expr.FloatLit`). Building every
+    // NUMBER as `Expr.Number` silently truncated a float literal to its integer part:
+    // `f(2.0)` lowered to `call %fn_ptr(i64 2)` with no `avra_float_parse` at all, so
+    // the callee reinterpreted the i64 as a double (~1e-323) and returned a wrong
+    // NUMBER rather than crashing (t-9bz3). Only literals reaching a build through this
+    // core were affected — a float via a binding was fine, which is what made it look
+    // like a codegen bug rather than a parse one.
+    if t.kind == "NUMBER" {
+        if t.tk == Tk.Float { return st.store.intern_expr_leaf(Expr.FloatLit(t.text)) }
+        return st.store.intern_expr_leaf(Expr.Number(t.text))
+    }
     if t.kind == "STRING" { return st.store.intern_expr_leaf(Expr.String(t.text)) }
     if t.kind == "BOOL" { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
     // `null` / `none` are keyword tokens (Tk.KwNull/KwNone → the generic "KW" grammar
@@ -2814,10 +2876,16 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
 /// default. A static method (no leading `self`) is returned unchanged. Keeps
 /// the DSL's built AST structurally equal to the hand parser's, not merely
 /// render-equal (render_param_list omits param types).
-fn retype_self_param(params: List<ParamEntry>, target: string) -> List<ParamEntry> {
+/// `st` is needed because retyping `self` must maintain the F1d DUAL: a param in a
+/// type-carrying position owns a real type ROW alongside its vtype, and rewriting the
+/// vtype without re-ingesting leaves `ty_id` pointing at the pre-retype type — or, as
+/// here, at nothing at all. The hand parser stamps both; so must this.
+/// (f1a_container_duals_test's "self's ty_id carries the impl header type".)
+fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> List<ParamEntry> {
     if params.length == 0 { return params }
     if params[0].name != "self" { return params }
-    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: vtype_from_name(target) }]
+    let self_vt = vtype_from_name(target)
+    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: self_vt, ty_id: st.store.ingest_type(self_vt, byte_span_none()) }]
     mut i = 1
     while i < params.length {
         out.push(params[i])
@@ -3718,7 +3786,25 @@ export fn mk_return_opt(st: PState, val_cv: CapVal) -> CapVal {
 export fn mk_fn_decl(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
     let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
     let no_tp: List<TypeParamEntry> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, no_tp, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
+}
+
+/// A `Stmt.Function`'s walker edge set: EXACTLY one `TypeRef` for the bare return-type
+/// field. Body rows are id payloads and contribute no edges — the hand's
+/// `fn_decl/parser.av` says so verbatim ("the bare return-type field contributes a
+/// TypeRef (body rows are id payloads — no edges)"), and this must match it or the two
+/// parsers disagree about the tree's shape.
+///
+/// The native builders used `add_leaf`, which records ZERO edges, so every routed fn was
+/// stored as a LEAF: `children_of()` came back empty and the L1 non-leaf side-table
+/// counted 0 where the hand counted 3 (`nonleaf=0` vs `nonleaf=3`,
+/// core/tests/side_table_test.av). `dense=` matched throughout, which is the tell that
+/// the STATEMENTS were all present and only their edges were missing.
+///
+/// Void counts: a fn with no declared return still ingests a row for `Void` and carries
+/// its TypeRef, exactly as the hand does, so `fn c() { return }` is non-leaf too.
+fn fn_decl_edges(st: PState, ret_vt: ValueType) -> NodeEdges {
+    NodeEdges { refs: [NodeRef.TypeRef(st.store.ingest_type(ret_vt, byte_span_none()))] }
 }
 
 /// `type Name = { field* }` (the `MkTypeDecl` build's core, non-generic slice).
@@ -3743,7 +3829,8 @@ export fn mk_enum_decl(st: PState, name: string, vars: List<Variant>) -> CapVal 
 /// arms close it in lockstep (t-47hc slice 10, ticket t-myz7).
 export fn mk_fn_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
     let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, tps, params, ret_vt, body)))
+    // Same edge set as the non-generic core — the type-param list is a payload, not an edge.
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, tps, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
 }
 
 /// `type Name < tparam* > = { field* }` (the 3-arg `MkTypeDecl` build's core).
@@ -3925,7 +4012,7 @@ export fn mk_impl(st: PState, header: string, for_cv: CapVal, has_for: bool, met
     mut mangled_ids: List<StmtId> = []
     for id in methods {
         match st.store.stmts.get(id) {
-            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(ps, target), rv, bd)))
+            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(st, ps, target), rv, bd)))
             _ -> mangled_ids.push(id)
         }
     }
@@ -4046,6 +4133,31 @@ fn build_table_arms(st: PState, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVa
     mut out: List<MatchArm> = []
     // `header_count < 2` (i.e. no value columns) yields NO arms — the hand's early return.
     if cols.length == 0 { return out }
+    // t-qhbz: REQUIRE the declared width. The row's cell repetition is `*{#cols}`, and a
+    // `{#cap}` bound is AT MOST N — never a requirement (`item_bound_cap` stops at the cap
+    // but nothing demands it). So a token starting none of `table_cell`'s alternatives —
+    // a prefix operator like `-1`, which cells deliberately exclude — simply ENDS the row
+    // rather than reporting, and the outer row loop then consumes it as the NEXT row's
+    // `p:pattern`, because a negative literal IS a valid pattern. Everything is consumed
+    // and nothing complains, so
+    //
+    //     match e table { pat | delta
+    //         .A | -1
+    //         .B | 2
+    //     }
+    //
+    // checked CLEAN on both native engines (pats=[.A, -1, 2], vals=[.B]) while the hand
+    // parser rejected it F0040. A latent hole since t-47hc.29 — unreachable until fn
+    // bodies were routed natively, because a hand-parsed body never got here.
+    //
+    // This is the one place that knows BOTH the header's value-column count and the
+    // flattened cell count, so it is where the width becomes checkable. `cols` holds only
+    // the VALUE columns (the header's leading IDENT — the pattern column — is matched
+    // unlabelled), so a well-formed table has exactly one cell per row per value column.
+    if vals.length != pats.length * cols.length {
+        st.report("expected expression")
+        return out
+    }
     mut r = 0
     while r < pats.length {
         mut ids: List<ExprId> = []

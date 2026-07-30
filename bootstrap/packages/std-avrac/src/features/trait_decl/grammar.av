@@ -11,7 +11,7 @@ export fn avra_trait_decl_grammar() -> Grammar {
   trait_decl  = "trait" trname:IDENT ( "<" tparam ( "," tparam )* ">" )? "{" ( tmembers:trait_member )* "}" -> MkTraitDecl(trname, tmembers)
   trait_member  = assoc_member | method_member
   assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
-  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" ( tmbody:statement )* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
+  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( "," tmparams:param )* )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" tmbody:body_item* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
     }
     gp.grammar
 }

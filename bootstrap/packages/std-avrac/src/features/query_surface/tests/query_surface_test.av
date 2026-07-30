@@ -16,6 +16,29 @@ fn query_check_out(path: string, source: string) -> string {
     avra_shell_exec("bash scripts/diagnose.sh --slot-exec ./build/bs2 check '${path}' 2>&1 && echo __AVRA_CHECK_OK__ || true")
 }
 
+/// Assert the shared runtime profile AND surface the capture when it does not hold.
+///
+/// `write_fixture_and_run` ends its command in `|| true`, so a fixture that fails to
+/// compile or run yields output WITHOUT the expected markers and the spec reports a bare
+/// `FAIL` — no F-code, no stdout, nothing. These three runtime specs failed exactly that
+/// way on rc-strict while passing locally under both the default allocator and
+/// `AVRA_RC_STRICT=1`, which left no way to tell a real regression from a swallowed
+/// transient (the same blind-failure shape as cli_metadata's rc probe, and the reason
+/// that one absorbed three rounds of diagnosis).
+///
+/// Printing the capture costs nothing on the passing path and makes the next occurrence
+/// diagnosable from the CI log alone.
+fn query_profile_ok(label: string, out: string) -> bool {
+    let ok = out.contains("len=5") && out.contains("again=5 computes=1")
+    if !ok {
+        println("query_surface: expected `len=5` + `again=5 computes=1` from " + label)
+        println("--- captured output start ---")
+        println(out)
+        println("--- captured output end ---")
+    }
+    ok
+}
+
 // The family enum every runtime fixture shares: `Src` (ordinal 0) is the input
 // family; `TextLen` (1) and `Doubled` (2) are compute families. One enum → one
 // dense ordinal space → inputs and computes can never collide.
@@ -64,7 +87,7 @@ spec "@query(Fam.Variant) generates a working memoized query" {
             query_fam_enum() +
             query_fn_decl() +
             query_driver_tail())
-        out.contains("len=5") && out.contains("again=5 computes=1")
+        query_profile_ok("basic", out)
     }
 }
 
@@ -80,7 +103,7 @@ spec "@query implicit imports dedupe against the driver's own" {
             query_fam_enum() +
             query_fn_decl() +
             query_driver_tail())
-        out.contains("len=5") && out.contains("again=5 computes=1")
+        query_profile_ok("inject (no computed/content_id_for import)", out)
     }
 }
 
@@ -99,7 +122,7 @@ spec "a user symbol shadowing an engine name cannot capture generated code" {
             "\n" +
             query_fn_decl() +
             query_driver_tail())
-        out.contains("len=5") && out.contains("again=5 computes=1")
+        query_profile_ok("shadow (user fn named computed)", out)
     }
 }
 

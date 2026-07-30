@@ -20,7 +20,7 @@
 // `MkExport` has the identical gap and is still executor-only. It is what the `export`
 // WRAPPING increment will spend, so it needs the same treatment then.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -69,5 +69,61 @@ spec "t-47hc slice 10.6: `extern fn` is native, in BOTH engines" {
         // The executor-only state would still have passed the parity assertions above,
         // since those run the interpreter. This is the half that was absent.
         emit_parser_source(avra_program_grammar()).contains("mk_extern_fn(st, capval_tok_text(ename)")
+    }
+}
+
+// ── ROUTING (t-47hc slice 10.13) ─────────────────────────────────────────────
+//
+// `fn` and `extern fn` leave `@hand(decl_hand)` as `@try` branches — native for VALID
+// input, rolling back into the hand gate the moment they report, so error recovery stays
+// the hand parser's byte-for-byte (t-myz7.2, #1061).
+//
+// These two are the last-but-two, and they are what made the parameter list cross a view
+// boundary for the first time: `param` is defined in the EXPRESSION view (it is
+// paren_expr's typed-lambda parameter, shared rather than duplicated), so routing them
+// needed TWO cross-view declarations in emit.av — a declared FIRST in `rule_first_guard`
+// and a capture KIND in `rule_kind_v`. Without the second, the accumulator declares
+// `List<ExprId>` and coerces every parameter through `capval_to_expr`; the builders
+// reject that as a layout conflict, which is the loud version of a trap that has
+// silently corrupted trees before (see the `tparam` and `pattern` entries beside it).
+//
+// Sixteen malformed forms across the four keywords are in the invalid corpus
+// (error_recovery_differential_test), F-code and recovery-TREE both.
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+spec "t-47hc slice 10.13: `fn` and `extern` are routed onto the production path" {
+    then "both parse fns exist and dispatch BEFORE the decl_hand gate" {
+        let src = decl_src()
+        let fn_at = src.index_of("parse_fn_decl(st)")
+        let ex_at = src.index_of("parse_extern_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("fn parse_fn_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_extern_decl(st: PState) -> CapVal") &&
+            fn_at >= 0 && ex_at >= 0 && hand_at >= 0 && fn_at < hand_at && ex_at < hand_at
+    }
+
+    then "both branches are SPECULATIVE — on any diagnostic they roll back into the gate" {
+        let src = decl_src()
+        src.contains("s_last = parse_fn_decl(st)") &&
+            src.contains("s_last = parse_extern_decl(st)") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the parameter list crosses the view boundary as ParamEntry, not ExprId" {
+        // The cross-view capture-kind declaration, asserted on the OUTPUT. `List<ExprId>`
+        // here would be the silent-corruption form of the same mistake.
+        let src = decl_src()
+        src.contains("mut params_list: List<ParamEntry> = []") &&
+            src.contains("params_list.push(capval_to_pentry(st, parse_param(st)))")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 }
