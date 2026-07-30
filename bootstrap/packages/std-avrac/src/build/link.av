@@ -115,6 +115,19 @@ export fn atomic_cp_cmd(src: string, dst: string, pid: int) -> string {
     "cp '${src}' '${tmp}'" + atomic_rename_tail(tmp, dst)
 }
 
+/// Shell command that INSTALLS an already-process-private `src` onto `dst` by
+/// rename alone. The sibling of `atomic_cp_cmd` for producers that wrote their
+/// output to a pid-unique path in the first place: the copy is redundant there,
+/// and for a multi-hundred-MB artifact (a whole-compiler `.ll`) it is the
+/// dominant cost. A same-directory rename is atomic, so a concurrent reader of
+/// `dst` sees the previous file or this one — never a partial.
+///
+/// `src` must be private to this process; use `atomic_cp_cmd` when it is not
+/// (the copy-to-temp is what makes THAT case safe).
+export fn atomic_install_cmd(src: string, dst: string) -> string {
+    "mv -f '${src}' '${dst}'"
+}
+
 /// Resolve the LLVM install root for one link. Honours an explicit
 /// `opts.llvm_prefix` first, then the shared `llvm_prefix_dir()`
 /// probe. Centralised so every linker call ends up with the same

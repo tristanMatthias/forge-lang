@@ -96,7 +96,7 @@ use @std.avrac.build.{
     pool_run, pool_extract_rc,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for, cache_entry_realobj_path,
-    CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd,
+    CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
     package_full_fingerprint, source_slot_fp, fingerprint_paths,
 }
 use @std.crypto.{sha256_hex, sha256_file}
@@ -1954,6 +1954,26 @@ fn run_build_command(args: BuildArgs) {
                     compile_cmd = compile_cmd + " --module_path='${derived_path}'"
                 }
             }
+            // t-5s7l: the child writes to a PID-PRIVATE output, never the
+            // shared `<entry>.ll`. Two `bs2 build --lib` on one package (the
+            // shard fan-out shape: std_avrac_lib_build, cli_metadata and
+            // metadata_walker_method_dispatch each shell one out on
+            // packages/std-avrac) otherwise contend on that single path —
+            // this build's freshness unlink lands between the sibling's
+            // compile and its artifact read, and the sibling fails with
+            // "compile produced no IR" while every artifact it should have
+            // produced is correct on disk. That is the exact signature
+            // observed in CI: probe `std_avrac_build_rc_zero` FAIL with
+            // meta.bin, the cached IR, and the symbol probes all PASS.
+            //
+            // pdme.7 already named `--output` the supported answer here
+            // ("N processes contend on ONE slot but never on each other's
+            // output file"); the build driver was the last caller not using
+            // it. `--output` is not a compilation input, so the compile
+            // cache is unaffected — a hit just materialises the same IR at
+            // the path this process asked for.
+            let ll_out = "${entry_path}.build-${string(avra_getpid())}.ll"
+            compile_cmd = compile_cmd + " --output='${ll_out}'"
             compile_cmd = compile_cmd + " '${entry_path}'"
             // g2eo: when --emit_metadata is on AND a path-dep was
             // pre-built by pre_build_path_deps above, its `.meta.bin`
@@ -1973,20 +1993,25 @@ fn run_build_command(args: BuildArgs) {
             let t_before_compile = avra_uptime_ms()
             // A stale entry .ll left by ANY earlier run must never stand
             // in for this compile's output: the artifact check below and
-            // record_build_result's read both trust whatever sits at
-            // ll_path, so a crashed child would report Built off the
-            // previous run's IR — and publish that stale IR into the
-            // cache under the fresh fingerprint. Remove it up front so
-            // an artifact after the compile is necessarily the child's
-            // fresh output. (Materialise-atomically-or-validate-on-reuse
-            // doctrine: this is the validate-freshness half.)
-            let ll_path = "${entry_path}.ll"
+            // record_build_result's read both trust whatever they read,
+            // so a crashed child would report Built off the previous
+            // run's IR — and publish that stale IR into the cache under
+            // the fresh fingerprint. Freshness now comes from reading
+            // `ll_out` (this process's own private output) rather than
+            // from unlinking the shared path, which is both stronger and
+            // race-free: a leftover at `ll_path` can no longer be read at
+            // all. (Materialise-atomically-or-validate-on-reuse doctrine:
+            // this is the validate-freshness half.)
+            //
+            // Clear this pid's own slot first — a same-pid predecessor
+            // (pids recycle) is the one way `ll_out` could pre-exist.
             // avra_remove_file returns 1 on unlink success AND on
-            // already-absent; 0 only when a stale file genuinely
-            // survives — which would void the freshness guarantee, so
-            // fail loudly like the file's other load-bearing deletions.
-            if avra_remove_file(ll_path) != 1 {
-                fail("error: could not remove stale artifact ${ll_path} before compile")
+            // already-absent; 0 only when a file genuinely survives,
+            // which would void the freshness guarantee, so fail loudly
+            // like the file's other load-bearing deletions.
+            let ll_path = "${entry_path}.ll"
+            if avra_remove_file(ll_out) != 1 {
+                fail("error: could not remove stale artifact ${ll_out} before compile")
             }
             // Renders a multi-line sticky progress UI on a TTY:
             // resolver appends per-module timing events to a /tmp file,
@@ -2001,12 +2026,31 @@ fn run_build_command(args: BuildArgs) {
             let compile_rc = run_with_progress("${env_prefix}${compile_cmd}", "compiling ${unit_name}", total_estimate)
             let t_after_compile = avra_uptime_ms()
             if compile_rc != 0 {
+                // A failed compile must not leave an EARLIER run's artifact
+                // sitting at the entry path, where a later consumer would
+                // read it as this build's output (libbuild_stale_ll_test
+                // pins exactly that). The removal is confined to the failure
+                // path — the success path never touches the shared path
+                // except to install its own fresh IR — so it cannot delete a
+                // sibling's good artifact: concurrent builds of one package
+                // share its sources and therefore fail together.
+                let _ = avra_remove_file(ll_out)
+                let _ = avra_remove_file(ll_path)
                 fail("error: compile failed for ${unit_name} (child exit ${string(compile_rc)})")
             }
-            if !file_exists(ll_path) {
-                fail("error: compile produced no IR (looked for ${ll_path})")
+            if !file_exists(ll_out) {
+                let _ = avra_remove_file(ll_path)
+                fail("error: compile produced no IR (looked for ${ll_out})")
             }
-            let ll_content = read_file(ll_path)
+            let ll_content = read_file(ll_out)
+            // Install this build's own IR at the shared entry path for the
+            // consumers that read it there. Rename, so a concurrent reader
+            // sees whole IR either way, and so a whole-compiler `.ll` isn't
+            // copied byte-for-byte a second time.
+            if avra_shell_exec_status(atomic_install_cmd(ll_out, ll_path)) != 0 {
+                let _ = avra_remove_file(ll_out)
+                fail("error: could not install ${ll_out} at ${ll_path}")
+            }
             let metadata = ""
             let staging_id = "${unit_name}.${fp_short(fp)}"
             let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, "", "", staging_id)

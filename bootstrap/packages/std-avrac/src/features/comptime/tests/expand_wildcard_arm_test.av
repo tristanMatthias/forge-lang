@@ -16,6 +16,24 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
+/// Assert the marker, and on failure PRINT what the fixture actually said.
+///
+/// Both specs below assert `out.contains(MARKER)` over a shelled-out compile
+/// and run. A bare false tells you the marker is missing and nothing else —
+/// which is how this file failed once in CI's rc-strict suite with no way to
+/// tell a real expansion regression from a compile that never got that far.
+/// The capture is the evidence; a guard that discards it makes the next
+/// failure a guessing exercise. (Same shape as query_surface_test's
+/// query_profile_ok.)
+fn wildcard_ok(label: string, marker: string, out: string) -> bool {
+    let ok = out.contains(marker)
+    if !ok {
+        println("expand_wildcard[${label}]: expected `${marker}` — fixture output follows")
+        println(out)
+    }
+    ok
+}
+
 spec "@expand macro survives an executed wildcard arm (`_ -> {}`, rmzs GAP3)" {
     then "a fn child falling through .ComponentBlock arms expands (wildcard runs)" {
         let out = write_fixture_and_run("/tmp/avra_expand_wildcard_cb.av",
@@ -53,7 +71,7 @@ spec "@expand macro survives an executed wildcard arm (`_ -> {}`, rmzs GAP3)" {
             "    }\n" +
             "}\n" +
             "fn main() {}\n")
-        out.contains("WILDCARD_CB_OK")
+        wildcard_ok("component-block-arms", "WILDCARD_CB_OK", out)
     }
     then "component children falling through .Function arms expand (reverse direction)" {
         let out = write_fixture_and_run("/tmp/avra_expand_wildcard_fn.av",
@@ -93,6 +111,6 @@ spec "@expand macro survives an executed wildcard arm (`_ -> {}`, rmzs GAP3)" {
             "    }\n" +
             "}\n" +
             "fn main() {}\n")
-        out.contains("WILDCARD_FN_OK")
+        wildcard_ok("function-arms", "WILDCARD_FN_OK", out)
     }
 }
