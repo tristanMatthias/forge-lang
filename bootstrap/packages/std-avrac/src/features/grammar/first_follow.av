@@ -70,6 +70,10 @@ fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
         // `@peek` is the same zero-width, non-opaque shape (a token-lookahead gate,
         // not a hidden leaf) — no FIRST terminal, scanned past identically.
         .Peek(_) -> ffs_empty()
+        // `@gensym` binds instead of gating, but its FIRST behaviour is identical:
+        // zero-width, no terminal, not opaque. first_seq must scan past it or a rule
+        // that mints before its keyword would compute an empty FIRST and never dispatch.
+        .Gensym(_) -> ffs_empty()
     }
 }
 
@@ -98,7 +102,7 @@ fn first_node(g: Grammar, node: GNode, visited: List<string>) -> FirstSet {
 /// FIRST of a sequence — the first item's FIRST, extended through nullable
 /// (Opt/Star) leading items. EXACTLY tok_starts_seq's shape (One/Plus stop).
 fn ff_is_pred(prim: GPrim) -> bool {
-    match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
+    match prim { .Pred(_) -> true  .Peek(_) -> true  .Gensym(_) -> true  _ -> false }
 }
 
 /// True iff a branch LEADS with a `@peek(cond)` TOKEN-LOOKAHEAD predicate. `@peek`

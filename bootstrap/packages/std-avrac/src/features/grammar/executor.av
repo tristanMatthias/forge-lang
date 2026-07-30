@@ -784,13 +784,21 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -
         .Pred(_) -> false
         // `@peek` is the same zero-width shape — starts no token.
         .Peek(_) -> false
+        // `@gensym` mints a name and consumes nothing — starts no token either.
+        .Gensym(_) -> false
     }
 }
 
-/// True iff the primary is a zero-width predicate — a `@when(flag)` mode read OR a
-/// `@peek(cond)` token lookahead. Both are skipped by tok_starts_seq's leading scan.
+/// True iff the primary is ZERO-WIDTH — a `@when(flag)` mode read, a `@peek(cond)`
+/// token lookahead, or a `@gensym(tag)` mint. All three are skipped by tok_starts_seq's
+/// leading scan: none consumes a token, so none contributes a FIRST.
+///
+/// `@gensym` belongs here even though it BINDS rather than gates. It is skipped for the
+/// same reason and by the same rule — a rule that mints before its keyword (which is
+/// exactly where the hand mints, between consuming `if` and consuming `let`) would
+/// otherwise compute an empty FIRST and never be dispatched to.
 fn prim_is_pred(prim: GPrim) -> bool {
-    match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
+    match prim { .Pred(_) -> true  .Peek(_) -> true  .Gensym(_) -> true  _ -> false }
 }
 
 fn tok_starts_rule(g: Grammar, name: string, st: PState, visited: List<string>) -> bool {
@@ -2193,7 +2201,22 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // `@peek` is the same zero-width shape — the gate already ran (branch_pred_ok);
         // executing it consumes no token and yields no value.
         .Peek(_) -> CapVal.Nil
+        // `@gensym` is zero-width but NOT valueless: it mints here, in parse order, and
+        // the result is bound to the item's label by the ordinary bind() path.
+        //
+        // The name rides in a synthetic `CapVal.Tok` positioned at the CURRENT token, so
+        // a build reads it with `capval_tok_text` exactly like a captured IDENT and the
+        // capture-kind machinery needs no new entry. `pos` is the cursor rather than 0
+        // because a Tok's position is what span logic reads if anything ever does; a
+        // zero would place the minted name at the start of the file.
+        .Gensym(tag) -> CapVal.Tok(gensym_token(st, tag))
     }
+}
+
+/// The synthetic token a `@gensym(tag)` binds. Shared by both engines — emit renders a
+/// call to this same function, so the minted name and its token shape cannot drift.
+export fn gensym_token(st: PState, tag: string) -> Token {
+    Token { kind: "IDENT", text: fresh_name(st, tag), pos: st.cur().pos, tk: Tk.Identifier }
 }
 
 // ── The escape-hatch (@hand) — hand-written rules the grammar calls ──

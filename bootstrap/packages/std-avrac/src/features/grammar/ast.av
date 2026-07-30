@@ -79,11 +79,16 @@ fn seq_first_literal(seq: GSeq) -> string {
     ""
 }
 
-/// `@when` / `@peek` — consume no token, so they never contribute a FIRST.
+/// `@when` / `@peek` / `@gensym` — consume no token, so they never contribute a FIRST.
+///
+/// `@gensym` is here for `rule_first_literal`'s sake (via seq_first_literal): a rule that
+/// mints before its keyword must still resolve to that keyword, or `@require` on a
+/// reference to it could not name the token it expected.
 fn prim_is_zero_width(prim: GPrim) -> bool {
     match prim {
         .Pred(_) -> true
         .Peek(_) -> true
+        .Gensym(_) -> true
         _ -> false
     }
 }
@@ -288,6 +293,25 @@ export enum GPrim {
     /// the first IDENT for a `:`. `cond` names the lookahead check (validated against
     /// seed_parser.peek_cond_supported; executor.lookahead_ok maps it to a token test).
     Peek(cond: string)
+    /// `@gensym(tag)` — a zero-width GENERATOR. Consumes no token and gates nothing;
+    /// it MINTS a fresh name (`__<tag>_<n>` from the PState counter) and binds it to
+    /// this item's label, for a rule that DESUGARS rather than merely parses.
+    ///
+    /// `if let v = x { … }` is the case that forced it: the hand lowers it to a temp
+    /// binding, a none-check condition, and an unwrap-bind row prepended to the
+    /// then-block, and the temp's name comes from `self.fresh("iflet")`. A `-> build`
+    /// cannot mint it, because a build fires AFTER its whole sequence has parsed —
+    /// so a NESTED `if let` inside the subject or then-block would take a lower
+    /// number than its parent, inverting the hand's outer-first order. Minting at a
+    /// POSITION is the only way to reproduce that ordering, which is why this is a
+    /// primary rather than a build helper.
+    ///
+    /// It binds a `CapVal.Tok` carrying a synthetic token, so it reuses the ordinary
+    /// `tok` capture kind end to end — no new CapVal variant, no new `rule_kind_v`
+    /// entry, and `capval_tok_text` reads it like any other captured name. A wrong
+    /// capture kind is the silent-corruption failure mode #1075 documented, so the
+    /// cheapest thing here is to add no kind at all.
+    Gensym(tag: string)
 }
 
 /// The `-> …` build that constructs the result from captures.
