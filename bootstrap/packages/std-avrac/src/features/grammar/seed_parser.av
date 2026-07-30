@@ -423,7 +423,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -447,6 +447,16 @@ fn at_when_primary(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "when"
+}
+
+/// True when the cursor is `@gensym` — the zero-width GENERATOR primary. Same
+/// consumes-nothing shape as `@when`/`@peek`, but it BINDS rather than gates: it mints
+/// a fresh name into its label at the position it appears (t-47hc.26).
+fn at_gensym_primary(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "gensym"
 }
 
 /// True when the cursor is `@peek` — the zero-width LOOKAHEAD-predicate primary
@@ -665,7 +675,7 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                             return "`${mk}(${fl})` cannot appear on (or inside a group of) an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the mode set"
                         }
                         if prim_is_hand_or_pred(item.prim) {
-                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek` primary (rule `${rule}`)"
+                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek`/`@gensym` primary (rule `${rule}`)"
                         }
                         // A mode marker on a `@require` item would LEAK the set mode: the
                         // emitted wrapper is `save; set; <item>; restore`, and a failed
@@ -1114,12 +1124,15 @@ fn branch_is_expr_fold(b: GSeq) -> bool {
 }
 
 /// True for the primaries a @off marker must not wrap: a `@hand` delegate (manages
-/// its own parser modes) and a `@when` predicate (zero-width, consumes nothing).
+/// its own parser modes), and the zero-width ones that consume nothing — `@when`,
+/// `@peek`, and `@gensym`.
 fn prim_is_hand_or_pred(prim: GPrim) -> bool {
     match prim {
         .Hand(_) -> true
         .Pred(_) -> true
         .Peek(_) -> true
+        // Zero-width too: there is no sub-parse for a mode to be set around.
+        .Gensym(_) -> true
         _ -> false
     }
 }
@@ -1283,6 +1296,14 @@ fn parse_labeled(p: GP) -> GItem {
         }
     }
     let base = parse_postfix(p)
+    // An UNLABELLED `@gensym` mints a name nothing can read — always a mistake, and the
+    // silent kind: a build would see an absent capture and substitute an empty name, so
+    // the desugar would emit a binding literally called "". Checked here rather than in
+    // parse_primary because only this level knows the label.
+    match base.prim {
+        .Gensym(_) -> if label == "" { p.fail("`@gensym(tag)` must be LABELLED — the minted name is its only product (`t:@gensym(iflet)`)") }
+        _ -> {}
+    }
     GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, bound: base.bound }
 }
 
@@ -1335,6 +1356,10 @@ fn parse_postfix(p: GP) -> Postfix {
     match prim {
         .Pred(_) -> match rep { .One -> {}  _ -> p.fail("`@when(flag)` cannot take a `*`/`+`/`?` repetition suffix") }
         .Peek(_) -> match rep { .One -> {}  _ -> p.fail("`@peek(cond)` cannot take a `*`/`+`/`?` repetition suffix") }
+        // Same reasoning: minting N names for one item has no meaning, and the two
+        // engines would disagree about N (the interpreter's repeat loop makes no
+        // progress on a zero-width item, emit's would mint once).
+        .Gensym(_) -> match rep { .One -> {}  _ -> p.fail("`@gensym(tag)` cannot take a `*`/`+`/`?` repetition suffix") }
         _ -> {}
     }
     Postfix { rep, prim, bound }
@@ -1372,6 +1397,25 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" { hf = p.advance().text }
         p.expect_punct(")", "expected `)` to close `@hand`")
         return GPrim.Hand(hf)
+    }
+    // Zero-width GENERATOR: `@gensym(tag)` mints a fresh name at THIS position.
+    //
+    // The tag is a bare NAME, not a string literal, for the same reason every other
+    // marker argument is: it is interpolated into emitted source, so keeping it to the
+    // grammar's identifier shape means there is no escaping question. An unlabelled
+    // `@gensym` is a grammar-parse ERROR rather than a no-op — the whole point of the
+    // primary is the binding, so minting a name nothing can read is always a mistake,
+    // and it is exactly the silent kind (a build would see an absent capture and
+    // substitute an empty name).
+    if at_gensym_primary(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "gensym"
+        p.expect_punct("(", "expected `(` after `@gensym`")
+        mut tag = ""
+        if p.peek().kind == "NAME" { tag = p.advance().text }
+        if tag == "" { p.fail("`@gensym` needs a tag name — `@gensym(iflet)`") }
+        p.expect_punct(")", "expected `)` to close `@gensym`")
+        return GPrim.Gensym(tag)
     }
     // Zero-width mode predicate: `@when(flag)` gates its branch on a parse mode.
     if at_when_primary(p) {

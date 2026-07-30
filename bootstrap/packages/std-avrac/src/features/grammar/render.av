@@ -83,6 +83,7 @@ fn render_prim(p: GPrim) -> string {
         .Hand(hf) -> "@hand(${hf})"
         .Pred(m) -> "@when(${m})"
         .Peek(c) -> "@peek(${c})"
+        .Gensym(tag) -> "@gensym(${tag})"
     }
 }
 

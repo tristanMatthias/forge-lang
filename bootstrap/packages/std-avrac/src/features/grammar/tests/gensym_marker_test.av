@@ -1,0 +1,159 @@
+// WHY: t-47hc.26 — `@gensym(tag)`, the zero-width GENERATOR primary.
+//
+// THE PROBLEM IT SOLVES. `if let v = x { … }` is not a parse, it is a DESUGAR: the hand
+// lowers it to a temp binding, a none-check condition, and an unwrap-bind row prepended
+// to the then-block. The temp's name comes from `self.fresh("iflet")`, and the hand calls
+// that at a specific POINT — after consuming `if`, before consuming `let`.
+//
+// A `-> build` cannot reproduce that, and the reason is not stylistic. A build fires
+// AFTER its whole sequence has parsed, so for
+//
+//     if let a = p { if let b = q { … } }
+//
+// a build-minted temp would number the INNER binding first (its sequence completes
+// first), while the hand numbers the OUTER one first. Different names in the emitted IR
+// for the same program. Minting at a POSITION is the only construction that gets the
+// order right, which is why this is a primary and not a helper.
+//
+// WHAT THESE SPECS PIN. The ordering property directly — a grammar with two `@gensym`
+// items must number them left to right, and a NESTED rule's mint must come after its
+// parent's. Both would pass trivially against a build-based implementation on flat
+// input, so the nesting case is the one that discriminates.
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, render_grammar}
+use @std.avrac.core.{render_expr_id}
+
+/// Render what a rule BUILDS, so a returned mint is observable: a captured `CapVal.Tok`
+/// routes through `capval_to_expr` -> `literal_node` -> `Expr.Ident(text)`, so the minted
+/// name appears in the tree verbatim (`$x$1`).
+fn built(grammar_src: string, input: string) -> string {
+    let g = parse_grammar(grammar_src)
+    if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
+    let out = run_grammar_expr(g.grammar, input)
+    render_expr_id(out.store, out.root)
+}
+
+fn parses(grammar_src: string, input: string) -> bool {
+    let g = parse_grammar(grammar_src)
+    g.error == "" && !run_grammar_expr(g.grammar, input).had_error
+}
+
+fn grammar_error(grammar_src: string) -> string {
+    parse_grammar(grammar_src).error
+}
+
+fn rule_src(grammar_src: string, rule: string) -> string {
+    let g = parse_grammar(grammar_src)
+    if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
+    for gr in g.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(g.grammar, gr) }
+    }
+    ""
+}
+
+spec "t-47hc.26: @gensym is accepted as a zero-width primary" {
+    then "a labelled @gensym parses and does not consume a token" {
+        // If it consumed anything, the following NUMBER would not match.
+        parses("r = t:@gensym(tmp) n:NUMBER -> Grouping(n)", "7")
+    }
+    then "it round-trips through the renderer" {
+        // The grammar text is the source of truth for review, so a marker that does not
+        // render is a marker nobody can read back.
+        render_grammar(parse_grammar("r = t:@gensym(tmp) n:NUMBER -> Grouping(n)").grammar).contains("@gensym(tmp)")
+    }
+    then "an UNLABELLED @gensym is a grammar-parse error, not a silent no-op" {
+        // Minting a name nothing can read is always a mistake, and the silent kind: a
+        // build would see an absent capture and substitute an empty name.
+        grammar_error("r = @gensym(tmp) n:NUMBER -> Grouping(n)") != ""
+    }
+    then "a tagless @gensym is rejected" {
+        grammar_error("r = t:@gensym() n:NUMBER -> Grouping(n)") != ""
+    }
+    then "a repetition suffix on @gensym is rejected" {
+        // The two engines would disagree about N: the interpreter's repeat loop makes no
+        // progress on a zero-width item, emit's would mint once.
+        grammar_error("r = t:@gensym(tmp)* n:NUMBER -> Grouping(n)") != ""
+    }
+}
+
+spec "t-47hc.26: @gensym does not disturb branch dispatch" {
+    then "a branch that mints BEFORE its keyword still dispatches on the keyword" {
+        // The regression this guards: if the FIRST scan stopped at the zero-width mint
+        // instead of scanning past it, the branch's FIRST would be empty and it would
+        // never be selected. `if`-led, exactly the shape if_expr uses.
+        parses("r = @peek(if_let) \"if\" t:@gensym(iflet) \"let\" n:NUMBER -> Grouping(n)", "if let 7")
+    }
+    then "and a @peek-gated sibling is still reachable" {
+        // The other direction, written the way the real if_expr rule is: two `if`-led
+        // branches are genuinely ambiguous on FIRST alone, so the mint-carrying one is
+        // gated by the same `@peek(if_let)` that peels the form off in production. If the
+        // mint had made that branch unconditional, this input would take it and fail on
+        // the missing `let`.
+        parses("r = @peek(if_let) \"if\" t:@gensym(iflet) \"let\" n:NUMBER -> Grouping(n)\n" +
+               "  | \"if\" m:NUMBER -> Grouping(m)", "if 7")
+    }
+}
+
+spec "t-47hc.26: the EMITTED parser mints at the same position" {
+    then "the mint is emitted as a positional statement, not folded into the build" {
+        // Both engines must call the SAME gensym_token; a second minting path is the
+        // drift hazard every marker in this DSL is built to avoid.
+        rule_src("r = \"if\" t:@gensym(iflet) \"let\" n:NUMBER -> Grouping(n)", "r").contains("gensym_token(st, \"iflet\")")
+    }
+    then "it is emitted AFTER the leading keyword is consumed, not before" {
+        // Position is the entire point. The hand mints between consuming `if` and
+        // consuming `let`; if emit hoisted the mint to the top of the fn, a nested
+        // if-let would renumber exactly as a build-based implementation would.
+        let s = rule_src("r = \"if\" t:@gensym(iflet) \"let\" n:NUMBER -> Grouping(n)", "r")
+        let adv = s.index_of("st.advance()")
+        let mint = s.index_of("gensym_token")
+        adv >= 0 && mint > adv
+    }
+    then "the mint contributes no dispatch guard" {
+        // A zero-width binder gates nothing; a `true` conjunct or an absent one are both
+        // fine, but a guard mentioning the tag would mean it had become a condition.
+        !rule_src("r = \"if\" t:@gensym(iflet) \"let\" n:NUMBER -> Grouping(n)", "r").contains("iflet\") &&")
+    }
+}
+
+spec "t-47hc.26: names are minted in PARSE ORDER — the property a build cannot have" {
+    // THE DISCRIMINATING SPECS. Everything above this point passes just as happily
+    // against a naive build-minted implementation; only these two fail against one,
+    // and the nested case is the one that matters, because it is the shape a real
+    // `if let` inside another `if let` produces.
+    then "two mints in one sequence number LEFT TO RIGHT" {
+        let g = "r = a:@gensym(x) b:@gensym(x) n:NUMBER"
+        built(g + " -> Grouping(a)", "7") == "(group $x$1)" &&
+        built(g + " -> Grouping(b)", "7") == "(group $x$2)"
+    }
+    then "a NESTED rule's mint comes AFTER its parent's" {
+        // The inversion a build-based implementation produces: the child's sequence
+        // COMPLETES first, so its build fires first, so it would take $x$1 and the
+        // parent $x$2 — the reverse of what the hand's parse_if_let_header does.
+        let g = "r = t:@gensym(x) c:child n:NUMBER"
+        let child = "\nchild = u:@gensym(x) -> u"
+        built(g + " -> Grouping(t)" + child, "7") == "(group $x$1)" &&
+        built(g + " -> Grouping(c)" + child, "7") == "(group $x$2)"
+    }
+    then "and the two names are DISTINCT — the counter really advances" {
+        built("r = a:@gensym(x) b:@gensym(x) n:NUMBER -> Grouping(a)", "7") !=
+        built("r = a:@gensym(x) b:@gensym(x) n:NUMBER -> Grouping(b)", "7")
+    }
+}
+
+spec "t-47hc.26: a mint under a repeating or optional GROUP keeps its capture" {
+    // `@gensym` rejects a repetition suffix on ITSELF, but an enclosing GROUP may still
+    // repeat — and then the label is a LIST capture (`list_labels_of` via `under_multi`,
+    // `list_decl_type` declaring `t_list: List<Token>`). Emitting a plain `let` there
+    // leaves that list permanently empty while the executor's generic `bind()` fills it.
+    // Asserted on the emitted SOURCE because the divergence is invisible in the tree of
+    // any grammar whose build ignores the capture.
+    then "a repeated group PUSHES to the accumulator, it does not rebind" {
+        let s = rule_src("r = ( t:@gensym(x) \",\" )* \"end\" -> Grouping(t)", "r")
+        s.contains("t_list.push(gensym_token(st, \"x\"))") && !s.contains("let t = CapVal.Tok(gensym_token")
+    }
+    then "an optional group ASSIGNS the pre-declared capture, it does not shadow it" {
+        // A `let` inside the `if` would shadow the enclosing `mut t`, leaving it Nil.
+        let s = rule_src("r = ( t:@gensym(x) )? n:NUMBER -> Grouping(t)", "r")
+        s.contains("t = CapVal.Tok(gensym_token(st, \"x\"))") && !s.contains("let t = CapVal.Tok(gensym_token")
+    }
+}
