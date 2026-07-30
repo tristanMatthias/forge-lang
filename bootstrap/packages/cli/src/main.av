@@ -129,6 +129,38 @@ fn fail(message: string) {
     exit(1)
 }
 
+/// Remove the shared entry `.ll` on a build-failure path, but ONLY if it is
+/// still the same artifact this build observed before it spawned its child.
+///
+/// Two requirements meet here and pull in opposite directions:
+///
+///   - A failed build must not leave an EARLIER run's artifact at the entry
+///     path, where a later consumer would read it as this build's output
+///     (libbuild_stale_ll_test pins exactly that).
+///   - A failed build must not delete a SIBLING's artifact. `entry_path` is
+///     per-PACKAGE, so concurrent `bs2 build --lib` on one package share it —
+///     and a child killed by OOM/jetsam (routine in this tree, as the orphan
+///     sweep below says in as many words) fails while its sibling succeeds.
+///     An unconditional unlink erases IR that a sibling has just published,
+///     reintroducing one path over the very race this build compiles to a
+///     private output to avoid.
+///
+/// `mtime_before` (nanosecond granularity, 0 when the path was absent)
+/// distinguishes them. Delete only when something WAS there and is unchanged;
+/// an absent-then-present path, or a changed mtime, is a sibling's fresh
+/// publication and is left alone.
+///
+/// Not airtight, and deliberately not claimed to be: a sibling can install
+/// between the re-stat and the unlink. POSIX has no compare-and-unlink to
+/// close that, and the residual window is a few microseconds against a
+/// multi-second publication cadence — where the unconditional unlink lost the
+/// race for the whole duration of the sibling's compile.
+fn remove_entry_ll_if_unchanged(ll_path: string, mtime_before: int) {
+    if mtime_before == 0 { return }
+    if avra_file_mtime(ll_path) != mtime_before { return }
+    let _ = avra_remove_file(ll_path)
+}
+
 /// Diagnostic-rendering context shared by every pipeline-stage
 /// helper. Carries the three knobs every renderer needs:
 ///
@@ -2013,6 +2045,12 @@ fn run_build_command(args: BuildArgs) {
             if avra_remove_file(ll_out) != 1 {
                 fail("error: could not remove stale artifact ${ll_out} before compile")
             }
+            // Snapshot the shared entry artifact's identity BEFORE the child
+            // runs, so the failure paths below can tell a leftover from an
+            // earlier run (safe to remove) from a sibling's publication that
+            // landed while this build was compiling (must not be touched).
+            // See remove_entry_ll_if_unchanged.
+            let ll_mtime_before = avra_file_mtime(ll_path)
             // Orphan sweep. If THIS process is hard-killed (OOM/jetsam —
             // routine in this tree) between the child's write and the install
             // below, `ll_out` survives with no owner, and pids don't recur
@@ -2045,18 +2083,21 @@ fn run_build_command(args: BuildArgs) {
             if compile_rc != 0 {
                 // A failed compile must not leave an EARLIER run's artifact
                 // sitting at the entry path, where a later consumer would
-                // read it as this build's output (libbuild_stale_ll_test
-                // pins exactly that). The removal is confined to the failure
-                // path — the success path never touches the shared path
-                // except to install its own fresh IR — so it cannot delete a
-                // sibling's good artifact: concurrent builds of one package
-                // share its sources and therefore fail together.
+                // read it as this build's output (libbuild_stale_ll_test pins
+                // exactly that) — but it must not delete a SIBLING's artifact
+                // either. An earlier revision of this code removed `ll_path`
+                // unconditionally, on the reasoning that "concurrent builds of
+                // one package share its sources and therefore fail together".
+                // That is false for the failures this tree actually sees: an
+                // OOM/jetsam kill or any transient child failure is not shared
+                // with the sibling, which meanwhile publishes valid IR that the
+                // unlink then erases.
                 let _ = avra_remove_file(ll_out)
-                let _ = avra_remove_file(ll_path)
+                remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
                 fail("error: compile failed for ${unit_name} (child exit ${string(compile_rc)})")
             }
             if !file_exists(ll_out) {
-                let _ = avra_remove_file(ll_path)
+                remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
                 fail("error: compile produced no IR (looked for ${ll_out})")
             }
             let ll_content = read_file(ll_out)

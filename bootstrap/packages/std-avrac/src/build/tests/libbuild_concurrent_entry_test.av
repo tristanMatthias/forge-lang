@@ -171,23 +171,30 @@ spec "t-5s7l: `bs2 build --lib` does not depend on the shared entry .ll" {
         let _ = avra_shell_exec("rm -rf '${dir}'")
         ok
     }
-    then "the orphan sweep spares a sibling's in-flight private output" {
+    then "the orphan sweep reclaims an aged artifact and spares an in-flight one" {
         // The driver sweeps orphaned `<entry>.build-<pid>.ll` left by builds
         // that were hard-killed mid-flight. That sweep is age-gated (>1 day)
         // for a reason: this path is CONTENDED, so a blanket
         // `rm -f <entry>.build-*.ll` would delete a concurrent build's output
         // and reintroduce the race this file exists to prevent — one path over.
         //
-        // Plant a fresh decoy at a foreign pid's private path, run a build, and
-        // require it to survive. A blanket glob fails this; the age gate passes.
+        // BOTH halves of the age gate are asserted, because each alone is
+        // satisfiable by a degenerate sweep: checking only that the fresh decoy
+        // survives passes when the sweep is deleted outright, and checking only
+        // that the aged one is reclaimed passes for the blanket glob the age
+        // gate exists to rule out. Together they admit only the age gate.
         let dir = conc_mk_pkg("sweep")
         let decoy = "${dir}/src/lib.av.build-999999.ll"
         let _ = avra_selfhost_write_file(decoy, "; in-flight output of a concurrent build\n")
+        let orphan = "${dir}/src/lib.av.build-888888.ll"
+        let _ = avra_selfhost_write_file(orphan, "; abandoned by a hard-killed build\n")
+        let _ = avra_shell_exec("touch -t 202001010000 '${orphan}'")
         let rcs = conc_build_n(dir, 1)
         let survived = avra_selfhost_file_exists(decoy) == 1
-        let ok = rcs == "0" && survived
+        let reclaimed = avra_selfhost_file_exists(orphan) == 0
+        let ok = rcs == "0" && survived && reclaimed
         if !ok {
-            println("orphan sweep check failed: rc=[${rcs}] decoy survived=${string(survived)}")
+            println("orphan sweep check failed: rc=[${rcs}] fresh decoy survived=${string(survived)} aged orphan reclaimed=${string(reclaimed)}")
             println(conc_logs(dir, 1))
         }
         let _ = avra_shell_exec("rm -rf '${dir}'")
