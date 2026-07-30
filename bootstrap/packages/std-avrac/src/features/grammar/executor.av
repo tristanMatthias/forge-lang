@@ -1351,6 +1351,26 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return true }
         let nx = st.toks[st.pos + 1]
+        // A TYPED table literal `table<Row> { … }` is NOT a bare ident followed by a
+        // comparison — decline so it falls through to `@hand(ident_primary)`, which owns
+        // every IDENT-led disambiguation (parse_ident_expr checks the table form BEFORE
+        // any postfix). The sibling `ident_lbrace_plain` right below already excludes the
+        // UNTYPED `table { … }` for exactly this reason; the typed form was missed.
+        //
+        // Consequence of the miss: `table` was consumed as a plain IDENT and the `<` left
+        // to the postfix generic-call speculation, which parses `Row`, finds `>`, expects
+        // `(`, sees `{`, and rolls back — leaving `table` as a bare reference, i.e.
+        // `undefined variable table`. Only in STATEMENT position, because a `let`
+        // initializer reaches the hand first, which is what made it look positional
+        // rather than a predicate gap (tests/table_cells_test.av, reachable once #1075
+        // routed fn bodies natively).
+        //
+        // Token-level mirror of the hand's `peek_is_table_row_type`: `<` IDENT `>` `{`.
+        // emit lowers `@peek` to this same `lookahead_ok`, so both engines get the fix.
+        if st.cur().text == "table" && nx.text == "<" && st.pos + 4 < st.toks.length
+            && tok_starts_word(st.toks[st.pos + 2])
+            && st.toks[st.pos + 3].text == ">"
+            && st.toks[st.pos + 4].text == "{" { return false }
         return nx.text != "{" && nx.kind != "TEMPLATE"
     }
     if cond == "ident_template" {
