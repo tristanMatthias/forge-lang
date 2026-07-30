@@ -577,6 +577,24 @@ Two things this changed that you'd otherwise trip over:
 
 **A local `diff-test` PASS is UNTRUSTWORTHY unless the compiler was built COLD — CI is the authority.** `make diff-test PREBUILT=1` (and any local run against a warm `build/bs2`) reuses caches / the metadata fast-path that can MASK real compiler breakage — a warm build can be green while the cold build CI runs is broken (the same trap CLAUDE.md notes for `build-quick`). This bit hard on the abandoned PR #976: a local hermetic PASS was declared a "flake" when CI diverged; CI diverged *again identically* — it was never a flake, the local run was a false pass. **Before trusting a diff-test locally, build cold** (`make clean` first, or run the hermetic `make diff-test` with no `PREBUILT`), and treat CI's cold result as the source of truth. Do NOT relabel a CI diff-test divergence as a flake without cold-reproducing it locally first.
 
+**And a PREBUILT *FAILURE* is equally untrustworthy — the false-FAILURE direction (t-v91z).** The
+false-PASS trap above is documented; its inverse reads far more convincingly and cost a full
+session. Under `PREBUILT=1`, **NEW is your WORKING TREE while OLD is a REF** (the base branch), so
+the two sides differ by your edits *plus every base commit your branch predates*. Any such commit
+that changes emitted IR is reported as a divergence caused by your change. The caught instance:
+PR #1076 briefly made the entry parse fill in `SrcPos.file` (`parse_program_source_at(source,
+ctx.path)`), and `Ctx.source_file` — assigned from `pos.file` (codegen/blocks.av), not from any
+build-time constant — feeds `@src_file` into `avra_null_deref_trap`. A branch based before #1076
+therefore emitted `@src_file = [1 x i8] zeroinitializer` while the OLD oracle at the newer base
+emitted the path: 7 divergences, all one line, none attributable to the branch. CI was green
+throughout, because CI's NEW is the PR **merge ref** and so inherits the base commit — so
+"local red, CI green" is the SIGNATURE of this, not evidence of a harness bug.
+**Before believing a local divergence, rebase onto the current integration tip and re-run.** Note
+the false-PASS remedy (rebuild `bs2` first) does NOT help here: the stale thing is the BASE, not the
+binary. Three separate wrong attributions were filed before the base mismatch was spotted, each
+from a single measurement with no control — so when the two sides disagree, first ask what differs
+about them *besides* your edits.
+
 **Sweep-first COMMITS on a small box.** The pre-commit hook's parallel per-file suite OOMs when it runs COLD — and any compiler-source edit (comments included) changes source fingerprints, so every shard compile goes cold. The commit pattern that survives: `make build-quick && make sweep FRESH=1` first (sequential, restart-resumable), THEN `git commit` — the hook's suite replays the sweep-warmed fixture captures at low load (a warm gate is ~2-3 min). Doc/test-only commits (no compiler source) skip the sweep. Also check `du -sh /tmp/build` when disk runs low: fixtures compiling with cwd=/tmp leak a compile cache; `make cache-gc` now reaches it (t-2qn0 — `--prune-tmp-scratch` sweeps `/tmp/avra_*` + `/tmp/build`; the residual cwd=/tmp compile foot-gun is t-wrgc).
 
 ### C-side debug tools (runtime.c)
