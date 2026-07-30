@@ -261,7 +261,15 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         // structurally invisible (the t-zrn3 blind spot). `agree_all` is the third
         // comparison; without it, "all paths agree on the trailing dot" was an
         // assumption, not a measurement.
-        agree_all("fn f() -> int {\n let q = a.\n return 0\n}") &&
+        // `agree_error` FIRST on each input, then `agree_all`: on its own `agree_all`
+        // only checks that the three signatures MATCH, so it passes vacuously if every
+        // path silently accepts a malformed input — three empty strings agree. Pairing
+        // it with the non-empty check is this file's own rule (the `agree_bad`
+        // docstring), and the reason is the `shape` regression: a guard that cannot
+        // fail is worth nothing.
+        agree_error("fn f() -> int {\n let q = a.\n return 0\n}") &&
+            agree_all("fn f() -> int {\n let q = a.\n return 0\n}") &&
+            agree_error("fn f() -> int {\n let q = a.b.\n return 0\n}") &&
             agree_all("fn f() -> int {\n let q = a.b.\n return 0\n}")
         // `a?.` is DELIBERATELY absent: it genuinely diverges (native F0001 vs hand
         // F0040) and the divergence PREDATES the `.` fallback — the pre-#1078 compiler
