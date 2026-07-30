@@ -246,7 +246,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // disjoint, so the order between them is free; the head is pinned here only to
         // keep the assertion specific rather than to fix a required order.
         src.contains("while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
-        src.contains("st.cur().tk == Tk.Dot || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Question || st.cur().tk == Tk.QuestionDot || st.cur().tk == Tk.Less || st.cur().text == \"catch\" {") &&
+        // The `@hand` tail's raw postfix-op set USED to close this union, and this
+        // assertion pinned it. t-47hc.33.2 deleted the delegate, so that disjunct is
+        // gone with it — what remains is the union of the NATIVE branches' FIRSTs, and
+        // the `.` now enters through the @fallback branch that owns the trailing-dot
+        // diagnostic rather than through a hand tail.
+        !src.contains("run_hand_expr(\"postfix_suffix\", st)") &&
+        src.contains("st.cur().tk == Tk.Dot") &&
+        src.contains("st.cur().text == \"catch\"") &&
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
         // `with_suffix = @hand(…)`), so each of the 19 FIRST-disjoint bases CALLS the one
         // generated fn instead of re-inlining run_hand_expr.

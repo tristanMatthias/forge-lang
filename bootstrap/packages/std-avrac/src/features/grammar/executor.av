@@ -1671,8 +1671,47 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
             // it such a rule can only ever emit the generic message below, and the two
             // closing-`]` diagnostics `index_tail` must reproduce are unreachable.
             // Checked AFTER the loop, so an earlier matching branch still wins.
-            for fb in branches {
-                if fb.fallback { return exec_seq(g, fb, st, env, multi, outer_annots) }
+            //
+            // …but NOT after a speculation DECLINED (t-lqzu). "No branch's FIRST matched"
+            // and "a branch matched, ran, and rolled back" are different states, and only
+            // the first entitles the fallback to report. A `@fallback` is scoped to its own
+            // led-form family — it owns the message for a token that starts neither of ITS
+            // forms — so handing it an unrelated token makes it report on something it was
+            // never about. With `@hand(postfix_suffix)` as the tail this was invisible: a
+            // declining hand accepts any token and returns the base unchanged. Once the
+            // delegate was deleted the tail became a `.`-requiring branch, so `a < b` —
+            // whose generic-call branch enters on the `<` and un-decides — fell in here,
+            // was told to find a FIELDNAME, reported, and the `@require` abort turned the
+            // whole chain into `error_node_silent()`. The comparison then rendered
+            // `(< <error> b)` with its LHS replaced.
+            //
+            // The `tried_spec` return below is the correct answer for that state: a clean
+            // "no match" the caller decides about. A leading-`@hand` or recovery-owning
+            // bare-ref tail is different and still runs after a rollback — that IS the
+            // `@try`-rolls-back-into-the-hand-gate contract, and the decl routing needs it.
+            // A fallback also only owns tokens its OWN guard admits. `postfix_suffix`'s FIRST
+            // is the whole postfix-op set (`. ( [ ! ? ?. < catch`) — a deliberate SUPERSET of
+            // what any branch can complete — so the `( postfix_suffix )*` loop enters on a
+            // `<` even when nothing can consume it (`1 < 2`: the generic-call branch needs
+            // `base_callable`, and a NUMBER base is not). The `@hand` tail used to absorb
+            // that by declining; a `.`-led `@fallback` must not inherit the job, or every
+            // comparison against a non-callable base reports "expected field name". So run
+            // the fallback only when `branch_pred_ok` says its guard holds (for the `.`
+            // branch that is `dot_postfix_ok`, which tests `st.cur().tk == Tk.Dot`), and
+            // treat a guard-declining fallback as "this rule does not apply" — the same
+            // clean no-match a rolled-back speculation yields, which is what lets the
+            // repetition's no-progress break end the chain instead of reporting.
+            //
+            // An UNGUARDED fallback (index_tail's `]` branch) has no Pred items, so
+            // branch_pred_ok is trivially true and it still runs exactly as before.
+            mut fb_declined = false
+            if !tried_spec {
+                for fb in branches {
+                    if fb.fallback {
+                        if branch_pred_ok(fb, st) { return exec_seq(g, fb, st, env, multi, outer_annots) }
+                        fb_declined = true
+                    }
+                }
             }
             // A SINGLE-branch alternation is run UNCONDITIONALLY by emit — there is
             // nothing to dispatch between, so `emit_single_branch` (and emit_node_items'
@@ -1704,7 +1743,9 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
             // A rolled-back speculative attempt is a clean "no match" (diags/had_error
             // already restored) — let the caller (an enclosing alternation, a `*`/`?`, or
             // a required position) decide; do NOT synthesise a spurious parse error.
-            if tried_spec { return CapVal.Nil }
+            // `fb_declined` joins it for the same reason: a guarded fallback that declined is
+            // this rule saying "not mine", not a parse error to synthesise (t-lqzu).
+            if tried_spec || fb_declined { return CapVal.Nil }
             CapVal.Node(st.error_node("unexpected token `${st.cur().text}`"))
         }
     }

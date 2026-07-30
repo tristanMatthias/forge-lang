@@ -112,7 +112,7 @@ spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
     then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
         postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
     }
-    then "the `@hand` tail is STILL present — deleting it is t-47hc.33.2, not this ticket" {
-        postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
+    then "the `@hand` tail is GONE — t-47hc.33.2 retired it" {
+        !postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }

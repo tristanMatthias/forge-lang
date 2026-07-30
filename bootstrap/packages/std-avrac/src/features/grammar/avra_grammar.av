@@ -171,9 +171,19 @@ fn avra_expr_core() -> Grammar {
                  | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
+                 // A `.` that starts a postfix step but COMPLETES none. Every `.`-led branch
+                 // above is @peek-gated on a valid field name, so `a.` (trailing dot, or a dot
+                 // followed by anything unusable) satisfies none of them. The hand has no such
+                 // gate — its entry guard is `Tk.Dot && dot_is_postfix` alone, so it ENTERS its
+                 // `.` arm and `consume_field_name` reports. While `@hand(postfix_suffix)` was
+                 // the tail that difference was invisible; without it NO branch owns the
+                 // diagnostic and the stray `.` is re-read at statement level (emit F0001 vs
+                 // the hand's F0040, and a different recovery tree). @fallback makes this the
+                 // unguarded last native `.` branch, exactly as index_tail's `]` branch owns
+                 // the message for a token that starts neither of ITS forms.
+                 | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`") -> MkFieldAccess(n)
                  | ^"(" @on_if(base_field_access, allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
                  | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
-                 | @hand(postfix_suffix)
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
   // The `f<T>(args)` branch is the ONE speculative form in the chain, and every marker on
   // it is chosen against try_parse_generic_call (features/generics/parser.av) rather than
