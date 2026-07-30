@@ -21,6 +21,8 @@
 // of the compiler under test.
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_parse_int(s: string) -> int
 
 /// A checked-in source file large enough that parsing it costs well over
 /// 100 MiB — the compiler's generated expression parser.
@@ -66,4 +68,119 @@ spec "t-drl0: the compiler bounds its own memory instead of being OOM-killed" {
         let out = check_with_mem_limit("0", BIG_FILE)
         !out.contains("F4014")
     }
+}
+
+/// The ceiling this process would enforce, in KiB (0 = disabled).
+extern fn avra_mem_limit_kb() -> int
+
+/// The ceiling POLICY, as a pure fn of (MemAvailable, MemTotal) in KiB.
+///
+/// Tested directly rather than end to end, because the failure is a property of
+/// the INPUTS and this box does not supply them: on a quiet machine
+/// MemAvailable is high, every plausible policy agrees, and an end-to-end
+/// assertion passes just as happily against the derivation that broke. Feeding
+/// the numbers from the CI failure is the only way to make the guard able to
+/// fail.
+extern fn avra_mem_ceiling_for(avail_kb: int, total_kb: int) -> int
+
+// The measured CI failure, in KiB: a 16 GiB runner whose MemAvailable had dipped
+// to ~3.8 GiB while sibling shards held memory.
+const CI_AVAIL_KB: int = 3915776      // ~3.73 GiB — the reading that produced 3441 MiB
+const CI_TOTAL_KB: int = 16777216     // 16 GiB
+// What compiling the whole compiler actually peaks at (~3.4 GiB), in KiB. The
+// ceiling must sit ABOVE this for a known-good build to survive.
+const WHOLE_COMPILER_PEAK_KB: int = 3525632
+
+spec "the DEFAULT ceiling is floored against MemTotal, not left to a load-time dip" {
+    then "the default ceiling is at least half of MemTotal" {
+        // The default was 90% of MemAvailable sampled ONCE at startup. Under a
+        // parallel build that samples the NEIGHBOURS: a child starting while sibling
+        // shards hold memory bakes a low ceiling for its whole life, even as they
+        // finish and the memory comes back. In CI that produced
+        //
+        //     error[F4014]: compiler memory ceiling exceeded
+        //                   — 3443 MiB resident (ceiling 3441 MiB)
+        //       phase: parse src/typeck/typeenv_cache.av
+        //
+        // on `bs2 build --lib` for @std/avrac: 3441 MiB is 90% of a transiently-low
+        // ~3.8 GiB reading, and compiling the whole compiler legitimately peaks
+        // around 3.4 GiB — so the ceiling landed UNDER a known-good build. It took
+        // several CI runs to even see, because the build's ARTIFACTS were all fine
+        // (cache hits) and only its exit code was wrong.
+        //
+        // MemTotal does not move under load, so the ceiling now floors at half of
+        // it. Asserted against /proc/meminfo rather than a baked constant so the
+        // guard travels to whatever box it runs on; skipped where MemTotal is
+        // unreadable (non-Linux), since the floor is only derivable there.
+        //
+        // NOTE: this spec must not run under a forced AVRA_MEM_LIMIT_MB — an
+        // explicit setting legitimately wins over the floor (the specs above depend
+        // on that, and would go vacuous otherwise), so a forced value here would
+        // make this assertion measure the wrong thing.
+        default_ceiling_clears_memtotal_floor()
+    }
+    then "at the EXACT numbers that broke CI, the ceiling clears the build's peak" {
+        // The regression, stated as the property that failed. Under the old
+        // derivation this is 90% of 3.73 GiB = 3441 MiB, which is BELOW the ~3.4 GiB
+        // a legitimate whole-compiler build reaches — so the build died. This is the
+        // assertion that goes red if the floor is removed.
+        let ceiling = avra_mem_ceiling_for(CI_AVAIL_KB, CI_TOTAL_KB)
+        let ok = ceiling > WHOLE_COMPILER_PEAK_KB
+        if !ok {
+            println("ceiling ${string(ceiling)} KiB does not clear the whole-compiler peak ${string(WHOLE_COMPILER_PEAK_KB)} KiB")
+        }
+        ok
+    }
+    then "and the OLD availability-only policy would NOT have — so that guard can fail" {
+        // Non-vacuity, pinned rather than asserted in a commit message. The old
+        // derivation yields (3915776/10)*9 = 3524198 KiB = 3441 MiB, against a peak
+        // of 3525632 KiB = 3443 MiB — the exact pair the CI diagnostic reported:
+        //
+        //     — 3443 MiB resident (ceiling 3441 MiB)
+        //
+        // So the previous spec is decided by a ~1.4 MiB margin that falls the wrong
+        // way without the floor. Delete the floor and it goes red; this `then` is
+        // what proves that, and it keeps proving it as the constants evolve.
+        let old_policy = (CI_AVAIL_KB / 10) * 9
+        !(old_policy > WHOLE_COMPILER_PEAK_KB)
+    }
+    then "a dip in MemAvailable cannot drag the ceiling below half of MemTotal" {
+        // The floor, in isolation and at its extreme: availability near zero.
+        avra_mem_ceiling_for(1, CI_TOTAL_KB) == CI_TOTAL_KB / 2
+    }
+    then "on a QUIET box availability still wins — the floor is a floor, not a cap" {
+        // Otherwise the fix would have capped every build at half the box, which is
+        // the opposite failure: a 16 GiB machine with 15 GiB free must still allow
+        // ~13.5 GiB, not 8 GiB. (snw0's whole-program shard peaks at ~11.4 GiB and
+        // would have started false-tripping.)
+        let quiet_avail = 15728640          // 15 GiB free on a 16 GiB box
+        avra_mem_ceiling_for(quiet_avail, CI_TOTAL_KB) == (quiet_avail / 10) * 9
+    }
+    then "an unknown MemTotal degrades to the availability-only rule" {
+        // Non-Linux / unreadable /proc: no floor is derivable, so the policy must
+        // fall back rather than produce a 0 ceiling and silently disable itself.
+        let quiet_avail = 15728640
+        avra_mem_ceiling_for(quiet_avail, 0) == (quiet_avail / 10) * 9
+    }
+}
+
+/// True when the process-wide ceiling is at least half of MemTotal — or when
+/// the floor is not derivable/applicable here, in which case there is nothing
+/// to assert. A helper fn rather than inline branches because an early `return`
+/// inside a `then` block is F0901 (it would exit the whole file's initializer
+/// and silently drop every later test).
+fn default_ceiling_clears_memtotal_floor() -> bool {
+    let total_kb_s = avra_shell_exec("awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null").trim()
+    // MemTotal unreadable (non-Linux): the floor is only derivable there.
+    if total_kb_s == "" { return true }
+    // An explicit setting legitimately wins over the floor, so under a forced
+    // AVRA_MEM_LIMIT_MB this assertion would measure the wrong thing.
+    if avra_process_env_get("AVRA_MEM_LIMIT_MB") != "" { return true }
+    let floor_kb = avra_parse_int(total_kb_s) / 2
+    let got_kb = avra_mem_limit_kb()
+    if got_kb < floor_kb {
+        println("default ceiling ${string(got_kb)} KiB is below the MemTotal floor ${string(floor_kb)} KiB")
+        return false
+    }
+    true
 }
