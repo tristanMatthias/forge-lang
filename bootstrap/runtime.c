@@ -5088,9 +5088,33 @@ static int64_t avra_mem_total_kb(void) { return avra_meminfo_kb("MemTotal:"); }
 //     bound. So: track availability when the box is genuinely quiet, but never
 //     conclude from a neighbour's spike that this process may use less than the box
 //     could always have given it.
+// The floor is THREE QUARTERS of MemTotal, not half.
+//
+// It was half, chosen to clear a whole-compiler peak believed to be ~3.4 GiB. That
+// figure was wrong, and wrong in the direction that matters: it was read off the
+// F4014 diagnostic's "3443 MiB resident" — the size the process had reached when the
+// ceiling KILLED it, not the size it would have reached had it finished. Measured
+// properly (poll RSS with the ceiling disabled, `bs2 compile --emit_metadata` on
+// @std/avrac), that build peaks at ~7.0 GiB locally and reached 7997 MiB on a CI
+// runner. Against a 16 GiB box the half-of-total floor is 7994 MiB, so the headroom
+// that looked like 2.3x was in fact NEGATIVE, and rc-strict failed with
+//
+//     error[F4014]: compiler memory ceiling exceeded
+//                   — 7997 MiB resident (ceiling 7994 MiB)
+//       phase: parse src/typeck/typeenv_cache.av
+//
+// which is the same shape as the failure the floor was added to fix, one octave up.
+//
+// Three quarters clears the measured peak with ~4.5 GiB of margin on a 16 GiB runner
+// while still stopping a genuine runaway well before the OS OOM-killer — which is the
+// ceiling's entire purpose. It also restores coherence with the documented default:
+// 75% of the box, or 90% of what is actually free, whichever is HIGHER.
+//
+// Divide-then-multiply, matching the availability rule's idiom, so a large MemTotal
+// cannot overflow the intermediate.
 int64_t avra_mem_ceiling_for(int64_t avail_kb, int64_t total_kb) {
     int64_t from_avail = (avail_kb > 1024 * 1024) ? (avail_kb / 10) * 9 : 0;
-    int64_t floor_kb = (total_kb > 0) ? total_kb / 2 : 0;
+    int64_t floor_kb = (total_kb > 0) ? (total_kb / 4) * 3 : 0;
     return (from_avail > floor_kb) ? from_avail : floor_kb;
 }
 

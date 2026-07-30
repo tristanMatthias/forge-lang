@@ -26,14 +26,14 @@
 // correctly BEFORE the flip spends it — and because `peek_guard` emits a call to
 // the same `lookahead_ok` the interpreter runs, proving it here proves it for the
 // generated parser too.
-use @std.avrac.features.grammar.{lookahead_ok, new_pstate, parse_grammar, run_grammar_expr}
+use @std.avrac.features.grammar.{lookahead_ok, new_pstate, parse_grammar, run_grammar_expr, run_grammar_expr_toks, lex_real}
+use @std.avrac.core.{new_node_store, build_line_index}
 
 // Ask the predicate DIRECTLY, over a PState built by `new_pstate` — which attaches
-// a real `@hand` delegate, and therefore a real feature Registry. That matters:
-// `run_grammar_expr` threads `hand_delegate: null`, and with no registry to consult
-// the predicate deliberately answers "not plain" for everything (see
-// executor.lookahead_ok), so a grammar-shaped probe over that entry could not
-// distinguish the registry case at all.
+// a real `@hand` delegate, and therefore a real feature Registry. `run_grammar_expr`
+// attaches the same delegate now (t-47hc.31), so a grammar-shaped probe over that
+// entry distinguishes the registry case too and the spec below asserts both forms;
+// only the token-only entry, which carries no source, still answers conservatively.
 //
 // `lookahead_ok` is also the exact function the EMITTED parser calls — `peek_guard`
 // emits `lookahead_ok("<cond>", st)` — so asserting it here covers the interpreter
@@ -75,10 +75,34 @@ spec "t-47hc.8: with NO registry available the predicate is CONSERVATIVE" {
     then "no delegate ⇒ not plain, so the hand keeps every ident+`{` form" {
         // The safe direction: a false negative leaves a struct literal to the hand
         // (correct, byte-identical); a false positive would let a native branch
-        // swallow a construct whose feature owns the block. `run_grammar_expr`
-        // threads no delegate, so this is the live shape of that path.
+        // swallow a construct whose feature owns the block.
+        //
+        // The live shape of that path is the TOKEN-ONLY entry. `run_grammar_expr`
+        // used to be it too, and that was the bug (t-47hc.31): with no registry the
+        // predicate declined for EVERY name, so the native struct-literal branch was
+        // unreachable in every interpreter oracle and `Foo { x: 1 }` was answered by
+        // the `@hand(primary_base)` tail — five equivalence specs measuring the hand
+        // parser while naming the grammar rule. Source-carrying entries now attach a
+        // real delegate; `run_grammar_expr_toks` carries no source, so an `@hand` leaf
+        // has nothing to re-parse and the conservative answer is the correct one.
         let gp = parse_grammar("r = @peek(ident_lbrace_plain) n:IDENT \"{\" \"}\"")
-        run_grammar_expr(gp.grammar, "Point { }").had_error
+        let src = "Point { }"
+        run_grammar_expr_toks(gp.grammar, lex_real(src), new_node_store(build_line_index(src))).had_error
+    }
+    then "…while the SOURCE-carrying entry, which has the registry, says plain" {
+        // The other half, and the one that keeps the spec above from re-freezing the
+        // vacuity: the same grammar over the same text through `run_grammar_expr`
+        // must now PARSE, because the delegate it attaches answers the registry
+        // question truthfully — `Point` is nobody's `kw { … }` construct.
+        let gp = parse_grammar("r = @peek(ident_lbrace_plain) n:IDENT \"{\" \"}\"")
+        !run_grammar_expr(gp.grammar, "Point { }").had_error
+    }
+    then "and it still excludes a REGISTERED construct over that same entry" {
+        // Registry-driven, not name-matched: `grammar` owns its block, so the
+        // predicate declines and the branch does not enter — the property the
+        // conservative null answer was standing in for, now actually measured.
+        let gp = parse_grammar("r = @peek(ident_lbrace_plain) n:IDENT \"{\" \"}\"")
+        run_grammar_expr(gp.grammar, "grammar { }").had_error
     }
 }
 

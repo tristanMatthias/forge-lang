@@ -9,9 +9,10 @@
 // own RSS from the allocation hot paths and stops itself first, with an F4014
 // naming the ceiling, the measured resident size, and the phase it died in.
 //
-// The ceiling is AVRA_MEM_LIMIT_MB (default: 75% of MemAvailable at startup;
-// 0 disables). These specs force it low so the trap fires in milliseconds, and
-// force it high to prove ordinary compiles don't false-trip.
+// The ceiling is AVRA_MEM_LIMIT_MB (default: the HIGHER of 90% of MemAvailable at
+// startup and 75% of MemTotal; 0 disables). These specs force it low so the trap
+// fires in milliseconds, and force it high to prove ordinary compiles don't
+// false-trip.
 //
 // The large input is a REAL file from the compiler's own source rather than a
 // generated fixture. Generating one in-process was a trap twice over: `{` opens
@@ -87,12 +88,26 @@ extern fn avra_mem_ceiling_for(avail_kb: int, total_kb: int) -> int
 // to ~3.8 GiB while sibling shards held memory.
 const CI_AVAIL_KB: int = 3915776      // ~3.73 GiB — the reading that produced 3441 MiB
 const CI_TOTAL_KB: int = 16777216     // 16 GiB
-// What compiling the whole compiler actually peaks at (~3.4 GiB), in KiB. The
-// ceiling must sit ABOVE this for a known-good build to survive.
-const WHOLE_COMPILER_PEAK_KB: int = 3525632
+// What compiling the whole compiler actually peaks at, in KiB — MEASURED, by polling
+// RSS with the ceiling disabled over
+//
+//     AVRA_MEM_LIMIT_MB=0 AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='@std::avrac' \
+//       bs2 compile --emit_metadata --module_path='@std::avrac' src/avrac.av
+//
+// 7064 MiB on the integration compiler, 6978 MiB on the branch's; a CI runner
+// reached 7997 MiB before the ceiling stopped it. The CI figure is the one of record
+// because it is the highest OBSERVED, and because the ceiling has to survive the
+// environment that actually runs it.
+//
+// This constant was previously 3525632 (3443 MiB) and that was the bug. It was read
+// off an F4014 report's "3443 MiB resident" line, which is the size the process had
+// reached when the ceiling KILLED it — a lower bound on the peak, taken for the peak
+// itself. Every margin computed against it was therefore fiction. If you update this
+// number, MEASURE it with the ceiling disabled; never harvest it from a trip report.
+const WHOLE_COMPILER_PEAK_KB: int = 8188928   // 7997 MiB, measured on CI
 
 spec "the DEFAULT ceiling is floored against MemTotal, not left to a load-time dip" {
-    then "the default ceiling is at least half of MemTotal" {
+    then "the default ceiling is at least three quarters of MemTotal" {
         // The default was 90% of MemAvailable sampled ONCE at startup. Under a
         // parallel build that samples the NEIGHBOURS: a child starting while sibling
         // shards hold memory bakes a low ceiling for its whole life, even as they
@@ -103,15 +118,19 @@ spec "the DEFAULT ceiling is floored against MemTotal, not left to a load-time d
         //       phase: parse src/typeck/typeenv_cache.av
         //
         // on `bs2 build --lib` for @std/avrac: 3441 MiB is 90% of a transiently-low
-        // ~3.8 GiB reading, and compiling the whole compiler legitimately peaks
-        // around 3.4 GiB — so the ceiling landed UNDER a known-good build. It took
+        // ~3.8 GiB reading, so the ceiling landed UNDER a known-good build. It took
         // several CI runs to even see, because the build's ARTIFACTS were all fine
         // (cache hits) and only its exit code was wrong.
         //
-        // MemTotal does not move under load, so the ceiling now floors at half of
-        // it. Asserted against /proc/meminfo rather than a baked constant so the
-        // guard travels to whatever box it runs on; skipped where MemTotal is
-        // unreadable (non-Linux), since the floor is only derivable there.
+        // MemTotal does not move under load, so the ceiling floors against it — at
+        // THREE QUARTERS, not half. Half was the first attempt, and it failed the
+        // same way one octave up (7997 MiB resident against a 7994 MiB ceiling),
+        // because the peak it was sized against had been harvested from a trip
+        // report rather than measured; see WHOLE_COMPILER_PEAK_KB.
+        //
+        // Asserted against /proc/meminfo rather than a baked constant so the guard
+        // travels to whatever box it runs on; skipped where MemTotal is unreadable
+        // (non-Linux), since the floor is only derivable there.
         //
         // NOTE: this spec must not run under a forced AVRA_MEM_LIMIT_MB — an
         // explicit setting legitimately wins over the floor (the specs above depend
@@ -144,9 +163,31 @@ spec "the DEFAULT ceiling is floored against MemTotal, not left to a load-time d
         let old_policy = (CI_AVAIL_KB / 10) * 9
         !(old_policy > WHOLE_COMPILER_PEAK_KB)
     }
-    then "a dip in MemAvailable cannot drag the ceiling below half of MemTotal" {
+    then "a dip in MemAvailable cannot drag the ceiling below three quarters of MemTotal" {
         // The floor, in isolation and at its extreme: availability near zero.
-        avra_mem_ceiling_for(1, CI_TOTAL_KB) == CI_TOTAL_KB / 2
+        avra_mem_ceiling_for(1, CI_TOTAL_KB) == (CI_TOTAL_KB / 4) * 3
+    }
+    then "the floor clears the MEASURED peak with real margin, not a rounding error" {
+        // The assertion that would have caught the half-of-total floor. At the CI
+        // numbers the ceiling was 7994 MiB against a build that reaches 7997 MiB —
+        // it "cleared" a peak of 3443 MiB only because that number was a trip
+        // report, not a measurement. Demand a margin big enough that environment
+        // variance cannot decide the outcome: half the peak again.
+        let ceiling = avra_mem_ceiling_for(CI_AVAIL_KB, CI_TOTAL_KB)
+        let want = WHOLE_COMPILER_PEAK_KB + WHOLE_COMPILER_PEAK_KB / 2
+        let ok = ceiling >= want
+        if !ok {
+            println("ceiling ${string(ceiling)} KiB leaves too little over the measured peak ${string(WHOLE_COMPILER_PEAK_KB)} KiB (want >= ${string(want)})")
+        }
+        ok
+    }
+    then "and the SUPERSEDED half-of-total floor would NOT have — so that guard can fail" {
+        // Non-vacuity for the assertion above, and the record of what went wrong:
+        // half of 16 GiB is 8388608 KiB (7994 MiB after the MiB rounding the
+        // diagnostic prints), against a measured 8188928 KiB. It clears the peak by
+        // under 2.5%, and on the runner it did not clear it at all.
+        let old_floor = CI_TOTAL_KB / 2
+        !(old_floor >= WHOLE_COMPILER_PEAK_KB + WHOLE_COMPILER_PEAK_KB / 2)
     }
     then "on a QUIET box availability still wins — the floor is a floor, not a cap" {
         // Otherwise the fix would have capped every build at half the box, which is
@@ -164,7 +205,7 @@ spec "the DEFAULT ceiling is floored against MemTotal, not left to a load-time d
     }
 }
 
-/// True when the process-wide ceiling is at least half of MemTotal — or when
+/// True when the process-wide ceiling is at least three quarters of MemTotal — or when
 /// the floor is not derivable/applicable here, in which case there is nothing
 /// to assert. A helper fn rather than inline branches because an early `return`
 /// inside a `then` block is F0901 (it would exit the whole file's initializer
@@ -176,7 +217,7 @@ fn default_ceiling_clears_memtotal_floor() -> bool {
     // An explicit setting legitimately wins over the floor, so under a forced
     // AVRA_MEM_LIMIT_MB this assertion would measure the wrong thing.
     if avra_process_env_get("AVRA_MEM_LIMIT_MB") != "" { return true }
-    let floor_kb = avra_parse_int(total_kb_s) / 2
+    let floor_kb = (avra_parse_int(total_kb_s) / 4) * 3
     let got_kb = avra_mem_limit_kb()
     if got_kb < floor_kb {
         println("default ceiling ${string(got_kb)} KiB is below the MemTotal floor ${string(floor_kb)} KiB")
