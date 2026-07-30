@@ -250,6 +250,29 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("fn f() -> int {\n let q = a.\n return 0\n}") &&
         agree("fn f() -> int {\n return * 3\n}")
     }
+    then "the trailing dot agrees on ALL THREE paths, executor included" {
+        // The `.`-led `@fallback` that replaced `@hand(postfix_suffix)` (t-47hc.33.2)
+        // owns this diagnostic natively now, and the two engines reach it differently:
+        // emit REPORTS then still builds `mk_field_access` from the cursor token, while
+        // the executor's `@require` aborts to `error_node_silent()`. The corpus pinned
+        // this input emit-vs-hand (`agree` above) and tree-vs-hand (`agree_bad` below),
+        // but never against the EXECUTOR — and the default production path is answered by
+        // the executor on invalid input, so an executor-only divergence here was
+        // structurally invisible (the t-zrn3 blind spot). `agree_all` is the third
+        // comparison; without it, "all paths agree on the trailing dot" was an
+        // assumption, not a measurement.
+        agree_all("fn f() -> int {\n let q = a.\n return 0\n}") &&
+            agree_all("fn f() -> int {\n let q = a.b.\n return 0\n}")
+        // `a?.` is DELIBERATELY absent: it genuinely diverges (native F0001 vs hand
+        // F0040) and the divergence PREDATES the `.` fallback — the pre-#1078 compiler
+        // reports F0001 too. Both `?.` branches are `@peek`-gated on a valid FIELDNAME
+        // (`qdot_method_call` / `qdot_plain_field`), so a trailing `?.` satisfies
+        // neither and no branch owns the diagnostic; the `.` family got a `@fallback`
+        // in t-47hc.33.2 and the `?.` family never did. Filed as its own gap rather
+        // than asserted here, so this spec does not fail for something it is not
+        // about. Adding `agree_all("… a?. …")` is the failing-first witness when
+        // someone fixes it.
+    }
     then "multi-error recovery: static-raw finds the SAME ordered error set as hand" {
         // Each program has 3-6 parse errors; recovery must resynchronise and find
         // every one, in the same order, under both parsers.
