@@ -1,0 +1,96 @@
+// WHY: t-oyr9 — a `use` in ONE module was visible from a SIBLING module that
+// never imported it, so a module importing nothing resolved a bare call to
+// another module's import, beating its own file-private definition.
+//
+// THE BUG was one line in `merge_aliases` (resolve/names.av):
+//
+//     mut out = base            // `List<T>` is heap-backed — this ALIASES
+//     while ... { out.push(...) }   // ...so every push mutated the CALLER's list
+//
+// `base` is `ctx.aliases`, the enclosing module's alias chain, and the walk
+// merges once per `Stmt.Module`. So the FIRST sibling's `use` lines were
+// appended to the shared parent list, and every LATER sibling inherited them.
+// Exactly the heap-aliasing hazard `ctx_push_params` already documents for
+// `ctx.locals`, and the reason `list_push_copy` exists.
+//
+// SCOPE, measured rather than assumed: CODEGEN was never affected — it resolves
+// independently and emitted the file-private callee correctly all along. Only
+// TYPECK's callee lookup was corrupted, which is why this hid for so long: the
+// checks that would have noticed are ptr-into-ptr, and nothing gated those until
+// the t-axu9 argument gate made such calls report at all.
+//
+// The fixture below reproduces it with THREE sibling modules and no external
+// dependency: `user` imports `thing/1` from `shared`, and `priv` — which imports
+// nothing — calls its OWN private `thing/2`. Under the bug, `priv`'s call binds
+// `shared::thing` and reports F1001 arity. Arity is the discriminator on purpose:
+// it reports on a plain build with no gate needed.
+//
+// FAILING-FIRST: verified to FAIL (F1001 in priv_entry) with `merge_aliases`
+// restored to the aliasing form, and to pass with the copy.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_mkdir_p(path: string) -> int
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_getpid() -> int
+
+/// Materialise a lib package whose submodules are auto-discovered from
+/// subdirectories of `src/` (the g2eo.1 directory-as-module shape), then
+/// compile it and capture the output.
+fn build_leak_fixture(priv_body: string) -> string {
+    let root = "/tmp/avra_oyr9_${string(avra_getpid())}"
+    let _ = avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p("${root}/src/shared")
+    let _ = avra_mkdir_p("${root}/src/user")
+    let _ = avra_mkdir_p("${root}/src/priv")
+
+    let _ = avra_selfhost_write_file("${root}/avra.toml",
+        "[package]\nname = \"@oyr9/leak\"\nversion = \"0.1.0\"\n\n[lib]\nname = \"oyr9-leak\"\npath = \"src/leak.av\"\n")
+    let _ = avra_selfhost_write_file("${root}/src/leak.av", "// lib entry\n")
+
+    // ONE param.
+    let _ = avra_selfhost_write_file("${root}/src/shared/mod.av",
+        "export fn thing(a: string) -> string { a }\n")
+    // Imports it — this is the `use` that used to leak into every sibling.
+    let _ = avra_selfhost_write_file("${root}/src/user/mod.av",
+        "use shared.{thing}\nexport fn user_entry() -> string { thing(\"x\") }\n")
+    let _ = avra_selfhost_write_file("${root}/src/priv/mod.av", priv_body)
+
+    avra_shell_exec("cd '${root}' && AVRA_LIB_PKG_ROOT='@oyr9::leak' " +
+        "'${avra_repo_bs2()}' compile --module_path='@oyr9::leak' src/leak.av 2>&1")
+}
+
+/// Absolute path to the bs2 under test — the fixture compiles from its own
+/// /tmp root, so a relative `./build/bs2` would not resolve.
+fn avra_repo_bs2() -> string {
+    let pwd = avra_shell_exec("pwd").trim()
+    "${pwd}/build/bs2"
+}
+
+spec "t-oyr9: a sibling module's `use` does not leak into a module that imports nothing" {
+    then "a module with NO imports binds its OWN private fn, not the sibling's import" {
+        // TWO params. Under the leak this bound `shared::thing` (one param)
+        // and reported F1001 "expects 1 argument, got 2".
+        let out = build_leak_fixture(
+            "fn thing(a: string, b: string) -> string { a + b }\n" +
+            "export fn priv_entry() -> string { thing(\"x\", \"y\") }\n")
+        !out.contains("error[F") && !out.contains("expects 1 argument")
+    }
+
+    then "the importing sibling still resolves its own import correctly" {
+        // The fix must not cost legitimate visibility: `user` imports `thing`
+        // from `shared` and must keep binding it.
+        let out = build_leak_fixture(
+            "export fn priv_entry() -> string { \"no local thing\" }\n")
+        !out.contains("error[F")
+    }
+
+    then "a module that imports nothing and defines nothing cannot see the name at all" {
+        // The converse of the leak: with aliases correctly scoped, a bare
+        // reference to a sibling's IMPORTED name is undefined, not silently
+        // resolved. This is the assertion that would fail if the fix were
+        // "copy, but seed from the parent's full chain".
+        let out = build_leak_fixture(
+            "export fn priv_entry() -> string { thing(\"x\") }\n")
+        out.contains("error[F")
+    }
+}
