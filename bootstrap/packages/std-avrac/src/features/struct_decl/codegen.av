@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_ptr_type, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, variant_index, render_expr, vtype_newtype_underlying}
+use core.{Expr, ExprId, FieldEntry, FieldInit, VarBinding, field_index_of, ValueType, vtype_render_full, vtype_is_str, vtype_is_bytes, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, vtype_trait_name, vtype_list_elem, variant_lookup, variant_index, render_expr, vtype_newtype_underlying}
 use features.closures.{emit_expected}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, expr_is_shared_alias}
 use core.{type_registry_id_for, vtype_struct}
@@ -8,6 +8,7 @@ use features.enum_decl.{emit_enum_ctor}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce, emit_trait_boxed_list, trait_decl_has}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
+use codegen.{vtype_is_ptr_type}
 
 /// Codegen for `Foo { x: 1, y: 2 }`. Allocates the struct's
 /// LLVM type via the arena (or reuses a Copy-type stack slot when
