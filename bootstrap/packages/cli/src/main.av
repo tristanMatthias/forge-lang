@@ -2013,6 +2013,23 @@ fn run_build_command(args: BuildArgs) {
             if avra_remove_file(ll_out) != 1 {
                 fail("error: could not remove stale artifact ${ll_out} before compile")
             }
+            // Orphan sweep. If THIS process is hard-killed (OOM/jetsam —
+            // routine in this tree) between the child's write and the install
+            // below, `ll_out` survives with no owner, and pids don't recur
+            // often enough for a later build to reclaim it by name. A
+            // whole-compiler `.ll` is ~55 MB, so they accumulate.
+            //
+            // Deliberately NOT a blanket `rm -f <entry>.build-*.ll`. The
+            // per-module sweep above (`*.o.tmp.*`) is safe only because, as its
+            // own comment says, "a package's per-module out_dir has no
+            // concurrent producer". THIS path is contended by construction —
+            // that is the entire premise of compiling to a private output — so
+            // a glob would delete a sibling build's in-flight artifact and
+            // reintroduce the race one path over. Age-gate instead: the longest
+            // entry compile observed here is ~370s (@std/avrac), so a day-old
+            // file is certainly not in flight.
+            let _ = avra_shell_exec("find \"$(dirname '${entry_path}')\" -maxdepth 1 " +
+                "-name \"$(basename '${entry_path}').build-*.ll\" -mmin +1440 -delete 2>/dev/null")
             // Renders a multi-line sticky progress UI on a TTY:
             // resolver appends per-module timing events to a /tmp file,
             // run_with_progress polls it and shows scrollback (✓ done

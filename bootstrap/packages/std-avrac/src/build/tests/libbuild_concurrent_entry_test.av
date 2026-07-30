@@ -171,6 +171,28 @@ spec "t-5s7l: `bs2 build --lib` does not depend on the shared entry .ll" {
         let _ = avra_shell_exec("rm -rf '${dir}'")
         ok
     }
+    then "the orphan sweep spares a sibling's in-flight private output" {
+        // The driver sweeps orphaned `<entry>.build-<pid>.ll` left by builds
+        // that were hard-killed mid-flight. That sweep is age-gated (>1 day)
+        // for a reason: this path is CONTENDED, so a blanket
+        // `rm -f <entry>.build-*.ll` would delete a concurrent build's output
+        // and reintroduce the race this file exists to prevent — one path over.
+        //
+        // Plant a fresh decoy at a foreign pid's private path, run a build, and
+        // require it to survive. A blanket glob fails this; the age gate passes.
+        let dir = conc_mk_pkg("sweep")
+        let decoy = "${dir}/src/lib.av.build-999999.ll"
+        let _ = avra_selfhost_write_file(decoy, "; in-flight output of a concurrent build\n")
+        let rcs = conc_build_n(dir, 1)
+        let survived = avra_selfhost_file_exists(decoy) == 1
+        let ok = rcs == "0" && survived
+        if !ok {
+            println("orphan sweep check failed: rc=[${rcs}] decoy survived=${string(survived)}")
+            println(conc_logs(dir, 1))
+        }
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        ok
+    }
     then "a successful build still installs fresh IR at the entry path" {
         // The freshness half of 18z8 must survive the fix: a build that reports
         // success leaves real IR at the entry path, produced by THIS build.
