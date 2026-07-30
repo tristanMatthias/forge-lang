@@ -2300,7 +2300,10 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // the EXPRESSION view (it is paren_expr's typed-lambda parameter, shared rather
         // than duplicated). Same crossing as `expression` and `type_expr` above. Its FIRST
         // is a bare IDENT: `param = pname:IDENT ( ":" pt:type_expr )?`.
-        if name == "param" { return "st.cur().tk == Tk.Identifier" }
+        // Delegated to `named_tk_guard` rather than spelled inline: that is the ONE place
+        // mapping the `IDENT` terminal to `Tk.Identifier`, and the neighbouring declared
+        // FIRSTs all route through a shared predicate too. Output is byte-identical.
+        if name == "param" { return named_tk_guard("IDENT") }
         // Any OTHER external rule has no declared FIRST, and falling back to `false`
         // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
         // `( r )?` is never taken, and the generated parser DROPS the whole construct

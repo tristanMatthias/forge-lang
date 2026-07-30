@@ -405,7 +405,20 @@ fn avra_decl_edge_grammar() -> Grammar {
   // here silently drops the component instantiation, which decl_lead_gate_test caught.
   body_item   = declaration
     }
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_modules_grammar()), avra_struct_decl_grammar()), avra_generics_grammar()), avra_enum_decl_grammar()), avra_fn_decl_grammar()), avra_trait_decl_grammar()), avra_impl_decl_grammar())
+    // Flat list, not a seven-deep `compose_grammars` nest: `compose_grammars(head, tail)`
+    // IS `compose_fragments([head, tail])`, and compose_fragments concatenates rules in
+    // list order, so the two spellings are provably identical — this one just doesn't
+    // grow a paren layer per decl fragment.
+    compose_fragments([
+        gp.grammar,
+        avra_modules_grammar(),
+        avra_struct_decl_grammar(),
+        avra_generics_grammar(),
+        avra_enum_decl_grammar(),
+        avra_fn_decl_grammar(),
+        avra_trait_decl_grammar(),
+        avra_impl_decl_grammar(),
+    ])
 }
 
 export fn avra_expr_grammar() -> Grammar {
