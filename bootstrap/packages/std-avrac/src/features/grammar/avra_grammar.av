@@ -301,7 +301,26 @@ fn avra_expr_core() -> Grammar {
   // `block_expr` likewise cannot fold in: brace_expr peeks brace_map first, so
   // `else { "a": 1 }` would become a MAP where the hand calls parse_block_expression
   // unconditionally.
-  if_expr      = @peek(if_let) @hand(if_expr)
+  // t-47hc.26 — the bind-fresh form goes native, spending `@gensym`. It is a DESUGAR,
+  // not a parse: `build_if_let_expr` (core/arena.av) turns it into a temp binding, a
+  // none-check condition, and an unwrap-bind row prepended to the then-block. That
+  // builder is SHARED with the hand's parse_if_let_expression — the same rows in the
+  // same order — so the two cannot drift in what they lower to.
+  //
+  // `tmp:@gensym(iflet)` sits between `"if"` and `"let"` because that is exactly where
+  // the hand mints (`parse_if_let_header`'s first line, after parse_if_expression has
+  // advanced past `if`). Position is load-bearing, not cosmetic: a build-minted temp
+  // would number a NESTED `if let` before its parent, inverting the hand's order.
+  //
+  // The three `@require`s are the hand's three `return .Err` points, in order —
+  // consume_identifier for the binding, consume(Equal), and the `{` check. An ABSENT
+  // piece aborts the whole leaf, which is what the hand does; a MALFORMED subject or
+  // block still recovers inside its own rule.
+  if_expr      = @peek(if_let) "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
+                 @off(allow_struct_lit) s:expression @require t:block_expr ( "else" e:else_tail )?
+                 @expect("IDENT", "expected a binding name after `if let`")
+                 @expect("=", "expected `=` after the `if let` binding")
+                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLet(tmp, b, s, t, e)
                | "if" @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
                  @expect("{", "expected `{` after if condition") -> MkIfExpr(c, t, e)
   else_tail    = if_expr | block_expr | expression

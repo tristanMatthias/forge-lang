@@ -22,6 +22,9 @@ use features.grammar.{Token, lex_real, rule_index_of}
 use features.grammar.{dispatch_has_tail}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
+// The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
+// definition of the rows, so the native rule and the oracle cannot lower differently.
+use core.{build_if_let_expr}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -3092,6 +3095,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `if c { … } else …` (t-47hc.24). An ABSENT else arrives as CapVal.Nil, which
         // mk_if_expr turns into the hand's synthesized empty (Void) block.
         "MkIfExpr" if args.length == 3 -> mk_if_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        "MkIfLet" if args.length == 5 -> mk_if_let(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]), env.get(args[4]))
         // Subjectless `match { … }` at STATEMENT position: the hand builds Expr.When and
         // boxes it in Stmt.Expr (parse_match_statement), so this does exactly that pair.
         "MkWhenStmt" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, 0 - 1, env.get(args[0]))))))
@@ -4198,6 +4202,39 @@ export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal
         Expr.IfExpr(capval_to_expr(st, cond_cv), capval_to_expr(st, then_cv), else_id),
         if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
         []
+    ))
+}
+
+/// The bind-fresh `if let v = x { … } else { … }` in EXPRESSION position (t-47hc.26).
+///
+/// A DESUGAR, not a parse. Every row is built by `build_if_let_expr` (core/arena.av),
+/// the SAME shared core the hand's `parse_if_let_expression` calls — so the native rule
+/// and the hand oracle lower to identical rows in identical order, and neither can drift
+/// from the other by editing one site.
+///
+/// `tmp_cv` is the `@gensym(iflet)` mint, already performed AT ITS POSITION in the
+/// sequence (between `if` and `let`), which is where the hand mints. Reading it here as
+/// an ordinary captured token is the whole point of making gensym a primary: by the time
+/// this build runs, the number is already fixed.
+///
+/// The absent-else case builds the SAME Void empty block `mk_if_expr` does, and BEFORE
+/// the desugar rows, matching the hand's order (parse_if_let_expression synthesises the
+/// else, then calls the builder). Not a `0` literal: an empty block types `.Void`, which
+/// is what keeps `if let v = x { return v }` valid in value position instead of a
+/// synthesized int hijacking the result type.
+export fn mk_if_let(st: PState, tmp_cv: CapVal, bind_cv: CapVal, subj_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
+    let empty_rows: List<StmtId> = []
+    let else_id = match else_cv {
+        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
+        _ -> capval_to_expr(st, else_cv)
+    }
+    CapVal.Node(build_if_let_expr(
+        st.store,
+        capval_tok_text(tmp_cv),
+        capval_tok_text(bind_cv),
+        capval_to_expr(st, subj_cv),
+        capval_to_expr(st, then_cv),
+        else_id
     ))
 }
 

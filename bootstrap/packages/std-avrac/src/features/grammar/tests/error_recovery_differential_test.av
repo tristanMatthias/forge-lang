@@ -79,6 +79,44 @@ fn agree_all(source: string) -> bool {
     sr == hand && dflt == hand
 }
 
+spec "t-47hc.26: the native `if let` recovers exactly as the hand did" {
+    // ROUTING GUARD. `if let` left `@hand(if_expr)` in t-47hc.26, and routing is
+    // INVISIBLE ON VALID INPUT by construction: the native rule and the hand agree
+    // there, so diff-test, the parity specs and the comptime smoke can all be green
+    // while error recovery has silently regressed. These malformed forms are the only
+    // witness, and each one corresponds to a `return .Err` in the hand's
+    // parse_if_let_header — the three points the rule reproduces with `@require`.
+    //
+    // Written as `agree_bad` (F-code + diagnostic COUNT + tree) AND `agree_all` (all
+    // three paths) per the routing discipline: the F-code oracles disable the fallback,
+    // so on any invalid input the DEFAULT path is answered by the EXECUTOR, and an
+    // executor-only divergence is invisible to them (t-zrn3).
+    then "each malformed if-let reports, and recovers to the hand's tree" {
+        // Binding absent (hand: consume_identifier fails), `=` absent (hand:
+        // consume(Equal) fails), block absent (hand: the check(LeftBrace) guard), and
+        // the subject missing entirely.
+        agree_bad("fn f(x: int?) -> int {\n let r = if let = x { 1 }\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v x { 1 }\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v = x 1\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v =\n r\n}")
+    }
+    then "and all three parser paths agree on the recovered tree" {
+        // The executor answers the default path on invalid input, so this is the
+        // comparison the two F-code oracles structurally cannot make.
+        agree_all("fn f(x: int?) -> int {\n let r = if let = x { 1 }\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v x { 1 }\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v = x 1\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v =\n r\n}")
+    }
+    then "a NESTED if-let is the case a build-minted temp would get wrong" {
+        // Not a recovery case — an ORDERING case, and the reason `@gensym` is a
+        // positional primary. The hand mints the OUTER temp first; a build-minted one
+        // would number the inner binding first, because its sequence completes first.
+        // Same tree from both parsers is the observable consequence.
+        agree_all("fn f(a: int?, b: int?) -> int {\n let r = if let p = a { if let q = b { q } else { p } } else { 0 }\n r\n}")
+    }
+}
+
 spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid corpus)" {
     // ps3t.6.7 slice 5b — the corpus GREW to a broad, category-diverse invalid set
     // (stray tokens, malformed decls of every keyword, control-flow, expressions,
