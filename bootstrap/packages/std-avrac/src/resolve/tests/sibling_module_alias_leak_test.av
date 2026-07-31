@@ -13,10 +13,24 @@
 // Exactly the heap-aliasing hazard `ctx_push_params` already documents for
 // `ctx.locals`, and the reason `list_push_copy` exists.
 //
-// SCOPE, measured rather than assumed: CODEGEN was never affected — it resolves
-// independently and emitted the file-private callee correctly all along. Only
-// TYPECK's callee lookup was corrupted, which is why this hid for so long: the
-// checks that would have noticed are ptr-into-ptr, and nothing gated those until
+// SCOPE, measured: BOTH codegen and typeck were affected. (An earlier revision
+// of this comment claimed codegen was untouched — that was generalised from a
+// single call site where it happened to hold, and diff-test disproved it.)
+// Codegen bound the wrong same-named fn at SEVEN call sites, every one of which
+// now binds the definition in the caller's OWN module:
+//
+//   comptime::try_jit_fold   core::vtype_is_str    -> comptime::vtype_is_str
+//   build::extract_const_value / core::annotation_{first_string,string_args}
+//                            codegen::strip_quotes -> build|core::strip_quotes
+//   cli::ui::{drain_progress_file,render_sticky}
+//                            render::pad_right     -> cli::ui::pad_right
+//
+// Two of those pairs differ in BEHAVIOUR, not just in name: codegen's
+// `strip_quotes` strips the first and last char unconditionally where core's and
+// build's check for quotes first, and render's `pad_right` is byte-based and
+// never truncates where the CLI's counts codepoints and elides. Typeck's callee
+// lookup was corrupted too — that is the direction that surfaced first, since
+// the checks that would notice are ptr-into-ptr and nothing gated those until
 // the t-axu9 argument gate made such calls report at all.
 //
 // The fixture below reproduces it with THREE sibling modules and no external
