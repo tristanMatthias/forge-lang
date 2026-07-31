@@ -61,7 +61,7 @@ use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
-use @std.avrac.test_runner.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd}
+use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
@@ -3271,7 +3271,7 @@ fn parse_jobs_env(default_jobs: int) -> int {
 ///
 /// `AVRA_JOBS` still sets the ceiling (a host that knows its headroom);
 /// memory then clamps it down. The ceiling and the per-shard estimate
-/// live on `LibMode` (test_runner/libmode.av) beside the mode they
+/// live on `LibMode` (@std.test.libmode) beside the mode they
 /// describe, so the scheduler and the header can't disagree.
 fn compute_shard_jobs(lib: LibMode, avail_mb: int) -> int {
     let ceiling = parse_jobs_env(lib.job_ceiling())

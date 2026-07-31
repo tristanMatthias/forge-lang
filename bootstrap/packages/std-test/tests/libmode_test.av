@@ -10,7 +10,7 @@
 //      std-test have no build/) can't disable the fast path via a redirect that
 //      fails before bs2 even runs.
 
-use @std.avrac.test_runner.{
+use @std.test.libmode.{
     LibModeCause, lib_mode_engaged, lib_mode_off,
     collect_workspace_lib_objs, std_prebuild_cmd, std_prebuild_log_path,
     FAST_PATH_SHARD_MB, WHOLE_PROGRAM_SHARD_MB,

@@ -6,8 +6,8 @@
 // hold, every failure carries the cause that names it, and `std_prebuild_cmd`
 // creates its own log dir so a missing scratch dir can't disable the fast path.
 
-use core.{avra_shell_exec, avra_selfhost_file_exists, avra_selfhost_read_file}
-use build.{cache_for, cache_entry_realobj_path, Fingerprint}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists, avra_selfhost_read_file}
+use @std.avrac.build.{cache_for, cache_entry_realobj_path, Fingerprint}
 
 /// Why the fast path is or isn't in effect. `OptedOut` is deliberate;
 /// `Unavailable` is the fail-open worth shouting about.

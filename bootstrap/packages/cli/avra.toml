@@ -22,3 +22,4 @@ description = "bs2 CLI entry (bootstrap compiler binary)"
 "@std/json"    = { path = "../std-json" }
 "@std/lsp"     = { path = "../std-lsp" }
 "@std/process" = { path = "../std-process" }
+"@std/test"    = { path = "../std-test" }
