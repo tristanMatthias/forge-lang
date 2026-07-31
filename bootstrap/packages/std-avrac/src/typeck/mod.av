@@ -2477,46 +2477,26 @@ export fn check_assign_layout_no_int(tc: TC, actual: ValueType, expected: ValueT
     check_assign_layout_ex(tc, actual, expected, ctx, false, true)
 }
 
-/// True when a type carries a type ARGUMENT that is still unresolved or absent — the
-/// `List<>` / `Map<string, >` / `Result<, string>` shapes typeck produces mid-inference.
-fn vtype_has_incomplete_args(t: ValueType) -> bool {
-    for a in vtype_type_args(t) {
-        if vtype_is_unknown(a) { return true }
-        if a is .Void { return true }
-    }
-    false
-}
-
-/// True for a collection whose ELEMENT type is still unresolved — `List<>` / `Map<>` as
-/// produced by an empty literal (`[]`, `{}`). That is the empty-collection-literal
-/// artifact and it was the largest single category in the count.
+/// A single inference ARTIFACT node: a type typeck could not resolve.
 ///
-/// It must read `vtype_list_elem` / `vtype_map_*`, NOT `vtype_type_args`: `.List` and
-/// `.Map` carry their element/key/value types in their own variant fields, so
-/// `vtype_type_args` answers EMPTY for every list including `List<int>`. Keying on that
-/// exempted all collections unconditionally, which left `string` into a `[int]` param —
-/// and even `[int]` into a `string` param — still accepted after the gate went in. Caught
-/// by re-running the accept/reject table rather than by reading the code.
-///
-/// AN ELEMENT MAY BE `.Void` AS WELL AS `.Unknown`, and BOTH are artifacts. typeck hands
-/// back `void` for an expression it could not type, so an unresolved element surfaces as
-/// `List<void>` at least as often as `List<>`. The top-level `a is .Void` exemption in
-/// `ptr_nominal_conflict` does NOT cover this — there the void is NESTED, and the list
-/// itself is a perfectly ordinary `.List`.
-///
-/// Found by CI (seed-train-verify), not locally: `list_optional_test::first_or` is called
-/// with an empty-literal argument that types as `List<void>` against a `List<int?>`
-/// parameter. This is the SAME trap the paragraph above describes — element types live in
-/// the variant field — caught for `Unknown` and missed for `Void`, which is the artifact
-/// the count showed to be dominant. Two halves of one mistake.
+/// BOTH forms count. `.Unknown` is the familiar one; `.Void` is handed back for an
+/// expression that could not be typed at all, and the count showed it to be the DOMINANT
+/// artifact here. Treating only `.Unknown` as an artifact is why `List<void>` slipped
+/// through and reddened CI.
 fn vtype_elem_is_artifact(t: ValueType) -> bool {
     vtype_is_unknown(t) || t is .Void
 }
 
-fn vtype_is_argless_generic(t: ValueType) -> bool {
-    if vtype_is_list(t) { return vtype_elem_is_artifact(vtype_list_elem(t)) }
-    if t is .Map { return vtype_elem_is_artifact(vtype_map_key(t)) || vtype_elem_is_artifact(vtype_map_value(t)) }
-    false
+/// True when an inference ARTIFACT (`.Unknown` or `.Void`) appears ANYWHERE in `t`'s
+/// tree — the type itself, a list element, a map key or value, a tuple slot, a generic
+/// argument, a nested fn's parameter or return.
+///
+/// `.any` walks every node, so this is shape-agnostic by construction: it covers
+/// containers that exist today (List, Map, Channel, Tuple, Result, …) and any added
+/// later, without this predicate being revisited. That is the whole point — the four
+/// helpers it replaced each named ONE container, and CI found a new one on every run.
+fn vtype_mentions_artifact(t: ValueType) -> bool {
+    t.any((x: ValueType) -> vtype_elem_is_artifact(x))
 }
 
 /// True for a FN type. Every fn-vs-fn pair is exempt, deliberately and with a measurement
@@ -2564,26 +2544,41 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
     // tree probing two registries per node, where the tests below are O(1) variant
     // checks. `void` is the dominant exempt case (see the count above), so running the
     // walk first paid the most expensive test on the most common exit.
-    if vtype_is_unknown(a) || vtype_is_unknown(d) { return false }
     // A value scalar on EITHER side is where the `.Int` fallbacks land — out of scope.
     if vtype_is_value_scalar(a) || vtype_is_value_scalar(d) { return false }
-    // `void` is the SECOND inference artifact, and the dominant one here: typeck hands
-    // it back for expressions it could not type, and unlike `.Int` it is not a value
-    // scalar, so the exemption above does not cover it. 935 -> the bulk of the hits.
-    if a is .Void || d is .Void { return false }
     // `ptr` is the untyped C-interop escape — an extern slot legitimately receives any
     // pointer shape, which is the whole reason the type exists.
     if a is .Ptr || d is .Ptr { return false }
     // A UNION arises here as a partially-inferred generic (`List<X>|List<>`), not as a
     // deliberate ad-hoc union in argument position — same artifact class.
     if a is .Union || d is .Union { return false }
-    // The whole-tree artifact walk, deliberately AFTER the O(1) variant tests above.
+    // AN ARTIFACT ANYWHERE IN EITHER TREE DISQUALIFIES THE COMPARISON.
+    //
+    // This one recursive test replaces four ad-hoc ones (a top-level `.Unknown` check, a
+    // top-level `.Void` check, `vtype_has_incomplete_args`, and `vtype_is_argless_generic`)
+    // because patching container-by-container was simply the wrong shape, and CI proved it
+    // four more times after the first three:
+    //
+    //     (string, int)   vs (<unknown>, <unknown>)   Unknown inside a TUPLE
+    //     (int, void)     vs (int?, int?)             void inside a TUPLE
+    //     Channel<int>    vs Channel<>                argless CHANNEL, not List/Map
+    //     List<fn(Rng)->int> vs List<fn(Rng)-><unknown>>   unresolved fn ret, NESTED
+    //
+    // Every one is the same statement: inference did not finish somewhere in this type, so
+    // the two sides are not comparable and this predicate has no business judging them.
+    // Enumerating containers can only ever chase that one container at a time — `.any`
+    // states it once, for every shape that exists now or later.
+    //
+    // Deliberately CONSERVATIVE. It also exempts a legitimately-resolved `fn() -> void`
+    // nested in a container, which loses a little detection. That is the right direction:
+    // a missed wild store is a bug this gate merely fails to catch, while a false positive
+    // REJECTS CORRECT CODE — and nine false-positive classes in, the asymmetry is settled.
+    if vtype_mentions_artifact(a) || vtype_mentions_artifact(d) { return false }
+    // Whole-tree walk for types naming something the registry cannot resolve yet. Distinct
+    // from the artifact walk above: that one looks for Unknown/Void NODES, this one probes
+    // the registries for unresolved NAMES.
     if vtype_mentions_unresolved(tc, a) { return false }
     if vtype_mentions_unresolved(tc, d) { return false }
-    // A partially-inferred generic (`List<>`, `Map<string, >`, `Result<, string>`) has an
-    // Unknown or absent type argument. That is inference incomplete, not a wild store.
-    if vtype_has_incomplete_args(a) || vtype_has_incomplete_args(d) { return false }
-    if vtype_is_argless_generic(a) || vtype_is_argless_generic(d) { return false }
     if vtype_is_unresolved_fn(a) || vtype_is_unresolved_fn(d) { return false }
     // A TRAIT on either side is CONFORMANCE, not nominal identity. `Square` into a
     // `dyn Shape` parameter is the entire point of dynamic dispatch (spec Axis 4), and

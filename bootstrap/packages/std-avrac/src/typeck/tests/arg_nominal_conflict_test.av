@@ -217,6 +217,21 @@ fn f(u: UserId) -> string { string(u) }
 fn main() -> int { let o: OrderId = \"x\" println(f(o)) 0 }")
     }
 
+    then "a concrete tuple into a generic tuple parameter — artifact NESTED in a tuple" {
+        // `(A, B)` on a generic fn arrives as `(<unknown>, <unknown>)` before inference
+        // completes, so the comparison is against artifacts NESTED one level down. The
+        // top-level `.Unknown` test never saw them.
+        //
+        // FAILING-FIRST: without the recursive `vtype_mentions_artifact` walk this reports
+        // "`(string, int)` is not assignable to `(<unknown>, <unknown>)`". Found by CI in
+        // generic_container_inference_test, along with three siblings that are the SAME
+        // defect in different containers — void in a tuple, an argless `Channel<>`, and an
+        // unresolved fn return nested in a `List`. Enumerating containers chased one per
+        // CI run; the recursive walk states it once.
+        accepted("fn snd<A, B>(p: (A, B)) -> B { p.1 }
+fn main() -> int { let t = (\"x\", 3) println(string(snd(t))) 0 }")
+    }
+
     then "a concrete type into a `dyn Trait` parameter — conformance, not identity" {
         // The `.Trait` exemption. Every conforming type has a DIFFERENT name by
         // construction, so nominal identity is the wrong question — `Square` into a
