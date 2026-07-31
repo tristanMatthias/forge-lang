@@ -1,0 +1,185 @@
+// WHY: t-axu9 — a CALL ARGUMENT whose type is nominally unrelated to the declared
+// parameter compiled clean and lowered to a call that reinterprets the pointer.
+//
+//     type Rec = { name: string }
+//     fn takes_rec(r: Rec) -> string { r.name }
+//     fn main() -> int { println(takes_rec("not a Rec")) 0 }   // check exited 0
+//
+// Both `string` and a struct are `ptr` in the value model, so once typeck let the call
+// through nothing downstream could catch it: codegen emitted a correct-by-its-own-lights
+// `ptr` argument and the callee GEP'd into a string header. Found because it segfaulted a
+// spec that passed a rule NAME where a `Rule` was declared.
+//
+// WHY IT WAS OPEN. `assign_layout_conflict` is deliberately NARROW and every one of its
+// subsets is SCALAR-side, because typeck hands back `.Int` (and `void`) for unresolved
+// expressions and a broad check would mass-false-positive. Every ptr-into-ptr
+// substitution is outside it by construction. The fix is a NOMINAL pointer-vs-pointer
+// conflict, which cannot see those artifacts because neither side is a scalar.
+//
+// RETURN position and struct-literal FIELD position already rejected these — measured —
+// so this was the argument path alone.
+//
+// THE EXEMPTIONS ARE MEASURED. The predicate was first run count-only over the compiler's
+// own source and narrowed until the false positives were gone: 935 hits naive, 765 after
+// void/ptr/union/incomplete-args, 61 after argless-generics + unresolved-fn-return, 0
+// after exempting fn-vs-fn pairs (all 61 were fn ARITY gaps — incomplete parameter
+// inference on higher-order call sites, not wild stores). It fired on the bug at every
+// step, so the narrowing removed false positives without disarming it.
+//
+// AND IT FOUND THREE REAL DEFECTS, all fixed alongside it: `list_take` declared
+// `List<string>` but called with `List<Diagnostic>`; `build_query_surface` declared
+// `List<string>` but called with `List<TypeParamEntry>`; and `mk_type_decl_any` passing a
+// bare `List<NodeRef>` where `NodeEdges` — a STRUCT wrapping that list — is declared,
+// which is this bug's exact shape in production code.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile and emit a sentinel ONLY on a clean compile, so the positive controls assert
+/// real success rather than the mere absence of an F-code.
+fn nom_out(source: string) -> string {
+    let path = "/tmp/avra_axu9_nom.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+}
+
+fn rejected(source: string) -> bool {
+    let out = nom_out(source)
+    out.contains("F1000") && out.contains("different nominal types")
+}
+
+fn accepted(source: string) -> bool {
+    nom_out(source).contains("__AVRA_COMPILE_OK__")
+}
+
+spec "t-axu9: a nominally unrelated argument is rejected at the call" {
+    then "the reported case — a string where a struct parameter is declared" {
+        rejected("type Rec = { name: string }
+fn takes_rec(r: Rec) -> string { r.name }
+fn main() -> int { println(takes_rec(\"not a Rec\")) 0 }")
+    }
+    then "struct A where struct B is declared — the newtype distinction, at a call" {
+        // spec Axis 1: `type UserId = UUID` creates a NOMINAL distinction. It was
+        // enforced everywhere except here.
+        rejected("type A = { n: string }
+type B = { m: string }
+fn f(b: B) -> string { b.m }
+fn main() -> int { let a = A { n: \"x\" } println(f(a)) 0 }")
+    }
+    then "a string where an enum parameter is declared" {
+        rejected("enum E { A, B }
+fn f(e: E) -> int { match e { .A -> 1  .B -> 2 } }
+fn main() -> int { println(string(f(\"x\"))) 0 }")
+    }
+    then "a string where a list parameter is declared" {
+        rejected("fn f(xs: [int]) -> int { xs.length }
+fn main() -> int { println(string(f(\"x\"))) 0 }")
+    }
+    then "and the REVERSE — a list where a string parameter is declared" {
+        // Not symmetric by accident: the collection exemption originally keyed on
+        // `vtype_type_args`, which answers EMPTY for `List<int>` as much as for `List<>`
+        // (a `.List` carries its element in its own variant field). That exempted every
+        // collection unconditionally, and this direction is what exposed it.
+        rejected("fn f(s: string) -> int { s.length }
+fn main() -> int { println(string(f([1, 2]))) 0 }")
+    }
+    then "a string where a map parameter is declared" {
+        rejected("fn f(m: Map<string, int>) -> int { 1 }
+fn main() -> int { println(string(f(\"x\"))) 0 }")
+    }
+}
+
+spec "t-axu9: valid arguments are untouched — the gate is not a blanket reject" {
+    // Each of these would compile under a too-broad predicate as well, so on its own the
+    // block proves little; its job is to fail loudly if the gate is ever widened past
+    // what the measurement justified.
+    then "a matching struct argument" {
+        accepted("type Rec = { name: string }
+fn f(r: Rec) -> string { r.name }
+fn main() -> int { let r = Rec { name: \"x\" } println(f(r)) 0 }")
+    }
+    then "a list argument into a list parameter" {
+        accepted("fn f(xs: [int]) -> int { xs.length }
+fn main() -> int { println(string(f([1, 2]))) 0 }")
+    }
+    then "an EMPTY list literal into a list parameter" {
+        // The empty-collection artifact: `[]` types as `List<>` with an unresolved
+        // element. Exempted deliberately — it was the largest single category in the
+        // count, and rejecting it would break ordinary code.
+        accepted("fn f(xs: [int]) -> int { xs.length }
+fn main() -> int { println(string(f([]))) 0 }")
+    }
+    then "a map literal into a map parameter" {
+        accepted("fn f(m: Map<string, int>) -> int { m.length }
+fn main() -> int { println(string(f({\"a\": 1}))) 0 }")
+    }
+    then "a struct argument into a NULLABLE struct parameter" {
+        // `Optional` is stripped from both sides before the comparison, so `Rec` into
+        // `Rec?` is the same nominal type, not a conflict.
+        accepted("type Rec = { name: string }
+fn f(r: Rec?) -> int { if r == null { 0 } else { 1 } }
+fn main() -> int { let r = Rec { name: \"x\" } println(string(f(r))) 0 }")
+    }
+
+    then "a STRUCT into a SHAPE parameter — width subtyping, not a nominal conflict" {
+        // Spec Axis 1: `type` is nominal, `shape` is STRUCTURAL with width subtyping.
+        // A struct carrying the shape's fields IS assignable and its name is deliberately
+        // unrelated, so nominal identity is the wrong question — same reasoning as the
+        // `dyn Trait` exemption.
+        //
+        // FAILING-FIRST: without the `is_shape` exemption this reports
+        // "`User` is not assignable to `HasName` — different nominal types", which is how
+        // it was found — 4 shard compile failures across shape_basic, shape_subtyping and
+        // type_system_edge_cases. The whole-compiler count could not have found it: the
+        // compiler's own source never passes a struct into a shape parameter.
+        accepted("shape HasName = { name: string }
+type User = { name: string, age: int }
+fn greet(h: HasName) -> string { h.name }
+fn main() -> int { let u = User { name: \"x\", age: 1 } println(greet(u)) 0 }")
+    }
+
+    then "an underlying value into a collection of its own NEWTYPE" {
+        // `type IntList = List<int>` is layout-identical to `List<int>` — a nominal
+        // wrapper question, not a wild store, which is all this predicate may judge.
+        //
+        // FAILING-FIRST: without the one-sided newtype peel this reports
+        // "`List<int>` is not assignable to `IntList` — different nominal types" and
+        // fails the whole shard compile. Found that way in tests/list_cross_fn_test.av.
+        //
+        // NOTE the shape: `push` into a `List<IntList>`, NOT a direct `f(xs: IntList)`
+        // parameter. A direct newtype parameter is rejected by `tc_check_newtype_args`
+        // ("expects `IntList`, got `List<int>`") — a SEPARATE and pre-existing check
+        // with its own message. An earlier draft of this spec asserted the direct form
+        // was accepted, which was simply false about the compiler; the two paths must
+        // not be conflated when reading a failure here.
+        accepted("type IntList = List<int>
+fn inner_of() -> List<int> { mut xs: List<int> = [] xs = xs.push(1) xs }
+fn nested() -> List<IntList> {
+    let inner = inner_of()
+    mut outer: List<IntList> = []
+    outer = outer.push(inner)
+    outer
+}
+fn main() -> int { println(string(nested().length)) 0 }")
+    }
+
+    then "two DIFFERENT newtypes over the same base are still a conflict" {
+        // The counterpart, and the reason the peel is one-sided rather than
+        // "unwrap both sides and compare": `UserId` and `OrderId` are layout-identical
+        // yet nominally distinct (spec Axis 8), and enforcing that at a CALL is one of
+        // the things this gate exists for. Unwrapping both would silently drop it.
+        rejected("type UserId = string
+type OrderId = string
+fn f(u: UserId) -> string { string(u) }
+fn main() -> int { let o: OrderId = \"x\" println(f(o)) 0 }")
+    }
+
+    then "a WIDER struct into a shape parameter — extra fields are fine" {
+        // The width-subtype rule proper: extras are permitted, which is the behaviour
+        // `tc_check_shape_compat` implements and this gate must not contradict.
+        accepted("shape HasName = { name: string }
+type Company = { name: string, employees: int, founded: int }
+fn greet(h: HasName) -> string { h.name }
+fn main() -> int { let c = Company { name: \"y\", employees: 2, founded: 3 } println(greet(c)) 0 }")
+    }
+}

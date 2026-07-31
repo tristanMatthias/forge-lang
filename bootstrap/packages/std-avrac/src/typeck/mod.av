@@ -2477,9 +2477,171 @@ export fn check_assign_layout_no_int(tc: TC, actual: ValueType, expected: ValueT
     check_assign_layout_ex(tc, actual, expected, ctx, false, true)
 }
 
+/// True when a type carries a type ARGUMENT that is still unresolved or absent — the
+/// `List<>` / `Map<string, >` / `Result<, string>` shapes typeck produces mid-inference.
+fn vtype_has_incomplete_args(t: ValueType) -> bool {
+    for a in vtype_type_args(t) {
+        if vtype_is_unknown(a) { return true }
+        if a is .Void { return true }
+    }
+    false
+}
+
+/// True for a collection whose ELEMENT type is still unresolved — `List<>` / `Map<>` as
+/// produced by an empty literal (`[]`, `{}`). That is the empty-collection-literal
+/// artifact and it was the largest single category in the count.
+///
+/// It must read `vtype_list_elem` / `vtype_map_*`, NOT `vtype_type_args`: `.List` and
+/// `.Map` carry their element/key/value types in their own variant fields, so
+/// `vtype_type_args` answers EMPTY for every list including `List<int>`. Keying on that
+/// exempted all collections unconditionally, which left `string` into a `[int]` param —
+/// and even `[int]` into a `string` param — still accepted after the gate went in. Caught
+/// by re-running the accept/reject table rather than by reading the code.
+fn vtype_is_argless_generic(t: ValueType) -> bool {
+    if vtype_is_list(t) { return vtype_is_unknown(vtype_list_elem(t)) }
+    if t is .Map { return vtype_is_unknown(vtype_map_key(t)) || vtype_is_unknown(vtype_map_value(t)) }
+    false
+}
+
+/// True for a FN type. Every fn-vs-fn pair is exempt, deliberately and with a measurement
+/// behind it: after the other exemptions, ALL 61 remaining probe hits over the compiler's
+/// own source were fn arity gaps — `fn(string) -> bool` against `fn() -> bool`, a bare
+/// `fn` against `fn(int) -> string`. Those are incomplete PARAMETER inference on
+/// higher-order call sites, not wild stores, and no amount of narrowing inside the fn
+/// shape distinguishes them from a genuine fn-type mismatch while that inference is
+/// missing. So the gate covers the non-fn pointer class only, and fn types are their own
+/// follow-up.
+fn vtype_is_unresolved_fn(t: ValueType) -> bool {
+    vtype_is_fn(t)
+}
+
+/// A NOMINAL pointer-vs-pointer conflict (t-axu9): both sides are heap/pointer types with
+/// DIFFERENT nominal identity, so storing one where the other is declared is a wild store.
+/// `string` into a struct parameter is the reported case; `Struct A` into a `Struct B`
+/// parameter is the same hole, and means a newtype distinction was not enforced at a call.
+///
+/// WHY THIS IS SEPARATE from `assign_layout_conflict`. That disjunction is deliberately
+/// narrow and every one of its subsets is SCALAR-side, because typeck hands back `.Int`
+/// for unresolved expressions and a broad scalar-vs-pointer check would mass-false-
+/// positive. Every ptr-into-ptr substitution is outside it by construction — which is why
+/// the call argument path accepted all of them.
+///
+/// THE EXEMPTIONS ARE MEASURED, NOT REASONED. Each was added because it appeared in a
+/// count over the compiler's own source, and the count is the evidence that this is safe
+/// to gate on:
+///
+///     naive nominal check                                935 hits
+///     + void / ptr / union / incomplete type args        765
+///     + argless generics (`List<>`) + unresolved fn ret    61
+///     + all fn-vs-fn pairs                                  0
+///
+/// It still fires on the reported bug at every step, so the exemptions narrowed the false
+/// positives without disarming it. Anything added here later needs the same treatment: run
+/// the count before believing a new exemption is free.
+fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool {
+    let a = vtype_strip_optional(actual)
+    let d = vtype_strip_optional(expected)
+    // Artifact exemptions, in the same spirit as int_into_pointer_slot's.
+    if vtype_mentions_unresolved(tc, a) { return false }
+    if vtype_mentions_unresolved(tc, d) { return false }
+    if vtype_is_unknown(a) || vtype_is_unknown(d) { return false }
+    // A value scalar on EITHER side is where the `.Int` fallbacks land — out of scope.
+    if vtype_is_value_scalar(a) || vtype_is_value_scalar(d) { return false }
+    // `void` is the SECOND inference artifact, and the dominant one here: typeck hands
+    // it back for expressions it could not type, and unlike `.Int` it is not a value
+    // scalar, so the exemption above does not cover it. 935 -> the bulk of the hits.
+    if a is .Void || d is .Void { return false }
+    // `ptr` is the untyped C-interop escape — an extern slot legitimately receives any
+    // pointer shape, which is the whole reason the type exists.
+    if a is .Ptr || d is .Ptr { return false }
+    // A UNION arises here as a partially-inferred generic (`List<X>|List<>`), not as a
+    // deliberate ad-hoc union in argument position — same artifact class.
+    if a is .Union || d is .Union { return false }
+    // A partially-inferred generic (`List<>`, `Map<string, >`, `Result<, string>`) has an
+    // Unknown or absent type argument. That is inference incomplete, not a wild store.
+    if vtype_has_incomplete_args(a) || vtype_has_incomplete_args(d) { return false }
+    if vtype_is_argless_generic(a) || vtype_is_argless_generic(d) { return false }
+    if vtype_is_unresolved_fn(a) || vtype_is_unresolved_fn(d) { return false }
+    // A TRAIT on either side is CONFORMANCE, not nominal identity. `Square` into a
+    // `dyn Shape` parameter is the entire point of dynamic dispatch (spec Axis 4), and
+    // whether the impl exists is a question this predicate has no business answering —
+    // it compares names, and every conforming type has a different one.
+    //
+    // Caught by diff-test, not by the whole-compiler count: the lib build happens not to
+    // call through a `dyn` parameter, so `tests/difftest_corpus/traits_dyn.av` was the
+    // first thing to exercise it. A count over one program is not a proof of no false
+    // positives, which is why the corpus is a separate oracle.
+    if a is .Trait || d is .Trait { return false }
+    // A SHAPE on either side is STRUCTURAL, not nominal — spec Axis 1: `type` is nominal,
+    // `shape` uses WIDTH SUBTYPING, so a struct carrying the required fields IS assignable
+    // to a shape and its name is deliberately unrelated. Comparing nominal identity is
+    // simply the wrong question here, exactly as for `.Trait` above.
+    //
+    // A shape registers as a STRUCT type plus its name in `tc.shapes` (see the ShapeDecl
+    // arm of collect_decls), so the ValueType variant cannot distinguish one — membership
+    // in that set is the only discriminator, which is why this reads `is_shape` rather
+    // than matching a variant.
+    //
+    // The check this defers to already exists: `tc_check_shape_compat` verifies the arg's
+    // struct has every field the shape requires (extras fine — the width-subtype rule).
+    // Duplicating that here as a nominal test would not merely be redundant, it would
+    // CONTRADICT it.
+    //
+    // Caught by the suite, not by the whole-compiler count: the compiler's own source
+    // never passes a struct into a shape parameter, so all 4 hits were in tests
+    // (shape_basic, shape_subtyping, type_system_edge_cases). Second time this exact
+    // lesson has landed on this predicate — see the `.Trait` note above, found by
+    // diff-test for the same reason. A count over one program is not a proof of no false
+    // positives; it only proves that program does not exercise the construct.
+    if is_shape(tc.shapes, tc_param_shaped_name(a)) { return false }
+    if is_shape(tc.shapes, tc_param_shaped_name(d)) { return false }
+    // A NEWTYPE against its OWN UNDERLYING type is layout-identical — `type IntList =
+    // List<int>` and a raw `List<int>` are the same bytes, so this is a nominal wrapper
+    // question and NOT a wild store, which is all this predicate is entitled to judge.
+    // `tc_check_newtype_args` owns the wrapper policy and permits it via
+    // `vtype_assignable`; contradicting it here would reject working code.
+    //
+    // ONLY against its own underlying. Two DIFFERENT newtypes over the same base
+    // (`type UserId = UUID` / `type OrderId = UUID`) stay a conflict — that distinction
+    // is spec Axis 8 and one of the things this gate is meant to enforce at a call. So
+    // the peel is deliberately one-sided rather than "unwrap both and compare".
+    //
+    // Found by the suite (tests/list_cross_fn_test.av), like the shape case and unlike
+    // anything the whole-compiler count could reach.
+    let a_under = tc_newtype_underlying(tc, a)
+    let d_under = tc_newtype_underlying(tc, d)
+    if !vtype_is_unknown(a_under) && vtype_eq(a_under, d) { return false }
+    if !vtype_is_unknown(d_under) && vtype_eq(a, d_under) { return false }
+    // Nominal identity, via the content-addressed id comparison, so a parser-default
+    // Struct("Foo") and a resolved Newtype("Foo") of the same FQN are EQUAL.
+    if vtype_eq(a, d) { return false }
+    true
+}
+
+/// The type a newtype wraps, or `.Unknown` when `t` is not a registered newtype.
+///
+/// ONE LEVEL ONLY, and deliberately so. `inner_vt` is stored exactly as the AST spelled
+/// it (`.NewtypeDecl(name, inner_vt)` — it does NOT pass through `resolve_vtype`), and
+/// `newtype_vtype_lookup` returns it verbatim, so a newtype over a newtype
+/// (`type A = B` over `type B = List<int>`) peels `A` to `B`, never to `List<int>`.
+///
+/// That transitive case therefore still reports. Left that way on purpose: newtypes are
+/// NOMINALLY DISTINCT (spec Axis 8), so a deeper peel would weaken the gate further, and
+/// nothing in the corpus exercises the shape. The single peel exists for exactly one
+/// reason — not to contradict `tc_check_newtype_args` on the direct wrapper case — and
+/// widening it beyond that needs its own evidence.
+fn tc_newtype_underlying(tc: TC, t: ValueType) -> ValueType {
+    let n = tc_param_shaped_name(t)
+    if n == "" { return ValueType.Unknown }
+    newtype_vtype_lookup(tc.newtypes, n)
+}
+
 fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_int: bool, incl_collection: bool) -> TC {
     if assign_layout_conflict(tc, actual, expected, incl_int, incl_collection) {
         return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` (layout conflict)")
+    }
+    if ptr_nominal_conflict(tc, actual, expected) {
+        return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` — different nominal types")
     }
     tc
 }
