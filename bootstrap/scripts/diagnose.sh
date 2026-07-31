@@ -590,6 +590,7 @@ SEED MANAGEMENT
 
 ENVIRONMENT
   LLVM_PREFIX  Override the LLVM install prefix.
+               Default: /opt/homebrew/opt/llvm
   AVRA_VERIFY_RC=1  Machine-check the alloca zero-init invariant (zm77
                guard) on every compiled module; violations fail the build
                naming fn+slot. Always on during --build-bs2's self-compile
@@ -600,7 +601,14 @@ ENVIRONMENT
                freed RC memory (the zm77 phantom-release signature). Turns a
                silent corruption into a loud, first-offense abort. Exercised
                by --rc-strict-suite.
-               Default: /opt/homebrew/opt/llvm
+  AVRA_HEAVY_PROCS  The process NAMES --stray reports and the run reaper /
+               memguard kill (default: "bs2 llc cc1plus clang cc1"). Point it
+               at a fake binary to exercise the kill paths against something
+               that is provably not a real build — how stray_reap_test.av can
+               SIGKILL a run inside the live suite.
+  AVRA_RUN_DIR  Where a --sweep / --guarded run records its marker
+               (default: build/runs). The marker is what lets the nanny — and
+               the next run — reap a run that died without unwinding.
 
 EXAMPLES
   diagnose.sh --build               # rebuild stage1 from rust + run tests
