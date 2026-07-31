@@ -33,6 +33,12 @@ fn harness_of(tag: string, src: string, body: string) -> string {
     avra_shell_exec("rm -rf '" + root + "'")
     let _ = avra_mkdir_p(root + "/runs")
     let script = "set -u\n" +
+        // The suite is meant to be run through `make sweep` / `make guarded`
+        // (CLAUDE.md says so), and both EXPORT AVRA_RUN_ID — which `run_begin`
+        // reads as "nested under an outer run": no marker, no nanny, no stale
+        // reap. Inherited, that turns four of these specs into assertions about
+        // an outer run's state. Each spec owns its own nesting, so start clean.
+        "unset AVRA_RUN_ID\n" +
         "export root='" + root + "'\n" +
         "export name='" + name + "'\n" +
         // A second fake, for the specs that need a heavy CHILD under a heavy
@@ -43,9 +49,15 @@ fn harness_of(tag: string, src: string, body: string) -> string {
         "export AVRA_HEAVY_PROCS=\"$name $kid\"\n" +
         "export AVRA_RUN_DIR=\"$root/runs\"\n" +
         "export AVRA_MEMGUARD_DIR=\"$root/memguard\"\n" +
-        "count() { ps -A -o pid=,comm= | awk -v n=\"$1\" '$2 == n { c++ } END { print c + 0 }'; }\n" +
+        // macOS ps prints `comm` as an absolute path where Linux prints the
+        // basename — the same normalisation all_ps does, for the same reason:
+        // without it these helpers count 0 on macOS and every spec fails for a
+        // reason that has nothing to do with the behaviour under test.
+        "count() { ps -A -o pid=,comm= | awk -v n=\"$1\" \\\n" +
+        "  '{ c = $2; sub(/^.*\\//, \"\", c) } c == n { k++ } END { print k + 0 }'; }\n" +
         "alive() { count \"$name\"; }\n" +
-        "pids()  { ps -A -o pid=,ppid=,pgid=,comm= | awk -v n=\"$name\" '$4 == n { print $1, $2, $3 }'; }\n" +
+        "pids()  { ps -A -o pid=,ppid=,pgid=,comm= | awk -v n=\"$name\" \\\n" +
+        "  '{ c = $4; sub(/^.*\\//, \"\", c) } c == n { print $1, $2, $3 }'; }\n" +
         "wait_gone() { i=0; while [ \"$(alive)\" != 0 ] && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done; }\n" +
         body
     let _ = avra_selfhost_write_file(root + "/run.sh", script)
@@ -190,18 +202,28 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
             "  leader=$(ls \"$root/runs\" 2>/dev/null | sed -n 's/\\.run$//p' | head -1)\n" +
             "  sleep 0.25; i=$((i+1)); done\n" +
             "i=0; while [ \"$(alive)\" = 0 ] && [ $i -lt 120 ]; do sleep 0.25; i=$((i+1)); done\n" +
+            // Capture the watchdog's pid while it is still up: after the kill
+            // it is gone by one of two paths and one of them removes the file.
+            "wpid=$(cat \"$root/memguard/pid\" 2>/dev/null)\n" +
+            "[ -n \"$wpid\" ] && echo WATCHDOG_PID_OK\n" +
             "echo \"SPAWNED=$(alive) LEADER=$leader\"\n" +
             "kill -9 \"$leader\" 2>/dev/null\n" +
             "wait_gone\n" +
             "echo \"AFTER_KILL=$(alive)\"\n" +
             "[ -f \"$root/runs/$leader.run\" ] && echo MARKER_KEPT || echo MARKER_CLEARED\n" +
-            // The watchdog is part of the run: it must not outlive it either,
-            // or it keeps polling and SIGKILLs whatever runs next.
-            "i=0; while ! grep -q 'STOP owner' \"$root/memguard/log\" 2>/dev/null && [ $i -lt 40 ]; do\n" +
+            // The watchdog is part of the run and must not outlive it, or it
+            // keeps polling and SIGKILLs whatever runs next. It dies by EITHER
+            // path — its own owner-gone poll (0.4s), or the nanny reaping it
+            // with the rest of the dead run's tree (1s) — so asserting on its
+            // log line would just be asserting which poll won the race. Assert
+            // the requirement instead: the process is gone.
+            "i=0; while [ -n \"$wpid\" ] && kill -0 \"$wpid\" 2>/dev/null && [ $i -lt 60 ]; do\n" +
             "  sleep 0.25; i=$((i+1)); done\n" +
-            "grep -q 'STOP owner' \"$root/memguard/log\" && echo WATCHDOG_STOPPED || echo WATCHDOG_LEAKED\n")
+            "if [ -n \"$wpid\" ] && kill -0 \"$wpid\" 2>/dev/null;\n" +
+            "  then echo WATCHDOG_LEAKED; else echo WATCHDOG_GONE; fi\n")
         out.contains("SPAWNED=1") && out.contains("AFTER_KILL=0")
-            && out.contains("MARKER_CLEARED") && out.contains("WATCHDOG_STOPPED")
+            && out.contains("MARKER_CLEARED")
+            && out.contains("WATCHDOG_PID_OK") && out.contains("WATCHDOG_GONE")
     }
     then "the NEXT run reaps the orphans of a run that died with its nanny" {
         // The backstop. When a whole process group goes at once nothing is left
