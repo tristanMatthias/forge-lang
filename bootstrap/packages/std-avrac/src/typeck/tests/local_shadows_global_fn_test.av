@@ -1,0 +1,96 @@
+// WHY: t-axu9 slice E — typeck's `.Ident` call arm consulted `fn_type_get` BEFORE
+// `type_lookup`, so a global `fn` won over a local binding of the same name when
+// TYPE-CHECKING the call. That is the inverse of lexical scoping, and the same
+// precedence inversion #1091 fixed in the resolver (`rewrite_ident` checks locals
+// first, for exactly this reason).
+//
+// HOW IT WAS FOUND. `@std::avrac::testing::check_property` takes a `gen` callback
+// (`fn(Rng) -> T`) and calls `gen(rng)`. Compiling any program that ALSO declares a
+// top-level `fn gen` type-checked that call against the USER's function — a library's
+// private parameter name captured by unrelated user code. It surfaced only when the
+// t-axu9 nominal argument gate compared the argument against the callee's declared
+// type; before that gate existed nothing looked, because both sides are pointers.
+//
+// ARITY IS THE DISCRIMINATOR, deliberately. The global takes TWO parameters and the
+// local takes ONE, so binding the wrong one is an F1001 that reports on a plain
+// `bs2 check` — no dependence on the nominal gate being present, and no dependence on
+// which symbol CODEGEN selects (see the scope note below).
+//
+// FAILING-FIRST, verified by reverting the fix and rebuilding:
+//     without E:  error[F1001]: `dbl` expects 2 arguments, got 1 (in function `apply_it`)
+//     with E:     clean, exit 0
+//
+// SCOPE — THIS IS A TYPECK FIX ONLY, AND THE CODEGEN HALF IS A SEPARATE BUG.
+// A run-value probe of the same program still prints the GLOBAL's result:
+//
+//     fn dbl(x: int) -> int { x * 10 }
+//     fn apply_it(dbl: fn(int) -> int, v: int) -> int { dbl(v) }
+//     apply_it((n: int) -> n + 1, 5)   ->  prints 50, should print 6
+//
+// So codegen ALSO resolves the callee global-first, and this fix cannot affect that —
+// typeck decides types, codegen decides symbols. That is a pre-existing wrong-code
+// defect, filed separately; an earlier draft of this spec asserted the run value and
+// failed, which is what surfaced it. Do not conflate the two layers when reading a
+// failure here: this file pins the TYPE binding only.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_getpid() -> int
+use @std.avrac.test_runner.{write_fixture}
+
+/// Compile-only probe: the real exit status plus the diagnostics, from a per-pid log.
+/// Status is the fact, the log is the evidence — asserting on captured stdout alone
+/// cannot distinguish "compiled cleanly" from "the compiler never ran".
+type ShadowRun = { status: int, log: string }
+
+fn shadow_check(source: string) -> ShadowRun {
+    let pid = string(avra_getpid())
+    let path = "/tmp/avra_slice_e_${pid}.av"
+    let log = "/tmp/avra_slice_e_${pid}.log"
+    write_fixture(path, source)
+    let status = avra_shell_exec_status("./build/bs2 check '${path}' > '${log}' 2>&1")
+    ShadowRun { status: status, log: avra_selfhost_read_file(log) }
+}
+
+spec "t-axu9 slice E: a local callable shadows a same-named global fn in TYPECK" {
+    then "a fn-typed PARAMETER is type-checked, not the same-named global" {
+        // The global takes 2 params, the parameter takes 1. Binding the global yields
+        // F1001 "expects 2 arguments, got 1" — the exact failure this fix removes.
+        let r = shadow_check(
+            "fn dbl(x: int, y: int) -> int { x + y }\n" +
+            "fn apply_it(dbl: fn(int) -> int, v: int) -> int { dbl(v) }\n" +
+            "fn main() { println(string(apply_it((n: int) -> n + 1, 5))) }\n")
+        r.status == 0 && !r.log.contains("error[F")
+    }
+
+    then "a LET-bound closure is likewise type-checked over the global" {
+        // Same rule for a `let` binding; resolving these differently would be an
+        // inconsistency, and the parameter case is only the one that happened to bite.
+        let r = shadow_check(
+            "fn pick(a: int, b: int) -> int { a + b }\n" +
+            "fn main() {\n" +
+            "    let pick = (n: int) -> n + 1\n" +
+            "    println(string(pick(5)))\n" +
+            "}\n")
+        r.status == 0 && !r.log.contains("error[F")
+    }
+
+    then "a NON-callable local does NOT shadow a global fn" {
+        // THE SCOPE PIN. `let sz = 5` is not callable, so `sz(3)` must still reach the
+        // global `fn sz`. Without the callability gate this would break ordinary code,
+        // which is why the shadow reuses the SAME `type_call_rejected` predicate the
+        // closure-call path already uses rather than shadowing on name presence alone
+        // — one notion of "callable", so the two cannot drift apart.
+        let r = shadow_check(
+            "fn sz(x: int) -> int { x * 10 }\n" +
+            "fn main() {\n" +
+            "    let sz = 5\n" +
+            "    println(string(sz + 1))\n" +
+            "    println(string(sz(3)))\n" +
+            "}\n")
+        r.status == 0 && !r.log.contains("error[F")
+    }
+}

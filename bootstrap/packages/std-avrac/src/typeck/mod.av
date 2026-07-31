@@ -4441,9 +4441,31 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
                 "println" or "eprintln" or "print" or "eprint" -> return tc_er(checked, .Void)
                 _ -> {}
             }
+            // A LOCAL BINDING OF CALLABLE TYPE SHADOWS A SAME-NAMED GLOBAL FN.
+            //
+            // This lookup used to come AFTER `fn_type_get`, so a global fn won over a
+            // local of the same name — the inverse of lexical scoping, and the same
+            // precedence inversion #1091 fixed in the resolver (`rewrite_ident` checks
+            // locals first, for exactly this reason).
+            //
+            // Measured: `@std::avrac::testing::check_property` takes a `gen` callback
+            // (`fn(Rng) -> T`) and calls `gen(rng)`. Compiling ANY program that also
+            // declares a top-level `fn gen` bound that call to the USER's fn — a
+            // library's private parameter name silently captured by unrelated user
+            // code. Invisible until the t-axu9 nominal argument gate compared the
+            // argument against the callee's declared type and reported `Rng` is not
+            // assignable to the user fn's parameter.
+            //
+            // The shadow is gated on the local being CALLABLE, via the same
+            // `type_call_rejected` predicate the closure path below already uses — so a
+            // local `let gen = 5` does not shadow a global `fn gen`, and there is no
+            // second notion of "callable" to drift out of step with the first.
+            let local_ty = type_lookup(checked.types, name)
+            let local_shadows = !vtype_is_unknown(local_ty)
+                && !type_call_rejected(local_ty, checked.current_scope_tp)
             // User-defined function
             let r = fn_type_get(checked.fns, name)
-            if r.found {
+            if r.found && !local_shadows {
                 return tc_check_fn_call_with_expected(checked, name, args, r, expected)
             }
             // Variable holding a closure. Row 19 (ps3t.4.5): an indirect
