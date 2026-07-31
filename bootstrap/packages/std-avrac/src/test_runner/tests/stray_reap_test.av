@@ -176,11 +176,11 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
         // it spawn a heavy child, SIGKILL the run leader (what the memguard and
         // a tool timeout both do), and require the child to be gone. The
         // leader's own traps CANNOT fire for SIGKILL, so this passes only via
-        // the nanny — the process that watches the leader and reaps the run's
-        // process group when it dies without unwinding.
+        // the nanny — the process that watches the leader and, when it dies
+        // without unwinding, reaps the orphaned trees left in its group.
         //
-        // `setsid` gives the run its own process group, which is what makes the
-        // group reap precise; without it the run would share the suite's.
+        // `setsid` gives the run a process group of its own, so the assertion
+        // is about this run's processes and cannot be perturbed by the suite's.
         let out = harness("D",
             "setsid bash scripts/diagnose.sh --guarded 1 -- bash -c \"'$root/$name' 300\" >/dev/null 2>&1 &\n" +
             // The marker file is named for the run leader — that is how the
