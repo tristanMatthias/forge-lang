@@ -261,13 +261,20 @@ fn main() -> int { println(string(total(Square { side: 2 }))) 0 }")
         // falls through to `vtype_eq(.Struct("Handle"), .Ptr)` = false and reports. The
         // second call covers the mirror direction — an untyped `ptr` return flowing back
         // into a typed slot — which is the `a is .Ptr` half of the same test.
+        //
+        // BOTH externs name symbols runtime.c actually DEFINES (`avra_trace_ptr` at
+        // :3117, `avra_map_new_cstr` at :2087). An earlier revision declared
+        // `avra_map_new`, which does not exist — harmless today because `bs2 compile`
+        // stops at IR and never links, so the fixture exercised the rule and passed. It
+        // would have become a link failure the moment the probe grew a link step, and it
+        // would have failed for a reason with nothing to do with the `.Ptr` rule.
         accepted("type Handle = { id: int }
 extern fn avra_trace_ptr(label: string, val: ptr)
-extern fn avra_map_new() -> ptr
+extern fn avra_map_new_cstr() -> ptr
 fn main() -> int {
     let h = Handle { id: 7 }
     avra_trace_ptr(\"h\", h)
-    avra_trace_ptr(\"m\", avra_map_new())
+    avra_trace_ptr(\"m\", avra_map_new_cstr())
     println(string(h.id))
     0
 }")

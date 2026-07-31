@@ -2552,6 +2552,13 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
     // A UNION arises here as a partially-inferred generic (`List<X>|List<>`), not as a
     // deliberate ad-hoc union in argument position — same artifact class.
     if a is .Union || d is .Union { return false }
+    // The O(1) exit for a TOP-LEVEL artifact, which is the dominant one — `void` alone
+    // accounted for most of the 935 naive hits. `vtype_mentions_artifact` below subsumes
+    // this case (`.any` visits the node itself, verified), so the check is purely about
+    // cost: without it the most common exit pays a full tree walk, which is exactly what
+    // the cheapest-first ordering above exists to avoid. Collapsing the four per-container
+    // helpers into one recursive walk removed this without the doc block noticing.
+    if vtype_elem_is_artifact(a) || vtype_elem_is_artifact(d) { return false }
     // AN ARTIFACT ANYWHERE IN EITHER TREE DISQUALIFIES THE COMPARISON.
     //
     // This one recursive test replaces four ad-hoc ones (a top-level `.Unknown` check, a
