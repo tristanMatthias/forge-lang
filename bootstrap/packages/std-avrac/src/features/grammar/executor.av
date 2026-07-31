@@ -1664,8 +1664,8 @@ fn branch_pred_ok(seq: GSeq, st: PState) -> bool {
 
 /// The first `n` elements of `xs` (for rolling `st.diags` back after a failed
 /// speculative parse — the list analogue of NodeStore.truncate_to_mark).
-fn list_take(xs: List<string>, n: int) -> List<string> {
-    mut out: List<string> = []
+fn list_take<T>(xs: List<T>, n: int) -> List<T> {
+    mut out: List<T> = []
     mut i = 0
     for x in xs {
         if i >= n { return out }
@@ -3999,8 +3999,8 @@ export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, 
     }
     let ty_id = st.store.ingest_type(vt, byte_span_none())
     match te {
-        .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
-        _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), [NodeRef.TypeRef(ty_id)], byte_span_none()))
+        .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
+        _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
     }
 }
 
