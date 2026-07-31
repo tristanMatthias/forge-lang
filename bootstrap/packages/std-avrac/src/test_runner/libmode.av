@@ -1,0 +1,199 @@
+// WHY: the @std/* metadata fast-path decides what a `bs2 test` run costs —
+// ~1800MB per shard when it engages, ~6000MB when shards inline all of @std.
+// When it silently fails to engage the run gets 3x more expensive with nothing
+// in the log to explain it (t-6flr). This module owns the mode so it cannot be
+// misreported: `want_meta()` is derived from the producer objects we actually
+// hold, every failure carries the cause that names it, and `std_prebuild_cmd`
+// creates its own log dir so a missing scratch dir can't disable the fast path.
+
+use core.{avra_shell_exec, avra_selfhost_file_exists, avra_selfhost_read_file}
+use build.{cache_for, cache_entry_realobj_path, Fingerprint}
+
+/// Why the fast path is or isn't in effect. `OptedOut` is deliberate;
+/// `Unavailable` is the fail-open worth shouting about.
+export enum LibModeCause {
+    Engaged,
+    OptedOut(detail: string),
+    Unavailable(detail: string),
+}
+
+/// `lib_objs` is the colon-joined `AVRA_LIB_OBJS` — the only evidence the fast
+/// path can work. Shards built with `AVRA_USE_METADATA=1` stub every @std/*
+/// symbol; these objects DEFINE them at link. Stubbing without them left ~76
+/// shards with undefined symbols (08ro), so the mode is derived from the
+/// objects rather than stored as a second flag three call sites must keep true.
+export type LibMode = {
+    lib_objs: string,
+    cause: LibModeCause,
+}
+
+/// Heaviest-realistic shard peak per mode, in MB. Measured clean 2026-07-21
+/// (jobs=1, per-process RSS): a metadata shard ~1.85GB.
+export const FAST_PATH_SHARD_MB: int = 1800
+export const WHOLE_PROGRAM_SHARD_MB: int = 6000
+
+impl LibMode {
+    fn want_meta(self) -> bool { self.lib_objs != "" }
+
+    fn per_shard_mb(self) -> int {
+        if self.want_meta() { FAST_PATH_SHARD_MB } else { WHOLE_PROGRAM_SHARD_MB }
+    }
+
+    /// Static shard-concurrency cap, before available RAM clamps it down and
+    /// before `AVRA_JOBS` overrides it.
+    fn job_ceiling(self) -> int { if self.want_meta() { 8 } else { 2 } }
+
+    fn opted_out(self) -> bool {
+        match self.cause {
+            .OptedOut(_) -> true,
+            _ -> false,
+        }
+    }
+
+    /// Derived from `want_meta()` first and the cause only second, so the label
+    /// is what the shards will actually do.
+    fn mode_label(self) -> string {
+        if self.want_meta() { return "metadata fast-path" }
+        if self.opted_out() { return "whole-program by request" }
+        "DEGRADED whole-program"
+    }
+
+    fn cause_detail(self) -> string {
+        if self.want_meta() { return "" }
+        match self.cause {
+            .OptedOut(d) -> d,
+            .Unavailable(d) -> d,
+            .Engaged -> "no producer objects were collected for @std/*",
+        }
+    }
+
+    /// The run header: achieved mode, its per-shard cost, and — when the fast
+    /// path is off — the reason. Returned rather than printed so tests can
+    /// assert on it.
+    fn report(self, jobs: int, avail_mb: int) -> string {
+        let head = "[per-file] shard concurrency: jobs=${string(jobs)} (${self.mode_label()}, ~${string(self.per_shard_mb())}MB/shard, MemAvailable ~${string(avail_mb)}MB)"
+        if self.want_meta() { return head }
+        let lead = if self.opted_out() {
+            "[per-file] !! the @std/* metadata fast-path is OFF by request"
+        } else {
+            "[per-file] !! DEGRADED: the @std/* metadata fast-path is OFF"
+        }
+        "${head}\n${lead} — every shard inlines all of @std (~${string(WHOLE_PROGRAM_SHARD_MB)}MB each vs ~${string(FAST_PATH_SHARD_MB)}MB)\n[per-file] !! cause: ${self.cause_detail()}"
+    }
+}
+
+/// Passing "" yields a degraded mode rather than a lie — the objects/mode
+/// pairing is enforced here, not asserted at call sites.
+export fn lib_mode_engaged(objs: string) -> LibMode {
+    if objs == "" {
+        return lib_mode_off(LibModeCause.Unavailable("no producer objects were collected for @std/*"))
+    }
+    LibMode { lib_objs: objs, cause: LibModeCause.Engaged }
+}
+
+export fn lib_mode_off(cause: LibModeCause) -> LibMode {
+    LibMode { lib_objs: "", cause: cause }
+}
+
+export fn std_prebuild_log_path(pkg_dir: string) -> string { "${pkg_dir}build/prebuild.log" }
+
+/// Where the lib-build driver records a package's current producer fingerprint.
+fn std_prebuild_sidecar_path(pkg_dir: string, pkg: string) -> string {
+    "${pkg_dir}build/cache/last/${pkg}.txt"
+}
+
+/// `bs2 build --lib --emit_metadata` for one @std/* package.
+///
+/// `mkdir -p` FIRST: a package `make build` never produces (std-process,
+/// std-test) has no `build/` on a cold tree, so the shell can't open the log
+/// redirect — the command then fails before bs2 runs, the pre-build is declared
+/// failed, and every shard degrades (snw0, t-6flr). The log itself (not
+/// /dev/null) keeps a real pre-build failure diagnosable.
+export fn std_prebuild_cmd(pkg_dir: string, lib_root: string, compiler_path: string) -> string {
+    "mkdir -p \"${pkg_dir}build\" && cd \"${pkg_dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${std_prebuild_log_path(pkg_dir)}\" 2>&1"
+}
+
+/// Resolve every @std/* package's producer object into AVRA_LIB_OBJS (6owa).
+///
+/// ALL OR NOTHING: shards resolve every package via metadata, so one missing
+/// object surfaces as undefined symbols at link — it degrades the whole run,
+/// carrying the cause that names it.
+export fn collect_workspace_lib_objs(project_dir: string) -> LibMode {
+    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
+    if listing == "" {
+        return lib_mode_off(LibModeCause.Unavailable("no packages/std-*/ directories under ${project_dir}"))
+    }
+    mut keep: List<string> = []
+    for dir in nonempty_lines(listing) {
+        if avra_selfhost_file_exists("${dir}avra.toml") != 0 {
+            match resolve_producer_obj(dir) {
+                .Ok(o) -> { keep.push(o) },
+                .Err(detail) -> { return lib_mode_off(LibModeCause.Unavailable(detail)) },
+            }
+        }
+    }
+    if keep.length == 0 {
+        return lib_mode_off(LibModeCause.Unavailable("no packages/std-*/ directory under ${project_dir} has an avra.toml"))
+    }
+    lib_mode_engaged(join_with_colon(keep))
+}
+
+/// One package's producer object, or the reason there isn't one. The `Err` is
+/// what the operator reads in the degraded header, so it names the missing file.
+///
+/// The slot comes from the driver's `last/<pkg>.txt` sidecar, whose `fp:` line
+/// names the entry for the CURRENT source + compiler. Globbing for the newest
+/// `cache/*/unit.realobj.o` does not work: a stale slot materialised later
+/// (realobj is llc'd lazily on read) carries the fresher mtime.
+fn resolve_producer_obj(dir: string) -> Result<string, string> {
+    let sidecar = std_prebuild_sidecar_path(dir, subdir_basename(dir))
+    let fp = sidecar_fp_for(sidecar)
+    if fp == "" {
+        return Result.Err("${dir} has no lib-build sidecar (${sidecar}) — its build/ dir is missing, or the @std/* pre-build never ran")
+    }
+    let o = cache_entry_realobj_path(cache_for(dir), Fingerprint { hex: fp })
+    if o == "" {
+        return Result.Err("${dir} has no producer object for build fp ${fp} — its cache slot has no unit.ll, or llc failed")
+    }
+    Result.Ok(o)
+}
+
+fn sidecar_fp_for(sidecar: string) -> string {
+    let body = avra_selfhost_read_file(sidecar)
+    if body == "" { return "" }
+    for line in body.split("\n") {
+        if line.starts_with("fp:") { return line.substring(3, line.length) }
+    }
+    ""
+}
+
+/// `packages/std-cli/` → `std-cli`.
+fn subdir_basename(p: string) -> string {
+    if p.length == 0 { return "" }
+    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
+    let len = trimmed.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if trimmed.byte(prev) == 0x2F { return trimmed.substring(i, len) }
+        i = prev
+    }
+    trimmed
+}
+
+fn nonempty_lines(s: string) -> List<string> {
+    mut out: List<string> = []
+    for p in s.split("\n") {
+        if p != "" { out.push(p) }
+    }
+    out
+}
+
+fn join_with_colon(xs: List<string>) -> string {
+    mut out = ""
+    for (i, x) in xs.enumerate() {
+        if i > 0 { out = out + ":" }
+        out = out + x
+    }
+    out
+}
