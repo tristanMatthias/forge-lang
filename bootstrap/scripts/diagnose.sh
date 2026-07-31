@@ -2995,6 +2995,21 @@ heavy_ps() {
       if (comm in heavy) print $1, $2, $3, $4, age($5), comm }'
 }
 
+# heavy_ps plus a STATE column: `orphan` when the process has outlived its run
+# (its parent is gone, so init inherited it), `live` when it still belongs to a
+# run that is going. That distinction is what makes reaping safe to type, so it
+# gets ONE definition — shared by --stray's table, --stray --reap's victim
+# selection, and the teardown advisory.
+annotate_heavy() {
+  heavy_ps | while read -r pid ppid pgid rss age comm; do
+    if [ "$ppid" = "1" ] || [ "$ppid" = "0" ] || ! kill -0 "$ppid" 2>/dev/null; then
+      printf '%s %s %s %s %s %s orphan\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
+    else
+      printf '%s %s %s %s %s %s live\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
+    fi
+  done
+}
+
 # The pid chain from PID (default: this shell) up to init, space separated.
 # Recorded at run START, because once the leader is SIGKILLed its children are
 # re-parented and the chain is gone — and a reaper must never kill the tree it
@@ -3180,6 +3195,20 @@ run_end() {
   reap_descendants "$$" "$RUN_LABEL"
   [ -n "$RUN_MARKER" ] && rm -f "$RUN_MARKER"
   RUN_MARKER=""
+  warn_residual_orphans
+}
+
+# The teardown advisory. Anything heavy STILL orphaned after our own reap
+# belongs to no run we know of — a leak from before this tracking existed, or a
+# run whose marker never got written. We do NOT kill it unasked: it is not our
+# subtree, and a reap is destructive. But saying nothing is how 8.8GB goes
+# unnoticed until the next run trips the memory floor and the reading taken to
+# explain that gets blamed on a compiler bug.
+warn_residual_orphans() {
+  local n
+  n=$(annotate_heavy | awk '$7 == "orphan" { c++ } END { print c + 0 }')
+  [ "$n" = "0" ] && return 0
+  warn "[run] $n orphaned heavy process(es) still resident (not this run's) — \`make stray REAP=1\` clears them"
 }
 
 run_nanny() {
@@ -3209,21 +3238,12 @@ run_nanny() {
 mode_stray() {
   local reap=0
   [ "${1:-}" = "--reap" ] && reap=1
-  local rows
-  rows="$(heavy_ps)"
-  if [ -z "$rows" ]; then
+  local annotated
+  annotated="$(annotate_heavy)"
+  if [ -z "$annotated" ]; then
     ok "[stray] none — no ${HEAVY_PROCS// //} process resident"
     return 0
   fi
-  # A parent that is gone (or init) means the process outlived its run.
-  local annotated
-  annotated="$(printf '%s\n' "$rows" | while read -r pid ppid pgid rss age comm; do
-    if [ "$ppid" = "1" ] || [ "$ppid" = "0" ] || ! kill -0 "$ppid" 2>/dev/null; then
-      printf '%s %s %s %s %s %s orphan\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
-    else
-      printf '%s %s %s %s %s %s live\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
-    fi
-  done)"
   printf '%7s %7s %7s %10s %8s %-8s %s\n' PID PPID PGID RSS AGE STATE COMM >&2
   printf '%s\n' "$annotated" | awk '{ printf "%7s %7s %7s %9.1fM %7ss %-8s %s\n", $1, $2, $3, $4/1024, $5, $7, $6 }' >&2
   local n orphans total

@@ -202,6 +202,20 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
             "echo \"STRANGER=$(alive)\"\n")
         out.contains("STRANGER=1")
     }
+    then "a run's teardown SAYS SO when orphans it does not own are resident" {
+        // A leak from before this tracking existed (or a run whose marker never
+        // got written) belongs to no run, so nothing reaps it automatically —
+        // killing a subtree that is not ours, unasked, is not a teardown's job.
+        // Reporting it is: silence is how GBs go unnoticed until the next run
+        // trips the memory floor and the reading taken to explain THAT gets
+        // blamed on a compiler bug.
+        let out = harness("I",
+            "bash -c '\"$root/$name\" 60 &'\n" +
+            "sleep 0.4\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true 2>&1\n")
+        out.contains("orphaned heavy process(es) still resident")
+            && out.contains("make stray REAP=1")
+    }
     then "a run NESTED inside another heavy run never group-reaps" {
         // The safety interlock, and the reason the suite can run these specs at
         // all. Inside a live `bs2 test` the process group is shared with the
