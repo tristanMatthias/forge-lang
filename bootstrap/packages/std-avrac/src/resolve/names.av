@@ -598,7 +598,7 @@ fn is_item_visible(graph: ModuleGraph, mod_path: string, name: string, canonical
 /// Convert a dotted module path (`a.b.c`) to its `::` form
 /// (`a::b::c`) — bridging the source syntax `use a.b.c` to the
 /// canonical-name representation used in the module tree.
-fn dots_to_colons(path: string) -> string {
+export fn dots_to_colons(path: string) -> string {
     mut result = ""
     for i in 0..path.length {
         let ch = path[i]
@@ -860,12 +860,22 @@ fn bind_pattern_list(ctx: NameCtx, pats: List<PatId>) -> NameCtx {
 /// in order so the last entry has the highest lookup priority
 /// (alias_lookup scans from the tail).
 fn merge_aliases(base: List<AliasBinding>, extra: List<AliasBinding>) -> List<AliasBinding> {
-    mut out = base
-    mut i = 0
-    while i < extra.length {
-        out.push(extra[i])
-        i = i + 1
-    }
+    // COPY, never extend in place. `List<T>` is heap-backed, so `mut out = base`
+    // binds the SAME underlying list and every push mutates the CALLER's — here
+    // `ctx.aliases`, the enclosing module's alias chain. The module walk merges
+    // once per `Stmt.Module`, so the first sibling's `use` lines were appended to
+    // the shared parent list and every LATER sibling inherited them: a module that
+    // imports nothing resolved a bare call to another module's import, beating its
+    // own file-private definition (t-oyr9). Codegen resolves independently and
+    // stayed correct, so this only ever corrupted TYPECK's callee lookup — which is
+    // why it hid until an argument gate made those calls report at all.
+    //
+    // This is the same heap-aliasing hazard `ctx_push_params` documents for
+    // `ctx.locals`, and the reason `list_push_copy` exists.
+    if extra.length == 0 { return base }
+    mut out: List<AliasBinding> = []
+    for a in base { out.push(a) }
+    for e in extra { out.push(e) }
     out
 }
 

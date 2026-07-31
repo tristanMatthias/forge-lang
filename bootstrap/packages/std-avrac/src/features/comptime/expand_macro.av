@@ -43,13 +43,13 @@
 
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, exit, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
-use resolve.{ResolverState, NameResolveResult, register_macro_decls, reresolve_use_aliases, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand}
+use resolve.{ResolverState, NameResolveResult, register_macro_decls, reresolve_use_aliases, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand, dots_to_colons}
 use features.comptime.{CompTimeRegistry, comptime_lookup, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
 use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_null, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, bag_errors_all_imports, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}
-use features.derive_registry.{derive_capability_macro, derive_capability_native, derive_capabilities_rendered}
+use features.derive_registry.{derive_capability_macro, derive_capability_module, derive_capability_native, derive_capabilities_rendered}
 use features.marshal.{derive_marshal_stmts_for}
 use features.query_surface.{query_surface_stmts_for, build_query_dispatcher, QuerySite}
 
@@ -948,11 +948,26 @@ fn try_derive_all(store: NodeStore, stmt: Stmt, reg: CompTimeRegistry, state: Re
         // through the state's alias table — the same mapping the resolver
         // used to rewrite `@expand`'s macro-arg ident — unless the bare
         // name already resolves (the in-module dogfood case).
+        // t-oyr9: `state.aliases` holds the ROOT program's `use` lines only.
+        // A @derive inside a MODULE body has its shim import in that module's
+        // body, not the root's, so the alias lookup misses it. It appeared to
+        // work only because `merge_aliases` used to extend the root list IN
+        // PLACE, leaking every module's imports into this table — the very bug
+        // this branch fixes. Since the registry already names the shim's home
+        // module, derive the canonical path from that mapping instead of
+        // depending on an alias being in scope: it is exactly what the alias
+        // would have produced, and it holds wherever the @derive sits.
         let effective = if comptime_has(reg, macro_name) {
             macro_name
         } else {
             let canon = alias_canonical_for(state, macro_name)
-            if canon != "" { canon } else { macro_name }
+            if canon != "" {
+                canon
+            } else {
+                let home = derive_capability_module(cap)
+                let derived = if home != "" { type_qualified_name(dots_to_colons(home), macro_name) } else { "" }
+                if derived != "" && comptime_has(reg, derived) { derived } else { macro_name }
+            }
         }
         let invoked = invoke_macro(stmt_unwrap(store, stmt), effective, reg, line, col, file, current_module, stmt)
         bag = bag_merge(bag, invoked.bag)
