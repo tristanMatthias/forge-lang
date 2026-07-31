@@ -417,7 +417,25 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
+  //
+  // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
+  // keyword up in the feature decl-parser table and calls that handler directly, so it
+  // does NOT re-enter parse_declaration and therefore does NOT stack (`export @foo fn`
+  // is "expected declaration after `export`" on the hand path, not a nested wrap). A
+  // recursive inner would accept that and diverge on invalid input, which is precisely
+  // the class the corpus additions in error_recovery_differential_test exist to catch.
+  //
+  // `exportable_decl` covers the NINE keywords that already have native rules. The hand
+  // table is wider — spec / component / select / parallel / let / mut / const are decl
+  // keywords too, and `export let x = 1` really does parse — so those forms fail this
+  // alternation, the `@try` rolls the whole branch back, and `@hand(decl_hand)` below
+  // parses them exactly as before. That is the point of routing as `@try` rather than
+  // bare: the native rule owns the input it can express and hands everything else,
+  // valid or malformed, back to the hand parser untouched.
+  export_decl     = "export" ed:exportable_decl -> MkExport(ed)
+  exportable_decl = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`

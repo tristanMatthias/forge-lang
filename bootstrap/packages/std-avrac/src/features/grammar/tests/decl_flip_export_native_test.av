@@ -1,0 +1,143 @@
+// WHY: t-47hc Phase 4 — `export` is the first of `decl_hand`'s prefix WRAPPERS to go
+// native. The nine decl KEYWORDS already left; what kept the leaf alive was the wrapper
+// family (`///` doc, `//!` module doc, `@annotation`, `export`) plus the IDENT-led
+// `Comp inst { … }`.
+//
+// A wrapper is a different kind of routing from a keyword, and the difference is what
+// this file pins:
+//
+//  1. THE INNER IS NOT `declaration`. The hand's export branch looks the NEXT token's
+//     keyword up in the feature decl-parser table and calls that handler DIRECTLY — it
+//     does not re-enter `parse_declaration`. So `export` does not stack: `export @foo fn`
+//     is "expected declaration after `export`" on the hand path, not a nested wrap. A
+//     recursive inner would accept that and diverge on invalid input.
+//
+//  2. THE HAND TABLE IS WIDER THAN THE NATIVE RULES. `spec` / `component` / `select` /
+//     `parallel` / `let` / `mut` / `const` are decl keywords too, and `export let x = 1`
+//     really does parse. `exportable_decl` covers only the nine keywords with native
+//     rules, so those other forms fail the alternation, the `@try` rolls the whole branch
+//     back, and `@hand(decl_hand)` parses them exactly as before. Routing as `@try`
+//     rather than bare is what makes that safe — and it is asserted here, not assumed.
+//
+// The malformed `export` forms live in error_recovery_differential_test's decl-WRAPPER
+// blocks, added BEFORE this routing for the reason that discipline exists: routing is
+// invisible on VALID input by construction, so a wrapper absent from the invalid corpus
+// would be routed on no evidence at all.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+// Status-plus-log, same shape as the use/mod flip's probe: the exit code is half the
+// assertion and `|| true` would throw it away.
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_decl_export_${name}.av"
+    let log = "build/_decl_export_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+spec "t-47hc Phase 4: `export` is emitted as a native rule" {
+    then "both parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_export_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_exportable_decl(st: PState) -> CapVal")
+    }
+
+    then "it dispatches BEFORE the decl_hand gate — else it would be dead code" {
+        // `export` is in `decl_lead`'s FIRST set and still is. Emitted after the gate,
+        // the gate would swallow it first and the native rule would be unreachable:
+        // correct output, no diagnostic, flip silently disabled. The #1028 failure
+        // mode, so it is asserted structurally on the emitted source.
+        let src = decl_src()
+        let exp_at = src.index_of("parse_export_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        exp_at >= 0 && hand_at >= 0 && exp_at < hand_at
+    }
+
+    then "the branch is SPECULATIVE — it rolls back into the hand gate on error" {
+        // Load-bearing, not incidental. A bare branch is error-TOLERANT: it would build
+        // a partial node where the hand ABORTS, and every `export` form the native rules
+        // cannot express (`export spec`, `export component`, `export let`) would be
+        // parsed WRONG instead of handed back.
+        let src = decl_src()
+        src.contains("s_last = parse_export_decl(st)") &&
+            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the build lowers to the SHARED core, not an executor-only build" {
+        // emit dispatches on the build NAME. A build that exists only in executor.av
+        // passes every interpreter-driven parity spec and emits nothing usable — the
+        // trap this slice's predecessors hit four separate times.
+        decl_src().contains("mk_export_decl(st, ed)")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        // Adding a branch can change which one is last, and the last one carries the
+        // unguarded error-recovery role. Nothing was removed here and the tail must
+        // stay `parse_statement(st)`.
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
+
+// The nine keywords `exportable_decl` covers natively, in one file so a regression in
+// any single one is a single red spec rather than nine.
+fn native_forms_out() -> string {
+    check_out("native",
+        "export fn ef() -> int { 1 }\n" +
+        "export type ET = { a: int }\n" +
+        "export enum EE { A, B }\n" +
+        "export shape ES = { a: int }\n" +
+        "export trait ETr { fn m(self) -> int }\n" +
+        "export extern fn avra_getpid() -> int\n" +
+        "fn main() { println(string(ef() + ET { a: 1 }.a)) }\n")
+}
+
+// The forms the native alternation CANNOT express. Each one is a decl keyword in the
+// hand's table with no native rule, so `exportable_decl` fails, `@try` rewinds, and
+// `@hand(decl_hand)` parses it. If the branch were bare these would break.
+fn hand_fallback_forms_out() -> string {
+    check_out("fallback",
+        "export const EC = 5\n" +
+        "export let el = 2\n" +
+        "export mut em = 3\n" +
+        "fn main() { println(string(EC + el + em)) }\n")
+}
+
+// A doc comment still routes through the hand's recursive wrapping branch, which
+// re-enters `parse_declaration` — so the native `export_decl` has to be reachable from
+// INSIDE the hand path too, not only from the top.
+fn wrapped_export_out() -> string {
+    check_out("wrapped",
+        "/// documented export\n" +
+        "export fn wf() -> int { 3 }\n" +
+        "@inline\n" +
+        "export fn af() -> int { 4 }\n" +
+        "fn main() { println(string(wf() + af())) }\n")
+}
+
+spec "t-47hc Phase 4: every `export` form the hand accepted still parses" {
+    then "the natively-expressible keywords all compile clean" {
+        clean(native_forms_out())
+    }
+
+    then "the decl keywords only the hand table has still compile — the `@try` handed them back" {
+        clean(hand_fallback_forms_out())
+    }
+
+    then "the native rule is reachable from inside the hand's recursive wrapper branch" {
+        clean(wrapped_export_out())
+    }
+}
