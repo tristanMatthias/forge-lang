@@ -593,7 +593,12 @@ fn build_uses_sp_start(name: string) -> bool {
         // thread the rule-entry byte exactly as MkQualExpr does (a tagged template's
         // Call node must start at the tag, not at the template literal).
         name == "MkStructLit" ||
-        name == "MkTaggedTemplate"
+        name == "MkTaggedTemplate" ||
+        // A prefix WRAPPER's inner declaration carries its OWN position, stamped from
+        // the byte where the inner starts — the hand captures it right after consuming
+        // the prefix. The build is the identity plus that side-table write, so its
+        // owning rule must begin exactly at the inner declaration.
+        name == "MkStampAt"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -1963,6 +1968,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkExtern" -> "mk_extern_fn(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}))"
         "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkExport" -> "mk_export_decl(st, ${args[0]})"
+        "MkStampAt" -> "mk_stamp_stmt_at(st, sp_start, ${args[0]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"

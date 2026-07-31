@@ -1,0 +1,223 @@
+// WHY: t-47hc Phase 4 — `export` is the first of `decl_hand`'s prefix WRAPPERS to go
+// native. The nine decl KEYWORDS already left; what kept the leaf alive was the wrapper
+// family (`///` doc, `//!` module doc, `@annotation`, `export`) plus the IDENT-led
+// `Comp inst { … }`.
+//
+// A wrapper is a different kind of routing from a keyword, and the difference is what
+// this file pins:
+//
+//  1. THE INNER IS NOT `declaration`. The hand's export branch looks the NEXT token's
+//     keyword up in the feature decl-parser table and calls that handler DIRECTLY — it
+//     does not re-enter `parse_declaration`. So `export` does not stack: `export @foo fn`
+//     is "expected declaration after `export`" on the hand path, not a nested wrap. A
+//     recursive inner would accept that and diverge on invalid input.
+//
+//  2. THE HAND TABLE IS WIDER THAN THE NATIVE RULES. `spec` / `component` / `select` /
+//     `parallel` / `let` / `mut` / `const` are decl keywords too, and `export let x = 1`
+//     really does parse. `exportable_decl` covers only the nine keywords with native
+//     rules, so those other forms fail the alternation, the `@try` rolls the whole branch
+//     back, and `@hand(decl_hand)` parses them exactly as before. Routing as `@try`
+//     rather than bare is what makes that safe — and it is asserted here, not assumed.
+//
+// The malformed `export` forms live in error_recovery_differential_test's decl-WRAPPER
+// blocks, added BEFORE this routing for the reason that discipline exists: routing is
+// invisible on VALID input by construction, so a wrapper absent from the invalid corpus
+// would be routed on no evidence at all.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+// Status-plus-log, same shape as the use/mod flip's probe: the exit code is half the
+// assertion and `|| true` would throw it away.
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_decl_export_${name}.av"
+    let log = "build/_decl_export_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+spec "t-47hc Phase 4: `export` is emitted as a native rule" {
+    then "both parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_export_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_exportable_decl(st: PState) -> CapVal")
+    }
+
+    then "it dispatches BEFORE the decl_hand gate — else it would be dead code" {
+        // `export` is in `decl_lead`'s FIRST set and still is. Emitted after the gate,
+        // the gate would swallow it first and the native rule would be unreachable:
+        // correct output, no diagnostic, flip silently disabled. The #1028 failure
+        // mode, so it is asserted structurally on the emitted source.
+        let src = decl_src()
+        let exp_at = src.index_of("parse_export_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        exp_at >= 0 && hand_at >= 0 && exp_at < hand_at
+    }
+
+    then "the branch is SPECULATIVE — it rolls back into the hand gate on error" {
+        // Load-bearing, not incidental. A bare branch is error-TOLERANT: it would build
+        // a partial node where the hand ABORTS, and every `export` form the native rules
+        // cannot express (`export spec`, `export component`, `export let`) would be
+        // parsed WRONG instead of handed back.
+        let src = decl_src()
+        src.contains("s_last = parse_export_decl(st)") &&
+            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
+            src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the INNER declaration is stamped with its own position" {
+        // The hand stamps the WRAPPED declaration with the position it captured right
+        // after consuming `export`; nothing else supplies that, because the
+        // statement-list loop stamps only the outermost node — for a wrapper, the
+        // `Stmt.Annotated`. `Ctx.source_line` RETAINS its previous value for a node with
+        // no recorded position, so an unstamped inner inherits whatever statement was
+        // emitted before it, and every diagnostic position inside it — including the
+        // `avra_null_deref_trap` line baked into the IR — moves with it.
+        //
+        // The first cut of this slice omitted it. diff-test caught it as selfhost line
+        // numbers drifting by 2, 3 and 41 — arbitrary deltas being the tell that a
+        // position is INHERITED rather than shifted. Asserted structurally so the fix
+        // cannot be dropped silently: `sp_start` must be captured by
+        // `parse_exportable_decl`, one literal AFTER `export`, not at `export`.
+        let src = decl_src()
+        let at = src.index_of("fn parse_exportable_decl(st: PState) -> CapVal {\n    let sp_start = st.cur().pos\n")
+        at >= 0 && src.contains("mk_stamp_stmt_at(st, sp_start, ei)")
+            // …and `parse_export_decl` itself must NOT capture one: its entry byte is
+            // `export`, which is the wrapper's position, not the inner's.
+            && !src.contains("fn parse_export_decl(st: PState) -> CapVal {\n    let sp_start")
+    }
+
+    then "the build lowers to the SHARED core, not an executor-only build" {
+        // emit dispatches on the build NAME. A build that exists only in executor.av
+        // passes every interpreter-driven parity spec and emits nothing usable — the
+        // trap this slice's predecessors hit four separate times.
+        decl_src().contains("mk_export_decl(st, ed)")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        // Adding a branch can change which one is last, and the last one carries the
+        // unguarded error-recovery role. Nothing was removed here and the tail must
+        // stay `parse_statement(st)`.
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
+
+// The nine keywords `exportable_decl` covers natively, in one file so a regression in
+// any single one is a single red spec rather than nine.
+fn native_forms_out() -> string {
+    check_out("native",
+        "export fn ef() -> int { 1 }\n" +
+        "export type ET = { a: int }\n" +
+        "export enum EE { A, B }\n" +
+        "export shape ES = { a: int }\n" +
+        "export trait ETr { fn m(self) -> int }\n" +
+        "export extern fn avra_getpid() -> int\n" +
+        "fn main() { println(string(ef() + ET { a: 1 }.a)) }\n")
+}
+
+// The forms the native alternation CANNOT express. Each one is a decl keyword in the
+// hand's table with no native rule, so `exportable_decl` fails, `@try` rewinds, and
+// `@hand(decl_hand)` parses it. If the branch were bare these would break.
+fn hand_fallback_forms_out() -> string {
+    check_out("fallback",
+        "export const EC = 5\n" +
+        "export let el = 2\n" +
+        "export mut em = 3\n" +
+        "fn main() { println(string(EC + el + em)) }\n")
+}
+
+// A doc comment still routes through the hand's recursive wrapping branch, which
+// re-enters `parse_declaration` — so the native `export_decl` has to be reachable from
+// INSIDE the hand path too, not only from the top.
+fn wrapped_export_out() -> string {
+    check_out("wrapped",
+        "/// documented export\n" +
+        "export fn wf() -> int { 3 }\n" +
+        "@inline\n" +
+        "export fn af() -> int { 4 }\n" +
+        "fn main() { println(string(wf() + af())) }\n")
+}
+
+// The diagnostic LINE baked into an exported fn's IR. `avra_null_deref_trap`'s last
+// argument is `Ctx.source_line`, which codegen stamps per statement from that
+// statement's recorded SrcPos — so it is a direct readout of what the parser recorded,
+// with no rendering in between.
+fn trap_lines(name: string, src: string) -> string {
+    let fixture = "build/_decl_export_${name}.av"
+    let out = "build/_decl_export_${name}.ll"
+    let log = "build/_decl_export_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let lines = "build/_decl_export_${name}.lines"
+    let rc = avra_shell_exec_status("./build/bs2 compile '${fixture}' --output '${out}' > '${log}' 2>&1")
+    if rc != 0 { return "__status=${rc}\n" + avra_selfhost_read_file(log) }
+    // Through a FILE, not the shell's stdout: the extraction is a pipeline whose
+    // capture is the one part of this probe that is not the thing under test, and a
+    // silent empty capture would read as a line-number regression.
+    // No `$` anchor in the sed: an Avra string escapes it, and the escaped form reaches
+    // the shell as a literal — which silently left the `)` on and turned a green
+    // extraction into a red assertion.
+    let _ = avra_shell_exec_status("grep -o 'avra_null_deref_trap(ptr @fld_name[^)]*)' '${out}' | sed 's/.*i64 //; s/[)]//' > '${lines}'")
+    "__status=0\n" + avra_selfhost_read_file(lines)
+}
+
+spec "t-47hc Phase 4: an exported fn's diagnostics report the TRUE source line" {
+    // WHY THIS IS ITS OWN SPEC. Routing `export` moved exported fn BODIES off the hand
+    // parser, and that changed 232 line numbers across the selfhost IR — every one of
+    // them inside an `export fn`, every one of them moving to the correct line.
+    //
+    // The hand parser's line counter carries deliberate accumulated nudges (the
+    // `is_map_literal` nudges `run_hand_expr` documents and takes care to preserve), so
+    // a delegated body's statements were stamped with a line that had drifted forward —
+    // by 2 in features/modules/resolver.av, by 41 in features/grammar/executor.av, by 97
+    // in typeck/mod.av. Verified against the source in seven files: the native line is
+    // the real one in every case.
+    //
+    // So every runtime trap and every codegen diagnostic raised inside an EXPORTED
+    // function has been naming the wrong line, while the identical code in a plain `fn`
+    // named the right one. This spec pins the invariant absolutely — the recorded line
+    // must equal the line the deref is actually written on — rather than comparing the
+    // two parsers, because the pre-fix behaviour is not reachable in-tree any more:
+    // `AVRA_PARSER_DECL_FLIP=0` is PURE hand with no delegate, and the drift came from
+    // the MIXED path where a native parse handed one body to the hand delegate.
+    then "an export fn and a plain fn both report the line the deref is written on" {
+        // Line numbers are counted from the first line of the string below, so they are
+        // checkable by reading it: the two `r!.n` derefs are on lines 3 and 7.
+        let out = trap_lines("lines",
+            "type Res = { n: int }\n" +                                    // 1
+            "export fn exported(r: Res?) -> int {\n" +                     // 2
+            "    r!.n\n" +                                                 // 3
+            "}\n" +                                                        // 4
+            "\n" +                                                         // 5
+            "fn plain(r: Res?) -> int {\n" +                               // 6
+            "    r!.n\n" +                                                 // 7
+            "}\n" +                                                        // 8
+            "fn main() { println(string(exported(Res { n: 1 }) + plain(Res { n: 2 }))) }\n")
+        out.contains("__status=0\n") && out.contains("3\n") && out.contains("7\n")
+    }
+}
+
+spec "t-47hc Phase 4: every `export` form the hand accepted still parses" {
+    then "the natively-expressible keywords all compile clean" {
+        clean(native_forms_out())
+    }
+
+    then "the decl keywords only the hand table has still compile — the `@try` handed them back" {
+        clean(hand_fallback_forms_out())
+    }
+
+    then "the native rule is reachable from inside the hand's recursive wrapper branch" {
+        clean(wrapped_export_out())
+    }
+}

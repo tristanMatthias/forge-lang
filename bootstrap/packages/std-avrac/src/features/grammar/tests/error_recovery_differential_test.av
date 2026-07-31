@@ -468,6 +468,65 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("mod 5\nfn f() -> int { 1 }") &&
         agree_bad("mod {\nfn f() -> int { 1 }")
     }
+    // t-47hc PHASE 4 PREREQUISITE — the DECL WRAPPERS, added BEFORE any of them is
+    // routed.
+    //
+    // All nine decl keywords are native; what keeps `@hand(decl_hand)` alive is the
+    // prefix-wrapper family (`///` doc, `//!` module doc, `@annotation`, `export`) plus
+    // the IDENT-led `Comp inst { … }`. Those wrappers are RECURSIVE — each parses its
+    // prefix and calls `parse_declaration` again — so routing them moves every
+    // declaration in the file onto the native path, the same blast radius the
+    // body-bearing keywords had in 10.13.
+    //
+    // NOT ONE OF THESE FORMS WAS IN THE CORPUS. That is the exact condition the routing
+    // discipline names as fatal: routing is invisible on VALID input by construction
+    // (the native rule and the hand agree there — that is what parity work buys), so a
+    // construct absent from the invalid corpus gets routed on no evidence at all.
+    // `shape` shipped that way in #1054 and had to be un-routed in #1059; `use`/`mod`
+    // shipped that way and diverged on 8 of 18 malformed forms.
+    //
+    // These pass TODAY on the hand path. Their job is to fail loudly the moment a
+    // wrapper is routed and its recovery does not match — which is the only witness
+    // that exists for that class of regression.
+    then "malformed decl WRAPPERS recover to the same tree" {
+        // Every form here was checked to actually REPORT on both paths before being
+        // added. An earlier draft of this block also listed `export\nfn f()`,
+        // `export let x = 1` and `/// orphan doc\nfn f()` as malformed — they are
+        // VALID (the wrapper attaches to the declaration on the next line), so
+        // `agree_bad`, which requires both parsers to report, failed on them. The
+        // parsers were right and the corpus entry was wrong; those moved to the
+        // valid-input tree pin below.
+        agree_bad("export export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        // A bare `@`, an unterminated arg list, an empty arg, a stray close paren.
+        agree_bad("@\nfn f() -> int { 1 }") &&
+        agree_bad("@foo(\nfn f() -> int { 1 }") &&
+        agree_bad("@foo(,)\nfn f() -> int { 1 }") &&
+        agree_bad("@foo)\nfn f() -> int { 1 }") &&
+        // An annotation with NOTHING following it — the wrapper's recursive call into
+        // `parse_declaration` hits EOF, which is the edge a routed rule is most likely
+        // to get wrong (it must abort, not build a wrapper around nothing).
+        agree_bad("@foo") &&
+        // A malformed INNER declaration under a wrapper: the diagnostic must come from
+        // the inner decl, not be swallowed by the prefix that wraps it.
+        agree_bad("export enum { A }\nfn f() -> int { 1 }") &&
+        // ...and under a STACK of wrappers, since they nest by recursion.
+        agree_bad("@foo\nexport enum { A }\nfn f() -> int { 1 }")
+    }
+    // The VALID half of the wrapper family. `agree_bad` cannot cover these — nothing
+    // reports — but routing must preserve their SHAPE, and a wrapper that silently
+    // stopped attaching to the following declaration would be a wrong-tree bug with no
+    // diagnostic anywhere. That is exactly the failure mode the t-47hc discipline says
+    // is invisible on valid input, so it needs its own pin.
+    then "well-formed decl wrappers build the same tree" {
+        agree_tree("export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_tree("/// a doc comment\nfn f() -> int { 1 }") &&
+        agree_tree("//! a module doc\nfn f() -> int { 1 }") &&
+        agree_tree("@foo\nfn f() -> int { 1 }") &&
+        agree_tree("@foo(1, 2)\nfn f() -> int { 1 }") &&
+        // The stack, in both orders — the recursion means order is observable.
+        agree_tree("@foo\nexport fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_tree("/// doc\n@foo\nexport fn g() -> int { 1 }\nfn f() -> int { 1 }")
+    }
     // The TREE half for `enum` — see the F-code block above. A partial enum node (a
     // nameless declaration, a variant list truncated at the first bad variant) has the
     // same F-codes as hand's `(error)` and a different tree, so both halves are needed.
