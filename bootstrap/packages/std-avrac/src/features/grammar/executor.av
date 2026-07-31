@@ -3287,6 +3287,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkExtern" if args.length == 3 -> mk_extern_fn(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])))
         "MkExport" if args.length == 1 -> mk_export_decl(st, env.get(args[0]))
+        // Span-free in the interpreter (`0 - 1`), exactly like Block / While / MkIfExpr:
+        // the oracle records no positions.
+        "MkStampAt" if args.length == 1 -> mk_stamp_stmt_at(st, 0 - 1, env.get(args[0]))
         // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the non-brace RHS
         // only, kept for the grammar-string consumers that predate `MkTypeDeclAny`
         // (decl_type_op_test). It DELEGATES rather than reimplementing: slice 10.5 grew
@@ -4038,16 +4041,47 @@ export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> C
 /// `export`-WRAPPING increment spends, so the core lands before the flip does — the
 /// dormant-capability shape the roadmap uses everywhere else.
 ///
-/// NOT the whole of the hand's export branch, and the gap is deliberate:
-/// `parse_declaration_hand` also calls `store.stmts.record_pos(inner_id, …)` to stamp the
-/// WRAPPED declaration's source position before wrapping. That is a side-table write on a
-/// node the builder receives already-built, and reproducing it needs the inner item's
-/// line/col at build time. The wrapping increment has to solve that; this core is the
-/// half that is unambiguous.
+/// The hand ALSO stamps the wrapped declaration's own source position
+/// (`store.stmts.record_pos(inner_id, …)`, captured after consuming `export`). That is a
+/// side-table write on a node the builder receives already-built, so it does not belong
+/// here — `mk_stamp_stmt_at` does it, driven by the inner rule's own entry byte. See its
+/// WHY for what happens when it is skipped.
 export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
+}
+
+/// Stamp an ALREADY-BUILT statement with its own source position and return it
+/// unchanged (the `MkStampAt` build's core). The identity build, plus one side-table
+/// write.
+///
+/// WHY IT EXISTS. A prefix WRAPPER (`export <decl>`, and the doc / annotation wrappers
+/// after it) yields a node whose recorded position is the wrapper's, while the hand
+/// parser ALSO stamps the wrapped declaration itself — captured after consuming the
+/// prefix, so it points at the inner keyword. Nothing else supplies that: the top-level
+/// statement-list loop stamps only the outermost node it pushed, which for a wrapper is
+/// the `Stmt.Annotated`.
+///
+/// SKIPPING IT IS NOT COSMETIC. `Ctx.source_line` is stamped from a node's recorded
+/// SrcPos and RETAINS its previous value when a node has none, so an unstamped
+/// declaration silently inherits whatever statement was emitted before it — and every
+/// diagnostic position inside that declaration, including the `avra_null_deref_trap`
+/// line baked into the IR, moves with it. Caught by diff-test as line numbers drifting
+/// by 2, 3 and 41 across the selfhost compile; the arbitrary deltas are the tell that a
+/// position is being inherited rather than shifted.
+///
+/// The position is the OWNING RULE's entry byte, so the rule that names this build must
+/// begin exactly where the inner declaration does. The interpreter passes `0 - 1` and
+/// records nothing, matching every other span-stamping build (`mk_block`, `mk_while`, …):
+/// it is the differential oracle and carries no spans.
+export fn mk_stamp_stmt_at(st: PState, sp_start: int, inner: CapVal) -> CapVal {
+    let id = capval_to_stmt(st, inner)
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(sp_start)
+        st.store.stmts.record_pos(id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    CapVal.SNode(id)
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).

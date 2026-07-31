@@ -25,7 +25,7 @@
 // would be routed on no evidence at all.
 
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
-use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
     emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
@@ -72,6 +72,28 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
             src.contains("st.restore_hand_state(s_hand)")
+    }
+
+    then "the INNER declaration is stamped with its own position" {
+        // The hand stamps the WRAPPED declaration with the position it captured right
+        // after consuming `export`; nothing else supplies that, because the
+        // statement-list loop stamps only the outermost node — for a wrapper, the
+        // `Stmt.Annotated`. `Ctx.source_line` RETAINS its previous value for a node with
+        // no recorded position, so an unstamped inner inherits whatever statement was
+        // emitted before it, and every diagnostic position inside it — including the
+        // `avra_null_deref_trap` line baked into the IR — moves with it.
+        //
+        // The first cut of this slice omitted it. diff-test caught it as selfhost line
+        // numbers drifting by 2, 3 and 41 — arbitrary deltas being the tell that a
+        // position is INHERITED rather than shifted. Asserted structurally so the fix
+        // cannot be dropped silently: `sp_start` must be captured by
+        // `parse_exportable_decl`, one literal AFTER `export`, not at `export`.
+        let src = decl_src()
+        let at = src.index_of("fn parse_exportable_decl(st: PState) -> CapVal {\n    let sp_start = st.cur().pos\n")
+        at >= 0 && src.contains("mk_stamp_stmt_at(st, sp_start, ei)")
+            // …and `parse_export_decl` itself must NOT capture one: its entry byte is
+            // `export`, which is the wrapper's position, not the inner's.
+            && !src.contains("fn parse_export_decl(st: PState) -> CapVal {\n    let sp_start")
     }
 
     then "the build lowers to the SHARED core, not an executor-only build" {
@@ -126,6 +148,64 @@ fn wrapped_export_out() -> string {
         "@inline\n" +
         "export fn af() -> int { 4 }\n" +
         "fn main() { println(string(wf() + af())) }\n")
+}
+
+// The diagnostic LINE baked into an exported fn's IR. `avra_null_deref_trap`'s last
+// argument is `Ctx.source_line`, which codegen stamps per statement from that
+// statement's recorded SrcPos — so it is a direct readout of what the parser recorded,
+// with no rendering in between.
+fn trap_lines(name: string, src: string) -> string {
+    let fixture = "build/_decl_export_${name}.av"
+    let out = "build/_decl_export_${name}.ll"
+    let log = "build/_decl_export_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let lines = "build/_decl_export_${name}.lines"
+    let rc = avra_shell_exec_status("./build/bs2 compile '${fixture}' --output '${out}' > '${log}' 2>&1")
+    if rc != 0 { return "__status=${rc}\n" + avra_selfhost_read_file(log) }
+    // Through a FILE, not the shell's stdout: the extraction is a pipeline whose
+    // capture is the one part of this probe that is not the thing under test, and a
+    // silent empty capture would read as a line-number regression.
+    // No `$` anchor in the sed: an Avra string escapes it, and the escaped form reaches
+    // the shell as a literal — which silently left the `)` on and turned a green
+    // extraction into a red assertion.
+    let _ = avra_shell_exec_status("grep -o 'avra_null_deref_trap(ptr @fld_name[^)]*)' '${out}' | sed 's/.*i64 //; s/[)]//' > '${lines}'")
+    "__status=0\n" + avra_selfhost_read_file(lines)
+}
+
+spec "t-47hc Phase 4: an exported fn's diagnostics report the TRUE source line" {
+    // WHY THIS IS ITS OWN SPEC. Routing `export` moved exported fn BODIES off the hand
+    // parser, and that changed 232 line numbers across the selfhost IR — every one of
+    // them inside an `export fn`, every one of them moving to the correct line.
+    //
+    // The hand parser's line counter carries deliberate accumulated nudges (the
+    // `is_map_literal` nudges `run_hand_expr` documents and takes care to preserve), so
+    // a delegated body's statements were stamped with a line that had drifted forward —
+    // by 2 in features/modules/resolver.av, by 41 in features/grammar/executor.av, by 97
+    // in typeck/mod.av. Verified against the source in seven files: the native line is
+    // the real one in every case.
+    //
+    // So every runtime trap and every codegen diagnostic raised inside an EXPORTED
+    // function has been naming the wrong line, while the identical code in a plain `fn`
+    // named the right one. This spec pins the invariant absolutely — the recorded line
+    // must equal the line the deref is actually written on — rather than comparing the
+    // two parsers, because the pre-fix behaviour is not reachable in-tree any more:
+    // `AVRA_PARSER_DECL_FLIP=0` is PURE hand with no delegate, and the drift came from
+    // the MIXED path where a native parse handed one body to the hand delegate.
+    then "an export fn and a plain fn both report the line the deref is written on" {
+        // Line numbers are counted from the first line of the string below, so they are
+        // checkable by reading it: the two `r!.n` derefs are on lines 3 and 7.
+        let out = trap_lines("lines",
+            "type Res = { n: int }\n" +                                    // 1
+            "export fn exported(r: Res?) -> int {\n" +                     // 2
+            "    r!.n\n" +                                                 // 3
+            "}\n" +                                                        // 4
+            "\n" +                                                         // 5
+            "fn plain(r: Res?) -> int {\n" +                               // 6
+            "    r!.n\n" +                                                 // 7
+            "}\n" +                                                        // 8
+            "fn main() { println(string(exported(Res { n: 1 }) + plain(Res { n: 2 }))) }\n")
+        out.contains("__status=0\n") && out.contains("3\n") && out.contains("7\n")
+    }
 }
 
 spec "t-47hc Phase 4: every `export` form the hand accepted still parses" {
