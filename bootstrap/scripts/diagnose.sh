@@ -413,6 +413,17 @@ DIFF & ANALYSIS
                        instead of OOM-restarting the container. Foreground
                        loop — background it and kill it yourself, or (better)
                        use --guarded. Trips logged to build/memguard/log.
+  --stray [--reap]     List every surviving heavy process (bs2/llc/cc1plus/
+                       clang/cc1) with RSS, age and whether it is ORPHANED.
+                       Run this before trusting any memory number, and after
+                       any killed run: orphans holding GBs make the NEXT run
+                       trip the memory floor. Matches ps's `comm`, never the
+                       command line, so it can never report itself the way
+                       `pgrep -f bs2` does. --reap kills the orphans and their
+                       subtrees (TERM then KILL), leaving live parented builds
+                       alone. Reporting exits 0 when nothing is resident, 1
+                       when something is; --reap exits 0 unless an orphan
+                       survived the KILL.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
@@ -2923,6 +2934,327 @@ mode_cache_fuzz() {
   ok "cache-fuzz PASS — $n iterations (seed $seed): cached IR == recomputed IR, revert restores golden"
 }
 
+# ── Stray heavy processes, and runs that reap what they spawned (t-ce5t) ─────
+#
+# Two hazards that compound, and they are the same subject: which heavy
+# processes exist, and whose they are.
+#
+# (1) ORPHANS SURVIVE THE KILL. A run that dies without unwinding — the
+#     memguard SIGKILLs it, a tool timeout kills it — leaves its grandchildren
+#     running. Observed 2026-07-31, minutes after a watchdog trip:
+#
+#         26966  4.4GB  build/bs2 compile
+#         26962  4.4GB  build/bs2 compile
+#
+#     8.8GB held by a run already declared dead. The NEXT run then starts
+#     against 6GB free instead of 14GB and is far likelier to trip the floor
+#     itself, so one kill begets the next — and every memory reading taken
+#     meanwhile is wrong, which is exactly the session-accumulated-pressure
+#     confusion CLAUDE.md warns has cost whole sessions. (The memory sibling
+#     of t-zg2s, which fixed orphaned-run ARTIFACTS poisoning verdicts.)
+#
+# (2) THE INSPECTION IDIOM LIES. `pgrep -f bs2` / `pkill -f <pat>` match the
+#     COMMAND LINE, and the shell running them carries the pattern in its own
+#     command line — so they match themselves. Knowing that is demonstrably
+#     not enough to avoid it: the hazard was already documented and still
+#     produced a `pgrep -f 'diagnose.sh --sweep'` that reported a sweep
+#     RUNNING after it had already failed (status reported wrong three times
+#     off that one reading). So nothing here matches a command line. Every
+#     probe below filters on ps's `comm` — the executable's basename, which
+#     no shell, awk or ps in the pipeline can accidentally be — making it
+#     self-safe BY CONSTRUCTION rather than by remembering a trick. (Typing
+#     one by hand anyway? The bracket idiom is the escape hatch, because the
+#     literal `[b]s2` does not match itself:
+#         ps -A -o pid=,rss=,comm= | grep '[b]s2')
+
+# The heavy set: the processes that actually hold the memory. ONE definition —
+# the memguard's trip-kill, the run reaper and --stray all read it, so a new
+# heavy tool is added in a single place. Overridable because the specs drive
+# the REAL cli end-to-end against fake binaries under a per-run name: pointing
+# the set at those names is what makes a test that genuinely SIGKILLs a run
+# and reaps its survivors incapable of touching the live suite's own `bs2`.
+HEAVY_PROCS="${AVRA_HEAVY_PROCS:-bs2 llc cc1plus clang cc1}"
+
+# One ps snapshot, heavy processes only, one per line:
+#   pid ppid pgid rss_kb age_seconds comm
+# The `comm` filter is what makes this self-safe (see (2) above). macOS ps
+# prints comm as an absolute path where Linux prints the basename, so the
+# path is stripped before matching.
+heavy_ps() {
+  ps -A -o pid=,ppid=,pgid=,rss=,etime=,comm= 2>/dev/null | awk -v want="$HEAVY_PROCS" '
+    function age(s,   a, p, n, d) {
+      d = 0
+      if (s ~ /-/) { split(s, a, "-"); d = a[1] + 0; s = a[2] }
+      n = split(s, p, ":")
+      if (n == 3) return d * 86400 + p[1] * 3600 + p[2] * 60 + p[3]
+      if (n == 2) return d * 86400 + p[1] * 60 + p[2]
+      return d * 86400 + p[1] + 0
+    }
+    BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) heavy[w[i]] = 1 }
+    { comm = $6; sub(/^.*\//, "", comm)
+      if (comm in heavy) print $1, $2, $3, $4, age($5), comm }'
+}
+
+# The pid chain from PID (default: this shell) up to init, space separated.
+# Recorded at run START, because once the leader is SIGKILLed its children are
+# re-parented and the chain is gone — and a reaper must never kill the tree it
+# is running INSIDE (a spec test driving this tooling has a live `bs2`
+# orchestrator above it).
+pid_ancestry() {
+  local p="${1:-$$}" chain="" hops=0 snap
+  snap="$(ps -A -o pid=,ppid= 2>/dev/null)"
+  while [ -n "$p" ] && [ "$p" != "0" ] && [ "$hops" -lt 64 ]; do
+    chain="$chain $p"
+    [ "$p" = "1" ] && break
+    p="$(printf '%s\n' "$snap" | awk -v t="$p" '$1 == t { print $2; exit }')"
+    hops=$(( hops + 1 ))
+  done
+  printf '%s' "${chain# }"
+}
+
+# Is one of our ANCESTORS a heavy process? Then we are running INSIDE another
+# run (a spec test driving this tooling, a nested build), our process GROUP is
+# shared with that run's other children, and a group-wide reap could kill work
+# that is not ours. Callers downgrade to descendant-only reaping when true.
+run_has_heavy_ancestor() {
+  local snap chain
+  chain=" $(pid_ancestry $$) "
+  snap="$(heavy_ps)"
+  [ -n "$snap" ] || return 1
+  printf '%s\n' "$snap" | awk -v chain="$chain" '
+    index(chain, " " $1 " ") > 0 { found = 1 } END { exit(found ? 0 : 1) }'
+}
+
+# SIGTERM the listed victims ("pid comm" per line), then SIGKILL whatever is
+# still standing. TERM first so a compile can unwind and drop its temp files;
+# KILL because the memory has to come back either way. Returns non-zero if
+# anything outlived the KILL, so a caller can report that honestly instead of
+# claiming a reap that did not happen.
+kill_victims() {
+  local list="$1" label="$2"
+  [ -n "$list" ] || return 0
+  local pids names n=0 p waited=0 alive left=0
+  pids=$(printf '%s\n' "$list" | awk '{ print $1 }')
+  names=$(printf '%s\n' "$list" | awk '{ printf "%s(%s) ", $1, $2 }')
+  for p in $pids; do kill -TERM "$p" 2>/dev/null; n=$(( n + 1 )); done
+  while [ "$waited" -lt 20 ]; do
+    alive=0
+    for p in $pids; do kill -0 "$p" 2>/dev/null && alive=1; done
+    [ "$alive" = "0" ] && break
+    sleep 0.1
+    waited=$(( waited + 1 ))
+  done
+  # Only signal what is still there: pids are recycled, and a blind second
+  # KILL two seconds later can land on whoever inherited the number.
+  for p in $pids; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null; done
+  for p in $pids; do kill -0 "$p" 2>/dev/null && left=$(( left + 1 )); done
+  warn "[reap:$label] killed $n stray heavy process(es): ${names% }"
+  [ "$left" = "0" ] || err "[reap:$label] $left survived SIGKILL (uninterruptible?) — re-check with --stray"
+  [ "$left" = "0" ]
+}
+
+# Heavy processes whose parent chain reaches any pid in ROOTS (space
+# separated), as "pid comm" lines. ONE ancestry walk, shared by both consumers:
+# the teardown arm (roots = the run leader) and --stray --reap (roots = the
+# orphans — whose own children are orphans-in-waiting, so killing only the top
+# of a dead run's tree would leave its shards to be re-parented and reported
+# again on the next pass).
+heavy_under() {
+  local roots=" $1 " snap
+  snap="$(ps -A -o pid=,ppid= 2>/dev/null)"
+  heavy_ps | awk -v snap="$snap" -v roots="$roots" '
+    BEGIN { n = split(snap, lines, "\n")
+            for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] } }
+    { p = $2; hops = 0
+      while (p != "" && p != "0" && p != "1" && hops < 64) {
+        if (index(roots, " " p " ") > 0) { print $1, $6; break }
+        p = parent[p]; hops++
+      } }'
+}
+
+# ARM 1 (leader alive — the normal teardown). Kill the heavy DESCENDANTS of
+# PID. Unconditionally safe: descendants are read off the LIVE process tree,
+# so nothing outside this run's own subtree can be selected.
+reap_descendants() {
+  local root="$1" label="${2:-teardown}"
+  kill_victims "$(heavy_under "$root")" "$label"
+}
+
+# ARM 2/3 (leader DEAD — the nanny and the stale-marker backstop). The run's
+# whole subtree has been re-parented, so ancestry is gone and the process
+# GROUP is the only attribute that survived. Every guard here is load-bearing:
+#   * group_reap=0 markers are skipped — that run shared its pgid with an
+#     outer run, so its group is not exclusively its own,
+#   * a pid in the run's recorded ancestry is never killed (the tree we, or
+#     the run, were running inside),
+#   * a process OLDER than the run itself is never killed, so a recycled pgid
+#     cannot make us reap a stranger's compile.
+reap_marker() {
+  local marker="$1" label="$2"
+  [ -f "$marker" ] || return 0
+  local pgid started group_reap spare now
+  pgid=$(awk -F= '$1 == "pgid" { print $2 }' "$marker" 2>/dev/null)
+  started=$(awk -F= '$1 == "started" { print $2 }' "$marker" 2>/dev/null)
+  group_reap=$(awk -F= '$1 == "group_reap" { print $2 }' "$marker" 2>/dev/null)
+  spare=$(awk -F= '$1 == "spare" { print $2 }' "$marker" 2>/dev/null)
+  [ "$group_reap" = "1" ] || return 0
+  # A marker that is truncated or garbled (a kill mid-write) must decline, not
+  # improvise: a non-numeric `started` would make the age guard compare against
+  # an empty string and quietly stop guarding anything.
+  case "$pgid"    in ""|*[!0-9]*) return 0 ;; esac
+  case "$started" in ""|*[!0-9]*) return 0 ;; esac
+  now=$(date +%s)
+  local victims
+  victims="$(heavy_ps | awk -v pgid="$pgid" -v spare=" $spare " -v me="$$" \
+                            -v maxage="$(( now - started + 2 ))" '
+    $3 == pgid && $1 != me && $5 <= maxage && index(spare, " " $1 " ") == 0 { print $1, $6 }')"
+  kill_victims "$victims" "$label"
+}
+
+# Where a run announces itself. Overridable so specs can drive the lifecycle
+# against a sandbox instead of the live tree.
+RUN_DIR="${AVRA_RUN_DIR:-$BUILD_DIR/runs}"
+RUN_MARKER=""
+RUN_NANNY=""
+RUN_AUX_PIDS=""     # helper processes (--guarded's memguard) reaped with the run
+RUN_LABEL="run"
+RUN_ENDED=0
+
+# ARM 3: reap what the LAST run left behind, before this one starts. This is
+# the arm that closes the "one kill begets the next" loop — nothing else runs
+# after a whole process group is killed at once, so the next run is the first
+# thing in a position to clean up.
+reap_stale_runs() {
+  [ -d "$RUN_DIR" ] || return 0
+  local m pid
+  for m in "$RUN_DIR"/*.run; do
+    [ -f "$m" ] || continue
+    pid=$(awk -F= '$1 == "pid" { print $2 }' "$m" 2>/dev/null)
+    # A live leader owns its own marker — it is mid-run, not stale.
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && continue
+    reap_marker "$m" "stale"
+    rm -f "$m"
+  done
+}
+
+# The lifecycle. A heavy runner calls run_begin once; run_end fires on every
+# exit path this shell can observe, and the nanny covers the one it cannot.
+run_begin() {
+  RUN_LABEL="${1:-run}"
+  RUN_ENDED=0
+  # Installed unconditionally, nested or not: even a nested run has helper
+  # processes (--guarded's memguard) that must not outlive it.
+  trap 'run_end; exit 130' INT
+  trap 'run_end; exit 143' TERM HUP
+  trap 'run_end' EXIT
+  # Nested under an outer run (`make guarded CMD="make sweep"`): the outer
+  # reaper already covers this entire subtree, marker and nanny included.
+  if [ -n "${AVRA_RUN_ID:-}" ]; then return 0; fi
+  mkdir -p "$RUN_DIR" 2>/dev/null
+  reap_stale_runs
+  local pgid group_reap=1
+  pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
+  run_has_heavy_ancestor && group_reap=0
+  RUN_MARKER="$RUN_DIR/$$.run"
+  printf 'pid=%s\npgid=%s\nstarted=%s\ngroup_reap=%s\nlabel=%s\nspare=%s\n' \
+    "$$" "$pgid" "$(date +%s)" "$group_reap" "$RUN_LABEL" "$(pid_ancestry $$)" > "$RUN_MARKER"
+  export AVRA_RUN_ID="$$"
+  # The SIGKILL arm: a trap cannot fire for SIGKILL, so a separate process
+  # watches the leader and reaps the group when it dies without unwinding.
+  # Pointless when the group is shared (group_reap=0) — reap_marker would
+  # decline anyway — so it is not started.
+  if [ "$group_reap" = "1" ] && [ -f "$RUN_MARKER" ]; then
+    run_nanny "$$" "$RUN_MARKER" &
+    RUN_NANNY=$!
+  fi
+}
+
+run_end() {
+  [ "$RUN_ENDED" = "1" ] && return 0
+  RUN_ENDED=1
+  local p
+  for p in $RUN_AUX_PIDS $RUN_NANNY; do kill "$p" 2>/dev/null; done
+  RUN_AUX_PIDS=""; RUN_NANNY=""
+  # We are still alive here, so this run's compiles are still our DESCENDANTS
+  # — the precise identification, available on every path but the SIGKILL one.
+  reap_descendants "$$" "$RUN_LABEL"
+  [ -n "$RUN_MARKER" ] && rm -f "$RUN_MARKER"
+  RUN_MARKER=""
+}
+
+run_nanny() {
+  local leader="$1" marker="$2"
+  # Bash resets traps in a background subshell; say so explicitly anyway, so
+  # the nanny can never run the LEADER's teardown as a side effect of its own.
+  trap - EXIT
+  trap 'exit 0' TERM INT HUP
+  while kill -0 "$leader" 2>/dev/null; do sleep 1; done
+  # The leader is gone. run_end removes the marker before dying on every path
+  # it controls, so a marker still present means an UNCAUGHT death — SIGKILL
+  # from the memguard, a tool timeout, the OOM killer — and this run's
+  # compiles are now orphans that nothing else will ever reap.
+  [ -f "$marker" ] || exit 0
+  reap_marker "$marker" "nanny"
+  rm -f "$marker"
+}
+
+# Usage: --stray [--reap]
+# Report every surviving heavy process with its RSS — the instrument to reach
+# for before trusting ANY memory number, and after any killed run. Reaping is
+# limited to ORPHANS (no live parent): a heavy process with a live parent
+# belongs to a run that is still going, and killing it would be sabotage, not
+# hygiene. Exit codes answer the question each form asks — reporting: 0 = no
+# heavy process resident, 1 = some are (`--stray && echo clean` composes);
+# reaping: 0 = no orphan left behind, 1 = one survived SIGKILL.
+mode_stray() {
+  local reap=0
+  [ "${1:-}" = "--reap" ] && reap=1
+  local rows
+  rows="$(heavy_ps)"
+  if [ -z "$rows" ]; then
+    ok "[stray] none — no ${HEAVY_PROCS// //} process resident"
+    return 0
+  fi
+  # A parent that is gone (or init) means the process outlived its run.
+  local annotated
+  annotated="$(printf '%s\n' "$rows" | while read -r pid ppid pgid rss age comm; do
+    if [ "$ppid" = "1" ] || [ "$ppid" = "0" ] || ! kill -0 "$ppid" 2>/dev/null; then
+      printf '%s %s %s %s %s %s orphan\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
+    else
+      printf '%s %s %s %s %s %s live\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
+    fi
+  done)"
+  printf '%7s %7s %7s %10s %8s %-8s %s\n' PID PPID PGID RSS AGE STATE COMM >&2
+  printf '%s\n' "$annotated" | awk '{ printf "%7s %7s %7s %9.1fM %7ss %-8s %s\n", $1, $2, $3, $4/1024, $5, $7, $6 }' >&2
+  local n orphans total
+  n=$(printf '%s\n' "$annotated" | wc -l | tr -d ' ')
+  orphans=$(printf '%s\n' "$annotated" | awk '$7 == "orphan"' | wc -l | tr -d ' ')
+  total=$(printf '%s\n' "$annotated" | awk '{ s += $4 } END { printf "%.1f", s/1024 }')
+  warn "[stray] $n heavy process(es) resident ($orphans orphaned) holding ${total}M"
+  if [ "$reap" = "1" ]; then
+    local chain roots victims
+    # Ancestors are spared throughout: a --stray --reap from inside a live
+    # `bs2 test` must not kill the suite it is reporting to.
+    chain=" $(pid_ancestry $$) "
+    roots="$(printf '%s\n' "$annotated" | awk -v chain="$chain" \
+      '$7 == "orphan" && index(chain, " " $1 " ") == 0 { printf "%s ", $1 }')"
+    if [ -z "$roots" ]; then
+      log "[stray] nothing to reap — no orphaned heavy process (live ones belong to a running build)"
+      return 0
+    fi
+    # The orphans AND the heavy subtrees hanging off them: an orphaned `bs2`
+    # with two shard children is one dead run, not one process.
+    victims="$( { printf '%s\n' "$annotated" | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
+                  heavy_under "$roots"
+                } | sort -un -k1,1 | awk -v chain="$chain" 'index(chain, " " $1 " ") == 0')"
+    kill_victims "$victims" "stray" || return 1
+    ok "[stray] reaped $(printf '%s\n' "$victims" | wc -l | tr -d ' ') orphaned process(es)"
+    return 0
+  fi
+  log "[stray] \`diagnose.sh --stray --reap\` kills the orphaned ones (live ones are left alone)"
+  return 1
+}
+
 # t-lqzr: the OOM-safe full-suite runner, promoted from the CLAUDE.md
 # copy-paste snippet (rule 10: dev tooling lives here). One `bs2 test`
 # per directory, strictly sequential — a ≤16GB box survives what a
@@ -2939,6 +3271,12 @@ mode_cache_fuzz() {
 mode_sweep() {
   local fresh=0
   if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
+  # t-ce5t: before ensure_bs2, so a build triggered from here is covered too.
+  # Reaps the previous run's orphans on the way in and this run's compiles on
+  # the way out — however the sweep ends. A sweep is the single most-killed
+  # command in this tree (tool timeouts, memguard trips), and each kill used
+  # to leave GBs behind for the next one to trip over.
+  run_begin sweep
   ensure_bs2
   local sweep_dir="${AVRA_SWEEP_DIR:-$BUILD_DIR/sweep}"
   [ "$fresh" = "1" ] && rm -rf "$sweep_dir"
@@ -3011,17 +3349,30 @@ mode_memguard() {
   printf '%s memguard START floor=%sMB pid=%s\n' "$(date +%T)" "$floor" "${BASHPID:-$$}" >> "$logf"
   # A clean shutdown (SIGTERM from --guarded's teardown, or a manual kill).
   trap 'rm -f "$dir/pid"; exit 0' TERM INT
+  # t-ce5t: the watchdog must not outlive the shell that owns it. Backgrounded
+  # by --guarded, `$$` in this subshell is the GUARDED shell's pid; run
+  # standalone it is our own, so the loop is unbounded exactly when it should
+  # be. Without this a SIGKILLed --guarded left a watchdog polling forever,
+  # ready to SIGKILL compiles belonging to whatever ran next — a killed run
+  # sabotaging its successor, which is the same failure as the orphaned
+  # compiles this ticket is about, one process up.
+  local owner="$$"
   while true; do
+    if ! kill -0 "$owner" 2>/dev/null; then
+      printf '%s STOP owner %s gone — watchdog exiting\n' "$(date +%T)" "$owner" >> "$logf"
+      rm -f "$dir/pid"
+      exit 0
+    fi
     local avail
     avail="$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')"
     if [ -n "$avail" ] && [ "$avail" -lt "$floor" ]; then
-      printf '%s TRIP avail=%sMB < %sMB — SIGKILL bs2/llc/cc1plus/clang/cc1\n' \
-        "$(date +%T)" "$avail" "$floor" >> "$logf"
-      pkill -9 -x bs2      2>/dev/null
-      pkill -9 -x llc      2>/dev/null
-      pkill -9 -x cc1plus  2>/dev/null
-      pkill -9 -x clang    2>/dev/null
-      pkill -9 -x cc1      2>/dev/null
+      printf '%s TRIP avail=%sMB < %sMB — SIGKILL %s\n' \
+        "$(date +%T)" "$avail" "$floor" "${HEAVY_PROCS// //}" >> "$logf"
+      # `pkill -x` matches the process NAME, never the command line, so it
+      # cannot match the shell running it (t-ce5t hazard (2)). The name list
+      # is shared with --stray and the run reaper — one definition.
+      local hp
+      for hp in $HEAVY_PROCS; do pkill -9 -x "$hp" 2>/dev/null; done
     fi
     sleep 0.4
   done
@@ -3071,15 +3422,18 @@ mode_guarded() {
   # gate running and the gate being unrunnable on a ≤16GB box; it costs one
   # extra compile (~30s). Overridable, like the others.
   export DIFF_TEST_JOBS="${DIFF_TEST_JOBS:-1}"
+  # t-ce5t: the run lifecycle installs the teardown traps (watchdog included,
+  # via RUN_AUX_PIDS) AND the orphan reaping the bespoke trap never did — the
+  # watchdog was reaped, the 4.4GB compiles it was watching were not.
+  run_begin guarded
   mode_memguard "$floor" &
   local guard=$!
-  # Reap the watchdog however the command (or this script) exits.
-  trap 'kill "$guard" 2>/dev/null' EXIT INT TERM
+  RUN_AUX_PIDS="$RUN_AUX_PIDS $guard"
   log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_JOBS=$AVRA_JOBS AVRA_TEST_JOBS=$AVRA_TEST_JOBS DIFF_TEST_JOBS=$DIFF_TEST_JOBS — running: $*"
   "$@"
   local rc=$?
-  kill "$guard" 2>/dev/null
-  trap - EXIT INT TERM
+  run_end
+  trap - EXIT INT TERM HUP
   if [ "$rc" -ne 0 ]; then
     err "[guarded] command exited $rc — if OOM-killed, build/memguard/log has the TRIP line"
   else
@@ -3527,6 +3881,7 @@ main() {
     --sweep)              mode_sweep "$@" ;;
     --memguard)           mode_memguard "$@" ;;
     --guarded)            mode_guarded "$@" ;;
+    --stray)              mode_stray "$@" ;;
     --prune-tmp-scratch)  mode_prune_tmp_scratch "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
     --cache-stats)        mode_cache_stats "$@" ;;

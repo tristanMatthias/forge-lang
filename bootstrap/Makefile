@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep guarded cache-gc clean-cache cache-stats
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep guarded stray cache-gc clean-cache cache-stats
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -46,6 +46,8 @@ help:
 	@echo "  make sweep         OOM-safe full suite: sequential per-dir runs with resume"
 	@echo "                     markers (build/sweep/). FRESH=1 drops the markers. The"
 	@echo "                     sanctioned full-suite runner on a <=16GB box."
+	@echo "  make stray         List surviving bs2/llc/cc1plus with RSS + orphan state"
+	@echo "                     (run it after a killed run; REAP=1 kills the orphans)."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
@@ -163,6 +165,15 @@ sweep:
 #   make guarded CMD="./build/bs2 test tests/foo_test.av" FLOOR=5500
 guarded:
 	@$(DIAG) --guarded $(if $(FLOOR),$(FLOOR)) -- $(CMD)
+
+# t-ce5t: what is still holding memory? Lists every surviving bs2/llc/cc1plus/
+# clang/cc1 with RSS and whether it is ORPHANED — the first thing to run after
+# a killed run, and before trusting any memory reading, since a leftover
+# compile holding GBs is what makes the NEXT run trip the memory floor.
+# REAP=1 kills the orphaned ones (live, parented builds are left alone).
+# Unlike `pgrep -f bs2`, this cannot report the shell that ran it.
+stray:
+	@$(DIAG) --stray $(if $(REAP),--reap)
 
 # Repo-wide cache GC: prune cold entries (mtime == last use; hits refresh
 # it) from the bootstrap root AND every package cache. DAYS= overrides the
