@@ -247,6 +247,32 @@ fn total(s: dyn Shape) -> int { s.area() }
 fn main() -> int { println(string(total(Square { side: 2 }))) 0 }")
     }
 
+    then "a pointer of ANY shape into a `ptr` parameter — the C-interop escape" {
+        // The `.Ptr` exemption. `ptr` is untyped BY DESIGN — an extern slot is where a
+        // value crosses into C and nominal identity stops being the question — so the
+        // gate must not compare against it. Every LLVM C-API binding in the compiler
+        // depends on this.
+        //
+        // THE SHAPE MATTERS. A `ptr` argument into a `ptr` parameter would pass with the
+        // exemption deleted, because `vtype_eq(.Ptr, .Ptr)` is true and the gate never
+        // reaches a verdict — a case like that is green either way and guards nothing.
+        // The first call below hands a STRUCT to a `ptr` slot, and `.Ptr` is not a value
+        // scalar (`vtype_is_value_scalar`, ast.av), so with the exemption removed it
+        // falls through to `vtype_eq(.Struct("Handle"), .Ptr)` = false and reports. The
+        // second call covers the mirror direction — an untyped `ptr` return flowing back
+        // into a typed slot — which is the `a is .Ptr` half of the same test.
+        accepted("type Handle = { id: int }
+extern fn avra_trace_ptr(label: string, val: ptr)
+extern fn avra_map_new() -> ptr
+fn main() -> int {
+    let h = Handle { id: 7 }
+    avra_trace_ptr(\"h\", h)
+    avra_trace_ptr(\"m\", avra_map_new())
+    println(string(h.id))
+    0
+}")
+    }
+
     then "a fn value into a fn-typed parameter — every fn-vs-fn pair is exempt" {
         // The `vtype_is_unresolved_fn` exemption, which removed the FINAL 61 hits in the
         // count: all of them were fn arity gaps on higher-order call sites

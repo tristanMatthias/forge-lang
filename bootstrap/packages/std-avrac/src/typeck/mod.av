@@ -2638,16 +2638,6 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
 
 /// The type a newtype wraps, or `.Unknown` when `t` is not a registered newtype.
 ///
-/// ONE LEVEL ONLY, and deliberately so. `inner_vt` is stored exactly as the AST spelled
-/// it (`.NewtypeDecl(name, inner_vt)` — it does NOT pass through `resolve_vtype`), and
-/// `newtype_vtype_lookup` returns it verbatim, so a newtype over a newtype
-/// (`type A = B` over `type B = List<int>`) peels `A` to `B`, never to `List<int>`.
-///
-/// That transitive case therefore still reports. Left that way on purpose: newtypes are
-/// NOMINALLY DISTINCT (spec Axis 8), so a deeper peel would weaken the gate further, and
-/// nothing in the corpus exercises the shape. The single peel exists for exactly one
-/// reason — not to contradict `tc_check_newtype_args` on the direct wrapper case — and
-/// widening it beyond that needs its own evidence.
 /// RESOLVED, not raw. `collect_decls`' NewtypeDecl arm registers the UNRESOLVED
 /// `inner_vt` — it computes `resolve_vtype` separately for the type registry but stores
 /// the raw one — so `newtype_vtype_lookup` hands back the parser-default shape. A
@@ -2655,6 +2645,16 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
 /// every reference to the enum itself is `.Enum("Color", …, id)`. Comparing those with
 /// `vtype_eq` misses the exemption and rejects valid code, so peel THROUGH
 /// `resolve_vtype`.
+///
+/// STILL ONE LEVEL ONLY, and deliberately so: `resolve_vtype` re-wraps a nested newtype
+/// NAME as `.Newtype(name, …)` rather than unwrapping it, so a newtype over a newtype
+/// (`type A = B` over `type B = List<int>`) peels `A` to `B`, never to `List<int>`.
+///
+/// That transitive case therefore still reports. Left that way on purpose: newtypes are
+/// NOMINALLY DISTINCT (spec Axis 8), so a deeper peel would weaken the gate further, and
+/// nothing in the corpus exercises the shape. The single peel exists for exactly one
+/// reason — not to contradict `tc_check_newtype_args` on the direct wrapper case — and
+/// widening it beyond that needs its own evidence.
 fn tc_newtype_underlying(tc: TC, t: ValueType) -> ValueType {
     let n = tc_param_shaped_name(t)
     if n == "" { return ValueType.Unknown }
