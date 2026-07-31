@@ -2477,9 +2477,205 @@ export fn check_assign_layout_no_int(tc: TC, actual: ValueType, expected: ValueT
     check_assign_layout_ex(tc, actual, expected, ctx, false, true)
 }
 
+/// A single inference ARTIFACT node: a type typeck could not resolve.
+///
+/// BOTH forms count. `.Unknown` is the familiar one; `.Void` is handed back for an
+/// expression that could not be typed at all, and the count showed it to be the DOMINANT
+/// artifact here. Treating only `.Unknown` as an artifact is why `List<void>` slipped
+/// through and reddened CI.
+fn vtype_elem_is_artifact(t: ValueType) -> bool {
+    vtype_is_unknown(t) || t is .Void
+}
+
+/// True when an inference ARTIFACT (`.Unknown` or `.Void`) appears ANYWHERE in `t`'s
+/// tree — the type itself, a list element, a map key or value, a tuple slot, a generic
+/// argument, a nested fn's parameter or return.
+///
+/// `.any` walks every node, so this is shape-agnostic by construction: it covers
+/// containers that exist today (List, Map, Channel, Tuple, Result, …) and any added
+/// later, without this predicate being revisited. That is the whole point — the four
+/// helpers it replaced each named ONE container, and CI found a new one on every run.
+fn vtype_mentions_artifact(t: ValueType) -> bool {
+    t.any((x: ValueType) -> vtype_elem_is_artifact(x))
+}
+
+/// True for a FN type. Every fn-vs-fn pair is exempt, deliberately and with a measurement
+/// behind it: after the other exemptions, ALL 61 remaining probe hits over the compiler's
+/// own source were fn arity gaps — `fn(string) -> bool` against `fn() -> bool`, a bare
+/// `fn` against `fn(int) -> string`. Those are incomplete PARAMETER inference on
+/// higher-order call sites, not wild stores, and no amount of narrowing inside the fn
+/// shape distinguishes them from a genuine fn-type mismatch while that inference is
+/// missing. So the gate covers the non-fn pointer class only, and fn types are their own
+/// follow-up.
+fn vtype_is_unresolved_fn(t: ValueType) -> bool {
+    vtype_is_fn(t)
+}
+
+/// A NOMINAL pointer-vs-pointer conflict (t-axu9): both sides are heap/pointer types with
+/// DIFFERENT nominal identity, so storing one where the other is declared is a wild store.
+/// `string` into a struct parameter is the reported case; `Struct A` into a `Struct B`
+/// parameter is the same hole, and means a newtype distinction was not enforced at a call.
+///
+/// WHY THIS IS SEPARATE from `assign_layout_conflict`. That disjunction is deliberately
+/// narrow and every one of its subsets is SCALAR-side, because typeck hands back `.Int`
+/// for unresolved expressions and a broad scalar-vs-pointer check would mass-false-
+/// positive. Every ptr-into-ptr substitution is outside it by construction — which is why
+/// the call argument path accepted all of them.
+///
+/// THE EXEMPTIONS ARE MEASURED, NOT REASONED. Each was added because it appeared in a
+/// count over the compiler's own source, and the count is the evidence that this is safe
+/// to gate on:
+///
+///     naive nominal check                                935 hits
+///     + void / ptr / union / incomplete type args        765
+///     + argless generics (`List<>`) + unresolved fn ret    61
+///     + all fn-vs-fn pairs                                  0
+///
+/// It still fires on the reported bug at every step, so the exemptions narrowed the false
+/// positives without disarming it. Anything added here later needs the same treatment: run
+/// the count before believing a new exemption is free.
+fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool {
+    let a = vtype_strip_optional(actual)
+    let d = vtype_strip_optional(expected)
+    // Artifact exemptions, in the same spirit as int_into_pointer_slot's.
+    //
+    // ORDERED CHEAPEST-FIRST. Every branch here returns `false`, so the order is free to
+    // choose and only affects cost — and `vtype_mentions_unresolved` walks the whole type
+    // tree probing two registries per node, where the tests below are O(1) variant
+    // checks. `void` is the dominant exempt case (see the count above), so running the
+    // walk first paid the most expensive test on the most common exit.
+    // A value scalar on EITHER side is where the `.Int` fallbacks land — out of scope.
+    if vtype_is_value_scalar(a) || vtype_is_value_scalar(d) { return false }
+    // `ptr` is the untyped C-interop escape — an extern slot legitimately receives any
+    // pointer shape, which is the whole reason the type exists.
+    if a is .Ptr || d is .Ptr { return false }
+    // A UNION arises here as a partially-inferred generic (`List<X>|List<>`), not as a
+    // deliberate ad-hoc union in argument position — same artifact class.
+    if a is .Union || d is .Union { return false }
+    // The O(1) exit for a TOP-LEVEL artifact, which is the dominant one — `void` alone
+    // accounted for most of the 935 naive hits. `vtype_mentions_artifact` below subsumes
+    // this case (`.any` visits the node itself, verified), so the check is purely about
+    // cost: without it the most common exit pays a full tree walk, which is exactly what
+    // the cheapest-first ordering above exists to avoid. Collapsing the four per-container
+    // helpers into one recursive walk removed this without the doc block noticing.
+    if vtype_elem_is_artifact(a) || vtype_elem_is_artifact(d) { return false }
+    // AN ARTIFACT ANYWHERE IN EITHER TREE DISQUALIFIES THE COMPARISON.
+    //
+    // This one recursive test replaces four ad-hoc ones (a top-level `.Unknown` check, a
+    // top-level `.Void` check, `vtype_has_incomplete_args`, and `vtype_is_argless_generic`)
+    // because patching container-by-container was simply the wrong shape, and CI proved it
+    // four more times after the first three:
+    //
+    //     (string, int)   vs (<unknown>, <unknown>)   Unknown inside a TUPLE
+    //     (int, void)     vs (int?, int?)             void inside a TUPLE
+    //     Channel<int>    vs Channel<>                argless CHANNEL, not List/Map
+    //     List<fn(Rng)->int> vs List<fn(Rng)-><unknown>>   unresolved fn ret, NESTED
+    //
+    // Every one is the same statement: inference did not finish somewhere in this type, so
+    // the two sides are not comparable and this predicate has no business judging them.
+    // Enumerating containers can only ever chase that one container at a time — `.any`
+    // states it once, for every shape that exists now or later.
+    //
+    // Deliberately CONSERVATIVE. It also exempts a legitimately-resolved `fn() -> void`
+    // nested in a container, which loses a little detection. That is the right direction:
+    // a missed wild store is a bug this gate merely fails to catch, while a false positive
+    // REJECTS CORRECT CODE — and nine false-positive classes in, the asymmetry is settled.
+    if vtype_mentions_artifact(a) || vtype_mentions_artifact(d) { return false }
+    // Whole-tree walk for types naming something the registry cannot resolve yet. Distinct
+    // from the artifact walk above: that one looks for Unknown/Void NODES, this one probes
+    // the registries for unresolved NAMES.
+    if vtype_mentions_unresolved(tc, a) { return false }
+    if vtype_mentions_unresolved(tc, d) { return false }
+    if vtype_is_unresolved_fn(a) || vtype_is_unresolved_fn(d) { return false }
+    // A TRAIT on either side is CONFORMANCE, not nominal identity. `Square` into a
+    // `dyn Shape` parameter is the entire point of dynamic dispatch (spec Axis 4), and
+    // whether the impl exists is a question this predicate has no business answering —
+    // it compares names, and every conforming type has a different one.
+    //
+    // Caught by diff-test, not by the whole-compiler count: the lib build happens not to
+    // call through a `dyn` parameter, so `tests/difftest_corpus/traits_dyn.av` was the
+    // first thing to exercise it. A count over one program is not a proof of no false
+    // positives, which is why the corpus is a separate oracle.
+    if a is .Trait || d is .Trait { return false }
+    // A SHAPE on either side is STRUCTURAL, not nominal — spec Axis 1: `type` is nominal,
+    // `shape` uses WIDTH SUBTYPING, so a struct carrying the required fields IS assignable
+    // to a shape and its name is deliberately unrelated. Comparing nominal identity is
+    // simply the wrong question here, exactly as for `.Trait` above.
+    //
+    // A shape registers as a STRUCT type plus its name in `tc.shapes` (see the ShapeDecl
+    // arm of collect_decls), so the ValueType variant cannot distinguish one — membership
+    // in that set is the only discriminator, which is why this reads `is_shape` rather
+    // than matching a variant.
+    //
+    // The check this defers to already exists: `tc_check_shape_compat` verifies the arg's
+    // struct has every field the shape requires (extras fine — the width-subtype rule).
+    // Duplicating that here as a nominal test would not merely be redundant, it would
+    // CONTRADICT it.
+    //
+    // Caught by the suite, not by the whole-compiler count: the compiler's own source
+    // never passes a struct into a shape parameter, so all 4 hits were in tests
+    // (shape_basic, shape_subtyping, type_system_edge_cases). Second time this exact
+    // lesson has landed on this predicate — see the `.Trait` note above, found by
+    // diff-test for the same reason. A count over one program is not a proof of no false
+    // positives; it only proves that program does not exercise the construct.
+    if is_shape(tc.shapes, tc_param_shaped_name(a)) { return false }
+    if is_shape(tc.shapes, tc_param_shaped_name(d)) { return false }
+    // A NEWTYPE against its OWN UNDERLYING type is layout-identical — `type IntList =
+    // List<int>` and a raw `List<int>` are the same bytes, so this is a nominal wrapper
+    // question and NOT a wild store, which is all this predicate is entitled to judge.
+    // `tc_check_newtype_args` owns the wrapper policy and permits it via
+    // `vtype_assignable`; contradicting it here would reject working code.
+    //
+    // ONLY against its own underlying. Two DIFFERENT newtypes over the same base
+    // (`type UserId = UUID` / `type OrderId = UUID`) stay a conflict — that distinction
+    // is spec Axis 8 and one of the things this gate is meant to enforce at a call. So
+    // the peel is deliberately one-sided rather than "unwrap both and compare".
+    //
+    // Found by the suite (tests/list_cross_fn_test.av), like the shape case and unlike
+    // anything the whole-compiler count could reach.
+    let a_under = tc_newtype_underlying(tc, a)
+    let d_under = tc_newtype_underlying(tc, d)
+    if !vtype_is_unknown(a_under) && vtype_eq(a_under, d) { return false }
+    if !vtype_is_unknown(d_under) && vtype_eq(a, d_under) { return false }
+    // Nominal identity, via the content-addressed id comparison, so a parser-default
+    // Struct("Foo") and a resolved Newtype("Foo") of the same FQN are EQUAL.
+    if vtype_eq(a, d) { return false }
+    true
+}
+
+/// The type a newtype wraps, or `.Unknown` when `t` is not a registered newtype.
+///
+/// RESOLVED, not raw. `collect_decls`' NewtypeDecl arm registers the UNRESOLVED
+/// `inner_vt` — it computes `resolve_vtype` separately for the type registry but stores
+/// the raw one — so `newtype_vtype_lookup` hands back the parser-default shape. A
+/// `type Wrap = Color` over `enum Color` comes back as `.Struct("Color", …, 0)` while
+/// every reference to the enum itself is `.Enum("Color", …, id)`. Comparing those with
+/// `vtype_eq` misses the exemption and rejects valid code, so peel THROUGH
+/// `resolve_vtype`.
+///
+/// STILL ONE LEVEL ONLY, and deliberately so: `resolve_vtype` re-wraps a nested newtype
+/// NAME as `.Newtype(name, …)` rather than unwrapping it, so a newtype over a newtype
+/// (`type A = B` over `type B = List<int>`) peels `A` to `B`, never to `List<int>`.
+///
+/// That transitive case therefore still reports. Left that way on purpose: newtypes are
+/// NOMINALLY DISTINCT (spec Axis 8), so a deeper peel would weaken the gate further, and
+/// nothing in the corpus exercises the shape. The single peel exists for exactly one
+/// reason — not to contradict `tc_check_newtype_args` on the direct wrapper case — and
+/// widening it beyond that needs its own evidence.
+fn tc_newtype_underlying(tc: TC, t: ValueType) -> ValueType {
+    let n = tc_param_shaped_name(t)
+    if n == "" { return ValueType.Unknown }
+    let raw = newtype_vtype_lookup(tc.newtypes, n)
+    if vtype_is_unknown(raw) { return raw }
+    resolve_vtype(tc, raw)
+}
+
 fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_int: bool, incl_collection: bool) -> TC {
     if assign_layout_conflict(tc, actual, expected, incl_int, incl_collection) {
         return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` (layout conflict)")
+    }
+    if ptr_nominal_conflict(tc, actual, expected) {
+        return tc_report(tc, DiagCode.TypeMismatch, "${ctx}: `${vtype_render_full(actual)}` is not assignable to `${vtype_render_full(expected)}` — different nominal types")
     }
     tc
 }
@@ -2924,7 +3120,15 @@ fn reject_literal_into_value_scalar(r: ExprResult, exp: ValueType, kind: string)
 /// recomputed (pure + cheap) rather than threading a fired-flag out of the gate.
 fn gate_expr_no_int(r: ExprResult, exp: ValueType, ctx: string) -> ExprResult {
     let after = check_assign_layout_no_int(r.tc, r.ty, exp, ctx)
-    tc_er(after, if assign_layout_conflict(r.tc, r.ty, exp, false, true) { .Unknown } else { r.ty })
+    // The collapse must cover EVERY conflict `check_assign_layout_ex` can report, not
+    // just the layout one. `ptr_nominal_conflict` (t-axu9) is a second report path
+    // through the same function, so omitting it here leaves the concrete type in place
+    // and `tc_check_stmt_returns` re-checks it against the declared return with
+    // `vtype_assignable` — two diagnostics for one defect at a `return`. The collapse
+    // discipline this restores is documented directly below.
+    let conflict = assign_layout_conflict(r.tc, r.ty, exp, false, true)
+        || ptr_nominal_conflict(r.tc, r.ty, exp)
+    tc_er(after, if conflict { .Unknown } else { r.ty })
 }
 
 /// Bidirectional variant of `check_expr`: threads the caller's
