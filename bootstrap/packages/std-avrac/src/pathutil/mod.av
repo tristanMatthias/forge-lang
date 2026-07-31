@@ -30,6 +30,60 @@ export fn basename_no_ext(path: string) -> string {
     }
 }
 
+/// Split `path` on `/`, dropping empty segments (so a leading or doubled
+/// separator contributes nothing). `path_segments("a//b/c.av")` →
+/// `["a", "b", "c.av"]`.
+export fn path_segments(path: string) -> List<string> {
+    mut out: List<string> = []
+    mut cur = ""
+    for ch in path {
+        if ch == "/" {
+            if cur != "" { out.push(cur) }
+            cur = ""
+        } else {
+            cur = cur + ch
+        }
+    }
+    if cur != "" { out.push(cur) }
+    out
+}
+
+/// The last `n` path segments joined with `_`, `.av` stripped, and every
+/// character that cannot appear in an Avra identifier (`-`, `.`) mapped to `_`.
+/// `path_tail_slug("/w/packages/std-cli/src/cmdgen/tests/x_test.av", 3)`
+/// → `"cmdgen_tests_x_test"`.
+///
+/// TRAILING segments only, deliberately: a slug of the ABSOLUTE path would key
+/// whatever is named after it (module names, and therefore generated symbol
+/// names) to where the checkout happens to live, so the same source would
+/// produce different output on a dev box and a CI runner.
+///
+/// `n` is clamped to the path's depth, so asking for more segments than exist
+/// yields the whole path rather than an error.
+export fn path_tail_slug(path: string, n: int) -> string {
+    let segs = path_segments(path)
+    mut start = segs.length - n
+    if start < 0 { start = 0 }
+    mut out = ""
+    mut i = start
+    while i < segs.length {
+        mut s = segs[i]
+        if i == segs.length - 1 && s.ends_with(".av") { s = s.substring(0, s.length - 3) }
+        out = if out == "" { s } else { out + "_" + s }
+        i = i + 1
+    }
+    slug_sanitize(out)
+}
+
+/// Map the characters a path may contain but an identifier may not.
+fn slug_sanitize(s: string) -> string {
+    mut out = ""
+    for ch in s {
+        if ch == "-" || ch == "." { out = out + "_" } else { out = out + ch }
+    }
+    out
+}
+
 // ── Qualified-path helpers ──────────────────────────────────────────
 //
 // Operate on Avra module paths separated by `::` (e.g.

@@ -1,0 +1,161 @@
+// WHY: t-kdyj.3 — two test files with the SAME BASENAME batched into one shard
+// produced two `Stmt.Module`s with the same name, because the shard named each
+// module `basename_no_ext(path)`.
+//
+// Per-file modules are NOT deduped (`dedup_modules` runs over the hoisted `@std/*`
+// packages only), so the resolver merged the two by name and one displaced the
+// other: every item declared ONLY by the loser came back F3000 `undefined
+// variable`, and the whole shard failed to COMPILE. Not a test failure — a shard
+// that never ran, reported as `1 shard(s) failed to compile/run` while every test
+// that DID run passed.
+//
+// THE MEASURED INSTANCE, and why it reads as a flake:
+// `packages/std-cli/src/cmdgen/tests/expand_command_test.av` and
+// `packages/std-avrac/src/features/comptime/tests/expand_command_test.av` have
+// coexisted for months. Whether they land in the SAME shard depends on batch
+// composition, which shifts whenever a test file is ADDED ANYWHERE in the tree. So
+// the failure attaches to whichever PR happens to change the file count — with
+// nothing in its diff to explain it. It cost two CI runs on #1093 (seed-train-verify
+// and rc-strict, both `undefined variable eg_expand`), and the branch that triggered
+// it only added a typeck spec file.
+//
+// The probe drives the real shape: two same-basename files in different subdirs of
+// one tree, forced into a single `bs2 test <dir>` batch, each declaring a
+// module-private fn ONLY it defines and calling it from its own spec. Under the old
+// naming one of those two fns is unreachable and the shard does not compile.
+//
+// PRECONDITIONS ARE ASSERTED FIRST — `[batch] 2 files` — because a runner-shape
+// change that stopped batching them together would make the probe vacuous: it would
+// pass while proving nothing, which is exactly how the underlying bug survived.
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+use @std.avrac.test_runner.{write_fixture, shard_mod_names, suffix_remaining_duplicates}
+
+/// True when every element of `names` is distinct — the postcondition
+/// `shard_mod_names` exists to establish, asserted as such rather than by
+/// spot-checking particular spellings.
+fn all_distinct(names: List<string>) -> bool {
+    mut i = 0
+    while i < names.length {
+        mut j = i + 1
+        while j < names.length {
+            if names[i] == names[j] { return false }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    true
+}
+
+/// Each file defines a DISTINCT private fn and calls it. Sharing a module name
+/// means one file's items are the only ones the merged module has, so the other's
+/// call is F3000 — a resolve error, at shard-compile time.
+fn probe_src(tag: string) -> string {
+    "fn shard_probe_${tag}() -> string { \"${tag}\" }\n" +
+    "\n" +
+    "spec \"${tag} same-basename batch member\" {\n" +
+    "    then \"its own module-private fn is reachable\" {\n" +
+    "        shard_probe_${tag}() == \"${tag}\"\n" +
+    "    }\n" +
+    "}\n"
+}
+
+spec "t-kdyj.3: same-basename test files in one shard keep separate modules" {
+    then "both units compile and pass in a single batch" {
+        let dir = "/tmp/avra_shard_basename_probe_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/alpha' '${dir}/beta'")
+        // SAME basename, different directories — the exact shape of the two
+        // `expand_command_test.av` files in the real tree.
+        write_fixture("${dir}/alpha/same_basename_probe_test.av", probe_src("alpha"))
+        write_fixture("${dir}/beta/same_basename_probe_test.av", probe_src("beta"))
+        // The inner run's EXIT STATUS is half the assertion. `|| true` would throw
+        // it away and leave the content checks to carry the whole test — and a
+        // failed shard still prints plenty of text to match against.
+        let log = "${dir}.log"
+        let rc = avra_shell_exec_status("./build/bs2 test '${dir}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        let _ = avra_shell_exec("rm -rf '${dir}' '${log}'")
+        rc == 0
+            // Precondition: they really do ride ONE shard.
+            && out.contains("[batch] 2 files")
+            // The shard COMPILED — under the old naming this is
+            // "shard compile failed: resolve error: undefined variable".
+            && !out.contains("shard compile failed")
+            && !out.contains("F3000")
+            // …and both units ran green.
+            && out.contains("pass=2 fail=0 total=2")
+    }
+}
+
+spec "t-kdyj.3: shard_mod_names is unique by construction" {
+    then "a same-basename pair is disambiguated by the path, not by luck" {
+        let names = shard_mod_names([
+            "/w/bootstrap/packages/std-cli/src/cmdgen/tests/expand_command_test.av",
+            "/w/bootstrap/packages/std-avrac/src/features/comptime/tests/expand_command_test.av",
+        ])
+        all_distinct(names)
+            && names[0] == "cmdgen_tests_expand_command_test"
+            && names[1] == "comptime_tests_expand_command_test"
+    }
+
+    then "a file that collides with NOTHING keeps its short name" {
+        // The reason disambiguation is per-name rather than global: extending every
+        // name whenever any pair collides would churn the generated symbols of
+        // files that had no collision at all.
+        let names = shard_mod_names([
+            "/w/a/tests/alpha_test.av",
+            "/w/b/tests/beta_test.av",
+        ])
+        names[0] == "alpha_test" && names[1] == "beta_test"
+    }
+
+    then "the `-` and `.` a path may contain do not reach an identifier" {
+        // `std-cli` is a real directory name and a hyphen is not an identifier
+        // character, so the slug has to map it.
+        let names = shard_mod_names([
+            "/w/std-cli/t/x_test.av",
+            "/w/std-json/t/x_test.av",
+        ])
+        all_distinct(names) && names[0] == "std_cli_t_x_test" && names[1] == "std_json_t_x_test"
+    }
+
+    then "paths identical past the segment cap still get distinct names" {
+        // The fallback the suffix pass exists for: eight identical trailing
+        // segments, so the walk runs out of path to disambiguate with.
+        let names = shard_mod_names([
+            "/rootA/s1/s2/s3/s4/s5/s6/s7/dup_test.av",
+            "/rootB/s1/s2/s3/s4/s5/s6/s7/dup_test.av",
+            "/rootC/s1/s2/s3/s4/s5/s6/s7/dup_test.av",
+        ])
+        all_distinct(names)
+    }
+}
+
+spec "t-kdyj.3: the suffix fallback reserves the names it generates" {
+    then "a generated suffix cannot collide with a name already in the input" {
+        // The defect this pass had: counting occurrences of the ORIGINAL name maps
+        // ["x", "x", "x_2"] to ["x", "x_2", "x_2"] — re-creating the exact
+        // duplicate the pass exists to remove, in the one code path that is the
+        // last line of defence. Asserted on the helper directly because the
+        // adversarial triple cannot be spelled as three file paths: a slug is
+        // path segments joined with `_`, so nothing produces a bare `x_2` next to
+        // a capped `x`.
+        //
+        // The third name keeps its own base and grows a suffix of its own
+        // (`x_2` → `x_2_2`) rather than being renumbered into the first name's
+        // sequence. Uniqueness is the property that matters; the exact spellings
+        // are pinned so a future rewrite has to restate its choice deliberately.
+        let out = suffix_remaining_duplicates(["x", "x", "x_2"])
+        all_distinct(out) && out[0] == "x" && out[1] == "x_2" && out[2] == "x_2_2"
+    }
+
+    then "an already-distinct list passes through untouched" {
+        let out = suffix_remaining_duplicates(["a", "b", "c"])
+        out[0] == "a" && out[1] == "b" && out[2] == "c"
+    }
+
+    then "three copies of one name become three distinct names" {
+        let out = suffix_remaining_duplicates(["m", "m", "m"])
+        all_distinct(out) && out[0] == "m" && out[1] == "m_2" && out[2] == "m_3"
+    }
+}
