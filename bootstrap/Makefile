@@ -172,8 +172,20 @@ guarded:
 # compile holding GBs is what makes the NEXT run trip the memory floor.
 # REAP=1 kills each orphaned tree whole, root included (live, parented builds
 # are left alone). Unlike `pgrep -f bs2`, this cannot report the shell that ran it.
+#
+# Two things the recipe has to get right, both about not lying to the caller:
+# only an AFFIRMATIVE REAP kills (a bare `$(if $(REAP),…)` is true for REAP=0,
+# which would reap on a value that plainly says not to); and the REPORTING form
+# exits 1 whenever something is resident — a deliberate contract, so `--stray &&
+# …` composes — which make would otherwise surface as `*** [stray] Error 1` in
+# exactly the situation the help text sends you here for. Status 1 is tolerated
+# for the report and NOT for the reap, where it means an orphan outlived SIGKILL.
 stray:
-	@$(DIAG) --stray $(if $(REAP),--reap)
+ifeq ($(strip $(filter 1 true yes,$(REAP))),)
+	@$(DIAG) --stray || [ $$? -eq 1 ]
+else
+	@$(DIAG) --stray --reap
+endif
 
 # Repo-wide cache GC: prune cold entries (mtime == last use; hits refresh
 # it) from the bootstrap root AND every package cache. DAYS= overrides the
