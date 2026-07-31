@@ -3266,6 +3266,15 @@ run_begin() {
   RUN_ENDED=0
   # Installed unconditionally, nested or not: even a nested run has helper
   # processes (--guarded's memguard) that must not outlive it.
+  #
+  # The EXIT trap is the BACKSTOP, not the mechanism: run_end is idempotent and
+  # every mode calls it explicitly on its own exits. Bash keeps ONE EXIT trap
+  # per shell, so a helper that installs its own would silently replace this —
+  # and a marker surviving a clean exit is worse than no marker at all, because
+  # the nanny would then reap trees after a run that ended fine. (No such
+  # helper is reachable from a run today: `run_fg` is only under --run and
+  # --emit-regen-*, and the other installers are modes, which main() dispatches
+  # one of. If you add one, chain it — do not reassign EXIT.)
   trap 'run_end; exit 130' INT
   trap 'run_end; exit 143' TERM HUP
   trap 'run_end' EXIT
@@ -3433,6 +3442,7 @@ mode_sweep() {
       err "[sweep] FAILED: $d — full log: $logf"
       sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -E '    FAIL|failed|crashed' | head -10 >&2
       err "[sweep] markers kept — a re-run resumes at this dir"
+      run_end
       return 1
     fi
     touch "$logf.ok"
@@ -3443,6 +3453,7 @@ mode_sweep() {
     [ -f "$f.ok" ] || continue
     sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1
   done | awk -F'[/ ]' '{p+=$1; t+=$2} END {print p "/" t}')
+  run_end
   ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
 }
 
