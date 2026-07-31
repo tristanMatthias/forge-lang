@@ -314,20 +314,34 @@ fn slug_collides(test_paths: List<string>, self_idx: int, depth: int, name: stri
 
 /// Append `_2`, `_3`, … to the second and later occurrences of any name that is
 /// still repeated. Order-stable, so the assignment is deterministic.
-fn suffix_remaining_duplicates(names: List<string>) -> List<string> {
+///
+/// The candidate is checked against the names ALREADY EMITTED, not against a count
+/// of the original name — a suffix this pass generates has to be reserved like any
+/// other. Counting occurrences of `names[i]` alone maps `["x", "x", "x_2"]` to
+/// `["x", "x_2", "x_2"]`, i.e. it re-creates the very collision the pass exists to
+/// remove. This is the last line of defence (reached only when the segment walk
+/// hits its cap), so it must hold unconditionally or the postcondition is a lie.
+export fn suffix_remaining_duplicates(names: List<string>) -> List<string> {
     mut out: List<string> = []
     mut i = 0
     while i < names.length {
-        mut seen = 0
-        mut j = 0
-        while j < i {
-            if names[j] == names[i] { seen = seen + 1 }
-            j = j + 1
+        mut candidate = names[i]
+        mut suffix = 2
+        while name_is_used(out, candidate) {
+            candidate = names[i] + "_" + string(suffix)
+            suffix = suffix + 1
         }
-        out.push(if seen == 0 { names[i] } else { names[i] + "_" + string(seen + 1) })
+        out.push(candidate)
         i = i + 1
     }
     out
+}
+
+fn name_is_used(names: List<string>, target: string) -> bool {
+    for name in names {
+        if name == target { return true }
+    }
+    false
 }
 
 /// Parse + resolve-module-files + hoist + spec-wrap one test file.
