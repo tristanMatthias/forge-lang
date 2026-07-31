@@ -117,8 +117,37 @@ spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
             "kill -0 \"$orphan\" 2>/dev/null && echo ORPHAN_SURVIVED || echo ORPHAN_REAPED\n" +
             "kill -0 \"$live\" 2>/dev/null && echo LIVE_SPARED || echo LIVE_KILLED\n" +
             "kill %1 2>/dev/null\n")
-        out.contains("reaped 1 orphaned process(es)")
+        out.contains("reaped 1 process(es) in 1 orphaned tree(s)")
             && out.contains("ORPHAN_REAPED") && out.contains("LIVE_SPARED")
+    }
+    then "an orphaned tree is reaped from its ROOT, spawner included" {
+        // The 2026-07-31 sweep kill, in miniature — and the reason reaping by
+        // NAME is not enough. The memguard killed every `bs2` by name, but the
+        // run's orphaned test-unit binary is not named `bs2`: it survived, and
+        // went on spawning fresh 4.2GB compiles indefinitely. Each new compile
+        // had a LIVE parent, so it did not even look like a stray.
+        //
+        // So the tree is the unit: the reap starts at the re-parented ROOT
+        // (here a plain shell loop, deliberately not in the heavy set) and
+        // takes everything under it. The assertion that matters is the one
+        // AFTER the reap — if the spawner survived, another heavy child is
+        // back within a second.
+        let out = harness("J",
+            "cat > \"$root/spawner.sh\" <<'SP'\n" +
+            "while true; do \"$root/$kid\" 5; done\n" +
+            "SP\n" +
+            "bash -c 'bash \"$root/spawner.sh\" & echo $! > \"$root/spawner.pid\"'\n" +
+            "sleep 1\n" +
+            "echo \"BEFORE heavy=$(count \"$kid\")\"\n" +
+            "bash scripts/diagnose.sh --stray --reap\n" +
+            "sleep 3\n" +
+            "echo \"AFTER heavy=$(count \"$kid\")\"\n" +
+            // Cleanup by PID. `pkill -f spawner` would be the obvious reflex
+            // and is the very hazard under test: it matches any command line
+            // containing the pattern, this one included.
+            "kill -9 \"$(cat \"$root/spawner.pid\")\" 2>/dev/null\n")
+        out.contains("BEFORE heavy=1") && out.contains("AFTER heavy=0")
+            && out.contains("orphaned tree(s)")
     }
     then "--reap takes the orphan's whole subtree, not just its root" {
         // A dead run is a TREE: an orphaned `bs2` with two shard children.
@@ -133,7 +162,7 @@ spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
             "sleep 0.5\n" +
             "echo \"AFTER parent=$(count \"$name\") child=$(count \"$kid\")\"\n")
         out.contains("BEFORE parent=1 child=1") && out.contains("AFTER parent=0 child=0")
-            && out.contains("reaped 2 orphaned process(es)")
+            && out.contains("reaped 2 process(es) in 1 orphaned tree(s)")
     }
 }
 
@@ -185,6 +214,30 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
             "echo \"AFTER_STALE_REAP=$(alive)\"\n" +
             "[ -f \"$root/runs/4194303.run\" ] && echo STALE_MARKER_KEPT || echo STALE_MARKER_CLEARED\n")
         out.contains("AFTER_STALE_REAP=0") && out.contains("STALE_MARKER_CLEARED")
+    }
+    then "a SIBLING sharing the run's process group is never reaped" {
+        // The guard that makes group-scoped reaping safe at all, and the one
+        // whose absence did real damage: reaping the whole GROUP took out the
+        // reaper's own pipeline and an unrelated command, because a process
+        // group is routinely shared — `make sweep` at a prompt shares one with
+        // the shell that typed it, and the Claude Code bash tool keeps a single
+        // persistent shell, so every command shares a group.
+        //
+        // So the unit is the orphaned TREE inside the group, not the group: a
+        // process whose parent is still alive belongs to someone else. Both
+        // shapes live in one dedicated session here, so the assertion is about
+        // this test's own processes and nothing else.
+        let out = harness("K",
+            "setsid bash -c '\"$root/$kid\" 300 & bash -c \"\\\"$root/$name\\\" 300 &\"; sleep 60' &\n" +
+            "sleep 1\n" +
+            "pgid=$(ps -A -o pid=,pgid=,comm= | awk -v n=\"$name\" '$3 == n { print $2; exit }')\n" +
+            "echo \"BEFORE orphan=$(count \"$name\") sibling=$(count \"$kid\")\"\n" +
+            "printf 'pid=4194303\\npgid=%s\\nstarted=%s\\ngroup_reap=1\\nlabel=stale\\nspare=\\n' \\\n" +
+            "  \"$pgid\" \"$(date +%s)\" > \"$root/runs/4194303.run\"\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true >/dev/null 2>&1\n" +
+            "sleep 1\n" +
+            "echo \"AFTER orphan=$(count \"$name\") sibling=$(count \"$kid\")\"\n")
+        out.contains("BEFORE orphan=1 sibling=1") && out.contains("AFTER orphan=0 sibling=1")
     }
     then "a process OLDER than the run is never reaped as its orphan" {
         // Process group ids get recycled. Without the age guard, a stale marker

@@ -2983,13 +2983,11 @@ mode_cache_fuzz() {
 # and reaps its survivors incapable of touching the live suite's own `bs2`.
 HEAVY_PROCS="${AVRA_HEAVY_PROCS:-bs2 llc cc1plus clang cc1}"
 
-# One ps snapshot, heavy processes only, one per line:
-#   pid ppid pgid rss_kb age_seconds comm
-# The `comm` filter is what makes this self-safe (see (2) above). macOS ps
-# prints comm as an absolute path where Linux prints the basename, so the
-# path is stripped before matching.
-heavy_ps() {
-  ps -A -o pid=,ppid=,pgid=,rss=,etime=,comm= 2>/dev/null | awk -v want="$HEAVY_PROCS" '
+# ONE ps snapshot behind everything below — `pid ppid pgid rss_kb age_secs comm`
+# for EVERY process. macOS ps prints comm as an absolute path where Linux prints
+# the basename, so the path is stripped.
+all_ps() {
+  ps -A -o pid=,ppid=,pgid=,rss=,etime=,comm= 2>/dev/null | awk '
     function age(s,   a, p, n, d) {
       d = 0
       if (s ~ /-/) { split(s, a, "-"); d = a[1] + 0; s = a[2] }
@@ -2998,24 +2996,53 @@ heavy_ps() {
       if (n == 2) return d * 86400 + p[1] * 60 + p[2]
       return d * 86400 + p[1] + 0
     }
-    BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) heavy[w[i]] = 1 }
     { comm = $6; sub(/^.*\//, "", comm)
-      if (comm in heavy) print $1, $2, $3, $4, age($5), comm }'
+      print $1, $2, $3, $4, age($5), comm }'
 }
 
-# heavy_ps plus a STATE column: `orphan` when the process has outlived its run
-# (its parent is gone, so init inherited it), `live` when it still belongs to a
-# run that is going. That distinction is what makes reaping safe to type, so it
-# gets ONE definition — shared by --stray's table, --stray --reap's victim
-# selection, and the teardown advisory.
+# The heavy ones. The `comm` filter is what makes this self-safe (see (2)
+# above): it matches the executable's basename, which no shell, awk or ps in
+# the pipeline can accidentally be.
+heavy_ps() {
+  all_ps | awk -v want="$HEAVY_PROCS" '
+    BEGIN { n = split(want, w, " "); for (i = 1; i <= n; i++) heavy[w[i]] = 1 }
+    $6 in heavy'
+}
+
+# heavy_ps plus STATE and the ROOT of the tree each process belongs to:
+#   pid ppid pgid rss age comm state root
+#
+# State comes from walking to the top of the process's own tree — the ancestor
+# init inherited — and asking whether that root is in OUR ancestry:
+#   live         the tree is still owned by something we are part of,
+#   orphan       the process itself was re-parented: its run is gone,
+#   orphan-tree  an ANCESTOR of it was.
+#
+# That third state is not a nicety, it is the whole point. A killed sweep leaves
+# an orphaned test-unit binary that keeps spawning fresh `bs2 compile` children,
+# and each child has a LIVE parent — so a parent-only test calls a 4.2GB compile
+# "live" while the run that owns it has been dead for minutes. Observed here on
+# the real thing, which is why the tree, not the process, is the unit.
 annotate_heavy() {
-  heavy_ps | while read -r pid ppid pgid rss age comm; do
-    if [ "$ppid" = "1" ] || [ "$ppid" = "0" ] || ! kill -0 "$ppid" 2>/dev/null; then
-      printf '%s %s %s %s %s %s orphan\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
-    else
-      printf '%s %s %s %s %s %s live\n' "$pid" "$ppid" "$pgid" "$rss" "$age" "$comm"
-    fi
-  done
+  local snap chain
+  snap="$(all_ps)"
+  chain=" $(pid_ancestry $$) "
+  printf '%s\n' "$snap" | awk -v snap="$snap" -v chain="$chain" -v want="$HEAVY_PROCS" '
+    BEGIN {
+      n = split(snap, lines, "\n")
+      for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] }
+      m = split(want, w, " "); for (i = 1; i <= m; i++) heavy[w[i]] = 1
+    }
+    !($6 in heavy) { next }
+    { root = ""; p = $1; hops = 0
+      while (p != "" && p != "0" && p != "1" && hops < 64) {
+        if (parent[p] == "1") { root = p; break }
+        p = parent[p]; hops++
+      }
+      state = "live"
+      if (root != "" && index(chain, " " root " ") == 0) state = (root == $1) ? "orphan" : "orphan-tree"
+      else root = "-"
+      print $1, $2, $3, $4, $5, $6, state, root }'
 }
 
 # The pid chain from PID (default: this shell) up to init, space separated.
@@ -3053,41 +3080,91 @@ run_has_heavy_ancestor() {
 # KILL because the memory has to come back either way. Returns non-zero if
 # anything outlived the KILL, so a caller can report that honestly instead of
 # claiming a reap that did not happen.
+#
+# Every signal is gated on the pid STILL carrying the comm we selected it by.
+# Pids are recycled, the list is a snapshot, and the list now includes ordinary
+# processes (a run's subtree is not all `bs2`) — so without the re-check a
+# recycled pid could take an unrelated signal.
+# Is PID still the process we selected — same pid, same comm? FORK-FREE on
+# Linux (a `read` from /proc), and that is not a micro-optimisation: forking a
+# `ps` per candidate RECYCLES the very pids just freed by the list-building
+# plumbing, and the recycled process is another `ps`/`awk`/subshell whose comm
+# MATCHES the dead entry it replaced. The check then confirms its own churn and
+# the reaper kills its own pipeline. Observed, on a real sweep teardown.
+comm_is() {
+  local now=""
+  if [ -r "/proc/$1/comm" ]; then
+    read -r now < "/proc/$1/comm" 2>/dev/null || return 1
+  else
+    now=$(ps -o comm= -p "$1" 2>/dev/null | sed 's|.*/||')   # BSD/macOS: no /proc
+  fi
+  [ -n "$now" ] && [ "$now" = "$2" ]
+}
+
+KILL_COUNT=0   # what the last kill_victims actually signalled
+
 kill_victims() {
   local list="$1" label="$2"
+  KILL_COUNT=0
   [ -n "$list" ] || return 0
-  local pids names n=0 p waited=0 alive left=0
-  pids=$(printf '%s\n' "$list" | awk '{ print $1 }')
-  names=$(printf '%s\n' "$list" | awk '{ printf "%s(%s) ", $1, $2 }')
-  for p in $pids; do kill -TERM "$p" 2>/dev/null; n=$(( n + 1 )); done
+  local n=0 left=0 waited=0 alive pid comm names=""
+  # Count what is actually SIGNALLED, not what was listed: entries that died on
+  # their own between snapshot and kill (the reaper's own plumbing, for one)
+  # must not be reported as a reap that happened.
+  while read -r pid comm; do
+    [ -n "$pid" ] || continue
+    comm_is "$pid" "$comm" || continue
+    n=$(( n + 1 )); names="$names $pid($comm)"
+    kill -TERM "$pid" 2>/dev/null
+  done <<EOF
+$list
+EOF
+  [ "$n" -gt 0 ] || return 0
+  # Liveness polling is `kill -0` (a builtin, no fork); a recycled pid here only
+  # costs a little patience. The SIGNALS are the ones that get the comm gate.
   while [ "$waited" -lt 20 ]; do
     alive=0
-    for p in $pids; do kill -0 "$p" 2>/dev/null && alive=1; done
+    for pid in $(printf '%s\n' "$list" | awk '{ print $1 }'); do
+      kill -0 "$pid" 2>/dev/null && alive=1
+    done
     [ "$alive" = "0" ] && break
     sleep 0.1
     waited=$(( waited + 1 ))
   done
-  # Only signal what is still there: pids are recycled, and a blind second
-  # KILL two seconds later can land on whoever inherited the number.
-  for p in $pids; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null; done
-  for p in $pids; do kill -0 "$p" 2>/dev/null && left=$(( left + 1 )); done
-  warn "[reap:$label] killed $n stray heavy process(es): ${names% }"
+  while read -r pid comm; do
+    [ -n "$pid" ] || continue
+    comm_is "$pid" "$comm" && kill -KILL "$pid" 2>/dev/null
+  done <<EOF
+$list
+EOF
+  sleep 0.1
+  while read -r pid comm; do
+    [ -n "$pid" ] || continue
+    comm_is "$pid" "$comm" && left=$(( left + 1 ))
+  done <<EOF
+$list
+EOF
+  KILL_COUNT="$n"
+  warn "[reap:$label] killed $n process(es):$names"
   [ "$left" = "0" ] || err "[reap:$label] $left survived SIGKILL (uninterruptible?) — re-check with --stray"
   [ "$left" = "0" ]
 }
 
-# Heavy processes whose parent chain reaches any pid in ROOTS (space
-# separated), as "pid comm" lines. ONE ancestry walk, shared by both consumers:
-# the teardown arm (roots = the run leader) and --stray --reap (roots = the
-# orphans — whose own children are orphans-in-waiting, so killing only the top
-# of a dead run's tree would leave its shards to be re-parented and reported
-# again on the next pass).
-heavy_under() {
-  local roots=" $1 " snap
-  snap="$(ps -A -o pid=,ppid= 2>/dev/null)"
-  heavy_ps | awk -v snap="$snap" -v roots="$roots" '
+# EVERY process whose parent chain reaches any pid in ROOTS (space separated),
+# as "pid comm" lines, minus anything in EXCLUDE (space separated, padded).
+#
+# Every process, NOT just the heavy ones — the lesson of the 2026-07-31 sweep
+# kill. Reaping by name left the run's orphaned test-unit binary alive, and it
+# went on spawning fresh 4.2GB `bs2 compile` children indefinitely: killing the
+# compiles while leaving the thing that spawns them is not a reap. A run's
+# subtree belongs to the run; when the run is over, all of it goes.
+procs_under() {
+  local roots=" $1 " exclude=" ${2:-} " snap
+  snap="$(all_ps)"
+  printf '%s\n' "$snap" | awk -v snap="$snap" -v roots="$roots" -v exclude="$exclude" '
     BEGIN { n = split(snap, lines, "\n")
             for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] } }
+    index(exclude, " " $1 " ") > 0 { next }
     { p = $2; hops = 0
       while (p != "" && p != "0" && p != "1" && hops < 64) {
         if (index(roots, " " p " ") > 0) { print $1, $6; break }
@@ -3095,23 +3172,36 @@ heavy_under() {
       } }'
 }
 
-# ARM 1 (leader alive — the normal teardown). Kill the heavy DESCENDANTS of
-# PID. Unconditionally safe: descendants are read off the LIVE process tree,
-# so nothing outside this run's own subtree can be selected.
+# ARM 1 (leader alive — the normal teardown). Kill the DESCENDANTS of PID.
+# Unconditionally safe: descendants are read off the LIVE process tree, so
+# nothing outside this run's own subtree can be selected — and by the time a
+# run tears down, anything still in its subtree is by definition a leftover.
 reap_descendants() {
   local root="$1" label="${2:-teardown}"
-  kill_victims "$(heavy_under "$root")" "$label"
+  kill_victims "$(procs_under "$root" "$(pid_ancestry $$)")" "$label"
 }
 
 # ARM 2/3 (leader DEAD — the nanny and the stale-marker backstop). The run's
-# whole subtree has been re-parented, so ancestry is gone and the process
-# GROUP is the only attribute that survived. Every guard here is load-bearing:
-#   * group_reap=0 markers are skipped — that run shared its pgid with an
-#     outer run, so its group is not exclusively its own,
-#   * a pid in the run's recorded ancestry is never killed (the tree we, or
-#     the run, were running inside),
-#   * a process OLDER than the run itself is never killed, so a recycled pgid
-#     cannot make us reap a stranger's compile.
+# subtree has been re-parented, so ancestry to the leader is gone. What is left
+# to identify it by is the pair (process GROUP, re-parented ROOT):
+#
+#   * its process group survived re-parenting, and
+#   * every survivor hangs off a root that init inherited when the leader died.
+#
+# Scoping to the orphaned TREES in the group — rather than to the whole group —
+# is what makes this safe on a SHARED group, which is the normal case: the group
+# of `make sweep` typed at a prompt also holds the shell that typed it and
+# anything else it is running (the Claude Code bash tool keeps ONE persistent
+# shell, so every command shares a group). A sibling with a live parent is not
+# ours. A re-parented tree in our group, younger than the run, is.
+#
+# The remaining guards are load-bearing too:
+#   * group_reap=0 markers are skipped — that run was nested inside another,
+#     so its group is not exclusively its own,
+#   * a pid in the run's recorded ancestry is never a root (the tree we, or the
+#     run, were running inside),
+#   * a process OLDER than the run is never a root, so a recycled pgid cannot
+#     make us reap a stranger's compile.
 reap_marker() {
   local marker="$1" label="$2"
   [ -f "$marker" ] || return 0
@@ -3127,10 +3217,17 @@ reap_marker() {
   case "$pgid"    in ""|*[!0-9]*) return 0 ;; esac
   case "$started" in ""|*[!0-9]*) return 0 ;; esac
   now=$(date +%s)
-  local victims
-  victims="$(heavy_ps | awk -v pgid="$pgid" -v spare=" $spare " -v me="$$" \
-                            -v maxage="$(( now - started + 2 ))" '
-    $3 == pgid && $1 != me && $5 <= maxage && index(spare, " " $1 " ") == 0 { print $1, $6 }')"
+  # Never ourselves: the nanny lives IN the dead run's group and is itself
+  # re-parented when the leader dies, so without this it is its own first root.
+  local mine roots victims
+  mine=" $spare $$ ${BASHPID:-$$} $(pid_ancestry "${BASHPID:-$$}") "
+  roots="$(all_ps | awk -v pgid="$pgid" -v mine="$mine" \
+                        -v maxage="$(( now - started + 2 ))" '
+    $2 == 1 && $3 == pgid && $5 <= maxage && index(mine, " " $1 " ") == 0 { printf "%s ", $1 }')"
+  [ -n "$roots" ] || return 0
+  victims="$( { all_ps | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
+                procs_under "$roots" "$mine"
+              } | sort -un -k1,1)"
   kill_victims "$victims" "$label"
 }
 
@@ -3214,7 +3311,7 @@ run_end() {
 # explain that gets blamed on a compiler bug.
 warn_residual_orphans() {
   local n
-  n=$(annotate_heavy | awk '$7 == "orphan" { c++ } END { print c + 0 }')
+  n=$(annotate_heavy | awk '$7 != "live" { c++ } END { print c + 0 }')
   [ "$n" = "0" ] && return 0
   warn "[run] $n orphaned heavy process(es) still resident (not this run's) — \`make stray REAP=1\` clears them"
 }
@@ -3238,8 +3335,9 @@ run_nanny() {
 # Usage: --stray [--reap]
 # Report every surviving heavy process with its RSS — the instrument to reach
 # for before trusting ANY memory number, and after any killed run. Reaping is
-# limited to ORPHANS (no live parent): a heavy process with a live parent
-# belongs to a run that is still going, and killing it would be sabotage, not
+# limited to processes in an ORPHANED TREE: one whose root was re-parented, so
+# the run that owned it is gone. A heavy process whose tree is still ours
+# belongs to a build that is still going, and killing it would be sabotage, not
 # hygiene. Exit codes answer the question each form asks — reporting: 0 = no
 # heavy process resident, 1 = some are (`--stray && echo clean` composes);
 # reaping: 0 = no orphan left behind, 1 = one survived SIGKILL.
@@ -3252,11 +3350,11 @@ mode_stray() {
     ok "[stray] none — no ${HEAVY_PROCS// //} process resident"
     return 0
   fi
-  printf '%7s %7s %7s %10s %8s %-8s %s\n' PID PPID PGID RSS AGE STATE COMM >&2
-  printf '%s\n' "$annotated" | awk '{ printf "%7s %7s %7s %9.1fM %7ss %-8s %s\n", $1, $2, $3, $4/1024, $5, $7, $6 }' >&2
+  printf '%7s %7s %7s %10s %8s %-12s %s\n' PID PPID PGID RSS AGE STATE COMM >&2
+  printf '%s\n' "$annotated" | awk '{ printf "%7s %7s %7s %9.1fM %7ss %-12s %s\n", $1, $2, $3, $4/1024, $5, $7, $6 }' >&2
   local n orphans total
   n=$(printf '%s\n' "$annotated" | wc -l | tr -d ' ')
-  orphans=$(printf '%s\n' "$annotated" | awk '$7 == "orphan"' | wc -l | tr -d ' ')
+  orphans=$(printf '%s\n' "$annotated" | awk '$7 != "live"' | wc -l | tr -d ' ')
   total=$(printf '%s\n' "$annotated" | awk '{ s += $4 } END { printf "%.1f", s/1024 }')
   warn "[stray] $n heavy process(es) resident ($orphans orphaned) holding ${total}M"
   if [ "$reap" = "1" ]; then
@@ -3264,19 +3362,22 @@ mode_stray() {
     # Ancestors are spared throughout: a --stray --reap from inside a live
     # `bs2 test` must not kill the suite it is reporting to.
     chain=" $(pid_ancestry $$) "
+    # The roots of the orphaned TREES, not the strays themselves. Killing an
+    # orphaned run's `bs2 compile` while leaving the orphaned test binary above
+    # it just gets you a fresh 4.2GB compile a second later — the whole dead
+    # tree is the unit, top included.
     roots="$(printf '%s\n' "$annotated" | awk -v chain="$chain" \
-      '$7 == "orphan" && index(chain, " " $1 " ") == 0 { printf "%s ", $1 }')"
+      '$7 != "live" && index(chain, " " $8 " ") == 0 { print $8 }' | sort -un | tr '\n' ' ')"
     if [ -z "$roots" ]; then
-      log "[stray] nothing to reap — no orphaned heavy process (live ones belong to a running build)"
+      log "[stray] nothing to reap — every heavy process belongs to a live tree (a build that is still running)"
       return 0
     fi
-    # The orphans AND the heavy subtrees hanging off them: an orphaned `bs2`
-    # with two shard children is one dead run, not one process.
     victims="$( { printf '%s\n' "$annotated" | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
-                  heavy_under "$roots"
-                } | sort -un -k1,1 | awk -v chain="$chain" 'index(chain, " " $1 " ") == 0')"
+                  all_ps | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
+                  procs_under "$roots" "$(pid_ancestry $$)"
+                } | sort -un -k1,1)"
     kill_victims "$victims" "stray" || return 1
-    ok "[stray] reaped $(printf '%s\n' "$victims" | wc -l | tr -d ' ') orphaned process(es)"
+    ok "[stray] reaped $KILL_COUNT process(es) in $(printf '%s' "$roots" | wc -w | tr -d ' ') orphaned tree(s)"
     return 0
   fi
   log "[stray] \`diagnose.sh --stray --reap\` kills the orphaned ones (live ones are left alone)"
