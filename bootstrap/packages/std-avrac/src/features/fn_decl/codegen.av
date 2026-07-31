@@ -810,6 +810,27 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
     if !vtype_is_unknown(cg_newtype_vtype_lookup(ctx.newtypes, name)) {
         return emit_newtype_ctor(ctx, env, name, args)
     }
+    // A LOCAL OF FN TYPE SHADOWS A SAME-NAMED GLOBAL FN — lexical scoping.
+    //
+    // This lookup used to sit INSIDE the `fn_val == null` branch below, i.e. a global
+    // fn was chosen first and the local was only consulted when no global existed. So
+    // a fn parameter or `let`-bound closure lost to a same-named top-level fn and the
+    // program CALLED THE WRONG FUNCTION — silently, with no diagnostic, because the
+    // call is well-formed either way.
+    //
+    //     fn dbl(x: int) -> int { x * 10 }
+    //     fn apply_it(dbl: fn(int) -> int, v: int) -> int { dbl(v) }
+    //     apply_it((n: int) -> n + 1, 5)      // emitted 50, should be 6
+    //
+    // THIRD INSTANCE OF ONE BUG. The resolver had it (#1091, `rewrite_ident` consulted
+    // the alias table before the current module's items) and typeck had it (this PR's
+    // other half, `fn_type_get` before `type_lookup`). Fixing only the type side left
+    // the program type-checking against the local while CALLING the global — the two
+    // layers must agree, so the same rule belongs in both.
+    let shadow = env_lookup(env, name)
+    if shadow.found && vtype_is_fn(shadow.ty) {
+        return emit_indirect_call(ctx, env, shadow.alloca, name, args)
+    }
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
         // Not a named function — might be a lambda stored in a variable.
