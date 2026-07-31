@@ -167,11 +167,11 @@ guarded:
 	@$(DIAG) --guarded $(if $(FLOOR),$(FLOOR)) -- $(CMD)
 
 # t-ce5t: what is still holding memory? Lists every surviving bs2/llc/cc1plus/
-# clang/cc1 with RSS and whether it is ORPHANED — the first thing to run after
-# a killed run, and before trusting any memory reading, since a leftover
+# clang/cc1 with RSS and whether its tree is ORPHANED — the first thing to run
+# after a killed run, and before trusting any memory reading, since a leftover
 # compile holding GBs is what makes the NEXT run trip the memory floor.
-# REAP=1 kills the orphaned ones (live, parented builds are left alone).
-# Unlike `pgrep -f bs2`, this cannot report the shell that ran it.
+# REAP=1 kills each orphaned tree whole, root included (live, parented builds
+# are left alone). Unlike `pgrep -f bs2`, this cannot report the shell that ran it.
 stray:
 	@$(DIAG) --stray $(if $(REAP),--reap)
 

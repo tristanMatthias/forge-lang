@@ -69,12 +69,16 @@ spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
             "\"$root/$name\" 300 &\n" +
             "sleep 0.5\n" +
             "bash scripts/diagnose.sh --stray; echo \"RC=$?\"\n" +
-            "kill %1 2>/dev/null\n")
+            "kill %1 2>/dev/null; sleep 0.5\n" +
+            // ...and the other half of the contract: 0 once nothing is left, so
+            // `--stray && <next step>` composes as a gate.
+            "bash scripts/diagnose.sh --stray; echo \"CLEAN_RC=$?\"\n")
         // Table row: PID PPID PGID RSS AGE STATE COMM. The RSS column is
         // asserted because "which process" without "how much memory" is not an
         // answer to the question this command exists to answer.
         out.contains(fake_name("A")) && out.contains("heavy process(es) resident")
-            && out.contains("M ") && out.contains("live") && out.contains("RC=1")
+            && out.contains("M ") && out.contains("live")
+            && out.contains("RC=1") && out.contains("CLEAN_RC=0")
     }
     then "the same shell that pgrep -f matches, --stray does not" {
         // The hazard reproduced and refuted in one run. BOTH probes launch from

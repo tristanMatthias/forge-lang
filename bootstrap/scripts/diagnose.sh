@@ -414,16 +414,18 @@ DIFF & ANALYSIS
                        loop — background it and kill it yourself, or (better)
                        use --guarded. Trips logged to build/memguard/log.
   --stray [--reap]     List every surviving heavy process (bs2/llc/cc1plus/
-                       clang/cc1) with RSS, age and whether it is ORPHANED.
-                       Run this before trusting any memory number, and after
-                       any killed run: orphans holding GBs make the NEXT run
-                       trip the memory floor. Matches ps's `comm`, never the
-                       command line, so it can never report itself the way
-                       `pgrep -f bs2` does. --reap kills the orphans and their
-                       subtrees (TERM then KILL), leaving live parented builds
-                       alone. Reporting exits 0 when nothing is resident, 1
-                       when something is; --reap exits 0 unless an orphan
-                       survived the KILL.
+                       clang/cc1) with RSS, age and whether its TREE is
+                       orphaned. Run this before trusting any memory number,
+                       and after any killed run: orphans holding GBs make the
+                       NEXT run trip the memory floor. Matches ps's `comm`,
+                       never the command line, so it can never report itself
+                       the way `pgrep -f bs2` does. --reap kills each orphaned
+                       tree WHOLE — from the re-parented root down, whatever
+                       the processes are called, since killing a compile whose
+                       orphaned parent will just spawn another is not cleanup
+                       — and leaves live parented builds alone. Reporting
+                       exits 0 when nothing is resident, 1 when something is;
+                       --reap exits 0 unless an orphan survived the KILL.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
                        blocks, missing terminators, wide-store-into-
                        narrow-malloc bugs, and similar quality smells.
