@@ -598,7 +598,7 @@ fn is_item_visible(graph: ModuleGraph, mod_path: string, name: string, canonical
 /// Convert a dotted module path (`a.b.c`) to its `::` form
 /// (`a::b::c`) — bridging the source syntax `use a.b.c` to the
 /// canonical-name representation used in the module tree.
-fn dots_to_colons(path: string) -> string {
+export fn dots_to_colons(path: string) -> string {
     mut result = ""
     for i in 0..path.length {
         let ch = path[i]
