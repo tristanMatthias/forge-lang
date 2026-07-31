@@ -1968,10 +1968,29 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
         if const_canonical != "" { return Expr.QualifiedIdent(const_canonical) }
         return original
     }
-    // 4. Use alias (from `use path.{name}`)
-    let from_alias = alias_lookup(ctx.aliases, name)
-    if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
-    // 5. Sibling in current module
+    // 4. Sibling in current module — BEFORE the alias table (t-axu9).
+    //
+    // Sibling-before-alias is not a preference, it is the same rule
+    // `resolve_const_ref` and `resolve_type_in_ctx` (yx7b) already apply, for the
+    // same reason, stated in resolve_const_ref's own comment: the ENTRY FILE's
+    // `use` aliases are merged into every module's ctx, so alias-first lets a
+    // ROOT import of `mod_a.{x}` hijack `mod_b`'s reference to its OWN `x`.
+    // Consts and types were fixed; lowercase values and fns were left on
+    // alias-first and kept the hole.
+    //
+    // Measured shape: a lib whose ROOT entry does `use shared.{thing}` (one
+    // param), with a submodule that imports NOTHING and defines its own
+    // two-param `thing`. The submodule's call to its own fn bound
+    // `shared::thing` and reported F1001 arity. In the compiler's own source
+    // this is `spec_test::reporter`'s three private `json_object` calls binding
+    // `@std::json::json_object`, because `cli/src/main.av` imports that name at
+    // the root and only the SELFHOST unit puts both in one compilation unit.
+    //
+    // DISTINCT from t-oyr9, which was sibling-to-sibling leakage via an
+    // in-place `merge_aliases` mutation. This one is outer-to-inner and the
+    // propagation is intentional — an inline `mod` block SHOULD see its file's
+    // imports. Only the PRECEDENCE was wrong: a module's own declaration
+    // shadows an inherited import, exactly as a local binding shadows both.
     if ctx.current_module != "" {
         let mod_node = module_find(ctx.tree, ctx.current_module)
         let from_sibling = match mod_node {
@@ -1980,6 +1999,9 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
         }
         if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
     }
+    // 5. Use alias (from `use path.{name}`)
+    let from_alias = alias_lookup(ctx.aliases, name)
+    if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
     // No global fallback. Names must be imported via `use` or defined
     // in the current module. Unresolved names stay as Expr.Ident.
     original

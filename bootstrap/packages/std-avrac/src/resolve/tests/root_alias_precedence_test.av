@@ -1,0 +1,111 @@
+// WHY: t-axu9 — the ENTRY FILE's `use` aliases are merged into every module's
+// resolver ctx, and `rewrite_ident` consulted that alias table BEFORE the
+// current module's own items. So a ROOT import of `shared.{thing}` hijacked a
+// submodule's reference to its OWN `thing`, even though the submodule imports
+// nothing at all.
+//
+// THE FIX is a precedence swap in `rewrite_ident` (resolve/names.av): sibling-
+// in-current-module before use-alias. That is not a new rule — it is the rule
+// `resolve_const_ref` and `resolve_type_in_ctx` (yx7b) ALREADY apply, for this
+// exact reason, stated in resolve_const_ref's own comment. Consts and types
+// were fixed; lowercase values and fns were left on alias-first and kept the
+// hole.
+//
+// IN THE COMPILER'S OWN SOURCE this was `spec_test::reporter`'s three private
+// `json_object` calls binding `@std::json::json_object`, because
+// `cli/src/main.av` imports that name at the ROOT and only the SELFHOST unit
+// pulls both files into one compilation unit. That is why a lib-build probe
+// showed nothing and the selfhost leg showed three F1000s.
+//
+// DISTINCT FROM t-oyr9, which was sibling-to-sibling leakage caused by an
+// in-place `merge_aliases` mutation. This one is outer-to-inner, and the
+// propagation is INTENTIONAL — an inline `mod` block should see its file's
+// imports. Only the precedence was wrong. The third `then` below pins exactly
+// that, so a later "fix" that severs propagation instead of reordering it
+// fails here rather than silently narrowing visibility.
+//
+// FAILING-FIRST: verified to FAIL (F1001 "expects 1 argument, got 2" in
+// sub_entry) with `rewrite_ident` restored to alias-before-sibling, and to
+// pass with the swap.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_mkdir_p(path: string) -> int
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_getpid() -> int
+
+/// Compile result: BOTH the exit status and the captured output. Asserting on
+/// output alone is unsound here — two of the three cases assert the ABSENCE of
+/// a diagnostic, and a compile that never ran (missing `build/bs2`, a failed
+/// `cd`) also produces no diagnostic, passing vacuously. That very trap bit
+/// during this ticket: a `cd` reset mid-command made `./build/bs2` unresolvable
+/// and the error count read 0 from a compiler that never started.
+type PrecBuild = { status: int, output: string }
+
+/// Absolute path to the bs2 under test — the fixture compiles from its own
+/// /tmp root, so a relative `./build/bs2` would not resolve.
+fn avra_repo_bs2() -> string {
+    let pwd = avra_shell_exec("pwd").trim()
+    "${pwd}/build/bs2"
+}
+
+/// Materialise a lib package whose ROOT ENTRY imports `thing` from a submodule,
+/// alongside a second submodule (`sub`) whose body is the parameter. The root
+/// import is the whole point: it is what gets merged into `sub`'s ctx.
+fn build_prec_fixture(sub_body: string) -> PrecBuild {
+    let root = "/tmp/avra_axu9_${string(avra_getpid())}"
+    let _ = avra_shell_exec("rm -rf '${root}'")
+    let _ = avra_mkdir_p("${root}/src/shared")
+    let _ = avra_mkdir_p("${root}/src/sub")
+
+    let _ = avra_selfhost_write_file("${root}/avra.toml",
+        "[package]\nname = \"@axu9/prec\"\nversion = \"0.1.0\"\n\n[lib]\nname = \"axu9-prec\"\npath = \"src/prec.av\"\n")
+
+    // The ROOT entry imports `thing` — the shape `cli/src/main.av` has with
+    // `use @std.json.{json_object, ...}`.
+    let _ = avra_selfhost_write_file("${root}/src/prec.av",
+        "use shared.{thing}\nexport fn root_entry() -> string { thing(\"x\") }\n")
+    // ONE param.
+    let _ = avra_selfhost_write_file("${root}/src/shared/mod.av",
+        "export fn thing(a: string) -> string { a }\n")
+    let _ = avra_selfhost_write_file("${root}/src/sub/mod.av", sub_body)
+
+    let log = "${root}/compile.log"
+    let status = avra_shell_exec_status("cd '${root}' && AVRA_LIB_PKG_ROOT='@axu9::prec' " +
+        "'${avra_repo_bs2()}' compile --module_path='@axu9::prec' src/prec.av > '${log}' 2>&1")
+    PrecBuild { status: status, output: avra_selfhost_read_file(log) }
+}
+
+spec "t-axu9: a module's own declaration beats the ROOT entry's `use` alias" {
+    then "a submodule that imports nothing binds its OWN fn, not the root's import" {
+        // TWO params. Under the bug this bound `shared::thing` (one param) and
+        // reported F1001 "expects 1 argument, got 2". Arity is the
+        // discriminator on purpose: it reports on a plain build, with no
+        // dependence on the t-axu9 nominal gate being present.
+        let r = build_prec_fixture(
+            "fn thing(a: string, b: string) -> string { a + b }\n" +
+            "export fn sub_entry() -> string { thing(\"x\", \"y\") }\n")
+        r.status == 0 && !r.output.contains("error[F") && !r.output.contains("expects 1 argument")
+    }
+
+    then "the ROOT entry still resolves its own import correctly" {
+        // The fix must not cost the importer its import: `prec.av` imports
+        // `thing` from `shared` and must keep binding it.
+        let r = build_prec_fixture(
+            "export fn sub_entry() -> string { \"no local thing\" }\n")
+        r.status == 0 && !r.output.contains("error[F")
+    }
+
+    then "a submodule with NO local definition still inherits the root's import" {
+        // SCOPE PIN. Outer-to-inner alias propagation is INTENTIONAL — an
+        // inline `mod` block should see its file's imports — and only the
+        // PRECEDENCE was wrong. A "fix" that severs propagation rather than
+        // reordering it would make this bare `thing("x")` undefined, so this
+        // case fails loudly instead of the change passing as a silent
+        // visibility narrowing.
+        let r = build_prec_fixture(
+            "export fn sub_entry() -> string { thing(\"x\") }\n")
+        r.status == 0 && !r.output.contains("error[F")
+    }
+}
