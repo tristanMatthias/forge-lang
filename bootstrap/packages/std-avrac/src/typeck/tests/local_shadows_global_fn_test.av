@@ -11,29 +11,27 @@
 // t-axu9 nominal argument gate compared the argument against the callee's declared
 // type; before that gate existed nothing looked, because both sides are pointers.
 //
-// ARITY IS THE DISCRIMINATOR, deliberately. The global takes TWO parameters and the
-// local takes ONE, so binding the wrong one is an F1001 that reports on a plain
-// `bs2 check` — no dependence on the nominal gate being present, and no dependence on
-// which symbol CODEGEN selects (see the scope note below).
+// ARITY IS THE DISCRIMINATOR for the type-level cases, deliberately. The global takes
+// TWO parameters and the local takes ONE, so binding the wrong one is an F1001 that
+// reports on a plain `bs2 check` — no dependence on the nominal gate being present.
 //
 // FAILING-FIRST, verified by reverting the fix and rebuilding:
-//     without E:  error[F1001]: `dbl` expects 2 arguments, got 1 (in function `apply_it`)
-//     with E:     clean, exit 0
+//     without:  error[F1001]: `dbl` expects 2 arguments, got 1 (in function `apply_it`)
+//     with:     clean, exit 0
 //
-// SCOPE — THIS IS A TYPECK FIX ONLY, AND THE CODEGEN HALF IS A SEPARATE BUG.
-// A run-value probe of the same program still prints the GLOBAL's result:
+// THREE LAYERS HAD THE SAME PRECEDENCE INVERSION, and this file pins all of them:
 //
-//     fn dbl(x: int) -> int { x * 10 }
-//     fn apply_it(dbl: fn(int) -> int, v: int) -> int { dbl(v) }
-//     apply_it((n: int) -> n + 1, 5)   ->  prints 50, should print 6
+//     resolver   rewrite_ident consulted the alias table before the module's own
+//                items                                                    (#1091)
+//     typeck     fn_type_get before type_lookup, in BOTH check_call and
+//                annotate_expr_stamped                                    (here)
+//     codegen    emit_call_named's get_fn before env_lookup               (here)
 //
-// So codegen ALSO resolves the callee global-first, and this fix cannot affect that —
-// typeck decides types, codegen decides symbols. That is a pre-existing wrong-code
-// defect, filed separately; an earlier draft of this spec asserted the run value and
-// failed, which is what surfaced it. Do not conflate the two layers when reading a
-// failure here: this file pins the TYPE binding only.
-
-use @std.avrac.test_runner.{write_fixture_and_run}
+// The codegen half was found the hard way: with only typeck fixed, the program
+// type-checked against the local while still CALLING the global, so the run-value
+// case below printed 50 instead of 6. Fixing one layer alone is worse than fixing
+// neither — the program then means one thing to the checker and another at runtime.
+// That is why the run case sits alongside the type cases rather than in its own file.
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -45,6 +43,15 @@ use @std.avrac.test_runner.{write_fixture}
 /// Status is the fact, the log is the evidence — asserting on captured stdout alone
 /// cannot distinguish "compiled cleanly" from "the compiler never ran".
 type ShadowRun = { status: int, log: string }
+
+/// Compile AND RUN, returning stdout — for the cases where the defect's signature is a
+/// wrong VALUE rather than a diagnostic.
+fn run_fixture(source: string) -> string {
+    let pid = string(avra_getpid())
+    let path = "/tmp/avra_slice_e_run_${pid}.av"
+    write_fixture(path, source)
+    avra_shell_exec("bash scripts/diagnose.sh --run '${path}' 2>&1 || true")
+}
 
 fn shadow_check(source: string) -> ShadowRun {
     let pid = string(avra_getpid())
@@ -78,12 +85,63 @@ spec "t-axu9 slice E: a local callable shadows a same-named global fn in TYPECK"
         r.status == 0 && !r.log.contains("error[F")
     }
 
+    then "the CALL ACTUALLY EMITTED is the local's, not the global's" {
+        // The run-value witness, and the one that matters most: a wrong binding that
+        // type-checks produces NO diagnostic — it just computes the wrong answer. The
+        // arithmetic separates the candidates so the assertion cannot be satisfied by
+        // the wrong one:
+        //
+        //     global `dbl`  -> x * 10   (would print 50)
+        //     the parameter -> x + 1    (prints 6)
+        //
+        // This case FAILED when only typeck was fixed: the program type-checked
+        // against the local while emit_call_named still resolved the global, so it
+        // printed 50. That failure is what revealed codegen had the same precedence
+        // inversion. Both layers are fixed now, and this pins them TOGETHER — a
+        // future fix to one alone turns this red.
+        let out = run_fixture(
+            "fn dbl(x: int) -> int { x * 10 }\n" +
+            "fn apply_it(dbl: fn(int) -> int, v: int) -> int { dbl(v) }\n" +
+            "fn main() { println(string(apply_it((n: int) -> n + 1, 5))) }\n")
+        out.contains("6") && !out.contains("50")
+    }
+
+    then "a NULLABLE local does NOT shadow a global fn" {
+        // REGRESSION for the first draft of this fix, which gated the shadow on
+        // `!type_call_rejected(...)`. That predicate deliberately does NOT reject
+        // `Optional` (a nullable could hold a fn), so a local `let mk: Rec? = null`
+        // suppressed the global `fn mk` even though it cannot be called. The gate is
+        // now the POSITIVE `vtype_is_fn`, and this pins it.
+        let r = shadow_check(
+            "type Rec = { n: int }\n" +
+            "fn mk(x: int) -> int { x * 10 }\n" +
+            "fn main() {\n" +
+            "    let mk: Rec? = null\n" +
+            "    println(string(mk == null))\n" +
+            "}\n")
+        r.status == 0 && !r.log.contains("error[F")
+    }
+
+    then "a NEWTYPE local does NOT shadow a global fn" {
+        // The other type `type_call_rejected` declines to reject — a newtype-over-fn
+        // could dispatch, so newtypes fall through there. Same consequence: a
+        // non-callable newtype local must not capture a same-named global fn.
+        let r = shadow_check(
+            "type Meters = int\n" +
+            "fn dist(x: int) -> int { x * 10 }\n" +
+            "fn main() {\n" +
+            "    let dist: Meters = Meters(3)\n" +
+            "    println(string(dist.raw()))\n" +
+            "}\n")
+        r.status == 0 && !r.log.contains("error[F")
+    }
+
     then "a NON-callable local does NOT shadow a global fn" {
         // THE SCOPE PIN. `let sz = 5` is not callable, so `sz(3)` must still reach the
         // global `fn sz`. Without the callability gate this would break ordinary code,
-        // which is why the shadow reuses the SAME `type_call_rejected` predicate the
-        // closure-call path already uses rather than shadowing on name presence alone
-        // — one notion of "callable", so the two cannot drift apart.
+        // which is why the shadow tests `vtype_is_fn` — the SAME predicate codegen's
+        // local-fallback already used for this question, so the two layers cannot
+        // drift into disagreeing about which binding a call refers to.
         let r = shadow_check(
             "fn sz(x: int) -> int { x * 10 }\n" +
             "fn main() {\n" +

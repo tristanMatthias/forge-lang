@@ -4456,13 +4456,18 @@ fn check_call_with_expected(tc: TC, callee: Expr, args: List<ExprId>, expected: 
             // argument against the callee's declared type and reported `Rng` is not
             // assignable to the user fn's parameter.
             //
-            // The shadow is gated on the local being CALLABLE, via the same
-            // `type_call_rejected` predicate the closure path below already uses — so a
-            // local `let gen = 5` does not shadow a global `fn gen`, and there is no
-            // second notion of "callable" to drift out of step with the first.
+            // The shadow needs a POSITIVE callable test. An earlier revision used
+            // `!type_call_rejected(...)`, which is not the same thing: that predicate
+            // deliberately does NOT reject `Optional` or `Newtype` (a newtype-over-fn
+            // could dispatch), so a local `let r: Rec? = null` would have suppressed a
+            // same-named global `fn r` — a local that cannot be called shadowing one
+            // that can. Caught in review.
+            //
+            // `vtype_is_fn` is the predicate codegen's local-fallback already uses for
+            // exactly this question, so both layers now ask it the same way and cannot
+            // drift into disagreeing about which binding a call refers to.
             let local_ty = type_lookup(checked.types, name)
-            let local_shadows = !vtype_is_unknown(local_ty)
-                && !type_call_rejected(local_ty, checked.current_scope_tp)
+            let local_shadows = vtype_is_fn(local_ty)
             // User-defined function
             let r = fn_type_get(checked.fns, name)
             if r.found && !local_shadows {
@@ -5353,8 +5358,19 @@ fn annotate_expr_stamped(tc: TC, id: ExprId) -> ExprId {
         // Call: look up return type from function registry
         .Call(callee, args) -> match tc.nodes.exprs.get(callee) {
             .Ident(name) -> {
-                let rec = fn_type_get(tc.fns, name)
-                tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+                // LOCAL-FIRST, matching check_call and codegen's emit_call_named. A
+                // callable local shadows a same-named global fn, so stamping the
+                // GLOBAL's return type here would annotate the expression with a type
+                // the call does not have — the annotation and the check disagreeing
+                // about which binding the name refers to. Caught in review alongside
+                // the codegen half; all three sites now ask the same question.
+                let local_ty = type_lookup(tc.types, name)
+                if vtype_is_fn(local_ty) {
+                    vtype_fn_ret(local_ty)
+                } else {
+                    let rec = fn_type_get(tc.fns, name)
+                    tc_subst_generic_ret(tc, rec.tp, rec.params, args, rec.ret_ty)
+                }
             }
             .QualifiedIdent(name) -> {
                 let rec = fn_type_get(tc.fns, name)
