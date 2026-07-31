@@ -51,7 +51,21 @@ fn synth_shim_unreachable(name: string) {
 }
 
 /// Id view of an expression node — comptime-only identity shim.
-export fn synth_expr_id(e: Expr) -> ExprId {
+///
+/// THE PARAMETER IS A UNION BECAUSE THE SHIM GENUINELY ACCEPTS SCALARS. An `~(expr)`
+/// value splice pastes a COMPUTED value into an expression slot, and
+/// `value_to_expr_node` coerces a scalar Value to the matching literal Expr
+/// (string→String, number→Number/FloatLit, bool→Bool, null→None) — that coercion is the
+/// entire point of the splice feature (rmzs GAP2). So
+/// `synth_expr_id(~("PREFIX-" + kind))` passes a `string`, and always has.
+///
+/// Declaring the parameter as bare `Expr` was therefore a signature that did not
+/// describe what the function takes. It went unnoticed because this shim is
+/// eval-intercepted by NAME (`call_is_synth_shim`) and is an identity at runtime, so no
+/// check ever compared the argument against the declaration — until the t-axu9 nominal
+/// argument gate did, and reported `string` is not assignable to `Expr` on three specs.
+/// The gate was right; the signature was wrong.
+export fn synth_expr_id(e: Expr | string | int | float | bool) -> ExprId {
     synth_shim_unreachable("synth_expr_id")
     ExprId(0)
 }
