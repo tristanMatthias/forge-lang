@@ -29,14 +29,23 @@
 // restored to the aliasing form, and to pass with the copy.
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_mkdir_p(path: string) -> int
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_getpid() -> int
+
+/// Compile result: BOTH the exit status and the captured output. Asserting on
+/// output alone is unsound here — two of the three cases below assert the
+/// ABSENCE of a diagnostic, and a compile that never ran (missing `build/bs2`,
+/// a failed `cd`) also produces no diagnostic. Such a guard passes vacuously,
+/// which is the one thing a regression guard must never do.
+type LeakBuild = { status: int, output: string }
 
 /// Materialise a lib package whose submodules are auto-discovered from
 /// subdirectories of `src/` (the g2eo.1 directory-as-module shape), then
 /// compile it and capture the output.
-fn build_leak_fixture(priv_body: string) -> string {
+fn build_leak_fixture(priv_body: string) -> LeakBuild {
     let root = "/tmp/avra_oyr9_${string(avra_getpid())}"
     let _ = avra_shell_exec("rm -rf '${root}'")
     let _ = avra_mkdir_p("${root}/src/shared")
@@ -55,8 +64,13 @@ fn build_leak_fixture(priv_body: string) -> string {
         "use shared.{thing}\nexport fn user_entry() -> string { thing(\"x\") }\n")
     let _ = avra_selfhost_write_file("${root}/src/priv/mod.av", priv_body)
 
-    avra_shell_exec("cd '${root}' && AVRA_LIB_PKG_ROOT='@oyr9::leak' " +
-        "'${avra_repo_bs2()}' compile --module_path='@oyr9::leak' src/leak.av 2>&1")
+    // Status via avra_shell_exec_status (not the popen-based avra_shell_exec)
+    // with output redirected to a log, so the assertions can require that the
+    // compiler actually RAN and not merely that it stayed quiet.
+    let log = "${root}/compile.log"
+    let status = avra_shell_exec_status("cd '${root}' && AVRA_LIB_PKG_ROOT='@oyr9::leak' " +
+        "'${avra_repo_bs2()}' compile --module_path='@oyr9::leak' src/leak.av > '${log}' 2>&1")
+    LeakBuild { status: status, output: avra_selfhost_read_file(log) }
 }
 
 /// Absolute path to the bs2 under test — the fixture compiles from its own
@@ -70,18 +84,18 @@ spec "t-oyr9: a sibling module's `use` does not leak into a module that imports 
     then "a module with NO imports binds its OWN private fn, not the sibling's import" {
         // TWO params. Under the leak this bound `shared::thing` (one param)
         // and reported F1001 "expects 1 argument, got 2".
-        let out = build_leak_fixture(
+        let r = build_leak_fixture(
             "fn thing(a: string, b: string) -> string { a + b }\n" +
             "export fn priv_entry() -> string { thing(\"x\", \"y\") }\n")
-        !out.contains("error[F") && !out.contains("expects 1 argument")
+        r.status == 0 && !r.output.contains("error[F") && !r.output.contains("expects 1 argument")
     }
 
     then "the importing sibling still resolves its own import correctly" {
         // The fix must not cost legitimate visibility: `user` imports `thing`
         // from `shared` and must keep binding it.
-        let out = build_leak_fixture(
+        let r = build_leak_fixture(
             "export fn priv_entry() -> string { \"no local thing\" }\n")
-        !out.contains("error[F")
+        r.status == 0 && !r.output.contains("error[F")
     }
 
     then "a module that imports nothing and defines nothing cannot see the name at all" {
@@ -89,8 +103,8 @@ spec "t-oyr9: a sibling module's `use` does not leak into a module that imports 
         // reference to a sibling's IMPORTED name is undefined, not silently
         // resolved. This is the assertion that would fail if the fix were
         // "copy, but seed from the parent's full chain".
-        let out = build_leak_fixture(
+        let r = build_leak_fixture(
             "export fn priv_entry() -> string { thing(\"x\") }\n")
-        out.contains("error[F")
+        r.status != 0 && r.output.contains("error[F")
     }
 }
