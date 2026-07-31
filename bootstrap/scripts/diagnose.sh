@@ -3372,15 +3372,15 @@ mode_stray() {
       log "[stray] nothing to reap — every heavy process belongs to a live tree (a build that is still running)"
       return 0
     fi
-    victims="$( { printf '%s\n' "$annotated" | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
-                  all_ps | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
+    # The roots themselves plus everything under them.
+    victims="$( { all_ps | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
                   procs_under "$roots" "$(pid_ancestry $$)"
                 } | sort -un -k1,1)"
     kill_victims "$victims" "stray" || return 1
     ok "[stray] reaped $KILL_COUNT process(es) in $(printf '%s' "$roots" | wc -w | tr -d ' ') orphaned tree(s)"
     return 0
   fi
-  log "[stray] \`diagnose.sh --stray --reap\` kills the orphaned ones (live ones are left alone)"
+  log "[stray] \`diagnose.sh --stray --reap\` kills the orphaned trees whole (live builds are left alone)"
   return 1
 }
 
