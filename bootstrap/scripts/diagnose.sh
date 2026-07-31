@@ -3087,12 +3087,12 @@ run_has_heavy_ancestor() {
 # Pids are recycled, the list is a snapshot, and the list now includes ordinary
 # processes (a run's subtree is not all `bs2`) — so without the re-check a
 # recycled pid could take an unrelated signal.
-# Is PID still the process we selected — same pid, same comm? FORK-FREE on
-# Linux (a `read` from /proc), and that is not a micro-optimisation: forking a
-# `ps` per candidate RECYCLES the very pids just freed by the list-building
-# plumbing, and the recycled process is another `ps`/`awk`/subshell whose comm
-# MATCHES the dead entry it replaced. The check then confirms its own churn and
-# the reaper kills its own pipeline. Observed, on a real sweep teardown.
+# Is PID still the process we selected — same pid, same comm? The victim list is
+# a SNAPSHOT: entries die between listing and signalling (the reaper's own
+# pipeline, for one), and pids are recycled (`pid_max` is 32768 on this box, so
+# a long build wraps it), so a stale entry must not hand its signal to whoever
+# inherited the number. Reading /proc keeps that check FORK-FREE on Linux —
+# the reaper does not spend a process per candidate to decide about one.
 comm_is() {
   local now=""
   if [ -r "/proc/$1/comm" ]; then
