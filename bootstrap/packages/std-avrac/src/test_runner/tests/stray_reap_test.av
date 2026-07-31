@@ -1,0 +1,318 @@
+// WHY: t-ce5t — a killed run used to leave its compiles running, and the
+// documented way to look for them lied.
+//
+// Two failures, one subject: which heavy processes exist, and whose they are.
+//
+//  (1) ORPHANS SURVIVE THE KILL. SIGKILL cannot be trapped, so when the
+//      memguard kills a run (or a tool timeout does) its `bs2`/`llc`
+//      grandchildren keep running. Observed 2026-07-31: two `bs2 compile`
+//      processes holding 4.4GB each, minutes after the sweep that spawned them
+//      had been declared dead. The next run then starts against 6GB free
+//      instead of 14GB and trips the memory floor itself — one kill begets the
+//      next — and every memory reading taken meanwhile is wrong.
+//  (2) THE INSPECTION IDIOM LIES. `pgrep -f bs2` / `pkill -f <pat>` match the
+//      COMMAND LINE, which the shell running them contains, so they match
+//      THEMSELVES: a `pgrep -f 'diagnose.sh --sweep'` reported a sweep RUNNING
+//      that had already failed.
+//
+// These specs drive the REAL cli (`--stray`, `--guarded`) and really SIGKILL a
+// run mid-flight. They are safe to run inside the live suite because the heavy
+// set is pointed at a per-run fake binary via AVRA_HEAVY_PROCS: every kill path
+// is exercised for real, against processes that can only be this test's own.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid}
+
+// A sandbox holding a fake heavy binary (a copy of `src`, named for this run),
+// the tooling pointed at it, and self-safe probes (`alive`, `pids`) that match
+// on ps's `comm` — the property under test, so the harness must not itself
+// cheat with `pgrep -f`.
+fn harness_of(tag: string, src: string, body: string) -> string {
+    let pid = string(avra_getpid())
+    let name = "fk" + tag + pid
+    let root = "/tmp/avra_ce5t_" + tag + "_" + pid
+    avra_shell_exec("rm -rf '" + root + "'")
+    let _ = avra_mkdir_p(root + "/runs")
+    let script = "set -u\n" +
+        // The suite is meant to be run through `make sweep` / `make guarded`
+        // (CLAUDE.md says so), and both EXPORT AVRA_RUN_ID — which `run_begin`
+        // reads as "nested under an outer run": no marker, no nanny, no stale
+        // reap. Inherited, that turns four of these specs into assertions about
+        // an outer run's state. Each spec owns its own nesting, so start clean.
+        "unset AVRA_RUN_ID\n" +
+        "export root='" + root + "'\n" +
+        "export name='" + name + "'\n" +
+        // A second fake, for the specs that need a heavy CHILD under a heavy
+        // parent (`$kid` rather than an interpolation the Avra lexer would eat).
+        "export kid=\"$name\"k\n" +
+        "cp \"$(command -v " + src + ")\" \"$root/$name\"\n" +
+        "cp \"$(command -v sleep)\" \"$root/$kid\"\n" +
+        "export AVRA_HEAVY_PROCS=\"$name $kid\"\n" +
+        "export AVRA_RUN_DIR=\"$root/runs\"\n" +
+        "export AVRA_MEMGUARD_DIR=\"$root/memguard\"\n" +
+        // macOS ps prints `comm` as an absolute path where Linux prints the
+        // basename — the same normalisation all_ps does, for the same reason:
+        // without it these helpers count 0 on macOS and every spec fails for a
+        // reason that has nothing to do with the behaviour under test.
+        "count() { ps -A -o pid=,comm= | awk -v n=\"$1\" \\\n" +
+        "  '{ c = $2; sub(/^.*\\//, \"\", c) } c == n { k++ } END { print k + 0 }'; }\n" +
+        "alive() { count \"$name\"; }\n" +
+        "pids()  { ps -A -o pid=,ppid=,pgid=,comm= | awk -v n=\"$name\" \\\n" +
+        "  '{ c = $4; sub(/^.*\\//, \"\", c) } c == n { print $1, $2, $3 }'; }\n" +
+        "wait_gone() { i=0; while [ \"$(alive)\" != 0 ] && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done; }\n" +
+        body
+    let _ = avra_selfhost_write_file(root + "/run.sh", script)
+    let out = avra_shell_exec("bash '" + root + "/run.sh' 2>&1")
+    // Belt and braces: `pkill -x` matches the process NAME, so this cleanup
+    // cannot self-match the way the idiom under test does.
+    avra_shell_exec("pkill -x '" + name + "' >/dev/null 2>&1; pkill -x '" + name +
+        "k' >/dev/null 2>&1; rm -rf '" + root + "'")
+    out
+}
+
+fn harness(tag: string, body: string) -> string { harness_of(tag, "sleep", body) }
+
+// The fake's name is derived, not passed, so a spec that needs it in a literal
+// (an awk field compare, a command line) can rebuild it.
+fn fake_name(tag: string) -> string { "fk" + tag + string(avra_getpid()) }
+
+spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
+    then "a resident heavy process is listed with its RSS and state" {
+        let out = harness("A",
+            "\"$root/$name\" 300 &\n" +
+            "sleep 0.5\n" +
+            "bash scripts/diagnose.sh --stray; echo \"RC=$?\"\n" +
+            "kill %1 2>/dev/null; sleep 0.5\n" +
+            // ...and the other half of the contract: 0 once nothing is left, so
+            // `--stray && <next step>` composes as a gate.
+            "bash scripts/diagnose.sh --stray; echo \"CLEAN_RC=$?\"\n")
+        // Table row: PID PPID PGID RSS AGE STATE COMM. The RSS column is
+        // asserted because "which process" without "how much memory" is not an
+        // answer to the question this command exists to answer.
+        out.contains(fake_name("A")) && out.contains("heavy process(es) resident")
+            && out.contains("M ") && out.contains("live")
+            && out.contains("RC=1") && out.contains("CLEAN_RC=0")
+    }
+    then "the same shell that pgrep -f matches, --stray does not" {
+        // The hazard reproduced and refuted in one run. BOTH probes launch from
+        // a shell whose command line contains the pattern — the real-world
+        // shape (`pgrep -f 'bs2 build'` typed at a prompt). pgrep reports that
+        // shell; --stray, matching on `comm`, cannot.
+        let n = fake_name("B")
+        let out = harness("B",
+            "\"$root/$name\" 300 &\n" +
+            "sleep 0.5\n" +
+            // The trailing `true` is load-bearing: bash EXECS the last command
+            // of a `-c` list in place, so without it the probe shell is
+            // replaced by the probe and there is no wrapper left to self-match.
+            "naive=$(bash -c 'echo PROBE=$$; pgrep -f " + n + "; true' 2>&1)\n" +
+            "safe=$(bash -c 'echo PROBE=$$; AVRA_HEAVY_PROCS=" + n +
+                " bash scripts/diagnose.sh --stray; true' 2>&1)\n" +
+            "np=$(printf '%s\\n' \"$naive\" | sed -n 's/^PROBE=//p')\n" +
+            "sp=$(printf '%s\\n' \"$safe\"  | sed -n 's/^PROBE=//p')\n" +
+            "printf '%s\\n' \"$naive\" | awk -v p=\"$np\" '$1 == p { print \"PGREP_SELF_MATCHED\" }'\n" +
+            "printf '%s\\n' \"$safe\"  | awk -v p=\"$sp\" '$1 == p { print \"STRAY_SELF_MATCHED\" }'\n" +
+            "printf '%s\\n' \"$safe\"  | awk '$7 == \"" + n + "\" { print \"STRAY_FOUND_THE_REAL_ONE\" }'\n" +
+            "kill %1 2>/dev/null\n")
+        out.contains("PGREP_SELF_MATCHED")
+            && !out.contains("STRAY_SELF_MATCHED")
+            && out.contains("STRAY_FOUND_THE_REAL_ONE")
+    }
+    then "--reap kills the orphan and leaves a live, parented build alone" {
+        // The distinction that makes --reap safe to type: an orphan is a leak,
+        // a parented process belongs to a run that is still going.
+        let out = harness("C",
+            // Orphan: the launching shell exits, init inherits the child.
+            "bash -c '\"$root/$name\" 300 &'\n" +
+            // Live: parented by this shell, which stays up across the reap.
+            "\"$root/$name\" 300 &\n" +
+            "sleep 0.5\n" +
+            "orphan=$(pids | awk '$2 == 1 { print $1; exit }')\n" +
+            "live=$(pids | awk -v me=$$ '$2 == me { print $1; exit }')\n" +
+            "echo \"ORPHAN=$orphan LIVE=$live\"\n" +
+            "bash scripts/diagnose.sh --stray --reap\n" +
+            "kill -0 \"$orphan\" 2>/dev/null && echo ORPHAN_SURVIVED || echo ORPHAN_REAPED\n" +
+            "kill -0 \"$live\" 2>/dev/null && echo LIVE_SPARED || echo LIVE_KILLED\n" +
+            "kill %1 2>/dev/null\n")
+        out.contains("reaped 1 process(es) in 1 orphaned tree(s)")
+            && out.contains("ORPHAN_REAPED") && out.contains("LIVE_SPARED")
+    }
+    then "an orphaned tree is reaped from its ROOT, spawner included" {
+        // The 2026-07-31 sweep kill, in miniature — and the reason reaping by
+        // NAME is not enough. The memguard killed every `bs2` by name, but the
+        // run's orphaned test-unit binary is not named `bs2`: it survived, and
+        // went on spawning fresh 4.2GB compiles indefinitely. Each new compile
+        // had a LIVE parent, so it did not even look like a stray.
+        //
+        // So the tree is the unit: the reap starts at the re-parented ROOT
+        // (here a plain shell loop, deliberately not in the heavy set) and
+        // takes everything under it. The assertion that matters is the one
+        // AFTER the reap — if the spawner survived, another heavy child is
+        // back within a second.
+        let out = harness("J",
+            "cat > \"$root/spawner.sh\" <<'SP'\n" +
+            "while true; do \"$root/$kid\" 5; done\n" +
+            "SP\n" +
+            "bash -c 'bash \"$root/spawner.sh\" & echo $! > \"$root/spawner.pid\"'\n" +
+            "sleep 1\n" +
+            "echo \"BEFORE heavy=$(count \"$kid\")\"\n" +
+            "bash scripts/diagnose.sh --stray --reap\n" +
+            "sleep 3\n" +
+            "echo \"AFTER heavy=$(count \"$kid\")\"\n" +
+            // Cleanup by PID. `pkill -f spawner` would be the obvious reflex
+            // and is the very hazard under test: it matches any command line
+            // containing the pattern, this one included.
+            "kill -9 \"$(cat \"$root/spawner.pid\")\" 2>/dev/null\n")
+        out.contains("BEFORE heavy=1") && out.contains("AFTER heavy=0")
+            && out.contains("orphaned tree(s)")
+    }
+    then "--reap takes the orphan's whole subtree, not just its root" {
+        // A dead run is a TREE: an orphaned `bs2` with two shard children.
+        // Reaping only the process whose parent died would leave the children
+        // to be re-parented — reported again, still holding the memory, one
+        // pass per level. So the orphans' heavy descendants go with them.
+        let out = harness_of("H", "bash",
+            "bash -c '\"$root/$name\" -c \"\\\"$root/$kid\\\" 300; true\" &'\n" +
+            "sleep 0.7\n" +
+            "echo \"BEFORE parent=$(count \"$name\") child=$(count \"$kid\")\"\n" +
+            "bash scripts/diagnose.sh --stray --reap\n" +
+            "sleep 0.5\n" +
+            "echo \"AFTER parent=$(count \"$name\") child=$(count \"$kid\")\"\n")
+        out.contains("BEFORE parent=1 child=1") && out.contains("AFTER parent=0 child=0")
+            && out.contains("reaped 2 process(es) in 1 orphaned tree(s)")
+    }
+}
+
+spec "t-ce5t: a run reaps what it spawned, however it dies" {
+    then "SIGKILLing a run mid-flight leaves no heavy descendant behind" {
+        // The acceptance criterion, done for real: start a --guarded run, let
+        // it spawn a heavy child, SIGKILL the run leader (what the memguard and
+        // a tool timeout both do), and require the child to be gone. The
+        // leader's own traps CANNOT fire for SIGKILL, so this passes only via
+        // the nanny — the process that watches the leader and, when it dies
+        // without unwinding, reaps the orphaned trees left in its group.
+        //
+        // `setsid` gives the run a process group of its own, so the assertion
+        // is about this run's processes and cannot be perturbed by the suite's.
+        let out = harness("D",
+            "setsid bash scripts/diagnose.sh --guarded 1 -- bash -c \"'$root/$name' 300\" >/dev/null 2>&1 &\n" +
+            // The marker file is named for the run leader — that is how the
+            // test learns which pid to kill.
+            "leader=''\n" +
+            "i=0; while [ -z \"$leader\" ] && [ $i -lt 120 ]; do\n" +
+            "  leader=$(ls \"$root/runs\" 2>/dev/null | sed -n 's/\\.run$//p' | head -1)\n" +
+            "  sleep 0.25; i=$((i+1)); done\n" +
+            "i=0; while [ \"$(alive)\" = 0 ] && [ $i -lt 120 ]; do sleep 0.25; i=$((i+1)); done\n" +
+            // Capture the watchdog's pid while it is still up: after the kill
+            // it is gone by one of two paths and one of them removes the file.
+            "wpid=$(cat \"$root/memguard/pid\" 2>/dev/null)\n" +
+            "[ -n \"$wpid\" ] && echo WATCHDOG_PID_OK\n" +
+            "echo \"SPAWNED=$(alive) LEADER=$leader\"\n" +
+            "kill -9 \"$leader\" 2>/dev/null\n" +
+            "wait_gone\n" +
+            "echo \"AFTER_KILL=$(alive)\"\n" +
+            "[ -f \"$root/runs/$leader.run\" ] && echo MARKER_KEPT || echo MARKER_CLEARED\n" +
+            // The watchdog is part of the run and must not outlive it, or it
+            // keeps polling and SIGKILLs whatever runs next. It dies by EITHER
+            // path — its own owner-gone poll (0.4s), or the nanny reaping it
+            // with the rest of the dead run's tree (1s) — so asserting on its
+            // log line would just be asserting which poll won the race. Assert
+            // the requirement instead: the process is gone.
+            "i=0; while [ -n \"$wpid\" ] && kill -0 \"$wpid\" 2>/dev/null && [ $i -lt 60 ]; do\n" +
+            "  sleep 0.25; i=$((i+1)); done\n" +
+            "if [ -n \"$wpid\" ] && kill -0 \"$wpid\" 2>/dev/null;\n" +
+            "  then echo WATCHDOG_LEAKED; else echo WATCHDOG_GONE; fi\n")
+        out.contains("SPAWNED=1") && out.contains("AFTER_KILL=0")
+            && out.contains("MARKER_CLEARED")
+            && out.contains("WATCHDOG_PID_OK") && out.contains("WATCHDOG_GONE")
+    }
+    then "the NEXT run reaps the orphans of a run that died with its nanny" {
+        // The backstop. When a whole process group goes at once nothing is left
+        // to clean up, so the next run does it on the way in — the arm that
+        // stops one kill from begetting the next.
+        let out = harness("E",
+            "bash -c 'setsid \"$root/$name\" 300 &'\n" +
+            "sleep 0.5\n" +
+            "pgid=$(pids | awk '{ print $3; exit }')\n" +
+            "printf 'pid=4194303\\npgid=%s\\nstarted=%s\\ngroup_reap=1\\nlabel=stale\\nspare=\\n' \\\n" +
+            "  \"$pgid\" \"$(date +%s)\" > \"$root/runs/4194303.run\"\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true >/dev/null 2>&1\n" +
+            "wait_gone\n" +
+            "echo \"AFTER_STALE_REAP=$(alive)\"\n" +
+            "[ -f \"$root/runs/4194303.run\" ] && echo STALE_MARKER_KEPT || echo STALE_MARKER_CLEARED\n")
+        out.contains("AFTER_STALE_REAP=0") && out.contains("STALE_MARKER_CLEARED")
+    }
+    then "a SIBLING sharing the run's process group is never reaped" {
+        // The guard that makes group-scoped reaping safe at all, and the one
+        // whose absence did real damage: reaping the whole GROUP took out the
+        // reaper's own pipeline and an unrelated command, because a process
+        // group is routinely shared — `make sweep` at a prompt shares one with
+        // the shell that typed it, and the Claude Code bash tool keeps a single
+        // persistent shell, so every command shares a group.
+        //
+        // So the unit is the orphaned TREE inside the group, not the group: a
+        // process whose parent is still alive belongs to someone else. Both
+        // shapes live in one dedicated session here, so the assertion is about
+        // this test's own processes and nothing else.
+        let out = harness("K",
+            "setsid bash -c '\"$root/$kid\" 300 & bash -c \"\\\"$root/$name\\\" 300 &\"; sleep 60' &\n" +
+            "sleep 1\n" +
+            "pgid=$(ps -A -o pid=,pgid=,comm= | awk -v n=\"$name\" '$3 == n { print $2; exit }')\n" +
+            "echo \"BEFORE orphan=$(count \"$name\") sibling=$(count \"$kid\")\"\n" +
+            "printf 'pid=4194303\\npgid=%s\\nstarted=%s\\ngroup_reap=1\\nlabel=stale\\nspare=\\n' \\\n" +
+            "  \"$pgid\" \"$(date +%s)\" > \"$root/runs/4194303.run\"\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true >/dev/null 2>&1\n" +
+            "sleep 1\n" +
+            "echo \"AFTER orphan=$(count \"$name\") sibling=$(count \"$kid\")\"\n")
+        out.contains("BEFORE orphan=1 sibling=1") && out.contains("AFTER orphan=0 sibling=1")
+    }
+    then "a process OLDER than the run is never reaped as its orphan" {
+        // Process group ids get recycled. Without the age guard, a stale marker
+        // whose group id has since been handed to someone else's shell would
+        // make the next run kill a stranger's compile.
+        let out = harness("F",
+            "bash -c 'setsid \"$root/$name\" 300 &'\n" +
+            "sleep 0.5\n" +
+            "pgid=$(pids | awk '{ print $3; exit }')\n" +
+            // A run that started AFTER this process did is not its parent.
+            "printf 'pid=4194303\\npgid=%s\\nstarted=%s\\ngroup_reap=1\\nlabel=stale\\nspare=\\n' \\\n" +
+            "  \"$pgid\" \"$(( $(date +%s) + 30 ))\" > \"$root/runs/4194303.run\"\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true >/dev/null 2>&1\n" +
+            "sleep 1\n" +
+            "echo \"STRANGER=$(alive)\"\n")
+        out.contains("STRANGER=1")
+    }
+    then "a run's teardown SAYS SO when orphans it does not own are resident" {
+        // A leak from before this tracking existed (or a run whose marker never
+        // got written) belongs to no run, so nothing reaps it automatically —
+        // killing a subtree that is not ours, unasked, is not a teardown's job.
+        // Reporting it is: silence is how GBs go unnoticed until the next run
+        // trips the memory floor and the reading taken to explain THAT gets
+        // blamed on a compiler bug.
+        let out = harness("I",
+            "bash -c '\"$root/$name\" 60 &'\n" +
+            "sleep 0.4\n" +
+            "bash scripts/diagnose.sh --guarded 1 -- true 2>&1\n")
+        out.contains("orphaned heavy process(es) still resident")
+            && out.contains("make stray REAP=1")
+    }
+    then "a run NESTED inside another heavy run never group-reaps" {
+        // The safety interlock, and the reason the suite can run these specs at
+        // all. Inside a live `bs2 test` the process group is shared with the
+        // orchestrator's other shards, so a group-wide reap would kill work
+        // that is not ours. Such a run records group_reap=0 and starts no
+        // nanny; its teardown stays descendant-only, which is precise by
+        // construction. Here the fake heavy binary is a copy of `bash`, so it
+        // can BE the heavy ancestor the interlock has to notice.
+        let out = harness_of("G", "bash",
+            "cat > \"$root/inner.sh\" <<'INNER'\n" +
+            "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+            "run_begin nested-probe\n" +
+            "cat \"$AVRA_RUN_DIR/$$.run\"\n" +
+            "run_end\n" +
+            "INNER\n" +
+            // Again the trailing `true`: without it the fake bash execs into
+            // the inner one and the heavy ancestor never exists to be found.
+            "\"$root/$name\" -c 'bash \"$0/inner.sh\"; true' \"$root\"\n")
+        out.contains("group_reap=0") && out.contains("label=nested-probe")
+    }
+}
