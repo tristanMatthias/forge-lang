@@ -32,24 +32,45 @@
 // bare `List<NodeRef>` where `NodeEdges` — a STRUCT wrapping that list — is declared,
 // which is this bug's exact shape in production code.
 
-extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_getpid() -> int
 use @std.avrac.test_runner.{write_fixture}
 
-/// Compile and emit a sentinel ONLY on a clean compile, so the positive controls assert
-/// real success rather than the mere absence of an F-code.
-fn nom_out(source: string) -> string {
-    let path = "/tmp/avra_axu9_nom.av"
+/// A compile's REAL exit status plus its diagnostics, read from a dedicated log.
+///
+/// An earlier revision emitted a `__AVRA_COMPILE_OK__` sentinel into the captured
+/// pipeline and asserted on that string. Two ways that lies: a truncated or empty
+/// capture makes `accepted` report failure for a clean compile, and — worse — nothing
+/// distinguished "compiled cleanly" from "the compiler never ran", so the whole file
+/// could pass vacuously. Status is the fact; the log is the evidence. Same correction
+/// CodeRabbit caught on #1090's guard, and it was right there too.
+///
+/// The fixture path folds in the pid: it was a fixed `/tmp/avra_axu9_nom.av`, which two
+/// concurrent shards would rewrite under each other (the t-zg2s class, where a fixture
+/// overwritten mid-run memoises the WRONG program's output).
+type NomRun = { status: int, log: string }
+
+fn nom_run(source: string) -> NomRun {
+    let pid = string(avra_getpid())
+    let path = "/tmp/avra_axu9_nom_${pid}.av"
+    let log = "/tmp/avra_axu9_nom_${pid}.log"
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+    let status = avra_shell_exec_status("./build/bs2 compile '${path}' > '${log}' 2>&1")
+    NomRun { status: status, log: avra_selfhost_read_file(log) }
 }
 
+/// Rejected: the compile must FAIL, and fail for THIS reason — a non-zero status alone
+/// would also be satisfied by a syntax error in the fixture.
 fn rejected(source: string) -> bool {
-    let out = nom_out(source)
-    out.contains("F1000") && out.contains("different nominal types")
+    let r = nom_run(source)
+    r.status != 0 && r.log.contains("F1000") && r.log.contains("different nominal types")
 }
 
+/// Accepted: the compile must SUCCEED. Asserting only "no F1000 in the output" would
+/// pass when the compiler never ran at all.
 fn accepted(source: string) -> bool {
-    nom_out(source).contains("__AVRA_COMPILE_OK__")
+    nom_run(source).status == 0
 }
 
 spec "t-axu9: a nominally unrelated argument is rejected at the call" {
@@ -121,6 +142,28 @@ fn f(r: Rec?) -> int { if r == null { 0 } else { 1 } }
 fn main() -> int { let r = Rec { name: \"x\" } println(string(f(r))) 0 }")
     }
 
+    then "a list literal containing `none` into a nullable-element list parameter" {
+        // `[9, none]` types as `List<void>`: `none` types as void, so the element type
+        // collapses to the void INFERENCE ARTIFACT. The top-level `a is .Void` exemption
+        // does not cover this — here the void is NESTED and the value is an ordinary
+        // `.List`.
+        //
+        // FAILING-FIRST: without treating a Void ELEMENT as an artifact this reports
+        // "`List<void>` is not assignable to `List<int?>` — different nominal types" and
+        // fails the shard compile. This is the exact shape of
+        // `null_safety/tests/list_optional_test.av:73` (`first_or([9, none], 0)`).
+        //
+        // Found by CI, not locally — the fifth false-positive class in this gate, and the
+        // second half of a mistake whose first half (element types live in the variant
+        // field, not `vtype_type_args`) is documented on `vtype_is_argless_generic`. That
+        // was fixed for `Unknown` and missed for `Void`.
+        accepted("fn first_or(xs: List<int?>, dflt: int) -> int {
+    for x in xs { if x != null { return x! } }
+    dflt
+}
+fn main() -> int { println(string(first_or([9, none], 0))) 0 }")
+    }
+
     then "a STRUCT into a SHAPE parameter — width subtyping, not a nominal conflict" {
         // Spec Axis 1: `type` is nominal, `shape` is STRUCTURAL with width subtyping.
         // A struct carrying the shape's fields IS assignable and its name is deliberately
@@ -172,6 +215,32 @@ fn main() -> int { println(string(nested().length)) 0 }")
 type OrderId = string
 fn f(u: UserId) -> string { string(u) }
 fn main() -> int { let o: OrderId = \"x\" println(f(o)) 0 }")
+    }
+
+    then "a concrete type into a `dyn Trait` parameter — conformance, not identity" {
+        // The `.Trait` exemption. Every conforming type has a DIFFERENT name by
+        // construction, so nominal identity is the wrong question — `Square` into a
+        // `dyn Shape` parameter is the entire point of dynamic dispatch (Axis 4).
+        //
+        // This exemption was found by DIFF-TEST, not by this suite or by the
+        // whole-compiler count — the lib build happens never to call through a `dyn`
+        // parameter. Without a case here, deleting the exemption leaves this file green.
+        accepted("trait Shape { fn area(self) -> int }
+type Square = { side: int }
+impl Shape for Square { fn area(self) -> int { self.side * self.side } }
+fn total(s: dyn Shape) -> int { s.area() }
+fn main() -> int { println(string(total(Square { side: 2 }))) 0 }")
+    }
+
+    then "a fn value into a fn-typed parameter — every fn-vs-fn pair is exempt" {
+        // The `vtype_is_unresolved_fn` exemption, which removed the FINAL 61 hits in the
+        // count: all of them were fn arity gaps on higher-order call sites
+        // (`fn(string) -> bool` against `fn() -> bool`), i.e. incomplete parameter
+        // inference rather than wild stores. Largest single exemption by measured
+        // effect, and it likewise had no case here.
+        accepted("fn apply(f: fn(int) -> int, x: int) -> int { f(x) }
+fn double(n: int) -> int { n * 2 }
+fn main() -> int { println(string(apply(double, 3))) 0 }")
     }
 
     then "a WIDER struct into a shape parameter — extra fields are fine" {

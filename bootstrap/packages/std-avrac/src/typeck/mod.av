@@ -2497,9 +2497,25 @@ fn vtype_has_incomplete_args(t: ValueType) -> bool {
 /// exempted all collections unconditionally, which left `string` into a `[int]` param —
 /// and even `[int]` into a `string` param — still accepted after the gate went in. Caught
 /// by re-running the accept/reject table rather than by reading the code.
+///
+/// AN ELEMENT MAY BE `.Void` AS WELL AS `.Unknown`, and BOTH are artifacts. typeck hands
+/// back `void` for an expression it could not type, so an unresolved element surfaces as
+/// `List<void>` at least as often as `List<>`. The top-level `a is .Void` exemption in
+/// `ptr_nominal_conflict` does NOT cover this — there the void is NESTED, and the list
+/// itself is a perfectly ordinary `.List`.
+///
+/// Found by CI (seed-train-verify), not locally: `list_optional_test::first_or` is called
+/// with an empty-literal argument that types as `List<void>` against a `List<int?>`
+/// parameter. This is the SAME trap the paragraph above describes — element types live in
+/// the variant field — caught for `Unknown` and missed for `Void`, which is the artifact
+/// the count showed to be dominant. Two halves of one mistake.
+fn vtype_elem_is_artifact(t: ValueType) -> bool {
+    vtype_is_unknown(t) || t is .Void
+}
+
 fn vtype_is_argless_generic(t: ValueType) -> bool {
-    if vtype_is_list(t) { return vtype_is_unknown(vtype_list_elem(t)) }
-    if t is .Map { return vtype_is_unknown(vtype_map_key(t)) || vtype_is_unknown(vtype_map_value(t)) }
+    if vtype_is_list(t) { return vtype_elem_is_artifact(vtype_list_elem(t)) }
+    if t is .Map { return vtype_elem_is_artifact(vtype_map_key(t)) || vtype_elem_is_artifact(vtype_map_value(t)) }
     false
 }
 
@@ -2542,8 +2558,12 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
     let a = vtype_strip_optional(actual)
     let d = vtype_strip_optional(expected)
     // Artifact exemptions, in the same spirit as int_into_pointer_slot's.
-    if vtype_mentions_unresolved(tc, a) { return false }
-    if vtype_mentions_unresolved(tc, d) { return false }
+    //
+    // ORDERED CHEAPEST-FIRST. Every branch here returns `false`, so the order is free to
+    // choose and only affects cost — and `vtype_mentions_unresolved` walks the whole type
+    // tree probing two registries per node, where the tests below are O(1) variant
+    // checks. `void` is the dominant exempt case (see the count above), so running the
+    // walk first paid the most expensive test on the most common exit.
     if vtype_is_unknown(a) || vtype_is_unknown(d) { return false }
     // A value scalar on EITHER side is where the `.Int` fallbacks land — out of scope.
     if vtype_is_value_scalar(a) || vtype_is_value_scalar(d) { return false }
@@ -2557,6 +2577,9 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
     // A UNION arises here as a partially-inferred generic (`List<X>|List<>`), not as a
     // deliberate ad-hoc union in argument position — same artifact class.
     if a is .Union || d is .Union { return false }
+    // The whole-tree artifact walk, deliberately AFTER the O(1) variant tests above.
+    if vtype_mentions_unresolved(tc, a) { return false }
+    if vtype_mentions_unresolved(tc, d) { return false }
     // A partially-inferred generic (`List<>`, `Map<string, >`, `Result<, string>`) has an
     // Unknown or absent type argument. That is inference incomplete, not a wild store.
     if vtype_has_incomplete_args(a) || vtype_has_incomplete_args(d) { return false }
@@ -2630,10 +2653,19 @@ fn ptr_nominal_conflict(tc: TC, actual: ValueType, expected: ValueType) -> bool 
 /// nothing in the corpus exercises the shape. The single peel exists for exactly one
 /// reason — not to contradict `tc_check_newtype_args` on the direct wrapper case — and
 /// widening it beyond that needs its own evidence.
+/// RESOLVED, not raw. `collect_decls`' NewtypeDecl arm registers the UNRESOLVED
+/// `inner_vt` — it computes `resolve_vtype` separately for the type registry but stores
+/// the raw one — so `newtype_vtype_lookup` hands back the parser-default shape. A
+/// `type Wrap = Color` over `enum Color` comes back as `.Struct("Color", …, 0)` while
+/// every reference to the enum itself is `.Enum("Color", …, id)`. Comparing those with
+/// `vtype_eq` misses the exemption and rejects valid code, so peel THROUGH
+/// `resolve_vtype`.
 fn tc_newtype_underlying(tc: TC, t: ValueType) -> ValueType {
     let n = tc_param_shaped_name(t)
     if n == "" { return ValueType.Unknown }
-    newtype_vtype_lookup(tc.newtypes, n)
+    let raw = newtype_vtype_lookup(tc.newtypes, n)
+    if vtype_is_unknown(raw) { return raw }
+    resolve_vtype(tc, raw)
 }
 
 fn check_assign_layout_ex(tc: TC, actual: ValueType, expected: ValueType, ctx: string, incl_int: bool, incl_collection: bool) -> TC {
@@ -3086,7 +3118,15 @@ fn reject_literal_into_value_scalar(r: ExprResult, exp: ValueType, kind: string)
 /// recomputed (pure + cheap) rather than threading a fired-flag out of the gate.
 fn gate_expr_no_int(r: ExprResult, exp: ValueType, ctx: string) -> ExprResult {
     let after = check_assign_layout_no_int(r.tc, r.ty, exp, ctx)
-    tc_er(after, if assign_layout_conflict(r.tc, r.ty, exp, false, true) { .Unknown } else { r.ty })
+    // The collapse must cover EVERY conflict `check_assign_layout_ex` can report, not
+    // just the layout one. `ptr_nominal_conflict` (t-axu9) is a second report path
+    // through the same function, so omitting it here leaves the concrete type in place
+    // and `tc_check_stmt_returns` re-checks it against the declared return with
+    // `vtype_assignable` — two diagnostics for one defect at a `return`. The collapse
+    // discipline this restores is documented directly below.
+    let conflict = assign_layout_conflict(r.tc, r.ty, exp, false, true)
+        || ptr_nominal_conflict(r.tc, r.ty, exp)
+    tc_er(after, if conflict { .Unknown } else { r.ty })
 }
 
 /// Bidirectional variant of `check_expr`: threads the caller's
