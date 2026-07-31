@@ -26,7 +26,7 @@ use features.modules.{
 use parse.{parse_program_source_shared, byte_at_str}
 use core.{NodeStore, StmtId}
 use diagnostics.{bag_has_errors, render_bag}
-use pathutil.{basename_no_ext}
+use pathutil.{path_tail_slug}
 use build.{llvm_prefix_dir}
 use list_ops.{list_concat}
 use @std.crypto.{sha256_hex, sha256_file}
@@ -257,6 +257,79 @@ type AssembledFile = {
     wrapped_body: List<StmtId>,
 }
 
+/// One module name per test path, UNIQUE within the shard.
+///
+/// t-kdyj.3. This was `basename_no_ext(path)` alone, computed per file, and two test
+/// files with the SAME BASENAME in one shard therefore produced two
+/// `Stmt.Module`s with the same name. Per-file modules are not deduped
+/// (`dedup_modules` runs over the hoisted `@std/*` packages only), so the resolver
+/// merged the two by name and one displaced the other: every item declared ONLY by
+/// the loser came back F3000 `undefined variable`, and the shard failed to COMPILE.
+///
+/// The measured instance: `packages/std-cli/src/cmdgen/tests/expand_command_test.av`
+/// and `packages/std-avrac/src/features/comptime/tests/expand_command_test.av` have
+/// coexisted for months. Whether they land in the SAME shard depends on batch
+/// composition, which shifts whenever a test file is added anywhere in the tree — so
+/// the failure lands on whichever PR happens to change the file count, with nothing
+/// in its diff to explain it, and reads as a flake. It cost two CI runs on #1093.
+///
+/// DISAMBIGUATION WALKS BACK UP THE PATH, one segment at a time, and only for the
+/// names that actually collide — so an unaffected file keeps the short readable
+/// `expand_command_test` and its generated symbols do not churn. Colliding files grow
+/// to `cmdgen_tests_expand_command_test` / `comptime_tests_expand_command_test`.
+/// Trailing segments only: an absolute-path slug would key module (and therefore
+/// symbol) names to where the checkout lives.
+///
+/// The final index pass is the unconditional backstop for the case the walk cannot
+/// resolve — two paths with identical trailing segments below different roots. It is
+/// what makes the postcondition "names are unique" hold with no depth caveat.
+export fn shard_mod_names(test_paths: List<string>) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i < test_paths.length {
+        mut depth = 1
+        mut name = path_tail_slug(test_paths[i], depth)
+        // Extend only while some OTHER path produces the same slug at this depth.
+        // Both members of a colliding pair run this identically, so they extend in
+        // lockstep and stay distinguishable at the depth where their paths diverge.
+        while depth < 8 && slug_collides(test_paths, i, depth, name) {
+            depth = depth + 1
+            name = path_tail_slug(test_paths[i], depth)
+        }
+        out.push(name)
+        i = i + 1
+    }
+    suffix_remaining_duplicates(out)
+}
+
+/// True when a path OTHER than `self_idx` yields `name` at this depth.
+fn slug_collides(test_paths: List<string>, self_idx: int, depth: int, name: string) -> bool {
+    mut j = 0
+    while j < test_paths.length {
+        if j != self_idx && path_tail_slug(test_paths[j], depth) == name { return true }
+        j = j + 1
+    }
+    false
+}
+
+/// Append `_2`, `_3`, … to the second and later occurrences of any name that is
+/// still repeated. Order-stable, so the assignment is deterministic.
+fn suffix_remaining_duplicates(names: List<string>) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i < names.length {
+        mut seen = 0
+        mut j = 0
+        while j < i {
+            if names[j] == names[i] { seen = seen + 1 }
+            j = j + 1
+        }
+        out.push(if seen == 0 { names[i] } else { names[i] + "_" + string(seen + 1) })
+        i = i + 1
+    }
+    out
+}
+
 /// Parse + resolve-module-files + hoist + spec-wrap one test file.
 /// Pure on the AST side; errors travel back as Result.Err with the
 /// rendered diagnostic already on stderr (via render_bag).
@@ -266,7 +339,7 @@ type AssembledFile = {
 /// sibling `use` imports. Cost: @std/* packages re-parsed per file;
 /// `dedup_modules` collapses the duplicate package wrappers by name
 /// at the program-root level.
-fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFile, string> {
+fn assemble_one_test_file(path: string, mod_name: string, store: NodeStore) -> Result<AssembledFile, string> {
     let content = avra_selfhost_read_file(path)
     let parsed = parse_program_source_shared(content, path, store)
     if parsed.had_error || parsed.ids == null {
@@ -280,7 +353,7 @@ fn assemble_one_test_file(path: string, store: NodeStore) -> Result<AssembledFil
     }
     let split = split_package_modules(store, mod_resolved.stmts)
     Result.Ok(AssembledFile {
-        mod_name: basename_no_ext(path),
+        mod_name: mod_name,
         packages: split.packages,
         // hkms.3: rewrite each top-level `spec` block into a guarded
         // `avra_test_run_spec_guarded(...)` call so a SIGSEGV / abort
@@ -382,12 +455,16 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
     // mod_group_merge), so changing this loop's order would shift
     // the merged module bodies' element order and break the
     // bs2≡bs3 selfhost fixed point.
+    // t-kdyj.3: names are assigned across the WHOLE batch, not per file, because
+    // uniqueness is a property of the shard — a per-file `basename_no_ext` cannot see
+    // the sibling it is about to collide with.
+    let assigned = shard_mod_names(test_paths)
     mut packages: List<StmtId> = []
     mut modules: List<StmtId> = []
     mut mod_names: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
-        let a = assemble_one_test_file(test_paths[i], store)?
+        let a = assemble_one_test_file(test_paths[i], assigned[i], store)?
         for p in a.packages { packages.push(p) }
         // Every test module is deferred — codegen synthesizes
         // __init_<mod> without the top-level auto-call; the runner

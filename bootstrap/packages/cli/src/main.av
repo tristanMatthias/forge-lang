@@ -59,7 +59,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -3213,7 +3213,19 @@ impl RunCtx {
         // must be rooted or they'd be skipped as external (undefined
         // symbols at link). Comma-separated: roots are qualified
         // names whose `::` a colon split would shred.
-        let roots = list_map(paths, (p: string) -> basename_no_ext(p)).join(",")
+        //
+        // t-kdyj.3: these are the SAME names `assemble_test_program`
+        // wraps each file's body in, so they come from the one
+        // policy (`shard_mod_names`) rather than being re-derived
+        // here. They used to be `basename_no_ext` on both sides,
+        // which agreed BY COINCIDENCE — and stopped agreeing the
+        // moment the assembler had to disambiguate a same-basename
+        // pair. A root that no longer prefixes its module makes
+        // codegen treat that module's fns as EXTERNAL and emit no
+        // body, so the shard fails at LINK with undefined symbols
+        // instead of at resolve. Fixing only the assembler moves the
+        // failure; it does not remove it.
+        let roots = shard_mod_names(paths).join(",")
         let pkg_root = if self.want_meta { "AVRA_LIB_PKG_ROOT='${roots}' " } else { "" }
         let quoted = list_map(paths, (p: string) -> "'${p}'")
         // nce6.1.F: propagate AVRA_TEST_RESULTS_BIN_PATH so the shard

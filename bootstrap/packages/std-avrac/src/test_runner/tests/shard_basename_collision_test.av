@@ -1,0 +1,66 @@
+// WHY: t-kdyj.3 — two test files with the SAME BASENAME batched into one shard
+// produced two `Stmt.Module`s with the same name, because the shard named each
+// module `basename_no_ext(path)`.
+//
+// Per-file modules are NOT deduped (`dedup_modules` runs over the hoisted `@std/*`
+// packages only), so the resolver merged the two by name and one displaced the
+// other: every item declared ONLY by the loser came back F3000 `undefined
+// variable`, and the whole shard failed to COMPILE. Not a test failure — a shard
+// that never ran, reported as `1 shard(s) failed to compile/run` while every test
+// that DID run passed.
+//
+// THE MEASURED INSTANCE, and why it reads as a flake:
+// `packages/std-cli/src/cmdgen/tests/expand_command_test.av` and
+// `packages/std-avrac/src/features/comptime/tests/expand_command_test.av` have
+// coexisted for months. Whether they land in the SAME shard depends on batch
+// composition, which shifts whenever a test file is ADDED ANYWHERE in the tree. So
+// the failure attaches to whichever PR happens to change the file count — with
+// nothing in its diff to explain it. It cost two CI runs on #1093 (seed-train-verify
+// and rc-strict, both `undefined variable eg_expand`), and the branch that triggered
+// it only added a typeck spec file.
+//
+// The probe drives the real shape: two same-basename files in different subdirs of
+// one tree, forced into a single `bs2 test <dir>` batch, each declaring a
+// module-private fn ONLY it defines and calling it from its own spec. Under the old
+// naming one of those two fns is unreachable and the shard does not compile.
+//
+// PRECONDITIONS ARE ASSERTED FIRST — `[batch] 2 files` — because a runner-shape
+// change that stopped batching them together would make the probe vacuous: it would
+// pass while proving nothing, which is exactly how the underlying bug survived.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+use @std.avrac.test_runner.{write_fixture}
+
+/// Each file defines a DISTINCT private fn and calls it. Sharing a module name
+/// means one file's items are the only ones the merged module has, so the other's
+/// call is F3000 — a resolve error, at shard-compile time.
+fn probe_src(tag: string) -> string {
+    "fn shard_probe_${tag}() -> string { \"${tag}\" }\n" +
+    "\n" +
+    "spec \"${tag} same-basename batch member\" {\n" +
+    "    then \"its own module-private fn is reachable\" {\n" +
+    "        shard_probe_${tag}() == \"${tag}\"\n" +
+    "    }\n" +
+    "}\n"
+}
+
+spec "t-kdyj.3: same-basename test files in one shard keep separate modules" {
+    then "both units compile and pass in a single batch" {
+        let dir = "/tmp/avra_shard_basename_probe_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}/alpha' '${dir}/beta'")
+        // SAME basename, different directories — the exact shape of the two
+        // `expand_command_test.av` files in the real tree.
+        write_fixture("${dir}/alpha/same_basename_probe_test.av", probe_src("alpha"))
+        write_fixture("${dir}/beta/same_basename_probe_test.av", probe_src("beta"))
+        let out = avra_shell_exec("./build/bs2 test '${dir}' 2>&1 || true")
+        let _ = avra_shell_exec("rm -rf '${dir}'")
+        // Precondition: they really do ride ONE shard.
+        out.contains("[batch] 2 files")
+            // The shard COMPILED — under the old naming this is
+            // "shard compile failed: resolve error: undefined variable".
+            && !out.contains("shard compile failed")
+            && !out.contains("F3000")
+            // …and both units ran green.
+            && out.contains("pass=2 fail=0 total=2")
+    }
+}
