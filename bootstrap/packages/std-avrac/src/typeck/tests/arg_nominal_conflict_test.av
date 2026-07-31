@@ -267,3 +267,9 @@ fn greet(h: HasName) -> string { h.name }
 fn main() -> int { let c = Company { name: \"y\", employees: 2, founded: 3 } println(greet(c)) 0 }")
     }
 }
+
+// CI note: seed-train-verify on 2a3e28d7 lost one shard to F3000 `undefined variable
+// eg_expand` — two same-BASENAME test files (std-cli and std-avrac both have an
+// expand_command_test.av) batched together, one module displacing the other. Filed as
+// t-kdyj.3. Unrelated to this gate: F3000 is a RESOLVER diagnostic and this PR is
+// typeck-only, and the same run reported 6241/6241 with zero nominal conflicts.
