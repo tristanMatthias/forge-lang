@@ -54,7 +54,7 @@
 // (features/derive_registry); the query surface lives beside it for the
 // same reason.
 
-use core.{NodeStore, StmtId, Stmt, Expr, ValueType, ParamEntry, find_annotation, type_short_name}
+use core.{NodeStore, StmtId, Stmt, Expr, ValueType, ParamEntry, TypeParamEntry, find_annotation, type_short_name}
 use parse.{parse_program_source_shared}
 
 /// A `@query(Fam.Variant)` family reference: the enum name and the variant
@@ -152,7 +152,7 @@ fn query_family_ref(store: NodeStore, node: Stmt) -> QueryFamilyRef? {
     null
 }
 
-fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type_params: List<string>, params: List<ParamEntry>, ret: ValueType) -> QuerySurfaceOut {
+fn build_query_surface(store: NodeStore, name: string, fam: QueryFamilyRef, type_params: List<TypeParamEntry>, params: List<ParamEntry>, ret: ValueType) -> QuerySurfaceOut {
     if type_params.length > 0 {
         return qs_fail("@query fn cannot be generic — the memo key is `(family, arg)`, monomorphic by construction")
     }
