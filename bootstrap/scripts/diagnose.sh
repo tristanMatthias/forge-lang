@@ -389,11 +389,23 @@ DIFF & ANALYSIS
   --sweep [--fresh] [dir ...]
                        OOM-safe full-suite runner: one sequential
                        `bs2 test <dir>` per test directory (default:
-                       tests/ + packages/**/tests) with per-dir logs and
-                       .ok resume markers under build/sweep. Stops LOUDLY
+                       every dir holding discovered tests, via
+                       `bs2 test --list`) with per-dir logs and .ok
+                       resume markers under build/sweep. Markers are
+                       keyed on the suite-input hash — any source/test/
+                       bs2 change drops them automatically. Stops LOUDLY
                        at the first red dir; a re-run resumes there.
-                       --fresh drops the markers. This is the sanctioned
-                       way to run the full suite on a ≤16GB box.
+                       A green full sweep writes build/.tests_verified
+                       so the pre-commit hook skips its duplicate suite
+                       run (t-8rsg). --fresh drops the markers. This is
+                       the sanctioned way to run the full suite on a
+                       ≤16GB box.
+  --test-input-hash [ROOT]
+                       Print the suite-input hash: one sha256 over bs2,
+                       every .av under packages/+tests/, runtime.c,
+                       llvm_wrapper.c, diagnose.sh, seed.ll, Makefile.
+                       Shared by the sweep's markers and the pre-commit
+                       hook's suite cache (t-8rsg).
   --guarded [FLOOR_MB] -- <cmd...>
                        RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
                        Starts the memory watchdog (--memguard), runs <cmd>,
@@ -3395,6 +3407,46 @@ mode_stray() {
   return 1
 }
 
+# t-8rsg: the pre-commit hook's suite-input hash, centralized (rule 10 —
+# the hook used to carry this computation inline, twice, where the sweep
+# could not reach it). One hash over every input that can change a spec
+# test's outcome: the bs2 binary, every .av under packages/ + tests/, the
+# C runtime + LLVM wrapper, this script (fixtures shell out to it), the
+# seed, and the Makefile. Only the per-file DIGESTS feed the final hash
+# (paths are dropped, then sorted), so the same tree hashes identically
+# from any cwd — and the hook's repo-root invocation matches the sweep's
+# bootstrap-cwd one. ROOT overrides the tree for spec tests; the default
+# is the real bootstrap dir. ~0.3s on the warm tree.
+test_input_hash() {
+  local root="${1:-$BOOTSTRAP_DIR}"
+  ( CDPATH= cd -- "$root" 2>/dev/null || exit 1
+    { $SHA256_CMD build/bs2 2>/dev/null
+      find packages tests -name '*.av' -type f -exec $SHA256_CMD {} + 2>/dev/null
+      $SHA256_CMD runtime.c llvm_wrapper.c 2>/dev/null
+      $SHA256_CMD scripts/diagnose.sh seed/seed.ll Makefile 2>/dev/null
+    } | awk '{print $1}' | sort | $SHA256_CMD | awk '{print $1}'
+  )
+}
+
+# t-8rsg: the sweep's default unit list, derived from the discovery engine
+# itself (`bs2 test --list`) instead of a hardcoded `find -name tests`.
+# The hardcoded list silently missed test files living outside a `tests/`
+# dir (std-cli's cli_v2_test.av, std-avrac's docs/gen_test.av), so a green
+# sweep proved LESS than the hook's full-tree suite — disqualifying it
+# from writing the hook's skip marker. One unit per discovered test-file
+# dir, ancestor-deduped: `bs2 test <dir>` recurses, so a dir under an
+# already-emitted ancestor is covered by it. cwd must be $BOOTSTRAP_DIR
+# (mode_sweep guarantees it).
+sweep_unit_dirs() {
+  "$BS2" test --list 2>/dev/null \
+    | awk -F: 'NF > 1 { print $1 }' | sed 's|/[^/]*$||' | sort -u \
+    | awk -v pfx="$BOOTSTRAP_DIR/" '{
+        if (index($0, pfx) == 1) $0 = substr($0, length(pfx) + 1)
+        for (i = 1; i <= n; i++) if (index($0, acc[i] "/") == 1) next
+        acc[++n] = $0; print
+      }'
+}
+
 # t-lqzr: the OOM-safe full-suite runner, promoted from the CLAUDE.md
 # copy-paste snippet (rule 10: dev tooling lives here). One `bs2 test`
 # per directory, strictly sequential — a ≤16GB box survives what a
@@ -3405,12 +3457,23 @@ mode_stray() {
 # dir can mask an earlier one. On a green run the per-dir tallies are
 # aggregated into one suite-wide summary.
 #
+# t-8rsg: the sweep is also the commit gate's suite run. Resume markers
+# are keyed on the suite-input hash, so ANY input change (source, test,
+# bs2, runtime, seed) drops them automatically — a resumed sweep can
+# never serve a green earned against a different tree, and the FRESH=1
+# ritual is no longer needed for correctness. A green FULL sweep (no dir
+# args) writes the pre-commit hook's skip marker (build/.tests_verified),
+# so the hook stops re-running the suite the sweep just ran; a scoped
+# sweep proves only part of the tree and never writes it.
+#
 # Usage: --sweep [--fresh] [dir ...]
 #   --fresh    drop resume markers first (full re-run)
-#   dir ...    sweep only these dirs (default: tests/ + packages/**/tests)
+#   dir ...    sweep only these dirs, bootstrap-relative or absolute
+#              (default: every dir holding discovered tests)
 mode_sweep() {
   local fresh=0
   if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
+  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   # t-ce5t: before ensure_bs2, so a build triggered from here is covered too.
   # Reaps the previous run's orphans on the way in and this run's compiles on
   # the way out — however the sweep ends. A sweep is the single most-killed
@@ -3421,12 +3484,23 @@ mode_sweep() {
   local sweep_dir="${AVRA_SWEEP_DIR:-$BUILD_DIR/sweep}"
   [ "$fresh" = "1" ] && rm -rf "$sweep_dir"
   mkdir -p "$sweep_dir"
+  # t-8rsg: hash AFTER ensure_bs2 (a rebuild changes build/bs2, an input).
+  local start_hash stored_hash
+  start_hash=$(test_input_hash)
+  stored_hash=$(cat "$sweep_dir/input_hash" 2>/dev/null || true)
+  if [ "$start_hash" != "$stored_hash" ]; then
+    [ -n "$stored_hash" ] && log "[sweep] inputs changed since the last sweep — dropping resume markers"
+    rm -f "$sweep_dir"/*.ok
+    printf '%s\n' "$start_hash" > "$sweep_dir/input_hash"
+  fi
+  local full_run=0
   local dirs=()
   if [ $# -gt 0 ]; then
     dirs=("$@")
   else
-    dirs=(tests)
-    while IFS= read -r d; do dirs+=("$d"); done < <(find packages -type d -name tests | sort)
+    full_run=1
+    while IFS= read -r d; do dirs+=("$d"); done < <(sweep_unit_dirs)
+    [ ${#dirs[@]} -gt 0 ] || { run_end; die "[sweep] discovery returned no test dirs — is $BS2 healthy?"; }
   fi
   local t_start
   t_start=$(date +%s)
@@ -3453,6 +3527,19 @@ mode_sweep() {
     [ -f "$f.ok" ] || continue
     sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1
   done | awk -F'[/ ]' '{p+=$1; t+=$2} END {print p "/" t}')
+  # t-8rsg: a green FULL sweep IS the suite run — record it where the
+  # pre-commit hook looks so the hook skips its duplicate pass. Re-hash
+  # first (the hook's 0o8i drift guard, same reason): a mid-sweep edit
+  # means this green no longer describes the current tree, so the next
+  # commit must re-run, not skip.
+  if [ "$full_run" = "1" ]; then
+    if [ "$(test_input_hash)" = "$start_hash" ]; then
+      printf '%s\n' "$start_hash" > "$BUILD_DIR/.tests_verified"
+      log "[sweep] commit-gate marker written — the pre-commit hook will skip its duplicate suite run"
+    else
+      log "[sweep] inputs changed mid-sweep — commit-gate marker NOT written (the hook will re-run the suite)"
+    fi
+  fi
   run_end
   ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
 }
@@ -4021,6 +4108,7 @@ main() {
     --slot-fuzz)          mode_slot_fuzz "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
+    --test-input-hash)    test_input_hash "$@" ;;
     --memguard)           mode_memguard "$@" ;;
     --guarded)            mode_guarded "$@" ;;
     --stray)              mode_stray "$@" ;;

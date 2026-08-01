@@ -48,25 +48,13 @@ src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|boo
 # to the last successful verify, skip the suite entirely. Set
 # AVRA_FORCE_TESTS=1 to bypass the cache when you suspect drift.
 #
-# Inputs (in addition to bs2 binary, every .av source/test/fixture,
-# runtime.c, llvm_wrapper.c — covered since the cache marker landed):
-#   - scripts/diagnose.sh — used by some fixtures via `diagnose.sh
-#     --run`; a change here can change fixture stdout without
-#     touching bs2 (5hyt).
-#   - seed/seed.ll — staged seed without rebuilt bs2 leaves the bs2
-#     hash old but the seed change real; rebuilds would then differ
-#     (5hyt).
-#   - bootstrap/Makefile — currently the test target just calls bs2
-#     directly, but covering it future-proofs against test-command
-#     changes (5hyt).
+# The hash computation lives in diagnose.sh (`test_input_hash`, t-8rsg)
+# — ONE definition shared with `--sweep`, whose green full runs write
+# this same marker so the hook doesn't re-run the suite the sweep just
+# ran. The input list (and why each input is in it, 5hyt) is documented
+# there.
 TEST_MARKER="bootstrap/build/.tests_verified"
-TEST_INPUT_HASH=$(
-  { shasum -a 256 bootstrap/build/bs2 2>/dev/null
-    find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
-    shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
-    shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
-  } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
-)
+TEST_INPUT_HASH=$(bootstrap/scripts/diagnose.sh --test-input-hash)
 TESTS_CACHED=0
 if [ "${AVRA_FORCE_TESTS:-0}" != "1" ] && [ -f "$TEST_MARKER" ] \
    && [ "$(cat "$TEST_MARKER" 2>/dev/null)" = "$TEST_INPUT_HASH" ]; then
@@ -148,13 +136,7 @@ if [ -n "$TEST_PID" ]; then
     # start) and now, refuse to write — the suite's result no longer
     # describes the current source state. Mid-suite edits land in
     # the NEXT commit's coverage, not this one's marker.
-    TEST_INPUT_HASH_NOW=$(
-      { shasum -a 256 bootstrap/build/bs2 2>/dev/null
-        find bootstrap/packages bootstrap/tests -name '*.av' -type f -exec shasum -a 256 {} +
-        shasum -a 256 bootstrap/runtime.c bootstrap/llvm_wrapper.c 2>/dev/null
-        shasum -a 256 bootstrap/scripts/diagnose.sh bootstrap/seed/seed.ll bootstrap/Makefile 2>/dev/null
-      } | awk '{print $1}' | sort | shasum -a 256 | awk '{print $1}'
-    )
+    TEST_INPUT_HASH_NOW=$(bootstrap/scripts/diagnose.sh --test-input-hash)
     if [ "$TEST_INPUT_HASH" = "$TEST_INPUT_HASH_NOW" ]; then
       echo "$TEST_INPUT_HASH" > "$TEST_MARKER"
     else
