@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -429,13 +429,13 @@ fn avra_decl_edge_grammar() -> Grammar {
   // the class the corpus additions in error_recovery_differential_test exist to catch.
   //
   // `exportable_decl` covers the keywords that already have native rules (the nine
-  // decls plus the `let`/`mut`/`const` bindings). The hand table is wider — spec /
-  // component / select / parallel are decl keywords too, and `let (a, b) = t`
-  // destructures — so those forms fail this alternation, the `@try` rolls the whole
-  // branch back, and `@hand(decl_hand)` below parses them exactly as before. That is
-  // the point of routing as `@try` rather than bare: the native rule owns the input
-  // it can express and hands everything else, valid or malformed, back to the hand
-  // parser untouched.
+  // decls plus the `let`/`mut`/`const` bindings and the destructure form). The hand
+  // table is wider — spec / component / select / parallel are decl keywords too —
+  // so those forms fail this alternation, the `@try` rolls the whole branch back,
+  // and `@hand(decl_hand)` below parses them exactly as before. That is the point
+  // of routing as `@try` rather than bare: the native rule owns the input it can
+  // express and hands everything else, valid or malformed, back to the hand parser
+  // untouched.
   // THE INNER CARRIES ITS OWN POSITION, which is why `exportable_decl` is a rule in its
   // own right rather than the alternation inlined into `export_decl`. The hand stamps
   // the WRAPPED declaration with the position it captured right after consuming
@@ -452,17 +452,16 @@ fn avra_decl_edge_grammar() -> Grammar {
   // position is inherited rather than shifted.
   export_decl      = "export" ed:exportable_decl -> MkExport(ed)
   exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
-  exportable_inner = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl
+  exportable_inner = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
   // lookup), so wrappers STACK — `/// doc` over `@a` over `export fn` really parses,
   // as Annotated(doc, Annotated(a, Annotated(export, fn))). `wrapped_inner` mirrors
-  // that: the native decls (bindings included) plus the wrappers themselves, all
-  // `@try`, so any form it cannot express (a destructuring `let (…)` inner, a
-  // keyword-named annotation, `//!` under `@a`) fails the alternation, the outer
-  // `@try` rewinds, and `@hand(decl_hand)` parses the WHOLE wrapped item exactly as
-  // before.
+  // that: the native decls (bindings and destructure included) plus the wrappers
+  // themselves, all `@try`, so any form it cannot express (a keyword-named
+  // annotation, `//!` under `@a`) fails the alternation, the outer `@try` rewinds,
+  // and `@hand(decl_hand)` parses the WHOLE wrapped item exactly as before.
   //
   // `docable_decl` / `annotable_decl` exist for the same reason `exportable_decl`
   // does: `MkStampAt` reads its OWNING RULE's entry byte, and the hand stamps the
@@ -484,7 +483,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   annot_decl     = an:annot ( an:annot )* ad:annotable_decl -> MkAnnotatedArgs(an, ad)
   annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
   annot          = "@" n:IDENT ( "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" )? -> MkAnn(n, a)
-  wrapped_inner  = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl
+  wrapped_inner  = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers
@@ -504,14 +503,24 @@ fn avra_decl_edge_grammar() -> Grammar {
   //     item owning the coded diagnostic — recovery stays the hand's,
   //     byte-for-byte.
   //   * `const` has no guard form and no `mut` modifier, matching the hand.
-  //
-  // The DESTRUCTURE form (`let (a, b) = t`) is NOT expressed: `let_decl`'s
-  // `n:IDENT` fails on `(`, the `@try` rewinds, and `@hand(decl_hand)` parses it
-  // exactly as before — the same dormant-fallback shape `export let` had before
-  // this slice.
+  //   * The DESTRUCTURE form has its own rule below: `let_decl`'s `n:IDENT`
+  //     fails on `(`, the `@try` rewinds, and `letdes_decl` (next in the
+  //     alternation) parses it.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
   mut_decl   = "mut" n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkMutBinding(n, ty, init, e, tmp)
   const_decl = "const" n:IDENT ( ":" ty:type_expr )? "=" init:expression -> MkConstBinding(n, ty, init)
+  // `let (a, b, …) = init` — the destructure binding, completing the binding
+  // family's exit from `@hand(decl_hand)`. The list shape is `for_binding`'s,
+  // verbatim: `@peek(comma_ident)` gates each repeat iteration so a trailing
+  // comma survives to the `","?` (the hand's parse_destructure_names tolerates
+  // `(a, b,)`), and the whole names group is optional because the hand accepts
+  // an EMPTY list (`let () = t` parses — entries are typed at check time).
+  // `( m:"mut" )?` mirrors the hand exactly: parse_let_statement consumes an
+  // optional `mut` BEFORE testing for `(`, and parse_let_destructure never
+  // reads is_mut — so `let mut (a, b) = t` is a plain destructure on both
+  // engines. A BARE `mut (` stays an error (parse_mut_statement demands an
+  // identifier), which is why mut_decl has no destructure sibling.
+  letdes_decl = "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? ")" "=" init:expression -> MkDestructure(n, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`

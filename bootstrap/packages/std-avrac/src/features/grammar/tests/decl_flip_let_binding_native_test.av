@@ -103,6 +103,19 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let tail_at = src.index_of("    parse_statement(st)\n}")
         tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
+
+    then "the destructure rule is emitted, speculative, and dispatches before the hand gate" {
+        // The follow-up slice (letdes_decl). It sits AFTER let_decl in the
+        // alternation — `let (` makes let_decl's `n:IDENT` report and roll
+        // back, then this rule owns the form — and like its siblings it must
+        // precede the decl_hand gate or `decl_lead` swallows `let` first.
+        let src = decl_src()
+        let des_at = src.index_of("parse_letdes_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("fn parse_letdes_decl(st: PState) -> CapVal") &&
+            src.contains("s_last = parse_letdes_decl(st)") &&
+            des_at >= 0 && hand_at >= 0 && des_at < hand_at
+    }
 }
 
 spec "t-47hc Phase 4: every binding form the compiler itself writes parses on all four paths" {
@@ -136,13 +149,51 @@ spec "t-47hc Phase 4: every binding form the compiler itself writes parses on al
             "fn main() { println(string(shared + DOCD)) }\n")
     }
 
-    then "the destructure form still parses — it falls back to the hand untouched" {
+    then "the destructure form parses natively — plain, `let mut (`, and trailing comma" {
+        // Routed in the follow-up slice (letdes_decl): the list shape is
+        // for_binding's, `let mut (a, b)` is a plain destructure (the hand never
+        // reads is_mut for this form), and the trailing comma survives.
         clean_all_paths("destructure",
             "fn pair() -> (int, int) { (1, 2) }\n" +
             "fn main() {\n" +
             "    let (a, b) = pair()\n" +
             "    println(string(a + b))\n" +
-            "}\n")
+            "}\n") &&
+        clean_all_paths("des_mut",
+            "fn pair() -> (int, int) { (1, 2) }\n" +
+            "fn main() {\n" +
+            "    let mut (a, b) = pair()\n" +
+            "    println(string(a + b))\n" +
+            "}\n") &&
+        clean_all_paths("des_trail",
+            "fn pair() -> (int, int) { (1, 2) }\n" +
+            "fn main() {\n" +
+            "    let (a, b,) = pair()\n" +
+            "    println(string(a + b))\n" +
+            "}\n") &&
+        clean_all_paths("des_export",
+            "export let (sa, sb) = (1, 2)\n" +
+            "fn main() { println(string(sa + sb)) }\n")
+    }
+
+    then "an EMPTY destructure list still parses and fails at TYPECK, on every path" {
+        // The hand's parse_destructure_names accepts `let () = t` (entries are
+        // typed at check time), so the parse must succeed everywhere and the
+        // SAME typeck rejection (F1000) must follow — a parse-time F0001 here
+        // would mean the native rule narrowed the language.
+        let src = "fn pair() -> (int, int) { (1, 2) }\n" +
+            "fn main() {\n" +
+            "    let () = pair()\n" +
+            "    println(string(1))\n" +
+            "}\n"
+        let d = check_out("des_empty_dflt", "", src)
+        let e = check_out("des_empty_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+        let x = check_out("des_empty_exec", "AVRA_PARSER_DECL_STATIC=0", src)
+        let h = check_out("des_empty_hand", "AVRA_PARSER_DECL_FLIP=0", src)
+        !clean(d) && d.contains("error[F1000]") && !d.contains("error[F0001]") &&
+            !clean(e) && e.contains("error[F1000]") && !e.contains("error[F0001]") &&
+            !clean(x) && x.contains("error[F1000]") && !x.contains("error[F0001]") &&
+            !clean(h) && h.contains("error[F1000]") && !h.contains("error[F0001]")
     }
 }
 
@@ -164,6 +215,15 @@ spec "t-47hc Phase 4: the binding frontier did not widen" {
     then "`let 5 = 1` stays a PARSE error — the native rule aborts, never builds" {
         let out = check_out("numname", "",
             "fn main() {\n    let 5 = 1\n}\n")
+        !clean(out) && out.contains("error[F0001]")
+    }
+
+    then "a BARE `mut (` stays an error — only `let` opens a destructure" {
+        // parse_mut_statement demands an identifier, so mut_decl has no
+        // destructure sibling; routing must not widen this.
+        let out = check_out("mutparen", "",
+            "fn pair() -> (int, int) { (1, 2) }\n" +
+            "fn main() {\n    mut (a, b) = pair()\n}\n")
         !clean(out) && out.contains("error[F0001]")
     }
 }
