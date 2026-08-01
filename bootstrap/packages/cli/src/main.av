@@ -92,7 +92,7 @@ use @std.avrac.build.{
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects,
     BuildRequest, BuildReport, build_request, build_ir, build_executable, link_unit_executable,
-    build_report_empty, unit_name_for, BuildOutput, DepTally, no_deps,
+    build_report_empty, unit_name_for, BuildOutput, DepTally, no_deps, is_library_target,
     resolve_compiler_path, runtime_objects_dir, remove_entry_ll_if_unchanged,
     cache_summary_line, build_event_json, count_path_deps, write_timings_html,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
@@ -771,7 +771,13 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -
         let dep = deps[i]
         if dep.path != "" {
             let lib_root = derive_lib_root_for(dep.path)
-            let env_prefix = if lib_root == "" { "" } else { "AVRA_LIB_PKG_ROOT='${lib_root}' " }
+            // ALWAYS explicit — '' for non-std deps: the outer lib build
+            // runs with its own AVRA_LIB_PKG_ROOT in the process env
+            // (derived in run_build_command), and an inherited outer root
+            // would mis-bucket a non-std dep's fns exactly as described
+            // above. An explicit empty root lets the dep's own
+            // run_build_command derive what is right for ITS package.
+            let env_prefix = "AVRA_LIB_PKG_ROOT='${lib_root}' "
             // --explain so the log carries the hit/miss line + miss
             // attribution the parent's tally reads back (pdme.5).
             let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
@@ -1528,6 +1534,34 @@ fn run_build_command(args: BuildArgs) -> BuildReport {
     maybe_auto_gc(project_dir)
     let manifest = load_manifest("${project_dir}/")
     let compiler_path = resolve_compiler_path(project_dir)
+
+    // A BARE `bs2 build --lib` must run under the same AVRA_LIB_PKG_ROOT
+    // the suite prebuild exports for this package (std_prebuild_cmd /
+    // build_pre_dep_cmds derive it from the package dir), or its cache
+    // fingerprint can never match the prebuild's slot — the root is a
+    // fingerprint axis. Every fixture that shells a bare lib build on
+    // packages/std-avrac (std_avrac_lib_build, cli_metadata,
+    // metadata_walker_method_dispatch) recompiled the whole package cold
+    // mid-suite (~7.8GB) on a guaranteed miss, which F4014'd on CI the
+    // moment box pressure coincided. Normalising the process env HERE —
+    // the CLI build entrypoint, before the facade's build_ir reads it and
+    // before pre-dep children inherit it — makes bare and rooted
+    // invocations share one slot, and the child compile emits the same
+    // pkg-scoped symbols. The facade only READS env; the CLI owns it.
+    //
+    // An explicit caller root always wins. The path-derived root is
+    // accepted only when it AGREES with the manifest-derived one (the
+    // --module_path mapping): a `std-` segment elsewhere in an absolute
+    // path (e.g. a home dir) can otherwise mis-root a non-std package.
+    // Non-std packages derive "" and stay whole-program.
+    if is_library_target(manifest, args.lib) && manifest.found
+        && avra_process_env_get("AVRA_LIB_PKG_ROOT") == "" {
+        let path_root = derive_lib_root_for(project_dir)
+        let manifest_root = manifest.name.replace("/", "::")
+        if path_root != "" && path_root == manifest_root {
+            avra_process_env_set("AVRA_LIB_PKG_ROOT", path_root)
+        }
+    }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE the
     // root build so the dep's .meta.bin and cache entries land first. The
