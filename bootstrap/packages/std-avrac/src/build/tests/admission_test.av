@@ -184,7 +184,7 @@ spec "admission priors: seeded estimates and unseeded measurement" {
         then "a measured peak above static persists and reads back" {
             let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
             let path = admission_prior_path(root, "k1")
-            persist_admission_prior(path, 2500, 1800)
+            persist_admission_prior(path, 2500, 1800, true)
             let got = read_admission_prior(path)
             let _ = avra_shell_exec("rm -rf '${root}'")
             got == 2500
@@ -192,11 +192,25 @@ spec "admission priors: seeded estimates and unseeded measurement" {
         then "a measurement at/below static removes the prior (decay)" {
             let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
             let path = admission_prior_path(root, "k2")
-            persist_admission_prior(path, 2500, 1800)
-            persist_admission_prior(path, 900, 1800)
+            persist_admission_prior(path, 2500, 1800, true)
+            persist_admission_prior(path, 900, 1800, true)
             let got = read_admission_prior(path)
             let _ = avra_shell_exec("rm -rf '${root}'")
             got == 0
+        }
+        then "an incomplete run neither decays nor overwrites the prior" {
+            // A jetsam-killed shard died unmeasured: its run's observation is
+            // not evidence of a lighter workload. Losing the prior there would
+            // let the NEXT full run repeat the unsafe admission (review, #1102).
+            let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
+            let path = admission_prior_path(root, "k4")
+            persist_admission_prior(path, 2500, 1800, true)
+            persist_admission_prior(path, 900, 1800, false)   // no decay
+            let kept = read_admission_prior(path)
+            persist_admission_prior(path, 9999, 1800, false)  // no overwrite either
+            let still = read_admission_prior(path)
+            let _ = avra_shell_exec("rm -rf '${root}'")
+            kept == 2500 && still == 2500
         }
         then "a missing or garbled prior reads as none" {
             let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"

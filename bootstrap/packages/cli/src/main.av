@@ -2951,7 +2951,11 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // run measured nothing above the mode's static number).
     let prior_path = admission_prior_path("${project_dir}/build/cache", admission_key(shards))
     let gov = dispatch_shards(shards, cx.jobs, cx.per_shard_mb, read_admission_prior(prior_path))
-    persist_admission_prior(prior_path, gov.observed_mb, cx.per_shard_mb)
+    // Persist only a COMPLETE run's measurement: a jetsam-killed shard died
+    // unmeasured, so its run's low observation is not evidence of a lighter
+    // workload — decaying the prior off it would let the NEXT full run
+    // repeat the unsafe admission.
+    persist_admission_prior(prior_path, gov.observed_mb, cx.per_shard_mb, jetsam_victims(shards).length == 0)
     // The retry inherits the CORRECTED estimate (prior-seeded + ratcheted),
     // not the static one: a jetsam kill is the strongest evidence the
     // static model under-booked, and the correction is most needed there.
@@ -3530,8 +3534,15 @@ fn dispatch_shards(shards: List<Shard>, jobs: int, per_shard_mb: int, prior_mb: 
 // being faster than serial. Capped at the run's memory-aware `jobs`
 // so a tight box that already dropped to jobs=1 (whole-program
 // fallback) doesn't recover at a width that re-triggers the OOM.
+/// Shards whose subprocess died before flushing any output — the jetsam
+/// victims. Shared by the retry (which re-runs them) and the prior
+/// persistence gate (which must not decay off an unmeasured run).
+fn jetsam_victims(shards: List<Shard>) -> List<Shard> {
+    list_filter(shards, (s: Shard) -> !s.log_alive())
+}
+
 fn retry_jetsam_killed(shards: List<Shard>, jobs: int, per_shard_mb: int) {
-    let victims = list_filter(shards, (s: Shard) -> !s.log_alive())
+    let victims = jetsam_victims(shards)
     if victims.length == 0 { return }
     let retry_jobs = if jobs < 2 { jobs } else { 2 }
     eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=${string(retry_jobs)})")

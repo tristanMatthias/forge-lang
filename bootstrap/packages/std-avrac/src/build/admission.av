@@ -227,15 +227,35 @@ export fn read_admission_prior(path: string) -> int {
 
 /// Persist the run's own measurement when it exceeds the static estimate;
 /// otherwise REMOVE the prior so the next run decays back to the mode's
-/// number. Whole-file write of a tiny payload — torn writes just re-measure.
-export fn persist_admission_prior(path: string, observed_mb: int, static_mb: int) {
+/// number. `complete` gates everything: a run where any unit died unmeasured
+/// (a jetsam victim) must neither decay nor overwrite the prior — absence of
+/// measurement is not evidence of a lighter workload, and losing the prior
+/// there would let the NEXT full run repeat the unsafe admission. Whole-file
+/// write of a tiny payload — torn writes just re-measure. Native mkdir and
+/// remove, never a shell: the path embeds the project root, which is not
+/// shell-safe.
+export fn persist_admission_prior(path: string, observed_mb: int, static_mb: int, complete: bool) {
+    if !complete { return }
     if observed_mb > static_mb {
-        let _ = avra_shell_exec("mkdir -p \"$(dirname '${path}')\"")
+        let _ = avra_mkdir_p(path_parent(path))
         let _ = avra_selfhost_write_file(path, "est_mb:${string(observed_mb)}\n")
         return
     }
-    let _ = avra_shell_exec("rm -f '${path}'")
+    let _ = avra_remove_file(path)
+}
+
+/// Everything before the last '/', or "" when the path has no separator.
+fn path_parent(p: string) -> string {
+    mut i = p.length
+    while i > 0 {
+        let prev = i - 1
+        if p.byte(prev) == 0x2F { return p.substring(0, prev) }
+        i = prev
+    }
+    ""
 }
 
 extern fn avra_selfhost_read_file(path: string) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
+extern fn avra_mkdir_p(path: string) -> int
+extern fn avra_remove_file(path: string) -> int
