@@ -61,7 +61,7 @@ use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
-use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd}
+use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
@@ -95,6 +95,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
+    pool_run_admitted, governor_for,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
@@ -108,6 +109,9 @@ extern fn avra_bytes_to_hex(b: bytes) -> string
 // t-drl0: label the current phase for the F4014 process memory ceiling, so a
 // runaway names the file it died reading instead of just how much it used.
 extern fn avra_mem_phase_set(label: string)
+// t-kdyj.1: MemAvailable in MB (-1 unknown) — the admission governor's
+// sampler; raw syscalls in runtime.c, never a shell fork.
+extern fn avra_mem_available_mb() -> int
 extern fn avra_stderr_tee_begin()
 extern fn avra_stderr_tee_end() -> string
 extern fn avra_stderr_write_raw(s: string)
@@ -2937,8 +2941,8 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // avrac tests where typeck cost scales with source size.
     let shards = plan_shards(cx, accepted_paths)
 
-    dispatch_shards(shards, cx.jobs)
-    retry_jetsam_killed(shards, cx.jobs)
+    dispatch_shards(shards, cx.jobs, cx.per_shard_mb)
+    retry_jetsam_killed(shards, cx.jobs, cx.per_shard_mb)
 
     aggregate_shard_logs(shards, t_start)
 }
@@ -3091,6 +3095,7 @@ type RunCtx = {
     filter_arg: string,
     want_meta: bool,
     jobs: int,
+    per_shard_mb: int,   // t-kdyj.1: the admission governor's per-unit estimate
 }
 
 impl RunCtx {
@@ -3256,6 +3261,7 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
         filter_arg: if args.filter == "" { "" } else { " --filter '${args.filter}'" },
         want_meta: lib.want_meta(),
         jobs: jobs,
+        per_shard_mb: lib.per_shard_mb(),
     }
 }
 
@@ -3289,10 +3295,9 @@ fn compute_shard_jobs(lib: LibMode, avail_mb: int) -> int {
     let ceiling = parse_jobs_env(lib.job_ceiling())
     let ceil = if ceiling < 1 { 1 } else { ceiling }
     if avail_mb <= 0 { return ceil }   // unknown → preserve the static default
-    // Headroom that must survive ALONGSIDE the shard fan-out: the
-    // orchestrator + page cache, the prebuild's residual pages, and —
-    // the load-bearing part — the fixture COMPILES that shards shell
-    // out. The no-metadata ones run `env -u AVRA_USE_METADATA bs2
+    // The reserve lives on libmode (SHARD_RESERVE_MB) beside the per-shard
+    // estimates, shared with the admission governor. History of the number:
+    // the no-metadata fixture compiles are `env -u AVRA_USE_METADATA bs2
     // compile`, i.e. a ~5GB WHOLE-PROGRAM compile each; those are now
     // slot-capped (#863) and the diagnostic majority fast-pathed to
     // ~1.5GB (#866), but a ~5GB @comptime-fixture compile can still
@@ -3301,7 +3306,7 @@ fn compute_shard_jobs(lib: LibMode, avail_mb: int) -> int {
     // stacked on 6 metadata shards. 6GB leaves room for a fixture
     // spike so the shard count backs off to keep the combined peak
     // clear of the cliff.
-    let reserve_mb = 6144
+    let reserve_mb = SHARD_RESERVE_MB
     // 5×1800 + 6GB reserve ≈ 15GB fits a 16GB box — why CI runs green at
     // jobs=5. (Two prior re-measurements that bumped this were both artefacts:
     // ~3.6GB taken mid-sweep under contention, ~5.4GB taken off a
@@ -3315,16 +3320,13 @@ fn compute_shard_jobs(lib: LibMode, avail_mb: int) -> int {
     if by_mem < ceil { by_mem } else { ceil }
 }
 
-/// MemAvailable from /proc/meminfo, in MB. Returns -1 when it can't be
-/// determined (non-Linux, or the read failed) so callers fall back to
-/// their static default. Linux-only by design — macOS keeps the
-/// pre-existing static behaviour rather than guessing from vm_stat.
+/// MemAvailable in MB. Returns -1 when it can't be determined (non-Linux,
+/// or the read failed) so callers fall back to their static default.
+/// Delegates to the C runtime's raw-syscall reader (the same one the F4014
+/// ceiling uses) — the admission governor samples this every dispatch
+/// round, so it must never cost a shell fork.
 fn available_memory_mb() -> int {
-    let out = avra_shell_exec("awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null").trim()
-    if out == "" { return -1 }
-    let kb = avra_parse_int(out)
-    if kb <= 0 { return -1 }
-    kb / 1024
+    avra_mem_available_mb()
 }
 
 /// F4 (uzs9.5.4): one fingerprint over EVERY input that feeds the @std/*
@@ -3479,9 +3481,19 @@ fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: strin
 // LJF ordering (cbg3) is preserved: callers still sort by source
 // size before invocation, so the biggest shards launch first and
 // the tail of cheap shards backfills workers continuously.
-fn dispatch_shards(shards: List<Shard>, jobs: int) {
+//
+// t-kdyj.1: dispatch runs under memory-aware admission control. `jobs`
+// stays the static width CEILING (so a roomy box behaves exactly as
+// before), but each dispatch round re-samples MemAvailable and admits
+// the next shard only while it fits the byte budget — see
+// @std.avrac.build.admission for the model. The governor's decisions
+// are summarised on stderr after the pool drains, so the run reports
+// what it admitted and why instead of leaving concurrency implicit.
+fn dispatch_shards(shards: List<Shard>, jobs: int, per_shard_mb: int) {
     let cmds = list_map(shards, (s: Shard) -> s.cmd)
-    let _ = pool_run(cmds, jobs)
+    let gov = governor_for(jobs, per_shard_mb, SHARD_RESERVE_MB, avra_mem_available_mb())
+    let _ = pool_run_admitted(cmds, gov, () -> avra_mem_available_mb())
+    eprintln(gov.summary())
 }
 
 // Cold-rebuild jetsam recovery: any shard whose log is empty got
@@ -3491,12 +3503,12 @@ fn dispatch_shards(shards: List<Shard>, jobs: int) {
 // being faster than serial. Capped at the run's memory-aware `jobs`
 // so a tight box that already dropped to jobs=1 (whole-program
 // fallback) doesn't recover at a width that re-triggers the OOM.
-fn retry_jetsam_killed(shards: List<Shard>, jobs: int) {
+fn retry_jetsam_killed(shards: List<Shard>, jobs: int, per_shard_mb: int) {
     let victims = list_filter(shards, (s: Shard) -> !s.log_alive())
     if victims.length == 0 { return }
     let retry_jobs = if jobs < 2 { jobs } else { 2 }
     eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=${string(retry_jobs)})")
-    dispatch_shards(victims, retry_jobs)
+    dispatch_shards(victims, retry_jobs, per_shard_mb)
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard

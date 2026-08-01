@@ -1,0 +1,208 @@
+// t-kdyj.1 — memory-aware admission control (@std.avrac.build.admission).
+//
+// WHY THIS EXISTS: the shard pool used to run at a fixed width picked by an
+// operator (AVRA_JOBS), with an external watchdog SIGKILLing the run when the
+// guess was wrong. The governor moves that decision inside the pool: admit
+// the next unit only while it fits a byte budget, serialise as the graceful
+// floor, ratchet the estimate from measurement, never kill. These specs pin
+// the decision MATH at the numbers that actually broke (a single degraded
+// shard is ~10GB while the estimate said ~1.8GB), because on a quiet box
+// every plausible policy agrees and an end-to-end assertion proves nothing.
+//
+// The governor is pure state + integer math with an injected avail sample,
+// so every regime is testable deterministically; the pool-level specs then
+// prove the dispatch loop actually consults it.
+//
+// @@fixture-stateful@@ — the pool specs spawn real subprocesses; a transient
+// hiccup must re-probe, not freeze as FAIL.
+
+use @std.avrac.build.{governor_for, governor_width_only, pool_run_admitted}
+
+spec "admission budget: growth regime stacks unrealized commitment" {
+    given "a fresh governor (est 500MB, reserve 100MB, baseline 2000MB)" {
+        then "with nothing in flight, a fitting unit is admitted" {
+            let gov = governor_for(8, 500, 100, 2000)
+            gov.budget_admits(2000, 0)
+        }
+        then "in-flight units still growing reserve their FULL estimate against the baseline" {
+            // avail hasn't moved (units admitted but not yet allocating):
+            // each in-flight unit stacks 500MB of unrealized commitment.
+            let gov = governor_for(8, 500, 100, 2000)
+            gov.budget_admits(2000, 1)          // 2000-100-500  >= 500
+                && gov.budget_admits(2000, 2)   // 2000-100-1000 >= 500
+                && !gov.budget_admits(2000, 3)  // 2000-100-1500 <  500
+        }
+        then "a burst cannot over-admit against one roomy sample" {
+            // The same avail sample refuses the 4th unit even though, read
+            // naively, 2000MB 'fits' four more 500MB units one at a time.
+            let gov = governor_for(8, 500, 100, 2000)
+            mut admitted = 0
+            for k in 0..8 {
+                if gov.budget_admits(2000, admitted) { admitted = admitted + 1 }
+            }
+            admitted == 3
+        }
+    }
+}
+
+spec "admission budget: realised regime budgets against live avail" {
+    given "the same governor after its units' usage materialised" {
+        then "commitment consumed by real usage stops double-counting" {
+            // 2 units in flight, avail dropped 2000 -> 900: used (1100)
+            // exceeds commitment (1000), so budget = live avail only.
+            let gov = governor_for(8, 500, 100, 2000)
+            gov.budget_admits(900, 2)           // 900-100 >= 500
+        }
+        then "a unit growing past its estimate throttles further admission" {
+            let gov = governor_for(8, 500, 100, 2000)
+            !gov.budget_admits(550, 2)          // 550-100 < 500
+        }
+    }
+}
+
+spec "admission budget: degraded inputs never wedge the pool" {
+    given "unknown memory or no cost model" {
+        then "unknown avail admits width-only (the pre-admission behaviour)" {
+            let gov = governor_for(4, 500, 100, 0 - 1)
+            gov.budget_admits(0 - 1, 3)
+        }
+        then "a zero estimate admits width-only" {
+            let gov = governor_width_only(4)
+            gov.budget_admits(50, 3)
+        }
+    }
+}
+
+spec "admission decisions: width cap, serial floor, deferral" {
+    given "a governor with cap 2 (est 500MB, reserve 100MB, baseline 400MB)" {
+        then "the width cap refuses regardless of memory" {
+            let gov = governor_for(2, 500, 100, 100000)
+            // A full pool is not a memory deferral, so no deferral counts.
+            !gov.try_admit(100000, 2) && gov.deferrals == 0
+        }
+        then "the serial floor admits exactly one when nothing is in flight" {
+            // 400MB avail can never fit est+reserve, but waiting with an
+            // empty pool would deadlock — one unit is always admitted.
+            let gov = governor_for(2, 500, 100, 400)
+            gov.try_admit(400, 0) && gov.floor_admits == 1 && gov.peak_width == 1
+        }
+        then "with a unit in flight the same pressure defers instead" {
+            let gov = governor_for(2, 500, 100, 400)
+            !gov.try_admit(400, 1) && gov.deferrals == 1
+        }
+        then "the constrained line is once-per-run, not an episode edge" {
+            // A pool under a budget steady-states AT its constrained width,
+            // so ANY edge-triggered recovered/backing-off pairing flaps once
+            // per reap/refill cycle (observed live: 37 pairs in nine dirs).
+            // The flag latches on the first constrained decision and stays —
+            // later admits and later deferrals add no lines, only tallies.
+            let gov = governor_for(2, 500, 100, 400)
+            let deferred = !gov.try_admit(400, 1)   // first constrained decision
+            let latched = gov.constrained_logged
+            let readmitted = gov.try_admit(5000, 1) // memory came back: width 2
+            let serial = gov.try_admit(400, 0)      // a later serialised round
+            deferred && latched && readmitted && serial
+                && gov.constrained_logged && gov.peak_width == 2
+        }
+    }
+}
+
+spec "admission model correction: measurement ratchets the estimate" {
+    given "a governor whose units outgrow their estimate" {
+        then "observed per-unit usage raises the live estimate" {
+            // 2 in flight consumed 4000MB total -> 2000MB each > 1800MB.
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.observe(6000, 2)
+            gov.estimate_mb == 2000 && gov.corrections == 1
+        }
+        then "the ratchet is monotone: a light sample never lowers it" {
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.observe(6000, 2)
+            gov.observe(9000, 2)   // 500MB/unit — far under the corrected 2000
+            gov.estimate_mb == 2000 && gov.corrections == 1
+        }
+        then "the corrected estimate narrows subsequent admissions" {
+            let gov = governor_for(8, 1800, 6144, 16000)
+            // At the static 1800MB estimate a 9856MB budget fits units wide...
+            let roomy = gov.budget_admits(16000, 0)
+            // ...then one degraded unit drives used to 10500MB: the reserve's
+            // 6144MB is already budgeted, so 4356MB attributes to the unit...
+            gov.observe(5500, 1)
+            // ...and the next admission is refused instead of thrashing.
+            roomy && gov.estimate_mb == 4356 && !gov.budget_admits(5500, 1)
+        }
+        then "the reserve is not double-counted into the attribution" {
+            // used 3000 with reserve 1000: the reserve already covers the
+            // un-modelled consumers (fixture compiles, page cache), so only
+            // 2000 attributes to the 2 units — 1000 each, not 1500. Measured
+            // live: naive attribution ratcheted a ~1.8GB shard to 8442MB and
+            // est+reserve then serialised a box the static model runs wide.
+            let gov = governor_for(8, 500, 1000, 10000)
+            gov.observe(7000, 2)
+            gov.estimate_mb == 1000
+        }
+        then "usage within the reserve does not ratchet at all" {
+            let gov = governor_for(8, 500, 1000, 10000)
+            gov.observe(9200, 1)   // used 800 < reserve 1000
+            gov.estimate_mb == 500 && gov.corrections == 0
+        }
+        then "min avail tracks the tightest sample" {
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.observe(6000, 1)
+            gov.observe(8000, 1)
+            gov.min_avail_mb == 6000
+        }
+    }
+}
+
+spec "admission summary reports the run's decisions" {
+    given "a governor that deferred and corrected" {
+        then "the summary names peak width, correction, and tallies" {
+            let gov = governor_for(4, 500, 100, 2000)
+            let _ = gov.try_admit(2000, 0)
+            let _ = gov.try_admit(300, 1)     // defer
+            gov.observe(1200, 1)              // used 800, reserve 100 -> ratchet 500 -> 700
+            let s = gov.summary()
+            s.contains("peak width 1/4")
+                && s.contains("~500MB -> ~700MB (corrected)")
+                && s.contains("1 deferral(s)")
+        }
+        then "an uneventful run reports a plain estimate" {
+            let gov = governor_for(4, 500, 100, 100000)
+            let _ = gov.try_admit(100000, 0)
+            let s = gov.summary()
+            s.contains("est ~500MB,") && !s.contains("corrected")
+        }
+    }
+}
+
+spec "admitted pool: the dispatch loop consults the governor" {
+    given "real commands under an injected memory sample" {
+        then "a roomy budget runs wide and propagates the worst rc" {
+            let gov = governor_for(3, 100, 0, 100000)
+            let rc = pool_run_admitted(["true", "false", "true"], gov, () -> 100000)
+            rc == 1 && gov.peak_width > 0
+        }
+        then "a tight budget serialises and still completes everything" {
+            // baseline == avail == 700: est 500 + reserve 100 fits ONE unit;
+            // the second admission always sees 500MB of unrealized
+            // commitment and defers until the first exits. Marker files
+            // prove every command actually ran.
+            let dir = "/tmp/avra_admission_pool_${string(avra_getpid())}"
+            let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            let gov = governor_for(3, 500, 100, 700)
+            let cmds = [
+                "sleep 0.2 && touch '${dir}/a'",
+                "sleep 0.2 && touch '${dir}/b'",
+                "touch '${dir}/c'",
+            ]
+            let rc = pool_run_admitted(cmds, gov, () -> 700)
+            let ran = avra_shell_exec("ls '${dir}' | sort | tr '\n' ' '").trim()
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            rc == 0 && ran == "a b c" && gov.peak_width == 1 && gov.deferrals > 0
+        }
+    }
+}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_getpid() -> int

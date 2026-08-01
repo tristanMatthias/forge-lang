@@ -5045,6 +5045,15 @@ static int64_t avra_mem_available_kb(void) { return avra_meminfo_kb("MemAvailabl
 // under load, which is exactly why the ceiling floors itself against it.
 static int64_t avra_mem_total_kb(void) { return avra_meminfo_kb("MemTotal:"); }
 
+// MemAvailable in MB for Avra-side schedulers (t-kdyj.1): the shard pool
+// samples this at every admission decision, so it must stay a couple of raw
+// syscalls — never a shell fork. -1 when unknown (non-Linux, or the read
+// failed) so callers fall back to their static behaviour.
+int64_t avra_mem_available_mb(void) {
+    int64_t kb = avra_mem_available_kb();
+    return (kb > 0) ? kb / 1024 : -1;
+}
+
 // Derive the ceiling (KiB, 0 = none) from a MemAvailable / MemTotal pair.
 //
 // PURE and separately callable so the policy can be tested at the numbers that

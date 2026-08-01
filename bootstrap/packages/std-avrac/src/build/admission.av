@@ -1,0 +1,180 @@
+// WHY: memory-aware admission control for the worker pool (t-kdyj.1) — the
+// keystone of "`bs2 test` is one command, memory-safe by construction". The
+// operator used to pick a job count (AVRA_JOBS) and an external watchdog
+// SIGKILLed the run when the guess was wrong; both decisions move HERE, where
+// the information is: the pool knows each unit's estimated peak (LibMode),
+// samples MemAvailable, and admits a unit only while it fits. Concurrency is
+// an OUTPUT of available memory, not an input.
+//
+// Four properties, in priority order:
+//   1. Back-pressure, never SIGKILL — under pressure the pool stops
+//      ADMITTING; running work is never killed and never orphans.
+//   2. The serial floor — with nothing in flight the next unit is ALWAYS
+//      admitted, so a tight box serialises (the sweep's one good property)
+//      instead of deadlocking. One unit at a time is the graceful minimum.
+//   3. Measure, don't assume — observed per-unit consumption RATCHETS the
+//      live estimate upward, so a wrong constant self-heals into narrower
+//      admissions instead of becoming a landmine.
+//   4. Decisions are observable — pressure-episode transitions log one line
+//      each, and `summary()` reports what happened (never per-unit spam).
+//
+// The math is integer MB throughout. One formula covers both regimes:
+//
+//     admit iff  avail - reserve - unrealized >= estimate
+//     where used       = max(0, baseline - avail)
+//           unrealized = max(0, estimate * in_flight - used)
+//
+// While admitted units are still allocating toward their estimates
+// (used < estimate * in_flight) this reduces to budgeting their FULL
+// commitment against the run-start baseline — so a burst of admissions in one
+// round can't all read the same roomy sample and stack past the budget. Once
+// in-flight usage has materialised (used >= commitment) it reduces to
+// budgeting against LIVE avail — so a unit growing past its estimate shows up
+// as reduced avail and throttles further admission automatically. Memory
+// consumed by anything else on the box also lands in `used`, which only
+// narrows admissions: every attribution error is in the safe direction.
+
+/// The admission state for one pool run. Counters are mutated through
+/// methods (structs are self-by-pointer), so the pool threads one governor
+/// through every dispatch round and reads the tallies afterwards.
+export type MemGovernor = {
+    width_cap: int,          // static concurrency ceiling (>= 1 by construction)
+    estimate_mb: int,        // live per-unit peak estimate; ratchets up, never below static
+    static_estimate_mb: int, // the mode's baseline estimate, for the summary
+    reserve_mb: int,         // headroom for the un-modelled: llc/cc1plus grandchildren, page cache
+    baseline_avail_mb: int,  // MemAvailable at run start; <= 0 = unknown -> width-only
+    min_avail_mb: int,       // observability: the tightest sample seen
+    peak_width: int,         // observability: widest concurrent admission reached
+    deferrals: int,          // decisions where a queued unit waited on the budget
+    floor_admits: int,       // serial-floor admissions the budget alone would have refused
+    corrections: int,        // estimate ratchets applied
+    constrained_logged: bool, // the once-per-run "backing off"/"memory floor" line fired
+}
+
+export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseline_avail_mb: int) -> MemGovernor {
+    MemGovernor {
+        width_cap: if width_cap < 1 { 1 } else { width_cap },
+        estimate_mb: if estimate_mb < 0 { 0 } else { estimate_mb },
+        static_estimate_mb: if estimate_mb < 0 { 0 } else { estimate_mb },
+        reserve_mb: if reserve_mb < 0 { 0 } else { reserve_mb },
+        baseline_avail_mb: baseline_avail_mb,
+        min_avail_mb: baseline_avail_mb,
+        peak_width: 0,
+        deferrals: 0,
+        floor_admits: 0,
+        corrections: 0,
+        constrained_logged: false,
+    }
+}
+
+/// Admission by idle-worker count alone — the pre-admission pool behaviour,
+/// for pool callers that aren't scheduling against memory. `estimate_mb == 0`
+/// makes every budget check pass and stops the pool from even sampling.
+export fn governor_width_only(width_cap: int) -> MemGovernor {
+    governor_for(width_cap, 0, 0, 0 - 1)
+}
+
+impl MemGovernor {
+    /// Whether this governor schedules against memory at all. The pool skips
+    /// sampling entirely when it doesn't.
+    fn has_model(self) -> bool { self.estimate_mb > 0 }
+
+    /// What the run has consumed since its baseline, per the kernel. Zero
+    /// when either number is unknown.
+    fn used_mb(self, avail_mb: int) -> int {
+        if self.baseline_avail_mb <= 0 || avail_mb <= 0 { return 0 }
+        let d = self.baseline_avail_mb - avail_mb
+        if d > 0 { d } else { 0 }
+    }
+
+    /// The pure budget decision — see the module header for the formula.
+    /// Unknown avail or no model degrades to width-only admission.
+    fn budget_admits(self, avail_mb: int, in_flight: int) -> bool {
+        if !self.has_model() || avail_mb <= 0 { return true }
+        let used = self.used_mb(avail_mb)
+        let commitment = self.estimate_mb * in_flight
+        let unrealized = if commitment > used { commitment - used } else { 0 }
+        avail_mb - self.reserve_mb - unrealized >= self.estimate_mb
+    }
+
+    /// Per-round measurement: track the tightest sample and ratchet the
+    /// per-unit estimate when measured consumption exceeds it. The ratchet
+    /// only ever RAISES the estimate — a unit exceeding its model narrows
+    /// future admissions; it is never killed for it (F4014's job, not ours).
+    ///
+    /// The reserve is SUBTRACTED from `used` before attributing to units: it
+    /// already budgets the un-modelled consumers that run alongside them
+    /// (orchestrator, page cache, the fixture compiles shards shell out).
+    /// Folding those into the per-unit estimate would double-count the same
+    /// spike — measured live: a ~1.8GB shard whose fixture children pushed
+    /// `used` to ~8.4GB ratcheted the estimate to 8442MB, and est+reserve
+    /// then serialised a box the static model runs at width 5. Overuse
+    /// BEYOND the reserve still narrows admissions — the safe direction.
+    fn observe(self, avail_mb: int, in_flight: int) {
+        if avail_mb <= 0 { return }
+        if self.min_avail_mb <= 0 || avail_mb < self.min_avail_mb { self.min_avail_mb = avail_mb }
+        if in_flight < 1 || !self.has_model() { return }
+        let attributable = self.used_mb(avail_mb) - self.reserve_mb
+        if attributable <= 0 { return }
+        let per_unit = attributable / in_flight
+        if per_unit <= self.estimate_mb { return }
+        // Log only meaningful jumps; small creep would spam one line per ratchet.
+        if per_unit - self.estimate_mb >= 128 {
+            eprintln("[admission] per-unit estimate corrected ~${string(self.estimate_mb)}MB -> ~${string(per_unit)}MB (measured across ${string(in_flight)} in flight)")
+        }
+        self.estimate_mb = per_unit
+        self.corrections = self.corrections + 1
+    }
+
+    /// One admission decision for the NEXT queued unit. Never blocks and
+    /// never kills: a `false` means "ask again after a poll tick".
+    ///
+    /// Logging: the FIRST budget-constrained decision logs one line, and the
+    /// end-of-run summary carries the tallies. Nothing logs per round or on
+    /// "recovery" — a pool under a budget steady-states AT its constrained
+    /// width, so any edge-triggered pair of lines flaps once per reap/refill
+    /// cycle (observed live: 37 recovered/backing-off pairs in nine dirs).
+    fn try_admit(self, avail_mb: int, in_flight: int) -> bool {
+        if in_flight >= self.width_cap { return false }
+        if self.budget_admits(avail_mb, in_flight) {
+            self.record_admit(in_flight + 1)
+            return true
+        }
+        if in_flight == 0 {
+            // Serial floor: the budget says no but nothing is running, so
+            // waiting could deadlock forever on a box under external
+            // pressure. Admit exactly one — serialised is the graceful
+            // worst case, and the F4014 self-ceiling still bounds it.
+            self.floor_admits = self.floor_admits + 1
+            if !self.constrained_logged {
+                self.constrained_logged = true
+                eprintln("[admission] memory floor: admitting 1 at a time (est ~${string(self.estimate_mb)}MB + reserve ${string(self.reserve_mb)}MB vs avail ${string(avail_mb)}MB)")
+            }
+            self.record_admit(1)
+            return true
+        }
+        self.deferrals = self.deferrals + 1
+        if !self.constrained_logged {
+            self.constrained_logged = true
+            eprintln("[admission] backing off: holding at ${string(in_flight)} in flight (est ~${string(self.estimate_mb)}MB, avail ${string(avail_mb)}MB, reserve ${string(self.reserve_mb)}MB)")
+        }
+        false
+    }
+
+    fn record_admit(self, width: int) {
+        if width <= self.peak_width { return }
+        self.peak_width = width
+    }
+
+    /// One line the orchestrator prints after the pool drains: what width the
+    /// run reached, whether the model was corrected, and how tight it got.
+    fn summary(self) -> string {
+        let est = if self.corrections > 0 {
+            "est ~${string(self.static_estimate_mb)}MB -> ~${string(self.estimate_mb)}MB (corrected)"
+        } else {
+            "est ~${string(self.estimate_mb)}MB"
+        }
+        let tail = if self.min_avail_mb > 0 { ", min avail ${string(self.min_avail_mb)}MB" } else { "" }
+        "[admission] peak width ${string(self.peak_width)}/${string(self.width_cap)}, ${est}, ${string(self.deferrals)} deferral(s), ${string(self.floor_admits)} floor admit(s)${tail}"
+    }
+}
