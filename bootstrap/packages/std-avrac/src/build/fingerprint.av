@@ -385,7 +385,17 @@ export fn package_source_fingerprint(pkg_root: string) -> string {
     let cached = avra_pkg_fp_cache_get(pkg_root)
     if cached != "" { return cached }
     let src_dir = pkg_root + "/src"
-    let listing = avra_shell_exec("find ${src_dir} -name '*.av' -type f 2>/dev/null | sort")
+    // `*_test.av` files are EXCLUDED: this fingerprint identifies the
+    // package's compiled surface — what a consumer links and type-checks
+    // against — and a test entry contributes to neither (nothing imports
+    // one; the [lib] build doesn't emit one). Including them made editing
+    // ANY test change the whole package's fp, which invalidates the
+    // package metadata slot it keys (2wfp). The resolver's fast-path then
+    // missed and fell back to parsing the ENTIRE package from source:
+    // measured at 455 module resolutions and 16s for a one-line test edit,
+    // versus 2 and 1.6s once the slot survives. A test's own edit still
+    // rebuilds its shard — that comes from the shard's `sources`, not here.
+    let listing = avra_shell_exec("find ${src_dir} -name '*.av' -type f -not -name '*_test.av' 2>/dev/null | sort")
     mut acc = ""
     for line in listing.split("\n") {
         if line == "" { continue }
