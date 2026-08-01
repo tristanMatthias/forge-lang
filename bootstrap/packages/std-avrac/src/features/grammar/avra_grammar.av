@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -533,6 +533,19 @@ fn avra_decl_edge_grammar() -> Grammar {
   parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
   select_decl   = "select" "{" ( arms:select_arm )* "}" -> MkSelect(arms)
   select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}" -> MkSelectArm(b, ch, body)
+  // The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
+  // dispatch — given-block | then-block | any declaration — and both nesting
+  // levels stamp per-item positions via the shared stmt-repetition loop (the
+  // hand stamps record_pos per spec item too). A `then` body is a plain
+  // statement list whose rows fold into a walker-opaque Expr.Block cond (the
+  // hand's parse_block_expression shape); all three nodes are LEAF rows. The
+  // missing-name diagnostics belong to the HAND (spec_test/parser.av — the
+  // silent-drop fix): a native STRING miss reports, the `@try` rolls back, and
+  // the hand's specific message owns the output.
+  spec_decl  = "spec" n:STRING "{" body:spec_item* "}" -> MkSpecBlock(n, body)
+  spec_item  = given_blk | then_blk | declaration
+  given_blk  = "given" n:STRING "{" body:spec_item* "}" -> MkGivenBlock(n, body)
+  then_blk   = "then" n:STRING "{" body:declaration* "}" -> MkThenBlock(n, body)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`

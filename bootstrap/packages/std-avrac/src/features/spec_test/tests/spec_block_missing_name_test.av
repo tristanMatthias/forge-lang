@@ -1,0 +1,43 @@
+// WHY: pins the spec/given/then missing-name diagnostics (t-47hc Phase 4). The
+// three block parsers bailed on a missing name string with a bare `.Err` and NO
+// report. At top level the generic empty-bag fallback caught `spec` alone, but
+// INSIDE a spec body parse_spec_body swallows the Err and returns the partial
+// item list — so `spec "s" { given }` closed cleanly with the malformed given
+// silently DROPPED (the same silent-drop class the select arm had; both were
+// caught by the error-recovery corpus's silent-drop guard while routing the
+// remaining decl keywords). The fix reports at each bail site.
+
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn check_src(name: string, env: string, src: string) -> string {
+    let fixture = "build/_spec_name_${name}.av"
+    let log = "build/_spec_name_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+spec "spec/given/then without a name string report, never silently drop" {
+    then "`given` without a name inside a spec body reports F0001" {
+        let out = check_src("given", "", "spec \"s\" { given }\nfn f() -> int { 1 }\n")
+        !out.contains("__status=0\n") && out.contains("error[F0001]") &&
+            out.contains("expected given name string after `given`")
+    }
+
+    then "`then` without a name inside a spec body reports F0001" {
+        let out = check_src("then", "", "spec \"s\" { then }\nfn f() -> int { 1 }\n")
+        !out.contains("__status=0\n") && out.contains("error[F0001]") &&
+            out.contains("expected then name string after `then`")
+    }
+
+    then "`spec` without a name reports the SPECIFIC message, not the generic fallback" {
+        let out = check_src("spec", "", "spec\nfn f() -> int { 1 }\n")
+        !out.contains("__status=0\n") && out.contains("error[F0001]") &&
+            out.contains("expected spec name string after `spec`")
+    }
+
+    then "a well-formed spec/given/then still parses clean" {
+        let src = "spec \"s\" {\n    given \"g\" {\n        then \"t\" { 1 }\n    }\n    then \"u\" { 2 }\n}\nfn f() -> int { 1 }\n"
+        check_src("ok", "", src).contains("__status=0\n")
+    }
+}

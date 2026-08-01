@@ -3318,6 +3318,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkParallel" if args.length == 1 -> mk_parallel_g(st, capval_to_stmt_list(env.get(args[0])))
         "MkSelect" if args.length == 1 -> mk_select_g(st, env.get(args[0]))
         "MkSelectArm" if args.length == 3 -> mk_select_arm_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_to_stmt_list(env.get(args[2])))
+        "MkSpecBlock" if args.length == 2 -> mk_spec_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
+        "MkGivenBlock" if args.length == 2 -> mk_given_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
+        "MkThenBlock" if args.length == 2 -> mk_then_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
@@ -3975,6 +3978,27 @@ export fn capval_to_select_arm_list(v: CapVal) -> List<SelectArm> {
         .SArm(a) -> [a]
         _ -> []
     }
+}
+
+/// `spec "name" { items }` — the MkSpecBlock build's core (t-47hc Phase 4).
+/// A LEAF SpecBlock row over the natively-parsed item ids, exactly the hand's
+/// `alloc_stmt_leaf(Stmt.SpecBlock(name, body.ids))`.
+export fn mk_spec_block_g(st: PState, name: string, body: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.SpecBlock(name, body)))
+}
+
+/// `given "name" { items }` — the MkGivenBlock build's core, the SpecBlock
+/// shape one level down.
+export fn mk_given_block_g(st: PState, name: string, body: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.GivenBlock(name, body)))
+}
+
+/// `then "name" { stmts }` — the MkThenBlock build's core. The body rows fold
+/// into a walker-opaque Expr.Block cond LEAF (the hand's parse_then_block:
+/// the rows ARE the structure), under a LEAF ThenBlock row.
+export fn mk_then_block_g(st: PState, name: string, body: List<StmtId>) -> CapVal {
+    let cond_id = st.store.exprs.add_leaf(Expr.Block(body))
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ThenBlock(name, cond_id)))
 }
 
 /// Coerce one generated arm result for a repeated select-arm capture.

@@ -1,0 +1,114 @@
+// WHY: pins the routing of the SPEC-TEST blocks (t-47hc Phase 4: `spec`, with
+// its `given` / `then` inner keywords) out of `@hand(decl_hand)`. Same property
+// set as the binding / destructure / select-parallel increments (the #1028
+// dead-code and #1054/#1059 recovery lessons): the rules must be EMITTED,
+// dispatch BEFORE the hand gate, stay SPECULATIVE, own the valid forms on all
+// four parser paths, and leave the acceptance frontier exactly where the hand
+// had it — including the missing-name diagnostics the corpus work added to the
+// hand (spec_test/tests/spec_block_missing_name_test.av pins that fix itself).
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+fn check_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_decl_spec_${name}.av"
+    let log = "build/_decl_spec_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+fn clean_all_paths(name: string, src: string) -> bool {
+    clean(check_out("${name}_dflt", "", src)) &&
+        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
+        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
+    then "all four parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_spec_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_spec_item(st: PState) -> CapVal") &&
+            src.contains("fn parse_given_blk(st: PState) -> CapVal") &&
+            src.contains("fn parse_then_blk(st: PState) -> CapVal")
+    }
+
+    then "spec_decl dispatches BEFORE the decl_hand gate — else it would be dead code" {
+        let src = decl_src()
+        let spec_at = src.index_of("parse_spec_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("s_last = parse_spec_decl(st)") &&
+            spec_at >= 0 && hand_at >= 0 && spec_at < hand_at
+    }
+
+    then "the spec-item accumulators are typed List<StmtId> via capval_to_stmt" {
+        // The kind-plumbing trap the `pattern` / `tparam` / `match_arm` emit
+        // entries were written for: `spec_item` is an alternation whose kind
+        // must derive "stmt" through its given/then builds — a mis-kinded
+        // repeat would coerce items through capval_to_expr. (The SPECULATIVE
+        // property itself is proven BEHAVIORALLY: the corpus red-check turns
+        // the recovery-tree spec red when the routing is flipped to bare.)
+        let src = decl_src()
+        src.contains("mk_spec_block_g(st, capval_tok_text(") &&
+            src.contains("mk_given_block_g(st, capval_tok_text(") &&
+            src.contains("mk_then_block_g(st, capval_tok_text(")
+    }
+}
+
+spec "t-47hc Phase 4: every spec form the suite itself writes parses on all four paths" {
+    then "a spec with given nesting, then blocks, and setup declarations compiles clean" {
+        clean_all_paths("full",
+            "fn helper() -> int { 41 }\n" +
+            "spec \"native spec routing\" {\n" +
+            "    let base = helper()\n" +
+            "    given \"a setup\" {\n" +
+            "        then \"asserts through the base\" { base + 1 == 42 }\n" +
+            "        then \"multi-statement body\" {\n" +
+            "            let x = 2\n" +
+            "            x * 21 == 42\n" +
+            "        }\n" +
+            "    }\n" +
+            "    then \"top-level then\" { true }\n" +
+            "}\n")
+    }
+
+    then "an EMPTY spec block parses clean everywhere" {
+        clean_all_paths("empty", "spec \"empty\" { }\nfn f() -> int { 1 }\n")
+    }
+
+    then "given nested in given parses clean everywhere" {
+        clean_all_paths("nested",
+            "spec \"s\" {\n" +
+            "    given \"outer\" {\n" +
+            "        given \"inner\" {\n" +
+            "            then \"t\" { 1 == 1 }\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n")
+    }
+}
+
+spec "t-47hc Phase 4: the spec frontier did not widen" {
+    then "`given` at TOP level stays an error — it is a spec-body keyword only" {
+        // Outside a spec body the keyword falls through to expression parsing
+        // and reports F0040 (`expected expression`) — the routing must not
+        // teach the top level to accept it.
+        let out = check_out("topgiven", "", "given \"g\" { }\nfn f() -> int { 1 }\n")
+        !clean(out) && out.contains("error[F0040]")
+    }
+
+    then "a spec missing its name reports the hand's SPECIFIC message on the default path" {
+        // The native STRING miss reports generically, the @try rolls back, and
+        // the hand's message must own the output — same shape as the guard
+        // form's coded diagnostic in the binding slice.
+        let out = check_out("noname", "", "spec\nfn f() -> int { 1 }\n")
+        !clean(out) && out.contains("expected spec name string after `spec`")
+    }
+}
