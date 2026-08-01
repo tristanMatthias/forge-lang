@@ -246,6 +246,24 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     // just emit-vs-hand: the wrappers are `@try`-routed, so on any malformed form the
     // branch rolls back and it is the EXECUTOR that answers the default path — the
     // divergence class the two-parser oracles are structurally blind to (t-zrn3).
+    // The CONCURRENCY statements join the routed set (t-47hc Phase 4: `select` /
+    // `parallel`). Added BEFORE the routing per the discipline. The select arm
+    // list's hand recovery is distinctive — a malformed arm returns SILENTLY and
+    // the caller's `}` consume does the reporting — so every partial-arm form is
+    // pinned here: the native rule must hand all of them back.
+    then "malformed select / parallel (the routed keywords), on all three paths" {
+        agree_all("parallel\nfn f() -> int { 1 }") &&
+        agree_all("parallel x\nfn f() -> int { 1 }") &&
+        agree_all("select\nfn f() -> int { 1 }") &&
+        agree_all("select x\nfn f() -> int { 1 }") &&
+        agree_all("select { x }\nfn f() -> int { 1 }") &&
+        agree_all("select { 5 }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch -> }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
+    }
+
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
         agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
@@ -572,6 +590,25 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("let mut (a b) = t\nfn f() -> int { 1 }") &&
         agree_bad("export let (a b) = t\nfn f() -> int { 1 }")
     }
+    // The tree half of the select / parallel corpus above.
+    // The tree half of the select / parallel corpus above. `select { x }` is the
+    // case that caught a real hand bug pre-routing: the arm loop bailed on a
+    // missing `<-` with the binding already consumed and NO report, so the input
+    // parsed clean with the arm silently dropped (fixed in select_stmt/parser.av
+    // alongside this corpus; agree_bad's silent-drop guard is what saw it).
+    then "malformed select / parallel recover to the same tree" {
+        agree_bad("parallel\nfn f() -> int { 1 }") &&
+        agree_bad("parallel x\nfn f() -> int { 1 }") &&
+        agree_bad("select\nfn f() -> int { 1 }") &&
+        agree_bad("select x\nfn f() -> int { 1 }") &&
+        agree_bad("select { x }\nfn f() -> int { 1 }") &&
+        agree_bad("select { 5 }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch -> }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
+    }
+
     then "malformed decl WRAPPERS recover to the same tree" {
         // Every form here was checked to actually REPORT on both paths before being
         // added. An earlier draft of this block also listed `export\nfn f()`,

@@ -1,0 +1,41 @@
+// WHY: pins the select arm-list's missing-`<-` diagnostic (t-47hc Phase 4). The
+// arm loop historically bailed on a missing `<-` with the binding already
+// consumed and NO report, so `select { x }` parsed CLEAN with the arm silently
+// dropped — `}` closed the statement and the caller's consume had nothing to
+// catch. The error-recovery corpus's silent-drop guard exposed it while routing
+// the concurrency keywords; the fix reports at the bail site, on every path.
+
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn check_src(name: string, env: string, src: string) -> string {
+    let fixture = "build/_select_arrow_${name}.av"
+    let log = "build/_select_arrow_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+spec "select arm without `<-` is a parse error, never a silent drop" {
+    then "`select { x }` reports F0001 on the default and hand paths" {
+        let src = "fn main() {\n    select { x }\n}\n"
+        let d = check_src("dflt", "", src)
+        let h = check_src("hand", "AVRA_PARSER_DECL_FLIP=0", src)
+        !d.contains("__status=0\n") && d.contains("error[F0001]") &&
+            d.contains("expected `<-` after select arm binding") &&
+            !h.contains("__status=0\n") && h.contains("error[F0001]")
+    }
+
+    then "a well-formed arm after a completed arm still requires `<-`" {
+        // The same bail exists on every later loop iteration: a second
+        // binding-only arm must report, not vanish.
+        let src = "fn main() {\n    let ch = channel<int>(1)\n" +
+            "    select { v <- ch -> { println(string(v)) } w }\n}\n"
+        let out = check_src("second", "", src)
+        !out.contains("__status=0\n") && out.contains("error[F0001]")
+    }
+
+    then "an EMPTY select still parses clean — the no-arms exit is not an error" {
+        let src = "fn main() {\n    select { }\n}\n"
+        check_src("empty", "", src).contains("__status=0\n")
+    }
+}

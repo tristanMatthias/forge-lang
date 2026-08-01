@@ -2094,6 +2094,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkMutBinding" -> "mk_let_binding_g(st, true, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]}, ${args[3]}, capval_present(${args[3]}), ${args[4]})"
         "MkConstBinding" -> "mk_const_binding_g(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]})"
         "MkDestructure" -> "mk_let_destructure_g(st, ${args[0]}_list, ${args[1]})"
+        "MkParallel" -> "mk_parallel_g(st, ${args[0]}_list)"
+        "MkSelect" -> "mk_select_g(st, CapVal.SArms(${args[0]}_list))"
+        "MkSelectArm" -> "mk_select_arm_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
@@ -2702,10 +2705,11 @@ fn build_kind(bn: string) -> string {
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
+    if bn == "MkSelectArm" { return "sarm" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
@@ -2853,6 +2857,7 @@ fn kind_coerce(kind: string) -> string {
     if kind == "arm" { return "capval_to_arm" }
     if kind == "finit" { return "capval_to_finit" }
     if kind == "warm" { return "capval_to_when_arm" }
+    if kind == "sarm" { return "capval_to_select_arm" }
     if kind == "ann" { return "capval_to_ann" }
     "capval_to_expr"
 }
@@ -2869,6 +2874,7 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "arm" { return "MatchArm" }
     if kind == "finit" { return "FieldInit" }
     if kind == "warm" { return "WhenArm" }
+    if kind == "sarm" { return "SelectArm" }
     if kind == "ann" { return "Annotation" }
     "ExprId"
 }

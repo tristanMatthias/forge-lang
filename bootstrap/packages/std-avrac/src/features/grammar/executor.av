@@ -26,6 +26,7 @@ use core.{tk_is_field_name}
 // definition of the rows, so the native rule and the oracle cannot lower differently.
 use core.{build_if_let_expr}
 use core.{build_let_else_init, stmt_ids_diverge}
+use core.{SelectArm}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -94,6 +95,12 @@ export enum CapVal {
     // walker-opaque, so these ids deliberately do not become arena edges.
     WArm(a: WhenArm)
     WArms(xs: List<WhenArm>)
+    // A `select` arm + repetition list (t-47hc Phase 4), parallel to WArm:
+    // binding name + channel expr id + body stmt ids. Stmt.Select is
+    // walker-opaque (SelectArm is not a registered container struct), so
+    // these ids deliberately do not become arena edges either.
+    SArm(a: SelectArm)
+    SArms(xs: List<SelectArm>)
     // A built PARAMETER ENTRY + a parallel list of them (declaration family,
     // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
     // (defaulting to Int, the hand parser's parse_param_list default); a `*`
@@ -318,6 +325,21 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.WArms(xs))
+    }
+
+    // Select-arm accumulator, parallel to append_warm.
+    fn append_sarm(self, name: string, a: SelectArm) {
+        let existing = self.get(name)
+        mut xs: List<SelectArm> = []
+        match existing {
+            .SArms(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .SArm(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(a)
+        self.set_scalar(name, CapVal.SArms(xs))
     }
 
     // Parameter-list accumulator (declaration family, ps3t.6.5.7): a `*` over
@@ -2258,6 +2280,7 @@ fn capval_len(v: CapVal) -> int {
         .TExprs(ts) -> ts.length
         .Arms(a) -> a.length
         .WArms(a) -> a.length
+        .SArms(a) -> a.length
         .FInits(f) -> f.length
         .PEntries(p) -> p.length
         .Fields(f) -> f.length
@@ -3113,6 +3136,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .TExpr(te) -> env.append_texpr(label, te)
             .Arm(a) -> env.append_arm(label, a)
             .WArm(a) -> env.append_warm(label, a)
+            .SArm(a) -> env.append_sarm(label, a)
             .FInit(f) -> env.append_finit(label, f)
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
@@ -3289,6 +3313,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
         "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
+        // The concurrency statements (t-47hc Phase 4) — both engines lower
+        // through the shared cores.
+        "MkParallel" if args.length == 1 -> mk_parallel_g(st, capval_to_stmt_list(env.get(args[0])))
+        "MkSelect" if args.length == 1 -> mk_select_g(st, env.get(args[0]))
+        "MkSelectArm" if args.length == 3 -> mk_select_arm_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_to_stmt_list(env.get(args[2])))
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
@@ -3912,6 +3941,49 @@ export fn capval_to_when_arm(st: PState, v: CapVal) -> WhenArm {
         _ -> {
             st.report("expected a when arm")
             WhenArm { cond_id: none, body_id: st.error_node("expected a when arm") }
+        }
+    }
+}
+
+/// `parallel { … }` — the MkParallel build's core (t-47hc Phase 4). The
+/// statement list is held as RAW ids under a LEAF Parallel row — the hand's
+/// `alloc_stmt_leaf(Stmt.Parallel(body.ids))`, no Block wrapper.
+export fn mk_parallel_g(st: PState, body: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Parallel(body)))
+}
+
+/// One `binding <- channel -> { body }` select arm — the MkSelectArm build's
+/// core. Mirrors parse_select_arm_list's row exactly: binding name text,
+/// channel expr id, body stmt ids.
+export fn mk_select_arm_g(st: PState, binding: string, ch_cv: CapVal, body: List<StmtId>) -> CapVal {
+    CapVal.SArm(SelectArm { binding: binding, chan_id: capval_to_expr(st, ch_cv), body_ids: body })
+}
+
+/// Fold grammar-built select arms into the walker-opaque Stmt.Select LEAF —
+/// the hand's `alloc_stmt_leaf(Stmt.Select(arms))`: SelectArm is not a
+/// registered container struct, so the canonical ingest records no children
+/// and the native alloc mirrors that.
+export fn mk_select_g(st: PState, arms_cv: CapVal) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Select(capval_to_select_arm_list(arms_cv))))
+}
+
+/// A repeated `select_arm` capture is SArms for many, SArm for one, Nil for none
+/// (`select { }` is VALID — zero arms).
+export fn capval_to_select_arm_list(v: CapVal) -> List<SelectArm> {
+    match v {
+        .SArms(xs) -> xs
+        .SArm(a) -> [a]
+        _ -> []
+    }
+}
+
+/// Coerce one generated arm result for a repeated select-arm capture.
+export fn capval_to_select_arm(st: PState, v: CapVal) -> SelectArm {
+    match v {
+        .SArm(a) -> a
+        _ -> {
+            st.report("expected a select arm")
+            SelectArm { binding: "", chan_id: st.error_node("expected a select arm"), body_ids: [] }
         }
     }
 }
