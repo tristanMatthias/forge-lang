@@ -322,18 +322,32 @@ spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slic
             // The first CI falsification: a cold whole-program fixture
             // child at ~6.7GB against a shard-sized grant, box roomy — must
             // keep running.
-            avra_mem_should_trip(6900, 3300, 1, 8600, 2048) == 0
+            avra_mem_should_trip(6900, 3300, 1, 8600, 1024) == 0
         }
         then "borrowing survives NORMAL suite load — the second CI falsification" {
             // CI run 2: ceiling 4872 (grant), avail ~5GB — a busy 16GB
             // runner legitimately sits below the 6144MB admission reserve
             // for most of a suite. With the reserve exported as the floor
-            // this tripped; against the runtime's near-cliff floor (2GB)
-            // it must borrow.
-            avra_mem_should_trip(4873, 4872, 1, 5000, 2048) == 0
+            // this tripped; against the box-scaled near-cliff floor it
+            // must borrow.
+            avra_mem_should_trip(4873, 4872, 1, 5000, 1024) == 0
         }
         then "an over-budget soft grant trips near the cliff" {
-            avra_mem_should_trip(6900, 3300, 1, 1500, 2048) == 1
+            avra_mem_should_trip(6900, 3300, 1, 700, 1024) == 1
+        }
+        then "the near-cliff floor scales with the box: MemTotal/16, clamped" {
+            // 16GB box -> 1GB floor; tiny box clamps up to 512MB; huge box
+            // clamps down to 2GB. KiB in, KiB out.
+            avra_mem_slack_floor_for(16777216) == 1048576 &&
+            avra_mem_slack_floor_for(4194304) == 524288 &&
+            avra_mem_slack_floor_for(134217728) == 2097152
+        }
+        then "the third falsification: a 16GB runner's heavy fixture rides through 2GB avail — the scaled floor lets it" {
+            // CI tripped the ~7GB @std/avrac lib-build probe at exactly
+            // "2047 MiB available < 2048 MiB floor" — a build the
+            // pre-budget world completed routinely at lower avail. Against
+            // the box-scaled floor (1024 on 16GB) the same reading borrows.
+            avra_mem_should_trip(6975, 4872, 1, 2047, 1024) == 0
         }
         then "an unlimited ceiling never trips" {
             avra_mem_should_trip(99999, 0, 0, 0, 0) == 0
@@ -380,9 +394,21 @@ spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slic
     }
     given "the fixture-slot machinery consumes the exported budget" {
         then "AVRA_MEM_BUDGET_MB sizes the pool instead of MemTotal" {
+            // The slot count is CPU-clamped, so the 5800MB expectation is
+            // min(2, nproc) — a 1-CPU runner legitimately answers 1.
+            let cores = avra_parse_int(avra_shell_exec("nproc 2>/dev/null || echo 2").trim())
+            let want_5800 = if cores < 2 { string(cores) } else { "2" }
             let two = avra_shell_exec("AVRA_MEM_BUDGET_MB=5800 bash scripts/diagnose.sh --print-compile-slots").trim()
             let one = avra_shell_exec("AVRA_MEM_BUDGET_MB=2000 bash scripts/diagnose.sh --print-compile-slots").trim()
-            two == "2" && one == "1"
+            two == want_5800 && one == "1"
+        }
+        then "a zero-padded budget parses as decimal, not octal" {
+            // The digit-only guard admits "08000"; bare bash arithmetic
+            // would reject it as bad octal and kill the probe.
+            let cores = avra_parse_int(avra_shell_exec("nproc 2>/dev/null || echo 2").trim())
+            let want = if cores < 2 { string(cores) } else { "2" }
+            let padded = avra_shell_exec("AVRA_MEM_BUDGET_MB=08000 bash scripts/diagnose.sh --print-compile-slots").trim()
+            padded == want
         }
         then "an unset or malformed budget falls back to the box-wide sizing" {
             // env -u: the suite may itself run under an exported budget
@@ -397,5 +423,7 @@ spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slic
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_getpid() -> int
+extern fn avra_parse_int(s: string) -> int
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_mem_should_trip(rss_kb: int, limit_kb: int, soft: int, avail_kb: int, floor_kb: int) -> int
+extern fn avra_mem_slack_floor_for(total_kb: int) -> int

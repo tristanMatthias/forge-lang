@@ -1723,7 +1723,9 @@ _default_compile_slots() {
     *)
       if [ "$AVRA_MEM_BUDGET_MB" -gt 0 ]; then
         local bn bcores
-        bn=$(( AVRA_MEM_BUDGET_MB / 2900 ))
+        # 10#: the digit-only guard above admits leading zeros ("08000"),
+        # which bare arithmetic would reject as bad octal.
+        bn=$(( 10#${AVRA_MEM_BUDGET_MB} / 2900 ))
         bcores=$(nproc 2>/dev/null || echo 2)
         [ "$bn" -gt "$bcores" ] && bn=$bcores
         [ "$bn" -lt 1 ] && bn=1
