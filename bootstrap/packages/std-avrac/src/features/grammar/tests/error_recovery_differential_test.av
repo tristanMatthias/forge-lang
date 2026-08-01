@@ -280,6 +280,27 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
     }
 
+    // The COMPONENT definition forms (t-47hc Phase 4 slice A — corpus FIRST,
+    // ahead of any routing). Every way the header, implements clause, config /
+    // children schemas, `body: TokenStream` marker, and field decls can go
+    // wrong, including the two coded diagnostics (implements-then-instance,
+    // body: non-TokenStream). The instantiation forms are slices B/C.
+    then "malformed component definitions (pre-routing corpus), on all three paths" {
+        agree_all("component\nfn f() -> int { 1 }") &&
+        agree_all("component C\nfn f() -> int { 1 }") &&
+        agree_all("component C 5\nfn f() -> int { 1 }") &&
+        agree_all("component C implements {\nfn f() -> int { 1 }") &&
+        agree_all("component C implements A B { }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config { x } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config { x: } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { children { x } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { body: int }\nfn f() -> int { 1 }") &&
+        agree_all("component C { let x }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst\nfn f() -> int { 1 }") &&
+        agree_all("component C implements A inst { }\nfn f() -> int { 1 }")
+    }
+
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
         agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
@@ -635,6 +656,23 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("spec \"s\" { then }\nfn f() -> int { 1 }") &&
         agree_bad("spec \"s\" { then \"t\" }\nfn f() -> int { 1 }") &&
         agree_bad("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
+    }
+
+    // The tree half of the component-definition corpus above.
+    then "malformed component definitions recover to the same tree" {
+        agree_bad("component\nfn f() -> int { 1 }") &&
+        agree_bad("component C\nfn f() -> int { 1 }") &&
+        agree_bad("component C 5\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements {\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements A B { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config { x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config { x: } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { children { x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { body: int }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { let x }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements A inst { }\nfn f() -> int { 1 }")
     }
 
     then "malformed decl WRAPPERS recover to the same tree" {
