@@ -574,6 +574,10 @@ fn build_uses_sp_start(name: string) -> bool {
         // `( e )` grouping / `()` empty tuple spans sp_start = the `(` byte (t-47hc paren
         // spend) — its owning paren_expr rule enters at `(`, like the tuple/lambda builds.
         name == "MkGroupOrEmpty" ||
+        // `grammar { … }` spans sp_start = the `grammar` keyword's byte — the hand
+        // parse_ident_expr threads the keyword start into parse_grammar_block's sp, so
+        // the desugared Call covers the whole construct (t-47hc.31 slice 2).
+        name == "MkGrammarBlock" ||
         name == "MkTupleFR" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
@@ -1931,6 +1935,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // boxed as CapVal.FInits over the accumulated `_list`, exactly as MkQualExpr's
         // struct-literal half does.
         "MkStructLit" -> "CapVal.Node(mk_struct_lit(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
+        // The `grammar { … }` block: the @rawbrace capture arrives as a plain Tok
+        // capture, so it passes straight through (t-47hc.31 slice 2).
+        "MkGrammarBlock" -> "CapVal.Node(mk_grammar_block(st, sp_start, ${args[0]}))"
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkMapLit" -> "CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"

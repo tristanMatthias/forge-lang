@@ -130,10 +130,22 @@ fn avra_expr_core() -> Grammar {
              | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace) @when(allow_struct_lit) base:grammar_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+  // The `grammar { … }` feature block goes NATIVE (t-47hc.31 slice 2): the body is a
+  // verbatim @rawbrace capture desugared to a runtime `parse_grammar("…")` call —
+  // byte-identical to the hand's parse_grammar_block, which this retires from the
+  // production path. The branch gate above mirrors the hand's dispatch exactly:
+  // `@peek(ident_lbrace)` (a variable named `grammar` NOT followed by `{` is a plain
+  // ident) + `@when(allow_struct_lit)` (in a control header, `match grammar { … }`'s
+  // `{` is the match body — the hand only consults the feature registry under that
+  // mode). Placed BEFORE struct_lit_expr, whose `ident_lbrace_plain` peek declines
+  // feature forms — so the two cannot both claim `grammar {`.
+  grammar_expr = "grammar" "{" body:@rawbrace(grammar) @require "}"
+                 @expect("}", "expected `}` to close `grammar { }` block") -> MkGrammarBlock(body)
   struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+

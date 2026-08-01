@@ -3085,6 +3085,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // t-47hc slice 8 — the two IDENT-led primaries the `ident_primary` flip needs.
         // Dormant until a grammar references them.
         "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
+        "MkGrammarBlock" if args.length == 1 -> CapVal.Node(mk_grammar_block(st, 0 - 1, env.get(args[0])))
         "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
@@ -4745,6 +4746,21 @@ export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
 /// parser builds it.
 export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
     st.store.add_expr(Expr.StructLit(capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// The `grammar { … }` feature block (t-47hc.31 slice 2) — the native twin of the hand
+/// `parse_grammar_block`. Desugars the @rawbrace-captured body to a runtime
+/// `parse_grammar("<body>")` call, replicating the hand's tree EXACTLY, in the same
+/// allocation order: the String leaf (bookend quotes only — codegen's strip_quotes
+/// peels one char each end, so interior `"` and newlines survive verbatim), then the
+/// `parse_grammar` Ident leaf, then the spanned Call. Both leaves intern
+/// (`intern_expr_leaf` == the hand's alloc_leaf), so repeat blocks share rows the
+/// same way the hand's do — the selfhost byte-identity of every grammar block in the
+/// tree rides on this ordering.
+export fn mk_grammar_block(st: PState, sp_start: int, bcap: CapVal) -> ExprId {
+    let str_id = st.store.intern_expr_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
+    let callee_id = st.store.intern_expr_leaf(Expr.Ident("parse_grammar"))
+    st.store.add_expr(Expr.Call(callee_id, [str_id]), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// A TAGGED TEMPLATE — ``tag`…` `` — the hand `parse_ident_expr`'s template branch

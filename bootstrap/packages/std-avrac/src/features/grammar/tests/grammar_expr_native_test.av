@@ -1,0 +1,90 @@
+// WHY: t-47hc.31 slice 2 — the `grammar { … }` feature block goes NATIVE, spending
+// the @rawbrace capture primitive. This file is the ROUTING spec, per the CLAUDE.md
+// discipline: assert the dispatch on the EMITTED SOURCE (a rule can be present with
+// correct output and still be dead code behind an earlier gate — the #1028 failure
+// mode), prove tree parity against the hand on valid input, and pin the two gates
+// (`@peek(ident_lbrace)` / `@when(allow_struct_lit)`) that keep a plain variable
+// named `grammar` out of the branch. The malformed forms live in
+// error_recovery_differential_test; the byte-identity of every real grammar block in
+// the tree is diff-test's selfhost leg (avra_grammar.av itself is the corpus).
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr, emit_rule_fn}
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_expr_id}
+
+fn dsl(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_expression() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> "<err>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    let got = dsl(src)
+    let want = hand(src)
+    if got != want {
+        println("grammar_expr mismatch: ${src}")
+        println("generated: ${got}")
+        println("hand:      ${want}")
+    }
+    got == want
+}
+
+fn rule_src(rule: string) -> string {
+    let g = avra_expr_grammar()
+    for gr in g.rules {
+        if gr.name == rule { return emit_rule_fn(g, gr) }
+    }
+    ""
+}
+
+spec "t-47hc.31: grammar_expr parses to the hand's exact tree" {
+    then "a simple block desugars to the same parse_grammar call" {
+        agree("grammar { r = x }")
+    }
+    then "interior quotes and operators survive verbatim" {
+        agree("grammar { expr = term (\"+\" term)* }")
+    }
+    then "an empty block agrees" {
+        agree("grammar { }")
+    }
+    then "nested braces stay inside the one block" {
+        agree("grammar { r = \"{\" inner \"}\" }")
+    }
+    then "a variable named `grammar` without `{` is a plain identifier" {
+        agree("grammar") && agree("grammar + 1")
+    }
+}
+
+spec "t-47hc.31: the dispatch is live on the emitted source, gated as the hand gates" {
+    then "unary dispatches to parse_grammar_expr BEFORE the struct-literal branch" {
+        // Order is the whole assertion: struct_lit_expr's ident_lbrace_plain peek
+        // declines feature forms, but if grammar_expr sat after it the decline would
+        // be load-bearing for dispatch — and after the @hand tail retires, a
+        // mis-ordered branch is dead code with no diagnostic.
+        let u = rule_src("unary")
+        let gi = u.index_of("parse_grammar_expr(st)")
+        let si = u.index_of("parse_struct_lit_expr(st)")
+        gi >= 0 && si >= 0 && gi < si
+    }
+    then "the branch guard carries BOTH hand gates plus the keyword" {
+        // @peek(ident_lbrace): `grammar` not followed by `{` is a plain ident.
+        // @when(allow_struct_lit): in a control header the `{` belongs to the
+        // header's body (`match grammar { … }`), exactly the hand's registry gate.
+        let u = rule_src("unary")
+        u.contains("lookahead_ok(\"ident_lbrace\", st) && st.modes.allow_struct_lit != 0 && (st.cur().text == \"grammar\")")
+    }
+    then "the rule body lowers to the SHARED cores" {
+        // An executor-only build passes every interpreter-driven spec and emits
+        // nothing usable — found four times in the decl slices. Both engines must
+        // route through the one rawbrace_scan and the one mk_grammar_block.
+        let g = rule_src("grammar_expr")
+        g.contains("rawbrace_scan(st, \"grammar\")") && g.contains("mk_grammar_block(st, sp_start, ")
+    }
+}

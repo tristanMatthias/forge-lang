@@ -968,3 +968,44 @@ spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
         agree_error("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.if))\n}")
     }
 }
+
+// ── t-47hc.31 slice 2: the native `grammar { … }` block ──
+//
+// ROUTING GUARD, per the discipline: routing is invisible on VALID input by
+// construction (the native rule and the hand agree there — diff-test proves it on
+// every grammar block in the tree), so the malformed forms below are the only
+// witness that recovery still matches the hand.
+//
+// The unterminated case is the load-bearing one. On the EOF path the native rule
+// reports the scan's unterminated message AND the close-brace @expect, where the
+// hand reports unterminated once and aborts — but the hand's abort then cascades
+// into the enclosing statement-list/fn recovery, which reports the missing close
+// itself, so the total diagnostic COUNTS and the recovered trees agree on every
+// path. Measured, not reasoned: a pre-routing prediction said this case would be
+// RED on count divergence, and the oracle disagreed — the cascade equalises. If a
+// future change to statement-list recovery breaks that equality, this case is the
+// witness.
+spec "t-47hc.31: the native `grammar { … }` block recovers exactly as the hand did" {
+    then "an UNTERMINATED grammar block reports ONCE, identically on all three paths" {
+        agree_bad("fn f() -> int {\n let g = grammar { r = x") &&
+        agree_all("fn f() -> int {\n let g = grammar { r = x")
+    }
+    then "a grammar block that swallows the fn's close brace recovers identically" {
+        // The scan legitimately eats `return 0` and the fn's `}` (they are inside the
+        // block's bracket extent) — on every path, exactly as the hand's
+        // capture_balanced_brace_body does; the residual diagnostic is the fn's.
+        agree_bad("fn f() -> int {\n let g = grammar { r = x\n return 0\n}") &&
+        agree_all("fn f() -> int {\n let g = grammar { r = x\n return 0\n}")
+    }
+    then "a variable named `grammar` NOT followed by `{` stays a plain identifier" {
+        // The @peek(ident_lbrace) gate's reason: without it the branch would claim any
+        // expression-position `grammar` and fail on the missing `{`.
+        agree("fn f(grammar: int) -> int {\n let g = grammar + 1\n g\n}")
+    }
+    then "`grammar` as a match subject stays a plain identifier — the mode gate" {
+        // The @when(allow_struct_lit) gate's reason: in a control header the `{` is
+        // the match body, and the hand only consults the feature registry under
+        // allow_struct_lit.
+        agree("fn f(grammar: int) -> int {\n match grammar {\n  1 -> 2\n  _ -> 3\n }\n}")
+    }
+}
