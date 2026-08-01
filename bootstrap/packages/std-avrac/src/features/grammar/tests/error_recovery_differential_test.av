@@ -544,6 +544,8 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("let 5 = 1\nfn f() -> int { 1 }") &&
         agree_bad("let mut = 1\nfn f() -> int { 1 }") &&
         agree_bad("mut\nfn f() -> int { 1 }") &&
+        agree_bad("mut y y = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const\nfn f() -> int { 1 }") &&
         agree_bad("const C\nfn f() -> int { 1 }") &&
         agree_bad("let (a b) = t\nfn f() -> int { 1 }") &&
         agree_bad("fn f() -> int {\n    let x = )\n    1\n}") &&
