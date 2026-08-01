@@ -49,6 +49,9 @@ export type MemGovernor = {
     floor_admits: int,       // serial-floor admissions the budget alone would have refused
     corrections: int,        // estimate ratchets applied
     constrained_logged: bool, // the once-per-run "backing off"/"memory floor" line fired
+    observed_mb: int,        // max measured per-unit MB this run — UNSEEDED by any
+                             // prior, so a persisted estimate can decay (see the
+                             // prior helpers below) instead of ratcheting forever
 }
 
 export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseline_avail_mb: int) -> MemGovernor {
@@ -64,6 +67,7 @@ export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseli
         floor_admits: 0,
         corrections: 0,
         constrained_logged: false,
+        observed_mb: 0,
     }
 }
 
@@ -117,6 +121,7 @@ impl MemGovernor {
         let attributable = self.used_mb(avail_mb) - self.reserve_mb
         if attributable <= 0 { return }
         let per_unit = attributable / in_flight
+        if per_unit > self.observed_mb { self.observed_mb = per_unit }
         if per_unit <= self.estimate_mb { return }
         // Log only meaningful jumps; small creep would spam one line per ratchet.
         if per_unit - self.estimate_mb >= 128 {
@@ -166,6 +171,14 @@ impl MemGovernor {
         self.peak_width = width
     }
 
+    /// Seed the live estimate from a persisted prior. Only ever RAISES it —
+    /// the static mode estimate stays the floor — and does not touch
+    /// `observed_mb`, which stays a pure measurement of THIS run.
+    fn seed_estimate(self, prior_mb: int) {
+        if prior_mb <= self.estimate_mb { return }
+        self.estimate_mb = prior_mb
+    }
+
     /// One line the orchestrator prints after the pool drains: what width the
     /// run reached, whether the model was corrected, and how tight it got.
     fn summary(self) -> string {
@@ -178,3 +191,51 @@ impl MemGovernor {
         "[admission] peak width ${string(self.peak_width)}/${string(self.width_cap)}, ${est}, ${string(self.deferrals)} deferral(s), ${string(self.floor_admits)} floor admit(s)${tail}"
     }
 }
+
+// ── Persisted priors (t-kdyj.1 slice 2) ────────────────────────────────
+// A unit's honest cost is its whole TREE — shard + the fixture compiles it
+// shells out — and that varies per shard SET, not per build mode. The mode
+// estimate admitted width 4 into a fixture-heavy dir whose trees stacked
+// past the cliff seconds later, before the first measurement could correct
+// (a container death, logged on t-kdyj.1). The first round needs a PRIOR:
+// each run persists its own measured per-unit peak, keyed by the shard set,
+// and the next run seeds its estimate from it. Decay is built in: the file
+// stores the RUN'S OWN measurement (`observed_mb`, unseeded), so a workload
+// that shrank writes the smaller truth — or removes the file entirely when
+// it measured nothing above the static estimate — instead of ratcheting
+// forever on a stale peak.
+
+/// Where a shard set's measured peak persists. `key` comes from the caller
+/// (content-id over the shard slugs — composed there, per the one-hash rule).
+export fn admission_prior_path(cache_root: string, key: string) -> string {
+    "${cache_root}/admission/${key}.txt"
+}
+
+/// The persisted per-unit estimate; 0 when absent or unparseable (both mean
+/// "no prior" — the mode's static estimate applies).
+export fn read_admission_prior(path: string) -> int {
+    let body = avra_selfhost_read_file(path)
+    if body == "" { return 0 }
+    for line in body.split("\n") {
+        if line.starts_with("est_mb:") {
+            let v = avra_parse_int(line.substring(7, line.length).trim())
+            return if v > 0 { v } else { 0 }
+        }
+    }
+    0
+}
+
+/// Persist the run's own measurement when it exceeds the static estimate;
+/// otherwise REMOVE the prior so the next run decays back to the mode's
+/// number. Whole-file write of a tiny payload — torn writes just re-measure.
+export fn persist_admission_prior(path: string, observed_mb: int, static_mb: int) {
+    if observed_mb > static_mb {
+        let _ = avra_shell_exec("mkdir -p \"$(dirname '${path}')\"")
+        let _ = avra_selfhost_write_file(path, "est_mb:${string(observed_mb)}\n")
+        return
+    }
+    let _ = avra_shell_exec("rm -f '${path}'")
+}
+
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
