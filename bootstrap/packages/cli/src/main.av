@@ -95,7 +95,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
-    pool_run_admitted, governor_for,
+    pool_run_admitted, governor_for, MemGovernor,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
@@ -2941,8 +2941,11 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // avrac tests where typeck cost scales with source size.
     let shards = plan_shards(cx, accepted_paths)
 
-    dispatch_shards(shards, cx.jobs, cx.per_shard_mb)
-    retry_jetsam_killed(shards, cx.jobs, cx.per_shard_mb)
+    let gov = dispatch_shards(shards, cx.jobs, cx.per_shard_mb)
+    // The retry inherits the CORRECTED estimate, not the static one: a
+    // jetsam kill is the strongest evidence the static model under-booked,
+    // and the ratchet's correction is most needed exactly there.
+    retry_jetsam_killed(shards, cx.jobs, gov.estimate_mb)
 
     aggregate_shard_logs(shards, t_start)
 }
@@ -3489,11 +3492,12 @@ fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: strin
 // @std.avrac.build.admission for the model. The governor's decisions
 // are summarised on stderr after the pool drains, so the run reports
 // what it admitted and why instead of leaving concurrency implicit.
-fn dispatch_shards(shards: List<Shard>, jobs: int, per_shard_mb: int) {
+fn dispatch_shards(shards: List<Shard>, jobs: int, per_shard_mb: int) -> MemGovernor {
     let cmds = list_map(shards, (s: Shard) -> s.cmd)
     let gov = governor_for(jobs, per_shard_mb, SHARD_RESERVE_MB, avra_mem_available_mb())
     let _ = pool_run_admitted(cmds, gov, () -> avra_mem_available_mb())
     eprintln(gov.summary())
+    gov
 }
 
 // Cold-rebuild jetsam recovery: any shard whose log is empty got
@@ -3508,7 +3512,7 @@ fn retry_jetsam_killed(shards: List<Shard>, jobs: int, per_shard_mb: int) {
     if victims.length == 0 { return }
     let retry_jobs = if jobs < 2 { jobs } else { 2 }
     eprintln("[per-file] retrying ${string(victims.length)} jetsam-killed shard(s) (jobs=${string(retry_jobs)})")
-    dispatch_shards(victims, retry_jobs, per_shard_mb)
+    let _ = dispatch_shards(victims, retry_jobs, per_shard_mb)
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard

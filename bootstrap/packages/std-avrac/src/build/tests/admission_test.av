@@ -128,8 +128,12 @@ spec "admission model correction: measurement ratchets the estimate" {
             // ...then one degraded unit drives used to 10500MB: the reserve's
             // 6144MB is already budgeted, so 4356MB attributes to the unit...
             gov.observe(5500, 1)
-            // ...and the next admission is refused instead of thrashing.
-            roomy && gov.estimate_mb == 4356 && !gov.budget_admits(5500, 1)
+            // ...and an admission the OLD estimate would have taken is now
+            // refused. avail 9144 discriminates: used 6856 >= commitment, so
+            // budget = 9144-6144 = 3000 — >= 1800 (stale: admit) but < 4356
+            // (corrected: refuse). An avail where both estimates refuse would
+            // pass this assertion without proving the ratchet changed anything.
+            roomy && gov.estimate_mb == 4356 && !gov.budget_admits(9144, 1)
         }
         then "the reserve is not double-counted into the attribution" {
             // used 3000 with reserve 1000: the reserve already covers the
