@@ -33,12 +33,17 @@ runs:
         # No `set -e`: a transient `apt-get update` blip must not abort before
         # the install (and its fallback) get a chance — matching prior behaviour.
         sudo apt-get update -y
+        # libclang-rt-20-dev: the clang_rt profile runtime `bs2 test
+        # --coverage` links against (build.link.coverage_runtime_args). It
+        # ships separately from the llvm-20 toolchain packages, so a runner
+        # without it can compile and link everything EXCEPT an instrumented
+        # coverage binary — and the coverage guard specs go red.
         if ! sudo apt-get install -y --no-install-recommends \
             -o Dir::Cache::archives="$archives" \
-            llvm-20 llvm-20-dev llvm-20-tools clang-20 lld-20; then
+            llvm-20 llvm-20-dev llvm-20-tools clang-20 lld-20 libclang-rt-20-dev; then
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           sudo bash /tmp/llvm.sh 20
-          sudo apt-get install -y --no-install-recommends llvm-20-dev lld-20 clang-20
+          sudo apt-get install -y --no-install-recommends llvm-20-dev lld-20 clang-20 libclang-rt-20-dev
         fi
         # apt writes the .debs as root; hand them back to the runner so the
         # post-job cache save can read them (best-effort — a failure here only

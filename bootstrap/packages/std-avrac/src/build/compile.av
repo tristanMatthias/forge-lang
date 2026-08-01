@@ -19,7 +19,7 @@ use typeck.{typecheck_env, typecheck_program_from_env, typecheck_env_seeded, sna
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag, MacroFnOrigin}
 use codegen.{codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
-use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir}
+use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir, coverage_runtime_args, host_is_macos}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key_cgu, CguMember, fn_unit_lookup, fn_unit_publish}
 use build.{f2_typeenv_read, f2_typeenv_write}
@@ -339,13 +339,19 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
         return build_binary_cgu(target)
     }
 
+    // Resolve the profile runtime BEFORE the frontend/lowering spend —
+    // a box missing libclang_rt fails in milliseconds with the install
+    // hint, not after a multi-minute instrumented compile.
+    let cov_args = match coverage_runtime_args(default_link_options()) {
+        .Ok(a) -> a
+        .Err(e) -> { return Result.Err(e) }
+    }
+
     let fm = frontend_to_mono(target)?
     let build_dir = "${target.project_dir}/build"
 
     // Coverage path: lower instrprof intrinsics via opt, then llc to
-    // .o, then link with clang_rt.profile_osx. The 16K-page-aligned
-    // profile sections are essential on Darwin/arm64 — without them
-    // llvm-profdata reports zero counters.
+    // .o, then link with the clang_rt profile runtime.
     let stem = strip_bin_suffix(target.bin_path)
     let ir_path = "${stem}.ll"
     let cov_ll = "${stem}.cov.ll"
@@ -354,7 +360,13 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     avra_shell_exec("mkdir -p ${cov_dir}")
     let _ = codegen_and_emit_ir_cov(fm.stmts, ir_path, fm.type_reg, "${stem}.av", target.store, target.project_dir)?
     let llvm_prefix = llvm_prefix_dir()
-    let opt_args = "[\"-passes=instrprof\", \"-mtriple=arm64-apple-macosx\", \"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
+    // The explicit Darwin triple keeps the 16K-page-aligned profile
+    // sections instrprof needs on arm64 macOS — without them
+    // llvm-profdata reports zero counters. Elsewhere the module's
+    // host-default triple is correct, the same contract as the
+    // non-coverage llc invocation (atomic_obj_llc_cmd passes none).
+    let triple_arg = if host_is_macos() { "\"-mtriple=arm64-apple-macosx\", " } else { "" }
+    let opt_args = "[\"-passes=instrprof\", ${triple_arg}\"-o\", \"${cov_ll}\", \"-S\", \"${ir_path}\"]"
     if avra_process_forward("${llvm_prefix}/bin/opt", opt_args, "") != 0 {
         return Result.Err("opt instrprof lowering failed")
     }
@@ -362,12 +374,9 @@ export fn build_binary(target: CompileTarget) -> Result<string, string> {
     if avra_process_forward("${llvm_prefix}/bin/llc", llc_args, "") != 0 {
         return Result.Err("llc failed")
     }
-    let darwin_dir = avra_shell_exec("ls -1 ${llvm_prefix}/lib/clang | head -1").trim()
-    let prof_lib_dir = "${llvm_prefix}/lib/clang/${darwin_dir}/lib/darwin"
-    let cov_libs = "-L${prof_lib_dir}"
     let cov_link_objs = prepend_extra_objs([obj_path], target.extra_objs)
     if link_objects_with_coverage(cov_link_objs, "${build_dir}/runtime.o", "${build_dir}/llvm_wrapper.o",
-                                  target.bin_path, cov_libs, default_link_options()) != 0 {
+                                  target.bin_path, cov_args, default_link_options()) != 0 {
         return Result.Err("link failed (coverage)")
     }
     Result.Ok(target.bin_path)
@@ -386,6 +395,16 @@ fn prepend_extra_objs(own: List<string>, extras: List<string>) -> List<string> {
         i = i + 1
     }
     out
+}
+
+/// The covmap sidecar a coverage build of `bin_path` writes: build_binary
+/// hands codegen_and_emit_ir_cov `<stem>.av` as the source_file, and
+/// codegen names the TSV `<source_file>.covmap.tsv`. The report side
+/// derives the path from the binary it just built so the two can't drift
+/// — the test-coverage renderer used to hardcode a stem that predated the
+/// pid-unique staging paths and read a missing/stale covmap.
+export fn coverage_covmap_path(bin_path: string) -> string {
+    "${strip_bin_suffix(bin_path)}.av.covmap.tsv"
 }
 
 /// Drop a trailing `.bin` so callers can build sibling intermediate

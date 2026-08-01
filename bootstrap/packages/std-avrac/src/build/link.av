@@ -9,19 +9,24 @@
 extern fn avra_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 extern fn avra_process_env_get(name: string) -> string
 extern fn avra_host_os() -> string
+extern fn avra_host_arch() -> string
 extern fn avra_selfhost_file_exists(path: string) -> int
+extern fn avra_readdir(path: string) -> List<string>
+extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_array, json_str}
 
 /// True on macOS. Gates the macOS-only linker conventions (ld64
 /// `-stack_size`, libc++) against the Linux ones (LLD, libstdc++).
-fn host_is_macos() -> bool { avra_host_os() == "macos" }
+/// Exported so the coverage lowering (build.compile) picks its opt
+/// `-mtriple` with the same predicate the linker uses.
+export fn host_is_macos() -> bool { avra_host_os() == "macos" }
 
 /// Per-link options. Defaults are the bootstrap's current behaviour:
 /// stack_size_hex 0x2000000 (32 MiB — needed for deep parser recursion),
 /// llvm_prefix empty (falls back to LLVM_PREFIX env or
-/// /opt/homebrew/opt/llvm), coverage off (set true for `avra build
-/// --coverage` to pull in clang_rt.profile_osx).
+/// /opt/homebrew/opt/llvm), coverage off (set true to pull in the
+/// clang_rt profile runtime — see coverage_runtime_args).
 export type LinkOptions = {
     stack_size_hex: string,
     llvm_prefix: string,
@@ -137,12 +142,55 @@ fn resolve_llvm_prefix(opts: LinkOptions) -> string {
     llvm_prefix_dir()
 }
 
+/// Locate the clang_rt profile runtime a coverage link needs and return
+/// the linker argv items that pull it in. macOS: the resource dir's
+/// `lib/darwin` via `-L` plus `-lclang_rt.profile_osx` (ld64 resolves the
+/// lib<name>_osx.a naming). Linux: the archive's FULL path — the Debian
+/// name embeds the arch (`libclang_rt.profile-x86_64.a`), which `-l`
+/// lookup can't express. Err when the runtime is absent: the resource dir
+/// ships separately from the llvm-<major> toolchain package (Debian:
+/// libclang-rt-<major>-dev), so a box that can compile and link everything
+/// else can still be missing exactly this archive.
+export fn coverage_runtime_args(opts: LinkOptions) -> Result<List<string>, string> {
+    let res_root = "${resolve_llvm_prefix(opts)}/lib/clang"
+    let ver = newest_version_dir(res_root)
+    if ver == "" {
+        return Result.Err("coverage: no clang resource dir under ${res_root} — install the clang runtime (Debian/Ubuntu: libclang-rt-<major>-dev)")
+    }
+    if host_is_macos() {
+        return Result.Ok(["-L${res_root}/${ver}/lib/darwin", "-lclang_rt.profile_osx"])
+    }
+    let archive = "${res_root}/${ver}/lib/linux/libclang_rt.profile-${avra_host_arch()}.a"
+    if avra_selfhost_file_exists(archive) != 1 {
+        return Result.Err("coverage: profile runtime not found at ${archive} — install libclang-rt-${ver}-dev")
+    }
+    Result.Ok([archive])
+}
+
+/// Highest-numbered subdirectory of the clang resource root — one per
+/// installed clang major (`20`, or `18.1.3` on pre-16 layouts, whose
+/// numeric prefix still orders correctly under avra_parse_int's atoll).
+/// "" when the root is missing or has no numbered children.
+fn newest_version_dir(root: string) -> string {
+    mut best = ""
+    mut best_n = 0
+    for name in avra_readdir(root) {
+        let n = avra_parse_int(name)
+        if n > best_n {
+            best_n = n
+            best = name
+        }
+    }
+    best
+}
+
 /// Build the JSON args array `cc` expects. Object files come first
 /// (the order the linker resolves symbols in), then the C-side
 /// helpers, then `-o out`, then the boilerplate trailing flags.
-/// Coverage adds the profile-runtime library when `opts.coverage`.
+/// Coverage appends the profile-runtime items from
+/// `coverage_runtime_args` when `opts.coverage`.
 fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
-                   out: string, opts: LinkOptions, coverage_libs: string) -> string {
+                   out: string, opts: LinkOptions, coverage_args: List<string>) -> string {
     mut items: List<string> = []
     mut i = 0
     while i < objs.length {
@@ -214,8 +262,10 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
         items.push(json_str("-lstdc++"))
         items.push(json_str("-fuse-ld=lld"))
     }
-    if opts.coverage && coverage_libs != "" {
-        items.push(json_str(coverage_libs))
+    if opts.coverage {
+        for a in coverage_args {
+            items.push(json_str(a))
+        }
     }
     json_array(items)
 }
@@ -225,21 +275,21 @@ fn build_link_argv(objs: List<string>, runtime_o: string, llvm_wrapper_o: string
 /// with non-zero — usually fail() and emit the captured stderr.
 export fn link_objects(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
                        out: string, opts: LinkOptions) -> int {
-    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts, "")
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts, [])
     avra_process_forward("cc", args, "")
 }
 
 /// Coverage variant — same surface as `link_objects` but threads the
-/// clang-rt profile-runtime library through. `coverage_libs` is
-/// expected to be a single `-L<dir>` flag pointing at the darwin
-/// runtime; `-lclang_rt.profile_osx` is appended automatically.
+/// clang_rt profile-runtime argv items through (resolve them with
+/// `coverage_runtime_args`; the caller decides how to surface a
+/// resolution failure before paying for lowering).
 export fn link_objects_with_coverage(objs: List<string>, runtime_o: string, llvm_wrapper_o: string,
-                                     out: string, coverage_libs: string, opts: LinkOptions) -> int {
+                                     out: string, coverage_args: List<string>, opts: LinkOptions) -> int {
     let opts_with_cov = LinkOptions {
         stack_size_hex: opts.stack_size_hex,
         llvm_prefix: opts.llvm_prefix,
         coverage: true,
     }
-    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts_with_cov, coverage_libs)
+    let args = build_link_argv(objs, runtime_o, llvm_wrapper_o, out, opts_with_cov, coverage_args)
     avra_process_forward("cc", args, "")
 }

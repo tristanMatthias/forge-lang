@@ -5151,6 +5151,23 @@ mode_diff_test() {
   done
   [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
 
+  # t-v91z detector: NEW is HEAD/the working tree while OLD is $base, so the
+  # two sides differ by this branch's edits PLUS every base commit the branch
+  # predates — and an intended-ir-change among those reads as a divergence
+  # caused HERE. It has twice cost a session chasing inherited diffs; in the
+  # 2026-08-01 instance a PR merged minutes before the run, moving the
+  # auto-fetched oracle ahead of the branch's base. Detect the shape up
+  # front: based-behind is not an error, but a FAIL under it is suspect.
+  local base_tip mb behind_base=0
+  base_tip=$(git -C "$REPO_DIR" rev-parse "$base^{commit}" 2>/dev/null) || true
+  mb=$(git -C "$REPO_DIR" merge-base HEAD "$base_tip" 2>/dev/null) || true
+  if [ -n "$base_tip" ] && [ -n "$mb" ] && [ "$mb" != "$base_tip" ]; then
+    behind_base=$(git -C "$REPO_DIR" rev-list --count "$mb..$base_tip")
+    warn "diff-test: this branch is based $behind_base commit(s) BEHIND the oracle ($base)"
+    warn "           a divergence may be INHERITED from those commits, not caused by this branch"
+    warn "           (t-v91z) — rebase onto $base before trusting a FAIL"
+  fi
+
   # The oracle model requires OLD and NEW to build from the SAME seed, so any
   # IR difference is attributable to compiler SOURCE alone. Assert it (fail
   # fast, before the expensive builds) for the hermetic path. --new-prebuilt
@@ -5319,6 +5336,9 @@ mode_diff_test() {
     return 0
   fi
   err "DIFF-TEST FAIL — $fails divergence(s); the change is NOT behaviour-preserving"
+  if [ "$behind_base" -gt 0 ]; then
+    err "NOTE: branch is $behind_base commit(s) behind the oracle — divergences may be inherited; rebase onto $base and re-run before attributing them here (t-v91z)"
+  fi
   if [ "$run_equiv" = "1" ]; then
     err "(run-equiv mode: a corpus artifact RUNS differently — the IR change is not behavior-preserving)"
   else
