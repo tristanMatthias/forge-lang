@@ -20,7 +20,7 @@
 // set is pointed at a per-run fake binary via AVRA_HEAVY_PROCS: every kill path
 // is exercised for real, against processes that can only be this test's own.
 
-use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_selfhost_read_file, avra_mkdir_p, avra_getpid}
 
 // A sandbox holding a fake heavy binary (a copy of `src`, named for this run),
 // the tooling pointed at it, and self-safe probes (`alive`, `pids`) that match
@@ -61,7 +61,16 @@ fn harness_of(tag: string, src: string, body: string) -> string {
         "wait_gone() { i=0; while [ \"$(alive)\" != 0 ] && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done; }\n" +
         body
     let _ = avra_selfhost_write_file(root + "/run.sh", script)
-    let out = avra_shell_exec("bash '" + root + "/run.sh' 2>&1")
+    // Output goes to a FILE, not the exec pipe. Several specs deliberately
+    // leave a fake running (the spared sibling, the stranger, the unowned
+    // orphan) — with a pipe, those survivors inherit the write end and
+    // popen's read blocks until they die of old age: this one file ran
+    // 679s for ~20s of real work, the whole cost three spared `sleep`s
+    // holding the pipe. A file has no reader to block; bash exits at the
+    // last foreground command and the cleanup below reaps the survivors
+    // immediately.
+    avra_shell_exec("bash '" + root + "/run.sh' > '" + root + "/out.txt' 2>&1")
+    let out = avra_selfhost_read_file(root + "/out.txt")
     // Belt and braces: `pkill -x` matches the process NAME, so this cleanup
     // cannot self-match the way the idiom under test does.
     avra_shell_exec("pkill -x '" + name + "' >/dev/null 2>&1; pkill -x '" + name +
@@ -254,7 +263,14 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
         // shapes live in one dedicated session here, so the assertion is about
         // this test's own processes and nothing else.
         let out = harness("K",
-            "setsid bash -c '\"$root/$kid\" 300 & bash -c \"\\\"$root/$name\\\" 300 &\"; sleep 60' &\n" +
+            // The sibling and its leader are the specs' only fakes MEANT to
+            // outlive the script (the spared-sibling assertion). Their
+            // durations are bounded at 45s — past every in-spec wait, but a
+            // hard ceiling on the linger if this bs2 dies before the cleanup
+            // pkill runs. The in-spec-killed fakes keep 300s: shortening those
+            // under the 60s wait_gone window would let one die of old age and
+            // pass a broken-reap mutation spuriously.
+            "setsid bash -c '\"$root/$kid\" 45 & bash -c \"\\\"$root/$name\\\" 300 &\"; sleep 45' &\n" +
             "sleep 1\n" +
             "pgid=$(ps -A -o pid=,pgid=,comm= | awk -v n=\"$name\" '$3 == n { print $2; exit }')\n" +
             "echo \"BEFORE orphan=$(count \"$name\") sibling=$(count \"$kid\")\"\n" +
@@ -270,7 +286,9 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
         // whose group id has since been handed to someone else's shell would
         // make the next run kill a stranger's compile.
         let out = harness("F",
-            "bash -c 'setsid \"$root/$name\" 300 &'\n" +
+            // Deliberately never reaped in-spec (STRANGER=1 is the point), so
+            // like spec K's survivors its duration is bounded at 45s.
+            "bash -c 'setsid \"$root/$name\" 45 &'\n" +
             "sleep 0.5\n" +
             "pgid=$(pids | awk '{ print $3; exit }')\n" +
             // A run that started AFTER this process did is not its parent.
@@ -289,7 +307,9 @@ spec "t-ce5t: a run reaps what it spawned, however it dies" {
         // trips the memory floor and the reading taken to explain THAT gets
         // blamed on a compiler bug.
         let out = harness("I",
-            "bash -c '\"$root/$name\" 60 &'\n" +
+            // The unowned orphan survives by design (reporting, not reaping,
+            // is the behaviour under test) — bounded like the other survivors.
+            "bash -c '\"$root/$name\" 45 &'\n" +
             "sleep 0.4\n" +
             "bash scripts/diagnose.sh --guarded 1 -- true 2>&1\n")
         out.contains("orphaned heavy process(es) still resident")
