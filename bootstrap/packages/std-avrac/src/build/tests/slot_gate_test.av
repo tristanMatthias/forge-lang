@@ -15,19 +15,24 @@
 // the INPUTS, and a quiet box does not supply them — the memory_ceiling_test
 // precedent). The end-to-end specs force the threshold with AVRA_SLOT_GATE_MB
 // and isolate slots with AVRA_COMPILE_SLOT_DIR, so they are deterministic on
-// any box, roomy or tight.
+// any box, roomy or tight. Command verdicts come from avra_shell_exec_status
+// with a per-spec log (the repo's exit-status idiom) — never `|| true` or a
+// parsed `rc=$?`.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+
 extern fn avra_slot_gate_threshold_for(total_kb: int) -> int
 extern fn avra_slot_gate_should_wait(avail_kb: int, threshold_kb: int) -> int
 extern fn avra_flock_try_exclusive(path: string) -> int
 extern fn avra_flock_unlock(fd: int) -> int
-extern fn avra_getpid() -> int
 
 /// A STANDALONE file (bare `bs2 check` prints "ok"), so the success
 /// assertions measure the gate and not import resolution — the difftest
 /// corpus exists precisely to compile with no package context. Small enough
-/// that a gated check is fast; the gate itself is what's under test.
+/// that a gated check is fast; the gate itself is what's under test. Being
+/// import-free it never touches the @std metadata fast-path, so the
+/// orchestration env (AVRA_USE_METADATA / AVRA_LIB_OBJS) is deliberately
+/// not part of these commands.
 const SMALL_FILE: string = "tests/difftest_corpus/strings_interp.av"
 
 /// A per-spec-process slot dir so concurrent shards can't contend on these
@@ -70,16 +75,34 @@ spec "slot-gate policy: the wait decision" {
     }
 }
 
-/// Run `bs2 check SMALL_FILE` with the gate's threshold forced to `mb` MiB
-/// and slots isolated under `dir`. `extra` prepends more env (e.g. width).
-fn check_gated(mb: string, dir: string, extra: string) -> string {
-    avra_shell_exec("${extra}AVRA_SLOT_GATE_MB=${mb} AVRA_COMPILE_SLOT_DIR='${dir}' timeout 60 ./build/bs2 check '${SMALL_FILE}' 2>&1 || true")
+/// Run `bs2 check SMALL_FILE` with the gate's threshold forced to `mb` MiB,
+/// slots isolated under `dir`, output to `log`. Returns the child's real
+/// exit status; `extra` prepends more env (e.g. width). timeout_s bounds a
+/// wrongly-blocking implementation instead of hanging the suite.
+fn check_gated_rc(mb: string, dir: string, extra: string, timeout_s: string, log: string) -> int {
+    avra_shell_exec_status("${extra}AVRA_SLOT_GATE_MB=${mb} AVRA_COMPILE_SLOT_DIR='${dir}' timeout ${timeout_s} ./build/bs2 check '${SMALL_FILE}' > '${log}' 2>&1")
+}
+
+/// Hold slot0 of a width-one `dir` from THIS spec process. Makes the bypass
+/// cases observable: an implementation that wrongly engages the gate finds
+/// every slot taken and blocks into the timeout, instead of silently
+/// acquiring an uncontended slot and passing anyway.
+fn hold_slot0(dir: string) -> int {
+    let _ = avra_shell_exec("mkdir -p '${dir}'")
+    avra_flock_try_exclusive("${dir}/slot0")
 }
 
 spec "slot-gate end to end: engagement follows pressure" {
-    then "a roomy box never engages the gate (threshold 1 MiB is always cleared)" {
-        let out = check_gated("1", slot_dir(), "")
-        !out.contains("[slot-gate]") && out.contains("ok")
+    then "a roomy box never engages the gate, even with every slot held" {
+        // Threshold 1 MiB is always cleared; slot0 held + width 1 means a
+        // wrongly-engaging gate has nothing to acquire and times out red.
+        let dir = "${slot_dir()}_roomy"
+        let held = hold_slot0(dir)
+        let log = "${dir}.log"
+        let rc = check_gated_rc("1", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "10", log)
+        let _ = avra_flock_unlock(held)
+        let out = avra_selfhost_read_file(log)
+        held >= 0 && rc == 0 && !out.contains("[slot-gate]") && out.contains("ok")
     }
     then "under forced pressure an uncontended acquisition is SILENT and succeeds" {
         // Threshold far above any real MemAvailable -> the gate always engages.
@@ -88,12 +111,20 @@ spec "slot-gate end to end: engagement follows pressure" {
         // would contaminate every shelled probe's captured output. Engagement
         // itself is proven by the contended specs below — only a process that
         // runs the gate can be made to WAIT.
-        let out = check_gated("999999999", slot_dir(), "")
-        !out.contains("[slot-gate]") && out.contains("ok")
+        let dir = "${slot_dir()}_engaged"
+        let log = "${dir}.log"
+        let rc = check_gated_rc("999999999", dir, "", "60", log)
+        let out = avra_selfhost_read_file(log)
+        rc == 0 && !out.contains("[slot-gate]") && out.contains("ok")
     }
-    then "AVRA_SLOT_GATE_MB=0 disables the gate even under real pressure semantics" {
-        let out = check_gated("0", slot_dir(), "")
-        !out.contains("[slot-gate]") && out.contains("ok")
+    then "AVRA_SLOT_GATE_MB=0 disables the gate even under contention" {
+        let dir = "${slot_dir()}_disabled"
+        let held = hold_slot0(dir)
+        let log = "${dir}.log"
+        let rc = check_gated_rc("0", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "10", log)
+        let _ = avra_flock_unlock(held)
+        let out = avra_selfhost_read_file(log)
+        held >= 0 && rc == 0 && !out.contains("[slot-gate]") && out.contains("ok")
     }
 }
 
@@ -103,26 +134,29 @@ spec "slot-gate end to end: an occupied gate blocks, then admits" {
         // must sit in the wait loop until the timeout kills it. rc 124 is the
         // proof of blocking; the waiting line is the proof it said why.
         let dir = "${slot_dir()}_blocked"
-        let _ = avra_shell_exec("mkdir -p '${dir}'")
-        let held = avra_flock_try_exclusive("${dir}/slot0")
-        let out = avra_shell_exec("AVRA_SLOT_GATE_MB=999999999 AVRA_COMPILE_SLOT_DIR='${dir}' AVRA_COMPILE_SLOT_WIDTH=1 timeout 3 ./build/bs2 check '${SMALL_FILE}' 2>&1; echo rc=$?")
+        let held = hold_slot0(dir)
+        let log = "${dir}.log"
+        let rc = check_gated_rc("999999999", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "3", log)
         let _ = avra_flock_unlock(held)
-        held >= 0 && out.contains("waiting for one of 1 compile slots") && out.contains("rc=124")
+        let out = avra_selfhost_read_file(log)
+        held >= 0 && rc == 124 && out.contains("waiting for one of 1 compile slots")
     }
     then "releasing the slot admits the next compile, without wait chatter" {
         let dir = "${slot_dir()}_released"
-        let _ = avra_shell_exec("mkdir -p '${dir}'")
-        let held = avra_flock_try_exclusive("${dir}/slot0")
+        let held = hold_slot0(dir)
         let _ = avra_flock_unlock(held)
-        let out = check_gated("999999999", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ")
-        held >= 0 && !out.contains("[slot-gate]") && out.contains("ok")
+        let log = "${dir}.log"
+        let rc = check_gated_rc("999999999", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "60", log)
+        let out = avra_selfhost_read_file(log)
+        held >= 0 && rc == 0 && !out.contains("[slot-gate]") && out.contains("ok")
     }
     then "slots are per-file: width 2 admits a second compile while slot0 is held" {
         let dir = "${slot_dir()}_width2"
-        let _ = avra_shell_exec("mkdir -p '${dir}'")
-        let held = avra_flock_try_exclusive("${dir}/slot0")
-        let out = check_gated("999999999", dir, "AVRA_COMPILE_SLOT_WIDTH=2 ")
+        let held = hold_slot0(dir)
+        let log = "${dir}.log"
+        let rc = check_gated_rc("999999999", dir, "AVRA_COMPILE_SLOT_WIDTH=2 ", "60", log)
         let _ = avra_flock_unlock(held)
-        held >= 0 && !out.contains("waiting") && out.contains("ok")
+        let out = avra_selfhost_read_file(log)
+        held >= 0 && rc == 0 && !out.contains("waiting") && out.contains("ok")
     }
 }

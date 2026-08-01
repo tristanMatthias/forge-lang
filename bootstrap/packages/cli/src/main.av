@@ -2847,10 +2847,6 @@ fn extract_kv_int(line: string, key: string) -> int {
 // `command _test_shard` block (its variadic `paths` positional), so the
 // missing-paths case is already a parse error before this runs.
 fn run_test_shard_command(paths: List<string>, args: TestArgs) {
-    // The slot is held through this shard's COMPILE and dies at the exec of
-    // the built test binary (O_CLOEXEC in the runtime) — the test RUN is not
-    // a compile, and its probe children gate themselves.
-    avra_compile_slot_gate()
     for p in paths {
         if !avra_selfhost_file_exists(p) {
             fail("error: file not found: ${p}")
@@ -2886,6 +2882,13 @@ fn run_test_shard_command(paths: List<string>, args: TestArgs) {
         }
         .Miss(fp, _, reason) -> {
             eprintln("[test-cache] miss ${fp_short(fp)} — ${reason}")
+            // Gate only the MISS: a cache hit execs an already-built binary
+            // and must never queue behind the box-wide pressure semaphore.
+            // The slot is held through this shard's COMPILE and dies at the
+            // exec of the built test binary (O_CLOEXEC in the runtime) — the
+            // test RUN is not a compile, and its probe children gate
+            // themselves.
+            avra_compile_slot_gate()
             let built = match compile_test_unit_to(inputs, paths, args, shard_id) {
                 .Ok(b) -> b
                 .Err(e) -> { fail("shard compile failed: ${e}") }
@@ -4110,7 +4113,6 @@ fn cmd_check(args: CliResult) -> int {
 }
 
 fn cmd_compile(args: CliResult) -> int {
-    avra_compile_slot_gate()
     let stop_after = result_get_option(args, "stop_after")
     let debug_null = result_has_flag(args, "debug_null")
     let enable_coverage = result_has_flag(args, "coverage")
@@ -4281,6 +4283,11 @@ fn cmd_compile(args: CliResult) -> int {
         let t_start = avra_uptime_ms()
         let ctx = render_ctx(json_output, csource, cpath)
 
+        // The slot gate sits AFTER the cache decision on purpose: a cache
+        // hit installs an already-built artifact and does no heavy work, so
+        // it must never queue behind the box-wide pressure semaphore. Only
+        // the real compile pipeline below is the heavy mode the gate bounds.
+        avra_compile_slot_gate()
         let parsed_prog = parse_or_fail(csource, ctx)
         let parsed_stmts = parsed_prog.ids
         let t_parse = avra_uptime_ms()

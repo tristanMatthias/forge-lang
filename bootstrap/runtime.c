@@ -5314,12 +5314,33 @@ static int avra_slot_gate_try(const char* dir, int64_t width) {
     for (int64_t i = 0; i < width; i++) {
         char path[512];
         snprintf(path, sizeof(path), "%s/slot%lld", dir, (long long)i);
-        int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+        // O_NOFOLLOW: a slot name that is a symlink is an attack on the
+        // shared default dir, never a legitimate slot — refuse to chase it.
+        int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0666);
         if (fd < 0) continue;
         if (flock(fd, LOCK_EX | LOCK_NB) == 0) return fd;
         close(fd);
     }
     return -1;
+}
+
+// The default slot dir lives in world-writable /tmp, so it must be treated
+// as hostile until proven ours: /tmp-style sticky mode on creation, and on
+// every entry reject a path that is a symlink, a non-directory, or owned by
+// a different effective uid. Validation failure FAILS OPEN (no gating, no
+// wait): a foreign or tampered dir must never be able to park every compile
+// on this box behind locks an attacker controls.
+static int avra_slot_gate_dir_ok(const char* dir) {
+    if (mkdir(dir, 01777) == 0) {
+        (void)chmod(dir, 01777);   // umask-proof the sticky bit we just asked for
+    } else if (errno != EEXIST) {
+        return 0;
+    }
+    struct stat st;
+    if (lstat(dir, &st) != 0) return 0;
+    if (!S_ISDIR(st.st_mode)) return 0;      // symlink or plain file: hostile
+    if (st.st_uid != geteuid()) return 0;    // someone else's dir: not ours to trust
+    return 1;
 }
 
 // The gate. Called at the top of every heavy CLI mode (compile / check / run /
@@ -5334,7 +5355,7 @@ void avra_compile_slot_gate(void) {
     const char* dir = getenv("AVRA_COMPILE_SLOT_DIR");
     if (!dir || !*dir) dir = "/tmp/.avra-slots";   // dot-named: outside the
                                                    // /tmp/avra_* prune glob
-    if (mkdir(dir, 0777) != 0 && errno != EEXIST) return;  // unwritable: fail open
+    if (!avra_slot_gate_dir_ok(dir)) return;       // unwritable/hostile: fail open
     int64_t width = avra_slot_gate_width();
     static int avra_slot_gate_fd = -1;
     // The uncontended fast path is SILENT on purpose: mid-suite the box sits
@@ -5372,7 +5393,7 @@ void avra_compile_slot_gate(void) {
 // (hold from the spec's own process; release explicitly — the shard binary
 // outlives any one spec).
 int64_t avra_flock_try_exclusive(const char* path) {
-    int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+    int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0666);
     if (fd < 0) return -1;
     if (flock(fd, LOCK_EX | LOCK_NB) != 0) { close(fd); return -1; }
     return (int64_t)fd;
