@@ -28,8 +28,15 @@ impl Parser {
             if !self.check(Tk.Identifier) { return out }
             let binding = self.current_lexeme
             self.advance()
-            // Expect `<-`
-            if !self.check(Tk.LeftArrow) { return out }
+            // Expect `<-`. This MUST report before bailing: with the binding
+            // already consumed, `select { x }` otherwise closes cleanly and the
+            // arm vanishes with no diagnostic at all — the caller's `}` consume
+            // only catches the bail when junk remains (the silent-drop bug the
+            // error-recovery corpus caught while routing t-47hc Phase 4).
+            if !self.check(Tk.LeftArrow) {
+                self.set_error("expected `<-` after select arm binding")
+                return out
+            }
             self.advance()  // consume <-
             // Parse channel expression
             let chan_id = match self.parse_expression() {
