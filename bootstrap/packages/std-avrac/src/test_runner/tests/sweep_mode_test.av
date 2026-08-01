@@ -10,6 +10,13 @@
 //     keeps NO marker, and returns non-zero,
 //   * a re-run skips marker-green dirs and picks up where it stopped,
 //   * the final tally aggregates per-dir counts.
+//
+// t-8rsg adds the commit-gate contract: resume markers are keyed on the
+// suite-input hash (test_input_hash) so no stale green can be resumed,
+// and a green FULL sweep records build/.tests_verified — the marker the
+// pre-commit hook checks to skip its duplicate suite run. The hash specs
+// exercise the REAL test_input_hash against a sandbox root; the sweep
+// specs stub it with a knob file so drift is simulable mid-run.
 
 use @std.avrac.core.{avra_shell_exec}
 
@@ -18,15 +25,25 @@ fn run_harness(body: string) -> string {
         "sandbox=$(mktemp -d)\n" +
         "cat > \"$sandbox/fake-bs2\" <<'FAKE'\n" +
         "#!/bin/bash\n" +
+        "here=$(dirname \"$0\")\n" +
         "case \"$2\" in\n" +
-        "  *red*) echo '1/2 tests passed in 0.1s (1 failed)'; exit 1 ;;\n" +
-        "  *)     echo '3/3 tests passed in 0.1s'; exit 0 ;;\n" +
+        "  --list) cat \"$here/list.txt\" 2>/dev/null; exit 0 ;;\n" +
+        "  *red*)  echo '1/2 tests passed in 0.1s (1 failed)'; exit 1 ;;\n" +
+        // The flip dir simulates a mid-sweep source edit: running its
+        // tests changes the (stubbed) input hash out from under the run.
+        "  *flip*) echo H2 > \"$here/knob\"; echo '3/3 tests passed in 0.1s'; exit 0 ;;\n" +
+        "  *)      echo '3/3 tests passed in 0.1s'; exit 0 ;;\n" +
         "esac\n" +
         "FAKE\n" +
         "chmod +x \"$sandbox/fake-bs2\"\n" +
-        "mkdir -p \"$sandbox/green_a\" \"$sandbox/green_b\" \"$sandbox/red_c\"\n" +
+        "mkdir -p \"$sandbox/green_a\" \"$sandbox/green_b\" \"$sandbox/red_c\" \"$sandbox/flip_d\" \"$sandbox/build\"\n" +
+        "export AVRA_RUN_DIR=\"$sandbox/runs\"\n" +
         "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
         "BS2=\"$sandbox/fake-bs2\"\n" +
+        // Keep the commit-gate marker inside the sandbox — these specs
+        // must never write the REAL build/.tests_verified (that would
+        // let a stubbed green authorise a real commit).
+        "BUILD_DIR=\"$sandbox/build\"\n" +
         "export AVRA_SKIP_ENSURE_BS2=1\n" +
         "export AVRA_SWEEP_DIR=\"$sandbox/markers\"\n" +
         body +
@@ -34,9 +51,27 @@ fn run_harness(body: string) -> string {
     avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
 }
 
+// The knob stub: replaces the real (whole-tree, ~0.3s) hash with a file
+// read, so specs can key the sweep off a value they control and flip.
+fn knob_stub() -> string {
+    "echo H1 > \"$sandbox/knob\"\n" +
+    "test_input_hash() { cat \"$sandbox/knob\"; }\n"
+}
+
+// A minimal tree shaped like the real input set, for driving the REAL
+// test_input_hash: every hashed input class is present once.
+fn mkroot() -> string {
+    "mkroot() { r=\"$sandbox/$1\"\n" +
+    "  mkdir -p \"$r/build\" \"$r/packages\" \"$r/tests\" \"$r/scripts\" \"$r/seed\"\n" +
+    "  echo src > \"$r/packages/a.av\"; echo t > \"$r/tests/t_test.av\"\n" +
+    "  echo c > \"$r/runtime.c\"; echo w > \"$r/llvm_wrapper.c\"\n" +
+    "  echo d > \"$r/scripts/diagnose.sh\"; echo s > \"$r/seed/seed.ll\"\n" +
+    "  echo m > \"$r/Makefile\"; echo b > \"$r/build/bs2\"; }\n"
+}
+
 spec "t-lqzr: --sweep mechanics (markers, loud failure, resume, tally)" {
     then "a red dir stops the sweep loudly, keeps no marker, later dirs never run" {
-        let out = run_harness(
+        let out = run_harness(knob_stub() +
             "mode_sweep --fresh \"$sandbox/green_a\" \"$sandbox/red_c\" \"$sandbox/green_b\"\n" +
             "echo \"rc=$?\"\n" +
             "[ -f \"$sandbox/markers/\"*green_a.log.ok ] && echo A_MARKED\n" +
@@ -47,7 +82,7 @@ spec "t-lqzr: --sweep mechanics (markers, loud failure, resume, tally)" {
             && out.contains("B_NEVER_RAN")
     }
     then "a re-run resumes: marker-green dirs skip, the rest run, tally aggregates" {
-        let out = run_harness(
+        let out = run_harness(knob_stub() +
             "mode_sweep --fresh \"$sandbox/green_a\" >/dev/null 2>&1\n" +
             "mode_sweep \"$sandbox/green_a\" \"$sandbox/green_b\"\n" +
             "echo \"rc=$?\"\n")
@@ -55,9 +90,93 @@ spec "t-lqzr: --sweep mechanics (markers, loud failure, resume, tally)" {
             && out.contains("sweep green") && out.contains("6/6")
     }
     then "--fresh drops markers and re-runs everything" {
-        let out = run_harness(
+        let out = run_harness(knob_stub() +
             "mode_sweep --fresh \"$sandbox/green_a\" >/dev/null 2>&1\n" +
             "mode_sweep --fresh \"$sandbox/green_a\"\n")
         !out.contains("already green") && out.contains("sweep green")
+    }
+}
+
+spec "t-8rsg: the suite-input hash (test_input_hash)" {
+    then "stable across calls and cwds; any input changes it; non-inputs do not" {
+        let out = run_harness(mkroot() +
+            "mkroot r\n" +
+            "h1=$(test_input_hash \"$sandbox/r\")\n" +
+            "h2=$(test_input_hash \"$sandbox/r\")\n" +
+            "[ -n \"$h1\" ] && [ \"$h1\" = \"$h2\" ] && echo STABLE\n" +
+            "h3=$(cd /tmp && test_input_hash \"$sandbox/r\")\n" +
+            "[ \"$h1\" = \"$h3\" ] && echo CWD_INDEPENDENT\n" +
+            "echo edit >> \"$sandbox/r/packages/a.av\"\n" +
+            "h4=$(test_input_hash \"$sandbox/r\")\n" +
+            "[ \"$h4\" != \"$h1\" ] && echo SOURCE_SENSITIVE\n" +
+            "echo edit >> \"$sandbox/r/build/bs2\"\n" +
+            "h5=$(test_input_hash \"$sandbox/r\")\n" +
+            "[ \"$h5\" != \"$h4\" ] && echo BS2_SENSITIVE\n" +
+            "echo junk > \"$sandbox/r/build/unrelated.log\"\n" +
+            "h6=$(test_input_hash \"$sandbox/r\")\n" +
+            "[ \"$h6\" = \"$h5\" ] && echo NON_INPUT_IGNORED\n")
+        out.contains("STABLE") && out.contains("CWD_INDEPENDENT")
+            && out.contains("SOURCE_SENSITIVE") && out.contains("BS2_SENSITIVE")
+            && out.contains("NON_INPUT_IGNORED")
+    }
+    then "the hook's skip decision: marker match skips, a touched file re-runs" {
+        // The pre-commit hook's cache decision, verbatim: skip the suite
+        // iff the stored marker equals the current hash. A file touched
+        // after the marker was written MUST flip the decision to run —
+        // the t-8rsg acceptance criterion.
+        let out = run_harness(mkroot() +
+            "mkroot r\n" +
+            "test_input_hash \"$sandbox/r\" > \"$sandbox/r/build/.tests_verified\"\n" +
+            "if [ \"$(cat \"$sandbox/r/build/.tests_verified\")\" = \"$(test_input_hash \"$sandbox/r\")\" ]\n" +
+            "  then echo DECISION1_SKIP; else echo DECISION1_RUN; fi\n" +
+            "echo edit >> \"$sandbox/r/tests/t_test.av\"\n" +
+            "if [ \"$(cat \"$sandbox/r/build/.tests_verified\")\" = \"$(test_input_hash \"$sandbox/r\")\" ]\n" +
+            "  then echo DECISION2_SKIP; else echo DECISION2_RUN; fi\n")
+        out.contains("DECISION1_SKIP") && out.contains("DECISION2_RUN")
+    }
+}
+
+spec "t-8rsg: sweep markers are input-keyed; a green FULL sweep records the commit gate" {
+    then "an input change drops resume markers — no stale green is ever resumed" {
+        let out = run_harness(knob_stub() +
+            "mode_sweep \"$sandbox/green_a\" >/dev/null 2>&1\n" +
+            // Capture-then-grep, never `mode_sweep | grep -q`: diagnose.sh
+            // sets pipefail, and -q's early exit SIGPIPEs the writer, so
+            // the pipeline fails even ON a match.
+            "resume=$(mode_sweep \"$sandbox/green_a\" 2>&1)\n" +
+            "printf '%s\\n' \"$resume\" | grep -q 'already green' && echo RESUMED_SAME_INPUTS\n" +
+            "echo H2 > \"$sandbox/knob\"\n" +
+            "out=$(mode_sweep \"$sandbox/green_a\" 2>&1)\n" +
+            "printf '%s\\n' \"$out\" | grep -q 'dropping resume markers' && echo MARKERS_DROPPED\n" +
+            "printf '%s\\n' \"$out\" | grep -q 'already green' || echo RERAN_AFTER_CHANGE\n")
+        out.contains("RESUMED_SAME_INPUTS") && out.contains("MARKERS_DROPPED")
+            && out.contains("RERAN_AFTER_CHANGE")
+    }
+    then "a green FULL sweep writes .tests_verified with the run's start hash" {
+        let out = run_harness(knob_stub() +
+            "printf '%s\\n' \"$sandbox/green_a/a_test.av:1: spec \\\"a\\\"\" \\\n" +
+            "  \"$sandbox/green_b/b_test.av:1: spec \\\"b\\\"\" > \"$sandbox/list.txt\"\n" +
+            "full=$(mode_sweep 2>&1)\n" +
+            "printf '%s\\n' \"$full\" | grep -q 'commit-gate marker written' && echo ANNOUNCED\n" +
+            "[ \"$(cat \"$sandbox/build/.tests_verified\" 2>/dev/null)\" = H1 ] && echo MARKER_IS_START_HASH\n")
+        out.contains("ANNOUNCED") && out.contains("MARKER_IS_START_HASH")
+    }
+    then "a SCOPED green sweep proves only part of the tree — no marker" {
+        let out = run_harness(knob_stub() +
+            "mode_sweep \"$sandbox/green_a\" >/dev/null 2>&1; echo \"rc=$?\"\n" +
+            "[ -f \"$sandbox/build/.tests_verified\" ] || echo NO_MARKER\n")
+        out.contains("rc=0") && out.contains("NO_MARKER")
+    }
+    then "mid-sweep input drift refuses the marker — the hook must re-run" {
+        // The flip dir's fake test run rewrites the knob, so the end
+        // re-hash disagrees with the start hash — exactly what a source
+        // edit during a long sweep looks like.
+        let out = run_harness(knob_stub() +
+            "printf '%s\\n' \"$sandbox/green_a/a_test.av:1: spec \\\"a\\\"\" \\\n" +
+            "  \"$sandbox/flip_d/f_test.av:1: spec \\\"f\\\"\" > \"$sandbox/list.txt\"\n" +
+            "drift=$(mode_sweep 2>&1)\n" +
+            "printf '%s\\n' \"$drift\" | grep -q 'marker NOT written' && echo REFUSED\n" +
+            "[ -f \"$sandbox/build/.tests_verified\" ] || echo NO_MARKER\n")
+        out.contains("REFUSED") && out.contains("NO_MARKER")
     }
 }
