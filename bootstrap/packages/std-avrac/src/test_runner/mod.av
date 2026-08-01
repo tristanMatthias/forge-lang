@@ -255,6 +255,10 @@ type AssembledFile = {
     mod_name: string,
     packages: List<StmtId>,
     wrapped_body: List<StmtId>,
+    // Files the resolver had loaded when this one finished. Threaded to
+    // the NEXT file so a package already materialised for an earlier
+    // member is not rebuilt — see assemble_test_program.
+    loaded: List<string>,
 }
 
 /// One module name per test path, UNIQUE within the shard.
@@ -353,15 +357,14 @@ fn name_is_used(names: List<string>, target: string) -> bool {
 /// sibling `use` imports. Cost: @std/* packages re-parsed per file;
 /// `dedup_modules` collapses the duplicate package wrappers by name
 /// at the program-root level.
-fn assemble_one_test_file(path: string, mod_name: string, store: NodeStore) -> Result<AssembledFile, string> {
+fn assemble_one_test_file(path: string, mod_name: string, loaded: List<string>, store: NodeStore) -> Result<AssembledFile, string> {
     let content = avra_selfhost_read_file(path)
     let parsed = parse_program_source_shared(content, path, store)
     if parsed.had_error || parsed.ids == null {
         if bag_has_errors(parsed.bag) { render_bag(content, path, parsed.bag) }
         return Result.Err("error parsing ${path}")
     }
-    let empty_loaded: List<string> = []
-    let mod_resolved = resolve_module_files(parsed.ids!, modules_dirname(path), empty_loaded, store)
+    let mod_resolved = resolve_module_files(parsed.ids!, modules_dirname(path), loaded, store)
     if mod_resolved.had_error {
         return Result.Err("module resolve error in ${path}: ${mod_resolved.error_message}")
     }
@@ -373,6 +376,7 @@ fn assemble_one_test_file(path: string, mod_name: string, store: NodeStore) -> R
         // `avra_test_run_spec_guarded(...)` call so a SIGSEGV / abort
         // in one spec doesn't take down the bundle.
         wrapped_body: wrap_specs_with_guard(store, split.body),
+        loaded: mod_resolved.loaded,
     })
 }
 
@@ -476,9 +480,15 @@ export fn assemble_test_program(test_paths: List<string>, project_dir: string, s
     mut packages: List<StmtId> = []
     mut modules: List<StmtId> = []
     mut mod_names: List<string> = []
+    // Threaded across members: the resolver already skips a package it has
+    // loaded (loaded_has), but a per-file reset meant every member
+    // re-decoded and re-synthesised each imported package's whole public
+    // surface — N copies that dedup_modules then merged back to one.
+    mut loaded: List<string> = []
     mut i = test_paths.length - 1
     while i >= 0 {
-        let a = assemble_one_test_file(test_paths[i], assigned[i], store)?
+        let a = assemble_one_test_file(test_paths[i], assigned[i], loaded, store)?
+        loaded = a.loaded
         for p in a.packages { packages.push(p) }
         // Every test module is deferred — codegen synthesizes
         // __init_<mod> without the top-level auto-call; the runner
