@@ -1,0 +1,169 @@
+// WHY: t-47hc Phase 4 — `let` / `mut` / `const` leave `@hand(decl_hand)`.
+//
+// The bindings are the highest-traffic residue of the hand delegate: every binding
+// statement in every routed body used to detour through `@hand(decl_hand)`. What this
+// file pins is the same set of properties the `use`/`mod` increment pinned
+// (decl_flip_use_mod_native_test — the #1028 dead-code and #1054/#1059 recovery
+// regressions are the reason each is asserted structurally rather than inferred),
+// plus the two properties NEW to this slice:
+//
+//  1. THE GENSYM MINT ORDER. The guard form desugars through a fresh `$letelse$N`
+//     name, and the hand mints it AFTER parsing the else statement
+//     (`build_let_else`: parse, check divergence, THEN `fresh`). The rule places
+//     `tmp:@gensym(letelse)` after `e:statement` to match, and the emitted source is
+//     the only place that ordering is visible — a regeneration that reorders it
+//     desynchronizes the hygiene sequences the moment any other mint lands between.
+//
+//  2. THE SPECULATIVE SCAFFOLD RESTORES THE GENSYM COUNTER. A rolled-back
+//     `let … else` has already minted; without `set_gensym_seq` in the rollback the
+//     hand's re-parse mints `$letelse$2` where the pure hand path mints `$letelse$1`
+//     — IR-divergent on the SAME valid program, which diff-test reads as a compiler
+//     bug. (Caught live on the non-diverging-else corpus case.)
+//
+// Recovery parity for malformed forms lives in error_recovery_differential_test
+// (the routed-keyword blocks, both specs); this file owns dispatch, scaffold and
+// acceptance-frontier structure, and the valid forms the compiler's own source uses.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+// Same status-plus-log shape as decl_flip_use_mod_native_test: the exit code is half
+// the assertion, and `|| true` would throw it away.
+fn check_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_decl_binding_${name}.av"
+    let log = "build/_decl_binding_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+/// Compile-clean on all FOUR parser paths (default, emit-raw, executor, hand) —
+/// the split_gt_rollback_test shape. The default path alone can hide a native-rule
+/// failure behind the interpreter fallback; emit-raw (`AVRA_NO_STATIC_FALLBACK=1`)
+/// is the assertion that the GENERATED rule itself owns the form.
+fn clean_all_paths(name: string, src: string) -> bool {
+    clean(check_out("${name}_dflt", "", src)) &&
+        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
+        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+spec "t-47hc Phase 4: the bindings are emitted as native rules" {
+    then "all three parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_let_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_mut_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_const_decl(st: PState) -> CapVal")
+    }
+
+    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+        let src = decl_src()
+        let let_at = src.index_of("parse_let_decl(st)")
+        let mut_at = src.index_of("parse_mut_decl(st)")
+        let const_at = src.index_of("parse_const_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at >= 0 &&
+            let_at < hand_at && mut_at < hand_at && const_at < hand_at
+    }
+
+    then "each routed branch is SPECULATIVE and its rollback restores the gensym counter" {
+        let src = decl_src()
+        // The commit guard: keep the parse only when it added no diagnostic…
+        src.contains("s_last = parse_let_decl(st)") &&
+            src.contains("s_last = parse_mut_decl(st)") &&
+            src.contains("s_last = parse_const_decl(st)") &&
+            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+            // …and the rollback restores the store, cursor, hand state AND the
+            // hygiene counter (property 2 in the WHY).
+            src.contains("st.store.truncate_to_mark(s_mark)") &&
+            src.contains("st.restore_hand_state(s_hand)") &&
+            src.contains("st.set_gensym_seq(s_gensym)")
+    }
+
+    then "the guard form mints its gensym AFTER the else statement, as the hand does" {
+        // Property 1 in the WHY: within parse_let_decl, `parse_statement` (the else
+        // arm) must precede the `letelse` mint. index_of finds the FIRST mint, which
+        // lives in parse_let_decl (parse_mut_decl's copy follows it).
+        let src = decl_src()
+        let let_fn = src.index_of("fn parse_let_decl(st: PState)")
+        let mint = src.index_of("gensym_token(st, \"letelse\")")
+        let else_parse = src.index_of("e = parse_statement(st)")
+        let_fn >= 0 && mint > let_fn && else_parse > let_fn && else_parse < mint
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
+
+spec "t-47hc Phase 4: every binding form the compiler itself writes parses on all four paths" {
+    then "plain, annotated, `let mut`, bare `mut`, and `const` bindings compile clean" {
+        clean_all_paths("plain",
+            "fn main() {\n" +
+            "    let a = 1\n" +
+            "    let b: int = 2\n" +
+            "    let mut c = 3\n" +
+            "    mut d: int = 4\n" +
+            "    const E = 5\n" +
+            "    c = a + b + d + E\n" +
+            "    println(string(c))\n" +
+            "}\n")
+    }
+
+    then "the guard form `let v = x else { … }` compiles clean everywhere" {
+        clean_all_paths("letelse",
+            "fn pick(o: int?) -> int {\n" +
+            "    let v = o else { return 0 }\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() { println(string(pick(7))) }\n")
+    }
+
+    then "`export` and doc wrappers accept a binding inner — the widened alternations" {
+        clean_all_paths("wrapped",
+            "export let shared = 1\n" +
+            "/// documented\n" +
+            "const DOCD = 2\n" +
+            "fn main() { println(string(shared + DOCD)) }\n")
+    }
+
+    then "the destructure form still parses — it falls back to the hand untouched" {
+        clean_all_paths("destructure",
+            "fn pair() -> (int, int) { (1, 2) }\n" +
+            "fn main() {\n" +
+            "    let (a, b) = pair()\n" +
+            "    println(string(a + b))\n" +
+            "}\n")
+    }
+}
+
+spec "t-47hc Phase 4: the binding frontier did not widen" {
+    then "a non-diverging `else` still reports the CODED diagnostic, on the default path" {
+        // The native builder's divergence report is deliberately message-only: under
+        // `@try` any report rolls the branch back, so the HAND owns F1203. If the
+        // native branch ever committed this form, the code would vanish from the
+        // output — this is the assertion that the no-code-channel discipline holds.
+        let out = check_out("nondiverge", "",
+            "fn f(o: int?) -> int {\n" +
+            "    let v = o else { 1 }\n" +
+            "    v\n" +
+            "}\n" +
+            "fn main() { println(string(f(none))) }\n")
+        !clean(out) && out.contains("error[F1203]")
+    }
+
+    then "`let 5 = 1` stays a PARSE error — the native rule aborts, never builds" {
+        let out = check_out("numname", "",
+            "fn main() {\n    let 5 = 1\n}\n")
+        !clean(out) && out.contains("error[F0001]")
+    }
+}

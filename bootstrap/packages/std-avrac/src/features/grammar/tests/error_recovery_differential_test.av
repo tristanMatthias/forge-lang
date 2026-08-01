@@ -203,6 +203,34 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("mod 5\nfn f() -> int { 1 }") &&
         agree("mod {\nfn f() -> int { 1 }")
     }
+    // The BINDING keywords join the routed set (t-47hc Phase 4: `let` / `mut` /
+    // `const`, the highest-traffic residue of `@hand(decl_hand)` — every binding in
+    // every body). Added BEFORE the routing per the discipline. Top-level and
+    // in-body forms both, because the two dispatch through different loops; the
+    // guard form's non-diverging else is the one coded diagnostic
+    // (LetElseMustDiverge) the native builder must hand back rather than own.
+    then "malformed bindings (the routed keywords), on all three paths" {
+        agree_all("let\nfn f() -> int { 1 }") &&
+        agree_all("let x\nfn f() -> int { 1 }") &&
+        agree_all("let x =\nfn f() -> int { 1 }") &&
+        agree_all("let x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("let 5 = 1\nfn f() -> int { 1 }") &&
+        agree_all("let mut = 1\nfn f() -> int { 1 }") &&
+        agree_all("mut\nfn f() -> int { 1 }") &&
+        agree_all("mut y y = 1\nfn f() -> int { 1 }") &&
+        agree_all("const\nfn f() -> int { 1 }") &&
+        agree_all("const C\nfn f() -> int { 1 }") &&
+        agree_all("let (a b) = t\nfn f() -> int { 1 }") &&
+        agree_all("fn f() -> int {\n    let x = )\n    1\n}") &&
+        agree_all("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
+        // The same keywords under the prefix wrappers, which this slice widens to
+        // accept bindings (`exportable_inner` / `wrapped_inner`): a malformed
+        // binding must fail the WHOLE wrapped branch back to the hand.
+        agree_all("export let\nfn f() -> int { 1 }") &&
+        agree_all("export const C\nfn f() -> int { 1 }") &&
+        agree_all("/// d\nlet x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("@a\nmut\nfn f() -> int { 1 }")
+    }
     // The prefix WRAPPERS join the routed set (t-47hc Phase 4: `///` doc, `//!` module
     // doc, `@annotation`; `export` went in #1098). Measured on ALL THREE paths, not
     // just emit-vs-hand: the wrappers are `@try`-routed, so on any malformed form the
@@ -504,6 +532,29 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     // These pass TODAY on the hand path. Their job is to fail loudly the moment a
     // wrapper is routed and its recovery does not match — which is the only witness
     // that exists for that class of regression.
+    // t-47hc Phase 4, routing `let` / `mut` / `const`: the tree half of the binding
+    // corpus above. A routed rule that reports and then builds a partial binding (a
+    // nameless `let`, an initializer-less `mut`) has the same F-codes as hand's
+    // `(error)` and a different tree — the exact `shape`/`use`/`mod` lesson.
+    then "malformed bindings recover to the same tree" {
+        agree_bad("let\nfn f() -> int { 1 }") &&
+        agree_bad("let x\nfn f() -> int { 1 }") &&
+        agree_bad("let x =\nfn f() -> int { 1 }") &&
+        agree_bad("let x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("let 5 = 1\nfn f() -> int { 1 }") &&
+        agree_bad("let mut = 1\nfn f() -> int { 1 }") &&
+        agree_bad("mut\nfn f() -> int { 1 }") &&
+        agree_bad("mut y y = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const\nfn f() -> int { 1 }") &&
+        agree_bad("const C\nfn f() -> int { 1 }") &&
+        agree_bad("let (a b) = t\nfn f() -> int { 1 }") &&
+        agree_bad("fn f() -> int {\n    let x = )\n    1\n}") &&
+        agree_bad("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
+        agree_bad("export let\nfn f() -> int { 1 }") &&
+        agree_bad("export const C\nfn f() -> int { 1 }") &&
+        agree_bad("/// d\nlet x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("@a\nmut\nfn f() -> int { 1 }")
+    }
     then "malformed decl WRAPPERS recover to the same tree" {
         // Every form here was checked to actually REPORT on both paths before being
         // added. An earlier draft of this block also listed `export\nfn f()`,

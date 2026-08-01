@@ -843,6 +843,26 @@ export fn build_if_let_expr(store: NodeStore, tmp: string, binding: string, subj
     store.intern_expr_leaf(Expr.Block([outer_let_id, inner_if_stmt_id]))
 }
 
+/// The `let v = x else { ELSE }` INITIALIZER desugar (features/let_stmt): a block-expr
+/// holding `let __t = x` then `if __t != none { __t! } else { ELSE }` — shared by the
+/// hand's build_let_else and the grammar's MkLetBinding/MkMutBinding builds
+/// (t-47hc Phase 4), the same one-desugar discipline as build_if_let_expr above, so
+/// the two engines cannot drift in what they lower to. The present value `__t!` is
+/// the THEN arm — see the hand's WHY (features/let_stmt/parser.av) for the layout
+/// consequence of getting that backwards. Alloc ORDER is the hand's, verbatim:
+/// unwrap call, none-check, else block, guard if-expr, tmp binding, guard stmt, block.
+export fn build_let_else_init(store: NodeStore, tmp: string, subject_id: ExprId, else_ids: List<StmtId>) -> ExprId {
+    let unwrap_subject = store.intern_expr_leaf(Expr.Ident(tmp))
+    let unwrap_callee = store.intern_expr_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+    let unwrap_id = store.intern_expr_leaf(Expr.Call(unwrap_callee, [unwrap_subject]))
+    let cond_id = iflet_cond_row_in(store, tmp)
+    let else_block_id = store.intern_expr_leaf(Expr.Block(else_ids))
+    let guard_id = store.intern_expr_leaf(Expr.IfExpr(cond_id, unwrap_id, else_block_id))
+    let tmp_let_id = iflet_binding_stmt_in(store, Stmt.Let(tmp, ValueType.Unknown, subject_id))
+    let guard_stmt_id = store.add_stmt_leaf(Stmt.Expr(guard_id))
+    store.intern_expr_leaf(Expr.Block([tmp_let_id, guard_stmt_id]))
+}
+
 /// The STATEMENT-position twin. Same rows, but the then/else are statements and the
 /// result is a `Stmt.Block`.
 export fn build_if_let_stmt(store: NodeStore, tmp: string, binding: string, subject_id: ExprId, then_id: StmtId, else_opt: StmtId?) -> StmtId {

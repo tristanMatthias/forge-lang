@@ -903,6 +903,7 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut ta_list: List<TypeExpr> = []
         mut a_list: List<ExprId> = []
@@ -939,6 +940,7 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
@@ -1317,6 +1319,7 @@ fn parse_list_expr(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = CapVal.Tok(st.advance())
@@ -1329,6 +1332,7 @@ fn parse_list_expr(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.LeftBracket {
@@ -1404,6 +1408,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let s_err = st.had_error
         mut s_cut = false
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         let sp_start = st.cur().pos
         while true {
@@ -1436,6 +1441,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.LeftParen {
@@ -1445,6 +1451,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         let sp_start = st.cur().pos
         mut rest_list: List<ExprId> = []
@@ -1472,6 +1479,7 @@ fn parse_paren_expr(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.LeftParen {

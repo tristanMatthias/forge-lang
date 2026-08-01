@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, gensym_token, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, Tk, SrcPos, TypeParamEntry, Annotation}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -15,6 +15,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_use_decl(st)
@@ -24,6 +25,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "mod" {
@@ -32,6 +34,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_mod_decl(st)
@@ -41,6 +44,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "shape" {
@@ -49,6 +53,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_shape_decl(st)
@@ -58,6 +63,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "enum" {
@@ -66,6 +72,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_enum_decl(st)
@@ -75,6 +82,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "type" {
@@ -83,6 +91,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_type_decl(st)
@@ -92,6 +101,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "extern" {
@@ -100,6 +110,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_extern_decl(st)
@@ -109,6 +120,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "fn" {
@@ -117,6 +129,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_fn_decl(st)
@@ -126,6 +139,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "trait" {
@@ -134,6 +148,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_trait_decl(st)
@@ -143,6 +158,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "impl" {
@@ -151,6 +167,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_impl_decl(st)
@@ -160,6 +177,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "export" {
@@ -168,6 +186,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_export_decl(st)
@@ -177,6 +196,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.DocComment {
@@ -185,6 +205,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_doc_decl(st)
@@ -194,6 +215,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.ModDocComment {
@@ -202,6 +224,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_mdoc_decl(st)
@@ -211,6 +234,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.At {
@@ -219,6 +243,7 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_annot_decl(st)
@@ -228,6 +253,64 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_let_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "mut" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_mut_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "const" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_const_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
@@ -257,6 +340,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_fn_decl(st)
@@ -266,6 +350,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "type" {
@@ -275,6 +360,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_type_decl(st)
@@ -284,6 +370,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "enum" {
@@ -293,6 +380,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_enum_decl(st)
@@ -302,6 +390,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "trait" {
@@ -311,6 +400,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_trait_decl(st)
@@ -320,6 +410,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "extern" {
@@ -329,6 +420,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_extern_decl(st)
@@ -338,6 +430,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "shape" {
@@ -347,6 +440,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_shape_decl(st)
@@ -356,6 +450,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "impl" {
@@ -365,6 +460,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_impl_decl(st)
@@ -374,6 +470,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "use" {
@@ -383,6 +480,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_use_decl(st)
@@ -392,6 +490,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "mod" {
@@ -401,6 +500,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_mod_decl(st)
@@ -410,6 +510,67 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_let_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "mut" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_mut_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "const" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_const_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
@@ -493,6 +654,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_fn_decl(st)
@@ -502,6 +664,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "type" {
@@ -511,6 +674,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_type_decl(st)
@@ -520,6 +684,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "enum" {
@@ -529,6 +694,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_enum_decl(st)
@@ -538,6 +704,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "trait" {
@@ -547,6 +714,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_trait_decl(st)
@@ -556,6 +724,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "extern" {
@@ -565,6 +734,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_extern_decl(st)
@@ -574,6 +744,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "shape" {
@@ -583,6 +754,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_shape_decl(st)
@@ -592,6 +764,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "impl" {
@@ -601,6 +774,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_impl_decl(st)
@@ -610,6 +784,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "use" {
@@ -619,6 +794,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_use_decl(st)
@@ -628,6 +804,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "mod" {
@@ -637,6 +814,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_mod_decl(st)
@@ -646,6 +824,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "export" {
@@ -655,6 +834,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_export_decl(st)
@@ -664,6 +844,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.DocComment {
@@ -673,6 +854,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_doc_decl(st)
@@ -682,6 +864,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().tk == Tk.At {
@@ -691,6 +874,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_diags = st.diags.length
         let s_err = st.had_error
         let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_annot_decl(st)
@@ -700,10 +884,143 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
         st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_let_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "mut" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_mut_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "const" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_const_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node("expected an expression"))
+}
+
+fn parse_let_decl(st: PState) -> CapVal {
+    mut m: CapVal = CapVal.Nil
+    mut ty: CapVal = CapVal.Nil
+    mut e: CapVal = CapVal.Nil
+    mut tmp: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().text == "mut" {
+        m = CapVal.Tok(st.advance())
+    }
+    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Colon {
+        let _ = st.advance()
+        ty = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
+        st.report("expected =")
+    }
+    let init = parse_expression(st)
+    if st.cur().text == "else" {
+        let _ = st.advance()
+        e = parse_statement(st)
+        tmp = CapVal.Tok(gensym_token(st, "letelse"))
+    }
+    mk_let_binding_g(st, capval_present(m), capval_tok_text(n), ty, capval_present(ty), init, e, capval_present(e), tmp)
+}
+
+fn parse_mut_decl(st: PState) -> CapVal {
+    mut ty: CapVal = CapVal.Nil
+    mut e: CapVal = CapVal.Nil
+    mut tmp: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Colon {
+        let _ = st.advance()
+        ty = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
+        st.report("expected =")
+    }
+    let init = parse_expression(st)
+    if st.cur().text == "else" {
+        let _ = st.advance()
+        e = parse_statement(st)
+        tmp = CapVal.Tok(gensym_token(st, "letelse"))
+    }
+    mk_let_binding_g(st, true, capval_tok_text(n), ty, capval_present(ty), init, e, capval_present(e), tmp)
+}
+
+fn parse_const_decl(st: PState) -> CapVal {
+    mut ty: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Colon {
+        let _ = st.advance()
+        ty = parse_type_expr(st)
+    }
+    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
+        st.report("expected =")
+    }
+    let init = parse_expression(st)
+    mk_const_binding_g(st, capval_tok_text(n), ty, capval_present(ty), init)
 }
 
 fn parse_body_item(st: PState) -> CapVal {

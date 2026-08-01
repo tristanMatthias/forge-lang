@@ -2220,10 +2220,23 @@ use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_type
 use @std.avrac.features.match_expr.{avra_pat_grammar}
 use @std.avrac.core.{avra_selfhost_write_file}
 
+// The expression and statement harnesses render COMPOSED interpreter views
+// (avra_expr_grammar / avra_stmt_grammar), which inline the declaration, type
+// and pattern families alongside the expr core — every family defined in the
+// grammar is emitted, not externalized. The import line therefore must carry
+// the FULL emitted-surface core set, not just one family's helpers: it went
+// stale when the type/decl families joined the composition (2026-07-28, the
+// type-flip slice) and every family core came back F3000 undefined. ONE line,
+// shared by both blocks, kept a superset of the union of the gen_*_file.av
+// headers plus the harness-only probes (new_pstate, dump_expr).
+fn grammar_core_imports() -> string {
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, run_hand_expr, run_hand_stmt, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, tok_starts_pattern, tok_starts_type, capval_tok_text, capval_tok_list, capval_present, capval_to_stmt, capval_to_pat, capval_to_arm, capval_to_ann, capval_to_when_arm, capval_to_texpr, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_finit, dump_expr, lookahead_ok, base_pred, gensym_token, modes_with_flag_on, modes_with_flag_off, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, mk_match_expr, mk_expr_block, mk_if_expr, mk_if_let, mk_quote, mk_quote_type, mk_quote_arm, mk_spawn, mk_isolated, mk_none_cap, mk_when, mk_when_arm, mk_when_default, mk_field_init, mk_with_suffix, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_use, mk_use_pkg, mk_module, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_evariant, mk_field, mk_param, mk_export_decl, mk_stamp_stmt_at, mk_splice, mk_splice_struct, mk_template, mk_tagged_template, fold_postfix_with_expr, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_field_access, mk_force_unwrap, mk_generic_call_suffix, mk_group_or_empty, mk_index_suffix, mk_lambda, mk_lambda_typed, mk_list_comp, mk_list_lit, mk_map_lit, mk_opt_chain, mk_opt_method_call, mk_qualified, mk_struct_lit, mk_try_suffix, mk_tuple_fr, mk_tuple_index, modes_with_counter_bumped, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g}\n"
+}
+
 fn imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, run_hand_expr, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, capval_tok_text, dump_expr}\n" +
+    grammar_core_imports() +
     "use @std.avrac.parse.{parse_expression_native_probe}\n" +
-    "use @std.avrac.core.{Expr, ExprId, NodeStore}\n\n"
+    "use @std.avrac.core.{Expr, ExprId, NodeStore, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
 fn harness_block() -> string {
@@ -2257,7 +2270,7 @@ fn harness_block() -> string {
 }
 
 fn stmt_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_pat, capval_to_arm, literal_node, run_hand, run_hand_expr, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, tok_starts_pattern, capval_tok_text, capval_present, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, mk_arm, mk_match, modes_with_flag_off}\n" +
+    grammar_core_imports() +
     "use @std.avrac.parse.{parser_new}\n" +
     "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, ValueType, Tk, NodeStore, render_stmt_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
@@ -2375,7 +2388,7 @@ fn type_harness_block() -> string {
 }
 
 fn program_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_to_pentry, capval_to_field, capval_to_variant, capval_tok_text, capval_present, run_hand, run_hand_stmt, run_hand_expr, literal_node, lookahead_ok, modes_with_flag_on, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, fold_postfix_expr, unary_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_block, mk_while, mk_if, mk_for_loop, mk_return_opt, mk_fn_decl, mk_type_decl, mk_enum_decl, mk_trait_decl, mk_impl, mk_use, mk_module, mk_field, mk_evariant, mk_param, mk_assoc_type, mk_trait_method, mk_method, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_qualified, capval_toks, mk_template}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_to_pentry, capval_to_field, capval_to_variant, capval_to_tparam, capval_tok_text, capval_tok_list, capval_present, run_hand, run_hand_stmt, run_hand_expr, literal_node, lookahead_ok, modes_with_flag_on, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, fold_postfix_expr, unary_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_block, mk_while, mk_if, mk_for_loop, mk_return_opt, mk_fn_decl, mk_fn_decl_g, mk_type_decl, mk_type_decl_any, mk_type_param, mk_enum_decl, mk_enum_decl_g, mk_shape_decl, mk_extern_fn, mk_trait_decl, mk_impl, mk_use, mk_use_pkg, mk_module, mk_field, mk_evariant, mk_param, mk_assoc_type, mk_trait_method, mk_method, mk_field_init, mk_with_suffix, capval_to_finit, capval_to_tparam, mk_map_lit, mk_qualified, capval_toks, mk_template}\n" +
     "use @std.avrac.parse.{parse_program_source}\n" +
     "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, TypeExpr, ParamEntry, FieldEntry, FieldInit, Variant, ValueType, NodeStore, render_stmt_ids}\n\n"
 }
