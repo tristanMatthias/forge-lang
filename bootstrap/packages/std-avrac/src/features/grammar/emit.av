@@ -2097,6 +2097,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkParallel" -> "mk_parallel_g(st, ${args[0]}_list)"
         "MkSelect" -> "mk_select_g(st, CapVal.SArms(${args[0]}_list))"
         "MkSelectArm" -> "mk_select_arm_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}_list)"
+        "MkSpecBlock" -> "mk_spec_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkGivenBlock" -> "mk_given_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkThenBlock" -> "mk_then_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
@@ -2709,7 +2712,7 @@ fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
