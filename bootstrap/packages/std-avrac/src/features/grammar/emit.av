@@ -2100,6 +2100,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkSpecBlock" -> "mk_spec_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkGivenBlock" -> "mk_given_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkThenBlock" -> "mk_then_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkCompConfig" -> "mk_comp_config_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
+        "MkChildrenSlot" -> "mk_children_slot_g(st, capval_tok_text(${args[0]}), ${args[1]})"
+        "MkCompField" -> "mk_comp_field_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
+        "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(CapVal.Toks(${args[1]}_list)), CapVal.CCfgs(${args[2]}_list), CapVal.CSlots(${args[3]}_list), capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
@@ -2709,10 +2713,12 @@ fn build_kind(bn: string) -> string {
     if bn == "MkFieldInit" { return "finit" }
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
     if bn == "MkSelectArm" { return "sarm" }
+    if bn == "MkCompConfig" { return "ccfg" }
+    if bn == "MkChildrenSlot" { return "cslot" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
@@ -2861,6 +2867,8 @@ fn kind_coerce(kind: string) -> string {
     if kind == "finit" { return "capval_to_finit" }
     if kind == "warm" { return "capval_to_when_arm" }
     if kind == "sarm" { return "capval_to_select_arm" }
+    if kind == "ccfg" { return "capval_to_comp_config" }
+    if kind == "cslot" { return "capval_to_children_slot" }
     if kind == "ann" { return "capval_to_ann" }
     "capval_to_expr"
 }
@@ -2878,6 +2886,8 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "finit" { return "FieldInit" }
     if kind == "warm" { return "WhenArm" }
     if kind == "sarm" { return "SelectArm" }
+    if kind == "ccfg" { return "CompConfig" }
+    if kind == "cslot" { return "ChildrenSlot" }
     if kind == "ann" { return "Annotation" }
     "ExprId"
 }

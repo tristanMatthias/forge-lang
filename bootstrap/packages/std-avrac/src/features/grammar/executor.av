@@ -27,6 +27,7 @@ use core.{tk_is_field_name}
 use core.{build_if_let_expr}
 use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
+use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -101,6 +102,12 @@ export enum CapVal {
     // these ids deliberately do not become arena edges either.
     SArm(a: SelectArm)
     SArms(xs: List<SelectArm>)
+    // Component-definition schema entries (t-47hc slice A), parallel to SArm:
+    // a `config { key: ty = default }` row and a `children { slot: ty }` row.
+    CCfg(c: CompConfig)
+    CCfgs(xs: List<CompConfig>)
+    CSlot(c: ChildrenSlot)
+    CSlots(xs: List<ChildrenSlot>)
     // A built PARAMETER ENTRY + a parallel list of them (declaration family,
     // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
     // (defaulting to Int, the hand parser's parse_param_list default); a `*`
@@ -340,6 +347,36 @@ impl CapEnv {
         }
         xs.push(a)
         self.set_scalar(name, CapVal.SArms(xs))
+    }
+
+    // Component config-entry accumulator, parallel to append_sarm.
+    fn append_ccfg(self, name: string, c: CompConfig) {
+        let existing = self.get(name)
+        mut xs: List<CompConfig> = []
+        match existing {
+            .CCfgs(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .CCfg(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(c)
+        self.set_scalar(name, CapVal.CCfgs(xs))
+    }
+
+    // Component children-slot accumulator, parallel to append_sarm.
+    fn append_cslot(self, name: string, c: ChildrenSlot) {
+        let existing = self.get(name)
+        mut xs: List<ChildrenSlot> = []
+        match existing {
+            .CSlots(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .CSlot(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(c)
+        self.set_scalar(name, CapVal.CSlots(xs))
     }
 
     // Parameter-list accumulator (declaration family, ps3t.6.5.7): a `*` over
@@ -1656,6 +1693,16 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
+    // The component-def `body: TokenStream` marker gate (t-47hc slice A):
+    // the WORD `body` followed by a colon — the hand's `current_lexeme ==
+    // "body" && peek_after_ident_is_colon()`. Both halves matter: without
+    // the colon check a VALID `body()` call statement in a def body would
+    // enter the marker group, fail `":"`, and roll the whole component back
+    // to the hand on well-formed input.
+    if cond == "body_marker" {
+        return st.cur().text == "body" && st.cur().kind == "IDENT" &&
+            st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == ":"
+    }
     if cond == "double_colon" {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
@@ -2281,6 +2328,8 @@ fn capval_len(v: CapVal) -> int {
         .Arms(a) -> a.length
         .WArms(a) -> a.length
         .SArms(a) -> a.length
+        .CCfgs(a) -> a.length
+        .CSlots(a) -> a.length
         .FInits(f) -> f.length
         .PEntries(p) -> p.length
         .Fields(f) -> f.length
@@ -3137,6 +3186,8 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .Arm(a) -> env.append_arm(label, a)
             .WArm(a) -> env.append_warm(label, a)
             .SArm(a) -> env.append_sarm(label, a)
+            .CCfg(c) -> env.append_ccfg(label, c)
+            .CSlot(c) -> env.append_cslot(label, c)
             .FInit(f) -> env.append_finit(label, f)
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
@@ -3321,6 +3372,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkSpecBlock" if args.length == 2 -> mk_spec_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         "MkGivenBlock" if args.length == 2 -> mk_given_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         "MkThenBlock" if args.length == 2 -> mk_then_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
+        // The component definition (t-47hc slice A) — shared cores.
+        "MkCompConfig" if args.length == 3 -> mk_comp_config_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), env.get(args[2]), capval_present(env.get(args[2])))
+        "MkChildrenSlot" if args.length == 2 -> mk_children_slot_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
+        "MkCompField" if args.length == 3 -> mk_comp_field_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), env.get(args[2]), capval_present(env.get(args[2])))
+        "MkComponentDef" if args.length == 6 -> mk_component_def_g(st, capval_tok_text(env.get(args[0])), capval_tok_texts(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_tok_text(env.get(args[4])), capval_present(env.get(args[4])), capval_to_stmt_list(env.get(args[5])))
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
@@ -3999,6 +4055,118 @@ export fn mk_given_block_g(st: PState, name: string, body: List<StmtId>) -> CapV
 export fn mk_then_block_g(st: PState, name: string, body: List<StmtId>) -> CapVal {
     let cond_id = st.store.exprs.add_leaf(Expr.Block(body))
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ThenBlock(name, cond_id)))
+}
+
+/// One `key: ty ( = default )?` config-schema entry — the MkCompConfig build's
+/// core (t-47hc slice A). Mirrors parse_comp_config_schema's row exactly,
+/// including the `glue_ingest_type` dual (ty_vt + ty_id, the F1a mid-migration
+/// shape that hand comment documents).
+export fn mk_comp_config_g(st: PState, key: string, ty_cv: CapVal, d_cv: CapVal, d_present: bool) -> CapVal {
+    let vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
+    let default_id: ExprId? = if d_present { capval_to_expr(st, d_cv) } else { none }
+    CapVal.CCfg(CompConfig { key: key, ty_vt: vt, default_id: default_id, ty_id: st.store.ingest_type(vt, byte_span_none()) })
+}
+
+/// One `slot: ty` children-schema entry — the MkChildrenSlot build's core.
+export fn mk_children_slot_g(st: PState, slot: string, ty_cv: CapVal) -> CapVal {
+    CapVal.CSlot(ChildrenSlot { slot_name: slot, child_ty: type_expr_to_vtype(capval_to_texpr(st, ty_cv)) })
+}
+
+/// The component-body `let field: ty ( = init )?` row — the MkCompField build's
+/// core. NOT the general binding: the annotation is REQUIRED (the grammar rule
+/// enforces it) and the row is the hand's `alloc_binding_stmt` (TypeRef edge),
+/// with an Expr.None initializer when none was written.
+export fn mk_comp_field_g(st: PState, name: string, ty_cv: CapVal, init_cv: CapVal, init_present: bool) -> CapVal {
+    let vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
+    let init_id = if init_present { capval_to_expr(st, init_cv) } else { st.store.exprs.add_leaf(Expr.None) }
+    CapVal.SNode(binding_stmt_row(st, Stmt.Let(name, vt, init_id), vt))
+}
+
+/// `component name [implements …] { config? children? body:TokenStream? … }` —
+/// the MkComponentDef build's core (modern form only; slice A). Validates the
+/// `body:` marker (only `TokenStream` is legal — anything else reports, and the
+/// enclosing @try hands the input back to the hand's coded diagnostic), then
+/// synthesizes the marker's Let row AHEAD of the body rows, enforces the
+/// children-vs-raw-body exclusion, REGISTERS the name for keyword-free
+/// instantiation exactly as the hand's register_component_def does (raw-body
+/// defs route instances to the RAW token capture), and allocs the LEAF
+/// ComponentDef row. Registration reaches the registry through the hand
+/// delegate; a delegate-less PState (pure-executor harness) skips it, which no
+/// current harness exercises — both PRODUCTION paths always carry the delegate.
+export fn mk_component_def_g(st: PState, name: string, implements: List<string>, cfg_cv: CapVal, cs_cv: CapVal, marker: string, marker_present: bool, body: List<StmtId>) -> CapVal {
+    if marker_present && marker != "TokenStream" {
+        st.report("`body:` in a component declares a raw token body — the only valid type is `TokenStream`")
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+    }
+    mut all_ids: List<StmtId> = []
+    if marker_present {
+        let vt = vtype_struct("TokenStream", 0)
+        all_ids.push(binding_stmt_row(st, Stmt.Let("body", vt, st.store.exprs.add_leaf(Expr.None)), vt))
+    }
+    for id in body { all_ids.push(id) }
+    let children = capval_to_children_slot_list(cs_cv)
+    if children.length > 0 && body_declares_token_stream(st.store, all_ids) {
+        st.report("component `${name}` declares both `children { … }` and `body: TokenStream` — a raw token body has no structured children; pick one")
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+    }
+    if st.hand_delegate != null {
+        let p = st.hand_delegate!
+        if body_declares_token_stream(st.store, all_ids) {
+            register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_raw())
+            register_raw_body_component(p.features, name)
+        } else {
+            register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_bare())
+        }
+    }
+    let empty_p: List<ParamEntry> = []
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentDef(name, empty_p, capval_to_comp_config_list(cfg_cv), children, implements, all_ids)))
+}
+
+/// A repeated bare-IDENT capture as its lexeme list (the implements clause).
+export fn capval_tok_texts(v: CapVal) -> List<string> {
+    mut out: List<string> = []
+    for t in capval_tok_list(v) { out.push(t.text) }
+    out
+}
+
+/// A repeated `config_entry` capture is CCfgs for many, CCfg for one, Nil for none.
+export fn capval_to_comp_config_list(v: CapVal) -> List<CompConfig> {
+    match v {
+        .CCfgs(xs) -> xs
+        .CCfg(c) -> [c]
+        _ -> []
+    }
+}
+
+/// A repeated `children_slot` capture is CSlots for many, CSlot for one, Nil for none.
+export fn capval_to_children_slot_list(v: CapVal) -> List<ChildrenSlot> {
+    match v {
+        .CSlots(xs) -> xs
+        .CSlot(c) -> [c]
+        _ -> []
+    }
+}
+
+/// Coerce one generated entry for a repeated config-entry capture.
+export fn capval_to_comp_config(st: PState, v: CapVal) -> CompConfig {
+    match v {
+        .CCfg(c) -> c
+        _ -> {
+            st.report("expected a config entry")
+            CompConfig { key: "", ty_vt: ValueType.Unknown, default_id: none, ty_id: st.store.ingest_type(ValueType.Unknown, byte_span_none()) }
+        }
+    }
+}
+
+/// Coerce one generated entry for a repeated children-slot capture.
+export fn capval_to_children_slot(st: PState, v: CapVal) -> ChildrenSlot {
+    match v {
+        .CSlot(c) -> c
+        _ -> {
+            st.report("expected a children slot")
+            ChildrenSlot { slot_name: "", child_ty: ValueType.Unknown }
+        }
+    }
 }
 
 /// Coerce one generated arm result for a repeated select-arm capture.

@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -546,6 +546,28 @@ fn avra_decl_edge_grammar() -> Grammar {
   spec_item  = given_blk | then_blk | declaration
   given_blk  = "given" n:STRING "{" body:spec_item* "}" -> MkGivenBlock(n, body)
   then_blk   = "then" n:STRING "{" body:declaration* "}" -> MkThenBlock(n, body)
+  // The COMPONENT definition, MODERN form only (t-47hc Phase 4 slice A):
+  // `component name [implements A, B] { config? children? body:TokenStream? … }`.
+  // The legacy paren form (`component C(params) {`), the keyword-prefixed
+  // instantiation (`component C inst {`), and the bare-IDENT instantiation stay
+  // with the hand — each fails this rule's header (`"{"` after the name /
+  // implements list), the `@try` rolls back, and `@hand(decl_hand)` owns them
+  // (including the coded implements-then-instance diagnostic). The implements
+  // list is parse_implements_list's shape: first trait required, trailing comma
+  // legal only before the body brace. `comp_field` is the component-body `let`,
+  // which REQUIRES the `: type` annotation (parse_comp_def_body errors on a
+  // bare `let x = 5`) — it must dispatch BEFORE `declaration`, whose routed
+  // let_decl would wrongly accept the annotation-less form. The MkComponentDef
+  // build REGISTERS the name for keyword-free instantiation at the same point
+  // the hand does (end of the def parse) — under @try speculation that can
+  // leave a registration behind on rollback, which is byte-for-byte the
+  // status quo (a hand-parsed def inside a rolled-back @try branch already
+  // does this; see the t-47hc hazard-1 comment).
+  component_decl = "component" n:IDENT ( "implements" tr:IDENT ( @peek(comma_ident) "," tr:IDENT )* ","? )? "{" ( "config" "{" ( cfg:config_entry )* "}" )? ( "children" "{" ( cs:children_slot ( @peek(comma_ident) "," cs:children_slot )* ","? )? "}" )? ( @peek(body_marker) "body" ":" bm:IDENT )? body:comp_item* "}" -> MkComponentDef(n, tr, cfg, cs, bm, body)
+  config_entry  = k:IDENT ":" ty:type_expr ( "=" d:expression )? ( "@" ( a:IDENT )? )* ","? -> MkCompConfig(k, ty, d)
+  children_slot = k:IDENT ":" ty:type_expr -> MkChildrenSlot(k, ty)
+  comp_item     = comp_field | declaration
+  comp_field    = "let" f:IDENT ":" ty:type_expr ( "=" init:expression )? -> MkCompField(f, ty, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`
