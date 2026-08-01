@@ -16,7 +16,8 @@
 // @@fixture-stateful@@ — the pool specs spawn real subprocesses; a transient
 // hiccup must re-probe, not freeze as FAIL.
 
-use @std.avrac.build.{governor_for, governor_width_only, pool_run_admitted}
+use @std.avrac.build.{governor_for, governor_width_only, pool_run_admitted,
+                      admission_prior_path, read_admission_prior, persist_admission_prior}
 
 spec "admission budget: growth regime stacks unrealized commitment" {
     given "a fresh governor (est 500MB, reserve 100MB, baseline 2000MB)" {
@@ -115,11 +116,27 @@ spec "admission model correction: measurement ratchets the estimate" {
             gov.observe(6000, 2)
             gov.estimate_mb == 2000 && gov.corrections == 1
         }
-        then "the ratchet is monotone: a light sample never lowers it" {
+        then "correction is asymmetric: instant up, gradual relaxation down" {
+            // A transient spike must narrow immediately (safety) but must
+            // not be a life sentence: monotone ratcheting collapsed width
+            // for the REST of a long CI run after one inflated attribution.
             let gov = governor_for(8, 1800, 0, 10000)
-            gov.observe(6000, 2)
-            gov.observe(9000, 2)   // 500MB/unit — far under the corrected 2000
-            gov.estimate_mb == 2000 && gov.corrections == 1
+            gov.observe(6000, 2)                    // 2000/unit -> ratchet up
+            let up = gov.estimate_mb == 2000
+            gov.observe(9000, 2)                    // 500/unit: floor is static 1800
+            let relaxed = gov.estimate_mb == 1950   // (2000*3 + 1800) / 4
+            mut i = 0
+            while i < 20 { gov.observe(9000, 2) i = i + 1 }
+            up && relaxed && gov.estimate_mb == 1800 && gov.corrections == 1
+        }
+        then "a quiet pool re-anchors the baseline (no drift attribution)" {
+            // Page-cache/slab growth over a long run depresses MemAvailable
+            // with the pool idle; that is the ENVIRONMENT, not our units.
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.observe(7000, 0)                    // quiet: re-anchor at 7000
+            gov.observe(6500, 1)                    // used is 500, not 3500
+            gov.baseline_avail_mb == 7000 && gov.estimate_mb == 1800
+                && gov.observed_mb == 500
         }
         then "the corrected estimate narrows subsequent admissions" {
             let gov = governor_for(8, 1800, 6144, 16000)
@@ -155,6 +172,72 @@ spec "admission model correction: measurement ratchets the estimate" {
             gov.observe(6000, 1)
             gov.observe(8000, 1)
             gov.min_avail_mb == 6000
+        }
+    }
+}
+
+spec "admission priors: seeded estimates and unseeded measurement" {
+    given "a governor seeded from a persisted prior" {
+        then "the prior raises the estimate but never lowers it" {
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.seed_estimate(4500)
+            let raised = gov.estimate_mb == 4500
+            gov.seed_estimate(900)     // a prior below static is ignored
+            raised && gov.estimate_mb == 4500
+        }
+        then "observed_mb measures THIS run, independent of the seed" {
+            // Seeded to 4500 but the run measured 1000/unit: the pure
+            // measurement records 1000 (what persists, so a shrunk workload
+            // decays next run), and the live estimate begins relaxing from
+            // the seed toward the evidence — one quarter of the gap to the
+            // 1800 static floor: (4500*3 + 1800) / 4.
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.seed_estimate(4500)
+            gov.observe(9000, 1)       // used 1000
+            gov.estimate_mb == 3825 && gov.observed_mb == 1000
+        }
+    }
+    given "the prior file lifecycle" {
+        then "a measured peak above static persists and reads back" {
+            let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
+            let path = admission_prior_path(root, "k1")
+            persist_admission_prior(path, 2500, 1800, true)
+            let got = read_admission_prior(path)
+            let _ = avra_shell_exec("rm -rf '${root}'")
+            got == 2500
+        }
+        then "a measurement at/below static removes the prior (decay)" {
+            let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
+            let path = admission_prior_path(root, "k2")
+            persist_admission_prior(path, 2500, 1800, true)
+            persist_admission_prior(path, 900, 1800, true)
+            let got = read_admission_prior(path)
+            let _ = avra_shell_exec("rm -rf '${root}'")
+            got == 0
+        }
+        then "an incomplete run neither decays nor overwrites the prior" {
+            // A jetsam-killed shard died unmeasured: its run's observation is
+            // not evidence of a lighter workload. Losing the prior there would
+            // let the NEXT full run repeat the unsafe admission (review, #1102).
+            let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
+            let path = admission_prior_path(root, "k4")
+            persist_admission_prior(path, 2500, 1800, true)
+            persist_admission_prior(path, 900, 1800, false)   // no decay
+            let kept = read_admission_prior(path)
+            persist_admission_prior(path, 9999, 1800, false)  // no overwrite either
+            let still = read_admission_prior(path)
+            let _ = avra_shell_exec("rm -rf '${root}'")
+            kept == 2500 && still == 2500
+        }
+        then "a missing or garbled prior reads as none" {
+            let root = "/tmp/avra_admission_prior_${string(avra_getpid())}"
+            let missing = read_admission_prior(admission_prior_path(root, "absent"))
+            let garbled_path = admission_prior_path(root, "garbled")
+            let _ = avra_shell_exec("mkdir -p \"$(dirname '${garbled_path}')\"")
+            let _ = avra_shell_exec("printf 'est_mb:not-a-number\n' > '${garbled_path}'")
+            let garbled = read_admission_prior(garbled_path)
+            let _ = avra_shell_exec("rm -rf '${root}'")
+            missing == 0 && garbled == 0
         }
     }
 }
