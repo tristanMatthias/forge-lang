@@ -195,9 +195,16 @@ spec "t-47hc Phase 4: a doc- or annotation-wrapped fn's diagnostics report the T
     // remaining wrapped fn bodies (every `/// doc`'d and `@annotation`'d declaration
     // in the tree) off the delegate, so the same class of drift is expected to fix
     // here, and the invariant is pinned absolutely rather than differentially.
-    then "wrapped and plain fns all report the line the deref is written on" {
-        // Line numbers are counted from the first line of the string below: the three
-        // `r!.n` derefs are on lines 4, 9 and 13.
+    then "wrapped, stacked-wrapped and plain fns all report the line the deref is written on" {
+        // Line numbers are counted from the first line of the string below: the four
+        // `r!.n` derefs are on lines 4, 9, 13 and 19. `triple` is the THREE-level
+        // stack (doc over annotation over export) — its trap line proves the inner
+        // declaration's position stamp survives every nested Stmt.Annotated layer,
+        // not just the single-wrapper cases above it. Every expected number is
+        // anchored on BOTH sides (each record in `out` is newline-delimited, the
+        // first by `__status=0\n`): a bare `contains("4\n")` also matches `14\n` or
+        // `104\n`, and line drift by exactly such offsets is the regression this
+        // spec exists to catch (the hand delegate drifted by up to 97).
         let out = trap_lines("lines",
             "type Res = { n: int }\n" +                                    // 1
             "/// documented\n" +                                           // 2
@@ -213,7 +220,14 @@ spec "t-47hc Phase 4: a doc- or annotation-wrapped fn's diagnostics report the T
             "fn plain(r: Res?) -> int {\n" +                               // 12
             "    r!.n\n" +                                                 // 13
             "}\n" +                                                        // 14
-            "fn main() { println(string(doc_fn(Res { n: 1 }) + ann_fn(Res { n: 2 }) + plain(Res { n: 3 }))) }\n")
-        out.contains("__status=0\n") && out.contains("4\n") && out.contains("9\n") && out.contains("13\n")
+            "\n" +                                                         // 15
+            "/// stacked\n" +                                              // 16
+            "@keep\n" +                                                    // 17
+            "export fn triple(r: Res?) -> int {\n" +                       // 18
+            "    r!.n\n" +                                                 // 19
+            "}\n" +                                                        // 20
+            "fn main() { println(string(doc_fn(Res { n: 1 }) + ann_fn(Res { n: 2 }) + plain(Res { n: 3 }) + triple(Res { n: 4 }))) }\n")
+        out.contains("__status=0\n") && out.contains("\n4\n") && out.contains("\n9\n") &&
+            out.contains("\n13\n") && out.contains("\n19\n")
     }
 }
