@@ -116,11 +116,27 @@ spec "admission model correction: measurement ratchets the estimate" {
             gov.observe(6000, 2)
             gov.estimate_mb == 2000 && gov.corrections == 1
         }
-        then "the ratchet is monotone: a light sample never lowers it" {
+        then "correction is asymmetric: instant up, gradual relaxation down" {
+            // A transient spike must narrow immediately (safety) but must
+            // not be a life sentence: monotone ratcheting collapsed width
+            // for the REST of a long CI run after one inflated attribution.
             let gov = governor_for(8, 1800, 0, 10000)
-            gov.observe(6000, 2)
-            gov.observe(9000, 2)   // 500MB/unit — far under the corrected 2000
-            gov.estimate_mb == 2000 && gov.corrections == 1
+            gov.observe(6000, 2)                    // 2000/unit -> ratchet up
+            let up = gov.estimate_mb == 2000
+            gov.observe(9000, 2)                    // 500/unit: floor is static 1800
+            let relaxed = gov.estimate_mb == 1950   // (2000*3 + 1800) / 4
+            mut i = 0
+            while i < 20 { gov.observe(9000, 2) i = i + 1 }
+            up && relaxed && gov.estimate_mb == 1800 && gov.corrections == 1
+        }
+        then "a quiet pool re-anchors the baseline (no drift attribution)" {
+            // Page-cache/slab growth over a long run depresses MemAvailable
+            // with the pool idle; that is the ENVIRONMENT, not our units.
+            let gov = governor_for(8, 1800, 0, 10000)
+            gov.observe(7000, 0)                    // quiet: re-anchor at 7000
+            gov.observe(6500, 1)                    // used is 500, not 3500
+            gov.baseline_avail_mb == 7000 && gov.estimate_mb == 1800
+                && gov.observed_mb == 500
         }
         then "the corrected estimate narrows subsequent admissions" {
             let gov = governor_for(8, 1800, 6144, 16000)
@@ -170,14 +186,15 @@ spec "admission priors: seeded estimates and unseeded measurement" {
             raised && gov.estimate_mb == 4500
         }
         then "observed_mb measures THIS run, independent of the seed" {
-            // Seeded to 4500 but the run only measured 1000/unit: the
-            // ratchet leaves the estimate alone AND the pure measurement
-            // stays 1000 — which is what persists, so a shrunk workload
-            // decays instead of pinning the stale peak forever.
+            // Seeded to 4500 but the run measured 1000/unit: the pure
+            // measurement records 1000 (what persists, so a shrunk workload
+            // decays next run), and the live estimate begins relaxing from
+            // the seed toward the evidence — one quarter of the gap to the
+            // 1800 static floor: (4500*3 + 1800) / 4.
             let gov = governor_for(8, 1800, 0, 10000)
             gov.seed_estimate(4500)
             gov.observe(9000, 1)       // used 1000
-            gov.estimate_mb == 4500 && gov.observed_mb == 1000
+            gov.estimate_mb == 3825 && gov.observed_mb == 1000
         }
     }
     given "the prior file lifecycle" {

@@ -117,18 +117,51 @@ impl MemGovernor {
     fn observe(self, avail_mb: int, in_flight: int) {
         if avail_mb <= 0 { return }
         if self.min_avail_mb <= 0 || avail_mb < self.min_avail_mb { self.min_avail_mb = avail_mb }
-        if in_flight < 1 || !self.has_model() { return }
+        if in_flight < 1 {
+            // Quiet pool: nothing of ours is running, so whatever the kernel
+            // reports now IS the environment — re-anchor the baseline.
+            // Without this, page-cache/slab growth from hundreds of shards'
+            // artifacts depresses MemAvailable over a long single run, `used`
+            // inflates regardless of true shard cost, and the ratchet
+            // collapses width permanently (measured: CI rc-strict's one
+            // 35-minute invocation ran the suite at 2098s vs the ~548s
+            // baseline; local per-dir sweeps masked it because every dir got
+            // a fresh baseline).
+            self.baseline_avail_mb = avail_mb
+            return
+        }
+        if !self.has_model() { return }
         let attributable = self.used_mb(avail_mb) - self.reserve_mb
-        if attributable <= 0 { return }
+        if attributable <= 0 {
+            self.relax_estimate(0)
+            return
+        }
         let per_unit = attributable / in_flight
         if per_unit > self.observed_mb { self.observed_mb = per_unit }
-        if per_unit <= self.estimate_mb { return }
+        if per_unit <= self.estimate_mb {
+            self.relax_estimate(per_unit)
+            return
+        }
         // Log only meaningful jumps; small creep would spam one line per ratchet.
         if per_unit - self.estimate_mb >= 128 {
             eprintln("[admission] per-unit estimate corrected ~${string(self.estimate_mb)}MB -> ~${string(per_unit)}MB (measured across ${string(in_flight)} in flight)")
         }
         self.estimate_mb = per_unit
         self.corrections = self.corrections + 1
+    }
+
+    /// The downward half of the correction, deliberately SLOWER than the
+    /// instant upward ratchet: each fresh sample below the live estimate
+    /// relaxes it a quarter of the gap toward that sample, floored at the
+    /// mode's static number. Monotone ratcheting turned one transient
+    /// attribution spike into a life sentence — width collapsed for the
+    /// REST of a long run even after the pressure passed (the second half
+    /// of the CI regression above). Asymmetry keeps the safety property:
+    /// overshoot narrows immediately, recovery is gradual and evidence-led.
+    fn relax_estimate(self, sample_mb: int) {
+        let floor = if sample_mb > self.static_estimate_mb { sample_mb } else { self.static_estimate_mb }
+        if self.estimate_mb <= floor { return }
+        self.estimate_mb = (self.estimate_mb * 3 + floor) / 4
     }
 
     /// One admission decision for the NEXT queued unit. Never blocks and
