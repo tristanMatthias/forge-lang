@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -521,6 +521,18 @@ fn avra_decl_edge_grammar() -> Grammar {
   // engines. A BARE `mut (` stays an error (parse_mut_statement demands an
   // identifier), which is why mut_decl has no destructure sibling.
   letdes_decl = "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? ")" "=" init:expression -> MkDestructure(n, init)
+  // The CONCURRENCY statements (t-47hc Phase 4). `parallel` is a keyword + a
+  // brace-delimited statement list held as RAW ids under a LEAF Parallel row
+  // (the hand's parse_statement_list_ids → Stmt.Parallel(ids) — no Block
+  // wrapper). `select` mirrors parse_select_arm_list: arms are
+  // `binding <- channel -> { body }`, ZERO arms is valid (`select { }`), and
+  // the arm list folds into the walker-opaque Stmt.Select leaf. The binding is
+  // Tk.Identifier only — keyword-words stop the arm repetition, fail the `"}"`,
+  // and the `@try` hands the whole statement back to the hand parser, whose
+  // missing-`<-` diagnostic (select_stmt/parser.av) then owns recovery.
+  parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
+  select_decl   = "select" "{" ( arms:select_arm )* "}" -> MkSelect(arms)
+  select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}" -> MkSelectArm(b, ch, body)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`

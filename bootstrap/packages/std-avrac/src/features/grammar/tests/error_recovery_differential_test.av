@@ -257,6 +257,7 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("select\nfn f() -> int { 1 }") &&
         agree_all("select x\nfn f() -> int { 1 }") &&
         agree_all("select { x }\nfn f() -> int { 1 }") &&
+        agree_all("select { 5 }\nfn f() -> int { 1 }") &&
         agree_all("select { x <- }\nfn f() -> int { 1 }") &&
         agree_all("select { x <- ch }\nfn f() -> int { 1 }") &&
         agree_all("select { x <- ch -> }\nfn f() -> int { 1 }") &&
@@ -601,6 +602,7 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("select\nfn f() -> int { 1 }") &&
         agree_bad("select x\nfn f() -> int { 1 }") &&
         agree_bad("select { x }\nfn f() -> int { 1 }") &&
+        agree_bad("select { 5 }\nfn f() -> int { 1 }") &&
         agree_bad("select { x <- }\nfn f() -> int { 1 }") &&
         agree_bad("select { x <- ch }\nfn f() -> int { 1 }") &&
         agree_bad("select { x <- ch -> }\nfn f() -> int { 1 }") &&

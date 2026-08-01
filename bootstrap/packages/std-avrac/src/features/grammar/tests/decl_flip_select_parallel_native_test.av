@@ -1,0 +1,122 @@
+// WHY: pins the routing of the CONCURRENCY statements (t-47hc Phase 4: `select` /
+// `parallel`) out of `@hand(decl_hand)`. Same property set as the binding and
+// destructure increments (decl_flip_let_binding_native_test — the #1028 dead-code
+// and #1054/#1059 recovery lessons): the rules must be EMITTED, dispatch BEFORE
+// the hand gate, stay SPECULATIVE, own the valid forms on all four parser paths,
+// and leave the acceptance frontier exactly where the hand had it — including the
+// missing-`<-` diagnostic the corpus work added to the hand
+// (select_stmt/tests/select_arm_missing_arrow_test.av pins that fix itself).
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+fn check_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_decl_selpar_${name}.av"
+    let log = "build/_decl_selpar_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+fn clean_all_paths(name: string, src: string) -> bool {
+    clean(check_out("${name}_dflt", "", src)) &&
+        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
+        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
+    then "all three parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_select_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_parallel_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_select_arm(st: PState) -> CapVal")
+    }
+
+    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+        let src = decl_src()
+        let sel_at = src.index_of("parse_select_decl(st)")
+        let par_at = src.index_of("parse_parallel_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("s_last = parse_select_decl(st)") &&
+            src.contains("s_last = parse_parallel_decl(st)") &&
+            sel_at >= 0 && par_at >= 0 && hand_at >= 0 &&
+            sel_at < hand_at && par_at < hand_at
+    }
+
+    then "the select-arm accumulator is typed List<SelectArm>, not the ExprId default" {
+        // The kind-plumbing trap the `pattern` / `tparam` / `match_arm` emit
+        // entries were written for: a mis-kinded repeat coerces arms through
+        // capval_to_expr and corrupts the tree (or fails to compile).
+        let src = decl_src()
+        src.contains("List<SelectArm>") && src.contains("capval_to_select_arm(st,")
+    }
+}
+
+spec "t-47hc Phase 4: the concurrency forms parse on all four paths" {
+    then "a parallel block with a body compiles clean everywhere" {
+        clean_all_paths("par",
+            "fn main() {\n" +
+            "    parallel {\n" +
+            "        println(\"a\")\n" +
+            "        println(\"b\")\n" +
+            "    }\n" +
+            "}\n")
+    }
+
+    then "an EMPTY parallel block compiles clean everywhere" {
+        clean_all_paths("par_empty", "fn main() {\n    parallel { }\n}\n")
+    }
+
+    then "a single-arm select compiles clean everywhere" {
+        clean_all_paths("sel",
+            "fn main() {\n" +
+            "    let ch = channel<int>(1)\n" +
+            "    ch.send(1)\n" +
+            "    select { v <- ch -> { println(string(v)) } }\n" +
+            "}\n")
+    }
+
+    then "a multi-arm select compiles clean everywhere" {
+        clean_all_paths("sel_multi",
+            "fn main() {\n" +
+            "    let a = channel<int>(1)\n" +
+            "    let b = channel<string>(1)\n" +
+            "    a.send(1)\n" +
+            "    select {\n" +
+            "        v <- a -> { println(string(v)) }\n" +
+            "        s <- b -> { println(s) }\n" +
+            "    }\n" +
+            "}\n")
+    }
+
+    then "an EMPTY select compiles clean everywhere — zero arms is valid" {
+        clean_all_paths("sel_empty", "fn main() {\n    select { }\n}\n")
+    }
+}
+
+spec "t-47hc Phase 4: the concurrency frontier did not widen" {
+    then "`parallel x` stays a parse error on the default path" {
+        let out = check_out("par_junk", "", "fn main() {\n    parallel x\n}\n")
+        !clean(out) && out.contains("error[F0001]")
+    }
+
+    then "`select { x }` stays the hand's missing-`<-` diagnostic" {
+        // The native arm rule fails at `<-`, the @try rolls back, and the HAND
+        // owns the report — the exact diagnostic its silent-drop fix added.
+        let out = check_out("sel_noarrow", "", "fn main() {\n    select { x }\n}\n")
+        !clean(out) && out.contains("error[F0001]") &&
+            out.contains("expected `<-` after select arm binding")
+    }
+
+    then "`select { 5 }` stays a parse error — a non-IDENT never starts an arm" {
+        let out = check_out("sel_num", "", "fn main() {\n    select { 5 }\n}\n")
+        !clean(out) && out.contains("error[F0001]")
+    }
+}
