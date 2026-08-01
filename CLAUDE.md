@@ -651,6 +651,10 @@ These bugs build successfully but corrupt memory at runtime.
 
 `avra build <file>` | `avra run <file>` | `avra check <file>` | `avra test [feature]` | `avra features [--graph|name]` | `avra explain <code>` | `avra package new <name>`
 
+- **`build`** links a **native executable** (incrementally, via the `@std.avrac.build` cache): default output is the source basename minus `.av` in the cwd (Go/Cargo convention), `-o <path>` overrides. `--lib` builds a library `.ll` (no link); `--per_module` is dispatch-only. The source→binary tail is `link_unit_executable` in `build/facade.av` (the ONE llc+cc site for a build — it materialises the object from the cached IR via the content-addressed object store, then consults the linked-binary cache; `diagnose.sh --run`/`run_fg` is the separate fixture runner, still load-bearing for the test suite).
+- **`run`** compiles+links to a private temp, execs it, and **forwards argv** (`avra run app.av <args>`; child flags go after a `--` terminator, captured by the run command's variadic `forward` arg). Compile diagnostics surface only on failure (clean output like `go run`). It is NOT the tree-walk interpreter anymore — that path (`execute_program_stmts`) still backs `@comptime`/`eval`.
+- **`compile`** stays IR-only (`<file>.av.ll`) — the low-level escape hatch. The bootstrap of `bs2` itself uses `bs2 compile` + an explicit llc+cc link in `diagnose.sh`, so it is unaffected by `build`'s linking.
+
 ## Error System — ZERO RAW ERRORS POLICY
 
 All errors go through `CompileError::render()`. No exceptions.

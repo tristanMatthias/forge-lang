@@ -21,6 +21,7 @@
 // that left a stale artifact can't masquerade as success.
 
 use @std.avrac.features.modules.{package_meta_path_for}
+use @std.avrac.build.{cached_build_ll_path}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -95,7 +96,13 @@ fn main() -> int {
     // The consumer entry .ll was (re)generated — proof the fast-path
     // compile ran to completion and emitted code for the surface it
     // synthesized, rather than a crashed child leaving nothing.
-    probe("consumer_ll_emitted", avra_selfhost_file_exists("${appmain}.ll") != 0)
+    // The consumer is a `[bin]`, so its IR lives in the content-addressed
+    // cache slot, not beside the source: a bin build links an executable from
+    // the cache and installs nothing next to src/ (a whole-program `.ll` is
+    // ~60MB of litter). A [lib] still installs — its IR is a product the
+    // metadata fast-path lowers to a producer object.
+    probe("consumer_ll_emitted",
+          avra_selfhost_file_exists(cached_build_ll_path("${root}/packages/test-app", "app")) != 0)
 
     0
 }

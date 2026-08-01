@@ -15,7 +15,6 @@ name = "std-avrac"
 path = "src/avrac.av"
 
 [dependencies]
-"@std/cli"     = { path = "../std-cli" }
 "@std/lsp"     = { path = "../std-lsp" }
 "@std/json"    = { path = "../std-json" }
 "@std/crypto"  = { path = "../std-crypto" }
