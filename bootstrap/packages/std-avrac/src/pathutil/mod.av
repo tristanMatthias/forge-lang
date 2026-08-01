@@ -30,6 +30,21 @@ export fn basename_no_ext(path: string) -> string {
     }
 }
 
+/// The directory portion of `path` — everything before the last `/`.
+/// Returns "." when there is no separator, so a bare filename resolves
+/// against the current directory rather than the filesystem root.
+/// `dirname("build/bs2")` → "build"; `dirname("bs2")` → ".".
+export fn dirname(path: string) -> string {
+    mut last_slash = -1
+    mut si = 0
+    for ch in path {
+        if ch == "/" { last_slash = si }
+        si = si + 1
+    }
+    if last_slash < 0 { return "." }
+    path.substring(0, last_slash)
+}
+
 /// Split `path` on `/`, dropping empty segments (so a leading or doubled
 /// separator contributes nothing). `path_segments("a//b/c.av")` →
 /// `["a", "b", "c.av"]`.

@@ -44,6 +44,15 @@ export fn default_link_options() -> LinkOptions {
     }
 }
 
+/// Canonical string of the LINK-relevant options — the `opts_canonical`
+/// axis of the content-addressed linked-binary cache key. ONE definition so
+/// every link site (the CGU driver, the executable facade) keys identically;
+/// a drift here would silently split or alias the link cache.
+export fn link_opts_canonical(opts: LinkOptions) -> string {
+    let cov = if opts.coverage { "1" } else { "0" }
+    "stack=${opts.stack_size_hex}|llvm=${llvm_prefix_dir()}|cov=${cov}"
+}
+
 /// Resolve the LLVM toolchain install root. The single source of
 /// truth for every Avra-side site that shells out to llc/opt/
 /// llvm-profdata or links against libLLVM — without this, each site

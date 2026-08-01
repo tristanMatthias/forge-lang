@@ -1,0 +1,697 @@
+// WHY: the build FACADE — the whole build system behind three calls, so a
+// consumer never touches a cache slot, an object, an llc invocation or an
+// artifact path. Machinery lives in the siblings (cache/compile/link/
+// driver/fingerprint/graph.av).
+//
+//     let report = build_executable(build_request(project_dir))
+//
+//   build_ir              source → cached LLVM IR
+//   build_executable      source → native binary
+//   link_unit_executable  the link tail for an already-built unit
+//
+// `run(cmd, label, estimate) -> rc` runs the compile subprocess. It is
+// INJECTED, not imported: a progress UI lives above this layer, and
+// reaching up for it would make @std/avrac depend on @std/cli — the import
+// cycle that silently double-loads a unit's own source (duplicate-symbol
+// FATAL at codegen). Callers pass `run_with_progress`; `quiet` mode uses
+// the silent runner below and ignores this.
+//
+// Three content-addressed caches — IR by unit fingerprint, object by IR
+// content, binary by link inputs — so an unchanged rebuild re-runs nothing.
+
+use build.link.{LinkOptions, default_link_options, link_objects, link_opts_canonical,
+                atomic_cp_cmd, atomic_install_cmd}
+use build.cache.{cache_for, cache_entry_realobj_path, linked_bin_key, linked_bin_lookup,
+                 linked_bin_publish, entry_source_meta_path, ensure_source_meta_dir, entry_ll_path}
+use build.driver.{BuildInputs, BuildOutcome, decide_build, record_build_result}
+use build.fingerprint.{Fingerprint, fp_short, package_full_fingerprint, source_slot_fp}
+use build.graph.{Unit, build_graph}
+use features.modules.{load_manifest, package_root_for_file, Manifest, Dep}
+use pathutil.{basename_no_ext, dirname}
+use @std.json.{json_str, json_object, json_pairs, json_pair_add}
+use core.{avra_process_env_get, avra_shell_exec, avra_shell_exec_status, avra_getpid,
+          avra_remove_file, avra_file_mtime, avra_file_size, avra_selfhost_read_file,
+          avra_selfhost_write_file, avra_selfhost_file_exists, avra_selfhost_get_arg_cstr,
+          avra_parse_int, avra_uptime_ms}
+
+// ── Request / report ────────────────────────────────────────────────
+
+/// How a build reports itself. ONE setting instead of three overlapping
+/// booleans — quiet/explain/json were mutually exclusive in practice, so an
+/// enum makes the invalid combinations unrepresentable.
+export enum BuildOutput {
+    Quiet,      // silent on success; diagnostics only on failure
+    Normal,     // Built/Cached + the [cache] accounting line
+    Explain,    // rebuild attribution + dep graph (cargo --explain)
+    Json,       // one JSON event per line, for tooling
+}
+
+/// Path-deps the caller pre-built, folded into the [cache] accounting line.
+export type DepTally = { hits: int, misses: int, detail: string }
+
+/// No pre-built deps — the common case.
+export fn no_deps() -> DepTally { DepTally { hits: 0, misses: 0, detail: "" } }
+
+/// What to build. Build one with `build_request(project_dir)` and override
+/// only what you need.
+///   entry   "" → the manifest's [bin] (or [lib])
+///   output  "" → the source basename minus `.av`, in the cwd
+///   library    build the [lib] target; implied when a package has no [bin]
+export type BuildRequest = {
+    project_dir: string,
+    entry: string,
+    output: string,
+    release: bool,
+    library: bool,
+    emit_metadata: bool,
+    timings: bool,
+    mode: BuildOutput,
+    deps: DepTally,
+}
+
+/// A request with defaults filled in: dev profile, binary target, normal
+/// output. `project_dir` is the cache + manifest root (normally the cwd).
+export fn build_request(project_dir: string) -> BuildRequest {
+    BuildRequest {
+        project_dir: project_dir,
+        entry: "",
+        output: "",
+        release: false,
+        library: false,
+        emit_metadata: false,
+        timings: false,
+        mode: BuildOutput.Normal,
+        deps: no_deps(),
+    }
+}
+
+/// Does this mode print status at all?
+fn shows_status(m: BuildOutput) -> bool { match m { .Quiet -> false, _ -> true } }
+fn is_json(m: BuildOutput) -> bool { match m { .Json -> true, _ -> false } }
+fn is_explain(m: BuildOutput) -> bool { match m { .Explain -> true, _ -> false } }
+
+/// What a build produced. `ok` is the verdict; on failure `error` carries a
+/// ready-to-print message and every other field is best-effort. The caller
+/// decides what a failure means — the build layer never exits the process.
+///
+/// `ir_cached` is true when the IR came from the cache (no compile ran);
+/// `bin_cached` when the binary came from the link cache (no llc/cc ran).
+export type BuildReport = {
+    ok: bool,
+    error: string,
+    entry: string,
+    unit: string,
+    fp: string,
+    ir_path: string,
+    binary_path: string,
+    ir_cached: bool,
+    bin_cached: bool,
+    reason: string,
+}
+
+/// A successful report for a build that produced no single artifact — the
+/// `--per_module` fan-out, whose output is many units under build/per_mod.
+/// `entry`/`fp`/`binary_path` are empty, so nothing downstream tries to
+/// link it.
+export fn build_report_empty() -> BuildReport {
+    BuildReport {
+        ok: true, error: "", entry: "", unit: "", fp: "",
+        ir_path: "", binary_path: "", ir_cached: false, bin_cached: false, reason: "",
+    }
+}
+
+/// A failed report carrying `msg`. Everything else is empty — callers gate
+/// on `ok` before reading the artifact fields.
+fn build_failed(msg: string) -> BuildReport {
+    BuildReport {
+        ok: false, error: msg, entry: "", unit: "", fp: "",
+        ir_path: "", binary_path: "", ir_cached: false, bin_cached: false, reason: "",
+    }
+}
+
+// ── The build ───────────────────────────────────────────────────────
+
+/// Compile a unit to LLVM IR, incrementally: resolve the target (argument
+/// or manifest), fingerprint it (sources + dep closure + compiler), consult
+/// the build cache, and on a miss run the compile and publish the result.
+/// The IR is installed at `<entry>.ll` for the consumers that read it there.
+///
+/// Never exits the process — a failure comes back as `ok: false`.
+export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> BuildReport {
+    let project_dir = req.project_dir
+    let manifest = load_manifest("${project_dir}/")
+    let prefer_lib = is_library_target(manifest, req.library)
+    let manifest_entry = if prefer_lib && manifest.lib.present {
+        manifest.lib.path
+    } else if manifest.bin.present {
+        manifest.bin.path
+    } else {
+        ""
+    }
+    let entry_path = if req.entry != "" { req.entry } else { manifest_entry }
+    if entry_path == "" {
+        let needed = if req.library { "[lib].path" } else { "[bin].path" }
+        return build_failed("error: bs2 build requires either a file argument or ${needed} in avra.toml")
+    }
+    if avra_selfhost_file_exists(entry_path) != 1 {
+        return build_failed("error: file not found: ${entry_path}")
+    }
+
+    let profile = if req.release { manifest.profile_release } else { manifest.profile_dev }
+    let unit_name = unit_name_for(manifest, req.library)
+    let compiler_path = resolve_compiler_path(project_dir)
+    let target_kind = if prefer_lib { "lib" } else { "bin" }
+    // pdme.1: fold the package's dep-aware full fingerprint into the unit
+    // key, so editing any source in the dep closure (not just the entry
+    // file) misses the cache. "" (no manifest) → no dep axis.
+    let full_fp = package_full_fingerprint(project_dir)
+    let inputs = BuildInputs {
+        project_root: project_dir,
+        unit_name: unit_name,
+        kind: target_kind,
+        sources: [entry_path],
+        entry_path: entry_path,
+        compiler_path: compiler_path,
+        target_triple: "host",
+        profile_name: profile.name,
+        opt_level: profile.opt_level,
+        debug: profile.debug,
+        overflow_checks: profile.overflow_checks,
+        coverage: profile.coverage,
+        lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        dep_fps: if full_fp == "" { [] } else { [full_fp] },
+    }
+
+    // With `explain` on, surface the manifest's [dependencies] graph so the
+    // user sees what units would participate in the build.
+    if is_explain(req.mode) && manifest.found {
+        let g = build_graph("${project_dir}/")
+        if !g.had_error {
+            let n = g.units.length
+            if n > 1 {
+                println("graph: ${string(n)} units (${render_unit_chain(g.units)})")
+            }
+        }
+    }
+
+    let t_start = avra_uptime_ms()
+    // pdme.7: re-validate after the decide — the Hit decision and this
+    // consumption are check-then-use over a mutable path (a concurrent
+    // evictor can empty the slot in between). A vanished/empty slot demotes
+    // to a Miss so the build recompiles instead of shipping a 0-byte
+    // artifact. (Same class as the compile-cache read gate.)
+    mut outcome = decide_build(inputs)
+    match outcome {
+        .Hit(_, cached_ll) -> {
+            // Consuming a Hit validates the slot and materialises the
+            // artifact atomically; either failing demotes to an honest Miss.
+            // A LIBRARY's IR is a product (the metadata fast-path lowers it to
+            // a producer object, and the lib contract tests pin it), so it is
+            // installed beside the source. A BINARY's is an intermediate — the
+            // cache holds it — so no ~60MB copy lands next to the user.
+            let installed = if prefer_lib {
+                avra_file_size(cached_ll) > 0
+                    && avra_shell_exec_status(atomic_cp_cmd(cached_ll, "${entry_path}.ll", avra_getpid())) == 0
+            } else {
+                avra_file_size(cached_ll) > 0
+            }
+            if !installed {
+                eprintln("[build-cache] stale-read miss — slot emptied or uninstallable mid-read; rebuilding")
+                outcome = match decide_build(inputs) {
+                    .Hit(fp2, _) -> BuildOutcome.Miss(fp2, "", "slot emptied mid-read")
+                    .Miss(fp2, pk, reason) -> BuildOutcome.Miss(fp2, pk, reason)
+                }
+            }
+        }
+        // A Miss needs no read-validation — there is nothing to consume.
+        .Miss(_, _, _) -> {}
+    }
+    let t_after_decide = avra_uptime_ms()
+    match outcome {
+        .Hit(fp, cached_ll) -> {
+            // The artifact was already installed atomically by the
+            // validation above; this arm only reports and mirrors meta.
+            // A bin build leaves its IR in the cache, so name THAT path
+            // rather than a source-adjacent file that no longer exists.
+            let dst = if prefer_lib { "${entry_path}.ll" } else { cached_ll }
+            // 0qmm: repopulate the source-keyed meta slot consumers (resolver
+            // fast-path, fixtures) read — a Hit that skips this leaves them
+            // meta-less. Size-gate: a 0-byte placeholder must not clobber a
+            // good payload.
+            if req.emit_metadata {
+                let suffix_len = 8  // "/unit.ll"
+                let cache_dir = cached_ll.substring(0, cached_ll.length - suffix_len)
+                let cached_meta = "${cache_dir}/metadata.bin"
+                if avra_selfhost_file_exists(cached_meta) != 0 {
+                    let size_str = avra_shell_exec("wc -c < '${cached_meta}' 2>/dev/null | tr -d ' '")
+                    if size_str != "" && size_str != "0" {
+                        mirror_source_meta(cached_meta, entry_path)
+                    }
+                }
+            }
+            if req.timings {
+                let total = avra_uptime_ms() - t_start
+                let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
+                    t_after_decide - t_start, 0, 0, total, "hit")
+            }
+            if shows_status(req.mode) {
+                if is_json(req.mode) {
+                    println(build_event_json("hit", unit_name, fp_short(fp), dst, ""))
+                } else if is_explain(req.mode) {
+                    println("cached ${fp_short(fp)} — ${entry_path}")
+                } else {
+                    println("Cached ${fp_short(fp)}: ${dst}")
+                }
+                // pdme.5: the build's cache accounting as the last line —
+                // this unit's hit + the pre-built deps' tallies.
+                if !is_json(req.mode) {
+                    println(cache_summary_line(req.deps.hits + 1, req.deps.misses, req.deps.detail))
+                }
+            }
+            return BuildReport {
+                ok: true, error: "", entry: entry_path, unit: unit_name, fp: fp.hex,
+                ir_path: dst, binary_path: "", ir_cached: true, bin_cached: false, reason: "",
+            }
+        }
+        .Miss(fp, _, reason) -> {
+            if shows_status(req.mode) {
+                if is_json(req.mode) {
+                    println(build_event_json("miss", unit_name, fp_short(fp), entry_path, reason))
+                } else if is_explain(req.mode) {
+                    println("rebuild ${fp_short(fp)} — ${reason}")
+                }
+            }
+            // Re-exec `bs2 compile` as a subprocess so codegen behaviour is
+            // identical to a non-build flow. opt_level affects llc, not IR
+            // emission, so it stays in the fingerprint but isn't passed.
+            mut compile_cmd = "${compiler_path} compile"
+            if profile.coverage {
+                compile_cmd = compile_cmd + " --coverage"
+            }
+            if req.emit_metadata {
+                compile_cmd = compile_cmd + " --emit_metadata"
+            }
+            // 2f54: when building a [lib] with metadata, auto-derive
+            // --module_path from the manifest's [package].name so the
+            // emitted symbols use the qualified namespace consumers
+            // reference via `use @<scope>.<pkg>...`. Maps `/` → `::`.
+            if prefer_lib && req.emit_metadata && manifest.found {
+                let derived_path = manifest.name.replace("/", "::")
+                if derived_path != "" {
+                    compile_cmd = compile_cmd + " --module_path='${derived_path}'"
+                }
+            }
+            // t-5s7l: the child writes to a PID-PRIVATE output, never the
+            // shared `<entry>.ll` — two concurrent builds of one package would
+            // otherwise race there ("compile produced no IR" while every
+            // artifact is correct on disk). pdme.7: `--output` is not a
+            // compilation input, so the compile cache is unaffected.
+            let ll_out = "${entry_path}.build-${string(avra_getpid())}.ll"
+            compile_cmd = compile_cmd + " --output='${ll_out}'"
+            compile_cmd = compile_cmd + " '${entry_path}'"
+            // g2eo: when metadata is on AND a path-dep was pre-built, its
+            // `.meta.bin` sits next to the dep source. AVRA_USE_METADATA=1
+            // lets the resolver's metadata fast-path consume those —
+            // skipping a full re-parse of every dep package. Safe because
+            // the fingerprint check rejects any stale .meta.bin and falls
+            // back to a fresh source parse; a meta absent or out-of-date
+            // never produces wrong code, just the slower path.
+            let env_prefix = if req.emit_metadata && manifest.found && count_path_deps(manifest.deps) > 0 {
+                "AVRA_USE_METADATA=1 "
+            } else {
+                ""
+            }
+            let t_before_compile = avra_uptime_ms()
+            // Freshness comes from reading `ll_out` (this process's own
+            // private output), never the shared path — else a crashed child
+            // would report Built off the previous run's IR and publish it
+            // under the fresh fingerprint. Clear this pid's slot first (pids
+            // recycle). avra_remove_file returns 1 on unlink AND on
+            // already-absent; 0 means the file survived, which voids the
+            // guarantee — so fail loudly.
+            let ll_path = "${entry_path}.ll"
+            if avra_remove_file(ll_out) != 1 {
+                return build_failed("error: could not remove stale artifact ${ll_out} before compile")
+            }
+            // Snapshot the shared entry artifact's identity BEFORE the child
+            // runs, so the failure paths below can tell a leftover from an
+            // earlier run (safe to remove) from a sibling's publication that
+            // landed while this build was compiling (must not be touched).
+            let ll_mtime_before = avra_file_mtime(ll_path)
+            // Orphan sweep: a hard kill (OOM/jetsam) between the child's
+            // write and the install leaves an unowned ~55MB `ll_out`. NOT a
+            // blanket glob — this path is contended by construction, so that
+            // would delete a sibling's in-flight artifact. Age-gate instead:
+            // the longest entry compile here is ~370s, so a day is safe.
+            let _ = avra_shell_exec("find \"$(dirname '${entry_path}')\" -maxdepth 1 " +
+                "-name \"$(basename '${entry_path}').build-*.ll\" -mmin +1440 -delete 2>/dev/null")
+            // Renders a multi-line sticky progress UI on a TTY; pipes / CI
+            // fall through to a silent captured run. Either way the child's
+            // REAL exit status comes back — it is the primary success gate;
+            // the artifact check is only a consistency assert behind it.
+            let full_cmd = "${env_prefix}${compile_cmd}"
+            let compile_rc = if !shows_status(req.mode) {
+                run_compile_quiet(full_cmd)
+            } else {
+                let count_raw = avra_shell_exec("find . -name '*.av' -not -path '*/build/*' -not -path '*/tests/*_fixtures/*' 2>/dev/null | wc -l").trim()
+                let total_estimate = avra_parse_int(count_raw)
+                run(full_cmd, "compiling ${unit_name}", total_estimate)
+            }
+            let t_after_compile = avra_uptime_ms()
+            if compile_rc != 0 {
+                // Don't leave an EARLIER run's artifact at the entry path
+                // (libbuild_stale_ll_test pins that) — but don't delete a
+                // SIBLING's either: a transient/OOM failure isn't shared, and
+                // the sibling may have just published valid IR.
+                let _ = avra_remove_file(ll_out)
+                remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
+                // Name the SOURCE, not just the cache unit: an explicit
+                // entry overrides the manifest, so reporting the unit alone
+                // ("compile failed for bs2" while compiling /tmp/x.av) names
+                // the wrong thing.
+                return build_failed("error: compile failed for ${entry_path} (child exit ${string(compile_rc)})")
+            }
+            if avra_selfhost_file_exists(ll_out) != 1 {
+                remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
+                return build_failed("error: compile produced no IR (looked for ${ll_out})")
+            }
+            let ll_content = avra_selfhost_read_file(ll_out)
+            // A LIBRARY's IR is installed at the shared entry path its
+            // consumers read (rename, so a reader sees whole IR and a
+            // whole-compiler `.ll` isn't copied twice). A BINARY's stays in
+            // the cache — no ~60MB copy beside the user's source.
+            if prefer_lib {
+                if avra_shell_exec_status(atomic_install_cmd(ll_out, ll_path)) != 0 {
+                    // A failed install is a failed build, so it owes the same
+                    // stale-entry cleanup as the two exits above.
+                    let _ = avra_remove_file(ll_out)
+                    remove_entry_ll_if_unchanged(ll_path, ll_mtime_before)
+                    return build_failed("error: could not install ${ll_out} at ${ll_path}")
+                }
+            } else {
+                let _ = avra_remove_file(ll_out)
+            }
+            let metadata = ""
+            let staging_id = "${unit_name}.${fp_short(fp)}"
+            let pr = record_build_result(inputs, fp, ll_content, ll_path, metadata, "", "", staging_id)
+            // Where this build's IR actually lives: next to the source for a
+            // library, in the content-addressed cache slot for a binary.
+            let ir_out = if prefer_lib { ll_path } else { entry_ll_path(cache_for(project_dir), fp) }
+            // 0qmm: mirror the source-keyed slot (just emitted by the child)
+            // into the path-keyed cache so future Hits can restore it.
+            if pr.success && req.emit_metadata {
+                // 2wfp/pdme.1: source-keyed slot uses the dep-aware
+                // whole-package fp; ad-hoc entries fall back to the entry's
+                // file hash (must match what the inner `bs2 compile
+                // --emit_metadata` child keyed its sidecar under — both
+                // sides derive via source_slot_fp).
+                let pkg_root = package_root_for_file(entry_path)
+                let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
+                let pkg_cache = cache_for(pkg_root)
+                let sidecar = entry_source_meta_path(pkg_cache, source_fp)
+                if avra_selfhost_file_exists(sidecar) != 0 {
+                    let cache_meta_dir = "${project_dir}/build/cache/${fp.hex}"
+                    // Atomic: this metadata.bin lands in a cache slot that a
+                    // later HIT trusts by existence (cache_has), so a killed
+                    // cp must not leave a partial there. (kaux/rrio class.)
+                    avra_shell_exec(atomic_cp_cmd(sidecar, "${cache_meta_dir}/metadata.bin", avra_getpid()))
+                }
+            }
+            let t_after_publish = avra_uptime_ms()
+            if req.timings {
+                let _ = write_timings_html(project_dir, unit_name, fp_short(fp),
+                    t_after_decide - t_start,
+                    t_after_compile - t_before_compile,
+                    t_after_publish - t_after_compile,
+                    t_after_publish - t_start,
+                    if pr.success { "miss-built" } else { "miss-publish-failed" })
+            }
+            if shows_status(req.mode) {
+                if pr.success {
+                    if is_json(req.mode) {
+                        println(build_event_json("built", unit_name, fp_short(fp), ir_out, ""))
+                    } else {
+                        println("Built ${fp_short(fp)}: ${ir_out}")
+                    }
+                } else {
+                    if is_json(req.mode) {
+                        println(build_event_json("publish_failed", unit_name, fp_short(fp), ir_out, pr.error))
+                    } else {
+                        eprintln("warning: cache publish failed: ${pr.error}")
+                        println("Built (uncached): ${ir_out}")
+                    }
+                }
+                // pdme.5: the build's cache accounting as the last line —
+                // pre-built deps' tallies, then this unit's miss with its
+                // attribution (deps first, root last).
+                if !is_json(req.mode) {
+                    println(cache_summary_line(req.deps.hits, req.deps.misses + 1,
+                        req.deps.detail + "; " + unit_name + " MISS [" + reason + "]"))
+                }
+            }
+            return BuildReport {
+                ok: true, error: "", entry: entry_path, unit: unit_name, fp: fp.hex,
+                ir_path: ir_out, binary_path: "", ir_cached: false, bin_cached: false,
+                reason: reason,
+            }
+        }
+    }
+}
+
+/// Build a native executable: `build_ir` followed by the link tail. The
+/// output path is `req.output`, defaulting to the source basename minus
+/// `.av` in the cwd (the Go/Cargo convention).
+///
+/// Both halves are cached, so an unchanged rebuild runs neither the
+/// compiler nor llc/cc. A `library` request has no entry point to link and
+/// returns the IR report unchanged.
+export fn build_executable(req: BuildRequest, run: fn(string, string, int) -> int) -> BuildReport {
+    let built = build_ir(req, run)
+    if !built.ok { return built }
+    if req.library { return built }
+    let out_bin = if req.output != "" { req.output } else { basename_no_ext(built.entry) }
+    let fp_val = Fingerprint { hex: built.fp }
+    let bs2_dir = runtime_objects_dir(req.project_dir)
+    let opts = default_link_options()
+    match link_unit_executable(req.project_dir, fp_val, out_bin, bs2_dir, opts) {
+        .Ok(cached) -> {
+            BuildReport {
+                ok: true, error: "", entry: built.entry, unit: built.unit, fp: built.fp,
+                ir_path: built.ir_path, binary_path: out_bin, ir_cached: built.ir_cached,
+                bin_cached: cached, reason: built.reason,
+            }
+        }
+        .Err(e) -> build_failed("error: ${e}")
+    }
+}
+
+/// Link the native executable for an already-built unit into `out_bin`,
+/// fully cache-managed. The unit's IR is the complete cache slot `fp`
+/// (published by `build_ir` under `project_dir`); this materialises the
+/// object from that IR (content-addressed object store — no re-llc when the
+/// IR is unchanged) and links it against the runtime helpers that ship next
+/// to the compiler in `bs2_dir`, consulting the content-addressed
+/// linked-binary cache first (no cc when the link inputs are byte-identical).
+///
+/// Returns Ok(true) when the binary was served from the link cache (nothing
+/// relinked), Ok(false) when freshly linked, Err(msg) on failure.
+export fn link_unit_executable(project_dir: string, fp: Fingerprint, out_bin: string,
+                               bs2_dir: string, opts: LinkOptions) -> Result<bool, string> {
+    let c = cache_for(project_dir)
+    let obj = cache_entry_realobj_path(c, fp)
+    if obj == "" {
+        return Result.Err("could not materialise an object from the cached IR for ${fp.hex}")
+    }
+    let runtime_o = "${bs2_dir}/runtime.o"
+    let wrapper_o = "${bs2_dir}/llvm_wrapper.o"
+    if avra_selfhost_file_exists(runtime_o) != 1 || avra_selfhost_file_exists(wrapper_o) != 1 {
+        return Result.Err("runtime objects (runtime.o / llvm_wrapper.o) not found next to the compiler in ${bs2_dir}")
+    }
+    let key = linked_bin_key([obj], runtime_o, wrapper_o, link_opts_canonical(opts))
+    if linked_bin_lookup(c, key, out_bin) {
+        return Result.Ok(true)
+    }
+    if link_objects([obj], runtime_o, wrapper_o, out_bin, opts) != 0 {
+        return Result.Err("linker (cc) failed producing ${out_bin}")
+    }
+    linked_bin_publish(c, key, out_bin)
+    Result.Ok(false)
+}
+
+// ── Shared build-domain helpers ─────────────────────────────────────
+
+/// True when this build should target the manifest's [lib]: either asked
+/// for explicitly, or because the package has no [bin] to fall back on
+/// (so a build works in library-only packages — 2f54).
+export fn is_library_target(manifest: Manifest, library: bool) -> bool {
+    library || (!manifest.bin.present && manifest.lib.present)
+}
+
+/// The cache unit name for a build target — the manifest's [lib]/[bin]
+/// name, or "main" for an ad-hoc entry with no manifest. ONE definition so
+/// every reporter names the unit identically.
+export fn unit_name_for(manifest: Manifest, library: bool) -> string {
+    let prefer_lib = is_library_target(manifest, library)
+    if manifest.found && prefer_lib && manifest.lib.present {
+        manifest.lib.name
+    } else if manifest.found && manifest.bin.present {
+        manifest.bin.name
+    } else {
+        "main"
+    }
+}
+
+/// Resolve the compiler binary path for any sub-compile / shard dispatch.
+/// First-match wins:
+///   1. AVRA_COMPILER env var (explicit override — CI / cross-builds)
+///   2. <project_dir>/build/bs2 (in-tree bootstrap convention)
+///   3. argv[0] (the currently-running bs2 — guaranteed to exist, but only
+///      when build/bs2 is absent, else we'd send shards through a different
+///      bs2 than the orchestrator)
+export fn resolve_compiler_path(project_dir: string) -> string {
+    let env_compiler = avra_process_env_get("AVRA_COMPILER")
+    if env_compiler != "" { return env_compiler }
+    let local_compiler = "${project_dir}/build/bs2"
+    if avra_selfhost_file_exists(local_compiler) == 1 { return local_compiler }
+    avra_selfhost_get_arg_cstr(0)
+}
+
+/// The directory the C-side runtime helpers (runtime.o, llvm_wrapper.o)
+/// ship in — always next to the resolved compiler binary.
+export fn runtime_objects_dir(project_dir: string) -> string {
+    dirname(resolve_compiler_path(project_dir))
+}
+
+/// Remove `ll_path` ONLY if it is the artifact we saw before the compile
+/// (same mtime). A build that fails must not leave an earlier run's IR
+/// where a later consumer would read it as this build's output — but it
+/// must not delete a CONCURRENT sibling's freshly published artifact
+/// either. The mtime is the discriminator.
+export fn remove_entry_ll_if_unchanged(ll_path: string, mtime_before: int) {
+    if avra_file_mtime(ll_path) == mtime_before {
+        let _ = avra_remove_file(ll_path)
+    }
+}
+
+/// Run a compile with NO chatter on success — the `quiet` path, used when
+/// the build is a means to an end (`avra run`) rather than the point.
+/// Diagnostics are captured and surfaced ONLY if the compile fails, so a
+/// clean build never buries the program's own output (the `go run` model).
+fn run_compile_quiet(cmd: string) -> int {
+    let log = "/tmp/avra_build_quiet.${string(avra_getpid())}.log"
+    let rc = avra_shell_exec_status("${cmd} >'${log}' 2>&1")
+    if rc != 0 {
+        eprintln(avra_selfhost_read_file(log))
+    }
+    let _ = avra_remove_file(log)
+    rc
+}
+
+/// Mirror a path-keyed `metadata.bin` into the source-keyed meta slot the
+/// resolver fast-path reads. 2wfp/pdme.1: the slot uses the dep-aware
+/// whole-package fp; ad-hoc entries fall back to the entry's file hash — an
+/// empty key would alias every ad-hoc entry to one slot.
+fn mirror_source_meta(cached_meta: string, entry_path: string) {
+    let pkg_root = package_root_for_file(entry_path)
+    let source_fp = Fingerprint { hex: source_slot_fp(pkg_root, entry_path) }
+    let pkg_cache = cache_for(pkg_root)
+    let _ = ensure_source_meta_dir(pkg_cache, source_fp)
+    let dest = entry_source_meta_path(pkg_cache, source_fp)
+    // Atomic: the source-keyed meta slot is trusted by existence
+    // (cache_has_source_meta); a killed cp must not leave a partial there.
+    avra_shell_exec(atomic_cp_cmd(cached_meta, dest, avra_getpid()))
+}
+
+/// How many of `deps` are path-deps (the ones a build can pre-build).
+export fn count_path_deps(deps: List<Dep>) -> int {
+    mut n = 0
+    for d in deps {
+        if d.path != "" { n = n + 1 }
+    }
+    n
+}
+
+// Compose the end-of-build summary: root unit outcome + pre-built dep
+// tallies in one greppable line, the lkze.9 "did it really run my new
+// code?" signal. Shape per the pdme.5 ticket:
+//   [cache] 1 hits / 2 misses (cli MISS [package deps changed (…)]; std-json MISS [source changed: …])
+export fn cache_summary_line(hits: int, misses: int, detail: string) -> string {
+    let base = "[cache] ${string(hits)} hits / ${string(misses)} misses"
+    if detail == "" { return base }
+    // detail entries arrive "; name MISS [reason]" — strip the leading
+    // separator and parenthesize.
+    base + " (" + detail.substring(2, detail.length) + ")"
+}
+
+/// Render a single build event as a one-line JSON object for IDE / tooling
+/// consumption (`bs2 build --json` / `--message-format=json`). Each call
+/// yields a complete document on its own line so consumers can parse the
+/// stream as JSONL. Strings are escaped via @std/json so embedded quotes /
+/// backslashes / control bytes survive intact.
+///
+/// Event kinds:
+///   "hit"            cache hit; `path` is the .ll, `reason` is empty
+///   "miss"           cache miss; `path` is the source, `reason` is the
+///                    explain attribution
+///   "built"          successful publish after a Miss
+///   "publish_failed" cache publish failed AFTER successful build
+export fn build_event_json(kind: string, unit: string, fp: string, path: string, reason: string) -> string {
+    mut p = json_pairs()
+    p = json_pair_add(p, "event", json_str(kind))
+    p = json_pair_add(p, "unit", json_str(unit))
+    p = json_pair_add(p, "fp", json_str(fp))
+    p = json_pair_add(p, "path", json_str(path))
+    p = json_pair_add(p, "reason", json_str(reason))
+    json_object(p)
+}
+
+/// Render a List<Unit> as "a → b → c". Used by `explain` to summarise the
+/// project's dep graph in a single line. Topological order means leaves
+/// come first; we display in that order so the chain reads "what gets built
+/// first → ... → root".
+export fn render_unit_chain(units: List<Unit>) -> string {
+    mut out = ""
+    for (i, unit) in units.enumerate() {
+        if i > 0 { out = out + " → " }
+        out = out + unit.name
+    }
+    out
+}
+
+/// Write a self-contained HTML timings report to
+/// `<root>/build/timings/<unit>-<fp>.html`. Each phase row shows its
+/// duration in ms; the header summarises total wall time. cargo --timings
+/// is the model; the body stays minimal (no external CSS / JS) so the file
+/// renders in any browser without a network round trip.
+export fn write_timings_html(project_root: string, unit_name: string, fp_short_str: string,
+                             decide_ms: int, compile_ms: int, publish_ms: int, total_ms: int,
+                             outcome_label: string) -> string {
+    let dir = "${project_root}/build/timings"
+    avra_shell_exec("mkdir -p '${dir}'")
+    let path = "${dir}/${unit_name}-${fp_short_str}.html"
+    let scale_max = if total_ms == 0 { 1 } else { total_ms }
+    let body = "<!doctype html>\n"
+        + "<html><head><meta charset=\"utf-8\">"
+        + "<title>bs2 build timings — ${unit_name} ${fp_short_str}</title>"
+        + "<style>body{font-family:system-ui,sans-serif;margin:2em;color:#111}"
+        + "h1{margin:0 0 .5em 0}.meta{color:#666;margin-bottom:1em}"
+        + "table{border-collapse:collapse}td,th{padding:.4em 1em;text-align:left}"
+        + "th{border-bottom:2px solid #333}.bar{background:#4a90e2;height:14px;display:inline-block;vertical-align:middle}"
+        + ".total{font-weight:bold;border-top:1px solid #999}"
+        + "</style></head><body>"
+        + "<h1>bs2 build — ${unit_name}</h1>"
+        + "<div class=\"meta\">fingerprint: ${fp_short_str} · outcome: ${outcome_label} · total: ${string(total_ms)}ms</div>"
+        + "<table><tr><th>phase</th><th>duration</th><th></th></tr>"
+        + render_timing_row("decide", decide_ms, scale_max)
+        + render_timing_row("compile", compile_ms, scale_max)
+        + render_timing_row("publish", publish_ms, scale_max)
+        + "<tr class=\"total\"><td>total</td><td>${string(total_ms)}ms</td><td></td></tr>"
+        + "</table></body></html>\n"
+    avra_selfhost_write_file(path, body)
+    path
+}
+
+fn render_timing_row(label: string, ms: int, scale_max: int) -> string {
+    let width = if scale_max == 0 { 0 } else { (ms * 400) / scale_max }
+    "<tr><td>${label}</td><td>${string(ms)}ms</td><td><span class=\"bar\" style=\"width:${string(width)}px\"></span></td></tr>"
+}

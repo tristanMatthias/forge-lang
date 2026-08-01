@@ -22,3 +22,33 @@
 // directory-as-module semantics — no `mod` decls needed. Consumers
 // reach machinery via:
 //   use @std.avrac.build.fingerprint.{fp_for_unit, ...}
+//
+// ── START HERE: the facade (facade.av) ──────────────────────────────
+//
+// Most consumers want one of three calls, not the machinery below them.
+// The facade owns every artifact — cache slots, the intermediate object,
+// the linked binary — so a caller never names a path, runs llc, or
+// reasons about freshness:
+//
+//     use @std.avrac.build.{build_request, build_executable}
+//
+//     mut req = build_request(project_dir)
+//     req.entry = "src/app.av"          // "" → manifest [bin]/[lib]
+//     let report = build_executable(req)
+//     if !report.ok { eprintln(report.error) }
+//
+//   build_ir              source → cached LLVM IR
+//   build_executable      source → native binary
+//   link_unit_executable  the link tail for an already-built unit
+//
+// Three content-addressed caches — IR by unit fingerprint, object by IR
+// content, binary by link inputs — make an unchanged rebuild a no-op.
+//
+// The facade NEVER exits the process: failures come back as
+// `report.ok == false` with a printable `report.error`. Set
+// `req.mode = BuildOutput.Quiet` when the build is a means to an end.
+//
+// Reach past the facade (decide_build / cache_* / link_objects) only for
+// genuinely new orchestration. If you find yourself hand-rolling llc, a
+// `.o` path, or a freshness stamp in a consumer, the facade is missing a
+// function — add it THERE, not a second build path in the caller.
