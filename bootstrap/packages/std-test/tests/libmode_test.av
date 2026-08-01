@@ -1,0 +1,99 @@
+// WHY (t-6flr): the @std/* metadata fast-path is a 3x memory lever, and when it
+// silently failed to engage the run header still announced the mode it INTENDED
+// — so a degraded ~6000MB/shard run read identically to a healthy one. These
+// pin the three contracts that make it self-explaining:
+//   1. the achieved mode is DERIVED from the producer objects we hold, so a run
+//      cannot claim a fast path it hasn't got;
+//   2. removing the prebuild's prerequisites changes the header AND names the
+//      missing file as the cause;
+//   3. the pre-build creates its own log dir, so a cold tree (std-process and
+//      std-test have no build/) can't disable the fast path via a redirect that
+//      fails before bs2 even runs.
+
+use @std.test.libmode.{
+    LibModeCause, lib_mode_engaged, lib_mode_off,
+    collect_workspace_lib_objs, std_prebuild_cmd, std_prebuild_log_path,
+    FAST_PATH_SHARD_MB, WHOLE_PROGRAM_SHARD_MB,
+}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists, avra_getpid}
+
+/// Scratch workspace root, pid-scoped so concurrent shards can't collide.
+/// `/tmp/avra_*` is the prefix `diagnose.sh --prune-tmp-scratch` reclaims.
+fn scratch_root(name: string) -> string {
+    "/tmp/avra_libmode_${name}.${string(avra_getpid())}"
+}
+
+/// Fresh scratch workspace holding one `packages/std-fake/avra.toml` and
+/// nothing else — the shape of a package whose `build/` dir never existed.
+fn make_fake_workspace(root: string) {
+    avra_shell_exec("rm -rf '${root}' && mkdir -p '${root}/packages/std-fake' && touch '${root}/packages/std-fake/avra.toml'")
+}
+
+spec "t-6flr: the shard header reports the ACHIEVED mode, not the intended one" {
+    then "the fast path is claimed only when producer objects back it" {
+        lib_mode_engaged("/a/unit.realobj.o:/b/unit.realobj.o").want_meta()
+            && !lib_mode_engaged("").want_meta()
+    }
+    then "an engaged run reports the fast path and its per-shard cost" {
+        let head = lib_mode_engaged("/a/unit.realobj.o").report(5, 15000)
+        head.contains("metadata fast-path")
+            && head.contains("~${string(FAST_PATH_SHARD_MB)}MB/shard")
+            && !head.contains("DEGRADED")
+    }
+    then "an involuntary fallback reports DEGRADED, the real cost, and the cause" {
+        let head = lib_mode_off(LibModeCause.Unavailable("packages/std-test/ has no sidecar")).report(2, 15000)
+        head.contains("DEGRADED whole-program")
+            && head.contains("~${string(WHOLE_PROGRAM_SHARD_MB)}MB/shard")
+            && head.contains("cause: packages/std-test/ has no sidecar")
+    }
+    then "a deliberate opt-out is reported but not flagged as a defect" {
+        let head = lib_mode_off(LibModeCause.OptedOut("AVRA_SKIP_PREBUILD is set")).report(2, 15000)
+        head.contains("OFF by request")
+            && head.contains("cause: AVRA_SKIP_PREBUILD is set")
+            && !head.contains("DEGRADED")
+    }
+    then "the fallback carries a lower job ceiling than the fast path" {
+        lib_mode_engaged("/a/unit.realobj.o").job_ceiling() > lib_mode_off(LibModeCause.Engaged).job_ceiling()
+    }
+}
+
+spec "t-6flr: removing the prebuild's prerequisites changes the header" {
+    then "a std-* package with no build/ dir degrades, naming its missing sidecar" {
+        let root = scratch_root("noprereq")
+        make_fake_workspace(root)
+        let lib = collect_workspace_lib_objs(root)
+        let ok = !lib.want_meta()
+            && lib.report(1, 15000).contains("DEGRADED whole-program")
+            && lib.cause_detail().contains("packages/std-fake/")
+            && lib.cause_detail().contains("build/cache/last/std-fake.txt")
+        if !ok { println("libmode_test: unexpected report:\n${lib.report(1, 15000)}") }
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+    then "a workspace with no std-* packages degrades with a reason too" {
+        let root = scratch_root("emptyws")
+        avra_shell_exec("rm -rf '${root}' && mkdir -p '${root}/packages'")
+        let lib = collect_workspace_lib_objs(root)
+        let ok = !lib.want_meta() && lib.cause_detail().contains("no packages/std-*/")
+        avra_shell_exec("rm -rf '${root}'")
+        ok
+    }
+}
+
+spec "t-6flr: the @std/* pre-build creates its own log dir" {
+    then "the command succeeds against a package dir that has no build/" {
+        // Without the `mkdir -p`, the shell cannot open the log redirect: the
+        // command fails (rc=1) BEFORE bs2 runs, the whole pre-build is declared
+        // failed, and every shard degrades. `true` stands in for the compiler,
+        // so this pins the redirect rather than a real build.
+        let root = scratch_root("logdir")
+        let pkg = "${root}/packages/std-fake/"
+        avra_shell_exec("rm -rf '${root}' && mkdir -p '${pkg}'")
+        let cmd = std_prebuild_cmd(pkg, "@std::fake", "true")
+        let rc = avra_shell_exec("${cmd}; echo rc=$?").trim()
+        let wrote_log = avra_selfhost_file_exists(std_prebuild_log_path(pkg)) != 0
+        if rc != "rc=0" { println("libmode_test: prebuild cmd ${rc} for: ${cmd}") }
+        avra_shell_exec("rm -rf '${root}'")
+        rc == "rc=0" && wrote_log
+    }
+}

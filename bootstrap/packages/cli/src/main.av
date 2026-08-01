@@ -61,6 +61,7 @@ use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
+use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
@@ -95,7 +96,7 @@ use @std.avrac.build.{
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
-    cache_bin_path_for, cache_entry_realobj_path,
+    cache_bin_path_for,
     CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
     package_full_fingerprint, source_slot_fp, fingerprint_paths,
 }
@@ -907,25 +908,11 @@ fn pre_build_workspace_std_packages(project_dir: string, compiler_path: string) 
                 // avra.toml (the [package].name field would work too
                 // but adds a load_manifest call per dir).
                 let lib_root = derive_lib_root_for(dir)
-                // 70zy: opt into the metadata fast-path so each pkg's build
-                // reads its dep packages' meta.bin stubs instead of re-parsing
-                // their full source. std-avrac is alphabetically first and has
-                // no deps that benefit (it IS the bulk of @std), so it pays the
-                // full ~12s; every other std-* pkg has the implicit @std/avrac
-                // dep and goes 9s → 0.4s. Output goes to a per-package log
-                // (not /dev/null) so a failed pre-build — which silently
-                // disables the whole metadata fast-path (08ro) — is
-                // diagnosable instead of vanishing.
-                //
-                // mkdir the log dir FIRST. A package that `make build` never
-                // produces (std-process, std-test — only the compiler + cli are
-                // built) has no `build/` dir on a cold tree, so the shell can't
-                // open the `> build/prebuild.log` redirect: the command fails
-                // BEFORE bs2 runs (rc=1, no log written), the whole pre-build is
-                // declared failed, and every shard degrades to the whole-program
-                // @std path (snw0). Creating the dir keeps the redirect — and so
-                // the fast-path — alive on a cold tree.
-                cmds.push("mkdir -p \"${dir}build\" && cd \"${dir}\" && AVRA_USE_METADATA=1 AVRA_LIB_PKG_ROOT='${lib_root}' \"${compiler_path}\" build --lib --emit_metadata > \"${dir}build/prebuild.log\" 2>&1")
+                // 70zy: each pkg's build reads its deps' meta.bin stubs instead
+                // of re-parsing their source. std-avrac is alphabetically first
+                // and has no deps that benefit (it IS the bulk of @std), so it
+                // pays the full ~12s; every other std-* pkg goes 9s → 0.4s.
+                cmds.push(std_prebuild_cmd(dir, lib_root, compiler_path))
             }
         }
         i = i + 1
@@ -991,87 +978,6 @@ fn last_index_of(s: string, needle: string) -> int {
         i = i - 1
     }
     -1
-}
-
-// 6owa library-mode: After pre_build_workspace_std_packages
-// populates each @std/* package's cache slot, resolve every
-// package's realobj.o and join them into AVRA_LIB_OBJS.
-//
-// The slot is found via the per-unit `last/<pkg>.txt` sidecar the
-// build driver writes on every publish (write_last_inputs): its
-// `fp:` line names the exact content-addressed entry for the
-// CURRENT source + compiler state. The previous implementation
-// globbed `cache/*/unit.realobj.o` and picked the newest mtime per
-// package — but a stale slot whose realobj.o was lazily
-// materialised later (cache_entry_realobj_path llc's on first
-// read) carries a fresher mtime than the right slot, and shards
-// then linked against a producer .o missing newly-added @std
-// symbols (`undefined symbol: …llvm_prefix_dir` while landing the
-// linker-prefix probe was this exact failure).
-//
-// Returns "" when no package resolves a realobj (pre-build skipped,
-// or every slot is missing). Caller treats this as "no lib-objs
-// env" — shards fall back to the legacy link path.
-fn collect_workspace_lib_objs(project_dir: string) -> string {
-    let listing = avra_shell_exec("ls -d '${project_dir}/packages'/std-*/ 2>/dev/null")
-    if listing == "" { return "" }
-    let pkg_dirs = split_by_newline(listing)
-    mut keep: List<string> = []
-    mut i = 0
-    while i < pkg_dirs.length {
-        let dir = pkg_dirs[i]
-        if dir != "" && avra_selfhost_file_exists("${dir}avra.toml") != 0 {
-            let fp = sidecar_fp_for(dir)
-            // kaux: single, atomic materialisation path. This used to inline
-            // its own direct-to-final `llc -o unit.realobj.o`, a duplicate of
-            // cache_entry_realobj_path that shared its half-published-slot bug
-            // (a killed llc left a truncated final object a later HIT linked).
-            // cache_entry_realobj_path now llc's to a per-pid temp and renames
-            // into place, so existence implies completeness. Returns "" when
-            // the slot's unit.ll is absent or llc fails.
-            let o = if fp != "" {
-                cache_entry_realobj_path(cache_for(dir), Fingerprint { hex: fp })
-            } else {
-                ""
-            }
-            if fp == "" || o == "" {
-                // ALL or NOTHING: a partial object set is worse than none.
-                // Shards resolve every @std/* package via metadata, so a
-                // missing producer .o surfaces later as undefined symbols
-                // at link. Returning "" drops to the documented degraded
-                // mode (no lib-objs env; legacy link path) instead.
-                eprintln("[per-file] no usable realobj for ${dir} — disabling the lib-objs fast path for this run")
-                return ""
-            }
-            keep.push(o)
-        }
-        i = i + 1
-    }
-    join_with_colon(keep)
-}
-
-/// Read the current lib-build fingerprint for a `packages/std-*/`
-/// dir from the driver's last-inputs sidecar. Returns "" when the
-/// sidecar is missing or has no `fp:` line (package never built —
-/// it then simply doesn't contribute to AVRA_LIB_OBJS).
-fn sidecar_fp_for(pkg_dir: string) -> string {
-    let pkg = subdir_basename(pkg_dir)
-    if pkg == "" { return "" }
-    let body = avra_selfhost_read_file("${pkg_dir}build/cache/last/${pkg}.txt")
-    if body == "" { return "" }
-    for line in body.split("\n") {
-        if line.starts_with("fp:") { return line.substring(3, line.length) }
-    }
-    ""
-}
-
-fn join_with_colon(xs: List<string>) -> string {
-    mut out = ""
-    for (i, x) in xs.enumerate() {
-        if i > 0 { out = out + ":" }
-        out = out + x
-    }
-    out
 }
 
 // Resolve the compiler binary path for any sub-compile / shard
@@ -3327,19 +3233,17 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
 
     let lib = maybe_prebuild_std_libs(project_dir, compiler_path)
-    // Concurrency is memory-bound, not CPU-bound, and the two shard modes have
-    // wildly different footprints. Measured peak on a 16GB box: a metadata
-    // fast-path shard ~1.5GB (STUBS @std/*, links pre-built producer .o's, then
-    // runs the linked binary); a whole-program FALLBACK shard ~5GB (inlines ALL
-    // of @std/* + llc-optimises), up to ~11GB for the heaviest. At the historic
-    // static caps the full suite peaked 12.7GB (8-wide metadata) / ~9GB (2-wide
-    // fallback) — over the OOM cliff the moment a prior run left pages resident,
-    // which is the snw0 "make test takes the container down" crash. So the cap
-    // is now MEMORY-AWARE: the static default is a ceiling that available RAM
-    // can only lower (compute_shard_jobs). Read AFTER the serial prebuild has
-    // freed its ~5GB so the reading reflects the memory the shards will share.
-    let jobs = compute_shard_jobs(lib.want_meta)
-    eprintln("[per-file] shard concurrency: jobs=${string(jobs)} (${if lib.want_meta { "metadata fast-path" } else { "whole-program fallback" }}, MemAvailable ~${string(available_memory_mb())}MB)")
+    // Concurrency is memory-bound, not CPU-bound, and the two shard modes cost
+    // ~3x apart (LibMode.per_shard_mb). Static caps once put the full suite
+    // over the OOM cliff whenever a prior run left pages resident — the snw0
+    // "make test takes the container down" crash — so the cap is MEMORY-AWARE
+    // (compute_shard_jobs). Sampled AFTER the serial prebuild freed its ~5GB so
+    // it reflects what the shards will share, and ONCE so the header announces
+    // the sample the jobs count came from.
+    let avail_mb = available_memory_mb()
+    let jobs = compute_shard_jobs(lib, avail_mb)
+    // t-6flr: reports the ACHIEVED mode, plus the cause when it's degraded.
+    eprintln(lib.report(jobs, avail_mb))
     let listing_file = compute_std_listing_file(project_dir, log_dir)
     let universe_fp = compute_test_universe_fp(listing_file, test_reporter_path(project_dir),
                                                "${project_dir}/build/runtime.o",
@@ -3350,7 +3254,7 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
         compiler_path: compiler_path,
         env_prefix: build_shard_env_prefix(lib, listing_file, universe_fp, project_dir),
         filter_arg: if args.filter == "" { "" } else { " --filter '${args.filter}'" },
-        want_meta: lib.want_meta,
+        want_meta: lib.want_meta(),
         jobs: jobs,
     }
 }
@@ -3371,20 +3275,19 @@ fn parse_jobs_env(default_jobs: int) -> int {
 ///
 ///     jobs = min(ceiling, (avail_mb - reserve) / per_shard_mb)
 ///
-/// `avail_mb` is MemAvailable from /proc/meminfo, read once by the
-/// caller after the serial prebuild freed its ~5GB. When it can't be
-/// read (non-Linux, or the read failed) we return the ceiling
-/// unchanged — behaviour is byte-identical to before this change.
+/// `avail_mb` is MemAvailable from /proc/meminfo, sampled ONCE by the
+/// caller after the serial prebuild freed its ~5GB — the same sample the
+/// run header announces, so the number reported is the number spent.
+/// When it can't be read (non-Linux, or the read failed) we return the
+/// ceiling unchanged.
 ///
-/// `AVRA_JOBS` still sets the ceiling (a host that knows its
-/// headroom); memory then clamps it down. The per-shard estimates are
-/// deliberately conservative — they reflect the HEAVIEST realistic
-/// shard so a pathological member can't tip a concurrent batch over
-/// the edge.
-fn compute_shard_jobs(want_meta: bool) -> int {
-    let ceiling = if want_meta { parse_jobs_env(8) } else { parse_jobs_env(2) }
+/// `AVRA_JOBS` still sets the ceiling (a host that knows its headroom);
+/// memory then clamps it down. The ceiling and the per-shard estimate
+/// live on `LibMode` (@std.test.libmode) beside the mode they
+/// describe, so the scheduler and the header can't disagree.
+fn compute_shard_jobs(lib: LibMode, avail_mb: int) -> int {
+    let ceiling = parse_jobs_env(lib.job_ceiling())
     let ceil = if ceiling < 1 { 1 } else { ceiling }
-    let avail_mb = available_memory_mb()
     if avail_mb <= 0 { return ceil }   // unknown → preserve the static default
     // Headroom that must survive ALONGSIDE the shard fan-out: the
     // orchestrator + page cache, the prebuild's residual pages, and —
@@ -3399,20 +3302,13 @@ fn compute_shard_jobs(want_meta: bool) -> int {
     // spike so the shard count backs off to keep the combined peak
     // clear of the cliff.
     let reserve_mb = 6144
-    // Heaviest-realistic per-shard peak. MEASURED CLEAN (2026-07-21, jobs=1 so
-    // no cross-shard contention, per-process RSS of a pure-metadata dir): a
-    // metadata shard peaks at ~1.85GB. (An earlier ~3.6GB reading was taken
-    // MID-SWEEP under 5-way contention + session pressure — the snw0-warned
-    // inflation — and a ~5.4GB reading was a WHOLE-PROGRAM shard, not a metadata
-    // one; both misled a prior bump to 4096 that halved jobs 5→2 and DOUBLED CI
-    // wall-time.) 1800 is correct for metadata shards: 5×1.8 + 6GB reserve ≈
-    // 15GB fits a 16GB box, which is exactly why CI ran green at jobs=5 for
-    // months. The few WHOLE-PROGRAM shards (~5GB, fixture_capture_taint /
-    // build-cache tests strip the fast-path) are absorbed by the 6GB reserve.
-    // (A pressured 16GB SESSION container — claude + residual — can still OOM at
-    // jobs=5 when two whole-program shards coincide; run local sweeps with
-    // AVRA_JOBS=2 rather than globally penalising CI for that.)
-    let per_shard_mb = if want_meta { 1800 } else { 6000 }
+    // 5×1800 + 6GB reserve ≈ 15GB fits a 16GB box — why CI runs green at
+    // jobs=5. (Two prior re-measurements that bumped this were both artefacts:
+    // ~3.6GB taken mid-sweep under contention, ~5.4GB taken off a
+    // WHOLE-PROGRAM shard. The bump halved jobs 5→2 and doubled CI wall-time.)
+    // A pressured session container can still OOM at 5 when two whole-program
+    // shards coincide — use AVRA_JOBS=2 locally rather than penalising CI.
+    let per_shard_mb = lib.per_shard_mb()
     let budget = avail_mb - reserve_mb
     mut by_mem = budget / per_shard_mb
     if by_mem < 1 { by_mem = 1 }
@@ -3430,11 +3326,6 @@ fn available_memory_mb() -> int {
     if kb <= 0 { return -1 }
     kb / 1024
 }
-
-/// Outcome of the optional @std/* pre-build pass. `want_meta` stays
-/// true even when the pre-build fails so shards still TRY the metadata
-/// fast-path; `lib_objs` only populates on success.
-type LibMode = { want_meta: bool, lib_objs: string }
 
 /// F4 (uzs9.5.4): one fingerprint over EVERY input that feeds the @std/*
 /// producer `.o`s — all `packages/std-*/src/**.av` (tests excluded; they
@@ -3470,49 +3361,37 @@ fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMod
     // The metadata fast-path has TWO coupled halves: shards built with
     // AVRA_USE_METADATA=1 STUB every @std/* symbol as an extern, and
     // AVRA_LIB_OBJS supplies the producer .o's that DEFINE them at link.
-    // Enabling the stub half without the producer half leaves those externs
-    // undefined — which bricked ~76 shards (08ro). So `want_meta` here is
-    // only ever true when we actually have producer objects; every degraded
-    // path falls fully back to whole-program shards (slower, but it links).
-    let off = LibMode { want_meta: false, lib_objs: "" }
-    let want_meta_req = avra_process_env_get("AVRA_USE_METADATA_LIB") != "0"
-    let skip = avra_process_env_get("AVRA_SKIP_PREBUILD") != ""
-    if !want_meta_req || skip { return off }
-    // F4 (uzs9.5.4): skip the per-package `bs2 build --lib` spawns when @std
-    // is UNCHANGED since the last successful prebuild. std_prebuild_fingerprint
-    // folds every input to the producer .o's, so a match means none can be
-    // stale — collect_workspace_lib_objs then resolves the still-fresh .o's
-    // straight from the persisted `last/` sidecars with ZERO subprocesses
-    // (the warm suite spends ~2.7s/run on those 7 cache-checking spawns
-    // otherwise, paid PER `bs2 test` invocation → per sweep dir). A mismatch,
-    // an empty fp, OR a since-deleted producer .o (collect returns "") falls
-    // through to the full prebuild below — the gate only skips provably
-    // redundant work, it never risks linking a stale @std.
+    // LibMode.want_meta() derives the mode from those objects, so every return
+    // below is honest by construction; what each adds is the CAUSE to report.
+    if avra_process_env_get("AVRA_USE_METADATA_LIB") == "0" {
+        return lib_mode_off(LibModeCause.OptedOut("AVRA_USE_METADATA_LIB=0"))
+    }
+    if avra_process_env_get("AVRA_SKIP_PREBUILD") != "" {
+        return lib_mode_off(LibModeCause.OptedOut("AVRA_SKIP_PREBUILD is set"))
+    }
+    // F4 (uzs9.5.4): skip the 7 per-package `bs2 build --lib` spawns (~2.7s per
+    // `bs2 test`, i.e. per sweep dir) when @std is UNCHANGED — the fingerprint
+    // folds every input to the producer .o's, so a match proves none is stale.
+    // Any miss falls through to the full prebuild, which is about to fix it, so
+    // its cause is transient and discarded rather than reported.
     let prebuild_fp = std_prebuild_fingerprint(project_dir, compiler_path)
     let marker_path = "${project_dir}/build/.std_prebuild_fp"
     if prebuild_fp != "" && avra_selfhost_read_file(marker_path).trim() == prebuild_fp {
-        let cached_objs = collect_workspace_lib_objs(project_dir)
-        if cached_objs != "" {
-            return LibMode { want_meta: true, lib_objs: cached_objs }
-        }
+        let cached = collect_workspace_lib_objs(project_dir)
+        if cached.want_meta() { return cached }
     }
     let rc = pre_build_workspace_std_packages(project_dir, compiler_path)
     if rc != 0 {
-        eprintln("[per-file] pre-build of @std/* libs failed (rc=${string(rc)}) — disabling metadata fast-path for this run")
         let diag = avra_shell_exec("grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null; tail -n 8 $(grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null | head -1) 2>/dev/null")
-        if diag != "" { eprintln("[per-file] pre-build failure detail:\n${diag}") }
-        return off
+        if diag != "" { eprintln("[per-file] first failing pre-build log:\n${diag}") }
+        return lib_mode_off(LibModeCause.Unavailable("the @std/* pre-build failed (rc=${string(rc)}) — see packages/std-*/build/prebuild.log"))
     }
-    let objs = collect_workspace_lib_objs(project_dir)
-    // collect returns "" (and logs) when any package's realobj is missing —
-    // its all-or-nothing rule. Without producer .o's, stubbing is unsound.
-    if objs == "" { return off }
-    // Record freshness ONLY after a fully-successful prebuild + collect, so a
-    // future run with an unchanged @std takes the spawn-free fast path above.
-    // A torn/garbage marker (concurrent writer) simply mismatches next run →
-    // a redundant-but-safe full prebuild.
+    let lib = collect_workspace_lib_objs(project_dir)
+    if !lib.want_meta() { return lib }
+    // Mark fresh ONLY after a fully-successful prebuild + collect. A torn
+    // marker just mismatches next run → a redundant-but-safe full prebuild.
     let _ = avra_selfhost_write_file(marker_path, prebuild_fp)
-    LibMode { want_meta: true, lib_objs: objs }
+    lib
 }
 
 /// Pre-compute the @std source listing ONCE. Each shard's
@@ -3555,7 +3434,7 @@ fn format_env_prefix(vars: List<EnvAssignment>) -> string {
 /// concurrent rebuilds triggered jetsam mass-kills before).
 fn build_shard_env_prefix(lib: LibMode, listing_file: string, universe_fp: string, project_dir: string) -> string {
     format_env_prefix([
-        EnvAssignment { name: "AVRA_USE_METADATA",    value: if lib.want_meta { "1" } else { "" } },
+        EnvAssignment { name: "AVRA_USE_METADATA",    value: if lib.want_meta() { "1" } else { "" } },
         EnvAssignment { name: "AVRA_LIB_OBJS",        value: lib.lib_objs },
         EnvAssignment { name: "AVRA_STD_LISTING_FILE", value: listing_file },
         EnvAssignment { name: "AVRA_STD_UNIVERSE_FP",  value: universe_fp },

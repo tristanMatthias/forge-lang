@@ -7,4 +7,10 @@ description = "Unit/integration testing primitives for Avra projects"
 
 [lib]
 name = "std-test"
-path = "src/testing.av"
+path = "src/test.av"
+
+[dependencies]
+# `libmode` resolves the @std/* producer objects a test run links against,
+# which means reading the compiler's own content-addressed build cache
+# (build.cache_for / cache_entry_realobj_path / Fingerprint).
+"@std/avrac" = { path = "../std-avrac" }
