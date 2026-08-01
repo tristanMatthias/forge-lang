@@ -5158,7 +5158,12 @@ static _Atomic int avra_mem_limit_soft = 0;
 
 int64_t avra_mem_limit_kb(void) {
     static _Atomic int64_t cached = -1;
-    int64_t c = atomic_load(&cached);
+    // Release/acquire pairing with the store below: the soft flag is
+    // written BEFORE the release-store of `cached`, so any thread that
+    // acquire-loads a non-negative `cached` also sees the flag. With
+    // relaxed ordering a racing poll could observe the budget-derived
+    // limit while still reading soft==0 and hard-trip a soft grant.
+    int64_t c = atomic_load_explicit(&cached, memory_order_acquire);
     if (c >= 0) return c;
     int64_t v;
     const char* e = getenv("AVRA_MEM_LIMIT_MB");
@@ -5168,33 +5173,50 @@ int64_t avra_mem_limit_kb(void) {
         if (v < 0) v = 0;
     } else if (b && *b && strtoll(b, NULL, 10) > 0) {
         v = strtoll(b, NULL, 10) * 1024;
-        atomic_store(&avra_mem_limit_soft, 1);
+        atomic_store_explicit(&avra_mem_limit_soft, 1, memory_order_relaxed);
     } else {
         v = avra_mem_ceiling_for(avra_mem_available_kb(), avra_mem_total_kb());
     }
-    atomic_store(&cached, v);
+    atomic_store_explicit(&cached, v, memory_order_release);
     return v;
 }
 
 // The pressure floor for a SOFT grant, in KiB: below this much MemAvailable
 // the box is genuinely NEAR THE CLIFF and an over-budget tree must stop
-// itself. This is a property of the box, not of any run's schedule — the
-// default (2 GiB) is deliberately far below a busy suite's normal
-// MemAvailable. Exporting the admission reserve (6144MB) as this floor was
-// tried and CI falsified it in one run: a loaded 16GB runner legitimately
-// sits below the reserve for most of a suite, so "normal load" read as
-// "pressure" and every over-grant fixture probe tripped — the hard cap
-// re-created through the pressure branch. AVRA_MEM_SLACK_FLOOR_MB remains
-// an override for tests and unusual boxes; the pool never sets it.
+// itself. This is a property of the box, not of any run's schedule, and it
+// SCALES with the box: MemTotal/16, clamped to [512 MiB, 2 GiB]. Two
+// falsified constants bracket the derivation:
+//   - the admission reserve (6144MB) as the floor: a loaded 16GB runner
+//     legitimately sits below the reserve for most of a suite, so "normal
+//     load" read as "pressure" and every over-grant fixture probe tripped
+//     — the hard cap re-created through the pressure branch;
+//   - an absolute 2048MB: CI then tripped the ~7GB @std/avrac lib-build
+//     probe at "2047 MiB available < 2048 MiB floor" — a fixture the
+//     pre-budget world completed routinely at LOWER avail (the kernel
+//     reclaims page cache well below 2GB). On a 16GB box, ~2GB avail
+//     under the known-heaviest fixture is NORMAL, not near-cliff.
+// Kernel low-memory watermarks scale with box size; so must this line.
+// AVRA_MEM_SLACK_FLOOR_MB remains an override for tests and unusual
+// boxes; the pool never sets it.
+int64_t avra_mem_slack_floor_for(int64_t total_kb) {
+    int64_t v = total_kb / 16;
+    int64_t lo = 512 * 1024;
+    int64_t hi = 2048 * 1024;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
 int64_t avra_mem_slack_floor_kb(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
     if (c >= 0) return c;
-    int64_t v = 2048 * 1024;
+    int64_t v;
     const char* e = getenv("AVRA_MEM_SLACK_FLOOR_MB");
-    if (e && *e) {
-        int64_t mb = strtoll(e, NULL, 10);
-        if (mb > 0) v = mb * 1024;
+    if (e && *e && strtoll(e, NULL, 10) > 0) {
+        v = strtoll(e, NULL, 10) * 1024;
+    } else {
+        v = avra_mem_slack_floor_for(avra_mem_total_kb());
     }
     atomic_store(&cached, v);
     return v;
