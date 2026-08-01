@@ -90,7 +90,7 @@ use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result,
     Fingerprint, fp_short,
-    LinkOptions, default_link_options, link_objects, link_objects_with_coverage,
+    LinkOptions, default_link_options, link_objects,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
@@ -99,7 +99,7 @@ use @std.avrac.build.{
     admission_prior_path, read_admission_prior, persist_admission_prior,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
-    CompileTarget, build_binary, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
+    CompileTarget, build_binary, coverage_covmap_path, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
     package_full_fingerprint, source_slot_fp, fingerprint_paths,
 }
 use @std.crypto.{sha256_hex, sha256_file}
@@ -3770,8 +3770,14 @@ fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
     let dump_path = "${cov_dir}/_test.profdata.txt"
     avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
     println("")
-    render_coverage("${cov_dir}/_test.av.covmap.tsv", dump_path, args.lcov_path)
-    avra_process_exit(0)
+    // The covmap path derives from the binary the compile just produced
+    // (pid-unique stem) — never a hardcoded stem, which silently reads a
+    // stale/absent covmap once staging paths change.
+    render_coverage(coverage_covmap_path(bin_path), dump_path, args.lcov_path)
+    // A failing suite must fail the coverage run too — render the report
+    // (partial coverage of a red suite is still useful), then propagate
+    // the test binary's exit code instead of masking it with 0.
+    avra_process_exit(run_rc)
 }
 
 /// LLVM toolchain prefix lookup — delegates to the shared probe in

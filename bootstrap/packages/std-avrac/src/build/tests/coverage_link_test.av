@@ -1,0 +1,93 @@
+// WHY: the coverage pipeline (instrprof lowering → llc → clang_rt
+// profile-runtime link → profraw → report) was Darwin-hardcoded and
+// silently broken everywhere for months: opt got a fixed
+// `arm64-apple-macosx` triple (so llc emitted Mach-O objects lld
+// rejected on Linux), the resource-dir probe assumed the Darwin layout,
+// the `-lclang_rt.profile_osx` item was documented but never emitted,
+// the report read a covmap stem that predated the pid-unique staging
+// paths, and a failing suite under `--coverage` still exited 0. Nothing
+// guarded any of it — `make coverage` could rot without a single test
+// going red. This spec is the teeth for all of it:
+//
+//   * coverage_runtime_args must resolve a REAL profile runtime on this
+//     host (on Linux the archive must exist on disk — its dev package is
+//     separate from the llvm toolchain package, so this is exactly the
+//     probe that catches a half-provisioned box with a useful hint).
+//   * coverage_covmap_path must track the binary's own stem, so the
+//     report side can never drift from the compile side again.
+//   * the e2e: a tiny spec run under `bs2 test --coverage` must produce
+//     a rendered report (proving lowering, link, profraw write and
+//     profdata merge all happened on THIS platform), and a failing spec
+//     must exit non-zero (the exit-propagation fix).
+//
+// @@fixture-stateful@@ — the e2e shells a nested `bs2 test --coverage`,
+// which shares build/coverage/ state with any concurrent coverage run;
+// a transient FAIL must re-probe, never freeze.
+
+use @std.avrac.build.{coverage_runtime_args, coverage_covmap_path, default_link_options}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_selfhost_file_exists, avra_getpid}
+
+extern fn avra_host_os() -> string
+
+// Run one tiny spec file through the REAL `bs2 test --coverage` and
+// return "rc=<n>\n<output>" so assertions can check both. The file body
+// is written fresh under build/ with a pid-unique name (never picked up
+// by tree discovery; passed as a literal path).
+fn run_cov_probe(slot: string, body: string) -> string {
+    let av = "${slot}_test.av"
+    let _ = avra_selfhost_write_file(av, body)
+    let out = avra_shell_exec("./build/bs2 test --coverage '${av}' 2>&1; echo \"rc=$?\"")
+    out
+}
+
+spec "coverage runtime resolution (build.link.coverage_runtime_args)" {
+    then "the profile runtime resolves on this host" {
+        match coverage_runtime_args(default_link_options()) {
+            .Ok(args) -> args.length > 0
+            .Err(_) -> false
+        }
+    }
+    then "resolved args are platform-correct and point at a real artifact" {
+        match coverage_runtime_args(default_link_options()) {
+            .Ok(args) -> {
+                if avra_host_os() == "macos" {
+                    // -L<resource>/lib/darwin + the ld64-resolvable lib name.
+                    args.length == 2 && args[0].starts_with("-L") && args[0].contains("/lib/darwin")
+                        && args[1] == "-lclang_rt.profile_osx"
+                } else {
+                    // Full archive path (the Debian name embeds the arch, so
+                    // -l lookup can't express it) — and it must exist on disk.
+                    args.length == 1 && args[0].ends_with(".a")
+                        && args[0].contains("clang_rt.profile")
+                        && !args[0].contains("darwin")
+                        && avra_selfhost_file_exists(args[0]) == 1
+                }
+            }
+            .Err(_) -> false
+        }
+    }
+}
+
+spec "coverage covmap path tracks the binary stem" {
+    then "a .bin path maps to its sibling covmap" {
+        coverage_covmap_path("build/coverage/_test_all.123.bin") == "build/coverage/_test_all.123.av.covmap.tsv"
+    }
+    then "a stem without .bin gains the sidecar suffix unchanged" {
+        coverage_covmap_path("build/coverage/_test_all.123") == "build/coverage/_test_all.123.av.covmap.tsv"
+    }
+}
+
+spec "bs2 test --coverage end to end on this platform" {
+    then "a passing spec renders a coverage report and exits 0" {
+        let pid = avra_getpid()
+        let out = run_cov_probe("build/_covlink_pass_${string(pid)}",
+            "spec \"cov probe\" {\n    then \"passes\" { 1 == 1 }\n}\n")
+        out.contains("AVRA COVERAGE") && out.contains("Line coverage:") && out.contains("rc=0")
+    }
+    then "a failing spec still renders the report but exits non-zero" {
+        let pid = avra_getpid()
+        let out = run_cov_probe("build/_covlink_fail_${string(pid)}",
+            "spec \"cov probe red\" {\n    then \"fails\" { 1 == 2 }\n}\n")
+        out.contains("AVRA COVERAGE") && !out.contains("rc=0")
+    }
+}

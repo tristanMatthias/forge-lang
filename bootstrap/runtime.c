@@ -5286,6 +5286,19 @@ const char* avra_host_os(void) {
 #endif
 }
 
+/// Host CPU architecture identifier, used by the coverage link step to
+/// name the clang_rt profile archive (libclang_rt.profile-<arch>.a on
+/// Linux). Returns a stable string literal — callers must not free it.
+const char* avra_host_arch(void) {
+#if defined(__aarch64__) || defined(__arm64__)
+    return "arm64";
+#elif defined(__x86_64__)
+    return "x86_64";
+#else
+    return "unknown";
+#endif
+}
+
 // ── Trait objects (dynamic dispatch) ──
 // A trait object is a 2-element struct: { concrete_value, vtable_ptr }
 // The vtable is a AvraArray of function pointers (closure arrays).
