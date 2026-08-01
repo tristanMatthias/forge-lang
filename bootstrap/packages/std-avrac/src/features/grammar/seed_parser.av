@@ -26,6 +26,7 @@
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
+use diagnostics.{diag_ice, render_diagnostic}
 
 // ── The DSL token stream ──
 
@@ -211,9 +212,13 @@ extern fn avra_process_exit(code: int)
 /// `Peek("")` in both the executor walk and the emitted static parser — the
 /// exact "validation gate with a bypass path" failure mode. `parse_grammar`
 /// itself stays non-fatal: the DSL's own error tests assert on `.error`.
+/// The ICE renders through the diagnostics path (diag_ice → render_diagnostic,
+/// the F9999 shape) per the zero-raw-errors policy; the dummy span skips the
+/// snippet section, which is right — there is no user source to point at.
 export fn grammar_checked(gp: GrammarParse) -> Grammar {
     if gp.error != "" {
-        eprintln("error[F9999]: ICE — compiled-in grammar failed to parse: ${gp.error}")
+        render_diagnostic("", "<compiled-in grammar>",
+            diag_ice("compiled-in grammar failed to parse: ${gp.error}"))
         avra_process_exit(99)
     }
     gp.grammar

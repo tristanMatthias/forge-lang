@@ -107,7 +107,7 @@ export fn avra_match_arm_grammar() -> Grammar {
 /// for all seventeen. This rule references `table_cell` as one external rule with one
 /// declared FIRST — the shape the roadmap meant by "the table flip spends the cells".
 export fn avra_match_table_grammar() -> Grammar {
-    parse_grammar(
+    grammar_checked(parse_grammar(
   "match_table_stmt = \"match\" @off(allow_struct_lit) subj:expression \"table\"\n" +
   "                   @require \"{\" IDENT ( \"|\" cols:IDENT )*\n" +
   "                   ( p:pattern ( \"|\" )? ( v:table_cell ( \"|\" )? )*{#cols} ( \",\" )? )*\n" +
@@ -126,5 +126,5 @@ export fn avra_match_table_grammar() -> Grammar {
   "                   @require \"}\"\n" +
   "                   @expect(\"{\", \"expected `{` after match table\")\n" +
   "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTableExpr(subj, cols, p, v)\n"
-    ).grammar
+    ))
 }
