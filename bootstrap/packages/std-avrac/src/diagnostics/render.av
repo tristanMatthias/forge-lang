@@ -5,6 +5,7 @@
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
 use core.{avra_selfhost_file_exists, avra_selfhost_read_file, avra_process_env_get}
+use core.{build_line_index}
 
 // ── ANSI colors ──
 
@@ -77,23 +78,20 @@ fn chr_dot() -> string { "\xc2\xb7" }
 /// and skips the source frame.
 fn extract_line(source: string, target: int) -> string {
     if target <= 0 { return "" }
-    mut line_num = 1
-    mut line_start = 0
-    mut i = 0
-    while i < source.length {
-        if source[i] == "\n" {
-            if line_num == target {
-                return source.substring(line_start, i)
-            }
-            line_num = line_num + 1
-            line_start = i + 1
-        }
-        i = i + 1
-    }
-    if line_num == target {
-        return source.substring(line_start, source.length)
-    }
-    ""
+    // ONE C-side pass (strchr) via the shared line index, not a per-character
+    // walk. `source[i]` re-derives strlen(source) on every access — the same
+    // trap build_line_index's doc calls out — so the old loop was quadratic in
+    // file size, and this runs once per RENDERED diagnostic. A 114KB file
+    // reporting 578 errors spent 145s of a 145s compile here: the cost was
+    // printing the diagnostics, not producing them.
+    let starts = build_line_index(source).line_starts
+    if target > starts.length { return "" }
+    let line_start = starts[target - 1]
+    // Each entry points just past a '\n', so the next entry minus one is this
+    // line's terminator; the last line runs to end-of-source.
+    let line_end = if target < starts.length { starts[target] - 1 } else { source.length }
+    if line_end < line_start { return "" }
+    source.substring(line_start, line_end)
 }
 
 /// Repeat a string `n` times, concatenating. Returns `""` for
