@@ -84,6 +84,7 @@ fn render_prim(p: GPrim) -> string {
         .Pred(m) -> "@when(${m})"
         .Peek(c) -> "@peek(${c})"
         .Gensym(tag) -> "@gensym(${tag})"
+        .RawBrace(tag) -> "@rawbrace(${tag})"
     }
 }
 

@@ -74,6 +74,11 @@ fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
         // zero-width, no terminal, not opaque. first_seq must scan past it or a rule
         // that mints before its keyword would compute an empty FIRST and never dispatch.
         .Gensym(_) -> ffs_empty()
+        // `@rawbrace` consumes an arbitrary token run — its FIRST cannot be
+        // enumerated, which is exactly what `opaque` expresses (same as `@hand`). In
+        // practice it never leads a branch (it follows the `"{"` that opened the
+        // block), so the opaque marker is a truthful placeholder, not a live gate.
+        .RawBrace(_) -> FirstSet { terms: [], opaque: true }
     }
 }
 

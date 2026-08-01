@@ -63,6 +63,17 @@ grammar Name {
   itself. `match … table` is the first spender — its cell loop is literally
   `while i < value_count`, a bound, NOT the row-width VALIDATION it was long
   recorded as (that check belongs to the separate `table { }` literal).
+- **raw capture** `body:@rawbrace(tag)` consumes every token up to the `}` that
+  balances an already-consumed `{` and binds the verbatim source slice between
+  them (trimmed) — the DSL spelling of the hand parser's
+  `capture_balanced_brace_body`, for a feature block whose body is NOT Avra
+  syntax and is handed to a runtime engine as a string (`grammar { … }` →
+  `parse_grammar("…")`). Depth counting is token-level, so a `{` inside a
+  string literal never miscounts; the cursor stops AT the balancing `}` so the
+  rule's own trailing `"}"` literal owns that token and its diagnostics. `tag`
+  names the construct in the unterminated-EOF message. Must be labelled, takes
+  no repetition suffix, and both engines lower to the one shared
+  `rawbrace_scan` (executor.av).
 - **abort** `@require` (`@cut`'s dual) marks a terminal whose absence STOPS the
   rule: `"for" v:IDENT @require "in" …`. By default both engines are
   error-tolerant — a missing token reports and the sequence keeps building a
