@@ -307,36 +307,50 @@ spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slic
         }
         then "a width-only governor exports nothing" {
             let gov = governor_width_only(8)
-            gov.allocation_mb(1) == 0 && gov.ceiling_mb(1) == 0
+            gov.allocation_mb(1) == 0 && gov.slack_floor_mb() == 0
         }
-        then "the exported ceiling floors at the heavy-fixture peak, the budget does not" {
-            // A light shard's allocation (~600 here) would F4014 a
-            // legitimate ~5.5GB whole-program fixture child; the LIMIT
-            // export floors heavy-safe while the BUDGET stays the true
-            // allocation for slot-width accounting.
-            let gov = governor_for(2, 500, 100, 700)
-            gov.allocation_mb(1) == 600 && gov.ceiling_mb(1) == 6500
+        then "the slack floor is the run's reserve — one number, one meaning" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.slack_floor_mb() == 6144
         }
-        then "an allocation above the floor is its own ceiling" {
-            let gov = governor_for(2, 9000, 1000, 20000)
-            gov.ceiling_mb(1) == 10000
+    }
+    given "the soft-grant trip decision (avra_mem_should_trip)" {
+        then "under the limit never trips, hard or soft" {
+            avra_mem_should_trip(500, 1000, 0, 0, 9999) == 0 &&
+            avra_mem_should_trip(500, 1000, 1, 0, 9999) == 0
+        }
+        then "a hard ceiling trips on RSS alone — the pre-slice-3 contract" {
+            avra_mem_should_trip(1000, 1000, 0, 999999, 0) == 1
+        }
+        then "an over-budget soft grant BORROWS while the box has slack" {
+            // The CI regression this replaces: a cold whole-program fixture
+            // child at ~6.7GB against a shard-sized grant, box roomy — must
+            // keep running.
+            avra_mem_should_trip(6900, 3300, 1, 8600, 6144) == 0
+        }
+        then "an over-budget soft grant trips under pressure" {
+            avra_mem_should_trip(6900, 3300, 1, 5000, 6144) == 1
+        }
+        then "an unlimited ceiling never trips" {
+            avra_mem_should_trip(99999, 0, 0, 0, 0) == 0
         }
     }
     given "a real pool run" {
-        then "a modeled admission exports the ceiling and budget to the child, across a compound command" {
+        then "a modeled admission exports the budget and floor to the child, across a compound command — and never a hard LIMIT" {
             let dir = "/tmp/avra_admission_alloc_${string(avra_getpid())}"
             let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            let inherited_lim = avra_process_env_get("AVRA_MEM_LIMIT_MB")
             // Serial (est 500 + reserve 100 vs avail 700): budget = 600,
-            // ceiling floors at 6500. `true &&` makes the command compound,
+            // floor = the reserve. `true &&` makes the command compound,
             // pinning the `export …;` form — a bare assignment prefix would
-            // leave the tail of the chain uncapped and this spec red.
+            // leave the tail of the chain ungoverned and this spec red.
             let gov = governor_for(2, 500, 100, 700)
             let rc = pool_run_admitted(
-                ["true && echo \"lim=$AVRA_MEM_LIMIT_MB budget=$AVRA_MEM_BUDGET_MB\" > '${dir}/env'"],
+                ["true && echo \"budget=$AVRA_MEM_BUDGET_MB floor=$AVRA_MEM_SLACK_FLOOR_MB lim=[$AVRA_MEM_LIMIT_MB]\" > '${dir}/env'"],
                 gov, () -> 700)
             let seen = avra_shell_exec("cat '${dir}/env' 2>/dev/null").trim()
             let _ = avra_shell_exec("rm -rf '${dir}'")
-            rc == 0 && seen == "lim=6500 budget=600"
+            rc == 0 && seen == "budget=600 floor=100 lim=[${inherited_lim}]"
         }
         then "a width-only pool leaves the child's environment untouched" {
             // The suite itself may run under an admitted shard whose
@@ -375,3 +389,4 @@ spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slic
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_getpid() -> int
 extern fn avra_process_env_get(name: string) -> string
+extern fn avra_mem_should_trip(rss_kb: int, limit_kb: int, soft: int, avail_kb: int, floor_kb: int) -> int

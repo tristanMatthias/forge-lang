@@ -217,6 +217,11 @@ fn default_ceiling_clears_memtotal_floor() -> bool {
     // An explicit setting legitimately wins over the floor, so under a forced
     // AVRA_MEM_LIMIT_MB this assertion would measure the wrong thing.
     if avra_process_env_get("AVRA_MEM_LIMIT_MB") != "" { return true }
+    // Same vacuity rule for a pool-exported soft grant (t-kdyj.1 slice 3):
+    // under AVRA_MEM_BUDGET_MB the limit IS the grant — the budget authority
+    // working as designed, not a defaulting bug. The default derivation
+    // itself stays pinned by the pure avra_mem_ceiling_for specs above.
+    if avra_process_env_get("AVRA_MEM_BUDGET_MB") != "" { return true }
     let floor_kb = (avra_parse_int(total_kb_s) / 4) * 3
     let got_kb = avra_mem_limit_kb()
     if got_kb < floor_kb {

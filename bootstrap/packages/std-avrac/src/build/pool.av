@@ -248,24 +248,25 @@ fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int,
         if !gov.try_admit(avail_mb, in_flight) { break }
         let cmd = cmds[i]
         // t-kdyj.1 slice 3 — one budget authority: a modeled admission
-        // exports the unit's allocation into its process tree. The child's
-        // F4014 ceiling derives from what was ADMITTED for it (instead of
-        // 75% of the whole box, which let every concurrent tree assume it
-        // owned the machine), and the fixture-slot machinery divides the
-        // same number. Prefixed, so an explicit setting inside `cmd` still
-        // wins (rightmost shell assignment). Width-only governors export
-        // nothing — their spawns are byte-identical.
+        // exports the unit's allocation into its process tree as a SOFT
+        // grant (AVRA_MEM_BUDGET_MB) plus the run's pressure floor
+        // (AVRA_MEM_SLACK_FLOOR_MB). The runtime's F4014 poll lets a tree
+        // exceed its grant while the box has slack — a cold whole-program
+        // fixture compile legitimately peaks ~7GB, which a hard shard-sized
+        // cap F4014'd on CI — and trips only over-budget UNDER PRESSURE, so
+        // the SUM is bounded exactly when it matters. NEVER export
+        // AVRA_MEM_LIMIT_MB here: that is the user's hard override, and a
+        // pool-exported hard cap is a workload model wearing a knob's
+        // clothes. Width-only governors export nothing — their spawns are
+        // byte-identical.
         let alloc = gov.allocation_mb(in_flight + 1)
-        let ceiling = gov.ceiling_mb(in_flight + 1)
         // `export …;` rather than a bare assignment prefix: a pool command
         // may be a compound line (`a && b`), and a bare prefix binds only
         // to the first simple command — the tail of the chain would run
-        // uncapped. An explicit assignment inside `cmd` still wins (it
-        // applies later). LIMIT (the per-process F4014 ceiling) is floored
-        // heavy-safe; BUDGET is the true allocation the fixture-slot
-        // machinery divides — see admission.av's ceiling_mb.
+        // ungoverned. An explicit assignment inside `cmd` still wins (it
+        // applies later).
         let spawn_cmd = if alloc > 0 {
-            "export AVRA_MEM_LIMIT_MB=${string(ceiling)} AVRA_MEM_BUDGET_MB=${string(alloc)}; ${cmd}"
+            "export AVRA_MEM_BUDGET_MB=${string(alloc)} AVRA_MEM_SLACK_FLOOR_MB=${string(gov.slack_floor_mb())}; ${cmd}"
         } else {
             cmd
         }

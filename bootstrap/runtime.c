@@ -5145,20 +5145,69 @@ int64_t avra_mem_ceiling_for(int64_t avail_kb, int64_t total_kb) {
 }
 
 // The ceiling in KiB; 0 means "no ceiling". Read once, cached.
+//
+// Precedence (t-kdyj.1 slice 3): an explicit AVRA_MEM_LIMIT_MB is the user's
+// HARD override and always wins. Otherwise a pool-exported AVRA_MEM_BUDGET_MB
+// (the admission governor's allocation for this process TREE) is a SOFT
+// grant: the poll below lets the process exceed it while the box has slack
+// and trips only over-budget under pressure — see avra_mem_should_trip.
+// Otherwise the box-wide 75%/90% derivation (hard, as ever). A malformed
+// budget (non-numeric → 0) falls back to the box-wide derivation rather
+// than disabling the ceiling.
+static _Atomic int avra_mem_limit_soft = 0;
+
 int64_t avra_mem_limit_kb(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
     if (c >= 0) return c;
     int64_t v;
     const char* e = getenv("AVRA_MEM_LIMIT_MB");
+    const char* b = getenv("AVRA_MEM_BUDGET_MB");
     if (e && *e) {
         v = strtoll(e, NULL, 10) * 1024;
         if (v < 0) v = 0;
+    } else if (b && *b && strtoll(b, NULL, 10) > 0) {
+        v = strtoll(b, NULL, 10) * 1024;
+        atomic_store(&avra_mem_limit_soft, 1);
     } else {
         v = avra_mem_ceiling_for(avra_mem_available_kb(), avra_mem_total_kb());
     }
     atomic_store(&cached, v);
     return v;
+}
+
+// The pressure floor for a SOFT grant, in KiB: below this much MemAvailable
+// the box is genuinely tight and an over-budget tree must stop itself.
+// Exported by the pool (the admission run's reserve — the margin the whole
+// run promises to keep free); defaults to 2 GiB when a budget arrives
+// without a floor.
+int64_t avra_mem_slack_floor_kb(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v = 2048 * 1024;
+    const char* e = getenv("AVRA_MEM_SLACK_FLOOR_MB");
+    if (e && *e) {
+        int64_t mb = strtoll(e, NULL, 10);
+        if (mb > 0) v = mb * 1024;
+    }
+    atomic_store(&cached, v);
+    return v;
+}
+
+// The ONE trip decision, pure so spec tests pin the semantics without
+// faking box pressure. A hard ceiling trips on RSS alone (the pre-slice-3
+// contract, unchanged). A soft grant trips only when BOTH hold: the tree
+// is over its grant AND MemAvailable has fallen under the slack floor —
+// while the box has room, exceeding a modeled grant is legitimate
+// borrowing (a cold whole-program fixture compile peaks ~7GB against a
+// ~3GB shard grant), and capping it re-creates the exact false-F4014 the
+// grant replaced the 75% guess to avoid.
+int64_t avra_mem_should_trip(int64_t rss_kb, int64_t limit_kb, int64_t soft,
+                             int64_t avail_kb, int64_t floor_kb) {
+    if (limit_kb <= 0 || rss_kb < limit_kb) return 0;
+    if (!soft) return 1;
+    return avail_kb < floor_kb ? 1 : 0;
 }
 
 // COPY the label; do NOT retain the caller's pointer.
@@ -5192,13 +5241,23 @@ int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
 // it reads like every other compiler diagnostic (ZERO RAW ERRORS policy) — the
 // runtime cannot construct a DiagnosticBag from an arbitrary allocation site,
 // but it can and does speak the same language.
-static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb) {
+static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
+                                    int soft, int64_t avail_kb, int64_t floor_kb) {
     const char* phase = atomic_load_explicit(&avra_mem_phase, memory_order_relaxed);
     fflush(stdout);
     fprintf(stderr,
         "\nerror[F4014]: compiler memory ceiling exceeded — %lld MiB resident (ceiling %lld MiB)\n",
         (long long)(rss_kb / 1024), (long long)(limit_kb / 1024));
     if (phase && *phase) fprintf(stderr, "  phase: %s\n", phase);
+    if (soft) {
+        // A soft grant only trips under real box pressure — say so, because
+        // "which condition fired" is the first question a reader asks of a
+        // budgeted tree (an over-grant alone never trips).
+        fprintf(stderr,
+            "  budget: soft grant exceeded while the box is under pressure "
+            "(%lld MiB available < %lld MiB floor)\n",
+            (long long)(avail_kb / 1024), (long long)(floor_kb / 1024));
+    }
     fprintf(stderr,
         "  help: this is the compiler stopping itself before the OS OOM-killer does.\n"
         "        Raise or disable the ceiling with AVRA_MEM_LIMIT_MB=<mb> (0 = no ceiling).\n"
@@ -5213,16 +5272,38 @@ static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb) {
 static void avra_mem_poll(void) {
     int64_t limit_kb = avra_mem_limit_kb();
     if (limit_kb <= 0) return;
+    // A tree KNOWN to be borrowing (soft grant, RSS past its budget) is the
+    // one that can help collapse the box: several borrowers allocating hard
+    // can take MemAvailable from the slack floor to zero INSIDE one 65536-
+    // allocation window, and the kernel OOM-killer wins the race (observed:
+    // a cold build/tests sweep dir SIGKILLed with no watchdog trip). While
+    // borrowing, poll 16x more often — the meminfo read is ~µs against
+    // ~ms of allocation work per 4096-allocation window, and the tighter
+    // window bounds how far past the floor a borrower can run.
+    static _Atomic int avra_mem_borrowing = 0;
+    int64_t mask = atomic_load_explicit(&avra_mem_borrowing, memory_order_relaxed)
+                       ? (AVRA_MEM_POLL_MASK >> 4) : AVRA_MEM_POLL_MASK;
     int64_t n = atomic_fetch_add_explicit(&avra_mem_poll_ctr, 1, memory_order_relaxed);
-    if ((n & AVRA_MEM_POLL_MASK) != 0) return;
+    if ((n & mask) != 0) return;
     int64_t rss = avra_mem_rss_kb();
     if (rss < 0) return;
     int64_t prev = atomic_load_explicit(&avra_mem_peak_kb, memory_order_relaxed);
     if (rss > prev) atomic_store_explicit(&avra_mem_peak_kb, rss, memory_order_relaxed);
-    if (rss < limit_kb) return;
+    int soft = atomic_load_explicit(&avra_mem_limit_soft, memory_order_relaxed);
+    if (rss < limit_kb) {
+        if (soft) atomic_store_explicit(&avra_mem_borrowing, 0, memory_order_relaxed);
+        return;
+    }
+    // Crossing is rare (once per poll window at most), so the soft-grant
+    // pressure read — a /proc/meminfo parse — happens only here, never on
+    // the sub-crossing hot path.
+    if (soft) atomic_store_explicit(&avra_mem_borrowing, 1, memory_order_relaxed);
+    int64_t avail_kb = soft ? avra_mem_available_kb() : 0;
+    int64_t floor_kb = soft ? avra_mem_slack_floor_kb() : 0;
+    if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;
     // Latch: the first thread to cross reports; others fall through to _exit.
     if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
-    avra_mem_ceiling_report(rss, limit_kb);
+    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb);
 }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
