@@ -1,0 +1,85 @@
+// A void fn/method whose LAST statement is a value-producing `if` with no
+// `else` must DISCARD that tail value, never coerce it into the implicit
+// return (needs_optional_unbox's `.Void` guard, optional_repr.av).
+//
+// The crash this pins: the tail `if c { x = w }` canonicalises to `int?` —
+// null exactly when `c` is false — and the permissive implicit unwrap then
+// LOADED THROUGH the null as the fall-off-end return of a value nobody can
+// read. Every void fn ending in that shape segfaulted the first time its
+// condition came up false at runtime; a 12-line program reproduced it
+// (found via the admission governor's `record_admit`, t-kdyj.1). The
+// then-path boxes and unwraps fine, which is why one green call — or a
+// thousand with the condition true — proves nothing; the FALSE branch is
+// the regression.
+//
+// @@fixture-stateful@@ — links + runs a real binary; a transient hiccup
+// must re-probe, not freeze as FAIL.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid,
+}
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.build.{build_binary, CompileTarget}
+
+fn repo_root() -> string { avra_shell_exec("pwd").trim() }
+
+/// Build `src` whole-program in an isolated dir, run it, and return
+/// "<built>|<output>|rc=<status>" so specs assert all three in one string.
+/// The exit status comes from `avra_shell_exec_status` (not parsed out of
+/// the captured stream, where a shell's own signal-death message could
+/// interleave); the program's output lands in a per-test log read back
+/// separately.
+fn build_and_run(dir: string, src: string) -> string {
+    avra_shell_exec("mkdir -p '${dir}/build' && cp '${repo_root()}/build/runtime.o' '${repo_root()}/build/llvm_wrapper.o' '${dir}/build/'")
+    let r = parse_program_source(src)
+    if r.had_error != 0 || r.ids == null { return "parsefail||" }
+    let target = CompileTarget {
+        program: r.ids!,
+        bin_path: "${dir}/prog.bin",
+        project_dir: dir,
+        diag_filename: "prog.av",
+        coverage: false,
+        extra_objs: [],
+        store: r.store,
+    }
+    let built = match build_binary(target) { .Ok(_) -> "ok", .Err(e) -> "err:${e}" }
+    let rc = avra_shell_exec_status("'${dir}/prog.bin' > '${dir}/run.log' 2>&1")
+    let out = avra_selfhost_read_file("${dir}/run.log").trim()
+    "${built}|${out}|rc=${string(rc)}"
+}
+
+const CRASH_SHAPE_SRC: string = "
+type Acc = { peak: int }
+impl Acc {
+    fn bump(self, w: int) {
+        if w > self.peak { self.peak = w }
+    }
+}
+fn poke(w: int) {
+    mut n = 1
+    if w > n { n = w }
+}
+fn main() {
+    let a = Acc { peak: 0 }
+    a.bump(1)
+    a.bump(1)
+    poke(0)
+    println(\"peak=\" + string(a.peak))
+}
+"
+
+spec "void tail-if value is discarded, not unwrapped" {
+    given "a void method and free fn each ending in a value-producing tail if" {
+        then "the false-condition calls run instead of dereferencing null" {
+            let dir = "/tmp/avra_void_tail_${string(avra_getpid())}"
+            avra_shell_exec("rm -rf '${dir}'")
+            let verdict = build_and_run(dir, CRASH_SHAPE_SRC)
+            avra_shell_exec("rm -rf '${dir}'")
+            // Second bump: 1 > 1 false -> tail canonicalises to null.
+            // poke(0):     0 > 1 false -> same shape through a free fn
+            //              (local mut assignment in the tail if).
+            // Pre-fix both segfaulted (rc=139) before printing anything.
+            verdict == "ok|peak=1|rc=0"
+        }
+    }
+}

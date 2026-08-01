@@ -110,8 +110,17 @@ export fn needs_optional_box(val_ty: ValueType, slot_ty: ValueType) -> bool {
 /// True when a boxed (tagged) optional must be UNBOXED to land in a
 /// non-optional `slot_ty`. Permissive narrow — the implicit unwrap that
 /// keeps mixed `T`/`T?` code building until non-null-by-default gating lands.
+///
+/// NEVER for a `.Void` slot: that shape is the fall-off-end tail of a void
+/// fn or lambda, whose value nobody can read. A tail `if c { … }` with no
+/// else canonicalises to `T?` that IS null whenever `c` is false, so the
+/// permissive unwrap here dereferenced null on a value that only needed
+/// discarding — every void fn ending in a value-producing tail `if` crashed
+/// the second time the condition came up false (found via the admission
+/// governor's `record_admit`, t-kdyj.1). Discard, don't unwrap.
 export fn needs_optional_unbox(val_ty: ValueType, slot_ty: ValueType) -> bool {
     if vtype_is_optional(slot_ty) { return false }
+    if slot_ty is .Void { return false }
     match val_ty {
         .Optional(inner) -> optional_repr_tagged(inner)
         _ -> false
