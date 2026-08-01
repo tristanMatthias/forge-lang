@@ -25,6 +25,7 @@ use core.{tk_is_field_name}
 // The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
 // definition of the rows, so the native rule and the oracle cannot lower differently.
 use core.{build_if_let_expr}
+use core.{build_let_else_init, stmt_ids_diverge}
 use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
@@ -445,7 +446,7 @@ export type TokEdit = { idx: int, orig: Token }
 /// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
 /// aliases the parser's mutable bag record, so it cannot by itself preserve the
 /// pre-branch diagnostics; keep an explicit value-copy of the bag beside it.
-export type HandTryState = { parser: ParserState, bag: DiagnosticBag }
+export type HandTryState = { parser: ParserState, bag: DiagnosticBag, gensym: int }
 
 /// Postfix-chain accumulator snapshot for a grammar `@try` — see save_postfix_state.
 /// Plain ids/offsets, so a value copy IS the snapshot.
@@ -594,15 +595,26 @@ impl PState {
     /// produce a `$`-bearing name and the temp cannot shadow or be shadowed.
     ///
     /// `gensym_seq` lives on PState and NOT in ExprModes, deliberately. ExprModes is
-    /// saved/restored by the `@off`/`@on`/`@bump` markers and by speculative rollback; a
-    /// hygiene counter must be MONOTONIC, because rolling it back would re-mint an
-    /// already-issued name. The hand parser documents the same exclusion on save_state
-    /// ("NOT snapshotted, by design: gensym_seq ONLY"), and the `@try` path here
-    /// snapshots named fields rather than the whole PState, so this is correct by
-    /// construction rather than by remembering.
+    /// saved/restored by the `@off`/`@on`/`@bump` markers; the counter is MONOTONIC
+    /// across the COMMITTED parse, because rolling it back there would re-mint a name
+    /// a surviving node carries. The one context that rolls it back is SPECULATIVE
+    /// rollback (`@try`, and the flip driver's interpreter fallback): every temp the
+    /// abandoned attempt minted dies with the store truncation, so the counter must
+    /// die with it — otherwise the retry mints `$letelse$2` where the pure-hand
+    /// oracle mints `$letelse$1` (the malformed-binding recovery corpus's catch).
+    /// The hand parser's save_state keeps its exclusion ("NOT snapshotted, by
+    /// design") for its OWN internal backtracks; the speculative snapshots carry the
+    /// counter explicitly (HandTryState.gensym / s_gensym).
     fn fresh(self, tag: string) -> string {
         self.gensym_seq = self.gensym_seq + 1
         gensym_name(tag, self.gensym_seq)
+    }
+
+    /// Restore the hygiene counter to a speculative snapshot — the write half the
+    /// `@try` scaffolds use (`st` is an immutable param there, so the field write
+    /// needs a self-by-pointer method exactly like restore_to's).
+    fn set_gensym_seq(self, n: int) {
+        self.gensym_seq = n
     }
     /// The `@on(flag)` SET-ON twin of push_mode_off: save modes, turn the flag ON,
     /// return the saved modes for restore_modes.
@@ -739,7 +751,7 @@ impl PState {
             error_count: d.bag.error_count,
             warning_count: d.bag.warning_count,
         }
-        HandTryState { parser: d.save_state(), bag }
+        HandTryState { parser: d.save_state(), bag, gensym: d.gensym_seq }
     }
 
     /// Restore the procedural half of a failed grammar `@try`: cursor,
@@ -749,6 +761,14 @@ impl PState {
         mut d = self.hand_delegate!
         d.restore_state(saved!.parser)
         d.bag = saved!.bag
+        // The hygiene counter rolls back WITH the store truncation the caller
+        // performs: every temp the abandoned branch minted dies with its rows, so
+        // NOT restoring re-mints later temps one-off from the pure-hand oracle
+        // ($letelse$2 where FLIP=0 mints $letelse$1 — the malformed-binding
+        // recovery corpus is the guard). ParserState itself still excludes the
+        // counter by design; the speculative snapshot is the one context where
+        // the discard makes rolling it back sound.
+        d.gensym_seq = saved!.gensym
     }
 
     /// A whole-construct error placeholder (no matching alternative).
@@ -1815,6 +1835,12 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         let s_err = st.had_error
                         let s_hand = st.save_hand_state()
                         let s_postfix = st.save_postfix_state()
+                        // The PState's OWN hygiene counter (native `@gensym` mints)
+                        // rolls back with the store, same argument as the delegate's
+                        // in restore_hand_state: the branch's minted-into rows die
+                        // with s_mark, so keeping the bump would drift every later
+                        // mint off the pure-hand oracle.
+                        let s_gensym = st.gensym_seq
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
                         // permitted, to feed a `-> build`) cannot leak to a sibling.
@@ -1846,6 +1872,7 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         st.restore_to(s_pos, s_diags, s_err)
                         st.restore_hand_state(s_hand)
                         st.restore_postfix_state(s_postfix)
+                        st.set_gensym_seq(s_gensym)
                     } else {
                         return exec_seq(g, b, st, env, multi, outer_annots)
                     }
@@ -3468,6 +3495,13 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // Span-free in the interpreter, like MkStampAt: the NoOp's position is
         // recorded only on the emitted path.
         "MkModuleDoc" if args.length == 1 -> mk_module_doc(st, 0 - 1, capval_tok_list(env.get(args[0])))
+        // ── Binding declaration builds (target: Stmt, t-47hc Phase 4) — the
+        //    PRODUCTION `let`/`mut`/`const` rules. Distinct from the §2 oracle-era
+        //    MkLet/MkMut/MkConst above: these build the hand's alloc_binding_stmt
+        //    row (TypeRef edge) and carry the `else` guard form. ──
+        "MkLetBinding" if args.length == 6 -> mk_let_binding_g(st, capval_present(env.get(args[0])), capval_tok_text(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), env.get(args[3]), env.get(args[4]), capval_present(env.get(args[4])), env.get(args[5]))
+        "MkMutBinding" if args.length == 5 -> mk_let_binding_g(st, true, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_present(env.get(args[3])), env.get(args[4]))
+        "MkConstBinding" if args.length == 3 -> mk_const_binding_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), env.get(args[2]))
         // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the non-brace RHS
         // only, kept for the grammar-string consumers that predate `MkTypeDeclAny`
         // (decl_type_op_test). It DELEGATES rather than reimplementing: slice 10.5 grew
@@ -4241,6 +4275,62 @@ export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
+}
+
+/// `let` / `mut` / `const` bindings go native (t-47hc Phase 4) — the shared core of
+/// the `MkLetBinding` / `MkMutBinding` builds. A plain binding builds the hand's
+/// `alloc_binding_stmt` row (`binding_stmt_row` below — NOT the edge-free `add_leaf`
+/// the §2 oracle-era `MkLet` uses); the guard form (`let v = x else { … }`) delegates
+/// every desugar row to `build_let_else_init` (core/arena.av), the SAME core the
+/// hand's `build_let_else` calls, so the two engines cannot drift in what they lower
+/// to.
+///
+/// The divergence REPORT is deliberately message-only, carrying no DiagCode: under
+/// `@try` ANY report rolls the branch back, so the hand re-parses the item and owns
+/// the coded `LetElseMustDiverge` diagnostic byte-for-byte (the t-47hc.31
+/// no-code-channel discipline — the native rule never needs a diagnostics channel of
+/// its own).
+///
+/// `tmp_cv` is the `@gensym(letelse)` mint, already performed AFTER the
+/// else-statement parse (its position in the rule's sequence), which is exactly where
+/// the hand mints (`build_let_else` parses the else, checks divergence, THEN calls
+/// `fresh`). Reading it here as an ordinary captured token keeps the hygiene
+/// sequences aligned across all engines.
+export fn mk_let_binding_g(st: PState, has_mut: bool, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal, else_cv: CapVal, has_else: bool, tmp_cv: CapVal) -> CapVal {
+    mut ty_vt = ValueType.Unknown
+    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
+    mut init_id = capval_to_expr(st, init_cv)
+    if has_else {
+        // The else-arm body rows: a parsed else-Block's rows are reused verbatim
+        // (never re-walked); any other stmt shape wraps as the block's single
+        // element — exactly the hand's readback.
+        let else_sid = capval_to_stmt(st, else_cv)
+        let else_ids: List<StmtId> = match st.store.stmts.get(else_sid) {
+            .Block(b) -> b
+            _ -> [else_sid]
+        }
+        if !stmt_ids_diverge(st.store, else_ids) {
+            st.report("the `else` of a `let … else` must diverge")
+        }
+        init_id = build_let_else_init(st.store, capval_tok_text(tmp_cv), init_id, else_ids)
+    }
+    let node = if has_mut { Stmt.Mut(name, ty_vt, init_id) } else { Stmt.Let(name, ty_vt, init_id) }
+    CapVal.SNode(binding_stmt_row(st, node, ty_vt))
+}
+
+/// `const NAME (":" T)? "=" init` — the same row shape, no guard form (the hand's
+/// `parse_const_statement` has no else branch).
+export fn mk_const_binding_g(st: PState, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal) -> CapVal {
+    mut ty_vt = ValueType.Unknown
+    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
+    CapVal.SNode(binding_stmt_row(st, Stmt.Const(name, ty_vt, capval_to_expr(st, init_cv)), ty_vt))
+}
+
+/// The hand's `alloc_binding_stmt` row, verbatim: a byte_span_none stmt whose one
+/// edge is the declared type's TypeRef (walker order — the initializer is an id
+/// payload, so it records no edge; the payload IS the child mechanism).
+fn binding_stmt_row(st: PState, node: Stmt, ty_vt: ValueType) -> StmtId {
+    st.store.add_stmt(node, byte_span_none(), [NodeRef.TypeRef(st.store.ingest_type(ty_vt, byte_span_none()))])
 }
 
 /// Stamp an ALREADY-BUILT statement with its own source position and return it

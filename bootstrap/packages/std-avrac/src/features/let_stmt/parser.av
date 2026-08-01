@@ -4,7 +4,7 @@
 // else-block that must diverge. Desugars to a block-expression initializer
 // so `v` stays at the outer level and the subject is evaluated once.
 
-use core.{Stmt, Expr, BinOp, ValueType, type_expr_to_vtype, stmt_ids_diverge, expr_force_unwrap, FORCE_UNWRAP_FN, NodeRef, ExprId, StmtId, byte_span_none}
+use core.{Stmt, ValueType, type_expr_to_vtype, stmt_ids_diverge, build_let_else_init, NodeRef, ExprId, StmtId, byte_span_none}
 use parse.{Parser}
 use core.{Tk}
 use diagnostics.{DiagCode}
@@ -76,20 +76,10 @@ impl Parser {
             self.report(DiagCode.LetElseMustDiverge, "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         let tmp = self.fresh("letelse")
-        let unwrap_id = self.alloc_force_unwrap_row(tmp)
-        // `__t != none` (present) — the THEN arm unwraps, the ELSE arm diverges.
-        let cond_id = self.alloc_none_check_row(tmp, BinOp.Ne)
-        // Flipped Expr.Block holds List<StmtId> (walker-opaque leaf) — the
-        // reused else-body rows ARE the structure, so the block-expr is a leaf.
-        let else_block = Expr.Block(else_ids)
-        let else_block_id = self.alloc_leaf(else_block)
-        let guard = Expr.IfExpr(cond_id, unwrap_id, else_block_id)
-        let guard_id = self.alloc_leaf(guard)
-        let tmp_let_id = self.alloc_binding_stmt(Stmt.Let(tmp, ValueType.Unknown, subject_id), ValueType.Unknown)
-        let guard_stmt_id = self.alloc_stmt_leaf(Stmt.Expr(guard_id))
-        // The block body rows ARE its two synthesized statements' ids.
-        let init = Expr.Block([tmp_let_id, guard_stmt_id])
-        let init_id = self.alloc_leaf(init)
+        // The rows themselves live in the shared core (core/arena.av) so the
+        // grammar's MkLetBinding/MkMutBinding builds lower to the exact same
+        // desugar — the one-desugar discipline build_if_let_expr set.
+        let init_id = build_let_else_init(self.store, tmp, subject_id, else_ids)
         if is_mut { .Ok(self.alloc_binding_stmt(Stmt.Mut(name, ty_vt, init_id), ty_vt)) } else { .Ok(self.alloc_binding_stmt(Stmt.Let(name, ty_vt, init_id), ty_vt)) }
     }
 

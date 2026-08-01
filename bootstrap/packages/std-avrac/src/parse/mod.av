@@ -1018,6 +1018,8 @@ impl Parser {
             // caller advances, else the list loop re-parses the same token forever).
             let item_start = self.current_start
             mut d = self.ensure_hand_delegate()
+            // The counter value the interpreter fallback restores to (see below).
+            let seq0 = d.gensym_seq
             d.copy_cursor_from(self)
             // Fresh per-item diagnostic scratch on the (single-level, pure-hand)
             // delegate: any diagnostic it reports while parsing THIS item is merged
@@ -1054,6 +1056,19 @@ impl Parser {
                 // interpreter — the store now holds EXACTLY the interpreter's rows.
                 // (ps3t.6.7 slice 5a: AVRA_NO_STATIC_FALLBACK=1 skips this re-parse so
                 // the static parser's RAW error tree is observable — the oracle hook.)
+                //
+                // The delegate's HYGIENE COUNTER rolls back with the store. save_state
+                // deliberately never snapshots gensym_seq (rolling a monotonic counter
+                // back can re-mint a name a COMMITTED node carries) — but here every
+                // node the abandoned attempt minted into dies with the truncate, so
+                // the argument inverts: NOT restoring it makes the re-parse mint
+                // `$letelse$2` where the pure-hand baseline mints `$letelse$1`, and
+                // every errored item's adopted tree (and all later mints in the file)
+                // drifts off the FLIP=0 oracle by however many temps the dead attempt
+                // issued. Caught by the malformed-binding recovery corpus (the
+                // non-diverging `let … else`, whose desugar is the first gensym user
+                // on an ERROR path).
+                d.gensym_seq = seq0
                 self.store.truncate_to_mark(store_mark)
                 d.copy_cursor_from(self)
                 d.bag = bag_new()
