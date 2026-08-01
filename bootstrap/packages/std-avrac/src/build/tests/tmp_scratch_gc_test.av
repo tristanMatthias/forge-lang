@@ -27,7 +27,15 @@ spec "t-2qn0: --prune-tmp-scratch reclaims stale /tmp scratch and spares fresh" 
         let _ = avra_mkdir_p("${fresh}/build/cache/slot")
         // Backdate the stale root past the guard; the fresh one keeps its
         // now-mtime (touch the top dir LAST so the inner mkdir doesn't bump it).
-        avra_shell_exec("touch -d '3 hours ago' '${stale}'")
+        // `touch -d '3 hours ago'` is GNU-only — BSD/macOS touch rejects the
+        // relative form ("out of range or illegal time specification"), so the
+        // dir kept its current mtime, the 90m guard correctly SPARED it, and
+        // this spec could only ever fail there. `-t <YYYYMMDDhhmm>` is POSIX
+        // and works on both; only computing the stamp differs, so try the BSD
+        // flag first and fall back to the GNU one.
+        let stamp = avra_shell_exec(
+            "date -v-3H +%Y%m%d%H%M 2>/dev/null || date -d '3 hours ago' +%Y%m%d%H%M").trim()
+        avra_shell_exec("touch -t ${stamp} '${stale}'")
 
         // Guard at 90m: stale (mtime 3h) goes, fresh (mtime ~0) stays. A wide
         // guard also means every SIBLING test's fresh scratch is untouched.
