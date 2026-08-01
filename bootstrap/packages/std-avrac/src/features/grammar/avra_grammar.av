@@ -16,7 +16,7 @@
 // types, and declarations join it here as their families migrate (§2.5's
 // family-by-family strategy), building toward the 6.5.12 swap-in.
 
-use features.grammar.{parse_grammar, Grammar, compose_grammars, compose_fragments}
+use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
 use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match_expr` already has for
@@ -372,7 +372,7 @@ fn avra_expr_core() -> Grammar {
   // `CapVal.Tok`, which capval_to_expr routes through literal_node.
   null_cell    = n:( "null" | "none" ) -> n
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// The §2 expression grammar the INTERPRETER runs (run_grammar_expr / the inverse-@hand
@@ -566,7 +566,11 @@ fn avra_decl_edge_grammar() -> Grammar {
   component_decl = "component" n:IDENT ( "implements" tr:IDENT ( @peek(comma_ident) "," tr:IDENT )* ","? )? "{" ( "config" "{" ( cfg:config_entry )* "}" )? ( "children" "{" ( cs:children_slot ( @peek(comma_ident) "," cs:children_slot )* ","? )? "}" )? ( @peek(body_marker) "body" ":" bm:IDENT )? body:comp_item* "}" -> MkComponentDef(n, tr, cfg, cs, bm, body)
   config_entry  = k:IDENT ":" ty:type_expr ( "=" d:expression )? ( "@" ( a:IDENT )? )* ","? -> MkCompConfig(k, ty, d)
   children_slot = k:IDENT ":" ty:type_expr -> MkChildrenSlot(k, ty)
-  comp_item     = comp_field | declaration
+  // The `@peek(kw_let)` gate declares the dispatch the ambiguity guard would
+  // otherwise flag as a silent FIRST/FIRST shadow: `declaration` also derives
+  // `let` (the routed let_decl), and comp_field must own it TOTALLY so the
+  // annotation-less form stays an error instead of leaking through.
+  comp_item     = @peek(kw_let) comp_field | declaration
   comp_field    = "let" f:IDENT ":" ty:type_expr ( "=" init:expression )? -> MkCompField(f, ty, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
@@ -579,7 +583,7 @@ fn avra_decl_edge_grammar() -> Grammar {
     // list order, so the two spellings are provably identical — this one just doesn't
     // grow a paren layer per decl fragment.
     compose_fragments([
-        gp.grammar,
+        grammar_checked(gp),
         avra_modules_grammar(),
         avra_struct_decl_grammar(),
         avra_generics_grammar(),
@@ -642,7 +646,7 @@ export fn avra_stmt_grammar() -> Grammar {
     // this view STANDALONE — an external reference has no sibling generated
     // file to land on there (parse_match_table_expr is module-private in
     // gen_decl_parser.av), so the harness died with an undefined fn.
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(gp.grammar, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_table_grammar())
+    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(grammar_checked(gp), avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_table_grammar())
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
@@ -753,7 +757,7 @@ fn avra_stmt_common_grammar() -> Grammar {
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 fn avra_stmt_flip_for_grammar() -> Grammar {
@@ -761,7 +765,7 @@ fn avra_stmt_flip_for_grammar() -> Grammar {
   for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
            | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 // t-47hc.21: the dispatch view is now IDENTICAL to the flip view above — `@hand(for_stmt_edge)`
@@ -782,7 +786,7 @@ fn avra_stmt_dispatch_for_grammar() -> Grammar {
   for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
            | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 export fn avra_stmt_flip_grammar() -> Grammar {
@@ -899,7 +903,7 @@ export fn avra_type_grammar() -> Grammar {
   paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
   named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// The PRODUCTION type-expression grammar (t-47hc.4.4 Phase 3d — the static
@@ -921,7 +925,7 @@ export fn avra_type_flip_grammar() -> Grammar {
   paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
   named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// t-47hc slice 9 — the DECL-keyword fragment registry: every feature that owns a
@@ -1009,7 +1013,7 @@ export fn avra_program_grammar() -> Grammar {
     // still names them — cross-fragment nonterminal references bind by name
     // against the merged rule set, so the composed grammar is the same language.
     // This block stays FIRST so `program` remains the start symbol.
-    mut frags: List<Grammar> = [gp.grammar]
+    mut frags: List<Grammar> = [grammar_checked(gp)]
     for g in feature_decl_grammar_fragments() {
         frags.push(g)
     }

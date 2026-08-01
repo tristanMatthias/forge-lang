@@ -1703,6 +1703,16 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.cur().text == "body" && st.cur().kind == "IDENT" &&
             st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == ":"
     }
+    // The component-body `let` gate (t-47hc slice A): comp_field owns EVERY
+    // `let` inside a component def — the annotation-less `let x = 5` must fail
+    // comp_field's `":"` (the hand's parse_comp_def_body error), never fall
+    // through to `declaration`'s routed let_decl, which would accept it. The
+    // gate is the guard-sanctioned spelling of that total shadow: branch
+    // selection is unchanged (comp_field already won on `let` by order), but
+    // the dispatch is now a declared lookahead, not a silent FIRST overlap.
+    if cond == "kw_let" {
+        return st.cur().tk == Tk.KwLet
+    }
     if cond == "double_colon" {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1

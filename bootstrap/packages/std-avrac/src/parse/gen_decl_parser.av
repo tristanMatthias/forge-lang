@@ -1468,7 +1468,7 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.report("expected }")
         }
     }
-    if lookahead_ok("", st) && (st.cur().text == "body") {
+    if lookahead_ok("body_marker", st) && (st.cur().text == "body") {
         let _ = st.advance()
         if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
             st.report("expected :")
@@ -1539,7 +1539,7 @@ fn parse_children_slot(st: PState) -> CapVal {
 }
 
 fn parse_comp_item(st: PState) -> CapVal {
-    if st.cur().text == "let" {
+    if lookahead_ok("kw_let", st) && (st.cur().text == "let") {
         return parse_comp_field(st)
     }
     parse_declaration(st)

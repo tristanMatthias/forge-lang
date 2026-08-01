@@ -16,7 +16,7 @@
 // hand-written call, so no seed cycle. Pattern builds (OrMaybe / MkVariant / …)
 // are interpreted by the shared executor keyed on the build name carried in the
 // grammar DATA, so moving the DEFINITION here does not move the engine.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
 /// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
@@ -37,7 +37,7 @@ export fn avra_pat_grammar() -> Grammar {
   neg_pat     = "-" n:NUMBER -> PatNegNum(n)
   num_pat     = n:NUMBER -> PatNum(n)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// The match ARM rules — the second fragment this feature owns, and the FIRST
@@ -67,7 +67,7 @@ export fn avra_match_arm_grammar() -> Grammar {
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// t-47hc.29 — a match-table CELL. This is `parse_primary` (parse/mod.av:2528) and

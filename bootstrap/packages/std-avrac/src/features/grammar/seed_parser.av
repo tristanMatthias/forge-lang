@@ -201,6 +201,24 @@ export fn parse_grammar(src: string) -> GrammarParse {
     GrammarParse { grammar: g, error: p.error }
 }
 
+extern fn avra_process_exit(code: int)
+
+/// The PRODUCTION unwrap for a `grammar { }` block's parse result. A compiled-in
+/// grammar is compiler source, so a parse/validation error in one is an ICE —
+/// never a value to limp past. Every production accessor routes through this
+/// instead of reading `.grammar` raw: the raw read is how an unknown `@peek`
+/// cond (`body_marker`, pre-allowlist) silently degraded to an ungated
+/// `Peek("")` in both the executor walk and the emitted static parser — the
+/// exact "validation gate with a bypass path" failure mode. `parse_grammar`
+/// itself stays non-fatal: the DSL's own error tests assert on `.error`.
+export fn grammar_checked(gp: GrammarParse) -> Grammar {
+    if gp.error != "" {
+        eprintln("error[F9999]: ICE — compiled-in grammar failed to parse: ${gp.error}")
+        avra_process_exit(99)
+    }
+    gp.grammar
+}
+
 fn parse_grammar_body(p: GP) -> Grammar {
     // Optional `grammar NAME { … }` wrapper.
     mut name = "grammar"
@@ -512,7 +530,11 @@ export fn peek_cond_supported(cond: string) -> bool {
     // call form, and reused verbatim by every argument list since (generic call,
     // enum ctor, optional method call), which is why `f(a, b,)` closes instead of
     // looking for a fourth argument.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "quote_arm" || cond == "quote_type"
+    // `body_marker`: the component-def `body: TokenStream` marker gate — the word
+    // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
+    // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
+    // routed let_decl. See executor.lookahead_ok for both.
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -773,24 +795,41 @@ fn validate_fallbacks(g: Grammar) -> string {
                 if seen > 1 {
                     return "rule `${r.name}` has more than one `@fallback` branch — only the last alternative can be the unconditional tail"
                 }
+                // A NON-LAST fallback is legal only when the branch is `@when`/`@peek`-
+                // GUARDED (postfix_suffix's `.` branch): a guarded fallback participates
+                // in ordered dispatch under its own guard in BOTH engines — emit renders
+                // it as an ordinary guarded branch (its fallback arm keys on last
+                // position), and the executor scans it in order, adding only the guarded
+                // clean-DECLINE after the loop (t-lqzu) — so later branches stay
+                // reachable and the marker means the same thing in both. An UNGUARDED
+                // non-last fallback is different: emit silently drops the marker (an
+                // ordinary FIRST-guarded branch) while the executor would run it as the
+                // after-loop tail — the silent-no-op/divergence class this validator
+                // exists to reject. (This distinction was invisible while the grammar
+                // accessors swallowed `.error`; grammar_checked made it load-bearing.)
                 mut i = 0
+                mut fb_is_last = false
                 for b in branches {
-                    if b.fallback && i != branches.length - 1 {
-                        return "`@fallback` must be the LAST alternative of rule `${r.name}` — a branch ordered after it is unreachable, since the fallback runs whenever no earlier branch matched"
+                    if b.fallback && i == branches.length - 1 { fb_is_last = true }
+                    if b.fallback && i != branches.length - 1 && !seq_has_guard(b) {
+                        return "`@fallback` must be the LAST alternative of rule `${r.name}` unless the branch is `@when`/`@peek`-guarded — emit honours an unguarded fallback only in last position, so ordering it earlier is a silent no-op in the generated parser"
                     }
                     i = i + 1
                 }
-                // `@try` ANYWHERE in the rule disables the emitted fallback tail
-                // (emit_dispatch's case is gated on `!has_spec`) while the executor's
-                // fallback loop runs unconditionally after the dispatch loop. That is a
-                // silent ENGINE DIVERGENCE: on input matching no branch the interpreter
-                // reports the fallback's own `@expect`, the generated parser the
-                // alternation's generic "expected an expression". Reject the combination
-                // rather than ship a marker that means two different things depending on
-                // which engine reads it. Lifting this means teaching emit_dispatch to run
-                // the fallback before its `tried_spec ? Nil : error_node` fallthrough —
-                // at which point this check comes out and the pair becomes legal.
-                if seen == 1 {
+                // A LAST-position fallback with a `@try` sibling: emit's fallback TAIL
+                // is suppressed when the rule has a speculative branch (`!has_spec`)
+                // while the executor still runs the fallback when no speculation was
+                // TRIED (`!tried_spec`, t-lqzu) — on input matching no branch's FIRST
+                // the interpreter reports the fallback's own `@expect`, the generated
+                // parser the alternation's generic message. Reject the combination
+                // rather than ship a marker that means two different things depending
+                // on which engine reads it. The guarded NON-last form is exempt: no
+                // emitted tail is involved there (ordinary guarded branch in both
+                // engines, and the executor's after-loop arm is `!tried_spec`-gated
+                // the same way). Lifting the last-position case means teaching
+                // emit_dispatch to run the fallback before its `tried_spec ? Nil :
+                // error_node` fallthrough — at which point this check comes out.
+                if seen == 1 && fb_is_last {
                     for b in branches {
                         if b.speculative {
                             return "rule `${r.name}` combines `@try` and `@fallback` — a speculative sibling suppresses the emitted fallback tail while the interpreter still runs it, so the two engines would disagree on the diagnostic"
@@ -1080,8 +1119,15 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                         // unconditionally and it can never mismatch; in an unguarded
                         // structural group it IS validated. Rather than make the marker's
                         // meaning depend on which of those the emitters picked, reject it
-                        // outright — mark the item that must FOLLOW the guard.
-                        if idx == 0 {
+                        // outright — mark the item that must FOLLOW the guard. EXCEPT on
+                        // a `@fallback` branch: the fallback runs precisely when NO
+                        // earlier branch's FIRST matched, so its leading item is NOT
+                        // pre-proved — both engines validate it, and `@require` there is
+                        // how the rule owns its whole-alternation mismatch message
+                        // (index_tail's "expected `]` after index" on `a[1 2]`). This
+                        // exemption was implicit while the accessors swallowed grammar
+                        // errors; grammar_checked made the validator's over-reach loud.
+                        if idx == 0 && !b.fallback {
                             return "`@require` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard; mark the item that must follow it"
                         }
                     }
@@ -1121,6 +1167,18 @@ fn prim_is_pred_e_sp(prim: GPrim) -> bool {
         .Peek(_) -> true
         _ -> false
     }
+}
+
+/// True iff the branch carries a `@when`/`@peek` guard anywhere — the condition
+/// under which a NON-last `@fallback` is meaningful (validate_fallbacks): the
+/// guard makes the branch an ordinary ordered-dispatch participant in both
+/// engines, with the executor's after-loop arm adding only the guarded
+/// clean-decline (t-lqzu).
+fn seq_has_guard(b: GSeq) -> bool {
+    for item in b.items {
+        if prim_is_pred_e_sp(item.prim) { return true }
+    }
+    false
 }
 
 /// True iff a branch's build is one of the legacy expr-fold helpers that take the
@@ -1487,7 +1545,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, quote_arm, quote_type, body_marker, kw_let)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

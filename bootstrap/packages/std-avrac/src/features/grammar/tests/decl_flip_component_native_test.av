@@ -127,6 +127,24 @@ spec "t-47hc slice A: definition forms parse and REGISTER on all four paths" {
             "component kidsonly { children { } }\n" +
             "fn main() { println(\"ok\") }\n")
     }
+
+    then "a `body()` METHOD CALL in a def body does not trip the body: marker gate" {
+        // The body_marker peek needs BOTH halves — the word `body` AND the
+        // following `:`. The cond briefly emitted as lookahead_ok("") (the
+        // allowlist gap peek_cond_lockstep_test now guards), degrading the gate
+        // to a colon-less `body` check: this def then entered the marker group,
+        // failed `:`, and rolled the whole component back to the hand on
+        // well-formed input. Parity hid that (the hand parses it identically);
+        // this pins the shape on every path so the gate keeps its colon half.
+        // The call is the def body's FIRST item — exactly the position the
+        // marker peek inspects (after the config/children groups).
+        clean_all_paths("bodycall",
+            "fn body() -> int { 1 }\n" +
+            "component caller {\n" +
+            "    body()\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
 }
 
 spec "t-47hc slice A: the component frontier did not move" {

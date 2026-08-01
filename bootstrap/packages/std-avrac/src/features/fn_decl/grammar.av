@@ -15,7 +15,7 @@
 // Authored as a `grammar { }` surface block (desugars to parse_grammar(<body>),
 // features/grammar/parser.av) — identical IR to the hand-written call, so no
 // seed cycle.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `fn` declaration: name, parenthesised parameter list, optional `->` return
 /// type, and a braced statement body. References `param` and `type_expr` from the
@@ -26,5 +26,5 @@ export fn avra_fn_decl_grammar() -> Grammar {
   fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( "," params:param )* )? ")" ( "->" ret:type_expr )? "{" body:body_item* "}" -> MkFnDecl(name, tparams, params, ret, body)
   extern_decl = "extern" "fn" ename:IDENT "(" ( eparams:param ( "," eparams:param )* )? ")" ( "->" eret:type_expr )? -> MkExtern(ename, eparams, eret)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
