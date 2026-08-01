@@ -37,11 +37,15 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <errno.h>
+#if defined(__APPLE__)
+// Needed on EVERY Apple arch for avra_mem_rss_kb's task_info() RSS poll,
+// not just arm64 — so keep it outside the arm64-only ucontext block.
+#include <mach/mach.h>
+#endif
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
 #undef _XOPEN_SOURCE
-#include <mach/mach.h>
 #include <mach-o/dyld.h>
 #endif
 
@@ -5006,6 +5010,19 @@ static int64_t avra_mem_rss_kb(void) {
     if (!(*p >= '0' && *p <= '9')) return -1;
     while (*p >= '0' && *p <= '9') { resident_pages = resident_pages * 10 + (*p - '0'); p++; }
     return resident_pages * (int64_t)(sysconf(_SC_PAGESIZE) / 1024);
+#elif defined(__APPLE__)
+    // macOS has no /proc: resident size comes from the Mach task info port.
+    // Without this the whole F4014 ceiling was dead here (avra_mem_rss_kb
+    // returned -1, which reads as "unknown" and disables the check), so a
+    // runaway had no backstop AND memory_ceiling_test could never trip —
+    // its deliberately-runaway compile ran to completion instead of being
+    // stopped, taking 778s of a 814s suite. Same allocation-free, lock-free
+    // discipline as the Linux path: one syscall, no malloc, safe to abandon.
+    mach_task_basic_info_data_t info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  (task_info_t)&info, &count) != KERN_SUCCESS) return -1;
+    return (int64_t)(info.resident_size / 1024);
 #else
     return -1;
 #endif
