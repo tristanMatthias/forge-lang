@@ -5,6 +5,7 @@
 // Tracking ticket: forge-crafting-intepreters-2f54.
 
 use @std.avrac.features.modules.{package_meta_path_for}
+use @std.avrac.build.{cached_build_ll_path}
 
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
@@ -47,8 +48,15 @@ fn main() -> int {
     // Dep's lib.av.ll should exist (proof of compile).
     probe("dep_ll_present", avra_selfhost_file_exists("${dep_dir}/src/lib.av.ll") != 0)
 
-    // App's main.av.ll should also exist (root built after dep).
-    probe("app_ll_present", avra_selfhost_file_exists("${app_dir}/src/main.av.ll") != 0)
+    // App's IR should also exist (proof the root built AFTER the dep — the
+    // ordering this fixture exists to pin). Read it from the CONTENT-ADDRESSED
+    // cache slot, not `src/main.av.ll`: a `[bin]` build keeps its IR in the
+    // cache and links an executable from it, so nothing is installed beside
+    // the source any more (a whole-program `.ll` is ~60MB of litter). A [lib]
+    // still installs — its IR is a product the metadata fast-path lowers to a
+    // producer object, which is why dep_ll_present above still reads src/.
+    // cached_build_ll_path is the race-safe accessor built for exactly this.
+    probe("app_ll_present", avra_selfhost_file_exists(cached_build_ll_path(app_dir, "app")) != 0)
 
     // Without --emit_metadata, dep is NOT pre-built (single-unit cycle preserved).
     avra_shell_exec("rm -rf ${dep_dir}/build/cache/meta")

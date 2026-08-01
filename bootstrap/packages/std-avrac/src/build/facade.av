@@ -23,7 +23,7 @@ use build.link.{LinkOptions, default_link_options, link_objects, link_opts_canon
                 atomic_cp_cmd, atomic_install_cmd}
 use build.cache.{cache_for, cache_entry_realobj_path, linked_bin_key, linked_bin_lookup,
                  linked_bin_publish, entry_source_meta_path, ensure_source_meta_dir, entry_ll_path}
-use build.driver.{BuildInputs, BuildOutcome, decide_build, record_build_result}
+use build.driver.{BuildInputs, BuildOutcome, decide_build, record_build_result, cached_build_fp}
 use build.fingerprint.{Fingerprint, fp_short, package_full_fingerprint, source_slot_fp}
 use build.graph.{Unit, build_graph}
 use features.modules.{load_manifest, package_root_for_file, Manifest, Dep}
@@ -473,7 +473,22 @@ export fn build_executable(req: BuildRequest, run: fn(string, string, int) -> in
     let fp_val = Fingerprint { hex: built.fp }
     let bs2_dir = runtime_objects_dir(req.project_dir)
     let opts = default_link_options()
-    match link_unit_executable(req.project_dir, fp_val, out_bin, bs2_dir, opts) {
+    let deps = dep_producer_objects(req.project_dir)
+    // A `[bin]` referencing a path-dep needs that dep's producer object on
+    // the link line. A plain `bs2 build` deliberately does NOT pre-build
+    // path-deps (only --emit_metadata does — build_auto_use_metadata_test
+    // pins that as a negative control), so the closure can legitimately be
+    // incomplete. Linking anyway fails with `undefined symbols`; instead
+    // stop at the IR, exactly as this command did before it learned to
+    // link, and say why.
+    if deps.missing != "" {
+        if shows_status(req.mode) && !is_json(req.mode) {
+            println("IR only: dependency `${deps.missing}` has no recorded build — " +
+                    "build it first (or pass --emit_metadata to pre-build path-deps) to link an executable")
+        }
+        return built
+    }
+    match link_unit_executable(req.project_dir, fp_val, out_bin, bs2_dir, deps.objs, opts) {
         .Ok(cached) -> {
             BuildReport {
                 ok: true, error: "", entry: built.entry, unit: built.unit, fp: built.fp,
@@ -496,26 +511,70 @@ export fn build_executable(req: BuildRequest, run: fn(string, string, int) -> in
 /// Returns Ok(true) when the binary was served from the link cache (nothing
 /// relinked), Ok(false) when freshly linked, Err(msg) on failure.
 export fn link_unit_executable(project_dir: string, fp: Fingerprint, out_bin: string,
-                               bs2_dir: string, opts: LinkOptions) -> Result<bool, string> {
+                               bs2_dir: string, dep_objs: List<string>, opts: LinkOptions) -> Result<bool, string> {
     let c = cache_for(project_dir)
-    let obj = cache_entry_realobj_path(c, fp)
-    if obj == "" {
+    let own = cache_entry_realobj_path(c, fp)
+    if own == "" {
         return Result.Err("could not materialise an object from the cached IR for ${fp.hex}")
     }
+    // The unit's own object FIRST, then every dependency's producer object.
+    // A `[bin]` that imports a path-dep references that dep's symbols, so
+    // linking the entry alone fails with `undefined symbols` — the whole
+    // dependency closure has to be on the link line.
+    mut objs: List<string> = [own]
+    for d in dep_objs { objs.push(d) }
     let runtime_o = "${bs2_dir}/runtime.o"
     let wrapper_o = "${bs2_dir}/llvm_wrapper.o"
     if avra_selfhost_file_exists(runtime_o) != 1 || avra_selfhost_file_exists(wrapper_o) != 1 {
         return Result.Err("runtime objects (runtime.o / llvm_wrapper.o) not found next to the compiler in ${bs2_dir}")
     }
-    let key = linked_bin_key([obj], runtime_o, wrapper_o, link_opts_canonical(opts))
+    let key = linked_bin_key(objs, runtime_o, wrapper_o, link_opts_canonical(opts))
     if linked_bin_lookup(c, key, out_bin) {
         return Result.Ok(true)
     }
-    if link_objects([obj], runtime_o, wrapper_o, out_bin, opts) != 0 {
+    if link_objects(objs, runtime_o, wrapper_o, out_bin, opts) != 0 {
         return Result.Err("linker (cc) failed producing ${out_bin}")
     }
     linked_bin_publish(c, key, out_bin)
     Result.Ok(false)
+}
+
+/// The dependency closure's producer objects, plus whether it is COMPLETE.
+/// `missing` names the first dependency with no recorded build.
+type DepObjs = { objs: List<string>, missing: string }
+
+/// Producer objects for every package this one depends on, transitively.
+/// build_graph is topo-sorted and carries each unit's own project_root, so
+/// this is the whole closure, not just direct deps. A dep with no recorded
+/// build contributes nothing (its symbols then surface as an honest link
+/// error rather than a silently wrong binary).
+fn dep_producer_objects(project_dir: string) -> DepObjs {
+    mut objs: List<string> = []
+    mut missing = ""
+    let g = build_graph("${project_dir}/")
+    if g.had_error { return DepObjs { objs: objs, missing: "" } }
+    let self_root = strip_trailing_slash(project_dir)
+    for u in g.units {
+        let root = strip_trailing_slash(u.project_root)
+        if root == self_root { continue }
+        let fp = cached_build_fp(root, u.name)
+        if fp == "" {
+            if missing == "" { missing = u.name }
+            continue
+        }
+        let o = cache_entry_realobj_path(cache_for(root), Fingerprint { hex: fp })
+        if o == "" {
+            if missing == "" { missing = u.name }
+            continue
+        }
+        objs.push(o)
+    }
+    DepObjs { objs: objs, missing: missing }
+}
+
+/// Paths reach us both ways (`build_graph` appends one, callers rarely do).
+fn strip_trailing_slash(p: string) -> string {
+    if p.length > 1 && p.ends_with("/") { p.substring(0, p.length - 1) } else { p }
 }
 
 // ── Shared build-domain helpers ─────────────────────────────────────

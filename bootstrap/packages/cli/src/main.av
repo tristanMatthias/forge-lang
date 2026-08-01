@@ -2506,8 +2506,12 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     retry_jetsam_killed(shards, cx.jobs, gov.estimate_mb)
     tp = shard_phase_ms("parent:retry_check", tp)
 
-    aggregate_shard_logs(shards, t_start)
+    // Capture BEFORE the probe: this call's value is the command's exit
+    // code, and a trailing statement would silently become the return
+    // value instead (a timestamp), making `bs2 test` always exit non-zero.
+    let rc = aggregate_shard_logs(shards, t_start)
     tp = shard_phase_ms("parent:aggregate_logs", tp)
+    rc
 }
 
 /// Stable identity for a planned shard set: the content id (FNV-1a-64, the

@@ -150,7 +150,11 @@ fn ge_emitted_ir() -> string {
         "fn f(b: EBox<int>) -> bool { b.is_wrap() }\n" +
         "fn main() { let x = f(EBox.Wrap(5)) }\n"
     let _ = avra_selfhost_write_file(fixture, src)
-    let _ = avra_shell_exec("./build/bs2 build ${fixture} 2>&1")
+    // `compile`, not `build`: this asserts on EMITTED IR, and compile is the
+    // IR-only command that writes `<file>.ll`. `build` now links a native
+    // executable, which both leaves the IR in the cache (nothing beside the
+    // source) and drops a stray binary in the cwd.
+    let _ = avra_shell_exec("./build/bs2 compile ${fixture} 2>&1")
     avra_shell_exec("cat ${fixture}.ll 2>&1")
 }
 
