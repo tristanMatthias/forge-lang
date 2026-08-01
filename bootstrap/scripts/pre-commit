@@ -49,10 +49,10 @@ src_relevant=$(echo "$staged" | grep -E '^(bootstrap/packages/std-avrac/src/|boo
 # AVRA_FORCE_TESTS=1 to bypass the cache when you suspect drift.
 #
 # The hash computation lives in diagnose.sh (`test_input_hash`, t-8rsg)
-# — ONE definition shared with `--sweep`, whose green full runs write
-# this same marker so the hook doesn't re-run the suite the sweep just
-# ran. The input list (and why each input is in it, 5hyt) is documented
-# there.
+# — ONE definition shared with `bs2 test`, whose green FULL runs write
+# this same marker (t-kdyj.2) so the hook doesn't re-run the suite the
+# developer just ran. The input list (and why each input is in it, 5hyt)
+# is documented there.
 TEST_MARKER="bootstrap/build/.tests_verified"
 TEST_INPUT_HASH=$(bootstrap/scripts/diagnose.sh --test-input-hash)
 TESTS_CACHED=0

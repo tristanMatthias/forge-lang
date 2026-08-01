@@ -3071,17 +3071,40 @@ fn retry_jetsam_killed(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
 // Walk each shard's log file, print it verbatim (preserving per-shard
 // output the user expects), parse the `[shard-summary]` line for the
 // aggregate counts, and render the unified pass/fail summary.
+//
+// t-kdyj.2 (folding t-jpjn's sweep property in): a red run ends with the
+// LIST of failing shards, not just a count — the per-shard logs scroll
+// past, and a bare tally sends the reader grepping for what actually
+// broke. Each entry names the shard, classifies the failure (spec fails
+// vs crashes vs the shard itself failing to compile/run), and points at
+// the full log.
 fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
-    let zero = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0, crashes: 0 }
-    let totals = list_fold(shards, zero, (acc: Totals, s: Shard) -> {
+    mut totals = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0, crashes: 0 }
+    mut red: List<string> = []
+    for s in shards {
         if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
-            return acc with { shard_failures: acc.shard_failures + 1 }
+            totals = totals with { shard_failures: totals.shard_failures + 1 }
+            red.push("${s.slug} — no log produced (compile/link failed or killed)")
+            continue
         }
         let out = s.read_log()
         println(out)
-        acc.merge(out, s.summary(out))
-    })
+        let parsed = s.summary(out)
+        let prior_shard_failures = totals.shard_failures
+        totals = totals.merge(out, parsed)
+        if totals.shard_failures > prior_shard_failures {
+            red.push("${s.slug} — shard failed to compile/run (log: ${s.log_path})")
+        } else if parsed.fail > 0 || parsed.crashes > 0 {
+            red.push("${s.slug} — ${string(parsed.fail)} failed, ${string(parsed.crashes)} crashed (log: ${s.log_path})")
+        }
+    }
+    if red.length > 0 {
+        println("[per-file] failing shards:")
+        for line in red {
+            println("  ${line}")
+        }
+    }
     render_test_summary(totals, avra_uptime_ms() - t_start)
 }
 
@@ -3112,6 +3135,39 @@ fn format_elapsed_seconds(elapsed_ms: int) -> string {
     let s = elapsed_ms / 1000
     let tenths = (elapsed_ms / 100) - (s * 10)
     "${string(s)}.${string(tenths)}s"
+}
+
+// t-kdyj.2: the commit-gate marker, folded in from the deleted
+// `diagnose.sh --sweep` (t-8rsg property). A green FULL suite run IS the
+// pre-commit hook's suite evidence — record it where the hook looks
+// (build/.tests_verified) so the hook skips its duplicate pass. The hash
+// definition stays in diagnose.sh (`--test-input-hash`, one definition
+// shared with the hook); a repo without that script (any non-bootstrap
+// project) simply never writes a marker. Scoped runs (--filter or a path
+// arg) prove only part of the tree and never write it.
+fn commit_gate_start_hash(project_dir: string, args: TestArgs) -> string {
+    if args.filter != "" || args.path_filter != "" { return "" }
+    if avra_selfhost_file_exists("${project_dir}/scripts/diagnose.sh") != 1 { return "" }
+    suite_input_hash(project_dir)
+}
+
+/// The hook-parity suite-input hash (bs2 + every .av + runtime + seed +
+/// diagnose.sh + Makefile). Empty when the script is missing or errors.
+fn suite_input_hash(project_dir: string) -> string {
+    avra_shell_exec("cd '${project_dir}' && bash scripts/diagnose.sh --test-input-hash 2>/dev/null").trim()
+}
+
+/// 0o8i drift guard, same as the hook's: re-hash immediately before
+/// writing — a mid-run edit means this green no longer describes the
+/// current tree, so the next commit must re-run, not skip.
+fn write_commit_gate_marker(project_dir: string, start_hash: string, rc: int) {
+    if start_hash == "" || rc != 0 { return }
+    if suite_input_hash(project_dir) != start_hash {
+        eprintln("[per-file] inputs changed mid-run — commit-gate marker NOT written (the pre-commit hook will re-run the suite)")
+        return
+    }
+    avra_selfhost_write_file("${project_dir}/build/.tests_verified", "${start_hash}\n")
+    eprintln("[per-file] commit-gate marker written — the pre-commit hook will skip its duplicate suite run")
 }
 
 // Shim around `compile_test_unit`. The heavy work — parse, resolve,
@@ -3194,7 +3250,9 @@ fn run_test_command(args: TestArgs) {
     // cache slot + binary. Coverage stays on the bundled path until
     // covmap merging across shards lands.
     if args.per_file && !args.coverage {
+        let gate_hash = commit_gate_start_hash(project_dir, args)
         let rc = run_per_file_test_command(project_dir, accepted_paths, args)
+        write_commit_gate_marker(project_dir, gate_hash, rc)
         avra_process_exit(rc)
         return
     }

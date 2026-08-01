@@ -22,7 +22,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov sweep guarded stray cache-gc clean-cache cache-stats
+.PHONY: build build-O0 build-debug build-quick test quick run selfhost diff-test clean help install-hooks score update-seed verify-seed seed-sigs seed-patch-traps seed-publish seed-train seed-train-verify coverage coverage-lcov stray cache-gc clean-cache cache-stats
 
 # `bs2` is built from the cli package (the binary entry). The
 # library it consumes (@std.avrac) lives at LIB_SRC_DIR — used for
@@ -43,9 +43,6 @@ help:
 	@echo "  make test          Run spec tests + self-host fixed-point check."
 	@echo "                     Options: FILTER=<substr>, SKIP_SELFHOST=1."
 	@echo "  make quick         Inner-loop: rebuild bs2 + tests, skip selfhost. FILTER= supported."
-	@echo "  make sweep         OOM-safe full suite: sequential per-dir runs with resume"
-	@echo "                     markers (build/sweep/). FRESH=1 drops the markers. The"
-	@echo "                     sanctioned full-suite runner on a <=16GB box."
 	@echo "  make stray         List surviving bs2/llc/cc1plus with RSS + orphan state"
 	@echo "                     (run it after a killed run; REAP=1 kills the orphans)."
 	@echo "  make run FILE=x.av Compile and run a Avra program."
@@ -53,7 +50,7 @@ help:
 	@echo "  make diff-test     HRN: build OLD (base) + NEW (HEAD) compilers, assert"
 	@echo "                     byte-identical IR over selfhost + curated corpus"
 	@echo "                     (tests/difftest_corpus/). Options: BASE=, NEW=, CORPUS=,"
-	@echo "                     JOBS=, PREBUILT=1 (reuse build/bs2 as NEW; local, fast)."
+	@echo "                     PREBUILT=1 (reuse build/bs2 as NEW; local, fast)."
 	@echo "  make update-seed   Rebuild seed/seed.ll from current source. Add FAST=1"
 	@echo "                     for the inner-loop variant (per-fn diff, no verify)."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
@@ -128,14 +125,9 @@ build-debug:
 # the compile — substring-matched against test filename. Use when
 # iterating on a specific feature.
 #
-# Runner environment knobs (every assembled test binary reads these):
-#   AVRA_TEST_JOBS=N       worker threads per test binary running its
-#                          test-file units in parallel. 1 = sequential
-#                          (debugging / exact coverage). Default: cores.
-#   AVRA_TEST_STALL_MS=N   INTERNAL — shrinks the stall-detector window
-#                          (default 60000) so the detector itself is
-#                          testable. The detector names in-flight units
-#                          on stderr when nothing completes in-window.
+# Memory safety needs no wrapper or knobs (t-kdyj): the runner's
+# admission governor budgets shard dispatch and the runtime's compile
+# slot gate bounds concurrent heavies box-wide under pressure.
 test:
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
 	@$(if $(SKIP_SELFHOST),,$(DIAG) --check-fixedpoint)
@@ -148,23 +140,6 @@ test:
 quick:
 	@$(DIAG) --ensure-bs2
 	@$(BS2) test $(if $(FILTER),-f $(FILTER))
-
-# OOM-safe full suite: one sequential `bs2 test <dir>` per test dir, with
-# per-dir logs + resume markers under build/sweep/ (kill-safe: a re-run
-# resumes at the failing dir). FRESH=1 drops the markers first.
-sweep:
-	@$(DIAG) --sweep $(if $(FRESH),--fresh)
-
-# Run any heavy command under the OOM memory watchdog — the ≤16GB-box
-# safety wrapper. The watchdog SIGKILLs bs2/llc/etc if free memory drops
-# below FLOOR MB (default 3500; FLOOR= overrides), so a runaway build/test
-# dies instead of OOM-restarting the WHOLE CONTAINER. Also forces
-# AVRA_TEST_JOBS=1. CMD= is the command to guard. See CLAUDE.md
-# "OOM safety — testing on the small box".
-#   make guarded CMD="make diff-test"
-#   make guarded CMD="./build/bs2 test tests/foo_test.av" FLOOR=5500
-guarded:
-	@$(DIAG) --guarded $(if $(FLOOR),$(FLOOR)) -- $(CMD)
 
 # t-ce5t: what is still holding memory? Lists every surviving bs2/llc/cc1plus/
 # clang/cc1 with RSS and whether its tree is ORPHANED — the first thing to run
