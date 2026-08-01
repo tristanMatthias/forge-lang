@@ -28,6 +28,7 @@ extern fn avra_sleep_ms(ms: int)
 extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_str}
+use build.admission.{MemGovernor, governor_width_only}
 
 fn pool_max_rc(a: int, b: int) -> int {
     if a > b { a } else { b }
@@ -60,6 +61,17 @@ fn workers_has_idle(ws: List<Worker>) -> bool {
         i = i + 1
     }
     false
+}
+
+// In-flight count — what the admission governor budgets against.
+fn workers_active(ws: List<Worker>) -> int {
+    mut n = 0
+    mut i = 0
+    while i < ws.length {
+        if ws[i].handle >= 0 { n = n + 1 }
+        i = i + 1
+    }
+    n
 }
 
 // Replace the first idle worker with a freshly-spawned one. Mutates
@@ -161,9 +173,29 @@ export fn pool_run(commands: List<string>, jobs: int) -> int {
 /// Tracking: forge-crafting-intepreters-e20h Phase 2 unification.
 export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
     if jobs <= 0 { return 0 }
+    pool_run_core(commands, slugs, marker_dir, governor_width_only(jobs), () -> 0 - 1)
+}
+
+/// t-kdyj.1: run `commands` under memory-aware admission control. The
+/// governor's width_cap bounds concurrency exactly like `jobs` does for
+/// `pool_run`; on top of that each dispatch round samples `avail_mb` (via
+/// `sampler`) and admits the next unit only while it fits the byte budget.
+/// Under pressure the pool stops ADMITTING — it never kills in-flight work —
+/// and with nothing in flight it always admits one (the serial floor), so a
+/// tight box serialises instead of deadlocking. Callers read the decision
+/// tally off the governor (`gov.summary()`) after the pool drains.
+export fn pool_run_admitted(commands: List<string>, gov: MemGovernor, sampler: fn() -> int) -> int {
+    pool_run_core(commands, [], "", gov, sampler)
+}
+
+// The one dispatch loop every entry point shares. A width-only governor
+// (estimate 0) short-circuits every budget check and never invokes the
+// sampler, so the plain pool_run paths behave exactly as before admission
+// control existed.
+fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string, gov: MemGovernor, sampler: fn() -> int) -> int {
     let want_markers = marker_dir != "" && slugs.length == commands.length
-    let workers = workers_init(jobs)
-    let started_slugs = workers_started_slugs_init(jobs)
+    let workers = workers_init(gov.width_cap)
+    let started_slugs = workers_started_slugs_init(gov.width_cap)
     let total = commands.length
     mut next_idx = 0
     mut completed = 0
@@ -173,7 +205,7 @@ export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jo
         completed = completed + reaped.completed
         max_rc = pool_max_rc(max_rc, reaped.max_rc)
         if completed >= total { return max_rc }
-        let dispatched_count = dispatch_batch(commands, slugs, next_idx, total, workers, started_slugs, marker_dir, want_markers)
+        let dispatched_count = dispatch_batch(commands, slugs, next_idx, total, workers, started_slugs, marker_dir, want_markers, gov, sampler)
         next_idx = next_idx + dispatched_count
         if dispatched_count == 0 && completed < total {
             avra_sleep_ms(50)
@@ -195,14 +227,25 @@ fn workers_started_slugs_init(n: int) -> List<string> {
 }
 
 // Dispatch up to `total - idx` queued commands into `workers`'s idle
-// slots. Returns the number of slots filled this call so the caller
-// advances `next_idx` accordingly. When markers are enabled, also
-// touches `<marker_dir>/<slug>.running` per dispatched job and
-// stashes the slug in `slugs_state` so the reap can find it.
-fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool) -> int {
+// slots, gated by the governor's admission decision per unit. Returns
+// the number of slots filled this call so the caller advances
+// `next_idx` accordingly. When markers are enabled, also touches
+// `<marker_dir>/<slug>.running` per dispatched job and stashes the
+// slug in `slugs_state` so the reap can find it.
+//
+// Memory is sampled ONCE per round; each admission in the round then
+// stacks its full estimate as unrealized commitment (see admission.av),
+// so a burst can't over-admit against one roomy sample. A width-only
+// governor never triggers the sampler at all.
+fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool, gov: MemGovernor, sampler: fn() -> int) -> int {
+    if idx >= total { return 0 }
+    let avail_mb = if gov.has_model() { sampler() } else { 0 - 1 }
+    mut in_flight = workers_active(workers)
+    gov.observe(avail_mb, in_flight)
     mut filled = 0
     mut i = idx
     while i < total && workers_has_idle(workers) {
+        if !gov.try_admit(avail_mb, in_flight) { break }
         let cmd = cmds[i]
         let handle = avra_process_spawn_bg("/bin/sh", "[\"-c\", ${json_str(cmd)}]", "")
         if handle < 0 {
@@ -213,6 +256,7 @@ fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int,
             continue
         }
         workers_dispatch(workers, handle, i)
+        in_flight = in_flight + 1
         if want_markers {
             let slug = slugs[i]
             workers_record_slug(workers, slugs_state, handle, slug)

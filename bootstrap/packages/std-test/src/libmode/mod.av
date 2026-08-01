@@ -32,6 +32,14 @@ export type LibMode = {
 export const FAST_PATH_SHARD_MB: int = 1800
 export const WHOLE_PROGRAM_SHARD_MB: int = 6000
 
+/// Headroom that must survive ALONGSIDE the shard fan-out: the orchestrator +
+/// page cache, the prebuild's residual pages, and — the load-bearing part —
+/// the fixture COMPILES that shards shell out (a ~5GB @comptime-fixture
+/// compile can coincide with the shards). Lives here beside the per-shard
+/// estimates so the static scheduler (compute_shard_jobs) and the admission
+/// governor (t-kdyj.1) budget against the same number.
+export const SHARD_RESERVE_MB: int = 6144
+
 impl LibMode {
     fn want_meta(self) -> bool { self.lib_objs != "" }
 
