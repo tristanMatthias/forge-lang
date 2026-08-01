@@ -789,6 +789,11 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -
         .Peek(_) -> false
         // `@gensym` mints a name and consumes nothing — starts no token either.
         .Gensym(_) -> false
+        // `@rawbrace` accepts ANY current token: the scan runs to the balancing `}`
+        // whatever the body starts with, and an immediate `}` is a legal EMPTY body.
+        // In practice it is never a branch head (it always follows the `"{"` literal
+        // that opened the block), so this arm only matters for exhaustiveness.
+        .RawBrace(_) -> true
     }
 }
 
@@ -2213,6 +2218,11 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
         // because a Tok's position is what span logic reads if anything ever does; a
         // zero would place the minted name at the start of the file.
         .Gensym(tag) -> CapVal.Tok(gensym_token(st, tag))
+        // `@rawbrace` consumes to the balancing `}` and binds the verbatim source
+        // slice as a synthetic Tok — the same no-new-capture-kind shape as `@gensym`.
+        // The scan itself is the shared `rawbrace_scan`, which emit also renders a
+        // call to, so the two engines cannot drift.
+        .RawBrace(tag) -> CapVal.Tok(rawbrace_scan(st, tag))
     }
 }
 
@@ -2220,6 +2230,42 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
 /// call to this same function, so the minted name and its token shape cannot drift.
 export fn gensym_token(st: PState, tag: string) -> Token {
     Token { kind: "IDENT", text: fresh_name(st, tag), pos: st.cur().pos, tk: Tk.Identifier }
+}
+
+/// The raw balanced-brace capture a `body:@rawbrace(tag)` binds (t-47hc.31). Shared by
+/// both engines — emit renders a call to this same function — so the scan, the captured
+/// slice, and the unterminated-EOF diagnostic cannot drift between them.
+///
+/// The exact mirror of the hand parser's `capture_balanced_brace_body`: the enclosing
+/// `{` has ALREADY been consumed (by the rule's `"{"` literal), so the scan starts at
+/// depth 1, counts brace TOKENS (a `{` inside a string/template literal is part of that
+/// one token and never miscounts), and stops AT the balancing `}` without consuming it —
+/// the rule's trailing `"}"` literal owns that token and its diagnostics. The bound
+/// token's text is `src[start .. close_brace_start].trim()`, verbatim otherwise, which
+/// is what makes the desugared `parse_grammar("…")` string byte-identical to the hand's.
+///
+/// On EOF the scan reports the hand's per-construct message and yields an empty-text
+/// token; `had_error` is set, so on the production path the item falls back to the hand
+/// parser exactly like any other native diagnostic.
+export fn rawbrace_scan(st: PState, tag: string) -> Token {
+    let start = st.cur().pos
+    mut depth = 1
+    while true {
+        if st.at_end() {
+            st.report("unterminated `${tag} { }` block — no balancing `}` before end of file")
+            return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
+        }
+        if st.cur().tk == Tk.LeftBrace { depth = depth + 1 }
+        if st.cur().tk == Tk.RightBrace {
+            depth = depth - 1
+            if depth == 0 {
+                let body = st.src.substring(start, st.cur().pos).trim()
+                return Token { kind: "RAW", text: body, pos: start, tk: Tk.String }
+            }
+        }
+        let _ = st.advance()
+    }
+    Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
 }
 
 // ── The escape-hatch (@hand) — hand-written rules the grammar calls ──

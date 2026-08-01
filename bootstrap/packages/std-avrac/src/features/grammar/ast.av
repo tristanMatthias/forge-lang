@@ -312,6 +312,30 @@ export enum GPrim {
     /// capture kind is the silent-corruption failure mode #1075 documented, so the
     /// cheapest thing here is to add no kind at all.
     Gensym(tag: string)
+    /// `@rawbrace(tag)` — a RAW BALANCED-BRACE CAPTURE (t-47hc.31). Consumes every
+    /// token from the current position up to (not including) the `}` that balances an
+    /// already-consumed `{`, and binds the verbatim SOURCE SLICE between them,
+    /// trimmed — the grammar-DSL spelling of the hand parser's
+    /// `capture_balanced_brace_body`. The canonical consumer is a feature block whose
+    /// body is NOT Avra syntax and is handed to a runtime engine as a string:
+    ///
+    ///   grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
+    ///
+    /// Depth counting is TOKEN-level (`Tk.LeftBrace`/`Tk.RightBrace`), exactly like
+    /// the hand's — a `{` inside a string or template literal is part of that one
+    /// token and never miscounts the depth. The cursor is left AT the balancing `}`
+    /// so the rule's own trailing `"}"` literal consumes it, keeping the close brace
+    /// (and its diagnostics) in the grammar where a reviewer can see it.
+    ///
+    /// `tag` names the construct in the unterminated-EOF diagnostic ("unterminated
+    /// `<tag> { }` block — …"), matching the hand's per-construct message. It is a bare
+    /// NAME like every other marker argument (no escaping question).
+    ///
+    /// Like `@gensym`, it binds a synthetic `CapVal.Tok` (text = the captured slice),
+    /// reusing the ordinary `tok` capture kind end to end — no new CapVal variant, no
+    /// new `rule_kind_v` entry. Both engines lower to the ONE shared
+    /// `rawbrace_scan` (executor.av), so the scan cannot drift between them.
+    RawBrace(tag: string)
 }
 
 /// The `-> …` build that constructs the result from captures.

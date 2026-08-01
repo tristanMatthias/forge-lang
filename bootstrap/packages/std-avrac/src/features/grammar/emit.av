@@ -1322,6 +1322,22 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             if item.label == "" { return "${ind}let _ = gensym_token(st, \"${tag}\")\n" }
             "${ind}let ${item.label} = CapVal.Tok(gensym_token(st, \"${tag}\"))\n"
         }
+        // `@rawbrace` emits a call to the SAME shared scan the executor runs
+        // (rawbrace_scan) — the whole point of centralising it: the generated parser
+        // and the interpreter capture the same slice and report the same
+        // unterminated-EOF message from one body. Capture shapes mirror `@gensym`'s,
+        // and for the same reasons (an enclosing group may repeat or be optional even
+        // though a suffix on the item itself is a grammar-parse error).
+        .RawBrace(tag) -> {
+            if str_in(list_labels, item.label) {
+                return "${ind}${item.label}_list.push(rawbrace_scan(st, \"${tag}\"))\n"
+            }
+            if str_in(opts, item.label) {
+                return "${ind}${item.label} = CapVal.Tok(rawbrace_scan(st, \"${tag}\"))\n"
+            }
+            if item.label == "" { return "${ind}let _ = rawbrace_scan(st, \"${tag}\")\n" }
+            "${ind}let ${item.label} = CapVal.Tok(rawbrace_scan(st, \"${tag}\"))\n"
+        }
         // A One group: a terminal alternation (`op:("!"|"-")`) yields a token
         // (bind it); a STRUCTURAL group (a nested alternation / sub-sequence,
         // e.g. variant_pat's `binds:IDENT … | subs:variant_pat …`) is inlined
@@ -2135,6 +2151,10 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
         // (seq_first_guard skips leading ones), where the identity conjunct is what
         // "this contributes no condition" means.
         .Gensym(_) -> "true"
+        // `@rawbrace` accepts any current token (an immediate `}` is a legal empty
+        // body), so its guard is the identity conjunct too — and like the executor's
+        // tok_starts arm, it is never a branch head in practice.
+        .RawBrace(_) -> "true"
     }
 }
 
@@ -2751,6 +2771,8 @@ fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
         // grammar-parse error (seed_parser). Token is the honest element type anyway:
         // it binds a synthetic `CapVal.Tok`.
         .Gensym(_) -> "Token"
+        // `@rawbrace` binds a synthetic `CapVal.Tok` too (text = the captured slice).
+        .RawBrace(_) -> "Token"
     }
 }
 

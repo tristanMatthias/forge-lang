@@ -1,0 +1,126 @@
+// WHY: t-47hc.31 — `@rawbrace(tag)`, the raw balanced-brace CAPTURE primary.
+//
+// THE PROBLEM IT SOLVES. `grammar { … }` is not a parse, it is a CAPTURE: the hand
+// parser (`parse_grammar_block` → `capture_balanced_brace_body`) consumes to the
+// balancing `}` and hands the verbatim source slice to a runtime engine as a string.
+// The block body is NOT Avra syntax, so no native rule can parse it — but nothing
+// about capturing it needs a hand parser either. Without this primary, retiring
+// `@hand(primary_base)` (the tail that reaches `parse_ident_expr`'s feature-form
+// dispatch) would leave `grammar { … }` with no native home at all.
+//
+// WHAT THESE SPECS PIN.
+//  * The slice is VERBATIM (interior spacing preserved, ends trimmed) — the consumer
+//    desugars it into a string literal, so any mangling here is a silent semantic
+//    change to every grammar block in the tree.
+//  * Depth counting is TOKEN-level: a `{` inside a STRING token must not open a
+//    level. This is the discriminator between the correct scan and a char scan.
+//  * The cursor stops AT the balancing `}`, leaving it for the rule's own trailing
+//    `"}"` literal — proven by the rule parsing cleanly at all.
+//  * The unterminated-EOF diagnostic names the construct via the tag.
+//  * Both engines lower to the ONE shared `rawbrace_scan` (the emitted source is
+//    asserted on, not inferred).
+use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn, render_grammar}
+use @std.avrac.core.{render_expr_id}
+
+/// Render what a rule BUILDS, so the captured slice is observable: the synthetic
+/// `CapVal.Tok` (kind "RAW") routes through `capval_to_expr` -> `literal_node`, whose
+/// unknown-kind fallthrough is `Expr.Ident(text)` — so the slice appears in the tree
+/// verbatim.
+fn built(grammar_src: string, input: string) -> string {
+    let g = parse_grammar(grammar_src)
+    if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
+    let out = run_grammar_expr(g.grammar, input)
+    if out.had_error { return "PARSE ERROR" }
+    render_expr_id(out.store, out.root)
+}
+
+fn parses(grammar_src: string, input: string) -> bool {
+    let g = parse_grammar(grammar_src)
+    g.error == "" && !run_grammar_expr(g.grammar, input).had_error
+}
+
+fn first_diag(grammar_src: string, input: string) -> string {
+    let g = parse_grammar(grammar_src)
+    if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
+    let out = run_grammar_expr(g.grammar, input)
+    if out.diags.length == 0 { return "" }
+    out.diags[0]
+}
+
+fn grammar_error(grammar_src: string) -> string {
+    parse_grammar(grammar_src).error
+}
+
+fn rule_src(grammar_src: string, rule: string) -> string {
+    let g = parse_grammar(grammar_src)
+    if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
+    for gr in g.grammar.rules {
+        if gr.name == rule { return emit_rule_fn(g.grammar, gr) }
+    }
+    ""
+}
+
+const RB_RULE = "r = \"g\" \"{\" b:@rawbrace(gram) \"}\" -> Grouping(b)"
+
+spec "t-47hc.31: @rawbrace captures the verbatim slice between balanced braces" {
+    then "a simple body is captured, trimmed, and bound" {
+        // The trailing `\"}\"` literal also proves the scan STOPPED AT the balancing
+        // brace rather than consuming it — the rule could not complete otherwise.
+        built(RB_RULE, "g { a + b }") == "(group a + b)"
+    }
+    then "an EMPTY body is legal — the scan may match zero tokens" {
+        parses(RB_RULE, "g { }")
+    }
+    then "NESTED braces stay inside the capture" {
+        built(RB_RULE, "g { x { y } z }") == "(group x { y } z)"
+    }
+    then "a `{` inside a STRING token does not open a depth level" {
+        // The token-vs-char discriminator: a char scan counts the `{` inside the
+        // string literal, never finds its mate, and captures to the wrong brace.
+        built(RB_RULE, "g { \"a{\" }") == "(group \"a{\")"
+    }
+    then "interior spacing survives verbatim (only the ENDS are trimmed)" {
+        built(RB_RULE, "g {  a   |   b  }") == "(group a   |   b)"
+    }
+}
+
+spec "t-47hc.31: @rawbrace reports the hand's unterminated-EOF diagnostic" {
+    then "EOF before the balancing `}` is an error, not a silent empty capture" {
+        !parses(RB_RULE, "g { a + b")
+    }
+    then "and the diagnostic names the construct via the tag" {
+        first_diag(RB_RULE, "g { a + b").contains("unterminated `gram { }` block")
+    }
+}
+
+spec "t-47hc.31: @rawbrace is validated at grammar-parse time" {
+    then "an UNLABELLED @rawbrace is a grammar-parse error, not a silent no-op" {
+        // It would consume the whole block and bind nothing — and the rule would
+        // still \"work\", which is exactly the silent kind of mistake.
+        grammar_error("r = \"g\" \"{\" @rawbrace(gram) \"}\" -> MkNone()") != ""
+    }
+    then "a tagless @rawbrace is rejected" {
+        grammar_error("r = \"g\" \"{\" b:@rawbrace() \"}\" -> Grouping(b)") != ""
+    }
+    then "a repetition suffix on @rawbrace is rejected" {
+        // One match already consumes to the balancing brace; a second iteration
+        // would start ON the close brace and the engines would disagree about it.
+        grammar_error("r = \"g\" \"{\" b:@rawbrace(gram)* \"}\" -> Grouping(b)") != ""
+    }
+    then "a mode marker wrapping @rawbrace is rejected" {
+        // A raw capture reads bytes, not modes — a mode set around it is dead by
+        // construction and must not imply an effect.
+        grammar_error("r = \"g\" \"{\" @off(allow_struct_lit) b:@rawbrace(gram) \"}\" -> Grouping(b)") != ""
+    }
+}
+
+spec "t-47hc.31: @rawbrace round-trips and lowers to the shared core" {
+    then "it round-trips through the renderer" {
+        render_grammar(parse_grammar(RB_RULE).grammar).contains("@rawbrace(gram)")
+    }
+    then "the EMITTED parser calls the same rawbrace_scan the executor runs" {
+        // The lockstep rule this slice's whole design rides on: ONE shared scan.
+        // Asserted on the emitted source, not inferred from the interpreter passing.
+        rule_src(RB_RULE, "r").contains("rawbrace_scan(st, \"gram\")")
+    }
+}
