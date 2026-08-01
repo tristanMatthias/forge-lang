@@ -5177,10 +5177,15 @@ int64_t avra_mem_limit_kb(void) {
 }
 
 // The pressure floor for a SOFT grant, in KiB: below this much MemAvailable
-// the box is genuinely tight and an over-budget tree must stop itself.
-// Exported by the pool (the admission run's reserve — the margin the whole
-// run promises to keep free); defaults to 2 GiB when a budget arrives
-// without a floor.
+// the box is genuinely NEAR THE CLIFF and an over-budget tree must stop
+// itself. This is a property of the box, not of any run's schedule — the
+// default (2 GiB) is deliberately far below a busy suite's normal
+// MemAvailable. Exporting the admission reserve (6144MB) as this floor was
+// tried and CI falsified it in one run: a loaded 16GB runner legitimately
+// sits below the reserve for most of a suite, so "normal load" read as
+// "pressure" and every over-grant fixture probe tripped — the hard cap
+// re-created through the pressure branch. AVRA_MEM_SLACK_FLOOR_MB remains
+// an override for tests and unusual boxes; the pool never sets it.
 int64_t avra_mem_slack_floor_kb(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
