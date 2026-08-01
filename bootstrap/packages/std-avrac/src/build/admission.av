@@ -54,6 +54,13 @@ export type MemGovernor = {
                              // prior helpers below) instead of ratcheting forever
 }
 
+/// The measured peak of a no-metadata WHOLE-PROGRAM fixture compile
+/// (~5.5GB, uzs9.7 / x2hu) plus margin — the floor for exported
+/// per-process ceilings, so an admitted tree's heavy members survive
+/// while runaways still stop themselves far below the old box-wide
+/// default. See MemGovernor.ceiling_mb.
+const HEAVY_FIXTURE_CEILING_MB: int = 6500
+
 export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseline_avail_mb: int) -> MemGovernor {
     MemGovernor {
         width_cap: if width_cap < 1 { 1 } else { width_cap },
@@ -162,6 +169,41 @@ impl MemGovernor {
         let floor = if sample_mb > self.static_estimate_mb { sample_mb } else { self.static_estimate_mb }
         if self.estimate_mb <= floor { return }
         self.estimate_mb = (self.estimate_mb * 3 + floor) / 4
+    }
+
+    /// The byte allocation exported to a unit admitted at `width` in flight
+    /// (itself included): its live estimate plus an equal share of the
+    /// reserve. This is the ONE budget authority (t-kdyj.1 slice 3): the
+    /// pool exports it to the admitted unit as AVRA_MEM_LIMIT_MB — the
+    /// child's F4014 self-ceiling, so a tree that outgrows what was admitted
+    /// for it stops ITSELF with a diagnosable error instead of taking the
+    /// container (both recorded container deaths were admitted work growing
+    /// past the model with nothing bounding the SUM) — and as
+    /// AVRA_MEM_BUDGET_MB, consumed by the fixture-slot machinery so
+    /// grandchildren divide the same allocation instead of sizing against
+    /// the whole box. Width-only governors return 0 = "export nothing";
+    /// those pools stay byte-identical to the pre-slice-3 behaviour.
+    fn allocation_mb(self, width: int) -> int {
+        if !self.has_model() { return 0 }
+        let w = if width < 1 { 1 } else { width }
+        self.estimate_mb + self.reserve_mb / w
+    }
+
+    /// The per-process F4014 ceiling exported alongside the allocation:
+    /// the allocation, floored at HEAVY_FIXTURE_CEILING_MB. The floor is
+    /// what keeps the ceiling honest for the tree's UNCLASSIFIED members —
+    /// a raw-shellout whole-program fixture compile (~5.5GB measured, the
+    /// x2hu class) is legitimate work that a light shard's ~3GB allocation
+    /// would F4014 mid-suite. One heavy runs at a time (the slot pool's
+    /// exclusive grant is repo-global), so one box-bounded heavy under the
+    /// floor is the correct worst case — while every process in the tree
+    /// still stops itself ~5GB below the old 75%-of-box default, before
+    /// the container cliff instead of past it. The BUDGET export stays the
+    /// true allocation, so slot-width accounting is unaffected.
+    fn ceiling_mb(self, width: int) -> int {
+        let alloc = self.allocation_mb(width)
+        if alloc == 0 { return 0 }
+        if alloc > HEAVY_FIXTURE_CEILING_MB { alloc } else { HEAVY_FIXTURE_CEILING_MB }
     }
 
     /// One admission decision for the NEXT queued unit. Never blocks and

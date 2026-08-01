@@ -291,5 +291,87 @@ spec "admitted pool: the dispatch loop consults the governor" {
     }
 }
 
+spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slice 3)" {
+    given "the allocation formula" {
+        then "a serial admission gets its estimate plus the whole reserve" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(1) == 7944
+        }
+        then "width shares the reserve equally, never the estimate" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(4) == 1800 + 6144 / 4
+        }
+        then "a degenerate width clamps to serial" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(0) == 7944
+        }
+        then "a width-only governor exports nothing" {
+            let gov = governor_width_only(8)
+            gov.allocation_mb(1) == 0 && gov.ceiling_mb(1) == 0
+        }
+        then "the exported ceiling floors at the heavy-fixture peak, the budget does not" {
+            // A light shard's allocation (~600 here) would F4014 a
+            // legitimate ~5.5GB whole-program fixture child; the LIMIT
+            // export floors heavy-safe while the BUDGET stays the true
+            // allocation for slot-width accounting.
+            let gov = governor_for(2, 500, 100, 700)
+            gov.allocation_mb(1) == 600 && gov.ceiling_mb(1) == 6500
+        }
+        then "an allocation above the floor is its own ceiling" {
+            let gov = governor_for(2, 9000, 1000, 20000)
+            gov.ceiling_mb(1) == 10000
+        }
+    }
+    given "a real pool run" {
+        then "a modeled admission exports the ceiling and budget to the child, across a compound command" {
+            let dir = "/tmp/avra_admission_alloc_${string(avra_getpid())}"
+            let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            // Serial (est 500 + reserve 100 vs avail 700): budget = 600,
+            // ceiling floors at 6500. `true &&` makes the command compound,
+            // pinning the `export …;` form — a bare assignment prefix would
+            // leave the tail of the chain uncapped and this spec red.
+            let gov = governor_for(2, 500, 100, 700)
+            let rc = pool_run_admitted(
+                ["true && echo \"lim=$AVRA_MEM_LIMIT_MB budget=$AVRA_MEM_BUDGET_MB\" > '${dir}/env'"],
+                gov, () -> 700)
+            let seen = avra_shell_exec("cat '${dir}/env' 2>/dev/null").trim()
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            rc == 0 && seen == "lim=6500 budget=600"
+        }
+        then "a width-only pool leaves the child's environment untouched" {
+            // The suite itself may run under an admitted shard whose
+            // exported vars the child INHERITS — so assert the pool adds
+            // nothing by comparing against this process's own values,
+            // not against empty.
+            let dir = "/tmp/avra_admission_noalloc_${string(avra_getpid())}"
+            let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            let inherited = avra_process_env_get("AVRA_MEM_LIMIT_MB")
+            let gov = governor_width_only(2)
+            let rc = pool_run_admitted(
+                ["echo \"lim=[$AVRA_MEM_LIMIT_MB]\" > '${dir}/env'"],
+                gov, () -> 0 - 1)
+            let seen = avra_shell_exec("cat '${dir}/env' 2>/dev/null").trim()
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            rc == 0 && seen == "lim=[${inherited}]"
+        }
+    }
+    given "the fixture-slot machinery consumes the exported budget" {
+        then "AVRA_MEM_BUDGET_MB sizes the pool instead of MemTotal" {
+            let two = avra_shell_exec("AVRA_MEM_BUDGET_MB=5800 bash scripts/diagnose.sh --print-compile-slots").trim()
+            let one = avra_shell_exec("AVRA_MEM_BUDGET_MB=2000 bash scripts/diagnose.sh --print-compile-slots").trim()
+            two == "2" && one == "1"
+        }
+        then "an unset or malformed budget falls back to the box-wide sizing" {
+            // env -u: the suite may itself run under an exported budget
+            // (the feature working); the fallback branch needs a genuinely
+            // unset variable to be observable.
+            let unset_out = avra_shell_exec("env -u AVRA_MEM_BUDGET_MB bash scripts/diagnose.sh --print-compile-slots").trim()
+            let junk_out = avra_shell_exec("AVRA_MEM_BUDGET_MB=abc bash scripts/diagnose.sh --print-compile-slots").trim()
+            unset_out != "" && junk_out == unset_out
+        }
+    }
+}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_getpid() -> int
+extern fn avra_process_env_get(name: string) -> string
