@@ -10,6 +10,7 @@ impl Parser {
     fn parse_spec_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `spec`
         if !self.check(Tk.String) {
+            self.set_error("expected spec name string after `spec`")
             return .Err("parse error")
         }
         let name = self.current_lexeme
@@ -49,7 +50,14 @@ impl Parser {
 
     fn parse_given_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `given`
+        // MUST report before bailing: parse_spec_body swallows the Err and
+        // returns the partial item list, so a bare return here let
+        // `spec "s" { given }` close cleanly with the malformed given DROPPED
+        // and no diagnostic — the same silent-drop class the select arm had
+        // (both caught by the error-recovery corpus while routing t-47hc
+        // Phase 4).
         if !self.check(Tk.String) {
+            self.set_error("expected given name string after `given`")
             return .Err("parse error")
         }
         let name = self.current_lexeme
@@ -66,7 +74,9 @@ impl Parser {
 
     fn parse_then_block(self) -> Result<StmtId, string> {
         self.advance()  // consume `then`
+        // Same silent-drop hazard as the given block above.
         if !self.check(Tk.String) {
+            self.set_error("expected then name string after `then`")
             return .Err("parse error")
         }
         let name = self.current_lexeme

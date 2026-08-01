@@ -264,6 +264,22 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
     }
 
+    // The SPEC-TEST blocks join the routed set (t-47hc Phase 4: `spec`, with its
+    // `given` / `then` inner keywords). Added BEFORE the routing per the
+    // discipline. The missing-name forms pin the silent-drop fix in
+    // spec_test/parser.av: given/then bailed with a bare Err that
+    // parse_spec_body swallowed, so those inputs used to parse CLEAN.
+    then "malformed spec / given / then (the routed keyword), on all three paths" {
+        agree_all("spec\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\"\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" {\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given \"g\" }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { then }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { then \"t\" }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
+    }
+
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
         agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
@@ -607,6 +623,18 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("select { x <- ch }\nfn f() -> int { 1 }") &&
         agree_bad("select { x <- ch -> }\nfn f() -> int { 1 }") &&
         agree_bad("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
+    }
+
+    // The tree half of the spec / given / then corpus above.
+    then "malformed spec / given / then recover to the same tree" {
+        agree_bad("spec\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\"\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" {\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given \"g\" }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { then }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { then \"t\" }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
     }
 
     then "malformed decl WRAPPERS recover to the same tree" {
