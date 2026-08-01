@@ -1,0 +1,84 @@
+// WHY: t-47hc slice A follow-up — the `@peek` cond LOCKSTEP guard. A cond used
+// in a production grammar must be in seed_parser.peek_cond_supported: an unknown
+// name fails the grammar parse, but every accessor used to read `.grammar` raw
+// and ignore `.error`, so the branch silently carried `Peek("")` — an ungated
+// lookahead in BOTH the executor walk and the emitted static parser (the
+// committed gen_decl_parser briefly shipped `lookahead_ok("", st)` for the
+// component `body:` marker, degrading the gate to a colon-less `body` check).
+// Two nets here: (1) every Peek cond reachable from the production grammars is
+// non-empty and allowlisted; (2) the parse-time rejection actually surfaces via
+// `.error`, which `grammar_checked` (the production unwrap) now enforces.
+use @std.avrac.features.grammar.{Grammar, GNode, GSeq, GItem, GPrim, parse_grammar, grammar_checked, peek_cond_supported, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+
+/// Collect every `@peek` cond reachable in `g` (recursing into groups).
+fn peek_conds(g: Grammar) -> List<string> {
+    mut out: List<string> = []
+    for r in g.rules {
+        for c in collect_node(r.body) { out.push(c) }
+    }
+    out
+}
+
+fn collect_node(n: GNode) -> List<string> {
+    mut out: List<string> = []
+    match n {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    match item.prim {
+                        .Peek(cond) -> out.push(cond)
+                        .Group(inner) -> {
+                            for c in collect_node(inner) { out.push(c) }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// True iff every cond in every production grammar is non-empty and supported.
+/// Prints the offender on failure so the red run names it.
+fn all_conds_supported() -> bool {
+    let grammars = [avra_expr_grammar(), avra_stmt_grammar(), avra_type_grammar(),
+                    avra_program_grammar(), avra_decl_flip_grammar(), avra_decl_dispatch_grammar()]
+    mut ok = true
+    for g in grammars {
+        for c in peek_conds(g) {
+            if c == "" || !peek_cond_supported(c) {
+                println("unsupported/empty @peek cond `${c}` reachable in grammar `${g.name}`")
+                ok = false
+            }
+        }
+    }
+    ok
+}
+
+spec "@peek conds in the production grammars are allowlisted (lockstep guard)" {
+    then "every reachable Peek cond is non-empty and peek_cond_supported" {
+        all_conds_supported()
+    }
+    then "the production grammars actually exercise the guard (conds exist)" {
+        // A vacuous walk (zero conds found) would green-light silently — the
+        // decl flip grammar alone carries several (`comma_ident`, `body_marker`,
+        // `kw_let`, `decl_lead`).
+        peek_conds(avra_decl_flip_grammar()).length > 0
+    }
+}
+
+spec "an unknown @peek cond is a HARD grammar error, not a silent no-op" {
+    given "a rule naming a cond outside the allowlist" {
+        then "the parse surfaces the rejection via .error" {
+            let gp = parse_grammar("r = @peek(no_such_cond) \"x\"")
+            gp.error != "" && gp.error.contains("unknown `@peek` cond")
+        }
+    }
+    given "the same rule with a supported cond" {
+        then "the parse is clean and grammar_checked passes it through" {
+            let gp = parse_grammar("r = @peek(kw_let) \"let\"")
+            gp.error == "" && grammar_checked(gp).rules.length == 1
+        }
+    }
+}

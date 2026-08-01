@@ -5,7 +5,7 @@
 // the bare `mod` declaration. They live in one fragment because one feature
 // (features/modules) owns both keywords — `use_feature()` and `mod_feature()`
 // are registered from the same directory.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `use` and `mod` declarations.
 ///
@@ -50,5 +50,5 @@ export fn avra_modules_grammar() -> Grammar {
               | useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUseBare(useg, unames)
   mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
     }
-    gp.grammar
+    grammar_checked(gp)
 }

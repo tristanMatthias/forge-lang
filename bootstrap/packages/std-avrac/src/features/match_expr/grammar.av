@@ -16,7 +16,7 @@
 // hand-written call, so no seed cycle. Pattern builds (OrMaybe / MkVariant / …)
 // are interpreted by the shared executor keyed on the build name carried in the
 // grammar DATA, so moving the DEFINITION here does not move the engine.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The §2 match-pattern family (ps3t.6.5.5): wildcard/`rest`, literals
 /// (int/float/string/bool, incl. negatives), type patterns `int(n)`, bare and
@@ -37,7 +37,7 @@ export fn avra_pat_grammar() -> Grammar {
   neg_pat     = "-" n:NUMBER -> PatNegNum(n)
   num_pat     = n:NUMBER -> PatNum(n)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// The match ARM rules — the second fragment this feature owns, and the FIRST
@@ -67,7 +67,7 @@ export fn avra_match_arm_grammar() -> Grammar {
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
 
 /// t-47hc.29 — a match-table CELL. This is `parse_primary` (parse/mod.av:2528) and
@@ -107,7 +107,7 @@ export fn avra_match_arm_grammar() -> Grammar {
 /// for all seventeen. This rule references `table_cell` as one external rule with one
 /// declared FIRST — the shape the roadmap meant by "the table flip spends the cells".
 export fn avra_match_table_grammar() -> Grammar {
-    parse_grammar(
+    grammar_checked(parse_grammar(
   "match_table_stmt = \"match\" @off(allow_struct_lit) subj:expression \"table\"\n" +
   "                   @require \"{\" IDENT ( \"|\" cols:IDENT )*\n" +
   "                   ( p:pattern ( \"|\" )? ( v:table_cell ( \"|\" )? )*{#cols} ( \",\" )? )*\n" +
@@ -126,5 +126,5 @@ export fn avra_match_table_grammar() -> Grammar {
   "                   @require \"}\"\n" +
   "                   @expect(\"{\", \"expected `{` after match table\")\n" +
   "                   @expect(\"}\", \"expected `}` after match table\") -> MkMatchTableExpr(subj, cols, p, v)\n"
-    ).grammar
+    ))
 }

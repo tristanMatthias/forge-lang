@@ -2,6 +2,11 @@
 // consumers can invoke macro fns at compile time after std-avrac is
 // loaded from `.meta.bin`.
 //
+// @@fixture-stateful@@ — the fixture compiles against the SHARED @std
+// metadata prebuild: a FAIL captured while that state is half-ready (a
+// cold concurrent sweep mid-prebuild — t-tzc4) must re-probe next run,
+// never replay from the fixture-stdout cache.
+//
 // Pre-fix: FnDeclEntry had no `is_comptime` flag and the body-ship
 // gate was generic-only. @comptime fns lost their bodies on every
 // AVRA_USE_METADATA=1 reload — `try_fold_call` couldn't reduce a

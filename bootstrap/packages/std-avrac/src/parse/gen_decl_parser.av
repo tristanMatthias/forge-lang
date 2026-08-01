@@ -4,8 +4,8 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
-use core.{ExprId, Stmt, MatchArm, SelectArm, Tk, SrcPos, TypeParamEntry, Annotation}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
+use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, ChildrenSlot, Tk, SrcPos, TypeParamEntry, Annotation}
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_declaration(st: PState) -> CapVal {
@@ -380,6 +380,25 @@ export fn parse_declaration(st: PState) -> CapVal {
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
         s_last = parse_spec_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "component" {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_component_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
             return s_last
         }
@@ -1391,6 +1410,157 @@ fn parse_then_blk(st: PState) -> CapVal {
         st.report("expected }")
     }
     mk_then_block_g(st, capval_tok_text(n), body_list)
+}
+
+fn parse_component_decl(st: PState) -> CapVal {
+    mut tr_list: List<Token> = []
+    mut cfg_list: List<CompConfig> = []
+    mut cs_list: List<ChildrenSlot> = []
+    mut body_list: List<StmtId> = []
+    mut bm: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().text == "implements" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+        while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
+            let _ = st.advance()
+            if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
+                st.report("expected IDENT")
+            }
+        }
+        if st.cur().tk == Tk.Comma { let _ = st.advance() }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    if st.cur().text == "config" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        while st.cur().tk == Tk.Identifier {
+            cfg_list.push(capval_to_comp_config(st, parse_config_entry(st)))
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+    }
+    if st.cur().text == "children" {
+        let _ = st.advance()
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected {")
+        }
+        if st.cur().tk == Tk.Identifier {
+            cs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
+            while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
+                let _ = st.advance()
+                cs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
+            }
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected }")
+        }
+    }
+    if lookahead_ok("body_marker", st) && (st.cur().text == "body") {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+            st.report("expected :")
+        }
+        if st.cur().tk == Tk.Identifier { bm = CapVal.Tok(st.advance()) } else {
+            st.report("expected IDENT")
+        }
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_comp_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_component_def_g(st, capval_tok_text(n), capval_tok_texts(CapVal.Toks(tr_list)), CapVal.CCfgs(cfg_list), CapVal.CSlots(cs_list), capval_tok_text(bm), capval_present(bm), body_list)
+}
+
+fn parse_config_entry(st: PState) -> CapVal {
+    mut a_list: List<Token> = []
+    mut d: CapVal = CapVal.Nil
+    let k = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+        st.report("expected :")
+    }
+    let ty = parse_type_expr(st)
+    if st.cur().tk == Tk.Equal {
+        let _ = st.advance()
+        d = parse_expression(st)
+    }
+    while st.cur().tk == Tk.At {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier {
+            a_list.push(st.advance())
+        }
+    }
+    if st.cur().tk == Tk.Comma { let _ = st.advance() }
+    mk_comp_config_g(st, capval_tok_text(k), ty, d, capval_present(d))
+}
+
+fn parse_children_slot(st: PState) -> CapVal {
+    let k = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+        st.report("expected :")
+    }
+    let ty = parse_type_expr(st)
+    mk_children_slot_g(st, capval_tok_text(k), ty)
+}
+
+fn parse_comp_item(st: PState) -> CapVal {
+    if lookahead_ok("kw_let", st) && (st.cur().text == "let") {
+        return parse_comp_field(st)
+    }
+    parse_declaration(st)
+}
+
+fn parse_comp_field(st: PState) -> CapVal {
+    mut init: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let f = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+        st.report("expected :")
+    }
+    let ty = parse_type_expr(st)
+    if st.cur().tk == Tk.Equal {
+        let _ = st.advance()
+        init = parse_expression(st)
+    }
+    mk_comp_field_g(st, capval_tok_text(f), ty, init, capval_present(init))
 }
 
 fn parse_body_item(st: PState) -> CapVal {

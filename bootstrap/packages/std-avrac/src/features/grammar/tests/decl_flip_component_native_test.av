@@ -1,0 +1,184 @@
+// WHY: pins the routing of the COMPONENT definition (t-47hc Phase 4 slice A:
+// the MODERN form `component name [implements …] { config? children?
+// body:TokenStream? … }`) out of `@hand(decl_hand)`. Same property set as the
+// binding / destructure / select-parallel / spec increments, plus one this
+// slice uniquely owes: the MkComponentDef build REGISTERS the name for
+// keyword-free instantiation (through the hand delegate, at the same point the
+// hand registers), so def-then-instantiate must work on ALL FOUR parser paths —
+// a registration that silently skipped would parse the def fine and then
+// mis-parse every later `name inst { … }` block. The legacy paren form and the
+// instantiation forms stay hand-owned (slices B/C): they must fail the native
+// header and fall back byte-for-byte.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+fn check_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_decl_comp_${name}.av"
+    let log = "build/_decl_comp_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+fn clean_all_paths(name: string, src: string) -> bool {
+    clean(check_out("${name}_dflt", "", src)) &&
+        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
+        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+spec "t-47hc slice A: the component definition is emitted as a native rule" {
+    then "the parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_component_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_config_entry(st: PState) -> CapVal") &&
+            src.contains("fn parse_children_slot(st: PState) -> CapVal") &&
+            src.contains("fn parse_comp_field(st: PState) -> CapVal")
+    }
+
+    then "component_decl dispatches BEFORE the decl_hand gate" {
+        let src = decl_src()
+        let comp_at = src.index_of("parse_component_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        src.contains("s_last = parse_component_decl(st)") &&
+            comp_at >= 0 && hand_at >= 0 && comp_at < hand_at
+    }
+
+    then "the schema accumulators are typed, not the ExprId default" {
+        // The kind-plumbing trap: a mis-kinded repeat coerces entries through
+        // capval_to_expr. CompConfig and ChildrenSlot each need their own kind.
+        let src = decl_src()
+        src.contains("List<CompConfig>") && src.contains("capval_to_comp_config(st,") &&
+            src.contains("List<ChildrenSlot>") && src.contains("capval_to_children_slot(st,")
+    }
+}
+
+spec "t-47hc slice A: definition forms parse and REGISTER on all four paths" {
+    then "a full modern definition with config, children, fields, and methods compiles clean" {
+        clean_all_paths("full",
+            "component panel {\n" +
+            "    config {\n" +
+            "        title: string = \"t\",\n" +
+            "        width: int\n" +
+            "    }\n" +
+            "    children { items: List<int> }\n" +
+            "    let count: int = 0\n" +
+            "    fn describe(self) -> string { \"panel\" }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "def-then-instantiate works on every path — the REGISTRATION proof" {
+        // The bare keyword-free instantiation only parses if the def's parse
+        // REGISTERED the name; a native def that skipped registration would
+        // make `box b { … }` fall to expression parsing and fail.
+        clean_all_paths("reg",
+            "component box {\n" +
+            "    config { label: string = \"x\" }\n" +
+            "}\n" +
+            "box b {\n" +
+            "    label \"hello\"\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "an implements clause (incl. trailing comma) parses clean everywhere" {
+        clean_all_paths("impl",
+            "trait Runnable { fn run(self) -> int }\n" +
+            "component job implements Runnable, {\n" +
+            "    fn run(self) -> int { 0 }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "a raw `body: TokenStream` def routes its instances to the RAW capture everywhere" {
+        // The registration SPLIT: a TokenStream def must register the raw-body
+        // parser, or the instance body would be parsed as structured Avra and
+        // F0001 on the arbitrary tokens. The fixture deliberately carries no
+        // @expand macro, so the CORRECT outcome on every path is the SEMANTIC
+        // F4101 (needs a macro) with NO parse error — reaching F4101 at all is
+        // the proof that the raw capture accepted the body verbatim.
+        let src = "component sql {\n" +
+            "    body: TokenStream\n" +
+            "}\n" +
+            "sql q { SELECT * FROM t WHERE x > 1 }\n" +
+            "fn main() { println(\"ok\") }\n"
+        let d = check_out("raw_dflt", "", src)
+        let e = check_out("raw_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+        let x = check_out("raw_exec", "AVRA_PARSER_DECL_STATIC=0", src)
+        let h = check_out("raw_hand", "AVRA_PARSER_DECL_FLIP=0", src)
+        d.contains("error[F4101]") && !d.contains("error[F0001]") &&
+            e.contains("error[F4101]") && !e.contains("error[F0001]") &&
+            x.contains("error[F4101]") && !x.contains("error[F0001]") &&
+            h.contains("error[F4101]") && !h.contains("error[F0001]")
+    }
+
+    then "an EMPTY component and an empty config/children still parse clean" {
+        clean_all_paths("empty",
+            "component blank { }\n" +
+            "component cfgonly { config { } }\n" +
+            "component kidsonly { children { } }\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "a `body()` METHOD CALL in a def body does not trip the body: marker gate" {
+        // The body_marker peek needs BOTH halves — the word `body` AND the
+        // following `:`. The cond briefly emitted as lookahead_ok("") (the
+        // allowlist gap peek_cond_lockstep_test now guards), degrading the gate
+        // to a colon-less `body` check: this def then entered the marker group,
+        // failed `:`, and rolled the whole component back to the hand on
+        // well-formed input. Parity hid that (the hand parses it identically);
+        // this pins the shape on every path so the gate keeps its colon half.
+        // The call is the def body's FIRST item — exactly the position the
+        // marker peek inspects (after the config/children groups).
+        clean_all_paths("bodycall",
+            "fn body() -> int { 1 }\n" +
+            "component caller {\n" +
+            "    body()\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+}
+
+spec "t-47hc slice A: the component frontier did not move" {
+    then "the LEGACY paren form still parses — hand fallback owns it byte-for-byte" {
+        clean_all_paths("legacy",
+            "component wid(size: int) {\n" +
+            "    fn area(self) -> int { 4 }\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "the keyword-prefixed instance form still parses via the hand" {
+        clean_all_paths("kwinst",
+            "component tag {\n" +
+            "    config { name: string = \"\" }\n" +
+            "}\n" +
+            "component tag t1 {\n" +
+            "    name \"a\"\n" +
+            "}\n" +
+            "fn main() { println(\"ok\") }\n")
+    }
+
+    then "`body:` with a non-TokenStream type still reports the hand's coded message" {
+        let out = check_out("badbody", "",
+            "component c {\n    body: int\n}\nfn main() { }\n")
+        !clean(out) &&
+            out.contains("the only valid type is `TokenStream`")
+    }
+
+    then "a component-body `let` WITHOUT a type annotation stays an error" {
+        // parse_comp_def_body requires the `: type`; the routed general
+        // let_decl must not leak into component bodies and accept it.
+        let out = check_out("badfield", "",
+            "component c {\n    let x = 5\n}\nfn main() { }\n")
+        !clean(out) && out.contains("error[F0001]")
+    }
+}

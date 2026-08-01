@@ -6,7 +6,7 @@
 // in features/struct_decl/grammar.av — the cross-fragment reference binds by
 // name after the merge, exactly as `match_arm` already references `pattern_or`
 // across the two match fragments.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `enum` declaration and its variant rule (bare or payload-carrying).
 export fn avra_enum_decl_grammar() -> Grammar {
@@ -14,5 +14,5 @@ export fn avra_enum_decl_grammar() -> Grammar {
   enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )* ( vars:variant ","? ( DOC )* )* "}" -> MkEnumDecl(ename, tparams, vars)
   variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
     }
-    gp.grammar
+    grammar_checked(gp)
 }

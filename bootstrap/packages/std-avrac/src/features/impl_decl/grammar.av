@@ -7,7 +7,7 @@
 // `impl_method` is separate from the trait's `method_member` because an impl
 // method's body is REQUIRED where a trait method's is optional — the two cannot
 // share one rule without making the body optional everywhere.
-use features.grammar.{parse_grammar, Grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `impl` declaration and its method rule.
 export fn avra_impl_decl_grammar() -> Grammar {
@@ -15,5 +15,5 @@ export fn avra_impl_decl_grammar() -> Grammar {
   impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
   impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" imbody:body_item* "}" -> MkMethod(imname, imparams, imret, imbody)
     }
-    gp.grammar
+    grammar_checked(gp)
 }
