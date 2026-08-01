@@ -291,5 +291,139 @@ spec "admitted pool: the dispatch loop consults the governor" {
     }
 }
 
+spec "one budget authority: admitted units carry their allocation (t-kdyj.1 slice 3)" {
+    given "the allocation formula" {
+        then "a serial admission gets its estimate plus the whole reserve" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(1) == 7944
+        }
+        then "width shares the reserve equally, never the estimate" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(4) == 1800 + 6144 / 4
+        }
+        then "a degenerate width clamps to serial" {
+            let gov = governor_for(4, 1800, 6144, 15000)
+            gov.allocation_mb(0) == 7944
+        }
+        then "a width-only governor exports nothing" {
+            let gov = governor_width_only(8)
+            gov.allocation_mb(1) == 0
+        }
+    }
+    given "the soft-grant trip decision (avra_mem_should_trip)" {
+        then "under the limit never trips, hard or soft" {
+            avra_mem_should_trip(500, 1000, 0, 0, 9999) == 0 &&
+            avra_mem_should_trip(500, 1000, 1, 0, 9999) == 0
+        }
+        then "a hard ceiling trips on RSS alone — the pre-slice-3 contract" {
+            avra_mem_should_trip(1000, 1000, 0, 999999, 0) == 1
+        }
+        then "an over-budget soft grant BORROWS while the box has slack" {
+            // The first CI falsification: a cold whole-program fixture
+            // child at ~6.7GB against a shard-sized grant, box roomy — must
+            // keep running.
+            avra_mem_should_trip(6900, 3300, 1, 8600, 1024) == 0
+        }
+        then "borrowing survives NORMAL suite load — the second CI falsification" {
+            // CI run 2: ceiling 4872 (grant), avail ~5GB — a busy 16GB
+            // runner legitimately sits below the 6144MB admission reserve
+            // for most of a suite. With the reserve exported as the floor
+            // this tripped; against the box-scaled near-cliff floor it
+            // must borrow.
+            avra_mem_should_trip(4873, 4872, 1, 5000, 1024) == 0
+        }
+        then "an over-budget soft grant trips near the cliff" {
+            avra_mem_should_trip(6900, 3300, 1, 700, 1024) == 1
+        }
+        then "the near-cliff floor scales with the box: MemTotal/16, clamped" {
+            // 16GB box -> 1GB floor; tiny box clamps up to 512MB; huge box
+            // clamps down to 2GB. KiB in, KiB out.
+            avra_mem_slack_floor_for(16777216) == 1048576 &&
+            avra_mem_slack_floor_for(4194304) == 524288 &&
+            avra_mem_slack_floor_for(134217728) == 2097152
+        }
+        then "the third falsification: a 16GB runner's heavy fixture rides through 2GB avail — the scaled floor lets it" {
+            // CI tripped the ~7GB @std/avrac lib-build probe at exactly
+            // "2047 MiB available < 2048 MiB floor" — a build the
+            // pre-budget world completed routinely at lower avail. Against
+            // the box-scaled floor (1024 on 16GB) the same reading borrows.
+            avra_mem_should_trip(6975, 4872, 1, 2047, 1024) == 0
+        }
+        then "an unlimited ceiling never trips" {
+            avra_mem_should_trip(99999, 0, 0, 0, 0) == 0
+        }
+    }
+    given "a real pool run" {
+        then "a modeled admission exports the budget to the child, across a compound command — never a hard LIMIT, never a floor" {
+            let dir = "/tmp/avra_admission_alloc_${string(avra_getpid())}"
+            let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            let inherited_lim = avra_process_env_get("AVRA_MEM_LIMIT_MB")
+            // The floor must NOT be exported: it is the runtime's near-cliff
+            // default, a box property — exporting the admission reserve as
+            // the floor made normal CI load read as pressure (the second
+            // CI falsification; see avra_mem_should_trip specs).
+            let inherited_floor = avra_process_env_get("AVRA_MEM_SLACK_FLOOR_MB")
+            // Serial (est 500 + reserve 100 vs avail 700): budget = 600.
+            // `true &&` makes the command compound, pinning the `export …;`
+            // form — a bare assignment prefix would leave the tail of the
+            // chain ungoverned and this spec red.
+            let gov = governor_for(2, 500, 100, 700)
+            let rc = pool_run_admitted(
+                ["true && echo \"budget=$AVRA_MEM_BUDGET_MB floor=[$AVRA_MEM_SLACK_FLOOR_MB] lim=[$AVRA_MEM_LIMIT_MB]\" > '${dir}/env'"],
+                gov, () -> 700)
+            let seen = avra_shell_exec("cat '${dir}/env' 2>/dev/null").trim()
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            rc == 0 && seen == "budget=600 floor=[${inherited_floor}] lim=[${inherited_lim}]"
+        }
+        then "a width-only pool leaves the child's environment untouched" {
+            // The suite itself may run under an admitted shard whose
+            // exported vars the child INHERITS — so assert the pool adds
+            // nothing by comparing against this process's own values,
+            // not against empty.
+            let dir = "/tmp/avra_admission_noalloc_${string(avra_getpid())}"
+            let _ = avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+            let inherited = avra_process_env_get("AVRA_MEM_LIMIT_MB")
+            let gov = governor_width_only(2)
+            let rc = pool_run_admitted(
+                ["echo \"lim=[$AVRA_MEM_LIMIT_MB]\" > '${dir}/env'"],
+                gov, () -> 0 - 1)
+            let seen = avra_shell_exec("cat '${dir}/env' 2>/dev/null").trim()
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            rc == 0 && seen == "lim=[${inherited}]"
+        }
+    }
+    given "the fixture-slot machinery consumes the exported budget" {
+        then "AVRA_MEM_BUDGET_MB sizes the pool instead of MemTotal" {
+            // The slot count is CPU-clamped, so the 5800MB expectation is
+            // min(2, nproc) — a 1-CPU runner legitimately answers 1.
+            let cores = avra_parse_int(avra_shell_exec("nproc 2>/dev/null || echo 2").trim())
+            let want_5800 = if cores < 2 { string(cores) } else { "2" }
+            let two = avra_shell_exec("AVRA_MEM_BUDGET_MB=5800 bash scripts/diagnose.sh --print-compile-slots").trim()
+            let one = avra_shell_exec("AVRA_MEM_BUDGET_MB=2000 bash scripts/diagnose.sh --print-compile-slots").trim()
+            two == want_5800 && one == "1"
+        }
+        then "a zero-padded budget parses as decimal, not octal" {
+            // The digit-only guard admits "08000"; bare bash arithmetic
+            // would reject it as bad octal and kill the probe.
+            let cores = avra_parse_int(avra_shell_exec("nproc 2>/dev/null || echo 2").trim())
+            let want = if cores < 2 { string(cores) } else { "2" }
+            let padded = avra_shell_exec("AVRA_MEM_BUDGET_MB=08000 bash scripts/diagnose.sh --print-compile-slots").trim()
+            padded == want
+        }
+        then "an unset or malformed budget falls back to the box-wide sizing" {
+            // env -u: the suite may itself run under an exported budget
+            // (the feature working); the fallback branch needs a genuinely
+            // unset variable to be observable.
+            let unset_out = avra_shell_exec("env -u AVRA_MEM_BUDGET_MB bash scripts/diagnose.sh --print-compile-slots").trim()
+            let junk_out = avra_shell_exec("AVRA_MEM_BUDGET_MB=abc bash scripts/diagnose.sh --print-compile-slots").trim()
+            unset_out != "" && junk_out == unset_out
+        }
+    }
+}
+
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_getpid() -> int
+extern fn avra_parse_int(s: string) -> int
+extern fn avra_process_env_get(name: string) -> string
+extern fn avra_mem_should_trip(rss_kb: int, limit_kb: int, soft: int, avail_kb: int, floor_kb: int) -> int
+extern fn avra_mem_slack_floor_for(total_kb: int) -> int

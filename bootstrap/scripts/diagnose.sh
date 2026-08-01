@@ -1712,6 +1712,27 @@ COMPILE_SLOT_DIR=""
 # 4.1GB alongside the shards). Non-Linux / read failure keeps the historic
 # default of 2. AVRA_FIXTURE_JOBS overrides this explicitly.
 _default_compile_slots() {
+  # t-kdyj.1 slice 3 — one budget authority: inside an admitted shard the
+  # pool exported the TREE's allocation (AVRA_MEM_BUDGET_MB). Size the
+  # fixture pool from IT, not from MemTotal, so a shard's grandchildren
+  # divide the shard's admitted budget instead of each assuming they own
+  # the machine (the mechanism behind both recorded container deaths:
+  # N admitted trees x box-sized fixture pools).
+  case "${AVRA_MEM_BUDGET_MB:-}" in
+    ''|*[!0-9]*) : ;;
+    *)
+      if [ "$AVRA_MEM_BUDGET_MB" -gt 0 ]; then
+        local bn bcores
+        # 10#: the digit-only guard above admits leading zeros ("08000"),
+        # which bare arithmetic would reject as bad octal.
+        bn=$(( 10#${AVRA_MEM_BUDGET_MB} / 2900 ))
+        bcores=$(nproc 2>/dev/null || echo 2)
+        [ "$bn" -gt "$bcores" ] && bn=$bcores
+        [ "$bn" -lt 1 ] && bn=1
+        echo "$bn"
+        return
+      fi ;;
+  esac
   local total
   total=$(awk '/^MemTotal:/ {print int($2/1024); exit}' /proc/meminfo 2>/dev/null)
   case "$total" in ''|*[!0-9]*) echo 2; return;; esac
@@ -4122,6 +4143,7 @@ main() {
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
     --sweep)              mode_sweep "$@" ;;
     --test-input-hash)    test_input_hash "$@" ;;
+    --print-compile-slots) _default_compile_slots ;;
     --memguard)           mode_memguard "$@" ;;
     --guarded)            mode_guarded "$@" ;;
     --stray)              mode_stray "$@" ;;
