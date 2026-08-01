@@ -431,7 +431,16 @@ export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser? }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit> }
+
+/// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
+/// journalled so a rollback can UNDO it. The stream is SHARED — across the
+/// static parse, the interpreter fallback re-parse, and the type/pattern flips
+/// all running over one per-file lex — so a mutation that survives the parse
+/// that made it corrupts every later re-read: a rollback across a split `>>`
+/// used to leave a single `>` in the slot, and the re-parse of
+/// `List<MemoEntry<V>>` then failed at the `)` with the first `>` simply gone.
+export type TokEdit = { idx: int, orig: Token }
 
 /// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
 /// aliases the parser's mutable bag record, so it cannot by itself preserve the
@@ -463,6 +472,13 @@ impl PState {
     /// pos is the second `>`'s byte offset, so spans stay honest.
     fn split_gt(self) -> Token {
         let cur = self.cur()
+        // Journal the original `>>` BEFORE overwriting the slot: the stream is
+        // shared across engines and re-parses, and this is a DESTRUCTIVE edit — the
+        // first `>` exists only in the returned synthetic token. restore_to undoes
+        // journalled edits at/after its rollback point (see TokEdit's WHY), and the
+        // shared runners undo the remainder on an errored exit, so no abandoned
+        // parse can leave a half-consumed `>>` for the next one to trip over.
+        self.tok_edits.push(TokEdit { idx: self.pos, orig: cur })
         self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1, tk: Tk.Greater })
         Token { kind: "PUNCT", text: ">", pos: cur.pos, tk: Tk.Greater }
     }
@@ -604,9 +620,46 @@ impl PState {
     /// snapshot (the node store is truncated separately by the caller via
     /// store.truncate_to_mark). The `@try` bounded-backtracking restore.
     fn restore_to(self, pos: int, diags_len: int, err: bool) {
+        // Un-split any `>>` the abandoned parse split at/after the rollback point.
+        // A speculation only moves FORWARD from its snapshot, so exactly the edits
+        // with idx >= pos belong to it — edits before it are committed ground.
+        // Without this, a rollback across a split left the slot holding only the
+        // second `>` (the first exists solely in split_gt's returned token), and
+        // the retry mis-parsed the nested-generic close it could no longer see.
+        mut n = self.tok_edits.length
+        while n > 0 && self.tok_edits[n - 1].idx >= pos {
+            let e = self.tok_edits[n - 1]
+            self.toks.set(e.idx, e.orig)
+            n = n - 1
+        }
+        if n < self.tok_edits.length { self.tok_edits = list_take(self.tok_edits, n) }
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+    }
+
+    /// Undo EVERY journalled token edit — called at EVERY shared-runner exit,
+    /// success and failure alike. On failure the caller is about to re-parse this
+    /// run's region over the SAME shared token list (the interpreter fallback, the
+    /// hand's decl_lead re-parse, a type-flip retry), so a surviving split would
+    /// corrupt the re-read. On success the splits lie BEHIND the caller's resync
+    /// point and are never re-read forward — but an ENCLOSING speculation (a
+    /// `@try`'d wrapper around the whole item) may still roll back across them,
+    /// and its journal cannot know about edits made in this run's own PState (the
+    /// nested type/pattern flips build fresh ones). Restoring the stream to
+    /// pristine at every exit closes that cross-PState leak: an outer rollback
+    /// re-reads the original `>>` and simply re-splits on the retry.
+    fn undo_all_tok_edits(self) {
+        mut n = self.tok_edits.length
+        while n > 0 {
+            let e = self.tok_edits[n - 1]
+            self.toks.set(e.idx, e.orig)
+            n = n - 1
+        }
+        if self.tok_edits.length > 0 {
+            let empty: List<TokEdit> = []
+            self.tok_edits = empty
+        }
     }
 
     /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try` — the sibling
@@ -895,7 +948,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [] }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -921,12 +974,13 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
     }
     let root = capval_to_expr(st, exec_rule(grammar, grammar.rules[0].name, st))
+    st.undo_all_tok_edits()
     RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
@@ -956,13 +1010,14 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
         return StmtRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
     }
     let root = capval_to_stmt(st, exec_rule(grammar, grammar.rules[0].name, st))
+    st.undo_all_tok_edits()
     StmtRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
@@ -980,13 +1035,14 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
         return PatRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
     }
     let root = capval_to_pat(st, exec_rule(grammar, grammar.rules[0].name, st))
+    st.undo_all_tok_edits()
     PatRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
@@ -1009,7 +1065,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -1017,6 +1073,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
     }
     let te = capval_to_texpr(st, exec_rule(grammar, grammar.rules[0].name, st))
     let root = st.store.types.add_leaf(type_expr_to_vtype(te))
+    st.undo_all_tok_edits()
     TypeRunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
 }
 
@@ -1405,6 +1462,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == "{"
+    }
+    // `~Name {` seen FROM the tilde — the quote-body splice-struct lookahead
+    // (parse_leaf_common's `check(Identifier) && peek_after_ident_is_lbrace()`,
+    // evaluated after consuming `~`). BRANCH-LEADING by design: emit renders only
+    // leading predicates into a branch guard, so a mid-sequence `@peek` after the
+    // `~` was silently dropped from the generated parser — the splice-struct arm
+    // then swallowed EVERY `~` and the greedy splice below it was dead code (the
+    // interpreter fallback masked it; the emit/exec divergence class).
+    if cond == "tilde_ident_lbrace" {
+        if st.cur().text != "~" { return false }
+        if st.pos + 2 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        return st.toks[st.pos + 2].text == "{"
     }
     // `Ident {` that is a PLAIN STRUCT LITERAL — i.e. `ident_lbrace` MINUS the two
     // IDENT-led forms that share those exact two tokens but mean something else
@@ -2542,13 +2612,20 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
@@ -2560,13 +2637,20 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     let te = capval_to_texpr(st, parse(st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslTypeResult { te, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
@@ -2585,13 +2669,20 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
@@ -2603,13 +2694,20 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [] }
     let pat = capval_to_pat(st, parse(st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslPatResult { pat, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
@@ -2637,14 +2735,21 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [] }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// ps3t.6.7 Step G — the STATIC-parser boundary. IDENTICAL PState setup to
@@ -2668,14 +2773,21 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [] }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslExprResult { expr, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
@@ -2692,13 +2804,20 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [] }
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslStmtResult { stmt, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 /// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
@@ -2740,13 +2859,20 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [] }
     let stmt = capval_to_stmt(st, parse(st))
+    // The resync byte must be read BEFORE the undo: the cursor may sit ON a
+    // split slot, and restoring `>>` rewinds that token's pos by one — the hand
+    // would then re-lex the whole `>>` where it already consumed the first `>`
+    // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    let stop_pos = st.cur().pos
+    st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0]
     }
-    DslStmtResult { stmt, stop_byte: st.cur().pos, had_error: st.had_error, diag }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag }
 }
 
 // Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
@@ -3088,6 +3214,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
+        "MkSpliceStruct" if args.length == 2 -> CapVal.Node(mk_splice_struct(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // ── Native `postfix_suffix` steps (t-47hc.33) ──
         // These take NO `sp_start` build arg: they read `st.postfix_sp_start`, the chain
         // start the `( postfix_suffix )*` loop threads. So unlike every sibling above,
@@ -3336,6 +3463,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // Span-free in the interpreter (`0 - 1`), exactly like Block / While / MkIfExpr:
         // the oracle records no positions.
         "MkStampAt" if args.length == 1 -> mk_stamp_stmt_at(st, 0 - 1, env.get(args[0]))
+        // ── Prefix-wrapper builds (target: Stmt, t-47hc Phase 4) ──
+        "MkDocAnnotated" if args.length == 2 -> mk_doc_annotated(st, capval_tok_list(env.get(args[0])), env.get(args[1]))
+        // Span-free in the interpreter, like MkStampAt: the NoOp's position is
+        // recorded only on the emitted path.
+        "MkModuleDoc" if args.length == 1 -> mk_module_doc(st, 0 - 1, capval_tok_list(env.get(args[0])))
         // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the non-brace RHS
         // only, kept for the grammar-string consumers that predate `MkTypeDeclAny`
         // (decl_type_op_test). It DELEGATES rather than reimplementing: slice 10.5 grew
@@ -3373,14 +3505,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             // argument EXPRESSIONS (arg_ids), exactly parse_annotations. Absent
             // args ⇒ empty arg_ids (a bare `@name`), so this build subsumes the
             // bare case too. The args reuse the DSL expression family.
-            CapVal.Ann(Annotation { name: capval_tok_text(env.get(args[0])), arg_ids: capval_to_node_list(env.get(args[1])) })
+            mk_ann_g(capval_tok_text(env.get(args[0])), capval_to_node_list(env.get(args[1])))
         }
         "MkAnnotatedArgs" if args.length == 2 -> {
             // `( "@" name args? )+ <decl>` — one or more annotations (WITH args)
             // wrapping a declaration → Stmt.Annotated(annotations, inner), the
             // args-carrying sibling of MkAnnotated. Since render_annotation_list
             // drops arg_ids, arg equivalence is asserted directly in the test.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(capval_to_ann_list(env.get(args[0])), capval_to_stmt(st, env.get(args[1])))))
+            mk_annotated_args_g(st, capval_to_ann_list(env.get(args[0])), env.get(args[1]))
         }
         "MkAnnotated" if args.length == 2 -> {
             // `( "@" name )+ <decl>` — one or more BARE annotations wrapping a
@@ -3798,6 +3930,19 @@ export fn capval_to_pentry(st: PState, v: CapVal) -> ParamEntry {
     }
 }
 
+/// A capture as ONE annotation — the scalar coercion the EMITTED parser's
+/// `( an:annot )*` accumulator applies per iteration (kind_coerce("ann")), the
+/// Annotation twin of capval_to_pentry above.
+export fn capval_to_ann(st: PState, v: CapVal) -> Annotation {
+    match v {
+        .Ann(a) -> a
+        _ -> {
+            st.report("expected an annotation")
+            Annotation { name: "", arg_ids: [] }
+        }
+    }
+}
+
 /// A capture as one struct/variant field — the per-element twin of
 /// capval_to_field_list.
 export fn capval_to_field(st: PState, v: CapVal) -> FieldEntry {
@@ -4128,6 +4273,64 @@ export fn mk_stamp_stmt_at(st: PState, sp_start: int, inner: CapVal) -> CapVal {
         st.store.stmts.record_pos(id, SrcPos { line: lc.line, col: lc.col, file: st.file })
     }
     CapVal.SNode(id)
+}
+
+/// One `@name ( "(" args ")" )?` annotation (the `MkAnn` build's core) — a name +
+/// its built argument EXPRESSIONS, exactly parse_annotations' entry shape. Absent
+/// args ⇒ empty arg_ids (a bare `@name`), so this subsumes the bare case too.
+export fn mk_ann_g(name: string, arg_ids: List<ExprId>) -> CapVal {
+    CapVal.Ann(Annotation { name: name, arg_ids: arg_ids })
+}
+
+/// `( "@" name args? )+ <decl>` — one or more annotations wrapping a declaration
+/// (the `MkAnnotatedArgs` build's core) → Stmt.Annotated(annotations, inner),
+/// exactly parse_declaration_hand's `@`-branch. The inner's own position is
+/// `mk_stamp_stmt_at`'s job, driven by the inner rule's entry byte, exactly as
+/// `mk_export_decl` splits it.
+export fn mk_annotated_args_g(st: PState, anns: List<Annotation>, inner: CapVal) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
+}
+
+/// `///`-doc lines wrapping a declaration (the `MkDocAnnotated` build's core):
+/// consecutive DOC tokens join with `\n` into ONE `@doc("…")` annotation around the
+/// inner declaration — exactly parse_declaration_hand's DocComment branch. The doc
+/// STRING leaf must intern (`intern_expr_leaf`): the hand builds it with alloc_leaf,
+/// and an add_leaf here would give a repeated doc text a second arena row —
+/// byte-divergent ids downstream (the t-9bz3 literal-node lesson).
+export fn mk_doc_annotated(st: PState, docs: List<Token>, inner: CapVal) -> CapVal {
+    mut doc_text = ""
+    mut i = 0
+    for t in docs {
+        if i > 0 { doc_text = doc_text + "\n" + t.text } else { doc_text = t.text }
+        i = i + 1
+    }
+    let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
+    let anns: List<Annotation> = [Annotation { name: "doc", arg_ids: [arg_id] }]
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
+}
+
+/// `//!` module-doc lines (the `MkModuleDoc` build's core): joined into ONE
+/// `@module_doc("…")` annotation around a `Stmt.NoOp` — module docs wrap no
+/// declaration (parse_declaration_hand's ModDocComment branch). The hand stamps the
+/// NoOp at its CURRENT token after consuming the doc lines — i.e. whatever follows
+/// them — so the emitted path records `st.cur().pos`; the interpreter passes
+/// `sp_start < 0` and records nothing, the span-free-oracle convention of
+/// `mk_stamp_stmt_at`.
+export fn mk_module_doc(st: PState, sp_start: int, docs: List<Token>) -> CapVal {
+    mut doc_text = ""
+    mut i = 0
+    for t in docs {
+        if i > 0 { doc_text = doc_text + "\n" + t.text } else { doc_text = t.text }
+        i = i + 1
+    }
+    let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
+    let anns: List<Annotation> = [Annotation { name: "module_doc", arg_ids: [arg_id] }]
+    let noop_id = st.store.stmts.add_leaf(Stmt.NoOp)
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(st.cur().pos)
+        st.store.stmts.record_pos(noop_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, noop_id)))
 }
 
 /// `trait Name { member* }` (the `MkTraitDecl` build's core).
@@ -4776,6 +4979,19 @@ export fn mk_qualified(st: PState, sp_start: int, ncap: CapVal, scap: CapVal, lb
 
 export fn mk_splice(st: PState, sp_start: int, tcap: CapVal) -> ExprId {
     st.store.add_expr(Expr.Splice(capval_to_expr(st, tcap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// `~Name { fields }` inside a quote body splices the CONSTRUCTOR NAME of a
+/// struct literal, not the whole literal — parse_leaf_common's special case: the
+/// `~`-prefixed name flows through name_or_splice in the quote lowering. Without
+/// this arm the greedy `~ t:unary` splice swallows the entire literal as ONE
+/// spliced node (MkSplice(StructLit)) carrying a hardcoded type name, and a
+/// stmts-quote then lowers that statement as a list SPLICE — `list_concat` of a
+/// struct value, the F4005 the sweep caught the moment the wrapper routing put
+/// `@comptime` fns on the static path. Spanned at the `~` like the hand's
+/// alloc_at(…, sp_start); span-free (-1) under the interpreter oracle.
+export fn mk_splice_struct(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
+    st.store.add_expr(Expr.StructLit("~" + capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `{ "k": v, … }` map literal (t-47hc.18). `Expr.MapLit`'s payload is a FLAT id list
