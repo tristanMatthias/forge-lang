@@ -586,6 +586,7 @@ fn build_uses_sp_start(name: string) -> bool {
         name == "MkWithSuffix" ||
         name == "MkMapLit" ||
         name == "MkSplice" ||
+        name == "MkSpliceStruct" ||
         name == "MkQualExpr" ||
         // The expression match TABLE anchors at the `match` keyword, like MkMatchExpr.
         name == "MkMatchTableExpr" ||
@@ -598,7 +599,10 @@ fn build_uses_sp_start(name: string) -> bool {
         // the byte where the inner starts — the hand captures it right after consuming
         // the prefix. The build is the identity plus that side-table write, so its
         // owning rule must begin exactly at the inner declaration.
-        name == "MkStampAt"
+        name == "MkStampAt" ||
+        // `//!` module docs wrap a NoOp the hand stamps AFTER the doc lines; sp_start
+        // here is only the emit/interpreter discriminator (the build reads st.cur()).
+        name == "MkModuleDoc"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -1551,6 +1555,58 @@ fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
 /// generated parser — an infinite loop the moment the hand tail declined to consume.
 /// Byte-identical today: every rule the old test admitted is still admitted (a bare hand
 /// rule is a rule with a hand alternative), and no other repeated rule has one.
+/// The pieces of the break-BEFORE-accumulate repeat body (see emit_repeat_group's
+/// single-hand arm): a single-hand group qualifies when its one item is a PLAIN
+/// labeled/unlabeled `.Ref` (no marker, rep One, no build/annots on the branch)
+/// whose rule has NO actual @hand alternative — such a rule's only no-progress
+/// exit is the all-speculative decline, which returns `CapVal.Nil`, and Nil must
+/// break the loop BEFORE any coercion reports on it. A hand-reaching rule keeps
+/// the historical order: its delegate returns a real node even on a decline, and
+/// the byte-identical trees depend on that push.
+type SinglePlainRef = { applies: bool, rule: string, acc: string }
+
+fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) -> SinglePlainRef {
+    let no = SinglePlainRef { applies: false, rule: "", acc: "" }
+    match node {
+        .Alt(branches) -> {
+            if branches.length != 1 { return no }
+            let b = branches[0]
+            if b.items.length != 1 || !build_is_none(b.build) || b.annots.length != 0 || b.speculative || b.fallback { return no }
+            let it = b.items[0]
+            if !rep_is_one(it.rep) || it.sameline || it.cut || it.require { return no }
+            if it.mode_off != "" || it.mode_on != "" || it.mode_bump != "" || it.mode_on_if != "" || it.bound != "" { return no }
+            match it.prim {
+                .Ref(nm) -> {
+                    if rule_has_hand_alt(g, nm) { return no }
+                    let acc = if it.label != "" && str_in(list_labels, it.label) {
+                        "${it.label}_list.push(${kind_coerce(rule_result_kind(g, nm))}(st, __rep_cv))"
+                    } else {
+                        "let _ = __rep_cv"
+                    }
+                    SinglePlainRef { applies: true, rule: nm, acc }
+                }
+                _ -> no
+            }
+        }
+    }
+}
+
+/// True iff `name`'s alternation has an ACTUAL `@hand` alternative — the
+/// hand-only half of rule_reaches_hand's disjunction, splitting the two
+/// no-progress shapes single_plain_ref_group must tell apart.
+fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
+    let i = rule_index_of(g, name)
+    if i < 0 { return false }
+    match g.rules[i].body {
+        .Alt(branches) -> {
+            for b in branches {
+                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
+            }
+            false
+        }
+    }
+}
+
 fn rule_reaches_hand(g: Grammar, name: string) -> bool {
     let i = rule_index_of(g, name)
     if i < 0 { return false }
@@ -1698,13 +1754,41 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
             if group_is_single_hand(g, inner) {
-                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                    bnd.guard +
-                    "${ind}    let __rep_before = st.pos\n" +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
-                    "${ind}    if st.pos == __rep_before { break }\n" +
-                    bnd.step +
-                    "${ind}}\n"
+                // Two body orders, split by WHAT a no-progress iteration hands back.
+                //
+                // A rule with an actual @hand alternative returns a REAL node even when
+                // the delegate declines, so the historical accumulate-THEN-break order
+                // is byte-identical and stays.
+                //
+                // A rule whose decline is all-SPECULATIVE (`postfix_suffix` once its
+                // hand tail was retired) hands back a no-progress `CapVal.Nil` — and
+                // coercing THAT before the break made capval_to_* REPORT. On valid
+                // input (`a < b` after a callable base: the generic-call `@try` enters
+                // on `<` and un-decides) the spurious report failed the whole enclosing
+                // item branch, which then rode the interpreter fallback on EVERY such
+                // expression — and when the item's already-parsed header held a split
+                // `>>`, the rollback re-parsed a mutated token stream and real errors
+                // surfaced (t-47hc Phase 4). Parse first, break on no progress, and
+                // only then accumulate — the emit twin of exec_repeat's silent exit.
+                let spr = single_plain_ref_group(g, inner, list_labels)
+                if spr.applies {
+                    req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                        bnd.guard +
+                        "${ind}    let __rep_before = st.pos\n" +
+                        "${ind}    let __rep_cv = parse_${spr.rule}(st)\n" +
+                        "${ind}    if st.pos == __rep_before { break }\n" +
+                        "${ind}    ${spr.acc}\n" +
+                        bnd.step +
+                        "${ind}}\n"
+                } else {
+                    req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                        bnd.guard +
+                        "${ind}    let __rep_before = st.pos\n" +
+                        emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                        "${ind}    if st.pos == __rep_before { break }\n" +
+                        bnd.step +
+                        "${ind}}\n"
+                }
             } else {
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
@@ -1934,6 +2018,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkMapLit" -> "CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
+        "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
         // Native `postfix_suffix` steps (t-47hc.33). No `sp_start` arg — the builder
         // reads `st.postfix_sp_start`, so these are deliberately absent from
         // build_uses_sp_start and no `let sp_start = …` is emitted for them.
@@ -1985,6 +2070,15 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkExport" -> "mk_export_decl(st, ${args[0]})"
         "MkStampAt" -> "mk_stamp_stmt_at(st, sp_start, ${args[0]})"
+        // ── The prefix WRAPPERS (t-47hc Phase 4). The doc lines are a repeated
+        // TERMINAL label (List<Token>), the annotations a repeated RULE label whose
+        // accumulator is typed by kind "ann" (List<Annotation>), and the args an
+        // external EXPR-rule list — all passed to the shared cores verbatim, so the
+        // generated call and the interpreter drive ONE implementation. ──
+        "MkDocAnnotated" -> "mk_doc_annotated(st, ${args[0]}_list, ${args[1]})"
+        "MkModuleDoc" -> "mk_module_doc(st, sp_start, ${args[0]}_list)"
+        "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
+        "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
@@ -2364,6 +2458,12 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // mapping the `IDENT` terminal to `Tk.Identifier`, and the neighbouring declared
         // FIRSTs all route through a shared predicate too. Output is byte-identical.
         if name == "param" { return named_tk_guard("IDENT") }
+        // t-47hc Phase 4 — routing the `@annotation` wrapper makes its arg list
+        // reachable from the declaration view, and `call_arg` is defined in the
+        // EXPRESSION view (it is the call-suffix argument, shared rather than
+        // duplicated). Its FIRST is `expression`'s own leaf predicate — a call_arg is
+        // `@on(allow_dot_postfix) e:expression`.
+        if name == "call_arg" { return "tok_starts_expr_leaf(st.cur())" }
         // Any OTHER external rule has no declared FIRST, and falling back to `false`
         // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
         // `( r )?` is never taken, and the generated parser DROPS the whole construct
@@ -2580,7 +2680,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkTaggedTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkTaggedTemplate" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
@@ -2588,7 +2688,8 @@ fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" { return "stmt" }
+    if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
     if bn == "MkField" { return "field" }
@@ -2735,6 +2836,7 @@ fn kind_coerce(kind: string) -> string {
     if kind == "arm" { return "capval_to_arm" }
     if kind == "finit" { return "capval_to_finit" }
     if kind == "warm" { return "capval_to_when_arm" }
+    if kind == "ann" { return "capval_to_ann" }
     "capval_to_expr"
 }
 
@@ -2750,6 +2852,7 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "arm" { return "MatchArm" }
     if kind == "finit" { return "FieldInit" }
     if kind == "warm" { return "WhenArm" }
+    if kind == "ann" { return "Annotation" }
     "ExprId"
 }
 

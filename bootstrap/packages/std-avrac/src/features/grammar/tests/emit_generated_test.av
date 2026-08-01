@@ -257,7 +257,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
         // `with_suffix = @hand(…)`), so each of the 19 FIRST-disjoint bases CALLS the one
         // generated fn instead of re-inlining run_hand_expr.
-        src.contains("p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))") &&
+        //
+        // t-47hc Phase 4: the loop body parses FIRST, breaks on no progress, and only
+        // then accumulates. The old order — accumulate-then-break — coerced an
+        // all-@try-declined iteration's no-progress CapVal.Nil, and capval_to_expr(Nil)
+        // REPORTS: every `a < b` after a callable base failed its item branch on valid
+        // input and rode the interpreter fallback (single_plain_ref_group in emit.av).
+        src.contains("let __rep_cv = parse_postfix_suffix(st)") &&
+        src.contains("p_list.push(capval_to_expr(st, __rep_cv))") &&
         src.contains("fn parse_postfix_suffix(st: PState) -> CapVal {") &&
         src.contains("fn parse_with_suffix(st: PState) -> CapVal {") &&
         // …and sharing must NOT cost the no-progress break where it is LOAD-BEARING. The
@@ -273,7 +280,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         //     therefore structural and no guard is emitted. That asymmetry is the point of
         //     restricting transparency to `name = @hand(f)` — pin BOTH halves so neither a
         //     dropped guard nor a spurious one slips through.
-        src.contains("            let __rep_before = st.pos\n            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))\n            if st.pos == __rep_before { break }") &&
+        src.contains("            let __rep_before = st.pos\n            let __rep_cv = parse_postfix_suffix(st)\n            if st.pos == __rep_before { break }\n            p_list.push(capval_to_expr(st, __rep_cv))") &&
         src.contains("        while st.cur().text == \"with\" {\n            s_list.push(capval_to_expr(st, parse_with_suffix(st)))\n        }") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the

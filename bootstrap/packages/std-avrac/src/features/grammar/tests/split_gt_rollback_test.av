@@ -1,0 +1,112 @@
+// WHY: t-47hc Phase 4 — two stacked static-parser defects that only met on an item
+// with a `>>` in its HEADER and a `<`-led speculation in its BODY:
+//
+//  1. The emitted `( p:postfix_suffix )*` loop coerced a DECLINED iteration before
+//     breaking. With the hand tail retired, a declined suffix comes back as a
+//     no-progress `CapVal.Nil`, and `capval_to_expr(Nil)` REPORTS — so every
+//     `a < b` after a callable base (`while i < n`, `if i < xs.length`) failed the
+//     enclosing item branch on VALID input and silently rode the interpreter
+//     fallback.
+//
+//  2. `split_gt` REPLACES the `>>` slot with the second `>` — the first exists only
+//     in the returned synthetic token. The stream is shared (static parse,
+//     interpreter fallback, type/pattern flips, one per-file lex), so when defect 1
+//     rolled an item branch back ACROSS a split, every re-parse read a stream with
+//     one `>` missing: `export fn f<V>(cells: List<MemoEntry<V>>, args: List<int>)`
+//     reported F0001 "expected generic type argument" at the `)` — errors on a
+//     valid program (found compiling query/mod.av the moment the doc wrapper
+//     routed doc'd fns onto the static path; reproduced back to the base compiler
+//     with no wrapper involved).
+//
+// The fixes: the loop parses first, breaks on no progress, and only then
+// accumulates (the emit twin of exec_repeat's silent exit); and PState journals
+// every split (TokEdit) so restore_to un-splits at/after its rollback point and
+// the shared runners un-split everything on an errored exit.
+
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file}
+
+// The d3-class fixture: `>>` in the header, `<`-speculation in the body, no
+// wrapper. Failed on the BASE compiler on the emit-raw AND default paths.
+fn fixture_plain() -> string {
+    "type MemoEntry<V> = { v: V }\n" +
+    "export fn f<V>(cells: List<MemoEntry<V>>, args: List<int>) -> int {\n" +
+    "    mut i = 0\n" +
+    "    while i < args.length {\n" +
+    "        i = i + 1\n" +
+    "    }\n" +
+    "    i\n" +
+    "}\n" +
+    "fn main() { println(string(1)) }\n"
+}
+
+// The query/mod.av shape that exposed it: the same class under a `///` doc
+// wrapper (routed native in this slice) with an `if` header and a struct build.
+fn fixture_wrapped() -> string {
+    "type MemoEntry<V> = { v: V }\n" +
+    "type FamilyMemo<V> = { cells: List<MemoEntry<V>>, args: List<int> }\n" +
+    "/// Rebuild a FamilyMemo.\n" +
+    "export fn mk<V>(cells: List<MemoEntry<V>>, args: List<int>) -> FamilyMemo<V> {\n" +
+    "    mut i = 0\n" +
+    "    if i < args.length {\n" +
+    "        i = i + 1\n" +
+    "    }\n" +
+    "    FamilyMemo { cells, args }\n" +
+    "}\n" +
+    "fn main() { println(string(1)) }\n"
+}
+
+// The RESYNC half: the hand's channel parser consumes `<`, hands the element
+// type to the TYPE FLIP (a fresh PState over the shared tokens), and resumes at
+// the flip's stop_byte. The flip splits the `>>`, and the whole-run un-split on
+// its exit must NOT rewind that byte — the cursor sits ON the split slot, and
+// reading stop_byte after the restore handed back the ORIGINAL `>>`'s position,
+// so the hand re-lexed `>>` where it had already consumed the first `>` and
+// reported "expected `>` to close the channel element type" on valid input.
+fn fixture_channel() -> string {
+    "enum GenOpt<T> { None, Some(value: T) }\n" +
+    "fn consume(c: Channel<GenOpt<int>>) -> int { 1 }\n" +
+    "fn main() { let r = consume(channel<GenOpt<int>>(1)) }\n"
+}
+
+fn check_rc(name: string, env: string, src: string) -> int {
+    let fixture = "build/_split_gt_${name}.av"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > /dev/null 2>&1")
+}
+
+spec "t-47hc Phase 4: a `>>` header survives a `<`-speculation in the body on every path" {
+    then "the plain export fn compiles clean on all four parser paths" {
+        check_rc("plain_dflt", "", fixture_plain()) == 0 &&
+            check_rc("plain_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_plain()) == 0 &&
+            check_rc("plain_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_plain()) == 0 &&
+            check_rc("plain_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_plain()) == 0
+    }
+
+    then "the doc-wrapped variant compiles clean on all four parser paths" {
+        check_rc("wrap_dflt", "", fixture_wrapped()) == 0 &&
+            check_rc("wrap_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_wrapped()) == 0 &&
+            check_rc("wrap_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_wrapped()) == 0 &&
+            check_rc("wrap_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_wrapped()) == 0
+    }
+
+    then "a channel<T<U>> resyncs onto the second `>`, not the restored `>>`" {
+        check_rc("chan_dflt", "", fixture_channel()) == 0 &&
+            check_rc("chan_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_channel()) == 0 &&
+            check_rc("chan_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_channel()) == 0 &&
+            check_rc("chan_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_channel()) == 0
+    }
+}
+
+spec "t-47hc Phase 4: the emitted repeat loop breaks BEFORE coercing a declined iteration" {
+    then "the postfix loop parses into __rep_cv and accumulates only after the progress check" {
+        // Asserted on the emitted SOURCE, not by inference: the old order
+        // (`push(coerce(parse(...)))` then break) is exactly what reported on a
+        // declined iteration, and a regeneration that silently reverts to it
+        // passes every valid-input spec via the interpreter fallback.
+        let src = emit_parser_source_ex(avra_expr_dispatch_grammar(), true)
+        src.contains("let __rep_cv = parse_postfix_suffix(st)") &&
+            src.contains("p_list.push(capval_to_expr(st, __rep_cv))") &&
+            !src.contains("p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))")
+    }
+}

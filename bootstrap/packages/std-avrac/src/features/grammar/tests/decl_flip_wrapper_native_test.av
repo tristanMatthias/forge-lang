@@ -1,0 +1,219 @@
+// WHY: t-47hc Phase 4 — the remaining three prefix WRAPPERS (`///` doc, `//!` module
+// doc, `@annotation`) go native, completing the wrapper family `export` opened in
+// #1098. What keeps `@hand(decl_hand)` alive after this is the IDENT-led
+// `Comp inst { … }`, the decl keywords with no native rule (spec / component / select /
+// parallel / let / mut / const), and its recovery-fallback role for the `@try`
+// branches above it.
+//
+// Two things distinguish these three from `export`, and both are pinned here:
+//
+//  1. THE INNER **IS** RECURSIVE. The hand's doc and annotation branches re-enter
+//     `parse_declaration` (export's branch does a direct table lookup instead), so
+//     wrappers STACK: `/// doc` over `@a` over `export fn` parses as
+//     Annotated(doc, Annotated(a, Annotated(export, fn))). `wrapped_inner` mirrors
+//     that recursion with the wrappers as `@try` alternatives of their own inner.
+//
+//  2. `//!` WRAPS NO DECLARATION. A module doc is `@module_doc` around a `Stmt.NoOp`,
+//     and the hand stamps that NoOp at its current token AFTER consuming the doc
+//     lines — so the stamp lives in the build (`MkModuleDoc` reads `st.cur()`), not
+//     in a `MkStampAt` inner rule.
+//
+// The malformed wrapper forms live in error_recovery_differential_test's decl-WRAPPER
+// blocks (both the F-code/three-path and recovery-TREE specs), added BEFORE this
+// routing per the discipline: routing is invisible on VALID input by construction, so
+// a wrapper absent from the invalid corpus would be routed on no evidence at all.
+
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+// Status-plus-log, same shape as the export flip's probe: the exit code is half the
+// assertion and `|| true` would throw it away.
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_decl_wrapper_${name}.av"
+    let log = "build/_decl_wrapper_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as native rules" {
+    then "all seven parse fns exist in the production declaration parser" {
+        let src = decl_src()
+        src.contains("fn parse_doc_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_docable_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_mdoc_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_annot_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_annotable_decl(st: PState) -> CapVal") &&
+            src.contains("fn parse_annot(st: PState) -> CapVal") &&
+            src.contains("fn parse_wrapped_inner(st: PState) -> CapVal")
+    }
+
+    then "each dispatches BEFORE the decl_hand gate — else it would be dead code" {
+        // DOC / MODDOC / `@` are all in `decl_lead`'s FIRST set. Emitted after the
+        // gate, the gate would swallow them first and the native rules would be
+        // unreachable: correct output, no diagnostic, flip silently disabled — the
+        // #1028 failure mode, asserted structurally on the emitted source.
+        let src = decl_src()
+        let doc_at = src.index_of("parse_doc_decl(st)")
+        let mdoc_at = src.index_of("parse_mdoc_decl(st)")
+        let ann_at = src.index_of("parse_annot_decl(st)")
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        doc_at >= 0 && mdoc_at >= 0 && ann_at >= 0 && hand_at >= 0 &&
+            doc_at < hand_at && mdoc_at < hand_at && ann_at < hand_at
+    }
+
+    then "the branches are SPECULATIVE — they roll back into the hand gate on error" {
+        // Load-bearing, not incidental. A bare branch is error-TOLERANT: it would
+        // build a partial wrapper where the hand ABORTS, and every form the native
+        // rules cannot express (`@foo let x = 1`, a keyword-named `@type`, `//!`
+        // under `@a`) would be parsed WRONG instead of handed back.
+        let src = decl_src()
+        src.contains("s_last = parse_doc_decl(st)") &&
+            src.contains("s_last = parse_mdoc_decl(st)") &&
+            src.contains("s_last = parse_annot_decl(st)") &&
+            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
+            src.contains("st.store.truncate_to_mark(s_mark)")
+    }
+
+    then "the INNER declaration is stamped with its own position" {
+        // The hand stamps the WRAPPED declaration at the position captured right after
+        // consuming the prefix; the statement-list loop stamps only the outermost
+        // node. `sp_start` must be captured by the -able rules (one prefix later),
+        // and NOT by the wrapper rules themselves — their entry byte is the prefix.
+        let src = decl_src()
+        src.contains("fn parse_docable_decl(st: PState) -> CapVal {\n    let sp_start = st.cur().pos\n") &&
+            src.contains("fn parse_annotable_decl(st: PState) -> CapVal {\n    let sp_start = st.cur().pos\n") &&
+            src.contains("mk_stamp_stmt_at(st, sp_start, di)") &&
+            src.contains("mk_stamp_stmt_at(st, sp_start, ai)") &&
+            !src.contains("fn parse_doc_decl(st: PState) -> CapVal {\n    let sp_start") &&
+            !src.contains("fn parse_annot_decl(st: PState) -> CapVal {\n    let sp_start")
+    }
+
+    then "the builds lower to the SHARED cores, not executor-only builds" {
+        // emit dispatches on the build NAME. A build that exists only in executor.av
+        // passes every interpreter-driven parity spec and emits nothing usable — the
+        // trap this slice's predecessors hit four separate times.
+        let src = decl_src()
+        src.contains("mk_doc_annotated(st, d_list, dd)") &&
+            src.contains("mk_module_doc(st, sp_start, m_list)") &&
+            src.contains("mk_ann_g(capval_tok_text(n), a_list)") &&
+            src.contains("mk_annotated_args_g(st, an_list, ad)")
+    }
+
+    then "the annotation accumulator is TYPED — List<Annotation>, coerced per iteration" {
+        // The `( an:annot )*` accumulator must declare List<Annotation> via kind "ann"
+        // (capval_to_ann); defaulting to List<ExprId>/capval_to_expr is the silent
+        // tree-corruption trap the pattern/tparam/param entries were written for.
+        let src = decl_src()
+        src.contains("mut an_list: List<Annotation> = []") &&
+            src.contains("an_list.push(capval_to_ann(st, parse_annot(st)))")
+    }
+
+    then "the alternation TAIL is still native `statement`, not a promoted @hand" {
+        // Adding branches can change which one is last, and the last one carries the
+        // unguarded error-recovery role. Nothing was removed here and the tail must
+        // stay `parse_statement(st)`.
+        let src = decl_src()
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let tail_at = src.index_of("    parse_statement(st)\n}")
+        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+    }
+}
+
+// The wrapper forms the native rules express, each also exercising the wrapped
+// declaration end-to-end (compile + name resolution over the annotations).
+fn native_forms_out() -> string {
+    check_out("native",
+        "/// a doc line\nfn df() -> int { 1 }\n" +
+        "/// first line\n/// second line\nfn df2() -> int { 2 }\n" +
+        "//! a module doc\n" +
+        "@inline\nfn af() -> int { 3 }\n" +
+        "@a\n@b\nfn af2() -> int { 4 }\n" +
+        "@arg(1, \"two\")\nfn af3() -> int { 5 }\n" +
+        "fn main() { println(string(df() + df2() + af() + af2() + af3())) }\n")
+}
+
+// The stacked forms — the recursion the hand's wrappers have and export's does not.
+fn stacked_forms_out() -> string {
+    check_out("stacked",
+        "/// doc over annotation\n@inline\nfn sf() -> int { 1 }\n" +
+        "@inline\n/// annotation over doc\nfn sf2() -> int { 2 }\n" +
+        "/// doc\n@a\nexport fn sf3() -> int { 3 }\n" +
+        "fn main() { println(string(sf() + sf2() + sf3())) }\n")
+}
+
+// The forms the native alternation CANNOT express: a non-native inner (`let` /
+// `const` are decl keywords only the hand table has) and a keyword-named annotation
+// (the hand accepts ANY lexeme after `@`; the native rule requires IDENT). Each
+// fails the alternation, `@try` rewinds, and `@hand(decl_hand)` parses it.
+fn hand_fallback_forms_out() -> string {
+    check_out("fallback",
+        "@keep\nconst FC = 5\n" +
+        "/// doc on a let\nlet fl = 2\n" +
+        "fn main() { println(string(FC + fl)) }\n")
+}
+
+spec "t-47hc Phase 4: every wrapper form the hand accepted still parses" {
+    then "the natively-expressible wrapper forms all compile clean" {
+        clean(native_forms_out())
+    }
+
+    then "stacked wrappers compile — the recursive inner is real" {
+        clean(stacked_forms_out())
+    }
+
+    then "the forms only the hand expresses still compile — the `@try` handed them back" {
+        clean(hand_fallback_forms_out())
+    }
+}
+
+// The diagnostic LINE baked into a wrapped fn's IR — same probe as the export flip's:
+// `avra_null_deref_trap`'s last argument is `Ctx.source_line`, stamped per statement
+// from the recorded SrcPos, a direct readout of what the parser recorded.
+fn trap_lines(name: string, src: string) -> string {
+    let fixture = "build/_decl_wrapper_${name}.av"
+    let out = "build/_decl_wrapper_${name}.ll"
+    let log = "build/_decl_wrapper_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let lines = "build/_decl_wrapper_${name}.lines"
+    let rc = avra_shell_exec_status("./build/bs2 compile '${fixture}' --output '${out}' > '${log}' 2>&1")
+    if rc != 0 { return "__status=${rc}\n" + avra_selfhost_read_file(log) }
+    let _ = avra_shell_exec_status("grep -o 'avra_null_deref_trap(ptr @fld_name[^)]*)' '${out}' | sed 's/.*i64 //; s/[)]//' > '${lines}'")
+    "__status=0\n" + avra_selfhost_read_file(lines)
+}
+
+spec "t-47hc Phase 4: a doc- or annotation-wrapped fn's diagnostics report the TRUE source line" {
+    // WHY THIS IS ITS OWN SPEC. Routing `export` (#1098) revealed that every body the
+    // hand delegate parsed carried drifted line numbers — 232 of them across the
+    // selfhost IR, off by up to 97. Routing the doc and annotation wrappers moves the
+    // remaining wrapped fn bodies (every `/// doc`'d and `@annotation`'d declaration
+    // in the tree) off the delegate, so the same class of drift is expected to fix
+    // here, and the invariant is pinned absolutely rather than differentially.
+    then "wrapped and plain fns all report the line the deref is written on" {
+        // Line numbers are counted from the first line of the string below: the three
+        // `r!.n` derefs are on lines 4, 9 and 13.
+        let out = trap_lines("lines",
+            "type Res = { n: int }\n" +                                    // 1
+            "/// documented\n" +                                           // 2
+            "fn doc_fn(r: Res?) -> int {\n" +                              // 3
+            "    r!.n\n" +                                                 // 4
+            "}\n" +                                                        // 5
+            "\n" +                                                         // 6
+            "@keep\n" +                                                    // 7
+            "fn ann_fn(r: Res?) -> int {\n" +                              // 8
+            "    r!.n\n" +                                                 // 9
+            "}\n" +                                                        // 10
+            "\n" +                                                         // 11
+            "fn plain(r: Res?) -> int {\n" +                               // 12
+            "    r!.n\n" +                                                 // 13
+            "}\n" +                                                        // 14
+            "fn main() { println(string(doc_fn(Res { n: 1 }) + ann_fn(Res { n: 2 }) + plain(Res { n: 3 }))) }\n")
+        out.contains("__status=0\n") && out.contains("4\n") && out.contains("9\n") && out.contains("13\n")
+    }
+}

@@ -23,15 +23,25 @@ use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbig
 fn is_intended_shadow(a: GAmbiguity) -> bool {
     a.rule == "in_rhs" && a.i == 0 && a.j == 1 ||
     // t-47hc: `~` is TWO operators sharing one token, so a FIRST/FIRST overlap on
-    // `lit:~` between unary's branches 1 and 2 is unavoidable — and it is resolved by
+    // `lit:~` between unary's `~`-led branches is unavoidable — and it is resolved by
     // predicates the FIRST-set analysis cannot see (the guard deliberately does NOT
     // exempt @when-led branches, which is why this needs naming):
-    //   branch 1  @when(at_quote_top)  `~` → BITNOT  (quote_depth == 0)
-    //   branch 2  @when(in_quote_body) `~` → SPLICE  (quote_depth  > 0)
-    // These are PROVABLY disjoint, not merely ordered: the two predicates are exact
-    // complements over one counter (executor.modes_flag), so at most one can ever hold.
-    // That is a stronger guarantee than the ordered-choice entries below rest on.
+    //   branch 1  @when(at_quote_top)  `~` → BITNOT         (quote_depth == 0)
+    //   branch 2  @when(in_quote_body) `~IDENT{` → SPLICE-STRUCT (quote_depth > 0)
+    //   branch 3  @when(in_quote_body) `~` → SPLICE          (quote_depth  > 0)
+    // 1-vs-{2,3} are PROVABLY disjoint, not merely ordered: at_quote_top and
+    // in_quote_body are exact complements over one counter (executor.modes_flag), so
+    // at most one side can ever hold — a stronger guarantee than the ordered-choice
+    // entries below rest on. 2-vs-3 is the hand parser's own check-then-greedy
+    // cascade (parse_leaf_common: `~Name {` splices only the constructor name,
+    // everything else is the greedy splice), partitioned by @peek(tilde_ident_lbrace)
+    // — a lookahead over tokens the FIRST-set analysis cannot consult (the t-47hc.16
+    // exemption applies to peek-led branches in the analysis's own terms, and this
+    // branch leads with a @when, so all three pairs need naming). Byte-parity with
+    // the hand is pinned by splice_name_positions_test + quote_expr_value_splice.
     a.rule == "unary" && a.i == 1 && a.j == 2 ||
+    a.rule == "unary" && a.i == 1 && a.j == 3 ||
+    a.rule == "unary" && a.i == 2 && a.j == 3 ||
     // t-47hc.18: `brace_expr` went grammar-native, so its `{` is a CONCRETE FIRST where
     // `@hand(brace_expr)` used to be opaque. That EXPOSES two pre-existing ordered-choice
     // shadows (it does not create them): at a `{`, a lambda body and a statement are a

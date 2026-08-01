@@ -203,6 +203,22 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("mod 5\nfn f() -> int { 1 }") &&
         agree("mod {\nfn f() -> int { 1 }")
     }
+    // The prefix WRAPPERS join the routed set (t-47hc Phase 4: `///` doc, `//!` module
+    // doc, `@annotation`; `export` went in #1098). Measured on ALL THREE paths, not
+    // just emit-vs-hand: the wrappers are `@try`-routed, so on any malformed form the
+    // branch rolls back and it is the EXECUTOR that answers the default path — the
+    // divergence class the two-parser oracles are structurally blind to (t-zrn3).
+    then "malformed decl wrappers (the routed prefixes), on all three paths" {
+        agree_all("@\nfn f() -> int { 1 }") &&
+        agree_all("@foo(\nfn f() -> int { 1 }") &&
+        agree_all("@foo(,)\nfn f() -> int { 1 }") &&
+        agree_all("@foo)\nfn f() -> int { 1 }") &&
+        agree_all("@foo") &&
+        agree_all("/// doc\nfn ( ) -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_all("//! mdoc\n* 5\nfn f() -> int { 1 }") &&
+        agree_all("/// doc\n@foo(\nfn f() -> int { 1 }") &&
+        agree_all("@foo\nexport enum { A }\nfn f() -> int { 1 }")
+    }
     // `enum` joins the routed set (t-47hc slice 10.11). It is the first routed keyword
     // with real INTERNAL structure — a type-param list, a variant list, and payload
     // fields — so the forms that can go wrong are not just "the name is missing": a
@@ -510,7 +526,14 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         // the inner decl, not be swallowed by the prefix that wraps it.
         agree_bad("export enum { A }\nfn f() -> int { 1 }") &&
         // ...and under a STACK of wrappers, since they nest by recursion.
-        agree_bad("@foo\nexport enum { A }\nfn f() -> int { 1 }")
+        agree_bad("@foo\nexport enum { A }\nfn f() -> int { 1 }") &&
+        // t-47hc Phase 4, routing `///` / `//!` / `@annotation`: the doc-led halves of
+        // the same classes — a malformed inner under a doc line, a module doc followed
+        // by a stray token (the wrapper must not swallow it), and a malformed
+        // annotation under a doc line (the stacked-wrapper rollback path).
+        agree_bad("/// doc\nfn ( ) -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_bad("//! mdoc\n* 5\nfn f() -> int { 1 }") &&
+        agree_bad("/// doc\n@foo(\nfn f() -> int { 1 }")
     }
     // The VALID half of the wrapper family. `agree_bad` cannot cover these — nothing
     // reports — but routing must preserve their SHAPE, and a wrapper that silently
