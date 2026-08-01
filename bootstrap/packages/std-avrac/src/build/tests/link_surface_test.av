@@ -107,7 +107,17 @@ spec "test-binary link sheds libLLVM for pure programs (F5 lazy link)" {
         let bin = build_wrapper_ref_binary(pure_slot, "build/_linksurface_ref_${string(pid)}", pid)
         // The wrapper reference forces llvm_wrapper.o to be pulled, whose
         // 136 undefined LLVM refs then keep libLLVM live under --as-needed.
-        // On macOS libLLVM is unconditional, so it's present either way.
-        pbin != "" && bin != "" && llvm_needed_count(bin) != "0"
+        //
+        // Gated like the sibling assertion above: llvm_needed_count shells out
+        // to `readelf`, which does not exist on macOS, so the count is always
+        // "0" there and this could only ever fail — regardless of what the
+        // linker actually did. On macOS libLLVM is linked unconditionally
+        // anyway (build_link_argv's own gate), so the DT_NEEDED question is
+        // not meaningful; assert only that both binaries linked.
+        if lazy_link_platform() {
+            pbin != "" && bin != "" && llvm_needed_count(bin) != "0"
+        } else {
+            pbin != "" && bin != ""
+        }
     }
 }

@@ -47,7 +47,32 @@ fn build_run_keep(src: string, dir: string, bin: string) -> string {
 /// Count strong symbols (nm T/D/B — excludes weak W/V linkonce) that are
 /// DEFINED in more than one .cgu*/.wrapper object under `dir/stem`.
 fn dup_strong_symbols(dir: string, stem: string) -> string {
-    avra_shell_exec("for o in '${dir}/${stem}'.cgu*.o '${dir}/${stem}'.wrapper.*.o; do nm --defined-only \"$o\" 2>/dev/null | grep -E ' [TDB] ' | awk '{print $3}'; done | sort | uniq -d | tr '\\n' ' '").trim()
+    let objs = "'${dir}/${stem}'.cgu*.o '${dir}/${stem}'.wrapper.*.o"
+    // ELF marks a linkonce_odr definition W/V, so ` [TDB] ` already excludes
+    // it. Mach-O has no such letter — plain `nm` prints T for a WEAK and a
+    // STRONG definition alike — so the ELF filter reported every linkonce
+    // wrapper as a duplicate on macOS even though the linker deduped it fine
+    // (the sibling `res == "ok|ok"` proves the program links AND runs).
+    // `nm -m` is the Mach-O form that distinguishes them:
+    //     (__TEXT,__text) external      _strong
+    //     (__TEXT,__text) weak external _wk
+    // so drop `weak external` and keep symbols defined in a section.
+    let per_obj = if avra_host_os() == "macos" {
+        // ` external ` keeps only GLOBAL definitions: a local reads
+        // `non-external` (no leading-space match) and would otherwise drag in
+        // Mach-O's ltmp*/l_.* temporaries, which the ELF ` [TDB] ` filter
+        // never saw. Then drop `weak external` — the linkonce ones.
+        // Three filters, matching what ELF's ` [TDB] ` implies in one letter:
+        //   (__TEXT/(__DATA  DEFINED here (an undefined ref reads `(undefined)`
+        //                    and every object has those — they'd all "dup")
+        //   ` external `     GLOBAL (a local reads `non-external`, which this
+        //                    leading space does not match — Mach-O ltmp*/l_.*)
+        //   not weak         drop the linkonce_odr definitions, the whole point
+        "nm -m \"$o\" 2>/dev/null | grep -E '\\(__TEXT|\\(__DATA' | grep ' external ' | grep -v 'weak external' | awk '{print $NF}'"
+    } else {
+        "nm --defined-only \"$o\" 2>/dev/null | grep -E ' [TDB] ' | awk '{print $3}'"
+    }
+    avra_shell_exec("for o in ${objs}; do ${per_obj}; done | sort | uniq -d | tr '\\n' ' '").trim()
 }
 
 /// All `__lambda_*` symbol names across the unit objects, one per line, piped

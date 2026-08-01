@@ -3815,10 +3815,16 @@ mode_cache_fuzz_parallel() {
 prune_tmp_scratch() {
   local min_age="${1:-0}"
   local reclaimed=0 d list
+  # `-H` follows the symlink given as the ARGUMENT (not ones found while
+  # walking), which is exactly what /tmp needs: on macOS /tmp is a symlink to
+  # private/tmp, so a bare `find /tmp -type d` matches NOTHING and this prune
+  # silently reclaimed zero — the /tmp scratch leak this tooling exists to fix
+  # went unfixed there (321 stale dirs on the box where this was found).
+  # POSIX, and a no-op on Linux where /tmp is a real directory.
   if [ "$min_age" -gt 0 ]; then
-    list=$(find /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) -mmin "+${min_age}" 2>/dev/null)
+    list=$(find -H /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) -mmin "+${min_age}" 2>/dev/null)
   else
-    list=$(find /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) 2>/dev/null)
+    list=$(find -H /tmp -maxdepth 1 -type d \( -name 'avra_*' -o -name 'build' \) 2>/dev/null)
   fi
   while IFS= read -r d; do
     [ -n "$d" ] || continue
