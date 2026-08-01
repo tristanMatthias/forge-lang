@@ -5222,6 +5222,168 @@ int64_t avra_mem_slack_floor_kb(void) {
     return v;
 }
 
+// ── The compile slot gate (t-kdyj.1 slice 4) ─────────────────────────────
+//
+// The acceptance-proof falsification of slice 3: the budget grant is computed
+// per admitted TREE but enforced per PROCESS, so a shard binary whose W test
+// workers each shell a `bs2 compile` fixture probe is W concurrent processes
+// EACH entitled to the full grant — the tree's effective bound is W x grant,
+// no member ever crosses its own budget, and the soft trip's floor condition
+// is unreachable no matter how bad the box gets. Three cold trees of
+// under-their-own-budget probes took the container down in five minutes with
+// zero diagnostics (2026-08-01, logged on t-kdyj.1).
+//
+// Dividing the grant per member is the wrong repair: under pressure every
+// legitimately-heavy probe would F4014 at once — mass spec failure instead of
+// slows-and-completes. The repair that matches the epic's back-pressure rule
+// is a BOX-WIDE concurrency bound on heavy compiler processes, enforced where
+// the process starts (so it covers pool children, spec-shelled probes and
+// ad-hoc runs alike, regardless of who spawned them) and engaged ONLY under
+// pressure: while MemAvailable is above a box-scaled threshold the gate is a
+// single meminfo read; below it, a compile must hold one of a small fixed set
+// of flock slots before doing heavy work. Waiting is the enforcement — no
+// process is ever killed, and a crash releases its slot by construction
+// (flock dies with the fd). The wait loop RE-SAMPLES pressure, so a box that
+// recovers releases its waiters without any slot changing hands.
+//
+// Deliberately NOT inherited: each bs2 process gates itself. An inherited
+// "slot held" mark would survive the shard binary's exec and wave its whole
+// probe storm through — the exact per-tree/per-process mismatch this exists
+// to fix. No gated process waits on another gated process while holding a
+// slot (compile/check are leaves; _test_shard's slot dies at exec via
+// O_CLOEXEC), so the gate cannot deadlock.
+
+// The pressure threshold policy, pure for spec-pinning: gating engages below
+// 3/8 of MemTotal, clamped to [2 GiB, 8 GiB]. On the 16 GiB box that killed
+// the container this is ~6 GiB — the same territory as the pool's reserve,
+// i.e. "the zone where the un-modelled tree growth must stop stacking".
+// Unknown MemTotal (non-Linux) returns 0 = the gate never engages; the box
+// has no pressure signal to act on, and failing open matches the ceiling's
+// availability-fallback precedent.
+int64_t avra_slot_gate_threshold_for(int64_t total_kb) {
+    if (total_kb <= 0) return 0;
+    int64_t v = (total_kb / 8) * 3;
+    int64_t lo = (int64_t)2048 * 1024;
+    int64_t hi = (int64_t)8192 * 1024;
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
+int64_t avra_slot_gate_threshold_kb(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v;
+    const char* e = getenv("AVRA_SLOT_GATE_MB");
+    if (e && *e) {
+        v = strtoll(e, NULL, 10) * 1024;   // 0 disables the gate explicitly
+        if (v < 0) v = 0;
+    } else {
+        v = avra_slot_gate_threshold_for(avra_mem_total_kb());
+    }
+    atomic_store(&cached, v);
+    return v;
+}
+
+// Pure: does this availability reading demand a slot before heavy work?
+int64_t avra_slot_gate_should_wait(int64_t avail_kb, int64_t threshold_kb) {
+    return (threshold_kb > 0 && avail_kb > 0 && avail_kb < threshold_kb) ? 1 : 0;
+}
+
+// How many heavy compiles the box runs concurrently UNDER PRESSURE. Two keeps
+// a little overlap (one draining, one starting) while bounding the stacked
+// peak to ~2 whole-program compiles + the already-running trees — measured
+// survivable where width 3-4 died. Roomy boxes never see this number.
+int64_t avra_slot_gate_width(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    const char* e = getenv("AVRA_COMPILE_SLOT_WIDTH");
+    int64_t v = (e && *e) ? strtoll(e, NULL, 10) : 2;
+    if (v < 1) v = 1;
+    if (v > 64) v = 64;
+    atomic_store(&cached, v);
+    return v;
+}
+
+// Try to take one slot non-blockingly; returns the held fd or -1. The fd is
+// O_CLOEXEC on purpose: _test_shard execs the shard binary after its compile,
+// and the slot must die at that boundary — the test RUN is not a compile.
+static int avra_slot_gate_try(const char* dir, int64_t width) {
+    for (int64_t i = 0; i < width; i++) {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/slot%lld", dir, (long long)i);
+        int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+        if (fd < 0) continue;
+        if (flock(fd, LOCK_EX | LOCK_NB) == 0) return fd;
+        close(fd);
+    }
+    return -1;
+}
+
+// The gate. Called at the top of every heavy CLI mode (compile / check / run /
+// _test_shard). Holds the winning slot fd for the life of the process — the
+// kernel releases it at exit, _exit, crash or exec; there is deliberately no
+// release path to forget.
+void avra_compile_slot_gate(void) {
+    int64_t threshold_kb = avra_slot_gate_threshold_kb();
+    if (threshold_kb <= 0) return;
+    int64_t avail_kb = avra_mem_available_kb();
+    if (!avra_slot_gate_should_wait(avail_kb, threshold_kb)) return;
+    const char* dir = getenv("AVRA_COMPILE_SLOT_DIR");
+    if (!dir || !*dir) dir = "/tmp/.avra-slots";   // dot-named: outside the
+                                                   // /tmp/avra_* prune glob
+    if (mkdir(dir, 0777) != 0 && errno != EEXIST) return;  // unwritable: fail open
+    int64_t width = avra_slot_gate_width();
+    static int avra_slot_gate_fd = -1;
+    // The uncontended fast path is SILENT on purpose: mid-suite the box sits
+    // under the threshold routinely, and a line here would leak into every
+    // shelled probe's captured output — nondeterministic contamination of
+    // output-asserting fixtures. Only genuine schedule events (waiting,
+    // acquired, pressure-cleared) speak, and only on the contended path.
+    avra_slot_gate_fd = avra_slot_gate_try(dir, width);
+    if (avra_slot_gate_fd >= 0) return;
+    fprintf(stderr,
+        "[slot-gate] memory pressure (%lld MiB available < %lld MiB): waiting for one of %lld compile slots\n",
+        (long long)(avail_kb / 1024), (long long)(threshold_kb / 1024), (long long)width);
+    for (;;) {
+        struct timespec ts = { 0, 200 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+        avail_kb = avra_mem_available_kb();
+        if (!avra_slot_gate_should_wait(avail_kb, threshold_kb)) {
+            // Pressure passed while we queued — the gate is a pressure gate,
+            // not a semaphore; proceed slotless rather than serialise a box
+            // that has already recovered.
+            fprintf(stderr, "[slot-gate] pressure cleared (%lld MiB available): proceeding\n",
+                (long long)(avail_kb / 1024));
+            return;
+        }
+        avra_slot_gate_fd = avra_slot_gate_try(dir, width);
+        if (avra_slot_gate_fd >= 0) {
+            fprintf(stderr, "[slot-gate] compile slot acquired (%lld MiB available)\n",
+                (long long)(avail_kb / 1024));
+            return;
+        }
+    }
+}
+
+// Test-facing flock primitives, so specs can OCCUPY a slot deterministically
+// (hold from the spec's own process; release explicitly — the shard binary
+// outlives any one spec).
+int64_t avra_flock_try_exclusive(const char* path) {
+    int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0666);
+    if (fd < 0) return -1;
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) { close(fd); return -1; }
+    return (int64_t)fd;
+}
+
+int64_t avra_flock_unlock(int64_t fd) {
+    if (fd < 0) return -1;
+    close((int)fd);   // closing the last fd on the description drops the lock
+    return 0;
+}
+
 // The ONE trip decision, pure so spec tests pin the semantics without
 // faking box pressure. A hard ceiling trips on RSS alone (the pre-slice-3
 // contract, unchanged). A soft grant trips only when BOTH hold: the tree

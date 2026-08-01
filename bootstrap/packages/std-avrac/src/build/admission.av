@@ -172,12 +172,18 @@ impl MemGovernor {
     /// the box has slack (a cold whole-program fixture compile legitimately
     /// peaks ~7GB — a hard shard-sized cap F4014'd exactly that on CI), and
     /// trips only when the tree is over-budget AND MemAvailable has fallen
-    /// under the runtime's near-cliff floor. Under pressure the over-budget trees
-    /// are precisely the ones that stop themselves, so the SUM is bounded
-    /// when it matters and never caps a legitimate heavy on a roomy box.
-    /// The fixture-slot machinery divides the same number, so grandchildren
-    /// size against the allocation instead of the whole box. Width-only
-    /// governors return 0 = "export nothing"; those pools stay
+    /// under the runtime's near-cliff floor. KNOWN LIMIT (proven by the
+    /// 2026-08-01 acceptance-proof container death): the grant is computed
+    /// per TREE but the F4014 poll enforces it per PROCESS — a shard whose W
+    /// test workers each shell a probe is W processes each entitled to the
+    /// full grant, so no member trips however bad the box gets. The bound
+    /// that actually holds under pressure is the runtime's compile slot gate
+    /// (avra_compile_slot_gate, slice 4): every heavy bs2 process must hold
+    /// one of a small set of flock slots while MemAvailable is under the
+    /// box-scaled threshold, capping concurrent heavies box-wide no matter
+    /// who spawned them. The grant remains the per-process ceiling input and
+    /// the sizing signal for diagnose.sh's `_default_compile_slots`.
+    /// Width-only governors return 0 = "export nothing"; those pools stay
     /// byte-identical to the pre-slice-3 behaviour.
     fn allocation_mb(self, width: int) -> int {
         if !self.has_model() { return 0 }

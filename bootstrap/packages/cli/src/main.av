@@ -113,6 +113,13 @@ extern fn avra_mem_phase_set(label: string)
 // t-kdyj.1: MemAvailable in MB (-1 unknown) — the admission governor's
 // sampler; raw syscalls in runtime.c, never a shell fork.
 extern fn avra_mem_available_mb() -> int
+// t-kdyj.1 slice 4: the box-wide compile slot gate. Under memory pressure a
+// heavy mode must hold one of a small set of flock slots before doing heavy
+// work — back-pressure by waiting, bounding concurrent compiles regardless of
+// who spawned them (pool children, spec-shelled probes, ad-hoc runs). A roomy
+// box pays one meminfo read. Each process gates ITSELF — the bound must not
+// be inheritable, or a shard binary's probe storm rides its parent's slot.
+extern fn avra_compile_slot_gate()
 extern fn avra_stderr_tee_begin()
 extern fn avra_stderr_tee_end() -> string
 extern fn avra_stderr_write_raw(s: string)
@@ -2840,6 +2847,10 @@ fn extract_kv_int(line: string, key: string) -> int {
 // `command _test_shard` block (its variadic `paths` positional), so the
 // missing-paths case is already a parse error before this runs.
 fn run_test_shard_command(paths: List<string>, args: TestArgs) {
+    // The slot is held through this shard's COMPILE and dies at the exec of
+    // the built test binary (O_CLOEXEC in the runtime) — the test RUN is not
+    // a compile, and its probe children gate themselves.
+    avra_compile_slot_gate()
     for p in paths {
         if !avra_selfhost_file_exists(p) {
             fail("error: file not found: ${p}")
@@ -4034,6 +4045,7 @@ fn cmd_eval(args: CliResult) -> int {
 /// evaluator, printing the final value. `parse_or_fail` gives F-coded parse
 /// errors a source-line diagnostic frame, like every other subcommand.
 fn cmd_run(args: CliResult) -> int {
+    avra_compile_slot_gate()
     let fa = arg_file_source(args)
     let parsed_prog = parse_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     let result = execute_program_stmts(parsed_prog.ids, parsed_prog.store)
@@ -4081,6 +4093,7 @@ fn cmd_expand(args: CliResult) -> int {
 }
 
 fn cmd_check(args: CliResult) -> int {
+    avra_compile_slot_gate()
     let check_json = result_has_flag(args, "json")
     let fa = arg_file_source(args)
     let ctx = render_ctx(check_json, fa.source, fa.path)
@@ -4097,6 +4110,7 @@ fn cmd_check(args: CliResult) -> int {
 }
 
 fn cmd_compile(args: CliResult) -> int {
+    avra_compile_slot_gate()
     let stop_after = result_get_option(args, "stop_after")
     let debug_null = result_has_flag(args, "debug_null")
     let enable_coverage = result_has_flag(args, "coverage")
