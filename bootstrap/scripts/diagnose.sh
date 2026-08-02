@@ -385,44 +385,12 @@ DIFF & ANALYSIS
                        build/cache under ROOT (default: the bootstrap
                        tree) — and nothing else. Guarded so it can
                        never touch a src/ tree. Next build is cold.
-  --sweep [--fresh] [dir ...]
-                       OOM-safe full-suite runner: one sequential
-                       `bs2 test <dir>` per test directory (default:
-                       every dir holding discovered tests, via
-                       `bs2 test --list`) with per-dir logs and .ok
-                       resume markers under build/sweep. Markers are
-                       keyed on the suite-input hash — any source/test/
-                       bs2 change drops them automatically. Stops LOUDLY
-                       at the first red dir; a re-run resumes there.
-                       A green full sweep writes build/.tests_verified
-                       so the pre-commit hook skips its duplicate suite
-                       run (t-8rsg). --fresh drops the markers. This is
-                       the sanctioned way to run the full suite on a
-                       ≤16GB box.
   --test-input-hash [ROOT]
                        Print the suite-input hash: one sha256 over bs2,
                        every .av under packages/+tests/, runtime.c,
                        llvm_wrapper.c, diagnose.sh, seed.ll, Makefile.
-                       Shared by the sweep's markers and the pre-commit
-                       hook's suite cache (t-8rsg).
-  --guarded [FLOOR_MB] -- <cmd...>
-                       RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
-                       Starts the memory watchdog (--memguard), runs <cmd>,
-                       and ALWAYS tears the watchdog down. Also pins
-                       AVRA_TEST_JOBS=1 (in-process test threads). Build and
-                       diff-test concurrency comes from their resource
-                       controllers, not environment flags. Use this for
-                       diff-test / cold builds so a memory spike kills the
-                       compile, NOT the whole container.
-                       e.g. --guarded 5500 -- make diff-test
-  --memguard [FLOOR_MB]
-                       The raw memory watchdog (default FLOOR 3500MB; 5500
-                       proven). Polls MemAvailable every ~0.4s; SIGKILLs
-                       bs2/llc/cc1plus/clang/cc1 when free memory drops
-                       below FLOOR, so an OOM takes out the runaway compile
-                       instead of OOM-restarting the container. Foreground
-                       loop — background it and kill it yourself, or (better)
-                       use --guarded. Trips logged to build/memguard/log.
+                       Shared by `bs2 test`'s commit-gate marker and the
+                       pre-commit hook's suite cache (t-8rsg).
   --stray [--reap]     List every surviving heavy process (bs2/llc/cc1plus/
                        clang/cc1) with RSS, age and whether its TREE is
                        orphaned. Run this before trusting any memory number,
@@ -613,14 +581,11 @@ ENVIRONMENT
                freed RC memory (the zm77 phantom-release signature). Turns a
                silent corruption into a loud, first-offense abort. Exercised
                by --rc-strict-suite.
-  AVRA_HEAVY_PROCS  The process NAMES --stray reports and the run reaper /
-               memguard kill (default: "bs2 llc cc1plus clang cc1"). Point it
+  AVRA_HEAVY_PROCS  The process NAMES --stray reports and --stray --reap
+               kills (default: "bs2 llc cc1plus clang cc1"). Point it
                at a fake binary to exercise the kill paths against something
                that is provably not a real build — how stray_reap_test.av can
-               SIGKILL a run inside the live suite.
-  AVRA_RUN_DIR  Where a --sweep / --guarded run records its marker
-               (default: build/runs). The marker is what lets the nanny — and
-               the next run — reap a run that died without unwinding.
+               SIGKILL a tree inside the live suite.
 
 EXAMPLES
   diagnose.sh --build               # rebuild stage1 from rust + run tests
@@ -2556,7 +2521,10 @@ mode_rc_strict_suite() {
   # runner (`undefined variable run_test_suite`).
   # The resource controller recognises RC strict as an allocation profile,
   # uses its stricter seed, and admits shards from live capacity and pressure.
-  # AVRA_TEST_JOBS remains the independent in-shard test-worker setting.
+  # ${AVRA_TEST_JOBS:-2} is this suite's own INTERNAL default for in-shard
+  # test workers — an undocumented hook (t-kdyj.2), not an operator knob.
+  # CI (rc-strict.yml) pins it to match seed-train.yml so PR CI exercises
+  # the same in-shard interleaving the post-merge train does (see hama).
   local test_jobs="${AVRA_TEST_JOBS:-2}"
   if [ -n "${1:-}" ]; then
     ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
@@ -2983,45 +2951,42 @@ mode_cache_fuzz() {
   ok "cache-fuzz PASS — $n iterations (seed $seed): cached IR == recomputed IR, revert restores golden"
 }
 
-# ── Stray heavy processes, and runs that reap what they spawned (t-ce5t) ─────
+# ── Stray heavy processes (t-ce5t) ───────────────────────────────────────────
 #
 # Two hazards that compound, and they are the same subject: which heavy
 # processes exist, and whose they are.
 #
-# (1) ORPHANS SURVIVE THE KILL. A run that dies without unwinding — the
-#     memguard SIGKILLs it, a tool timeout kills it — leaves its grandchildren
-#     running. Observed 2026-07-31, minutes after a watchdog trip:
+# (1) ORPHANS SURVIVE THE KILL. A run that dies without unwinding — SIGKILL,
+#     a tool timeout — leaves its grandchildren running. Observed 2026-07-31:
 #
 #         26966  4.4GB  build/bs2 compile
 #         26962  4.4GB  build/bs2 compile
 #
 #     8.8GB held by a run already declared dead. The NEXT run then starts
-#     against 6GB free instead of 14GB and is far likelier to trip the floor
-#     itself, so one kill begets the next — and every memory reading taken
-#     meanwhile is wrong, which is exactly the session-accumulated-pressure
-#     confusion CLAUDE.md warns has cost whole sessions. (The memory sibling
-#     of t-zg2s, which fixed orphaned-run ARTIFACTS poisoning verdicts.)
+#     against 6GB free instead of 14GB, and every memory reading taken
+#     meanwhile is wrong — the session-accumulated-pressure confusion
+#     CLAUDE.md warns has cost whole sessions. (The memory sibling of
+#     t-zg2s, which fixed orphaned-run ARTIFACTS poisoning verdicts.)
 #
 # (2) THE INSPECTION IDIOM LIES. `pgrep -f bs2` / `pkill -f <pat>` match the
 #     COMMAND LINE, and the shell running them carries the pattern in its own
 #     command line — so they match themselves. Knowing that is demonstrably
 #     not enough to avoid it: the hazard was already documented and still
-#     produced a `pgrep -f 'diagnose.sh --sweep'` that reported a sweep
-#     RUNNING after it had already failed (status reported wrong three times
-#     off that one reading). So nothing here matches a command line. Every
-#     probe below filters on ps's `comm` — the executable's basename, which
-#     no shell, awk or ps in the pipeline can accidentally be — making it
-#     self-safe BY CONSTRUCTION rather than by remembering a trick. (Typing
-#     one by hand anyway? The bracket idiom is the escape hatch, because the
-#     literal `[b]s2` does not match itself:
+#     produced a stale-run status reported wrong three times off one reading.
+#     So nothing here matches a command line. Every probe below filters on
+#     ps's `comm` — the executable's basename, which no shell, awk or ps in
+#     the pipeline can accidentally be — making it self-safe BY CONSTRUCTION
+#     rather than by remembering a trick. (Typing one by hand anyway? The
+#     bracket idiom is the escape hatch, because the literal `[b]s2` does
+#     not match itself:
 #         ps -A -o pid=,rss=,comm= | grep '[b]s2')
 
 # The heavy set: the processes that actually hold the memory. ONE definition —
-# the memguard's trip-kill, the run reaper and --stray all read it, so a new
-# heavy tool is added in a single place. Overridable because the specs drive
-# the REAL cli end-to-end against fake binaries under a per-run name: pointing
-# the set at those names is what makes a test that genuinely SIGKILLs a run
-# and reaps its survivors incapable of touching the live suite's own `bs2`.
+# --stray reports it and --stray --reap kills it, so a new heavy tool is added
+# in a single place. Overridable because the specs drive the REAL cli
+# end-to-end against fake binaries under a per-run name: pointing the set at
+# those names is what makes a test that genuinely SIGKILLs a tree and reaps
+# its survivors incapable of touching the live suite's own `bs2`.
 HEAVY_PROCS="${AVRA_HEAVY_PROCS:-bs2 llc cc1plus clang cc1}"
 
 # ONE ps snapshot behind everything below — `pid ppid pgid rss_kb age_secs comm`
@@ -3213,175 +3178,6 @@ procs_under() {
       } }'
 }
 
-# ARM 1 (leader alive — the normal teardown). Kill the DESCENDANTS of PID.
-# Unconditionally safe: descendants are read off the LIVE process tree, so
-# nothing outside this run's own subtree can be selected — and by the time a
-# run tears down, anything still in its subtree is by definition a leftover.
-reap_descendants() {
-  local root="$1" label="${2:-teardown}"
-  kill_victims "$(procs_under "$root" "$(pid_ancestry $$)")" "$label"
-}
-
-# ARM 2/3 (leader DEAD — the nanny and the stale-marker backstop). The run's
-# subtree has been re-parented, so ancestry to the leader is gone. What is left
-# to identify it by is the pair (process GROUP, re-parented ROOT):
-#
-#   * its process group survived re-parenting, and
-#   * every survivor hangs off a root that init inherited when the leader died.
-#
-# Scoping to the orphaned TREES in the group — rather than to the whole group —
-# is what makes this safe on a SHARED group, which is the normal case: the group
-# of `make sweep` typed at a prompt also holds the shell that typed it and
-# anything else it is running (the Claude Code bash tool keeps ONE persistent
-# shell, so every command shares a group). A sibling with a live parent is not
-# ours. A re-parented tree in our group, younger than the run, is.
-#
-# The remaining guards are load-bearing too:
-#   * group_reap=0 markers are skipped — that run was nested inside another,
-#     so its group is not exclusively its own,
-#   * a pid in the run's recorded ancestry is never a root (the tree we, or the
-#     run, were running inside),
-#   * a process OLDER than the run is never a root, so a recycled pgid cannot
-#     make us reap a stranger's compile.
-reap_marker() {
-  local marker="$1" label="$2"
-  [ -f "$marker" ] || return 0
-  local pgid started group_reap spare now
-  pgid=$(awk -F= '$1 == "pgid" { print $2 }' "$marker" 2>/dev/null)
-  started=$(awk -F= '$1 == "started" { print $2 }' "$marker" 2>/dev/null)
-  group_reap=$(awk -F= '$1 == "group_reap" { print $2 }' "$marker" 2>/dev/null)
-  spare=$(awk -F= '$1 == "spare" { print $2 }' "$marker" 2>/dev/null)
-  [ "$group_reap" = "1" ] || return 0
-  # A marker that is truncated or garbled (a kill mid-write) must decline, not
-  # improvise: a non-numeric `started` would make the age guard compare against
-  # an empty string and quietly stop guarding anything.
-  case "$pgid"    in ""|*[!0-9]*) return 0 ;; esac
-  case "$started" in ""|*[!0-9]*) return 0 ;; esac
-  now=$(date +%s)
-  # Never ourselves: the nanny lives IN the dead run's group and is itself
-  # re-parented when the leader dies, so without this it is its own first root.
-  local mine roots victims
-  mine=" $spare $$ ${BASHPID:-$$} $(pid_ancestry "${BASHPID:-$$}") "
-  roots="$(all_ps | awk -v pgid="$pgid" -v mine="$mine" \
-                        -v maxage="$(( now - started + 2 ))" '
-    $2 == 1 && $3 == pgid && $5 <= maxage && index(mine, " " $1 " ") == 0 { printf "%s ", $1 }')"
-  [ -n "$roots" ] || return 0
-  victims="$( { all_ps | awk -v r=" $roots" 'index(r, " " $1 " ") > 0 { print $1, $6 }'
-                procs_under "$roots" "$mine"
-              } | sort -un -k1,1)"
-  kill_victims "$victims" "$label"
-}
-
-# Where a run announces itself. Overridable so specs can drive the lifecycle
-# against a sandbox instead of the live tree.
-RUN_DIR="${AVRA_RUN_DIR:-$BUILD_DIR/runs}"
-RUN_MARKER=""
-RUN_NANNY=""
-RUN_AUX_PIDS=""     # helper processes (--guarded's memguard) reaped with the run
-RUN_LABEL="run"
-RUN_ENDED=0
-
-# ARM 3: reap what the LAST run left behind, before this one starts. This is
-# the arm that closes the "one kill begets the next" loop — nothing else runs
-# after a whole process group is killed at once, so the next run is the first
-# thing in a position to clean up.
-reap_stale_runs() {
-  [ -d "$RUN_DIR" ] || return 0
-  local m pid
-  for m in "$RUN_DIR"/*.run; do
-    [ -f "$m" ] || continue
-    pid=$(awk -F= '$1 == "pid" { print $2 }' "$m" 2>/dev/null)
-    # A live leader owns its own marker — it is mid-run, not stale.
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && continue
-    reap_marker "$m" "stale"
-    rm -f "$m"
-  done
-}
-
-# The lifecycle. A heavy runner calls run_begin once; run_end fires on every
-# exit path this shell can observe, and the nanny covers the one it cannot.
-run_begin() {
-  RUN_LABEL="${1:-run}"
-  RUN_ENDED=0
-  # Installed unconditionally, nested or not: even a nested run has helper
-  # processes (--guarded's memguard) that must not outlive it.
-  #
-  # The EXIT trap is the BACKSTOP, not the mechanism: run_end is idempotent and
-  # every mode calls it explicitly on its own exits. Bash keeps ONE EXIT trap
-  # per shell, so a helper that installs its own would silently replace this —
-  # and a marker surviving a clean exit is worse than no marker at all, because
-  # the nanny would then reap trees after a run that ended fine. (No such
-  # helper is reachable from a run today: `run_fg` is only under --run and
-  # --emit-regen-*, and the other installers are modes, which main() dispatches
-  # one of. If you add one, chain it — do not reassign EXIT.)
-  trap 'run_end; exit 130' INT
-  trap 'run_end; exit 143' TERM HUP
-  trap 'run_end' EXIT
-  # Nested under an outer run (`make guarded CMD="make sweep"`): the outer
-  # reaper already covers this entire subtree, marker and nanny included.
-  if [ -n "${AVRA_RUN_ID:-}" ]; then return 0; fi
-  mkdir -p "$RUN_DIR" 2>/dev/null
-  reap_stale_runs
-  local pgid group_reap=1
-  pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
-  run_has_heavy_ancestor && group_reap=0
-  RUN_MARKER="$RUN_DIR/$$.run"
-  printf 'pid=%s\npgid=%s\nstarted=%s\ngroup_reap=%s\nlabel=%s\nspare=%s\n' \
-    "$$" "$pgid" "$(date +%s)" "$group_reap" "$RUN_LABEL" "$(pid_ancestry $$)" > "$RUN_MARKER"
-  export AVRA_RUN_ID="$$"
-  # The SIGKILL arm: a trap cannot fire for SIGKILL, so a separate process
-  # watches the leader and reaps the group when it dies without unwinding.
-  # Pointless when the group is shared (group_reap=0) — reap_marker would
-  # decline anyway — so it is not started.
-  if [ "$group_reap" = "1" ] && [ -f "$RUN_MARKER" ]; then
-    run_nanny "$$" "$RUN_MARKER" &
-    RUN_NANNY=$!
-  fi
-}
-
-run_end() {
-  [ "$RUN_ENDED" = "1" ] && return 0
-  RUN_ENDED=1
-  local p
-  for p in $RUN_AUX_PIDS $RUN_NANNY; do kill "$p" 2>/dev/null; done
-  RUN_AUX_PIDS=""; RUN_NANNY=""
-  # We are still alive here, so this run's compiles are still our DESCENDANTS
-  # — the precise identification, available on every path but the SIGKILL one.
-  reap_descendants "$$" "$RUN_LABEL"
-  [ -n "$RUN_MARKER" ] && rm -f "$RUN_MARKER"
-  RUN_MARKER=""
-  warn_residual_orphans
-}
-
-# The teardown advisory. Anything heavy STILL orphaned after our own reap
-# belongs to no run we know of — a leak from before this tracking existed, or a
-# run whose marker never got written. We do NOT kill it unasked: it is not our
-# subtree, and a reap is destructive. But saying nothing is how 8.8GB goes
-# unnoticed until the next run trips the memory floor and the reading taken to
-# explain that gets blamed on a compiler bug.
-warn_residual_orphans() {
-  local n
-  n=$(annotate_heavy | awk '$7 != "live" { c++ } END { print c + 0 }')
-  [ "$n" = "0" ] && return 0
-  warn "[run] $n orphaned heavy process(es) still resident (not this run's) — \`make stray REAP=1\` clears them"
-}
-
-run_nanny() {
-  local leader="$1" marker="$2"
-  # Bash resets traps in a background subshell; say so explicitly anyway, so
-  # the nanny can never run the LEADER's teardown as a side effect of its own.
-  trap - EXIT
-  trap 'exit 0' TERM INT HUP
-  while kill -0 "$leader" 2>/dev/null; do sleep 1; done
-  # The leader is gone. run_end removes the marker before dying on every path
-  # it controls, so a marker still present means an UNCAUGHT death — SIGKILL
-  # from the memguard, a tool timeout, the OOM killer — and this run's
-  # compiles are now orphans that nothing else will ever reap.
-  [ -f "$marker" ] || exit 0
-  reap_marker "$marker" "nanny"
-  rm -f "$marker"
-}
-
 # Usage: --stray [--reap]
 # Report every surviving heavy process with its RSS — the instrument to reach
 # for before trusting ANY memory number, and after any killed run. Reaping is
@@ -3434,16 +3230,16 @@ mode_stray() {
   return 1
 }
 
-# t-8rsg: the pre-commit hook's suite-input hash, centralized (rule 10 —
-# the hook used to carry this computation inline, twice, where the sweep
-# could not reach it). One hash over every input that can change a spec
-# test's outcome: the bs2 binary, every .av under packages/ + tests/, the
-# C runtime + LLVM wrapper, this script (fixtures shell out to it), the
-# seed, and the Makefile. Only the per-file DIGESTS feed the final hash
-# (paths are dropped, then sorted), so the same tree hashes identically
-# from any cwd — and the hook's repo-root invocation matches the sweep's
-# bootstrap-cwd one. ROOT overrides the tree for spec tests; the default
-# is the real bootstrap dir. ~0.3s on the warm tree.
+# t-8rsg: the pre-commit hook's suite-input hash, centralized (rule 10).
+# One hash over every input that can change a spec test's outcome: the bs2
+# binary, every .av under packages/ + tests/, the C runtime + LLVM wrapper,
+# this script (fixtures shell out to it), the seed, and the Makefile. Only
+# the per-file DIGESTS feed the final hash (paths are dropped, then
+# sorted), so the same tree hashes identically from any cwd — the hook's
+# repo-root invocation matches `bs2 test`'s bootstrap-cwd one (t-kdyj.2:
+# a green full `bs2 test` writes build/.tests_verified via this hash, so
+# the hook skips its duplicate suite run). ROOT overrides the tree for
+# spec tests; the default is the real bootstrap dir. ~0.3s warm.
 test_input_hash() {
   local root="${1:-$BOOTSTRAP_DIR}"
   ( CDPATH= cd -- "$root" 2>/dev/null || exit 1
@@ -3453,226 +3249,6 @@ test_input_hash() {
       $SHA256_CMD scripts/diagnose.sh seed/seed.ll Makefile 2>/dev/null
     } | awk '{print $1}' | sort | $SHA256_CMD | awk '{print $1}'
   )
-}
-
-# t-8rsg: the sweep's default unit list, derived from the discovery engine
-# itself (`bs2 test --list`) instead of a hardcoded `find -name tests`.
-# The hardcoded list silently missed test files living outside a `tests/`
-# dir (std-cli's cli_v2_test.av, std-avrac's docs/gen_test.av), so a green
-# sweep proved LESS than the hook's full-tree suite — disqualifying it
-# from writing the hook's skip marker. One unit per discovered test-file
-# dir, ancestor-deduped: `bs2 test <dir>` recurses, so a dir under an
-# already-emitted ancestor is covered by it. cwd must be $BOOTSTRAP_DIR
-# (mode_sweep guarantees it).
-sweep_unit_dirs() {
-  "$BS2" test --list 2>/dev/null \
-    | awk -F: 'NF > 1 { print $1 }' | sed 's|/[^/]*$||' | sort -u \
-    | awk -v pfx="$BOOTSTRAP_DIR/" '{
-        if (index($0, pfx) == 1) $0 = substr($0, length(pfx) + 1)
-        for (i = 1; i <= n; i++) if (index($0, acc[i] "/") == 1) next
-        acc[++n] = $0; print
-      }'
-}
-
-# t-lqzr: the OOM-safe full-suite runner, promoted from the CLAUDE.md
-# copy-paste snippet (rule 10: dev tooling lives here). One `bs2 test`
-# per directory, strictly sequential — a ≤16GB box survives what a
-# parallel whole-suite invocation has repeatedly OOM'd. Per-dir logs +
-# `.ok` resume markers under $BUILD_DIR/sweep (override: AVRA_SWEEP_DIR),
-# so a killed run resumes at the failing dir instead of restarting, and
-# failure is LOUD (stop at the first red dir, print its tail) — no later
-# dir can mask an earlier one. On a green run the per-dir tallies are
-# aggregated into one suite-wide summary.
-#
-# t-8rsg: the sweep is also the commit gate's suite run. Resume markers
-# are keyed on the suite-input hash, so ANY input change (source, test,
-# bs2, runtime, seed) drops them automatically — a resumed sweep can
-# never serve a green earned against a different tree, and the FRESH=1
-# ritual is no longer needed for correctness. A green FULL sweep (no dir
-# args) writes the pre-commit hook's skip marker (build/.tests_verified),
-# so the hook stops re-running the suite the sweep just ran; a scoped
-# sweep proves only part of the tree and never writes it.
-#
-# Usage: --sweep [--fresh] [dir ...]
-#   --fresh    drop resume markers first (full re-run)
-#   dir ...    sweep only these dirs, bootstrap-relative or absolute
-#              (default: every dir holding discovered tests)
-mode_sweep() {
-  local fresh=0
-  if [ "${1:-}" = "--fresh" ]; then fresh=1; shift; fi
-  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
-  # t-ce5t: before ensure_bs2, so a build triggered from here is covered too.
-  # Reaps the previous run's orphans on the way in and this run's compiles on
-  # the way out — however the sweep ends. A sweep is the single most-killed
-  # command in this tree (tool timeouts, memguard trips), and each kill used
-  # to leave GBs behind for the next one to trip over.
-  run_begin sweep
-  ensure_bs2
-  local sweep_dir="${AVRA_SWEEP_DIR:-$BUILD_DIR/sweep}"
-  [ "$fresh" = "1" ] && rm -rf "$sweep_dir"
-  mkdir -p "$sweep_dir"
-  # t-8rsg: hash AFTER ensure_bs2 (a rebuild changes build/bs2, an input).
-  local start_hash stored_hash
-  start_hash=$(test_input_hash)
-  stored_hash=$(cat "$sweep_dir/input_hash" 2>/dev/null || true)
-  if [ "$start_hash" != "$stored_hash" ]; then
-    [ -n "$stored_hash" ] && log "[sweep] inputs changed since the last sweep — dropping resume markers"
-    rm -f "$sweep_dir"/*.ok
-    printf '%s\n' "$start_hash" > "$sweep_dir/input_hash"
-  fi
-  local full_run=0
-  local dirs=()
-  if [ $# -gt 0 ]; then
-    dirs=("$@")
-  else
-    full_run=1
-    while IFS= read -r d; do dirs+=("$d"); done < <(sweep_unit_dirs)
-    [ ${#dirs[@]} -gt 0 ] || { run_end; die "[sweep] discovery returned no test dirs — is $BS2 healthy?"; }
-  fi
-  local t_start
-  t_start=$(date +%s)
-  local d slug logf
-  for d in "${dirs[@]}"; do
-    slug=$(printf '%s' "$d" | tr '/' '_')
-    logf="$sweep_dir/$slug.log"
-    if [ -f "$logf.ok" ]; then
-      log "[sweep] $d — already green (resume marker; --fresh re-runs)"
-      continue
-    fi
-    if ! "$BS2" test "$d" > "$logf" 2>&1; then
-      err "[sweep] FAILED: $d — full log: $logf"
-      sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -E '    FAIL|failed|crashed' | head -10 >&2
-      err "[sweep] markers kept — a re-run resumes at this dir"
-      run_end
-      return 1
-    fi
-    touch "$logf.ok"
-    log "[sweep] ok $d ($(sed 's/\x1b\[[0-9;]*m//g' "$logf" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1))"
-  done
-  local total
-  total=$(for f in "$sweep_dir"/*.log; do
-    [ -f "$f.ok" ] || continue
-    sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -oE '[0-9]+/[0-9]+ tests passed' | tail -1
-  done | awk -F'[/ ]' '{p+=$1; t+=$2} END {print p "/" t}')
-  # t-8rsg: a green FULL sweep IS the suite run — record it where the
-  # pre-commit hook looks so the hook skips its duplicate pass. Re-hash
-  # first (the hook's 0o8i drift guard, same reason): a mid-sweep edit
-  # means this green no longer describes the current tree, so the next
-  # commit must re-run, not skip.
-  if [ "$full_run" = "1" ]; then
-    if [ "$(test_input_hash)" = "$start_hash" ]; then
-      printf '%s\n' "$start_hash" > "$BUILD_DIR/.tests_verified"
-      log "[sweep] commit-gate marker written — the pre-commit hook will skip its duplicate suite run"
-    else
-      log "[sweep] inputs changed mid-sweep — commit-gate marker NOT written (the hook will re-run the suite)"
-    fi
-  fi
-  run_end
-  ok "sweep green — $total specs across ${#dirs[@]} dir(s) in $(( $(date +%s) - t_start ))s"
-}
-
-# ── OOM safety on the ≤16GB Claude-Code-Web container ────────────────────
-# t-lqzr: the memory WATCHDOG, promoted from the session scratchpad (rule
-# 10: dev tooling lives here, never a throwaway /tmp script that dies with
-# the container). The problem it solves is concrete and RECURRING: a heavy
-# run — `bs2 test <dir>` fanning out parallel shards, `make diff-test`'s
-# TWO concurrent whole-compiler selfhost compiles, a cold `make test` —
-# spikes RSS past the box's ceiling, and the OOM killer takes down the
-# WHOLE CONTAINER (three restarts in one 2026-07-12 session; more since),
-# not just the offending command. There is no code bug to fix — the box is
-# just too small for these peaks — so the durable answer is to cap the
-# blast radius: kill the runaway compile, keep the container alive.
-#
-# mode_memguard polls system AVAILABLE memory (`free -m`, MemAvailable)
-# every ~0.4s; when it drops below FLOOR MB it SIGKILLs the heavy
-# compiler/test processes (bs2, llc, cc1plus, clang, cc1). The parent
-# build/test then sees a failed child and aborts LOUDLY — a failed command
-# is recoverable; a dead container is not. It writes trip records to
-# build/memguard/log so an OOM death is diagnosable after the fact.
-#
-# This is a foreground loop, meant to be backgrounded (`... --memguard 5500
-# & GUARD=$!; ...; kill $GUARD`) or — far better — driven by --guarded,
-# which starts it, runs your command, and ALWAYS tears it down. Prefer
-# --guarded so a watchdog is never left orphaned.
-#
-# Usage: --memguard [FLOOR_MB]   (default 3500; 5500 is the proven value)
-mode_memguard() {
-  local floor="${1:-3500}"
-  local dir="${AVRA_MEMGUARD_DIR:-$BUILD_DIR/memguard}"
-  mkdir -p "$dir"
-  local logf="$dir/log"
-  echo "${BASHPID:-$$}" > "$dir/pid"
-  printf '%s memguard START floor=%sMB pid=%s\n' "$(date +%T)" "$floor" "${BASHPID:-$$}" >> "$logf"
-  # A clean shutdown (SIGTERM from --guarded's teardown, or a manual kill).
-  trap 'rm -f "$dir/pid"; exit 0' TERM INT
-  # t-ce5t: the watchdog must not outlive the shell that owns it. Backgrounded
-  # by --guarded, `$$` in this subshell is the GUARDED shell's pid; run
-  # standalone it is our own, so the loop is unbounded exactly when it should
-  # be. Without this a SIGKILLed --guarded left a watchdog polling forever,
-  # ready to SIGKILL compiles belonging to whatever ran next — a killed run
-  # sabotaging its successor, which is the same failure as the orphaned
-  # compiles this ticket is about, one process up.
-  local owner="$$"
-  while true; do
-    if ! kill -0 "$owner" 2>/dev/null; then
-      printf '%s STOP owner %s gone — watchdog exiting\n' "$(date +%T)" "$owner" >> "$logf"
-      rm -f "$dir/pid"
-      exit 0
-    fi
-    local avail
-    avail="$(free -m 2>/dev/null | awk '/^Mem:/{print $7}')"
-    if [ -n "$avail" ] && [ "$avail" -lt "$floor" ]; then
-      printf '%s TRIP avail=%sMB < %sMB — SIGKILL %s\n' \
-        "$(date +%T)" "$avail" "$floor" "${HEAVY_PROCS// //}" >> "$logf"
-      # `pkill -x` matches the process NAME, never the command line, so it
-      # cannot match the shell running it (t-ce5t hazard (2)). The name list
-      # is shared with --stray and the run reaper — one definition.
-      local hp
-      for hp in $HEAVY_PROCS; do pkill -9 -x "$hp" 2>/dev/null; done
-    fi
-    sleep 0.4
-  done
-}
-
-# The RECOMMENDED way to run ANY heavy build/test on the small box: wrap it
-# in the watchdog, guaranteed torn down when the command finishes (or is
-# interrupted). It pins AVRA_TEST_JOBS=1, the small in-process test-thread
-# setting. Build/test/diff process fan-out is instead admitted by the shared
-# resource controller from the live platform snapshot. Returns the command's
-# OWN exit status; on a non-zero exit it points at the trip log so an OOM kill
-# is unambiguous.
-#
-# Usage: --guarded [FLOOR_MB] -- <command> [args...]
-#   diagnose.sh --guarded 5500 -- make diff-test
-#   diagnose.sh --guarded -- ./build/bs2 test tests/foo_test.av
-mode_guarded() {
-  local floor=3500
-  # An optional leading FLOOR before the mandatory `--` separator.
-  if [ "${1:-}" != "--" ] && [ $# -ge 1 ]; then floor="$1"; shift; fi
-  [ "${1:-}" = "--" ] && shift
-  [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
-  # This remains a correctness/debug setting for test code running threads
-  # within an already-admitted shard. Build and diff width are intentionally
-  # not overridden here.
-  export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
-  # t-ce5t: the run lifecycle installs the teardown traps (watchdog included,
-  # via RUN_AUX_PIDS) AND the orphan reaping the bespoke trap never did — the
-  # watchdog was reaped, the 4.4GB compiles it was watching were not.
-  run_begin guarded
-  mode_memguard "$floor" &
-  local guard=$!
-  RUN_AUX_PIDS="$RUN_AUX_PIDS $guard"
-  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS; process pools use resource admission — running: $*"
-  "$@"
-  local rc=$?
-  run_end
-  trap - EXIT INT TERM HUP
-  if [ "$rc" -ne 0 ]; then
-    err "[guarded] command exited $rc — if OOM-killed, build/memguard/log has the TRIP line"
-  else
-    ok "[guarded] command completed cleanly (no container OOM-restart)"
-  fi
-  return $rc
 }
 
 # pdme.7: CONCURRENCY fuzz — the parallel sibling of --cache-fuzz.
@@ -4117,11 +3693,8 @@ main() {
     --slot-exec)          mode_slot_exec "$@" ;;
     --slot-fuzz)          mode_slot_fuzz "$@" ;;
     --cache-fuzz)         mode_cache_fuzz "$@" ;;
-    --sweep)              mode_sweep "$@" ;;
     --test-input-hash)    test_input_hash "$@" ;;
     --print-compile-slots) _default_compile_slots ;;
-    --memguard)           mode_memguard "$@" ;;
-    --guarded)            mode_guarded "$@" ;;
     --stray)              mode_stray "$@" ;;
     --prune-tmp-scratch)  mode_prune_tmp_scratch "$@" ;;
     --cache-gc)           mode_cache_gc "$@" ;;
@@ -5015,6 +4588,11 @@ mode_check_bootstrap_window() {
 #                           and the named work's conservative first-run seed;
 #                           cgroup and macOS limits share this one boundary.
 #   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
+#
+# Memory safety needs no knob (t-kdyj): each compile self-bounds via the
+# runtime's compile slot gate under pressure. DIFF_TEST_JOBS survives only
+# as an internal hook (corpus fan-out width; 1 also serializes the two
+# selfhost compiles) — not needed for a normal run on any box.
 
 DIFFTEST_DIR="$BUILD_DIR/difftest"
 

@@ -1,0 +1,86 @@
+// WHY: the lib-build cache fingerprint folds AVRA_LIB_PKG_ROOT (snw0 —
+// a wrong root caches a wrong-shaped artifact, so the root MUST key the
+// slot). The suite prebuild (std_prebuild_cmd) exports the root derived
+// from the package dir, but a BARE `bs2 build --lib` used to run with no
+// root at all — so its key could never match the prebuild's slot, and
+// every fixture that shelled one out on packages/std-avrac recompiled
+// the whole package cold mid-suite (~7.8GB), which F4014'd on CI when
+// box pressure coincided (the t-kdyj.2 rc-strict red).
+//
+// The fix: run_build_command self-derives the root for a lib build when
+// the env carries none, accepting the path-derived root ONLY when it
+// agrees with the manifest-derived one (`name.replace("/", "::")`) — a
+// stray `std-` segment elsewhere in an absolute path must never mis-root
+// a package. These specs pin both halves against a throwaway package:
+//   1. bare-after-rooted is a cache HIT (one slot, by construction)
+//   2. a path/manifest DISAGREEMENT leaves the bare build rootless
+//      (the honest "library root changed" miss, not a silent adoption)
+//
+// Raw avra_shell_exec probes only — never the fixture-stdout cache.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_getpid,
+}
+
+/// Materialise a throwaway [lib] package at `<base>/packages/<dir_name>/`
+/// — the `packages/std-*` shape the deriver and the prebuild recognise.
+/// The manifest [package].name is caller-chosen so specs can make the
+/// path-derived and manifest-derived roots agree or disagree at will.
+fn bareroot_mk_pkg(slug: string, dir_name: string, pkg_name: string) -> string {
+    let base = "/tmp/avra_bareroot_${slug}_${string(avra_getpid())}"
+    let dir = "${base}/packages/${dir_name}"
+    let _ = avra_shell_exec("rm -rf '${base}' && mkdir -p '${dir}/src'")
+    let _ = avra_selfhost_write_file("${dir}/avra.toml",
+        "[package]\nname = \"${pkg_name}\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"${dir_name}\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av",
+        "export fn bareroot_${slug}() -> int { 40 + 2 }\n")
+    dir
+}
+
+/// `bs2 build --lib --emit_metadata --explain` inside `dir`, with the
+/// root either set explicitly (the prebuild shape) or absent (the bare
+/// fixture shape, `root == ""`). The env strip keeps the probe hermetic
+/// under the test runner's metadata-mode environment.
+fn bareroot_build(dir: string, root: string) -> string {
+    let repo = avra_shell_exec("pwd")
+    let bs2 = "${repo}/build/bs2"
+    let root_env = if root == "" { "-u AVRA_LIB_PKG_ROOT" } else { "AVRA_LIB_PKG_ROOT='${root}'" }
+    let log_path = "${dir}/build_probe.log"
+    let _ = avra_shell_exec_status(
+        "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER ${root_env} '${bs2}' build --lib --emit_metadata --explain > '${log_path}' 2>&1")
+    avra_selfhost_read_file(log_path)
+}
+
+fn bareroot_cleanup(dir: string) {
+    // dir is <base>/packages/<name>; remove the whole throwaway base.
+    let _ = avra_shell_exec("rm -rf \"$(dirname \"$(dirname '${dir}')\")\"")
+}
+
+spec "bare `bs2 build --lib` derives the prebuild's AVRA_LIB_PKG_ROOT" {
+    then "bare-after-rooted is a cache HIT — one slot for both shapes" {
+        // Path root @std::tiny == manifest root @std::tiny → agreement.
+        let dir = bareroot_mk_pkg("agree", "std-tiny", "@std/tiny")
+        let rooted_log = bareroot_build(dir, "@std::tiny")
+        let bare_log = bareroot_build(dir, "")
+        bareroot_cleanup(dir)
+        // Rooted cold build compiles; the bare rerun must land on the
+        // SAME fingerprint — a cache hit, never a root-change miss.
+        rooted_log.contains("rebuild ")
+            && bare_log.contains("cached ")
+            && !bare_log.contains("library root changed")
+    }
+    then "a path/manifest disagreement leaves the bare build rootless" {
+        // Path derives @std::tiny2 but the manifest says @other/thing —
+        // the derivation must NOT adopt the path root, so a bare build
+        // after an explicitly path-rooted one is the honest root-change
+        // miss (root '' vs '@std::tiny2'), not a silent hit.
+        let dir = bareroot_mk_pkg("disagree", "std-tiny2", "@other/thing")
+        let rooted_log = bareroot_build(dir, "@std::tiny2")
+        let bare_log = bareroot_build(dir, "")
+        bareroot_cleanup(dir)
+        rooted_log.contains("rebuild ")
+            && bare_log.contains("library root changed")
+    }
+}

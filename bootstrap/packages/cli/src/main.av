@@ -92,7 +92,7 @@ use @std.avrac.build.{
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects,
     BuildRequest, BuildReport, build_request, build_ir, build_executable, link_unit_executable,
-    build_report_empty, unit_name_for, BuildOutput, DepTally, no_deps,
+    build_report_empty, unit_name_for, BuildOutput, DepTally, no_deps, is_library_target,
     resolve_compiler_path, runtime_objects_dir, remove_entry_ll_if_unchanged,
     cache_summary_line, build_event_json, count_path_deps, write_timings_html,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
@@ -771,7 +771,13 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -
         let dep = deps[i]
         if dep.path != "" {
             let lib_root = derive_lib_root_for(dep.path)
-            let env_prefix = if lib_root == "" { "" } else { "AVRA_LIB_PKG_ROOT='${lib_root}' " }
+            // ALWAYS explicit — '' for non-std deps: the outer lib build
+            // runs with its own AVRA_LIB_PKG_ROOT in the process env
+            // (derived in run_build_command), and an inherited outer root
+            // would mis-bucket a non-std dep's fns exactly as described
+            // above. An explicit empty root lets the dep's own
+            // run_build_command derive what is right for ITS package.
+            let env_prefix = "AVRA_LIB_PKG_ROOT='${lib_root}' "
             // --explain so the log carries the hit/miss line + miss
             // attribution the parent's tally reads back (pdme.5).
             let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
@@ -1528,6 +1534,34 @@ fn run_build_command(args: BuildArgs) -> BuildReport {
     maybe_auto_gc(project_dir)
     let manifest = load_manifest("${project_dir}/")
     let compiler_path = resolve_compiler_path(project_dir)
+
+    // A BARE `bs2 build --lib` must run under the same AVRA_LIB_PKG_ROOT
+    // the suite prebuild exports for this package (std_prebuild_cmd /
+    // build_pre_dep_cmds derive it from the package dir), or its cache
+    // fingerprint can never match the prebuild's slot — the root is a
+    // fingerprint axis. Every fixture that shells a bare lib build on
+    // packages/std-avrac (std_avrac_lib_build, cli_metadata,
+    // metadata_walker_method_dispatch) recompiled the whole package cold
+    // mid-suite (~7.8GB) on a guaranteed miss, which F4014'd on CI the
+    // moment box pressure coincided. Normalising the process env HERE —
+    // the CLI build entrypoint, before the facade's build_ir reads it and
+    // before pre-dep children inherit it — makes bare and rooted
+    // invocations share one slot, and the child compile emits the same
+    // pkg-scoped symbols. The facade only READS env; the CLI owns it.
+    //
+    // An explicit caller root always wins. The path-derived root is
+    // accepted only when it AGREES with the manifest-derived one (the
+    // --module_path mapping): a `std-` segment elsewhere in an absolute
+    // path (e.g. a home dir) can otherwise mis-root a non-std package.
+    // Non-std packages derive "" and stay whole-program.
+    if is_library_target(manifest, args.lib) && manifest.found
+        && avra_process_env_get("AVRA_LIB_PKG_ROOT") == "" {
+        let path_root = derive_lib_root_for(project_dir)
+        let manifest_root = manifest.name.replace("/", "::")
+        if path_root != "" && path_root == manifest_root {
+            avra_process_env_set("AVRA_LIB_PKG_ROOT", path_root)
+        }
+    }
 
     // 2f54: pre-build each [dependencies] path-dep as a lib BEFORE the
     // root build so the dep's .meta.bin and cache entries land first. The
@@ -3071,17 +3105,40 @@ fn retry_jetsam_killed(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
 // Walk each shard's log file, print it verbatim (preserving per-shard
 // output the user expects), parse the `[shard-summary]` line for the
 // aggregate counts, and render the unified pass/fail summary.
+//
+// t-kdyj.2 (folding t-jpjn's sweep property in): a red run ends with the
+// LIST of failing shards, not just a count — the per-shard logs scroll
+// past, and a bare tally sends the reader grepping for what actually
+// broke. Each entry names the shard, classifies the failure (spec fails
+// vs crashes vs the shard itself failing to compile/run), and points at
+// the full log.
 fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
-    let zero = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0, crashes: 0 }
-    let totals = list_fold(shards, zero, (acc: Totals, s: Shard) -> {
+    mut totals = Totals { pass: 0, fail: 0, total: 0, shard_failures: 0, crashes: 0 }
+    mut red: List<string> = []
+    for s in shards {
         if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
-            return acc with { shard_failures: acc.shard_failures + 1 }
+            totals = totals with { shard_failures: totals.shard_failures + 1 }
+            red.push("${s.slug} — no log produced (compile/link failed or killed)")
+            continue
         }
         let out = s.read_log()
         println(out)
-        acc.merge(out, s.summary(out))
-    })
+        let parsed = s.summary(out)
+        let prior_shard_failures = totals.shard_failures
+        totals = totals.merge(out, parsed)
+        if totals.shard_failures > prior_shard_failures {
+            red.push("${s.slug} — shard failed to compile/run (log: ${s.log_path})")
+        } else if parsed.fail > 0 || parsed.crashes > 0 {
+            red.push("${s.slug} — ${string(parsed.fail)} failed, ${string(parsed.crashes)} crashed (log: ${s.log_path})")
+        }
+    }
+    if red.length > 0 {
+        println("[per-file] failing shards:")
+        for line in red {
+            println("  ${line}")
+        }
+    }
     render_test_summary(totals, avra_uptime_ms() - t_start)
 }
 
@@ -3112,6 +3169,42 @@ fn format_elapsed_seconds(elapsed_ms: int) -> string {
     let s = elapsed_ms / 1000
     let tenths = (elapsed_ms / 100) - (s * 10)
     "${string(s)}.${string(tenths)}s"
+}
+
+// t-kdyj.2: the commit-gate marker, folded in from the deleted
+// `diagnose.sh --sweep` (t-8rsg property). A green FULL suite run IS the
+// pre-commit hook's suite evidence — record it where the hook looks
+// (build/.tests_verified) so the hook skips its duplicate pass. The hash
+// definition stays in diagnose.sh (`--test-input-hash`, one definition
+// shared with the hook); a repo without that script (any non-bootstrap
+// project) simply never writes a marker. Scoped runs (--filter or a path
+// arg) prove only part of the tree and never write it.
+fn commit_gate_start_hash(project_dir: string, args: TestArgs) -> string {
+    if args.filter != "" || args.path_filter != "" { return "" }
+    if avra_selfhost_file_exists("${project_dir}/scripts/diagnose.sh") != 1 { return "" }
+    suite_input_hash(project_dir)
+}
+
+/// The hook-parity suite-input hash (bs2 + every .av + runtime + seed +
+/// diagnose.sh + Makefile). Empty when the script is missing or errors.
+fn suite_input_hash(project_dir: string) -> string {
+    avra_shell_exec("cd '${project_dir}' && bash scripts/diagnose.sh --test-input-hash 2>/dev/null").trim()
+}
+
+/// 0o8i drift guard, same as the hook's: re-hash immediately before
+/// writing — a mid-run edit means this green no longer describes the
+/// current tree, so the next commit must re-run, not skip.
+fn write_commit_gate_marker(project_dir: string, start_hash: string, rc: int) {
+    if start_hash == "" || rc != 0 { return }
+    if suite_input_hash(project_dir) != start_hash {
+        eprintln("[per-file] inputs changed mid-run — commit-gate marker NOT written (the pre-commit hook will re-run the suite)")
+        return
+    }
+    if avra_selfhost_write_file("${project_dir}/build/.tests_verified", "${start_hash}\n") != 1 {
+        eprintln("[per-file] commit-gate marker could NOT be written (the pre-commit hook will re-run the suite)")
+        return
+    }
+    eprintln("[per-file] commit-gate marker written — the pre-commit hook will skip its duplicate suite run")
 }
 
 // Shim around `compile_test_unit`. The heavy work — parse, resolve,
@@ -3194,7 +3287,9 @@ fn run_test_command(args: TestArgs) {
     // cache slot + binary. Coverage stays on the bundled path until
     // covmap merging across shards lands.
     if args.per_file && !args.coverage {
+        let gate_hash = commit_gate_start_hash(project_dir, args)
         let rc = run_per_file_test_command(project_dir, accepted_paths, args)
+        write_commit_gate_marker(project_dir, gate_hash, rc)
         avra_process_exit(rc)
         return
     }
