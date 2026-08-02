@@ -1434,10 +1434,16 @@ fn slug_of_path(p: string) -> string {
 // already newline-free shell units; making the files explicit gives the child
 // pool an ordinary, inspectable hand-off without squeezing command strings
 // through flags or re-implementing scheduling in shell.
-fn write_line_list(path: string, items: List<string>) {
+fn write_line_list(path: string, items: List<string>) -> bool {
     mut body = ""
     for item in items { body = body + item + "\n" }
-    let _ = avra_selfhost_write_file(path, body)
+    // The result is the CALLER's business: these files are the spawned
+    // child's only queue input, and avra_selfhost_write_file returns 0 on
+    // failure. Discarding it let a failed write spawn a child that read a
+    // missing file, got an empty queue, ran it, and exited 0 — so the parent
+    // reported success while the path-dependency pre-build was silently
+    // skipped. (CodeRabbit on #1120.)
+    avra_selfhost_write_file(path, body) == 1
 }
 
 // The TTY renderer needs a foreground process, but the dispatcher must still
@@ -1447,8 +1453,13 @@ fn write_line_list(path: string, items: List<string>) {
 fn spawn_resource_pool_async(cmds: List<string>, slugs: List<string>, marker_dir: string, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string) -> int {
     let commands_path = "${marker_dir}/resource.commands"
     let slugs_path = "${marker_dir}/resource.slugs"
-    write_line_list(commands_path, cmds)
-    write_line_list(slugs_path, slugs)
+    // Fail to the SYNCHRONOUS path (which still holds `cmds` in memory) rather
+    // than spawn a child whose queue we could not stage — both callers already
+    // treat a negative return as "run it synchronously".
+    if !write_line_list(commands_path, cmds) || !write_line_list(slugs_path, slugs) {
+        eprintln("[resources] could not stage the queue hand-off in ${marker_dir} — running synchronously")
+        return 0 - 1
+    }
     let argv = json_string_list([
         "_resource_pool",
         "--commands", commands_path,
