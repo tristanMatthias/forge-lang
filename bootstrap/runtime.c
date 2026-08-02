@@ -41,6 +41,8 @@
 // Needed on EVERY Apple arch for avra_mem_rss_kb's task_info() RSS poll,
 // not just arm64 — so keep it outside the arm64-only ucontext block.
 #include <mach/mach.h>
+#include <sys/sysctl.h>
+#include <dispatch/dispatch.h>
 #endif
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
@@ -5069,6 +5071,328 @@ static int64_t avra_mem_total_kb(void) { return avra_meminfo_kb("MemTotal:"); }
 int64_t avra_mem_available_mb(void) {
     int64_t kb = avra_mem_available_kb();
     return (kb > 0) ? kb / 1024 : -1;
+}
+
+// ── Portable resource snapshot (uzs9.10) ─────────────────────────────
+//
+// Build and test schedulers need one semantic answer — usable memory, CPU
+// capacity, pressure, and scope — rather than platform conditionals. Linux
+// prefers the current cgroup's finite limit and PSI. macOS exposes host VM
+// availability plus the supported libdispatch memory-pressure source. Every
+// function returns -1/0 when a capability is genuinely unavailable; callers
+// must be conservative instead of pretending unlike kernel counters match.
+
+#ifdef __linux__
+static pthread_once_t avra_cgroup_v2_once = PTHREAD_ONCE_INIT;
+static char avra_cgroup_v2_dir[PATH_MAX];
+
+// Find the v2 hierarchy's root and mountpoint from mountinfo. `/sys/fs/cgroup`
+// is common but not guaranteed in containers, so treating it as an API would
+// make the controller silently use host values in exactly the environments
+// where cgroup limits matter most. mountinfo paths are kernel-produced and
+// normally have no escaped whitespace; unsupported escaped paths safely fall
+// back to the usual mountpoint below.
+static int avra_cgroup_v2_mount(char* root, size_t root_cap, char* mount, size_t mount_cap) {
+    int fd = open("/proc/self/mountinfo", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char buf[65536];
+    ssize_t n;
+    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    char* line = buf;
+    while (line && *line) {
+        char* eol = strchr(line, '\n');
+        if (eol) *eol = '\0';
+        if (strstr(line, " - cgroup2 ") != NULL) {
+            char found_root[PATH_MAX];
+            char found_mount[PATH_MAX];
+            // Fields 4 and 5 in mountinfo are the hierarchy root and mount
+            // point. The preceding three fields never contain whitespace.
+            if (sscanf(line, "%*s %*s %*s %1023s %1023s", found_root, found_mount) == 2) {
+                snprintf(root, root_cap, "%s", found_root);
+                snprintf(mount, mount_cap, "%s", found_mount);
+                return 1;
+            }
+        }
+        line = eol ? eol + 1 : NULL;
+    }
+    return 0;
+}
+
+// Locate this process's unified cgroup. Failure simply leaves the resource
+// backend at host scope. This is deliberately a one-time read because
+// admission samples run frequently while dispatching a pool.
+static void avra_cgroup_v2_init(void) {
+    int fd = open("/proc/self/cgroup", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return;
+    char buf[4096];
+    ssize_t n;
+    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return;
+    buf[n] = '\0';
+    const char* p = buf;
+    while (p && *p) {
+        const char* eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) : strlen(p);
+        // Unified hierarchy lines have the exact "0::/path" shape.
+        if (len >= 4 && p[0] == '0' && p[1] == ':' && p[2] == ':') {
+            const char* rel = p + 3;
+            size_t rel_len = len - 3;
+            if (rel_len >= PATH_MAX) return;
+            char rel_path[PATH_MAX];
+            memcpy(rel_path, rel, rel_len);
+            rel_path[rel_len] = '\0';
+            char mount_root[PATH_MAX];
+            char mount_point[PATH_MAX];
+            if (!avra_cgroup_v2_mount(mount_root, sizeof(mount_root), mount_point, sizeof(mount_point))) {
+                snprintf(mount_root, sizeof(mount_root), "/");
+                snprintf(mount_point, sizeof(mount_point), "/sys/fs/cgroup");
+            }
+            const char* suffix = rel_path;
+            size_t root_len = strlen(mount_root);
+            if (root_len > 1) {
+                if (strncmp(rel_path, mount_root, root_len) != 0
+                    || (rel_path[root_len] != '\0' && rel_path[root_len] != '/')) return;
+                suffix = rel_path + root_len;
+            }
+            if (rel_len == 0 || (rel_len == 1 && rel_path[0] == '/')) suffix = "";
+            snprintf(avra_cgroup_v2_dir, sizeof(avra_cgroup_v2_dir), "%s%s", mount_point, suffix);
+            return;
+        }
+        p = eol ? eol + 1 : NULL;
+    }
+}
+
+static ssize_t avra_cgroup_v2_read(const char* name, char* out, size_t cap) {
+    pthread_once(&avra_cgroup_v2_once, avra_cgroup_v2_init);
+    if (avra_cgroup_v2_dir[0] == '\0' || cap < 2) return -1;
+    char path[PATH_MAX];
+    int written = snprintf(path, sizeof(path), "%s/%s", avra_cgroup_v2_dir, name);
+    if (written <= 0 || (size_t)written >= sizeof(path)) return -1;
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    ssize_t n;
+    do { n = read(fd, out, cap - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return -1;
+    out[n] = '\0';
+    return n;
+}
+
+// A cgroup value expressed in bytes. "max" and malformed values are unknown.
+static int64_t avra_cgroup_v2_bytes(const char* name) {
+    char buf[128];
+    if (avra_cgroup_v2_read(name, buf, sizeof(buf)) < 0) return 0;
+    const char* p = buf;
+    if (!(*p >= '0' && *p <= '9')) return 0;
+    int64_t out = 0;
+    while (*p >= '0' && *p <= '9') {
+        if (out > INT64_MAX / 10) return 0;
+        out = out * 10 + (*p - '0');
+        p++;
+    }
+    return out;
+}
+
+static int64_t avra_cgroup_v2_memory_limit_kb(void) {
+    int64_t bytes = avra_cgroup_v2_bytes("memory.max");
+    // Treat a value too large to be a practical machine limit as unlimited.
+    if (bytes <= 0 || bytes > INT64_MAX / 2) return 0;
+    return bytes / 1024;
+}
+
+static int64_t avra_cgroup_v2_memory_current_kb(void) {
+    int64_t bytes = avra_cgroup_v2_bytes("memory.current");
+    return bytes > 0 ? bytes / 1024 : 0;
+}
+
+// Parse an avg10 PSI percentage into hundredths of a percent. The caller names
+// either "some avg10=" or "full avg10="; -1 means absent/malformed.
+static int avra_psi_avg10_bps(const char* body, const char* key) {
+    const char* p = strstr(body, key);
+    if (!p) return -1;
+    p += strlen(key);
+    if (!(*p >= '0' && *p <= '9')) return -1;
+    int whole = 0;
+    while (*p >= '0' && *p <= '9') { whole = whole * 10 + (*p - '0'); p++; }
+    int fraction = 0;
+    if (*p == '.') {
+        p++;
+        if (*p >= '0' && *p <= '9') { fraction = (*p - '0') * 10; p++; }
+        if (*p >= '0' && *p <= '9') { fraction += *p - '0'; }
+    }
+    return whole * 100 + fraction;
+}
+
+static int avra_linux_pressure_level(void) {
+    char buf[512];
+    // Per-cgroup PSI is the right signal in CI. Host PSI remains a useful
+    // fallback on older/non-delegated cgroup installations.
+    ssize_t n = avra_cgroup_v2_read("memory.pressure", buf, sizeof(buf));
+    if (n < 0) {
+        int fd = open("/proc/pressure/memory", O_RDONLY | O_CLOEXEC);
+        if (fd < 0) return 0;
+        do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+        close(fd);
+        if (n <= 0) return 0;
+        buf[n] = '\0';
+    }
+    int full = avra_psi_avg10_bps(buf, "full avg10=");
+    int some = avra_psi_avg10_bps(buf, "some avg10=");
+    if (full < 0 && some < 0) return 0;
+    // Full stalls mean every runnable task is blocked; even 0.25% sustained
+    // over ten seconds is a real thrash signal. Partial stalls are earlier
+    // feedback, so 1% asks the controller to stop ramping up.
+    if (full >= 25) return 3;      // critical
+    if (some >= 100) return 2;     // elevated
+    return 1;                      // normal
+}
+
+static int avra_linux_cpu_capacity(void) {
+    long host = sysconf(_SC_NPROCESSORS_ONLN);
+    int cap = host > 0 ? (int)host : 1;
+    char buf[128];
+    if (avra_cgroup_v2_read("cpu.max", buf, sizeof(buf)) < 0) return cap;
+    const char* p = buf;
+    if (strncmp(p, "max", 3) == 0) return cap;
+    char* end = NULL;
+    long long quota = strtoll(p, &end, 10);
+    if (end == p || quota <= 0) return cap;
+    while (*end == ' ' || *end == '\t') end++;
+    char* period_end = NULL;
+    long long period = strtoll(end, &period_end, 10);
+    if (period_end == end || period <= 0) return cap;
+    long long by_quota = (quota + period - 1) / period;
+    if (by_quota < 1) by_quota = 1;
+    return by_quota < cap ? (int)by_quota : cap;
+}
+#endif
+
+#if defined(__APPLE__)
+static dispatch_once_t avra_macos_pressure_once;
+static dispatch_source_t avra_macos_pressure_source;
+static _Atomic int avra_macos_pressure = 0;
+
+static void avra_macos_pressure_handler(void* context) {
+    dispatch_source_t source = (dispatch_source_t)context;
+    unsigned long flags = dispatch_source_get_data(source);
+    if (flags & DISPATCH_MEMORYPRESSURE_CRITICAL) {
+        atomic_store_explicit(&avra_macos_pressure, 3, memory_order_relaxed);
+    } else if (flags & DISPATCH_MEMORYPRESSURE_WARN) {
+        atomic_store_explicit(&avra_macos_pressure, 2, memory_order_relaxed);
+    } else if (flags & DISPATCH_MEMORYPRESSURE_NORMAL) {
+        atomic_store_explicit(&avra_macos_pressure, 1, memory_order_relaxed);
+    }
+}
+
+static void avra_macos_pressure_init(void* unused) {
+    (void)unused;
+    avra_macos_pressure_source = dispatch_source_create(
+        DISPATCH_SOURCE_TYPE_MEMORYPRESSURE,
+        0,
+        DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL,
+        dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    if (!avra_macos_pressure_source) return;
+    dispatch_set_context(avra_macos_pressure_source, avra_macos_pressure_source);
+    dispatch_source_set_event_handler_f(avra_macos_pressure_source, avra_macos_pressure_handler);
+    atomic_store_explicit(&avra_macos_pressure, 1, memory_order_relaxed);
+    dispatch_resume(avra_macos_pressure_source);
+}
+
+static int64_t avra_macos_memory_capacity_kb(void) {
+    uint64_t bytes = 0;
+    size_t size = sizeof(bytes);
+    if (sysctlbyname("hw.memsize", &bytes, &size, NULL, 0) != 0 || bytes == 0) return 0;
+    return (int64_t)(bytes / 1024);
+}
+
+static int64_t avra_macos_memory_available_kb(void) {
+    vm_statistics64_data_t vm;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+                          (host_info64_t)&vm, &count) != KERN_SUCCESS) return 0;
+    vm_size_t page_size = 0;
+    if (host_page_size(mach_host_self(), &page_size) != KERN_SUCCESS || page_size == 0) return 0;
+    // Free, inactive, and speculative pages are reclaimable without treating
+    // compressed/active application memory as ours to spend.
+    uint64_t pages = (uint64_t)vm.free_count + (uint64_t)vm.inactive_count + (uint64_t)vm.speculative_count;
+    return (int64_t)((pages * (uint64_t)page_size) / 1024);
+}
+#endif
+
+// Effective capacity of the current resource scope, in MiB. A finite cgroup
+// cap wins over host RAM; otherwise the host capacity is the honest scope.
+int64_t avra_resource_memory_capacity_mb(void) {
+#ifdef __linux__
+    int64_t cgroup = avra_cgroup_v2_memory_limit_kb();
+    if (cgroup > 0) return cgroup / 1024;
+    int64_t host = avra_mem_total_kb();
+    return host > 0 ? host / 1024 : -1;
+#elif defined(__APPLE__)
+    int64_t host = avra_macos_memory_capacity_kb();
+    return host > 0 ? host / 1024 : -1;
+#else
+    return -1;
+#endif
+}
+
+// Memory the current scope can still spend, in MiB. Under a finite cgroup we
+// take the smaller of cgroup headroom and host reclaimable memory: neither may
+// be exceeded safely. Unknown inputs are ignored rather than treated as zero.
+int64_t avra_resource_memory_available_mb(void) {
+#ifdef __linux__
+    int64_t best = avra_mem_available_kb();
+    int64_t limit = avra_cgroup_v2_memory_limit_kb();
+    int64_t current = avra_cgroup_v2_memory_current_kb();
+    if (limit > 0 && current >= 0) {
+        int64_t cgroup_free = limit - current;
+        if (cgroup_free < 0) cgroup_free = 0;
+        if (best <= 0 || cgroup_free < best) best = cgroup_free;
+    }
+    return best > 0 ? best / 1024 : -1;
+#elif defined(__APPLE__)
+    int64_t host = avra_macos_memory_available_kb();
+    return host > 0 ? host / 1024 : -1;
+#else
+    return -1;
+#endif
+}
+
+int64_t avra_resource_cpu_capacity(void) {
+#ifdef __linux__
+    return avra_linux_cpu_capacity();
+#else
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? n : 1;
+#endif
+}
+
+// 0 unknown, 1 normal, 2 elevated, 3 critical. This is feedback for the
+// controller, never a replacement for its reservation accounting.
+int64_t avra_resource_pressure_level(void) {
+#ifdef __linux__
+    return avra_linux_pressure_level();
+#elif defined(__APPLE__)
+    dispatch_once_f(&avra_macos_pressure_once, NULL, avra_macos_pressure_init);
+    return atomic_load_explicit(&avra_macos_pressure, memory_order_relaxed);
+#else
+    return 0;
+#endif
+}
+
+// 0 unknown, 1 host, 2 finite cgroup.
+int64_t avra_resource_scope_kind(void) {
+#ifdef __linux__
+    if (avra_cgroup_v2_memory_limit_kb() > 0) return 2;
+    return avra_mem_total_kb() > 0 ? 1 : 0;
+#elif defined(__APPLE__)
+    return avra_macos_memory_capacity_kb() > 0 ? 1 : 0;
+#else
+    return 0;
+#endif
 }
 
 // Derive the ceiling (KiB, 0 = none) from a MemAvailable / MemTotal pair.

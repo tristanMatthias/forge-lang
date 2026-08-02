@@ -100,59 +100,9 @@ jobs:
           # the still-open parallel-interleaving flakes (uzs9.2 / uzs9.4) and
           # must move in BOTH gates together (a correctness call, see hama).
           AVRA_TEST_JOBS: "1"
-          # Shard-compile fan-out = the runner's 4 vCPUs. #867 raised this to 6
-          # on the theory that the metadata fast-path (~1.5GB/shard) left cores
-          # idle, but measured it INERT — because the heavy whole-program
-          # fixtures still in the suite then (~5GB/shard) kept the memory-aware
-          # governor (compute_shard_jobs, main.av) clamping effective
-          # concurrency low regardless of the nominal cap. y9y4.19 moved the
-          # LAST of those onto the fast-path, so #867's premise now holds:
-          # per_shard is uniformly ~1.8GB, the governor sizes 4 shards, and the
-          # nominal cap is binding again (measured: `tests` dir cold 208s@2 ->
-          # 112s@4, ~1.86x, min-avail 2.7GB). Bigger runner (hama) /
-          # self-tuning governor (x2hu) remain the ceiling.
-          #
-          # LOWERED 4 -> 3 (t-h6xv). "The governor clamps by live MemAvailable,
-          # so 4 can only ever be LOWERED, never OOM" did not hold: the clamp is
-          # (avail - 6144) / 1800, which on this runner's ~13.7GB yields 4.2 —
-          # so the cap bound and the clamp never engaged. That budgets
-          # 4*1800 + 6144 = 13.2GB against ~13.75GB: ~500MB of margin, and the
-          # min-avail 2.7GB above was already measured INSIDE it. The suite grew
-          # into that margin and the runner started dying mid-suite ("received a
-          # shutdown signal", ~90-120s in) on 2026-07-28 — three consecutive
-          # integration trains red from 20:05Z, and every seed-train-verify on a
-          # base after them. rc-strict runs the SAME suite on the SAME runner at
-          # AVRA_JOBS=2 and stayed green throughout, which is what isolates the
-          # fan-out rather than any one merge.
-          #
-          # 3 was expected to restore real headroom (3*1800 + 6144 = 11.5GB
-          # against ~13.9GB) at ~1.4x rather than ~1.86x speedup. IT DID NOT
-          # HOLD EITHER. It passed twice — #1060's own verify (9m16s) and
-          # #1048's (9m10s) — and then #1065 died with the identical signature:
-          #
-          #   fixed point holds — bs2 and bs3 emit byte-identical 1099338-line IR
-          #   seed-train verify: running the spec suite
-          #   [per-file] shard concurrency: jobs=3 (metadata fast-path, MemAvailable ~13957MB)
-          #   ##[error]The runner has received a shutdown signal.
-          #
-          # ~4 minutes into the suite, AFTER the fixed point held, on a PR whose
-          # cold diff-test passed — so the compiler was fine and the suite is
-          # simply at the edge at 3. "Passes twice, then dies" is what being
-          # inside the noise band looks like, not a flake to re-run.
-          #
-          # LOWERED 3 -> 2 (t-h6xv). That budgets 2*1800 + 6144 = 9.7GB against
-          # ~13.9GB and matches rc-strict, which runs the SAME suite on the SAME
-          # runner class at 2 and has stayed green throughout — the comparison
-          # that isolated the fan-out in the first place now sets the value.
-          #
-          # This is the SECOND time a headroom estimate derived from
-          # per_shard_mb = 1800 has been wrong in the same direction, which is
-          # itself evidence about the number rather than about the ceiling. The
-          # real fix is still re-measuring it (2026-07-21 vintage; the number
-          # that made the clamp inert), plus making the clamp bite independently
-          # of the ceiling so it cannot go silently inert again. Both belong in
-          # the governor with a clean measurement, not in a CI-unblocking change.
-          AVRA_JOBS: "2"
+          # The resource controller owns shard width. It keys its learned
+          # model by workload, execution mode, toolchain, and plan shape; CI
+          # deliberately supplies no memory-concurrency override.
         run: bash bootstrap/scripts/diagnose.sh --seed-train-verify
 
   # Publish the PASS fingerprint as a commit STATUS on the PR head — in an

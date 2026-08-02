@@ -1,0 +1,81 @@
+// WHY: Linux and macOS have different raw memory APIs. Consumers must not
+// learn those differences or compare incomparable values like Linux
+// MemAvailable and macOS free pages. The runtime translates each platform to
+// this small semantic contract; unknown capability is explicit and the
+// controller can take a conservative path.
+
+// Kept here during the bootstrap window: the pinned seed's baked metadata
+// decoder cannot safely consume a core runtime-surface expansion until the
+// train cycles. This module is still the ONE public Avra resource surface;
+// moving these declarations into core/runtime.av is a mechanical follow-up
+// after that cycle, not a second platform API.
+extern fn avra_resource_memory_capacity_mb() -> int
+extern fn avra_resource_memory_available_mb() -> int
+extern fn avra_resource_cpu_capacity() -> int
+extern fn avra_resource_pressure_level() -> int
+extern fn avra_resource_scope_kind() -> int
+
+/// Cross-platform resource state for the current process's enclosing scope.
+/// All sizes are MiB; <=0 means unavailable rather than a fabricated zero.
+/// Pressure codes: 0 unknown, 1 normal, 2 elevated, 3 critical. Scope codes:
+/// 0 unknown, 1 host, 2 cgroup. Scalars keep this bootstrap-safe while the
+/// public module owns the labels and no caller observes platform raw values.
+export type ResourceSnapshot = {
+    capacity_mb: int,
+    available_mb: int,
+    cpu_capacity: int,
+    pressure: int,
+    scope: int,
+}
+
+/// The one native probe every scheduler uses. Linux prefers a finite cgroup
+/// limit and cgroup PSI; macOS reports host VM capacity plus its memory
+/// pressure source. The policy layer never opens /proc or Mach directly.
+export fn resource_snapshot() -> ResourceSnapshot {
+    ResourceSnapshot {
+        capacity_mb: avra_resource_memory_capacity_mb(),
+        available_mb: avra_resource_memory_available_mb(),
+        cpu_capacity: avra_resource_cpu_capacity(),
+        pressure: avra_resource_pressure_level(),
+        scope: avra_resource_scope_kind(),
+    }
+}
+
+/// Pure constructor for controller specs. It keeps test pressure traces out
+/// of the public process environment and makes every scheduler branch
+/// deterministic on every host OS.
+export fn resource_snapshot_for_test(capacity_mb: int, available_mb: int, cpu_capacity: int, pressure: int, scope: int) -> ResourceSnapshot {
+    ResourceSnapshot {
+        capacity_mb: capacity_mb,
+        available_mb: available_mb,
+        cpu_capacity: cpu_capacity,
+        pressure: pressure,
+        scope: scope,
+    }
+}
+
+/// Apply the enclosing scope's CPU limit to a caller's own work ceiling.
+/// This is deliberately separate from memory admission: CPU capacity provides
+/// a fast, stable upper bound, while the controller decides how much of that
+/// width can be admitted under live memory availability and pressure.
+export fn resource_width_cap(requested: int, snapshot: ResourceSnapshot) -> int {
+    let ceiling = if requested < 1 { 1 } else { requested }
+    if snapshot.cpu_capacity > 0 && snapshot.cpu_capacity < ceiling {
+        snapshot.cpu_capacity
+    } else {
+        ceiling
+    }
+}
+
+export fn resource_pressure_label(pressure: int) -> string {
+    if pressure == 1 { return "normal" }
+    if pressure == 2 { return "elevated" }
+    if pressure == 3 { return "critical" }
+    "unknown"
+}
+
+export fn resource_scope_label(scope: int) -> string {
+    if scope == 1 { return "host" }
+    if scope == 2 { return "cgroup" }
+    "unknown"
+}

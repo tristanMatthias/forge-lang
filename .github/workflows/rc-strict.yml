@@ -53,21 +53,9 @@ jobs:
 
       - name: Spec suite under AVRA_RC_STRICT=1
         env:
-          # - AVRA_JOBS=2 bounds the shard-COMPILE fan-out. This gate MUST
-          #   stay at 2, unlike the non-strict suite gates: under
-          #   AVRA_RC_STRICT the runtime disables the bump-region allocator
-          #   and quarantines freed RC payloads instead of reusing them, so
-          #   every shard's resident footprint roughly DOUBLES vs the
-          #   ~1.8GB non-strict metadata peak the governor was tuned on.
-          #   6f226e13 raised this 2→4 across all suite gates on the
-          #   strength of a NON-strict measurement (`tests` dir cold,
-          #   min-avail 2.7GB, no OOM) — valid for seed-train-verify /
-          #   seed-train, but under strict the governor's per-shard estimate
-          #   is ~half the real footprint, so it sized jobs=3 and the runner
-          #   was OOM-killed mid-suite (the bogus "runner received a
-          #   shutdown signal"). At 2 the strict suite sizes jobs=2 — the
-          #   value that ran green for months. (The other gates keep 4;
-          #   their measurement holds because they don't run strict.)
+          # The controller identifies RC strict as a distinct allocation
+          # profile, starts with its conservative memory seed, and adapts to
+          # the detected capacity and pressure. CI supplies no width override.
           # - AVRA_TEST_JOBS=1 serializes RUN-time unit workers. This is the
           #   FLAKE-PARITY knob (in-shard test interleaving), NOT a memory or
           #   speed lever — it is pinned to match seed-train.yml so PR CI
@@ -75,6 +63,5 @@ jobs:
           #   Raising it surfaces the still-open parallel-interleaving flakes
           #   (uzs9.2 / uzs9.4) and must move in BOTH gates together; it is a
           #   correctness investigation, not a speed knob (see hama).
-          AVRA_JOBS: "2"
           AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite

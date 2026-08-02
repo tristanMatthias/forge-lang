@@ -1,8 +1,8 @@
-// t-kdyj.1 — memory-aware admission control (@std.avrac.build.admission).
+// t-kdyj.1 — memory-aware admission control (@std.avrac.resources).
 //
 // WHY THIS EXISTS: the shard pool used to run at a fixed width picked by an
-// operator (AVRA_JOBS), with an external watchdog SIGKILLing the run when the
-// guess was wrong. The governor moves that decision inside the pool: admit
+// operator/CI width guess, with an external watchdog SIGKILLing the run when
+// the guess was wrong. The controller moves that decision inside the pool: admit
 // the next unit only while it fits a byte budget, serialise as the graceful
 // floor, ratchet the estimate from measurement, never kill. These specs pin
 // the decision MATH at the numbers that actually broke (a single degraded
@@ -16,8 +16,13 @@
 // @@fixture-stateful@@ — the pool specs spawn real subprocesses; a transient
 // hiccup must re-probe, not freeze as FAIL.
 
-use @std.avrac.build.{governor_for, governor_width_only, pool_run_admitted,
-                      admission_prior_path, read_admission_prior, persist_admission_prior}
+use @std.avrac.build.{pool_run_admitted}
+use @std.avrac.resources.{governor_for, governor_width_only,
+                          admission_prior_path, read_admission_prior, persist_admission_prior,
+                          resource_profile_with_mode, resource_profile_key,
+                          resource_profile_seed_mb, resource_snapshot_for_test,
+                          resource_controller_for_snapshot}
+use @std.avrac.resources.{resource_snapshot, resource_width_cap}
 
 spec "admission budget: growth regime stacks unrealized commitment" {
     given "a fresh governor (est 500MB, reserve 100MB, baseline 2000MB)" {
@@ -252,13 +257,59 @@ spec "admission summary reports the run's decisions" {
             let s = gov.summary()
             s.contains("peak width 1/4")
                 && s.contains("~500MB -> ~700MB (corrected)")
-                && s.contains("1 deferral(s)")
+                && s.contains("1 budget deferral(s)")
         }
         then "an uneventful run reports a plain estimate" {
             let gov = governor_for(4, 500, 100, 100000)
             let _ = gov.try_admit(100000, 0)
             let s = gov.summary()
             s.contains("est ~500MB,") && !s.contains("corrected")
+        }
+    }
+}
+
+spec "resources: execution profiles and live pressure stay separate" {
+    given "the same test-shard plan under normal and RC-strict allocators" {
+        then "strict has an independent identity and conservative seed" {
+            let normal = resource_profile_with_mode("test-shard", "normal", "toolchain-a", "batch=8")
+            let strict = resource_profile_with_mode("test-shard", "rc-strict", "toolchain-a", "batch=8")
+            resource_profile_key(normal) != resource_profile_key(strict)
+                && resource_profile_seed_mb(normal, 1800) == 1800
+                && resource_profile_seed_mb(strict, 1800) == 3600
+        }
+        then "the CPU scope is a shared ceiling before memory admission" {
+            let two_cpus = resource_snapshot_for_test(16000, 12000, 2, 1, 2)
+            let profile = resource_profile_with_mode("test-shard", "normal", "toolchain-a", "batch=8")
+            resource_width_cap(8, two_cpus) == 2
+                && resource_width_cap(1, two_cpus) == 1
+                && resource_width_cap(0, two_cpus) == 1
+                && resource_controller_for_snapshot(8, profile, 1800, 1000, two_cpus).width_cap == 2
+        }
+    }
+    given "a live critical-pressure snapshot" {
+        then "the controller holds new work but retains the serial floor" {
+            let gov = governor_for(4, 500, 100, 2000)
+            let critical = resource_snapshot_for_test(4000, 2000, 4, 3, 1)
+            !gov.try_admit_snapshot(critical, 1)
+                && gov.pressure_deferrals == 1
+                && gov.try_admit_snapshot(critical, 0)
+                && gov.peak_width == 1
+        }
+        then "elevated pressure never ramps beyond its reached width" {
+            let gov = governor_for(4, 500, 100, 2000)
+            let normal = resource_snapshot_for_test(4000, 2000, 4, 1, 1)
+            let elevated = resource_snapshot_for_test(4000, 2000, 4, 2, 1)
+            let first = gov.try_admit_snapshot(normal, 0)
+            !gov.try_admit_snapshot(elevated, 1)
+                && first && gov.pressure_deferrals == 1
+        }
+    }
+    given "the native platform snapshot" {
+        then "it exposes only valid portable codes" {
+            let live = resource_snapshot()
+            live.pressure >= 0 && live.pressure <= 3
+                && live.scope >= 0 && live.scope <= 2
+                && live.cpu_capacity >= 1
         }
     }
 }
