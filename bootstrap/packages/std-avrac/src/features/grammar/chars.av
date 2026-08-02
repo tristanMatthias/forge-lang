@@ -31,3 +31,124 @@ export fn is_ident_start_code(c: int) -> bool {
 export fn is_ident_cont_code(c: int) -> bool {
     is_ident_start_code(c) || is_digit_code(c)
 }
+
+// ── Raw-source lookahead cores (SHARED: hand parser ↔ grammar `@peek`) ──
+//
+// WHY these live here rather than as `Parser` methods: the component
+// config-pair disambiguation (`key value` vs a nested block vs the end of the
+// pairs) reads RAW SOURCE, not tokens — and when that construct goes native
+// the grammar engine must reach the IDENTICAL verdict. A token-level
+// re-derivation is NOT equivalent, in four separate ways:
+//
+//   1. the scan skips space/tab/CR/LF ONLY, never comments, so
+//      `key /* c */ "v"` is not a string-valued pair (a token peek, which
+//      never sees comments, would say it is);
+//   2. the keyword test is a PREFIX match, not a word-boundary one, so
+//      `key trueish` matches `true`;
+//   3. the number test looks at the first BYTE, so `key -5` is not a
+//      number-valued pair;
+//   4. the string test looks for a literal `"`, so a raw string `key r"s"`
+//      is not a string-valued pair.
+//
+// Every one of those is load-bearing behaviour that a careful re-reading
+// would have to re-derive and keep re-derived. Sharing the core instead makes
+// the two engines identical BY CONSTRUCTION — the discipline `postfix_step`
+// established for the postfix chain, and the reason `tok_starts_word` routes
+// through `is_ident_start_code` rather than re-spelling the scan.
+//
+// Offsets are byte offsets into `src`; `len` is the caller's CACHED source
+// length (the hand parser's `source_len`, the grammar's `src.length`), so no
+// helper pays a per-call strlen — the same reason `Parser.char_at` exists.
+
+/// The byte at `i` as a codepoint, read through the cached-length primitive.
+/// The `code_at` twin for callers that already know the source length.
+export fn code_at_len(src: string, len: int, i: int) -> int {
+    avra_str_char_at_len(src, i, len).char_code()
+}
+
+/// First non-whitespace byte offset at or after `from`, or `len` when the rest
+/// of the source is blank. Whitespace-ONLY by design — see note 1 above.
+export fn src_skip_ws(src: string, len: int, from: int) -> int {
+    mut i = from
+    while i < len {
+        if !is_space_code(code_at_len(src, len, i)) { return i }
+        i = i + 1
+    }
+    i
+}
+
+/// Is the next non-whitespace byte a `"` — a string-literal value? Note 4: the
+/// test is on the literal quote byte, so `r"…"` (leading `r`) is NOT one.
+export fn src_next_nonws_is_quote(src: string, len: int, from: int) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    code_at_len(src, len, i) == 34
+}
+
+/// Is the next non-whitespace byte an ASCII digit? Note 3: the test is on the
+/// BYTE, so a negative literal (`-5`) is not a number value here.
+export fn src_next_nonws_is_digit(src: string, len: int, from: int) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    is_digit_code(code_at_len(src, len, i))
+}
+
+/// Does the source at the next non-whitespace byte START WITH `word`? Note 2:
+/// a PREFIX test, not a word-boundary one — `trueish` matches `true`.
+export fn src_next_nonws_starts_with(src: string, len: int, from: int, word: string) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    if i + word.length <= len {
+        return avra_str_substring_len(src, i, i + word.length, len) == word
+    }
+    false
+}
+
+/// Is the next non-whitespace byte a single `=` (an `==` comparison is not a
+/// config-pair assignment)? A trailing `=` at end-of-source counts.
+export fn src_next_nonws_is_single_eq(src: string, len: int, from: int) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    if code_at_len(src, len, i) != 61 { return false }
+    if i + 1 < len {
+        return code_at_len(src, len, i + 1) != 61
+    }
+    true
+}
+
+/// Is the next non-whitespace byte a `{` — a nested block rather than a value?
+export fn src_next_nonws_is_lbrace(src: string, len: int, from: int) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    code_at_len(src, len, i) == 123
+}
+
+/// Is the next non-whitespace run an identifier word that is NOT one of the
+/// literal keywords `true` / `false` / `null` — i.e. a nested block's name
+/// rather than a config value?
+export fn src_next_nonws_is_value_word(src: string, len: int, from: int) -> bool {
+    let i = src_skip_ws(src, len, from)
+    if i >= len { return false }
+    if !is_ident_start_code(code_at_len(src, len, i)) { return false }
+    mut j = i
+    while j < len {
+        if !is_ident_cont_code(code_at_len(src, len, j)) { break }
+        j = j + 1
+    }
+    let word = avra_str_substring_len(src, i, j, len)
+    if word == "true" || word == "false" || word == "null" { return false }
+    true
+}
+
+/// Does an `ident` at `from` head an `ident() { … }` method shorthand — empty
+/// parens immediately followed by a block? Tells a `run() { … }` component
+/// method apart from a bare `run()` call statement, which has no trailing block.
+export fn src_at_empty_call_block(src: string, len: int, from: int) -> bool {
+    mut i = src_skip_ws(src, len, from)
+    if i >= len || code_at_len(src, len, i) != 40 { return false }
+    i = src_skip_ws(src, len, i + 1)
+    if i >= len || code_at_len(src, len, i) != 41 { return false }
+    i = src_skip_ws(src, len, i + 1)
+    if i >= len { return false }
+    code_at_len(src, len, i) == 123
+}

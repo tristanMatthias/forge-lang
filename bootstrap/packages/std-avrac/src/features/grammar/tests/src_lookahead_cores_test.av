@@ -1,0 +1,138 @@
+// WHY: t-47hc.5.1 slice B1 — pin the RAW-SOURCE lookahead cores that the
+// component config-pair disambiguation runs on.
+//
+// These cores (features/grammar/chars.av) were lifted verbatim out of
+// `impl Parser` so the hand parser and the grammar engine's `@peek` conds can
+// share ONE implementation when the keyword-prefixed instantiation goes native
+// (slice B2). The whole point of sharing them is that four of their behaviours
+// are NOT what a token-level re-derivation would produce — and each is
+// load-bearing for how `component C inst { … }` parses today:
+//
+//   1. comments are NOT skipped (the scan is whitespace-only)
+//   2. the keyword test is a PREFIX match, not a word-boundary one
+//   3. the number test reads the first BYTE, so `-5` is not a number
+//   4. the string test wants a literal `"`, so `r"s"` is not a string
+//
+// A future tidy-up that "fixes" any of these would silently change how real
+// component blocks parse. These specs are the tripwire: they assert the
+// surprising behaviour ON PURPOSE. If one goes red, the core drifted from the
+// hand parser it was extracted from — do not update the expectation without
+// changing `parse_comp_config_pairs` in the same breath.
+use @std.avrac.features.grammar.{src_skip_ws, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
+
+// Each helper mirrors the hand's call site: the source is `key` followed by
+// whatever trails it, and the scan starts one past the staged lexeme (offset 3).
+/// The staged lexeme every case scans past — the `key` in `key <value>`.
+///
+/// A `fn` rather than the obvious `const KEY = "key"` because a module-level
+/// `const` bound to a string is typed `int` at codegen, so `KEY.length` is a
+/// hard error (t-8xte). Revert this to a plain `const` when that lands.
+fn key() -> string { "key" }
+
+fn is_quote(rest: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_is_quote(src, src.length, key().length)
+}
+
+fn is_digit(rest: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_is_digit(src, src.length, key().length)
+}
+
+fn starts_with(rest: string, word: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_starts_with(src, src.length, key().length, word)
+}
+
+fn is_eq(rest: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_is_single_eq(src, src.length, key().length)
+}
+
+fn is_lbrace(rest: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_is_lbrace(src, src.length, key().length)
+}
+
+fn is_value_word(rest: string) -> bool {
+    let src = key() + rest
+    src_next_nonws_is_value_word(src, src.length, key().length)
+}
+
+fn empty_call_block(rest: string) -> bool {
+    let src = key() + rest
+    src_at_empty_call_block(src, src.length, key().length)
+}
+
+spec "t-47hc.5.1: the four divergences a token-level rewrite would lose" {
+    // 1. Comments are not whitespace to these scans. A token peek never sees a
+    // comment at all and would read this as a string-valued config pair.
+    then "a comment before the value hides it — `key /* c */ \"v\"` is not a string" {
+        !is_quote(" /* c */ \"v\"") && !is_quote(" // c\n\"v\"")
+    }
+    then "...and the same for a commented-out number" { !is_digit(" /* c */ 5") }
+
+    // 2. Prefix match, not word boundary: `trueish` begins with `true`.
+    then "`trueish` matches the `true` keyword test by PREFIX" { starts_with(" trueish", "true") }
+    then "`falsey` likewise matches `false`" { starts_with(" falsey", "false") }
+    then "a genuine prefix miss still fails" { !starts_with(" truthy", "true") }
+
+    // 3. First BYTE, so a sign is not part of the number.
+    then "`-5` is NOT a number value — the `-` byte fails the digit test" { !is_digit(" -5") }
+    then "`+5` likewise" { !is_digit(" +5") }
+    then "a bare `5` is" { is_digit(" 5") }
+
+    // 4. Literal quote byte, so a raw string does not read as a string.
+    then "`r\"s\"` is NOT a string value — it leads with `r`" { !is_quote(" r\"s\"") }
+    then "a plain `\"s\"` is" { is_quote(" \"s\"") }
+}
+
+spec "t-47hc.5.1: whitespace handling is exactly space/tab/CR/LF" {
+    then "each whitespace byte is skipped" {
+        is_quote(" \"s\"") && is_quote("\t\"s\"") && is_quote("\n\"s\"") && is_quote("\r\"s\"")
+    }
+    then "runs of mixed whitespace are skipped" { is_quote(" \t\n\r \"s\"") }
+    then "no value at all is a miss, not a crash" { !is_quote("") && !is_quote("   ") }
+    then "src_skip_ws lands on the first non-space byte" {
+        src_skip_ws("  x", 3, 0) == 2 && src_skip_ws("x", 1, 0) == 0
+    }
+    then "src_skip_ws returns the length when the tail is blank" {
+        src_skip_ws("  ", 2, 0) == 2 && src_skip_ws("", 0, 0) == 0
+    }
+}
+
+spec "t-47hc.5.1: `=` distinguishes assignment from comparison" {
+    then "a single `=` is a config assignment" { is_eq(" = 1") && is_eq("=1") }
+    then "`==` is NOT — that is a comparison" { !is_eq(" == 1") }
+    then "a trailing `=` at end of source still counts" { is_eq("=") }
+    then "any other byte is not" { !is_eq(" : 1") && !is_eq(" 5") }
+}
+
+spec "t-47hc.5.1: `{` marks a nested block rather than a value" {
+    then "a following brace is detected across whitespace" { is_lbrace(" {") && is_lbrace("\n  {") }
+    then "a non-brace is not" { !is_lbrace(" \"s\"") && !is_lbrace("") }
+}
+
+spec "t-47hc.5.1: a value word is an identifier that is not a literal keyword" {
+    then "an ordinary word is a nested block name" { is_value_word(" child") && is_value_word(" _x9") }
+    then "the three literal keywords are values, not block names" {
+        !is_value_word(" true") && !is_value_word(" false") && !is_value_word(" null")
+    }
+    then "the exclusion is a WHOLE-word test, unlike the keyword prefix test above" {
+        is_value_word(" trueish") && is_value_word(" nullable")
+    }
+    then "a non-identifier lead is not a word" {
+        !is_value_word(" 9x") && !is_value_word(" \"s\"") && !is_value_word("")
+    }
+}
+
+spec "t-47hc.5.1: the `ident() { … }` method shorthand" {
+    then "empty parens then a block is the shorthand" {
+        empty_call_block("() { }") && empty_call_block(" ( ) \n { }")
+    }
+    then "a call with no trailing block is NOT" { !empty_call_block("()") && !empty_call_block("() 5") }
+    then "non-empty parens are NOT the shorthand" { !empty_call_block("(a) { }") }
+    then "a truncated form runs off the end safely" {
+        !empty_call_block("(") && !empty_call_block("()  ") && !empty_call_block("")
+    }
+}

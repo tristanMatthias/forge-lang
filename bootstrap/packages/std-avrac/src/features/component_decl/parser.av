@@ -12,6 +12,9 @@ use parse.{Parser, StmtListIds}
 use core.{Tk}
 use core.{register_component_name, register_raw_body_component, component_is_raw_body}
 use core.{vtype_struct, body_declares_token_stream}
+// The raw-source config-pair lookahead cores, SHARED with the grammar engine's
+// `@peek` conds so the hand and the native rule decide identically (t-47hc.5.1).
+use features.grammar.{src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
 
 impl Parser {
     // Keyword-free instantiation: `comp_name inst_name { ... }`
@@ -403,110 +406,49 @@ impl Parser {
         .Ok(out)
     }
 
+    // ── Raw-source config-pair lookahead ──
+    //
+    // Every one of these is a THIN WRAPPER over a shared core in
+    // features/grammar/chars.av. The scans read raw source rather than tokens,
+    // and a token-level re-derivation is not equivalent (comments, prefix
+    // keyword matching, the leading-byte number test, raw strings — all four
+    // divergences are documented at the cores). The grammar engine's `@peek`
+    // conds call the SAME cores, so the hand and the native rule cannot drift:
+    // identical by construction, not by re-reading. Do NOT re-inline these
+    // scans here.
+
+    /// Byte offset just past the staged token's lexeme — where every one of
+    /// the lookaheads below begins scanning.
+    fn after_current_lexeme(self) -> int {
+        self.current_start + self.current_lexeme.length
+    }
+
     fn peek_after_ident_is_string(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                return ch == "\""
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_is_quote(self.source, self.source_len, self.after_current_lexeme())
     }
 
     fn peek_after_ident_is_number(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                return ch >= "0" && ch <= "9"
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_is_digit(self.source, self.source_len, self.after_current_lexeme())
     }
 
     // Check if the text after whitespace matches a specific keyword
     fn peek_after_ident_is_keyword(self, keyword: string) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        // Skip whitespace
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                // Check if the text starting here matches the keyword
-                if i + keyword.length <= self.source_len {
-                    return self.slice(i, i + keyword.length) == keyword
-                }
-                return false
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_starts_with(self.source, self.source_len, self.after_current_lexeme(), keyword)
     }
 
     // Peek: is the next non-whitespace char after current token `=` (but not `==`)?
     fn peek_after_ident_is_eq(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                if ch != "=" { return false }
-                if i + 1 < self.source_len {
-                    return self.char_at(i + 1) != "="
-                }
-                return true
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_is_single_eq(self.source, self.source_len, self.after_current_lexeme())
     }
 
     // Peek: is the next non-whitespace char after current token a `{`?
     fn peek_after_ident_is_brace(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                return ch == "{"
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_is_lbrace(self.source, self.source_len, self.after_current_lexeme())
     }
 
     // Peek: is the next non-whitespace token an identifier (not a keyword like true/false)?
     fn peek_after_ident_is_ident(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        // Skip whitespace
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                // Must be a letter or underscore (identifier start)
-                let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
-                if !is_alpha { return false }
-                // Extract the full word to check against keywords
-                mut j = i
-                while j < self.source_len {
-                    let wc = self.char_at(j)
-                    let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
-                    if !is_alnum { break }
-                    j = j + 1
-                }
-                let word = self.slice(i, j)
-                // Exclude literal keywords — these are config values, not nested block names
-                if word == "true" || word == "false" || word == "null" { return false }
-                return true
-            }
-            i = i + 1
-        }
-        false
+        src_next_nonws_is_value_word(self.source, self.source_len, self.after_current_lexeme())
     }
 
     // Peek: does the current identifier head an `ident() {` method
@@ -514,25 +456,7 @@ impl Parser {
     // tell a `run() { … }` component method (spec §4.1) apart from a bare
     // `run()` call statement (which has no trailing block).
     fn peek_after_ident_is_empty_call_block(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = self.skip_ws_from(end)
-        if i >= self.source_len || self.char_at(i) != "(" { return false }
-        i = self.skip_ws_from(i + 1)
-        if i >= self.source_len || self.char_at(i) != ")" { return false }
-        i = self.skip_ws_from(i + 1)
-        if i >= self.source_len { return false }
-        self.char_at(i) == "{"
-    }
-
-    /// First non-whitespace source offset at or after `from`.
-    fn skip_ws_from(self, from: int) -> int {
-        mut i = from
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { return i }
-            i = i + 1
-        }
-        i
+        src_at_empty_call_block(self.source, self.source_len, self.after_current_lexeme())
     }
 
     // Parse block body: nested blocks + method shorthand +
