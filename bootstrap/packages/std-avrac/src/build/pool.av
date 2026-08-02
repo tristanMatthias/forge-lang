@@ -28,7 +28,7 @@ extern fn avra_sleep_ms(ms: int)
 extern fn avra_parse_int(s: string) -> int
 
 use @std.json.{json_str}
-use build.admission.{MemGovernor, governor_width_only}
+use resources.{MemGovernor, governor_width_only, ResourceSnapshot, resource_snapshot_for_test}
 
 fn pool_max_rc(a: int, b: int) -> int {
     if a > b { a } else { b }
@@ -173,7 +173,7 @@ export fn pool_run(commands: List<string>, jobs: int) -> int {
 /// Tracking: forge-crafting-intepreters-e20h Phase 2 unification.
 export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
     if jobs <= 0 { return 0 }
-    pool_run_core(commands, slugs, marker_dir, governor_width_only(jobs), () -> 0 - 1)
+    pool_run_core(commands, slugs, marker_dir, governor_width_only(jobs), () -> resource_snapshot_for_test(0 - 1, 0 - 1, 0, 0, 0))
 }
 
 /// t-kdyj.1: run `commands` under memory-aware admission control. The
@@ -185,6 +185,13 @@ export fn pool_run_with_progress(commands: List<string>, slugs: List<string>, jo
 /// tight box serialises instead of deadlocking. Callers read the decision
 /// tally off the governor (`gov.summary()`) after the pool drains.
 export fn pool_run_admitted(commands: List<string>, gov: MemGovernor, sampler: fn() -> int) -> int {
+    pool_run_core(commands, [], "", gov, () -> resource_snapshot_for_test(0 - 1, sampler(), 0, 0, 0))
+}
+
+/// Generic resource-controller entry point. Consumers provide the same
+/// platform-neutral snapshot whether it came from Linux cgroup PSI or macOS
+/// memory-pressure events.
+export fn pool_run_resource_admitted(commands: List<string>, gov: MemGovernor, sampler: fn() -> ResourceSnapshot) -> int {
     pool_run_core(commands, [], "", gov, sampler)
 }
 
@@ -192,7 +199,7 @@ export fn pool_run_admitted(commands: List<string>, gov: MemGovernor, sampler: f
 // (estimate 0) short-circuits every budget check and never invokes the
 // sampler, so the plain pool_run paths behave exactly as before admission
 // control existed.
-fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string, gov: MemGovernor, sampler: fn() -> int) -> int {
+fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string, gov: MemGovernor, sampler: fn() -> ResourceSnapshot) -> int {
     let want_markers = marker_dir != "" && slugs.length == commands.length
     let workers = workers_init(gov.width_cap)
     let started_slugs = workers_started_slugs_init(gov.width_cap)
@@ -234,18 +241,20 @@ fn workers_started_slugs_init(n: int) -> List<string> {
 // slug in `slugs_state` so the reap can find it.
 //
 // Memory is sampled ONCE per round; each admission in the round then
-// stacks its full estimate as unrealized commitment (see admission.av),
+// stacks its full estimate as unrealized commitment (see
+// @std.avrac.resources),
 // so a burst can't over-admit against one roomy sample. A width-only
 // governor never triggers the sampler at all.
-fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool, gov: MemGovernor, sampler: fn() -> int) -> int {
+fn dispatch_batch(cmds: List<string>, slugs: List<string>, idx: int, total: int, workers: List<Worker>, slugs_state: List<string>, marker_dir: string, want_markers: bool, gov: MemGovernor, sampler: fn() -> ResourceSnapshot) -> int {
     if idx >= total { return 0 }
-    let avail_mb = if gov.has_model() { sampler() } else { 0 - 1 }
+    let snapshot = if gov.has_model() { sampler() } else { resource_snapshot_for_test(0 - 1, 0 - 1, 0, 0, 0) }
+    let avail_mb = snapshot.available_mb
     mut in_flight = workers_active(workers)
     gov.observe(avail_mb, in_flight)
     mut filled = 0
     mut i = idx
     while i < total && workers_has_idle(workers) {
-        if !gov.try_admit(avail_mb, in_flight) { break }
+        if !gov.try_admit_snapshot(snapshot, in_flight) { break }
         let cmd = cmds[i]
         // t-kdyj.1 slice 3 — one budget authority: a modeled admission
         // exports the unit's allocation into its process tree as a SOFT
@@ -337,4 +346,3 @@ fn workers_reap_with_markers(ws: List<Worker>, slugs_state: List<string>, marker
     }
     ReapResult { completed, max_rc }
 }
-

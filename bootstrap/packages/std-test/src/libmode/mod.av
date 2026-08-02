@@ -47,8 +47,8 @@ impl LibMode {
         if self.want_meta() { FAST_PATH_SHARD_MB } else { WHOLE_PROGRAM_SHARD_MB }
     }
 
-    /// Static shard-concurrency cap, before available RAM clamps it down and
-    /// before `AVRA_JOBS` overrides it.
+    /// Static shard-concurrency cap. The shared resource controller applies
+    /// the enclosing CPU limit and live memory admission beneath this cap.
     fn job_ceiling(self) -> int { if self.want_meta() { 8 } else { 2 } }
 
     fn opted_out(self) -> bool {
@@ -79,7 +79,7 @@ impl LibMode {
     /// path is off — the reason. Returned rather than printed so tests can
     /// assert on it.
     fn report(self, jobs: int, avail_mb: int) -> string {
-        let head = "[per-file] shard concurrency: jobs=${string(jobs)} (${self.mode_label()}, ~${string(self.per_shard_mb())}MB/shard, MemAvailable ~${string(avail_mb)}MB)"
+        let head = "[per-file] shard concurrency: jobs=${string(jobs)} (${self.mode_label()}, ~${string(self.per_shard_mb())}MB/shard, available ~${string(avail_mb)}MB)"
         if self.want_meta() { return head }
         let lead = if self.opted_out() {
             "[per-file] !! the @std/* metadata fast-path is OFF by request"

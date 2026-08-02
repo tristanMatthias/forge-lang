@@ -410,12 +410,12 @@ DIFF & ANALYSIS
                        RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
                        Starts the memory watchdog (--memguard), runs <cmd>,
                        and ALWAYS tears the watchdog down. Also pins
-                       AVRA_JOBS=1 (shard PROCESSES — the memory-dominant
-                       knob), AVRA_TEST_JOBS=1 (in-process test threads) and
-                       DIFF_TEST_JOBS=1 (corpus fan-out); all three are
-                       overridable, so no runner fans out. Use this for
-                       diff-test / bs2 test / cold builds so a memory spike
-                       kills the compile, NOT the whole container.
+                       legacy AVRA_JOBS=1 (build-pipeline workers),
+                       AVRA_TEST_JOBS=1 (in-process test threads), and
+                       DIFF_TEST_JOBS=1 (corpus fan-out); all are
+                       overridable. `bs2 test` uses its own adaptive resource
+                       controller. Use this for diff-test / cold builds so a
+                       memory spike kills the compile, NOT the whole container.
                        e.g. --guarded 5500 -- make diff-test
   --memguard [FLOOR_MB]
                        The raw memory watchdog (default FLOOR 3500MB; 5500
@@ -2556,19 +2556,14 @@ mode_rc_strict_suite() {
   # root. Same `( cd "$BOOTSTRAP_DIR" && "$BS2" test )` form the seed-train's
   # spec-suite check uses; without it every shard fails to resolve the test
   # runner (`undefined variable run_test_suite`).
-  #
-  # Concurrency is CAPPED under strict mode (explicit env still wins): the
-  # strict allocator's reuse quarantine + poison pages inflate every
-  # process's footprint, and at the default fan-out (AVRA_JOBS=8 shard
-  # compiles, worker threads = core count) the suite peaks past a 16GB CI
-  # runner's memory — the runner service gets OOM-killed, surfacing as a
-  # bogus "runner received a shutdown signal" mid-suite. Same capacity
-  # discipline as the degraded-shard jobs=2 cap and `make sweep`.
-  local jobs="${AVRA_JOBS:-4}" test_jobs="${AVRA_TEST_JOBS:-2}"
+  # The resource controller recognises RC strict as an allocation profile,
+  # uses its stricter seed, and admits shards from live capacity and pressure.
+  # AVRA_TEST_JOBS remains the independent in-shard test-worker setting.
+  local test_jobs="${AVRA_TEST_JOBS:-2}"
   if [ -n "${1:-}" ]; then
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_JOBS="$jobs" AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
   else
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_JOBS="$jobs" AVRA_TEST_JOBS="$test_jobs" "$BS2" test )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test )
   fi
 }
 
@@ -3652,12 +3647,9 @@ mode_memguard() {
 # constrain the others — this mode used to set only AVRA_TEST_JOBS while
 # claiming `bs2 test` "can't fan out parallel shards", which was false:
 #
-#   AVRA_JOBS       shard PROCESS concurrency — `bs2 test <dir>` spawning N
-#                   shard binaries. Read by parse_jobs_env (cli/src/main.av)
-#                   as the CEILING in compute_shard_jobs; memory can lower
-#                   it further. THIS is the knob that governs the fan-out,
-#                   and it is the memory-dominant one (~1.8GB per metadata
-#                   shard, ~6GB per whole-program one).
+#   AVRA_JOBS       legacy build-pipeline worker width. The test runner no
+#                   longer reads it: the shared resource controller owns test
+#                   shard admission from its profile, capacity, and pressure.
 #   AVRA_TEST_JOBS  in-process test parallelism — test FILES run as
 #                   @deferred_init units across worker THREADS inside one
 #                   already-assembled shard binary. Cheap by comparison.
@@ -3673,10 +3665,9 @@ mode_guarded() {
   if [ "${1:-}" != "--" ] && [ $# -ge 1 ]; then floor="$1"; shift; fi
   [ "${1:-}" = "--" ] && shift
   [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
-  # The load-bearing one: without it `bs2 test <dir>` still spawns up to 8
-  # shard processes under the watchdog and trips the floor it was wrapped to
-  # avoid. Override (AVRA_JOBS=3 --guarded …) when the box has the headroom
-  # and you want the wall-clock back.
+  # Keep legacy build-pipeline pools narrow under the watchdog. `bs2 test`
+  # ignores this setting; its resource controller already admits shards from
+  # the live platform snapshot.
   export AVRA_JOBS="${AVRA_JOBS:-1}"
   export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
   # Same reasoning, for the other heavy runner under this wrapper: diff-test's

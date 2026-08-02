@@ -1,10 +1,8 @@
-// WHY: memory-aware admission control for the worker pool (t-kdyj.1) — the
-// keystone of "`bs2 test` is one command, memory-safe by construction". The
-// operator used to pick a job count (AVRA_JOBS) and an external watchdog
-// SIGKILLed the run when the guess was wrong; both decisions move HERE, where
-// the information is: the pool knows each unit's estimated peak (LibMode),
-// samples MemAvailable, and admits a unit only while it fits. Concurrency is
-// an OUTPUT of available memory, not an input.
+// WHY: generic resource admission control (uzs9.10). Build, test, coverage,
+// and diff-test schedulers use this one controller surface: callers describe
+// a work profile and receive leases; none of them knows whether the host is Linux,
+// macOS, cgroup-limited, or merely under pressure. Concurrency is an OUTPUT
+// of available capacity, not a CI AVRA_JOBS setting.
 //
 // Four properties, in priority order:
 //   1. Back-pressure, never SIGKILL — under pressure the pool stops
@@ -34,6 +32,8 @@
 // consumed by anything else on the box also lands in `used`, which only
 // narrows admissions: every attribution error is in the safe direction.
 
+use resources.{ResourceProfile, ResourceSnapshot, resource_profile_seed_mb, resource_snapshot, resource_width_cap}
+
 /// The admission state for one pool run. Counters are mutated through
 /// methods (structs are self-by-pointer), so the pool threads one governor
 /// through every dispatch round and reads the tallies afterwards.
@@ -42,13 +42,15 @@ export type MemGovernor = {
     estimate_mb: int,        // live per-unit peak estimate; ratchets up, never below static
     static_estimate_mb: int, // the mode's baseline estimate, for the summary
     reserve_mb: int,         // headroom for the un-modelled: llc/cc1plus grandchildren, page cache
-    baseline_avail_mb: int,  // MemAvailable at run start; <= 0 = unknown -> width-only
+    baseline_avail_mb: int,  // usable memory at run start; <= 0 = unknown -> width-only
     min_avail_mb: int,       // observability: the tightest sample seen
     peak_width: int,         // observability: widest concurrent admission reached
     deferrals: int,          // decisions where a queued unit waited on the budget
     floor_admits: int,       // serial-floor admissions the budget alone would have refused
     corrections: int,        // estimate ratchets applied
     constrained_logged: bool, // the once-per-run "backing off"/"memory floor" line fired
+    pressure_deferrals: int, // admissions held by a real platform pressure signal
+    pressure_logged: bool,   // the once-per-run resource-pressure line fired
     observed_mb: int,        // max measured per-unit MB this run — UNSEEDED by any
                              // prior, so a persisted estimate can decay (see the
                              // prior helpers below) instead of ratcheting forever
@@ -67,6 +69,8 @@ export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseli
         floor_admits: 0,
         corrections: 0,
         constrained_logged: false,
+        pressure_deferrals: 0,
+        pressure_logged: false,
         observed_mb: 0,
     }
 }
@@ -76,6 +80,19 @@ export fn governor_for(width_cap: int, estimate_mb: int, reserve_mb: int, baseli
 /// makes every budget check pass and stops the pool from even sampling.
 export fn governor_width_only(width_cap: int) -> MemGovernor {
     governor_for(width_cap, 0, 0, 0 - 1)
+}
+
+/// Construct the generic controller from an execution profile and the native
+/// resource snapshot. This is the one policy boundary shared by test, build,
+/// coverage, and future schedulers.
+export fn resource_controller_for(width_cap: int, profile: ResourceProfile, normal_estimate_mb: int, reserve_mb: int) -> MemGovernor {
+    resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, reserve_mb, resource_snapshot())
+}
+
+/// Snapshot-taking sibling for callers that need the initial resource report
+/// and first admission to use the identical sample.
+export fn resource_controller_for_snapshot(width_cap: int, profile: ResourceProfile, normal_estimate_mb: int, reserve_mb: int, snapshot: ResourceSnapshot) -> MemGovernor {
+    governor_for(resource_width_cap(width_cap, snapshot), resource_profile_seed_mb(profile, normal_estimate_mb), reserve_mb, snapshot.available_mb)
 }
 
 impl MemGovernor {
@@ -227,6 +244,28 @@ impl MemGovernor {
         false
     }
 
+    /// Pressure-aware admission around the pure byte-budget decision. PSI and
+    /// macOS memory-pressure events are feedback, not a replacement for
+    /// reservations: critical pressure permits only the serial floor, while
+    /// elevated pressure holds the widest width already reached.
+    fn try_admit_snapshot(self, snapshot: ResourceSnapshot, in_flight: int) -> bool {
+        let pressure_blocks = if snapshot.pressure == 3 {
+            in_flight > 0
+        } else if snapshot.pressure == 2 {
+            in_flight >= (if self.peak_width > 0 { self.peak_width } else { 1 })
+        } else { false }
+        if pressure_blocks {
+            self.pressure_deferrals = self.pressure_deferrals + 1
+            if !self.pressure_logged {
+                self.pressure_logged = true
+                let label = if snapshot.pressure == 3 { "critical" } else if snapshot.pressure == 2 { "elevated" } else { "unknown" }
+                eprintln("[resources] ${label} memory pressure: holding new work at ${string(in_flight)} in flight")
+            }
+            return false
+        }
+        self.try_admit(snapshot.available_mb, in_flight)
+    }
+
     fn record_admit(self, width: int) {
         if width <= self.peak_width { return }
         self.peak_width = width
@@ -249,7 +288,8 @@ impl MemGovernor {
             "est ~${string(self.estimate_mb)}MB"
         }
         let tail = if self.min_avail_mb > 0 { ", min avail ${string(self.min_avail_mb)}MB" } else { "" }
-        "[admission] peak width ${string(self.peak_width)}/${string(self.width_cap)}, ${est}, ${string(self.deferrals)} deferral(s), ${string(self.floor_admits)} floor admit(s)${tail}"
+        let pressure = if self.pressure_deferrals > 0 { ", ${string(self.pressure_deferrals)} pressure deferral(s)" } else { "" }
+        "[resources] peak width ${string(self.peak_width)}/${string(self.width_cap)}, ${est}, ${string(self.deferrals)} budget deferral(s)${pressure}, ${string(self.floor_admits)} floor admit(s)${tail}"
     }
 }
 

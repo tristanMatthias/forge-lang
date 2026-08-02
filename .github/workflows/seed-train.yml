@@ -88,29 +88,9 @@ jobs:
           # silently SIGKILLs the biggest child. Keep in lockstep with
           # seed-train-verify.yml.
           AVRA_TEST_JOBS: "1"
-          # Shard-compile fan-out = the runner's 4 vCPUs. The memory-aware
-          # governor (compute_shard_jobs, main.av) clamps this by live
-          # MemAvailable, so it can only ever LOWER 4, never OOM. Held at 2
-          # historically because heavy whole-program fixtures (~5GB/shard) kept
-          # per_shard high; y9y4.19 moved the last onto the ~1.8GB fast-path so
-          # the governor now sizes 4 shards (measured: `tests` cold 208s@2 ->
-          # 112s@4). Kept in lockstep with seed-train-verify.yml.
-          #
-          # LOWERED 4 -> 3 (t-h6xv). "The governor clamps by live MemAvailable,
-          # so it can only ever LOWER 4, never OOM" did not hold: the clamp is
-          # (avail - 6144) / 1800, which on this runner's ~13.7GB yields 4.2, so
-          # the cap bound and the clamp never engaged. 4*1800 + 6144 = 13.2GB
-          # against ~13.75GB leaves ~500MB. The suite grew into it and this
-          # train started dying mid-suite ("received a shutdown signal") on
-          # 2026-07-28 — three consecutive reds from 20:05Z, pin stuck at v417.
-          # See seed-train-verify.yml for the full reasoning; the two must move
-          # together.
-          #
-          # LOWERED 3 -> 2 (t-h6xv). 3 passed twice and then died the same way
-          # (#1065, "received a shutdown signal" ~4min into the suite, after the
-          # fixed point held), so it was inside the noise band rather than clear
-          # of it. 2 matches rc-strict, green on the same runner class all along.
-          AVRA_JOBS: "2"
+          # The resource controller owns shard width. It carries the same
+          # profile and persisted model semantics as seed-train-verify, so
+          # this workflow deliberately supplies no memory-concurrency override.
           # Skip the redundant suite ONLY when the merged PR's seed-train-verify
           # published a PASS status for this exact seed×source fingerprint. Any
           # miss → empty → the suite runs (today's behaviour). Build + fixed point

@@ -1,0 +1,67 @@
+// WHY: resource policy belongs to the work being scheduled, not to a CI
+// workflow or an environment variable. A profile is the stable identity of
+// that work: observations from an RC-strict compiler shard must never make a
+// normal link pessimistic, and a new compiler binary must never blindly trust
+// a predecessor's measurements.
+
+use core.{avra_process_env_get, content_id_for}
+
+/// A generic description of resource-consuming work. `work_kind` is owned by
+/// the caller ("test-shard", "compile-unit", "link", …); the controller does
+/// not need a test- or build-specific enum to make an admission decision.
+export type ResourceProfile = {
+    work_kind: string,
+    runtime_mode: string,
+    toolchain_fingerprint: string,
+    plan_shape: string,
+}
+
+/// Detect the runtime allocation mode once at the boundary. This is not a
+/// tuning input: AVRA_RC_STRICT already changes runtime correctness behaviour;
+/// the profile merely describes the process we are about to schedule.
+export fn resource_runtime_mode() -> string {
+    let strict = avra_process_env_get("AVRA_RC_STRICT")
+    if strict != "" && strict != "0" { "rc-strict" }
+    else { "normal" }
+}
+
+/// Construct a profile for the current runtime. Callers provide the compiler
+/// fingerprint and a cache-stable plan shape, so a changed compiler or shard
+/// plan naturally receives a fresh model instead of inheriting stale peaks.
+export fn resource_profile(work_kind: string, toolchain_fingerprint: string, plan_shape: string) -> ResourceProfile {
+    ResourceProfile {
+        work_kind: work_kind,
+        runtime_mode: resource_runtime_mode(),
+        toolchain_fingerprint: toolchain_fingerprint,
+        plan_shape: plan_shape,
+    }
+}
+
+/// Pure constructor for deterministic specs and future callers that schedule
+/// a mode other than their own process's inherited environment.
+export fn resource_profile_with_mode(work_kind: string, runtime_mode: string, toolchain_fingerprint: string, plan_shape: string) -> ResourceProfile {
+    ResourceProfile {
+        work_kind: work_kind,
+        runtime_mode: runtime_mode,
+        toolchain_fingerprint: toolchain_fingerprint,
+        plan_shape: plan_shape,
+    }
+}
+
+export fn resource_runtime_mode_label(mode: string) -> string { mode }
+
+/// Versioned cache identity for learned resource observations. The whole
+/// profile participates — particularly the allocator mode — so it is safe to
+/// persist this key under a project cache without contaminating other runs.
+export fn resource_profile_key(profile: ResourceProfile) -> string {
+    let body = "r1;${profile.work_kind};${resource_runtime_mode_label(profile.runtime_mode)};${profile.toolchain_fingerprint};${profile.plan_shape}"
+    "r1-${string(content_id_for(body))}"
+}
+
+/// Conservative seed before the controller has a measurement for this exact
+/// profile. This lives in one profile policy rather than as a CI AVRA_JOBS
+/// workaround. The learned model remains the authority after the first run.
+export fn resource_profile_seed_mb(profile: ResourceProfile, normal_mb: int) -> int {
+    let base = if normal_mb < 1 { 1 } else { normal_mb }
+    if profile.runtime_mode == "rc-strict" { base * 2 } else { base }
+}
