@@ -21,6 +21,7 @@ use @std.avrac.resources.{governor_for, governor_width_only,
                           admission_prior_path, read_admission_prior, persist_admission_prior,
                           resource_profile_with_mode, resource_profile_key,
                           resource_profile_seed_mb, resource_snapshot_for_test,
+                          resource_build_pool_policy, resource_controller_for_policy,
                           resource_controller_for_snapshot}
 use @std.avrac.resources.{resource_snapshot, resource_width_cap}
 
@@ -284,6 +285,18 @@ spec "resources: execution profiles and live pressure stay separate" {
                 && resource_width_cap(1, two_cpus) == 1
                 && resource_width_cap(0, two_cpus) == 1
                 && resource_controller_for_snapshot(8, profile, 1800, 1000, two_cpus).width_cap == 2
+        }
+        then "build policy owns first-run seeds outside the CLI" {
+            let compile = resource_profile_with_mode("build-module-compile", "normal", "toolchain-a", "modules=8")
+            let codegen = resource_profile_with_mode("build-module-codegen", "normal", "toolchain-a", "objects=8")
+            let scope = resource_snapshot_for_test(16000, 12000, 2, 1, 2)
+            let compile_policy = resource_build_pool_policy(compile)
+            let codegen_policy = resource_build_pool_policy(codegen)
+            compile_policy.width_cap == 4
+                && compile_policy.normal_estimate_mb == 3500
+                && compile_policy.reserve_mb == 4096
+                && codegen_policy.normal_estimate_mb == 1024
+                && resource_controller_for_policy(compile, compile_policy, scope).width_cap == 2
         }
     }
     given "a live critical-pressure snapshot" {

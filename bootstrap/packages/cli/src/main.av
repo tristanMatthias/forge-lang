@@ -110,6 +110,7 @@ use @std.avrac.resources.{MemGovernor, ResourceProfile, ResourceSnapshot,
     resource_profile_seed_mb, resource_runtime_mode_label,
     resource_pressure_label, resource_scope_label,
     resource_width_cap,
+    resource_build_pool_policy, resource_controller_for_policy,
     resource_controller_for_snapshot,
     admission_prior_path, read_admission_prior, persist_admission_prior}
 use @std.crypto.{sha256_hex, sha256_file}
@@ -649,22 +650,15 @@ fn pre_dep_outcome_empty() -> PreDepOutcome {
     PreDepOutcome { rc: 0, hits: 0, misses: 0, detail: "" }
 }
 
-// Build pools use the same policy boundary as test shards. These are
-// conservative first-run seeds, not knobs: a completed run persists its own
-// observed peak under the profile key and becomes the authority thereafter.
-const BUILD_COMPILE_SEED_MB: int = 3500
-const BUILD_CODEGEN_SEED_MB: int = 1024
-const BUILD_POOL_RESERVE_MB: int = 4096
-
 /// Run a generic build work queue under the resource controller. Keeping
 /// profile construction, prior persistence, and end-of-run reporting here
 /// prevents every build phase from growing its own jobs/env-var policy.
-fn run_build_resource_pool(commands: List<string>, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
+fn run_build_resource_pool(commands: List<string>, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string) -> int {
     if commands.length == 0 { return 0 }
     let snapshot = resource_snapshot()
     let profile = resource_profile(work_kind, sha256_file(compiler_path), plan_shape)
     let prior_path = admission_prior_path("${project_dir}/build/cache", resource_profile_key(profile))
-    let gov = resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, BUILD_POOL_RESERVE_MB, snapshot)
+    let gov = resource_controller_for_policy(profile, resource_build_pool_policy(profile), snapshot)
     gov.seed_estimate(read_admission_prior(prior_path))
     let rc = pool_run_resource_admitted(commands, gov, () -> resource_snapshot())
     persist_admission_prior(prior_path, gov.observed_mb, gov.static_estimate_mb, rc == 0)
@@ -748,7 +742,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     let log_dir = "${project_dir}/build/pre_deps.${string(avra_getpid())}"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
     let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir)
-    let rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
+    let rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape)
     if rc != 0 {
         eprintln("pre-build failed — per-dep logs: ${log_dir}/")
         return PreDepOutcome { rc: rc, hits: 0, misses: 0, detail: "" }
@@ -1035,12 +1029,12 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // (CI logs stay byte-clean).
     let want_progress = progress_should_render() && !args.json
     let cc_rc = if want_progress {
-        run_per_mod_with_progress(cmds, slugs, out_dir, total, project_dir, compiler_path, "build-module-compile", compile_plan, 4, BUILD_COMPILE_SEED_MB)
+        run_per_mod_with_progress(cmds, slugs, out_dir, total, project_dir, compiler_path, "build-module-compile", compile_plan)
     } else {
         if !args.json {
             eprintln("[per-module] dispatching ${string(total)} compile units to resource-admitted pool")
         }
-        run_build_resource_pool(cmds, project_dir, compiler_path, "build-module-compile", compile_plan, 4, BUILD_COMPILE_SEED_MB)
+        run_build_resource_pool(cmds, project_dir, compiler_path, "build-module-compile", compile_plan)
     }
     if cc_rc != 0 {
         eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log or ${unit_meta_log}")
@@ -1095,7 +1089,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // out_dir has no concurrent producer (they would already collide on <sl>.o).
     let _ = avra_shell_exec("rm -f '${out_dir}'/*.o.tmp.* 2>/dev/null")
     let llc_plan = "objects=${string(llc_cmds.length)};opt=O0"
-    let llc_rc = run_build_resource_pool(llc_cmds, project_dir, compiler_path, "build-module-codegen", llc_plan, 4, BUILD_CODEGEN_SEED_MB)
+    let llc_rc = run_build_resource_pool(llc_cmds, project_dir, compiler_path, "build-module-codegen", llc_plan)
     if llc_rc != 0 {
         eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
         return llc_rc
@@ -1191,11 +1185,11 @@ fn subdir_basename(p: string) -> string {
 // project-local. The background child runs the same generic Avra
 // resource pool as pipe mode, so the renderer is observational only — it
 // never substitutes a shell semaphore for admission control.
-fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, marker_dir: string, total: int, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
-    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, work_kind, plan_shape, width_cap, normal_estimate_mb)
+fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, marker_dir: string, total: int, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string) -> int {
+    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, work_kind, plan_shape)
     if pool_handle < 0 {
         // Spawn failed — preserve the same resource policy synchronously.
-        return run_build_resource_pool(cmds, project_dir, compiler_path, work_kind, plan_shape, width_cap, normal_estimate_mb)
+        return run_build_resource_pool(cmds, project_dir, compiler_path, work_kind, plan_shape)
     }
     let t_start = avra_uptime_ms()
     mut prev_lines = 0
@@ -1343,10 +1337,10 @@ fn run_pre_deps_with_progress(paths_file: string, compiler_path: string, total: 
     // the TTY progress bar against the marker files. The child is an internal
     // CLI command so it can own a live governor while this process stays free
     // to render.
-    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
+    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, "build-path-dependency", plan_shape)
     if pool_handle < 0 {
         // Spawn failure: preserve resource admission synchronously.
-        let sync_rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
+        let sync_rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape)
         if sync_rc != 0 {
             avra_shell_exec("rm -rf ${marker_dir}")
             return PreDepOutcome { rc: sync_rc, hits: 0, misses: 0, detail: "" }
@@ -1450,7 +1444,7 @@ fn write_line_list(path: string, items: List<string>) {
 // have a live MemGovernor. Launch an internal command in the current compiler
 // instead of a shell FIFO: both TTY and piped builds now enter the exact same
 // resource-pool implementation, profiles, persistence, and platform sampler.
-fn spawn_resource_pool_async(cmds: List<string>, slugs: List<string>, marker_dir: string, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
+fn spawn_resource_pool_async(cmds: List<string>, slugs: List<string>, marker_dir: string, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string) -> int {
     let commands_path = "${marker_dir}/resource.commands"
     let slugs_path = "${marker_dir}/resource.slugs"
     write_line_list(commands_path, cmds)
@@ -1464,8 +1458,6 @@ fn spawn_resource_pool_async(cmds: List<string>, slugs: List<string>, marker_dir
         "--compiler", compiler_path,
         "--work-kind", work_kind,
         "--plan-shape", plan_shape,
-        "--width-cap", string(width_cap),
-        "--estimate-mb", string(normal_estimate_mb),
     ])
     avra_process_spawn_bg(compiler_path, argv, "")
 }
@@ -3569,9 +3561,7 @@ fn cmd_resource_pool(args: CliResult) -> int {
     let compiler_path = result_get_option(args, "compiler")
     let work_kind = result_get_option(args, "work_kind")
     let plan_shape = result_get_option(args, "plan_shape")
-    let width_cap = avra_parse_int(result_get_option(args, "width_cap"))
-    let normal_estimate_mb = avra_parse_int(result_get_option(args, "estimate_mb"))
-    if commands_path == "" || slugs_path == "" || marker_dir == "" || project_dir == "" || compiler_path == "" || work_kind == "" || width_cap < 1 || normal_estimate_mb < 1 {
+    if commands_path == "" || slugs_path == "" || marker_dir == "" || project_dir == "" || compiler_path == "" || work_kind == "" {
         let _ = write_file("${marker_dir}/resource.summary", "[resources] internal progress dispatcher received incomplete queue metadata")
         return 2
     }
@@ -3584,7 +3574,7 @@ fn cmd_resource_pool(args: CliResult) -> int {
     let snapshot = resource_snapshot()
     let profile = resource_profile(work_kind, sha256_file(compiler_path), plan_shape)
     let prior_path = admission_prior_path("${project_dir}/build/cache", resource_profile_key(profile))
-    let gov = resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, BUILD_POOL_RESERVE_MB, snapshot)
+    let gov = resource_controller_for_policy(profile, resource_build_pool_policy(profile), snapshot)
     gov.seed_estimate(read_admission_prior(prior_path))
     let rc = pool_run_resource_admitted_with_progress(commands, slugs, marker_dir, gov, () -> resource_snapshot())
     persist_admission_prior(prior_path, gov.observed_mb, gov.static_estimate_mb, rc == 0)
@@ -4273,8 +4263,6 @@ cli avra {
         option compiler { description "Internal compiler path for profile identity" }
         option work_kind { description "Internal resource work profile" }
         option plan_shape { description "Internal resource plan shape" }
-        option width_cap { description "Internal static CPU width ceiling" }
-        option estimate_mb { description "Internal conservative per-unit seed" }
         run() { cmd_resource_pool(args) }
     }
 
