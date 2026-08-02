@@ -99,7 +99,7 @@ use @std.avrac.build.{
     metadata_write, metadata_read, bytes_from_hex,
     synthesize_unit_stmts,
     pool_run, pool_extract_rc,
-    pool_run_resource_admitted,
+    pool_run_resource_admitted, pool_run_resource_admitted_with_progress,
     cache_for, cache_read_diag, entry_source_meta_path, ensure_source_meta_dir,
     cache_bin_path_for,
     CompileTarget, build_binary, coverage_covmap_path, atomic_obj_llc_cmd, atomic_cp_cmd, atomic_install_cmd,
@@ -623,15 +623,14 @@ type BuildArgs = {
 // (registry versions, git refs) are skipped — they'll come back
 // when resolution actually pulls them locally.
 //
-// Workers run in parallel via xargs -P. Default job count is 4
-// (matches a typical laptop's physical cores; CPU-bound compiles
-// don't benefit from oversubscription). Override with the
-// `AVRA_JOBS=N` env var. Path-deps are independent today
-// (no inter-dep ordering recorded in the manifest), so naive
-// parallel-spawn works; once topo ordering matters, replace with
-// a real wave scheduler (forge-crafting-intepreters-e20h Phase 2).
+// Workers run through the shared resource controller. Path-deps are
+// independent today (no inter-dep ordering recorded in the manifest), so a
+// bounded queue is sound; the controller derives its width from the current
+// CPU/memory scope and learns its cost per build profile. Once topo ordering
+// matters, this queue becomes a wave scheduler (forge-crafting-intepreters-e20h
+// Phase 2) without changing resource policy.
 //
-// Returns 0 on success; non-zero is xargs's failure exit code.
+// Returns 0 on success; otherwise the queue's worst worker exit code.
 //
 // Tracking ticket: forge-crafting-intepreters-2f54 + e20h.
 // pdme.5: one pre-build's cache accounting, read back from the per-dep
@@ -648,6 +647,29 @@ type PreDepOutcome = {
 
 fn pre_dep_outcome_empty() -> PreDepOutcome {
     PreDepOutcome { rc: 0, hits: 0, misses: 0, detail: "" }
+}
+
+// Build pools use the same policy boundary as test shards. These are
+// conservative first-run seeds, not knobs: a completed run persists its own
+// observed peak under the profile key and becomes the authority thereafter.
+const BUILD_COMPILE_SEED_MB: int = 3500
+const BUILD_CODEGEN_SEED_MB: int = 1024
+const BUILD_POOL_RESERVE_MB: int = 4096
+
+/// Run a generic build work queue under the resource controller. Keeping
+/// profile construction, prior persistence, and end-of-run reporting here
+/// prevents every build phase from growing its own jobs/env-var policy.
+fn run_build_resource_pool(commands: List<string>, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
+    if commands.length == 0 { return 0 }
+    let snapshot = resource_snapshot()
+    let profile = resource_profile(work_kind, sha256_file(compiler_path), plan_shape)
+    let prior_path = admission_prior_path("${project_dir}/build/cache", resource_profile_key(profile))
+    let gov = resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, BUILD_POOL_RESERVE_MB, snapshot)
+    gov.seed_estimate(read_admission_prior(prior_path))
+    let rc = pool_run_resource_admitted(commands, gov, () -> resource_snapshot())
+    persist_admission_prior(prior_path, gov.observed_mb, gov.static_estimate_mb, rc == 0)
+    eprintln("[resources] build ${work_kind}: profile=${resource_runtime_mode_label(profile.runtime_mode)}, scope=${resource_scope_label(snapshot.scope)}, pressure=${resource_pressure_label(snapshot.pressure)}; ${gov.summary()}")
+    rc
 }
 
 // Classify each per-dep child log as cache HIT or MISS, keeping the
@@ -695,9 +717,8 @@ fn dep_log_miss_reason(content: string) -> string {
 fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) -> PreDepOutcome {
     let path_count = count_path_deps(deps)
     if path_count == 0 { return pre_dep_outcome_empty() }
-    let env_jobs = avra_process_env_get("AVRA_JOBS")
-    let jobs_str = if env_jobs != "" { env_jobs } else { "4" }
-    let jobs = avra_parse_int(jobs_str)
+    let project_dir = avra_process_env_get("PWD")
+    let plan_shape = "deps=${string(path_count)};emit_metadata=1"
     // TTY-aware split (5gvp): pipe-redirected stdout takes the
     // pure-Avra worker pool path so CI logs stay byte-identical to
     // before. An interactive terminal gets a multi-line progress bar
@@ -713,7 +734,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
         let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
         avra_shell_exec("rm -f ${paths_file}")
         write_dep_paths(deps, paths_file)
-        let out = run_pre_deps_with_progress(paths_file, jobs_str, compiler_path, path_count)
+        let out = run_pre_deps_with_progress(paths_file, compiler_path, path_count, project_dir, plan_shape)
         avra_shell_exec("rm -f ${paths_file}")
         return out
     }
@@ -724,10 +745,10 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     // Per-dep logs (pid-scoped — the orphaned-run lesson): the tally
     // reads them back for the [cache] summary, and a failed dep's
     // output stays inspectable instead of vanishing into /dev/null.
-    let log_dir = "${avra_process_env_get("PWD")}/build/pre_deps.${string(avra_getpid())}"
+    let log_dir = "${project_dir}/build/pre_deps.${string(avra_getpid())}"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
     let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir)
-    let rc = pool_run(cmds, jobs)
+    let rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
     if rc != 0 {
         eprintln("pre-build failed — per-dep logs: ${log_dir}/")
         return PreDepOutcome { rc: rc, hits: 0, misses: 0, detail: "" }
@@ -1005,9 +1026,8 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     let unit_meta_cmd = "cd \"${project_dir}\" && \"${compiler_path}\" compile --module_path='${pkg_qual}' --emit_metadata '${entry_path}' > '${unit_meta_log}' 2>&1"
     cmds.push(unit_meta_cmd)
     slugs.push("_unit_meta")
-    let env_jobs = avra_process_env_get("AVRA_JOBS")
-    let jobs_n = if env_jobs != "" { avra_parse_int(env_jobs) } else { 4 }
     let total = cmds.length
+    let compile_plan = "modules=${string(total)};emit_metadata=1"
     // Phase C UI: when stdout is a TTY and --json isn't on, spawn the
     // pool as a subprocess + poll the marker_dir in the foreground
     // for a multi-line progress bar (same shape as the path-deps TTY
@@ -1015,19 +1035,19 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // (CI logs stay byte-clean).
     let want_progress = progress_should_render() && !args.json
     let cc_rc = if want_progress {
-        run_per_mod_with_progress(cmds, slugs, jobs_n, out_dir, total)
+        run_per_mod_with_progress(cmds, slugs, out_dir, total, project_dir, compiler_path, "build-module-compile", compile_plan, 4, BUILD_COMPILE_SEED_MB)
     } else {
         if !args.json {
-            eprintln("[per-module] dispatching ${string(total)} compile units to pool (jobs=${string(jobs_n)})")
+            eprintln("[per-module] dispatching ${string(total)} compile units to resource-admitted pool")
         }
-        pool_run(cmds, jobs_n)
+        run_build_resource_pool(cmds, project_dir, compiler_path, "build-module-compile", compile_plan, 4, BUILD_COMPILE_SEED_MB)
     }
     if cc_rc != 0 {
         eprintln("[per-module] one or more compile units failed (rc=${string(cc_rc)}) — see ${out_dir}/<unit>.log or ${unit_meta_log}")
         return cc_rc
     }
-    // Phase B.2: llc each per-mod .ll → .o in parallel. Same pool,
-    // jobs cap from AVRA_JOBS. The downstream link step expects
+    // Phase B.2: llc each per-mod .ll → .o in parallel. The shared resource
+    // controller owns its width. The downstream link step expects
     // object files (`link_objects` from k21v takes List<.o>), so
     // this is the final step before a multi-unit link.
     // Resolve llc the same way the coverage path does: $LLVM_PREFIX
@@ -1064,7 +1084,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
         k = k + 1
     }
     if !args.json {
-        eprintln("[per-module] llc'ing ${string(llc_cmds.length)} units to .o (jobs=${string(jobs_n)})")
+        eprintln("[per-module] llc'ing ${string(llc_cmds.length)} units to .o (resource-admitted)")
     }
     // rrio: sweep stale `.o.tmp.*` orphans left by a PRIOR build that was
     // hard-killed (OOM/SIGKILL) before atomic_obj_llc_cmd's own `|| rm`
@@ -1074,7 +1094,8 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // pool creates THIS build's fresh temps, and a package's per-module
     // out_dir has no concurrent producer (they would already collide on <sl>.o).
     let _ = avra_shell_exec("rm -f '${out_dir}'/*.o.tmp.* 2>/dev/null")
-    let llc_rc = pool_run(llc_cmds, jobs_n)
+    let llc_plan = "objects=${string(llc_cmds.length)};opt=O0"
+    let llc_rc = run_build_resource_pool(llc_cmds, project_dir, compiler_path, "build-module-codegen", llc_plan, 4, BUILD_CODEGEN_SEED_MB)
     if llc_rc != 0 {
         eprintln("[per-module] llc failed for one or more units (rc=${string(llc_rc)}) — see ${out_dir}/<unit>.llc.log")
         return llc_rc
@@ -1167,16 +1188,14 @@ fn subdir_basename(p: string) -> string {
 //
 // The marker_dir is the same `build/per_mod/` we already write
 // .ll/.o into; tmp is unnecessary because per-mod artefacts are
-// project-local. The dispatcher (spawn_pool_async) writes both
-// kinds of marker before/after each job, just like the path-dep
-// path does — the renderer doesn't need to know which dispatcher
-// produced them.
-fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string, total: int) -> int {
-    let pool_handle = spawn_pool_async(cmds, slugs, jobs, marker_dir)
+// project-local. The background child runs the same generic Avra
+// resource pool as pipe mode, so the renderer is observational only — it
+// never substitutes a shell semaphore for admission control.
+fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, marker_dir: string, total: int, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
+    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, work_kind, plan_shape, width_cap, normal_estimate_mb)
     if pool_handle < 0 {
-        // Spawn failed — fall back to sync pool_run so the build
-        // still proceeds.
-        return pool_run(cmds, jobs)
+        // Spawn failed — preserve the same resource policy synchronously.
+        return run_build_resource_pool(cmds, project_dir, compiler_path, work_kind, plan_shape, width_cap, normal_estimate_mb)
     }
     let t_start = avra_uptime_ms()
     mut prev_lines = 0
@@ -1189,6 +1208,7 @@ fn run_per_mod_with_progress(cmds: List<string>, slugs: List<string>, jobs: int,
     }
     let final_json = avra_process_wait(pool_handle)
     let exit_code = pool_extract_rc(final_json)
+    report_resource_pool_summary(marker_dir)
     let final_done = count_done_markers(marker_dir)
     let final_elapsed = format_elapsed_seconds(avra_uptime_ms() - t_start)
     progress_clear(prev_lines)
@@ -1304,13 +1324,10 @@ fn count_lines(s: string) -> int {
     n
 }
 
-// e20h Phase 2 unification: TTY branch now uses pool_run_with_progress
-// + the marker-file UI loop, instead of spawning xargs. Same marker-
-// file protocol as the pre-Phase-2 path so the renderer is unchanged;
-// the dispatcher just changed from xargs to the in-Avra pool. Removes
-// the xargs dependency, removes the worker.sh shim, removes the
-// `__avra_xargs_rc:` exit-code-in-stdout hack.
-fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: string, total: int) -> PreDepOutcome {
+// e20h Phase 2 unification: the TTY child uses the exact same generic Avra
+// resource pool as the non-TTY path. Markers let the parent render progress;
+// they do not become a second scheduler with independent width policy.
+fn run_pre_deps_with_progress(paths_file: string, compiler_path: string, total: int, project_dir: string, plan_shape: string) -> PreDepOutcome {
     let marker_dir = progress_marker_dir()
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
     let dep_paths = read_paths_file_lines(paths_file)
@@ -1322,14 +1339,14 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
         // log carries the hit/miss attribution the tally reads (pdme.5).
         cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata --explain) > \"${marker_dir}/${slug}.log\" 2>&1")
     }
-    let jobs_n = avra_parse_int(jobs)
     // Spawn the pool in the background so the foreground can render
-    // the TTY progress bar against the marker files. avra_process_spawn_bg
-    // gives us a handle we poll with avra_process_is_alive.
-    let pool_handle = spawn_pool_async(cmds, slugs, jobs_n, marker_dir)
+    // the TTY progress bar against the marker files. The child is an internal
+    // CLI command so it can own a live governor while this process stays free
+    // to render.
+    let pool_handle = spawn_resource_pool_async(cmds, slugs, marker_dir, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
     if pool_handle < 0 {
-        // Spawn failure: run synchronously without progress rendering.
-        let sync_rc = pool_run(cmds, jobs_n)
+        // Spawn failure: preserve resource admission synchronously.
+        let sync_rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape, 4, BUILD_COMPILE_SEED_MB)
         if sync_rc != 0 {
             avra_shell_exec("rm -rf ${marker_dir}")
             return PreDepOutcome { rc: sync_rc, hits: 0, misses: 0, detail: "" }
@@ -1349,6 +1366,7 @@ fn run_pre_deps_with_progress(paths_file: string, jobs: string, compiler_path: s
     }
     let final_json = avra_process_wait(pool_handle)
     let exit_code = pool_extract_rc(final_json)
+    report_resource_pool_summary(marker_dir)
     let final_done = count_done_markers(marker_dir)
     let final_elapsed = avra_uptime_ms() - t_start
     progress_clear(prev_lines)
@@ -1418,91 +1436,43 @@ fn slug_of_path(p: string) -> string {
     trimmed
 }
 
-// Spawn the parallel-dispatch worker in the background so the
-// foreground stays free to poll the marker files for progress UI.
-//
-// Approach: write a small `/bin/sh` script that backgrounds each
-// per-job command (with marker writes wrapping it), tracks pids in
-// an array, and waits on each pid in turn after the last spawn.
-// Per-pid `wait` returns the child's rc, which we fold into max_rc.
-// Avoids `wait -n` (bash 4.3+ only) and the dash/sh portability
-// pitfalls; keeps semantics identical to `pool_run_with_progress`
-// (worst-rc wins, hermetic per-job isolation).
-fn spawn_pool_async(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string) -> int {
-    spawn_pool_async_with_markers(cmds, slugs, jobs, marker_dir, true)
+// Write one string per line. Build queue commands and their marker slugs are
+// already newline-free shell units; making the files explicit gives the child
+// pool an ordinary, inspectable hand-off without squeezing command strings
+// through flags or re-implementing scheduling in shell.
+fn write_line_list(path: string, items: List<string>) {
+    mut body = ""
+    for item in items { body = body + item + "\n" }
+    let _ = avra_selfhost_write_file(path, body)
 }
 
-// `with_progress_markers=false` skips the .running / .done touch+rm
-// fork-chain that's only consumed by the build-pipeline progress UI
-// (run_per_mod_with_progress). The test runner waits on the pool via
-// process_wait and doesn't poll, so the markers are pure overhead
-// there: each `touch`/`rm` is a fork+exec to /usr/bin/{touch,rm}.
-// 451 shards × 3 marker forks ≈ 1.4k forks, ~5ms each on M1 ≈ ~7s
-// of fork serialisation cost.
-fn spawn_pool_async_with_markers(cmds: List<string>, slugs: List<string>, jobs: int, marker_dir: string, with_progress_markers: bool) -> int {
-    // FIFO-semaphore dispatcher. Replaces the prior `wait $oldest`
-    // FIFO drain (which blocked on the oldest in-flight pid even when
-    // other slots were free) with a SysV-style counting semaphore: a
-    // named pipe is primed with `jobs` ready tokens; each child
-    // `read`s one before starting, writes one when done. Result is
-    // any-child wakeup — equivalent to bash's `wait -n` (which macOS
-    // bash 3.2 lacks).
-    //
-    // POSIX-portable: uses mkfifo + `read <FD>` only. Each child's
-    // rc is captured into a per-shard rc file; parent aggregates
-    // after `wait`.
-    let script_path = "${marker_dir}/dispatch.sh"
-    mut script = "#!/bin/sh\nset +e\n"
-    // Redirect dispatcher's own stdout/stderr to /dev/null. When a
-    // shard's cmd is signal-killed (SIGKILL from macOS jetsam, etc.),
-    // bash prints a shell-level "Killed: 9" notification to the
-    // subshell's stderr — INHERITED from this dispatcher's stderr,
-    // which is a pipe to the orchestrator (avra_process_spawn_bg).
-    // 460 such notifications fill the 64KB pipe; subsequent writes
-    // BLOCK; workers deadlock at __write_nocancel and never refill
-    // the FIFO token; parent's wait blocks forever. Per-cmd `> LOG
-    // 2>&1` doesn't help — those redirect the cmd's output, not the
-    // shell's own. Each cmd still produces its own log file, so the
-    // orchestrator's aggregate_shard_logs still sees everything.
-    script = script + "exec 1>/dev/null 2>&1\n"
-    let fifo = "${marker_dir}/.dispatch-fifo"
-    script = script + "FIFO=" + fifo + "\n"
-    script = script + "rm -f " + "$" + "FIFO\nmkfifo " + "$" + "FIFO\n"
-    script = script + "exec 3<>" + "$" + "FIFO\n"
-    // Prime N ready tokens.
-    script = script + "i=0\nwhile [ " + "$" + "i -lt " + string(jobs) + " ]; do echo >&3; i=$((i+1)); done\n"
-    for (slug, cmd) in slugs.zip(cmds) {
-        // Each child: acquire token via read, run cmd, write rc file
-        // (via shell redirect — no fork to /usr/bin/touch), emit
-        // optional .running/.done markers (only when caller will poll
-        // them for progress UI), release token via echo.
-        let start_marker = if with_progress_markers {
-            "touch ${marker_dir}/${slug}.running; "
-        } else {
-            ""
-        }
-        let stop_marker = if with_progress_markers {
-            "rm -f ${marker_dir}/${slug}.running; touch ${marker_dir}/${slug}.done; "
-        } else {
-            ""
-        }
-        let job =
-            "read tok <&3\n" +
-            "{ ${start_marker}${cmd}; jrc=$?; " +
-            "${stop_marker}" +
-            "echo \"" + "$" + "jrc\" > ${marker_dir}/${slug}.rc; " +
-            "echo >&3; } &\n"
-        script = script + job
-    }
-    script = script + "wait\nexec 3>&-\nrm -f " + "$" + "FIFO\n"
-    // Aggregate rc files: max across all of them.
-    script = script + "max_rc=0\nfor f in ${marker_dir}/*.rc; do "
-    script = script + "rc=" + "$" + "(cat \"" + "$" + "f\" 2>/dev/null); "
-    script = script + "if [ -n \"" + "$" + "rc\" ] && [ \"" + "$" + "rc\" -gt \"" + "$" + "max_rc\" ]; then max_rc=" + "$" + "rc; fi; "
-    script = script + "done\nexit " + "$" + "max_rc\n"
-    let _ = avra_selfhost_write_file(script_path, script)
-    avra_shell_exec("chmod +x ${script_path}")
-    avra_process_spawn_bg("/bin/sh", "[${json_str(script_path)}]", "")
+// The TTY renderer needs a foreground process, but the dispatcher must still
+// have a live MemGovernor. Launch an internal command in the current compiler
+// instead of a shell FIFO: both TTY and piped builds now enter the exact same
+// resource-pool implementation, profiles, persistence, and platform sampler.
+fn spawn_resource_pool_async(cmds: List<string>, slugs: List<string>, marker_dir: string, project_dir: string, compiler_path: string, work_kind: string, plan_shape: string, width_cap: int, normal_estimate_mb: int) -> int {
+    let commands_path = "${marker_dir}/resource.commands"
+    let slugs_path = "${marker_dir}/resource.slugs"
+    write_line_list(commands_path, cmds)
+    write_line_list(slugs_path, slugs)
+    let argv = json_string_list([
+        "_resource_pool",
+        "--commands", commands_path,
+        "--slugs", slugs_path,
+        "--marker-dir", marker_dir,
+        "--project-dir", project_dir,
+        "--compiler", compiler_path,
+        "--work-kind", work_kind,
+        "--plan-shape", plan_shape,
+        "--width-cap", string(width_cap),
+        "--estimate-mb", string(normal_estimate_mb),
+    ])
+    avra_process_spawn_bg(compiler_path, argv, "")
+}
+
+fn report_resource_pool_summary(marker_dir: string) {
+    let summary = read_file("${marker_dir}/resource.summary").trim()
+    if summary != "" { eprintln(summary) }
 }
 
 // On failure we surface every per-worker log so the user sees what
@@ -3573,6 +3543,56 @@ fn cmd_eval(args: CliResult) -> int {
     0
 }
 
+/// `avra resources` — a deliberately small machine-readable boundary for
+/// orchestration outside the Avra process (notably diagnose.sh diff-test).
+/// Schedulers inside the compiler use ResourceSnapshot directly; shell tools
+/// consume this stable key=value form instead of reimplementing /proc or Mach.
+fn cmd_resources() -> int {
+    let snapshot = resource_snapshot()
+    println("capacity_mb=${string(snapshot.capacity_mb)}")
+    println("available_mb=${string(snapshot.available_mb)}")
+    println("cpu_capacity=${string(snapshot.cpu_capacity)}")
+    println("pressure=${resource_pressure_label(snapshot.pressure)}")
+    println("scope=${resource_scope_label(snapshot.scope)}")
+    0
+}
+
+/// Internal TTY-progress dispatcher. It deliberately accepts queue metadata
+/// only from its parent build process; the public surface is `avra resources`.
+/// Keeping this as an Avra command lets a background dispatcher sample live
+/// pressure and preserve learned observations while its parent renders markers.
+fn cmd_resource_pool(args: CliResult) -> int {
+    let commands_path = result_get_option(args, "commands")
+    let slugs_path = result_get_option(args, "slugs")
+    let marker_dir = result_get_option(args, "marker_dir")
+    let project_dir = result_get_option(args, "project_dir")
+    let compiler_path = result_get_option(args, "compiler")
+    let work_kind = result_get_option(args, "work_kind")
+    let plan_shape = result_get_option(args, "plan_shape")
+    let width_cap = avra_parse_int(result_get_option(args, "width_cap"))
+    let normal_estimate_mb = avra_parse_int(result_get_option(args, "estimate_mb"))
+    if commands_path == "" || slugs_path == "" || marker_dir == "" || project_dir == "" || compiler_path == "" || work_kind == "" || width_cap < 1 || normal_estimate_mb < 1 {
+        let _ = write_file("${marker_dir}/resource.summary", "[resources] internal progress dispatcher received incomplete queue metadata")
+        return 2
+    }
+    let commands = read_paths_file_lines(commands_path)
+    let slugs = read_paths_file_lines(slugs_path)
+    if commands.length != slugs.length {
+        let _ = write_file("${marker_dir}/resource.summary", "[resources] internal progress dispatcher queue/marker shape mismatch")
+        return 2
+    }
+    let snapshot = resource_snapshot()
+    let profile = resource_profile(work_kind, sha256_file(compiler_path), plan_shape)
+    let prior_path = admission_prior_path("${project_dir}/build/cache", resource_profile_key(profile))
+    let gov = resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, BUILD_POOL_RESERVE_MB, snapshot)
+    gov.seed_estimate(read_admission_prior(prior_path))
+    let rc = pool_run_resource_admitted_with_progress(commands, slugs, marker_dir, gov, () -> resource_snapshot())
+    persist_admission_prior(prior_path, gov.observed_mb, gov.static_estimate_mb, rc == 0)
+    let summary = "[resources] build ${work_kind}: profile=${resource_runtime_mode_label(profile.runtime_mode)}, scope=${resource_scope_label(snapshot.scope)}, pressure=${resource_pressure_label(snapshot.pressure)}; ${gov.summary()}"
+    let _ = write_file("${marker_dir}/resource.summary", summary)
+    rc
+}
+
 /// JSON array literal of a string list — the shape `avra_process_forward`
 /// expects for a child's argv.
 fn json_string_list(items: List<string>) -> string {
@@ -4243,6 +4263,21 @@ cli avra {
         }
     }
 
+    command _resource_pool {
+        description "INTERNAL: run a marker-aware resource-admitted build queue"
+        hidden true
+        option commands { description "Internal newline-separated command queue" }
+        option slugs { description "Internal newline-separated marker slugs" }
+        option marker_dir { description "Internal marker directory" }
+        option project_dir { description "Internal project root for learned observations" }
+        option compiler { description "Internal compiler path for profile identity" }
+        option work_kind { description "Internal resource work profile" }
+        option plan_shape { description "Internal resource plan shape" }
+        option width_cap { description "Internal static CPU width ceiling" }
+        option estimate_mb { description "Internal conservative per-unit seed" }
+        run() { cmd_resource_pool(args) }
+    }
+
     command expr {
         description "Parse and display an expression"
         arg file { description "Source file", required true }
@@ -4265,6 +4300,11 @@ cli avra {
         description "Evaluate a Avra expression"
         arg file { description "Source file", required true }
         run() { cmd_eval(args) }
+    }
+
+    command resources {
+        description "Print the current portable CPU, memory, pressure, and scope snapshot"
+        run() { cmd_resources() }
     }
 
     command fix {

@@ -1,0 +1,23 @@
+// Fixture: the public `bs2 resources` boundary is deliberately tiny and
+// machine-readable, so shell-owned orchestration can share the compiler's
+// Linux/macOS/cgroup probes without carrying another platform implementation.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+fn probe(name: string, ok: bool) {
+    let tag = if ok { "ok" } else { "FAIL" }
+    println("PROBE ${name}: ${tag}")
+}
+
+fn main() -> int {
+    let rc = avra_shell_exec_status("build/bs2 resources")
+    let out = avra_shell_exec("build/bs2 resources")
+    probe("resources_rc_zero", rc == 0)
+    probe("capacity_key_present", out.contains("capacity_mb="))
+    probe("available_key_present", out.contains("available_mb="))
+    probe("cpu_key_present", out.contains("cpu_capacity="))
+    probe("pressure_label_portable", out.contains("pressure=unknown") || out.contains("pressure=normal") || out.contains("pressure=elevated") || out.contains("pressure=critical"))
+    probe("scope_label_portable", out.contains("scope=unknown") || out.contains("scope=host") || out.contains("scope=cgroup"))
+    0
+}

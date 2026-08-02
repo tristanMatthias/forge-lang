@@ -32,7 +32,8 @@
 // consumed by anything else on the box also lands in `used`, which only
 // narrows admissions: every attribution error is in the safe direction.
 
-use resources.{ResourceProfile, ResourceSnapshot, resource_profile_seed_mb, resource_snapshot, resource_width_cap}
+use resources.{ResourceProfile, ResourceSnapshot, resource_profile_seed_mb,
+               resource_snapshot, resource_width_cap}
 
 /// The admission state for one pool run. Counters are mutated through
 /// methods (structs are self-by-pointer), so the pool threads one governor

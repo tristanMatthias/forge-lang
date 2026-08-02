@@ -42,7 +42,7 @@ fn main() -> int {
     // ── Case 1: pipe stdout (CI shape). The progress bar must NOT render. ──
     avra_shell_exec("rm -rf ${root}/dep1/build/cache/meta ${root}/dep2/build/cache/meta")
     let pipe_log = "/tmp/avra_5gvp_pipe.log"
-    let rc_pipe = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata > ${pipe_log} 2>&1")
+    let rc_pipe = avra_shell_exec_status("cd ${root}/app && ${bs2} build --emit_metadata > ${pipe_log} 2>&1")
     probe("pipe_build_rc_zero", rc_pipe == 0)
     probe("pipe_dep1_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep1", bs2)) != 0)
     probe("pipe_dep2_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/dep2", bs2)) != 0)
@@ -59,7 +59,7 @@ fn main() -> int {
     // `script` allocates a PTY for stdout, but its CLI differs by platform:
     // BSD/macOS takes the command positionally (`script -q FILE cmd…`),
     // util-linux takes it via `-c` (`script -q -c "cmd" FILE`).
-    let inner = "cd ${root}/app && AVRA_JOBS=2 ${bs2} build --emit_metadata"
+    let inner = "cd ${root}/app && ${bs2} build --emit_metadata"
     let tty_cmd = if avra_host_os() == "macos" {
         "script -q ${tty_log} sh -c '${inner}' > /dev/null 2>&1"
     } else {
@@ -76,6 +76,8 @@ fn main() -> int {
     probe("tty_log_has_escape_codes", tty_has_esc == 0)
     let tty_has_summary = avra_shell_exec_status("grep -q 'built 2 deps' ${tty_log}")
     probe("tty_log_has_summary_line", tty_has_summary == 0)
+    let tty_has_resource_controller = avra_shell_exec_status("grep -q '\[resources\] build build-path-dependency:' ${tty_log}")
+    probe("tty_log_has_resource_controller_summary", tty_has_resource_controller == 0)
 
     0
 }

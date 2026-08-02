@@ -225,9 +225,10 @@ selfhost:
 #                                  # cold ~5-7 min rebuild) — LOCAL only, non-
 #                                  # hermetic; CI always uses the default build
 #   make diff-test CORPUS='path/*.av'   # override the corpus glob
-#   make diff-test JOBS=N          # corpus fan-out width (default: ~nproc-1)
+# Concurrency is derived from the shared portable resource profile; there is
+# deliberately no per-workflow jobs override.
 diff-test:
-	@$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(if $(JOBS),DIFF_TEST_JOBS=$(JOBS) )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW)) $(if $(PREBUILT),--new-prebuilt)
+	@$(if $(CORPUS),DIFF_TEST_CORPUS='$(CORPUS)' )$(DIAG) --diff-test $(if $(BASE),--base $(BASE)) $(if $(NEW),--new $(NEW)) $(if $(PREBUILT),--new-prebuilt)
 
 # Compile and run a single Avra file with the bootstrap compiler.
 run:

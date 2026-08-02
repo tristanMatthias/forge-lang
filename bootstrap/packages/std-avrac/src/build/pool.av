@@ -195,6 +195,13 @@ export fn pool_run_resource_admitted(commands: List<string>, gov: MemGovernor, s
     pool_run_core(commands, [], "", gov, sampler)
 }
 
+/// Marker-aware form of `pool_run_resource_admitted`. A foreground progress
+/// renderer can observe the same pool through its marker protocol without
+/// downgrading its dispatcher to a width-only shell semaphore.
+export fn pool_run_resource_admitted_with_progress(commands: List<string>, slugs: List<string>, marker_dir: string, gov: MemGovernor, sampler: fn() -> ResourceSnapshot) -> int {
+    pool_run_core(commands, slugs, marker_dir, gov, sampler)
+}
+
 // The one dispatch loop every entry point shares. A width-only governor
 // (estimate 0) short-circuits every budget check and never invokes the
 // sampler, so the plain pool_run paths behave exactly as before admission

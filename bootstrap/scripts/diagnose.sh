@@ -339,14 +339,13 @@ DIFF & ANALYSIS
                        and NEW (default HEAD) and assert byte-identical IR
                        over the selfhost source + curated standalone corpus
                        (tests/difftest_corpus/*.av). By default the two
-                       selfhost compiles run concurrently and the corpus fans
-                       out in parallel (see DIFF_TEST_JOBS below to serialize).
+                       selfhost compiles and corpus fan-out are scheduled from
+                       the portable resource profile for the active CPU/memory
+                       scope.
                        The go-hard safety net. --new-prebuilt reuses build/bs2 as
                        NEW (skip the cold rebuild; LOCAL, non-hermetic).
-                       DIFF_TEST_CORPUS=<glob> overrides the corpus;
-                       DIFF_TEST_JOBS=<n> the concurrency width (1 also
-                       serializes the two selfhost compiles: half the peak
-                       memory, for a ≤16GB box).
+                       DIFF_TEST_CORPUS=<glob> overrides the corpus. Width is
+                       derived from `bs2 resources`, not an environment knob.
   --cache-fuzz [N] [SEED]
                        The canonical "is the cache lying to me" check
                        (pdme.9). N seeded edit/damage iterations against a
@@ -410,12 +409,11 @@ DIFF & ANALYSIS
                        RUN ANY HEAVY COMMAND SAFELY on the ≤16GB container.
                        Starts the memory watchdog (--memguard), runs <cmd>,
                        and ALWAYS tears the watchdog down. Also pins
-                       legacy AVRA_JOBS=1 (build-pipeline workers),
-                       AVRA_TEST_JOBS=1 (in-process test threads), and
-                       DIFF_TEST_JOBS=1 (corpus fan-out); all are
-                       overridable. `bs2 test` uses its own adaptive resource
-                       controller. Use this for diff-test / cold builds so a
-                       memory spike kills the compile, NOT the whole container.
+                       AVRA_TEST_JOBS=1 (in-process test threads). Build and
+                       diff-test concurrency comes from their resource
+                       controllers, not environment flags. Use this for
+                       diff-test / cold builds so a memory spike kills the
+                       compile, NOT the whole container.
                        e.g. --guarded 5500 -- make diff-test
   --memguard [FLOOR_MB]
                        The raw memory watchdog (default FLOOR 3500MB; 5500
@@ -3638,23 +3636,11 @@ mode_memguard() {
 
 # The RECOMMENDED way to run ANY heavy build/test on the small box: wrap it
 # in the watchdog, guaranteed torn down when the command finishes (or is
-# interrupted). Also pins every fan-out knob to 1 (all overridable) so no
-# runner under the wrapper can multiply its own peak. Returns the command's
-# OWN exit status; on a non-zero exit it points at the trip log so an OOM
-# kill is unambiguous.
-#
-# t-vj3v: the THREE knobs are distinct mechanisms, and pinning one does not
-# constrain the others — this mode used to set only AVRA_TEST_JOBS while
-# claiming `bs2 test` "can't fan out parallel shards", which was false:
-#
-#   AVRA_JOBS       legacy build-pipeline worker width. The test runner no
-#                   longer reads it: the shared resource controller owns test
-#                   shard admission from its profile, capacity, and pressure.
-#   AVRA_TEST_JOBS  in-process test parallelism — test FILES run as
-#                   @deferred_init units across worker THREADS inside one
-#                   already-assembled shard binary. Cheap by comparison.
-#   DIFF_TEST_JOBS  diff-test corpus fan-out (NOT its two selfhost compiles,
-#                   which --diff-test serializes when this is 1).
+# interrupted). It pins AVRA_TEST_JOBS=1, the small in-process test-thread
+# setting. Build/test/diff process fan-out is instead admitted by the shared
+# resource controller from the live platform snapshot. Returns the command's
+# OWN exit status; on a non-zero exit it points at the trip log so an OOM kill
+# is unambiguous.
 #
 # Usage: --guarded [FLOOR_MB] -- <command> [args...]
 #   diagnose.sh --guarded 5500 -- make diff-test
@@ -3665,17 +3651,10 @@ mode_guarded() {
   if [ "${1:-}" != "--" ] && [ $# -ge 1 ]; then floor="$1"; shift; fi
   [ "${1:-}" = "--" ] && shift
   [ $# -ge 1 ] || die "--guarded: usage: --guarded [FLOOR_MB] -- <command> [args...]"
-  # Keep legacy build-pipeline pools narrow under the watchdog. `bs2 test`
-  # ignores this setting; its resource controller already admits shards from
-  # the live platform snapshot.
-  export AVRA_JOBS="${AVRA_JOBS:-1}"
+  # This remains a correctness/debug setting for test code running threads
+  # within an already-admitted shard. Build and diff width are intentionally
+  # not overridden here.
   export AVRA_TEST_JOBS="${AVRA_TEST_JOBS:-1}"
-  # Same reasoning, for the other heavy runner under this wrapper: diff-test's
-  # two selfhost compiles peak at ~12GB CONCURRENTLY, which trips the very
-  # watchdog this mode starts. Serializing them is the difference between the
-  # gate running and the gate being unrunnable on a ≤16GB box; it costs one
-  # extra compile (~30s). Overridable, like the others.
-  export DIFF_TEST_JOBS="${DIFF_TEST_JOBS:-1}"
   # t-ce5t: the run lifecycle installs the teardown traps (watchdog included,
   # via RUN_AUX_PIDS) AND the orphan reaping the bespoke trap never did — the
   # watchdog was reaped, the 4.4GB compiles it was watching were not.
@@ -3683,7 +3662,7 @@ mode_guarded() {
   mode_memguard "$floor" &
   local guard=$!
   RUN_AUX_PIDS="$RUN_AUX_PIDS $guard"
-  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_JOBS=$AVRA_JOBS AVRA_TEST_JOBS=$AVRA_TEST_JOBS DIFF_TEST_JOBS=$DIFF_TEST_JOBS — running: $*"
+  log "[guarded] watchdog pid=$guard floor=${floor}MB AVRA_TEST_JOBS=$AVRA_TEST_JOBS; process pools use resource admission — running: $*"
   "$@"
   local rc=$?
   run_end
@@ -5018,12 +4997,11 @@ mode_check_bootstrap_window() {
 # would be skipped after a doomed ~1s compile, leaving the corpus phase with
 # ZERO real comparisons (the bug this default fixed).
 #
-# The two selfhost compiles (OLD and NEW) run CONCURRENTLY — `--output` stops
-# them clobbering each other's IR file — so the selfhost phase, the dominant
-# post-build cost, takes ~one compile's wall time, not two. The corpus files
-# then fan out in parallel too (bounded by DIFF_TEST_JOBS). The selfhost and
-# corpus PHASES are still sequential, but the corpus is tiny (~13 files) so
-# overlapping them across phases would save a rounding error, not the builds.
+# The selfhost profile decides whether OLD and NEW can run concurrently;
+# `--output` keeps their IR files independent when it admits both. The corpus
+# has its own smaller profile. The selfhost and corpus PHASES are still
+# sequential, but the corpus is tiny (~13 files) so overlapping them across
+# phases would save a rounding error, not the builds.
 #
 # Usage / knobs:
 #   --base <ref>            OLD/oracle ref     (default: integration branch)
@@ -5033,11 +5011,9 @@ mode_check_bootstrap_window() {
 #                           rebuild. LOCAL convenience only: NON-HERMETIC (the
 #                           binary's seed/source aren't pinned); CI never uses it.
 #   DIFF_TEST_CORPUS=<glob> corpus inputs  (default: tests/difftest_corpus/*.av)
-#   DIFF_TEST_JOBS=<n>      concurrency width (default: ~nproc-1, capped at 8).
-#                           Bounds the corpus fan-out; jobs=1 ALSO serializes
-#                           the two selfhost compiles, halving peak memory
-#                           (~12GB -> ~6GB) for one extra compile of wall-clock.
-#                           That is the setting for a ≤16GB box.
+#   resource profile        derives selfhost/corpus width from `bs2 resources`
+#                           and the named work's conservative first-run seed;
+#                           cgroup and macOS limits share this one boundary.
 #   AVRA_FORCE_DIFFTEST=1   ignore the per-ref compiler build cache
 
 DIFFTEST_DIR="$BUILD_DIR/difftest"
@@ -5090,14 +5066,35 @@ dt_compile_ir() {
     >"$logdir/last.compile.log" 2>&1
 }
 
-# Bounded fan-out width for the corpus differential. Leaves a core free and
-# caps the pool so a large overridden DIFF_TEST_CORPUS can't fork-bomb / OOM
-# (the snw0 class on small boxes). Override with DIFF_TEST_JOBS.
-dt_default_jobs() {
-  local n; n=$(nproc 2>/dev/null || echo 4)
-  if [ "$n" -gt 2 ]; then n=$((n - 1)); else n=1; fi   # leave a core free
-  if [ "$n" -gt 8 ]; then n=8; fi                       # cap the pool
-  printf '%s' "$n"
+# Resource-derived width for the shell-owned diff-test phases. The canonical
+# platform probe lives in `bs2 resources`; this shell only applies a named
+# work profile's conservative seed, so Linux/macOS/cgroups never get separate
+# ad-hoc implementations or environment-variable overrides.
+dt_resource_jobs() {
+  local bs2="$1" kind="$2" snapshot avail cpu pressure seed reserve by_mem jobs
+  snapshot=$("$bs2" resources 2>/dev/null) || { printf '1'; return; }
+  avail=$(printf '%s\n' "$snapshot" | sed -n 's/^available_mb=//p' | head -1)
+  cpu=$(printf '%s\n' "$snapshot" | sed -n 's/^cpu_capacity=//p' | head -1)
+  pressure=$(printf '%s\n' "$snapshot" | sed -n 's/^pressure=//p' | head -1)
+  case "$avail" in ''|*[!0-9-]*) avail=0 ;; esac
+  case "$cpu" in ''|*[!0-9-]*) cpu=1 ;; esac
+  [ "$cpu" -gt 0 ] || cpu=1
+  case "$kind" in
+    selfhost) seed=6000; reserve=4096 ;;
+    corpus)   seed=2500; reserve=4096 ;;
+    *)        seed=3500; reserve=4096 ;;
+  esac
+  if [ "$avail" -le 0 ]; then printf '1'; return; fi
+  # A shell-owned one-shot has no persistent governor loop, so a live
+  # elevated/critical platform signal narrows its initial admission to the
+  # serial floor. The compilers it starts retain their runtime pressure gate.
+  case "$pressure" in elevated|critical) printf '1'; return ;; esac
+  by_mem=$(((avail - reserve) / seed))
+  [ "$by_mem" -gt 0 ] || by_mem=1
+  jobs="$by_mem"
+  [ "$jobs" -le "$cpu" ] || jobs="$cpu"
+  [ "$jobs" -le 8 ] || jobs=8
+  printf '%s' "$jobs"
 }
 
 # Collision-free per-input work-dir key: a hash of the FULL path. Same-named
@@ -5230,14 +5227,10 @@ mode_diff_test() {
   # main.av.ll, so by default they run CONCURRENTLY and the phase costs ~one
   # compile instead of two.
   #
-  # DIFF_TEST_JOBS=1 serializes them. Two whole-compiler compiles peak at ~12GB
-  # together, which on a ≤16GB box trips the memory watchdog (or takes the
-  # container down without one) — so the authoritative local gate was
-  # unrunnable there, with no knob to trade wall-clock for peak memory: jobs=1
-  # only ever bounded the corpus fan-out, leaving the heaviest phase untouched.
-  # jobs=1 now means what it says — nothing in diff-test runs concurrently —
-  # at the cost of ~one extra selfhost compile (~30s).
-  local self_jobs="${DIFF_TEST_JOBS:-$(dt_default_jobs)}"
+  # Two whole-compiler compiles peak at ~12GB together, so this phase receives
+  # its own conservative resource profile and serialises automatically on a
+  # tight runner rather than consulting an environment override.
+  local self_jobs; self_jobs=$(dt_resource_jobs "$new_bs2" selfhost)
   local self="$old/tree/bootstrap/packages/cli/src/main.av"
   local p_old p_new rc_old rc_new
   if [ "$self_jobs" -le 1 ]; then
@@ -5284,7 +5277,7 @@ mode_diff_test() {
   # compile them standalone — every one would be skipped, doing zero work.
   # (Always runs — it's now tiny and fast; there is no skip-the-corpus knob.)
   local glob="${DIFF_TEST_CORPUS:-$BOOTSTRAP_DIR/tests/difftest_corpus/*.av}"
-  local jobs="${DIFF_TEST_JOBS:-$(dt_default_jobs)}"
+  local jobs; jobs=$(dt_resource_jobs "$new_bs2" corpus)
   log "diff-test: corpus differential — $glob (jobs=$jobs)"
   local divergent=() skipped_names=() input name cwd status in_batch=0 first_div_cwd=""
   # Fan out: each input runs through both compilers in its own dir

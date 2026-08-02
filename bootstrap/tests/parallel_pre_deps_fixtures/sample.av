@@ -1,6 +1,5 @@
-// Fixture: validates parallel path-dep pre-build via xargs -P.
-// Three independent path-deps; with --jobs=3 they should build
-// concurrently. Smoking gun: total wall < 3× single-dep cost.
+// Fixture: validates resource-controlled path-dep pre-build. The width comes
+// from the shared build profile, not an environment-variable override.
 //
 // Tracking ticket: forge-crafting-intepreters-e20h.
 
@@ -36,19 +35,18 @@ fn main() -> int {
     let pwd = avra_process_env_get("PWD")
     let bs2 = "${pwd}/build/bs2"
 
-    // Run with AVRA_JOBS=3 — all 3 deps should build concurrently.
-    let rc = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=3 ${bs2} build --emit_metadata")
-    probe("parallel_build_rc_zero", rc == 0)
+    // An invalid legacy setting proves the build path does not parse it.
+    let rc = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=not-a-number ${bs2} build --emit_metadata")
+    probe("resource_build_rc_zero", rc == 0)
 
     probe("a_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/a", bs2)) != 0)
     probe("b_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/b", bs2)) != 0)
     probe("c_meta_present", avra_selfhost_file_exists(package_meta_path_for("${root}/c", bs2)) != 0)
 
-    // AVRA_JOBS=1 (sequential) — second run hits the cache for each
-    // dep so .meta.bin from the first run is preserved. Just verify
-    // the command exits clean (correctness path identical to N=many).
-    let rc_seq = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=1 ${bs2} build --emit_metadata")
-    probe("sequential_build_rc_zero", rc_seq == 0)
+    // A subsequent run can reuse cache state without changing its resource
+    // policy. Keep the legacy setting malformed here too.
+    let rc_repeat = avra_shell_exec_status("cd ${root}/app && AVRA_JOBS=not-a-number ${bs2} build --emit_metadata")
+    probe("repeat_build_rc_zero", rc_repeat == 0)
 
     0
 }
