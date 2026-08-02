@@ -1,0 +1,24 @@
+// `bs2 resources` is the stable process-boundary contract for orchestration
+// outside Avra (for example diagnose.sh's diff-test). It exposes portable
+// values rather than Linux /proc or Mach-specific details.
+
+use @std.avrac.test_runner.{cached_fixture_run}
+
+fn resources_run() -> string {
+    cached_fixture_run("tests/resources_command_fixtures/sample.av")
+}
+
+spec "resources command: portable platform snapshot boundary" {
+    then "the command succeeds" {
+        resources_run().contains("PROBE resources_rc_zero: ok")
+    }
+    then "memory and CPU fields are machine-readable" {
+        resources_run().contains("PROBE capacity_key_present: ok") &&
+        resources_run().contains("PROBE available_key_present: ok") &&
+        resources_run().contains("PROBE cpu_key_present: ok")
+    }
+    then "pressure and scope use portable labels" {
+        resources_run().contains("PROBE pressure_label_portable: ok") &&
+        resources_run().contains("PROBE scope_label_portable: ok")
+    }
+}

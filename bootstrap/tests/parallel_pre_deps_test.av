@@ -1,6 +1,6 @@
-// `bs2 build --emit_metadata` parallelizes path-dep pre-builds via
-// xargs -P. AVRA_JOBS controls the worker count (default 4). All
-// three deps in the fixture build concurrently when N≥3.
+// `bs2 build --emit_metadata` sends independent path-dep builds through the
+// shared resource controller. AVRA_JOBS is deliberately ignored here: the
+// current platform scope and learned profile decide the width.
 //
 // Tracking ticket: forge-crafting-intepreters-e20h.
 
@@ -10,9 +10,9 @@ fn pp_run() -> string {
     cached_fixture_run("tests/parallel_pre_deps_fixtures/sample.av")
 }
 
-spec "parallel pre-deps: AVRA_JOBS=N runs path-dep builds concurrently" {
-    then "AVRA_JOBS=3 build with three independent deps succeeds" {
-        pp_run().contains("PROBE parallel_build_rc_zero: ok")
+spec "parallel pre-deps: resource controller owns build width" {
+    then "an invalid legacy AVRA_JOBS value cannot affect the build" {
+        pp_run().contains("PROBE resource_build_rc_zero: ok")
     }
     then "dep a's meta.bin lands" {
         pp_run().contains("PROBE a_meta_present: ok")
@@ -23,7 +23,7 @@ spec "parallel pre-deps: AVRA_JOBS=N runs path-dep builds concurrently" {
     then "dep c's meta.bin lands" {
         pp_run().contains("PROBE c_meta_present: ok")
     }
-    then "sequential AVRA_JOBS=1 also exits clean (cache hit)" {
-        pp_run().contains("PROBE sequential_build_rc_zero: ok")
+    then "a subsequent build exits clean from the same resource profile" {
+        pp_run().contains("PROBE repeat_build_rc_zero: ok")
     }
 }

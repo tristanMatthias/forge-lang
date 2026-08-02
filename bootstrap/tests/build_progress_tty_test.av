@@ -42,4 +42,7 @@ spec "build progress (5gvp): TTY stdout renders the multi-line bar" {
     then "TTY build log ends with a `built N deps` summary" {
         pb_run().contains("PROBE tty_log_has_summary_line: ok")
     }
+    then "TTY dispatcher reports the shared resource controller" {
+        pb_run().contains("PROBE tty_log_has_resource_controller_summary: ok")
+    }
 }

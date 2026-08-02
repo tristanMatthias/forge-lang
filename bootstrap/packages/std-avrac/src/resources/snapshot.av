@@ -4,22 +4,15 @@
 // this small semantic contract; unknown capability is explicit and the
 // controller can take a conservative path.
 
-// Kept here during the bootstrap window: the pinned seed's baked metadata
-// decoder cannot safely consume a core runtime-surface expansion until the
-// train cycles. This module is still the ONE public Avra resource surface;
-// moving these declarations into core/runtime.av is a mechanical follow-up
-// after that cycle, not a second platform API.
-extern fn avra_resource_memory_capacity_mb() -> int
-extern fn avra_resource_memory_available_mb() -> int
-extern fn avra_resource_cpu_capacity() -> int
-extern fn avra_resource_pressure_level() -> int
-extern fn avra_resource_scope_kind() -> int
+use core.{avra_resource_memory_capacity_mb, avra_resource_memory_available_mb,
+           avra_resource_cpu_capacity, avra_resource_pressure_level,
+           avra_resource_scope_kind}
 
 /// Cross-platform resource state for the current process's enclosing scope.
 /// All sizes are MiB; <=0 means unavailable rather than a fabricated zero.
 /// Pressure codes: 0 unknown, 1 normal, 2 elevated, 3 critical. Scope codes:
-/// 0 unknown, 1 host, 2 cgroup. Scalars keep this bootstrap-safe while the
-/// public module owns the labels and no caller observes platform raw values.
+/// 0 unknown, 1 host, 2 cgroup. The public module owns the labels; callers
+/// never inspect Linux or Mach raw data.
 export type ResourceSnapshot = {
     capacity_mb: int,
     available_mb: int,

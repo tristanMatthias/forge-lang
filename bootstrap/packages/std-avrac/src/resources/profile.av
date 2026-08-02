@@ -16,6 +16,40 @@ export type ResourceProfile = {
     plan_shape: string,
 }
 
+/// The scheduling defaults associated with a named kind of work. These are
+/// bootstrap seeds, not user-facing tuning flags: a successful pool run
+/// persists its measured peak under `ResourceProfile` and supersedes the
+/// initial estimate on the next run.
+export type ResourcePoolPolicy = {
+    width_cap: int,
+    normal_estimate_mb: int,
+    reserve_mb: int,
+}
+
+/// Construct policy data without leaking raw arithmetic to a scheduler.
+/// Other subsystems may provide their own named defaults through this same
+/// shape; the controller itself remains work-kind agnostic.
+export fn resource_pool_policy(width_cap: int, normal_estimate_mb: int, reserve_mb: int) -> ResourcePoolPolicy {
+    ResourcePoolPolicy {
+        width_cap: if width_cap < 1 { 1 } else { width_cap },
+        normal_estimate_mb: if normal_estimate_mb < 1 { 1 } else { normal_estimate_mb },
+        reserve_mb: if reserve_mb < 0 { 0 } else { reserve_mb },
+    }
+}
+
+/// Canonical defaults for build worker pools. The work kind remains part of
+/// the generic `ResourceProfile` identity; only this policy lookup knows that
+/// LLVM codegen is materially lighter than a compiler invocation.
+export fn resource_build_pool_policy(profile: ResourceProfile) -> ResourcePoolPolicy {
+    if profile.work_kind == "build-module-codegen" {
+        resource_pool_policy(4, 1024, 4096)
+    } else {
+        // Path dependencies and per-module compiler units both fork a bs2
+        // compiler, including its parser/typechecker/codegen working set.
+        resource_pool_policy(4, 3500, 4096)
+    }
+}
+
 /// Detect the runtime allocation mode once at the boundary. This is not a
 /// tuning input: AVRA_RC_STRICT already changes runtime correctness behaviour;
 /// the profile merely describes the process we are about to schedule.
