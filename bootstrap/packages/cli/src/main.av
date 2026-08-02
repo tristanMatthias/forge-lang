@@ -3200,7 +3200,10 @@ fn write_commit_gate_marker(project_dir: string, start_hash: string, rc: int) {
         eprintln("[per-file] inputs changed mid-run — commit-gate marker NOT written (the pre-commit hook will re-run the suite)")
         return
     }
-    avra_selfhost_write_file("${project_dir}/build/.tests_verified", "${start_hash}\n")
+    if avra_selfhost_write_file("${project_dir}/build/.tests_verified", "${start_hash}\n") != 1 {
+        eprintln("[per-file] commit-gate marker could NOT be written (the pre-commit hook will re-run the suite)")
+        return
+    }
     eprintln("[per-file] commit-gate marker written — the pre-commit hook will skip its duplicate suite run")
 }
 

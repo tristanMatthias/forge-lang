@@ -2521,7 +2521,10 @@ mode_rc_strict_suite() {
   # runner (`undefined variable run_test_suite`).
   # The resource controller recognises RC strict as an allocation profile,
   # uses its stricter seed, and admits shards from live capacity and pressure.
-  # AVRA_TEST_JOBS remains the independent in-shard test-worker setting.
+  # ${AVRA_TEST_JOBS:-2} is this suite's own INTERNAL default for in-shard
+  # test workers — an undocumented hook (t-kdyj.2), not an operator knob.
+  # CI (rc-strict.yml) pins it to match seed-train.yml so PR CI exercises
+  # the same in-shard interleaving the post-merge train does (see hama).
   local test_jobs="${AVRA_TEST_JOBS:-2}"
   if [ -n "${1:-}" ]; then
     ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )

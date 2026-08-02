@@ -30,7 +30,7 @@ fn harness_of(tag: string, src: string, body: string) -> string {
     let name = "fk" + tag + pid
     let root = "/tmp/avra_ce5t_" + tag + "_" + pid
     avra_shell_exec("rm -rf '" + root + "'")
-    let _ = avra_mkdir_p(root + "/runs")
+    let _ = avra_mkdir_p(root)
     let script = "set -u\n" +
         "export root='" + root + "'\n" +
         "export name='" + name + "'\n" +
