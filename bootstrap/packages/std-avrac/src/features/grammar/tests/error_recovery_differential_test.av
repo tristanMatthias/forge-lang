@@ -514,14 +514,26 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
 // `(error)`, a failed expr-stmt → `(expr (error))`), so one string equality
 // captures both the outcome AND the shape.
 
-fn rtree(static_raw: bool, source: string) -> string {
+/// The whole-program tree under ONE parser path — the three-way core `rtree` and
+/// `tree_agrees_everywhere` both read, so the path selection lives in one place.
+/// `mode`: "hand" (the oracle) | "emit" (the generated parser, interpreter re-parse
+/// OFF) | "exec" (the grammar EXECUTOR). Those are CLAUDE.md's three implementations;
+/// the DEFAULT production path is emit with the executor as its fallback, so a
+/// comparison that omits "exec" cannot see an executor-only divergence.
+fn rtree_at(mode: string, source: string) -> string {
     mut p = parser_new(source)
-    // static-raw: the static generated parser with the interpreter re-parse
-    // fallback OFF (its RAW recovery tree). Otherwise the hand oracle.
-    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    if mode == "hand" { p.decl_flip = false }
+    else if mode == "emit" { p.no_static_fallback = true }
+    else { p.decl_static = false }
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
+}
+
+fn rtree(static_raw: bool, source: string) -> string {
+    // static-raw: the static generated parser with the interpreter re-parse
+    // fallback OFF (its RAW recovery tree). Otherwise the hand oracle.
+    rtree_at(if static_raw { "emit" } else { "hand" }, source)
 }
 fn agree_tree(source: string) -> bool {
     let sr = rtree(true, source)
@@ -1325,6 +1337,89 @@ spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
     }
 }
 
+
+/// Tree equality across ALL THREE implementations, for VALID input. The `agree_*`
+/// family above all key on DIAGNOSTICS, which a valid program has none of — so they
+/// pass vacuously here and cannot say anything about what a valid program PARSES
+/// INTO. This is the valid-input twin: same three paths, compared on the tree.
+fn tree_agrees_everywhere(source: string) -> bool {
+    let h = rtree_at("hand", source)
+    let e = rtree_at("emit", source)
+    let x = rtree_at("exec", source)
+    if e != h || x != h {
+        println("three-path TREE mismatch")
+        println(source)
+        println("hand=" + h)
+        println("emit=" + e)
+        println("exec=" + x)
+    }
+    e == h && x == h
+}
+
+// ── t-47hc.33.2: the `!` compounds, asserted instead of asserted-about ──────────
+//
+// Deleting `@hand(postfix_suffix)` rested on a claim that was MEASURED and then written
+// down only in prose (postfix_flip_test): "measured with the delegate actually deleted,
+// every compound agrees: `x!\n?`, `x!\n.f`, `x!\n[0]`, `x!\n(1)`, `x!!`, `x!?`". That
+// was the last stated blocker on the deletion, cleared by a measurement no spec kept.
+//
+// A measurement that is not a spec decays into folklore, and this one gates a DELETED
+// safety net. So the compounds are corpus now — and asserting them found the claim to be
+// FALSE for one of the six. See the divergence note below `x!\n?` is deliberately absent
+// from, in the same shape this file already uses for `a?.`.
+//
+// They are VALID programs, which is why they need their own assertion: the whole
+// `agree_*` family compares DIAGNOSTICS, and a valid program has none, so every one of
+// them passes vacuously here. Only the TREE distinguishes `x!\n[0]` read as one indexed
+// chain from `x!` followed by a fresh list-literal statement.
+spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
+    then "a NEXT-LINE suffix after `!` does not fold onto the previous line" {
+        // Newline-sensitivity is the whole question. `[0]` and `(1)` must start FRESH
+        // statements (a list literal and a group), not become an index and a call —
+        // which is what the entry guard's same-line conjunct is for.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n [0]\n return 0\n}") &&
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n (1)\n return 0\n}")
+    }
+    then "a next-line `.field` DOES fold — and that is the designed asymmetry" {
+        // `.` is the one postfix whose entry guard requires same-line ONLY under
+        // `cell_mode`, because cross-line method chaining is idiomatic. Pinned so a
+        // later "consistency" tidy-up cannot quietly make `.` newline-sensitive too.
+        tree_agrees_everywhere("type S = { f: int }\nfn f(x: S?) -> int {\n let a = x!\n .f\n return 0\n}")
+    }
+    then "and the SAME-LINE compounds, which the hand ran as ONE step" {
+        // `x!!` and `x!?` are the `!` loop's own shape — the hand consumed the run and
+        // then dispatched without re-guarding. Native, each is a separate re-entered
+        // step; that this makes no observable difference is the claim under test.
+        tree_agrees_everywhere("fn f(x: int??) -> int {\n let a = x!!\n return 0\n}") &&
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
+    }
+    // `x!` + a NEXT-LINE `?` is DELIBERATELY absent, and it is the one case the retired
+    // claim got wrong. It genuinely DIVERGES, measured on this exact corpus:
+    //
+    //     hand = (let a (call __avra_force_unwrap (x)))  (error)  (return 0)
+    //     emit = (let a (? (call __avra_force_unwrap (x))))       (return 0)
+    //     exec = (? …) — same as emit
+    //
+    // The hand REJECTS the cross-line `?`; the production parser FOLDS it into a Try.
+    // Mechanism, traced rather than inferred: the hand's `postfix_step` (parse/mod.av)
+    // consumes a run of `!` in a `while` loop and then falls through to
+    // `if self.check(Tk.Question)` with NO re-test of the entry guard's
+    // `allow_dot_postfix && current_line == prev_line`. The pure-hand driver never
+    // reaches that fallthrough — it consumes the `!` in its own step, so the NEXT step's
+    // entry guard rejects the `?` — while the production path arrives mid-chain and does
+    // reach it (traced firing at cur=3 prev=2, folding anyway).
+    //
+    // Its siblings do NOT diverge, which is why this is one bug and not a class: `[`
+    // and `(` reach the same unguarded fallthrough but land in a fresh step on every
+    // path, and `.` is legal cross-line by design (above).
+    //
+    // Filed as its own gap rather than asserted here, so this spec does not fail for
+    // something it is not about — the same treatment `a?.` gets above. Adding
+    // `tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}")`
+    // is the failing-first witness when someone fixes it. NOTE the fix is a STRICTNESS
+    // change to the hand oracle (it makes the parser reject what it accepts today), so
+    // it lands on the `intended-strictness-change` path, not as a silent correction.
+}
 
 fn agree_pos(source: string) -> bool {
     let h = poslist(false, source)
