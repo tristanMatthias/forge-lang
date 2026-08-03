@@ -335,6 +335,33 @@ export fn filter_discovered(files: List<DiscoveredFile>, filter: string) -> List
 /// the caller distinguish "the suffix matched two files" (ambiguous)
 /// from "exact match" (one file). Today the orchestrator runs all
 /// returned files; future UX could warn on ambiguity.
+/// Scope the discovered set to N positional paths: the UNION of what each
+/// filter selects, deduped by path, in the order the filters were given.
+///
+/// Each filter resolves through `filter_by_path`'s own first-non-empty-wins
+/// ladder INDEPENDENTLY (dir → exact → suffix → basename substring). That
+/// per-filter application is the load-bearing part: flattening it into one
+/// "matches any filter by any strategy" pass would change meaning, because a
+/// filter with an exact match would start pulling in another filter's
+/// substring hits — precisely the surprise the ladder exists to avoid.
+///
+/// An empty list is a no-op, mirroring `filter_by_path`'s empty-string case,
+/// so a bare `bs2 test` still runs everything.
+export fn filter_by_paths(files: List<DiscoveredFile>, path_filters: List<string>) -> List<DiscoveredFile> {
+    if path_filters.length == 0 { return files }
+    mut out: List<DiscoveredFile> = []
+    for f in path_filters {
+        for d in filter_by_path(files, f) {
+            // Two filters legitimately overlap (`bs2 test tests/ tests/a_test.av`);
+            // the file must still be compiled and run once.
+            if list_filter(out, (o: DiscoveredFile) -> o.path == d.path).length == 0 {
+                out.push(d)
+            }
+        }
+    }
+    out
+}
+
 export fn filter_by_path(files: List<DiscoveredFile>, path_filter: string) -> List<DiscoveredFile> {
     if path_filter == "" { return files }
     if avra_is_dir(path_filter) == 1 {

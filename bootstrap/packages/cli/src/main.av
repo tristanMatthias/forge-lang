@@ -60,7 +60,7 @@ use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure}
-use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
+use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path, filter_by_paths}
 use @std.avrac.test_runner.{
     scan_gate_diagnostics, render_gate_scan,
     new_only_diagnostics, render_strictness_delta, delta_is_strictness,
@@ -513,7 +513,7 @@ fn run_lang_command(print_flag: bool) {
 // --list (hkms.4) prints discovered tests and exits without compile.
 // Built from the parsed CliResult by the declarative `command test` /
 // `command _test_shard` run() bodies — no raw-argv scanning remains.
-type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool, path_filter: string }
+type TestArgs = { filter: string, coverage: bool, lcov_path: string, per_file: bool, list_only: bool, path_filters: List<string> }
 
 extern fn avra_uptime_ms() -> int
 
@@ -2047,22 +2047,37 @@ fn run_cache_command(subcommand: string, dry_run: bool, max_age_days_str: string
 // Imported at the top of this file alongside the other discovery
 // types.
 
-/// Discovery dispatch for run_test_command: when `path_filter` is
-/// an existing literal file, short-circuit to that one file (saves
-/// the whole-tree walk + ~450 token-classifications, ~15s on a
+/// Discovery dispatch for run_test_command: when every positional path is
+/// an existing literal file or directory, short-circuit to exactly those
+/// (saves the whole-tree walk + ~450 token-classifications, ~15s on a
 /// realistic project). Otherwise fall through to discover_tests so
 /// suffix / basename-substring path filters still resolve.
-fn discover_with_path_shortcut(project_dir: string, path_filter: string) -> List<DiscoveredFile> {
-    // A directory argument scopes the discovery walk to that tree:
-    // `bs2 test fixtures/dir` runs every spec under it. (Previously a
-    // directory fell into the single-file classifier, which crashed
-    // on read_file(dir) — a null deref instead of a meaning.)
-    if path_filter != "" && avra_is_dir(path_filter) == 1 {
-        return discover_tests(path_filter)
+///
+/// Takes N paths (t-kdyj.6). The single-path form used to be an `arg file`
+/// that silently DISCARDED every argument after the first: `bs2 test a.av
+/// b.av` ran `a.av`, exited 0, and said nothing about `b.av` — a green
+/// result that had not measured what the operator asked for.
+fn discover_with_path_shortcut(project_dir: string, path_filters: List<string>) -> List<DiscoveredFile> {
+    if path_filters.length == 0 { return discover_tests(project_dir) }
+    mut resolved: List<DiscoveredFile> = []
+    for pf in path_filters {
+        // A directory argument scopes the discovery walk to that tree:
+        // `bs2 test fixtures/dir` runs every spec under it. (Previously a
+        // directory fell into the single-file classifier, which crashed
+        // on read_file(dir) — a null deref instead of a meaning.)
+        if pf != "" && avra_is_dir(pf) == 1 {
+            for d in discover_tests(pf) { resolved.push(d) }
+            continue
+        }
+        let one = discover_one_file(pf)
+        // One unresolvable path (a suffix or basename form) means the walk
+        // is needed anyway, and ONE walk serves every filter — filter_by_paths
+        // narrows afterwards. Returning early here rather than walking
+        // per-filter is what keeps the N-path cost at one walk, not N.
+        if one.length == 0 { return discover_tests(project_dir) }
+        for d in one { resolved.push(d) }
     }
-    let one = discover_one_file(path_filter)
-    if one.length > 0 { return one }
-    discover_tests(project_dir)
+    resolved
 }
 
 /// hkms.4: render the structurally-discovered test set for `--list`.
@@ -3186,7 +3201,7 @@ fn format_elapsed_seconds(elapsed_ms: int) -> string {
 // project) simply never writes a marker. Scoped runs (--filter or a path
 // arg) prove only part of the tree and never write it.
 fn commit_gate_start_hash(project_dir: string, args: TestArgs) -> string {
-    if args.filter != "" || args.path_filter != "" { return "" }
+    if args.filter != "" || args.path_filters.length > 0 { return "" }
     if avra_selfhost_file_exists("${project_dir}/scripts/diagnose.sh") != 1 { return "" }
     suite_input_hash(project_dir)
 }
@@ -3261,23 +3276,39 @@ fn run_test_command(args: TestArgs) {
     // substring forms fall through to the full walk because we
     // don't know which file they meant until discovery sees the
     // whole set.
-    let discovered = discover_with_path_shortcut(project_dir, args.path_filter)
+    let discovered = discover_with_path_shortcut(project_dir, args.path_filters)
     let after_filter = filter_discovered(discovered, args.filter)
-    // Scope discovery to a single file (or path-suffix match) when
-    // the user passed a positional path arg. Applied AFTER --filter
-    // so both can compose. Empty path_filter is a no-op fast path.
-    let accepted = filter_by_path(after_filter, args.path_filter)
+    // Scope discovery to the positional path args (files, dirs, or
+    // path-suffix matches), unioned. Applied AFTER --filter so both
+    // compose. An empty list is a no-op fast path.
+    let accepted = filter_by_paths(after_filter, args.path_filters)
 
+    // A path that selects NOTHING is an error, and it stays an error when
+    // sibling paths matched. Without this, `bs2 test valid.av typo.av` runs
+    // valid.av and exits 0 — a successful partial measurement that silently
+    // drops a path the operator asked for, which is the same defect as the
+    // discarded-argument bug this command just fixed, one level up. Raised in
+    // review of #1138; the all-unmatched case exited 0 too.
+    //
+    // Checked against `discovered` (BEFORE --filter) so an unmatched PATH is
+    // attributable to the path itself. A valid path plus a name filter that
+    // excludes everything is a different situation and falls through to the
+    // filter message below.
+    let unmatched = list_filter(args.path_filters,
+        (pf: string) -> filter_by_path(discovered, pf).length == 0)
+    if unmatched.length > 0 {
+        // Name every unmatched path — with N paths the operator needs to know
+        // WHICH one was empty, not merely that one was.
+        eprintln("error: no test files matched `${unmatched.join("`, `")}`")
+        avra_process_exit(1)
+        return
+    }
     if discovered.length == 0 {
         println("No test files found.")
         return
     }
     if accepted.length == 0 {
-        if args.path_filter != "" {
-            println("No spec test files matched path `${args.path_filter}`.")
-        } else {
-            println("No spec test files matched filter.")
-        }
+        println("No spec test files matched filter.")
         return
     }
 
@@ -4445,7 +4476,7 @@ cli avra {
         flag bundled { description "Opt out of per-file: run all tests in one process (legacy; coverage uses it)" }
         flag list { description "List discovered tests and exit — no compile, no run" }
         option lcov { description "Enable coverage and write an LCOV report to this path" }
-        arg file { description "Test file or path to scope the run (optional)" }
+        arg files { description "Test files or paths to scope the run (optional, repeatable)", variadic true }
         run() {
             // per_file is the DEFAULT (per-file isolation avoids the bundled
             // path's ~10GB working set / OOM); `--bundled` opts out, `--per_file`
@@ -4457,7 +4488,7 @@ cli avra {
                 lcov_path: lcov,
                 per_file: per_file || !bundled,
                 list_only: list,
-                path_filter: file,
+                path_filters: files,
             })
             0
         }
@@ -4471,7 +4502,7 @@ cli avra {
         option lcov { description "Enable coverage and write an LCOV report to this path" }
         arg paths { description "Test files compiled into this shard", required true, variadic true }
         run() {
-            // per_file / list_only / path_filter are orchestrator-level
+            // per_file / list_only / path_filters are orchestrator-level
             // concerns (`avra test` consumed them before forking this shard)
             // with no meaning inside one shard — zeroed, not parsed.
             run_test_shard_command(paths, TestArgs {
@@ -4480,7 +4511,7 @@ cli avra {
                 lcov_path: lcov,
                 per_file: false,
                 list_only: false,
-                path_filter: "",
+                path_filters: [],
             })
             0
         }

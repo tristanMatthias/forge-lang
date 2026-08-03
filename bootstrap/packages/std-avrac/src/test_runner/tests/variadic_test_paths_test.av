@@ -1,0 +1,117 @@
+// t-kdyj.6: `bs2 test a.av b.av` ran ONLY `a.av` — exit 0, no warning, no
+// mention of `b.av`. The `test` command declared `arg file` (singular), so
+// every argument after the first was parsed and dropped on the floor.
+//
+// The epic's own directive names the plural form verbatim — "there must be
+// `bs2 test`, and `bs2 test <paths>`" — and the plural form silently did
+// something other than what it said. It is the failure mode this epic keeps
+// finding: a GREEN result that did not measure what the operator asked for.
+// A CI script or an agent narrowing a run to a set of files got a pass for
+// the first file and silence about the rest.
+//
+// Caught while building a repro harness for uzs9.2 (`bs2 test $FILES` over
+// the 8-file batch a flaky spec shares a shard with). Had it run, it would
+// have reported a clean result for a one-file experiment, indistinguishable
+// from a real one.
+//
+// These specs drive the REAL CLI. `--list` is the probe: it exercises the
+// whole positional-path plumbing (arg parse → discover_with_path_shortcut →
+// filter_by_paths) while skipping compile+run, so the guard costs
+// milliseconds instead of two shard builds. The mutation that reintroduces
+// the bug — making the arg singular again — drops the second file's entries
+// and reds every arm below.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_read_file, avra_getpid,
+}
+
+/// `--list` output for the given positional args, run from the repo root.
+fn list_for(paths: string) -> string {
+    avra_shell_exec("./build/bs2 test --list ${paths} 2>&1")
+}
+
+/// A real `bs2 test` invocation's EXIT STATUS plus both streams.
+///
+/// The status is the point, and it needs its own runner: piping into
+/// `tail`/`grep` to read the output yields the PIPE's status, not bs2's —
+/// which reports 0 for a run that exited 1. Redirect to a file, capture the
+/// status directly, then read the file.
+type PathProbe = { status: int, output: string }
+
+fn path_probe(paths: string) -> PathProbe {
+    let log = "/tmp/avra_vtp_${string(avra_getpid())}.log"
+    let st = avra_shell_exec_status("./build/bs2 test ${paths} > '${log}' 2>&1")
+    let out = avra_selfhost_read_file(log)
+    let _ = avra_shell_exec("rm -f '${log}'")
+    PathProbe { status: st, output: out }
+}
+
+spec "t-kdyj.6: every positional test path is honoured, not just the first" {
+    then "two files list entries from BOTH" {
+        let out = list_for("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        out.contains("suite_bs2_guard_test.av") && out.contains("source_newer_than_test.av")
+    }
+
+    // The control. Without it, a `filter_by_paths` that ignored its filters
+    // entirely and returned everything would satisfy the arm above — the
+    // union must still be a RESTRICTION, not a pass-through.
+    then "one file lists only that file's entries" {
+        let out = list_for("tests/suite_bs2_guard_test.av")
+        out.contains("suite_bs2_guard_test.av") && !out.contains("source_newer_than_test.av")
+    }
+
+    // Order is the operator's, so a reversed pair must select the same set.
+    then "the pair is order-independent" {
+        let fwd = list_for("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        let rev = list_for("packages/std-avrac/src/build/tests/source_newer_than_test.av " +
+                           "tests/suite_bs2_guard_test.av")
+        let fwd_n = fwd.trim().split("\n").length
+        let rev_n = rev.trim().split("\n").length
+        fwd_n == rev_n && rev.contains("suite_bs2_guard_test.av")
+            && rev.contains("source_newer_than_test.av")
+    }
+
+    // Overlapping paths are legitimate (`bs2 test dir/ dir/one_test.av`) and
+    // must not compile or run a file twice. Counting `--list` lines is the
+    // direct check: a duplicate would show up as extra entries.
+    then "a directory and a file inside it do not double-count" {
+        let dir_only = list_for("packages/std-avrac/src/build/tests")
+        let both = list_for("packages/std-avrac/src/build/tests " +
+                            "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        dir_only.trim().split("\n").length == both.trim().split("\n").length
+    }
+
+    // A path that matches nothing must SAY so, name the path, and FAIL.
+    //
+    // The first version of this arm asserted only that the path was named,
+    // and passed while the command exited 0 — so it did not hold the contract
+    // this ticket exists for ("either run every path, or fail naming the one
+    // that matched nothing"). Raised in review of #1138.
+    then "an unmatched path fails, naming it" {
+        let p = path_probe("no_such_spec_file_xyz.av")
+        p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
+    }
+
+    // The blocking case from review, and the sharper one: with a VALID path
+    // alongside, the run succeeded on a subset and exited 0 — a successful
+    // partial measurement that silently dropped a requested path. That is the
+    // same defect as the discarded-argument bug this PR fixes, one level up:
+    // the operator asked for two things, got one, and was told everything
+    // passed.
+    then "a valid path does not excuse an unmatched sibling" {
+        let p = path_probe("tests/suite_bs2_guard_test.av no_such_spec_file_xyz.av")
+        p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
+    }
+
+    // Control: the failure above must come from the BOGUS path, not from
+    // passing two paths at all. Without this, "any multi-path run fails"
+    // would satisfy the arm above.
+    then "two valid paths still succeed" {
+        let p = path_probe("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        p.status == 0
+    }
+}
