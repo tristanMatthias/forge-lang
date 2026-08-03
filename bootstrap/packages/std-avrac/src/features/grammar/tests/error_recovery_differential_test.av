@@ -301,6 +301,40 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("component C implements A inst { }\nfn f() -> int { 1 }")
     }
 
+    // ROUTING GUARD for t-47hc.5.1 slice B — the KEYWORD-PREFIXED INSTANTIATION
+    // (`component C inst { … }`, parse_component_decl's third form). Landed
+    // BEFORE the routing, per the slice-10 discipline: routing is invisible on
+    // valid input by construction, so the invalid corpus is the only witness
+    // that recovery did not silently change. `shape` shipped routed with no
+    // malformed coverage (#1054) and had to be un-routed (#1059) — a keyword
+    // must not be routed on no evidence.
+    //
+    // These pass TODAY (both paths reach the hand) and must go RED if the rule
+    // is ever routed BARE, because the hand ABORTS a malformed item and lets
+    // the statement-list loop synchronize, while a bare native branch is
+    // error-TOLERANT and builds partial nodes. `@try` is what keeps them green.
+    //
+    // Cases are one per error site down the instantiation path. The three forms
+    // slice A's corpus already covers (`component C inst`, `component C
+    // implements A inst { }`, `component C 5`) are deliberately NOT repeated.
+    then "malformed component INSTANTIATIONS (pre-routing corpus), on all three paths" {
+        // config-pair sites (parse_comp_config_pairs)
+        agree_all("component C inst { key = }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst { key = 1\nfn f() -> int { 1 }") &&
+        // the instance block itself never closes
+        agree_all("component C inst {\nfn f() -> int { 1 }") &&
+        // nested-block site: a nested name with no `{` (parse_comp_block_body)
+        agree_all("component C inst { nested name }\nfn f() -> int { 1 }") &&
+        // method-shorthand site: the method body never closes. The `{` must stay
+        // UNCLOSED — `run() { }` closes it, and then the only thing left wrong is
+        // the outer block, which reports F0040 exactly like the bare case above.
+        // Unterminated, this reports F0001 `expected `}` after method body`, which
+        // is the site this case exists to cover.
+        agree_all("component C inst { run() {\nfn f() -> int { 1 }") &&
+        // body statement site: a `let` the block body cannot accept
+        agree_all("component C inst { let x }\nfn f() -> int { 1 }")
+    }
+
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
         agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
@@ -673,6 +707,53 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("component C { let x }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst\nfn f() -> int { 1 }") &&
         agree_bad("component C implements A inst { }\nfn f() -> int { 1 }")
+    }
+
+    // The TREE half of the instantiation corpus above. This is the half that
+    // actually caught the enum_decl routing regression (t-myz7.2): the F-code
+    // signatures can agree while the RECOVERED TREE diverges, because the hand
+    // aborts to Stmt.Error and synchronizes where a tolerant native branch
+    // builds a partial node. agree_bad also refuses a SILENT DROP — invalid
+    // source that parses with no diagnostic on either path.
+    // THE HIGHEST-VALUE ASSERTIONS IN THE SLICE. These four are VALID input —
+    // they parse clean, so they cannot live in `agree_bad`, which requires a
+    // diagnostic. They are the exact cases a TOKEN-LEVEL rewrite of the config
+    // -pair peeks would get wrong, and the reason those scans are shared cores
+    // (chars.av) rather than re-derived: the native rule and the hand must
+    // reach the same verdict on each, and the tree is the proof.
+    //
+    //   -5          the number test reads the first BYTE, so this is NOT a
+    //               config value — it falls through and `key -5` becomes a
+    //               binary expression statement in the block body
+    //   /* c */     the scans skip whitespace ONLY, never comments, so the
+    //               string never registers as a value
+    //   r"s"        a raw string leads with `r`, not `"`
+    //   trueish     the keyword test is a PREFIX match, so this DOES read as
+    //               a config pair whose value is the identifier `trueish`
+    then "the four config-pair divergences parse identically to the hand" {
+        agree_tree("component C inst { key -5 }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key /* c */ \"v\" }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key r\"s\" }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key trueish }\nfn f() -> int { 1 }")
+    }
+
+    // The forms the native rule deliberately DECLINES (nested blocks, method
+    // shorthand, nested `component`), which @try must hand back to the hand
+    // verbatim rather than parsing as loose expression statements.
+    then "the declined body forms still match the hand exactly" {
+        agree_tree("component C inst { nested name { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { nested { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { run() { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { component D e { } }\nfn f() -> int { 1 }")
+    }
+
+    then "malformed component INSTANTIATIONS recover to the same tree" {
+        agree_bad("component C inst { key = }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { key = 1\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst {\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested name }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { run() {\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { let x }\nfn f() -> int { 1 }")
     }
 
     then "malformed decl WRAPPERS recover to the same tree" {

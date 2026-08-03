@@ -29,6 +29,12 @@ use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
 use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
+// The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with the hand
+// parser's Parser.peek_after_ident_is_* wrappers. The component config-pair
+// `@peek` conds below run the IDENTICAL scan over the IDENTICAL bytes rather
+// than re-deriving it at token level, which is not equivalent — see the note
+// at the cores in chars.av for the four divergences that depends on.
+use features.grammar.{src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
 use diagnostics.{DiagnosticBag}
@@ -108,6 +114,13 @@ export enum CapVal {
     CCfgs(xs: List<CompConfig>)
     CSlot(c: ChildrenSlot)
     CSlots(xs: List<ChildrenSlot>)
+    // A component INSTANTIATION config pair (t-47hc.5.1 slice B) — `key value`
+    // or `key = expr` inside `component C inst { … }`. Distinct from CCfg: that
+    // is the DEFINITION's schema row (`key: ty = default`), this is the
+    // instance's supplied value. `value` is a boxed Expr, not an ExprId,
+    // because CompConfigPair carries the node inline.
+    CPair(p: CompConfigPair)
+    CPairs(xs: List<CompConfigPair>)
     // A built PARAMETER ENTRY + a parallel list of them (declaration family,
     // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
     // (defaulting to Int, the hand parser's parse_param_list default); a `*`
@@ -362,6 +375,21 @@ impl CapEnv {
         }
         xs.push(c)
         self.set_scalar(name, CapVal.CCfgs(xs))
+    }
+
+    // Component instantiation config-PAIR accumulator, parallel to append_ccfg.
+    fn append_cpair(self, name: string, p: CompConfigPair) {
+        let existing = self.get(name)
+        mut xs: List<CompConfigPair> = []
+        match existing {
+            .CPairs(prev) -> {
+                for x in prev { xs.push(x) }
+            }
+            .CPair(prev) -> xs.push(prev)
+            _ -> {}
+        }
+        xs.push(p)
+        self.set_scalar(name, CapVal.CPairs(xs))
     }
 
     // Component children-slot accumulator, parallel to append_sarm.
@@ -1713,6 +1741,69 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "kw_let" {
         return st.cur().tk == Tk.KwLet
     }
+    // ── component INSTANTIATION config pairs (t-47hc.5.1 slice B) ──
+    //
+    // `parse_comp_config_pairs` is a hand-rolled `while` whose continuation
+    // depends on RAW-SOURCE peeks at the current key token. Expressed here as
+    // two `@peek`-gated alternatives over `( config_pair )*`: the loop simply
+    // ends when neither cond matches, which is what the hand's `keep_going =
+    // false` does.
+    //
+    // The ORDER of the hand's bails is load-bearing and is reproduced exactly
+    // in `cfg_pair_common`: `on` is not a config key, `fn`/`component`/`let`
+    // end the pairs, and a following `{` means a NESTED BLOCK rather than a
+    // value — that brace test must come before any value test, or `key {`
+    // would be read as a pair.
+    if cond == "cfg_pair_value" {
+        if !cfg_pair_common(st) { return false }
+        let at = cfg_pair_after(st)
+        // string / number / true / false — the four value leads, each decided
+        // by the SHARED core so the hand and this cond cannot disagree.
+        return src_next_nonws_is_quote(st.src, st.src.length, at)
+            || src_next_nonws_is_digit(st.src, st.src.length, at)
+            || src_next_nonws_starts_with(st.src, st.src.length, at, "true")
+            || src_next_nonws_starts_with(st.src, st.src.length, at, "false")
+    }
+    if cond == "cfg_pair_eq" {
+        if !cfg_pair_common(st) { return false }
+        return src_next_nonws_is_single_eq(st.src, st.src.length, cfg_pair_after(st))
+    }
+    // A body item the native instantiation rule may own. `parse_comp_block_body`
+    // has four special arms BEFORE it falls through to parse_declaration —
+    // nested `component …`, `ident name {`, `ident {`, and the `ident() { … }`
+    // method shorthand — and each ABORTS on a malformed form where a plain
+    // `declaration` would happily read the pieces as expression statements.
+    // `component C inst { nested name }` is the witness: the hand reports
+    // F0001/F0013, while an ungated body parsed it clean as two expr statements
+    // and, reporting nothing, COMMITTED the @try with the wrong tree.
+    //
+    // So the native rule declines them: the body loop stops, the rule then
+    // fails to find `}`, reports, and @try rolls back into the hand — which
+    // owns these forms verbatim. Porting the four arms faithfully is slice B2b;
+    // this cond is the seam that keeps the split honest meanwhile.
+    // The keyword-prefixed INSTANTIATION shape: `component <name> <inst> {`.
+    //
+    // `implements` must be excluded explicitly. It lexes as an ordinary IDENT,
+    // so without this `component Cmd implements { }` matches the instantiation
+    // shape and parses as an instance NAMED `implements` — silently swallowing
+    // the hand's "expected trait name after `implements`" error, because a
+    // clean parse never rolls the @try back. The hand tests for the word
+    // before it ever considers the instance form; so does this.
+    if cond == "comp_inst_shape" {
+        if st.pos + 3 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        let inst = st.toks[st.pos + 2]
+        if inst.kind != "IDENT" || inst.text == "implements" { return false }
+        return st.toks[st.pos + 3].tk == Tk.LeftBrace
+    }
+    if cond == "comp_body_plain" {
+        if st.cur().tk == Tk.KwComponent { return false }
+        if st.cur().kind != "IDENT" { return true }
+        let at = cfg_pair_after(st)
+        if src_next_nonws_is_value_word(st.src, st.src.length, at) { return false }
+        if src_next_nonws_is_lbrace(st.src, st.src.length, at) { return false }
+        return !src_at_empty_call_block(st.src, st.src.length, at)
+    }
     if cond == "double_colon" {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
@@ -1763,6 +1854,29 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.toks[st.pos + 2].tk == Tk.LeftBrace
     }
     true
+}
+
+/// The byte offset just past the staged token's lexeme — where every raw-source
+/// config-pair scan begins. The grammar twin of the hand's
+/// `current_start + current_lexeme.length`: `Token.pos` IS the source byte
+/// offset, so the two are the same number over the same bytes.
+fn cfg_pair_after(st: PState) -> int {
+    st.cur().pos + st.cur().text.length
+}
+
+/// The shared prefix of both config-pair conds — every reason
+/// `parse_comp_config_pairs` STOPS before it even looks at a value, in the
+/// hand's own order. Keep this in lockstep with that loop's head.
+fn cfg_pair_common(st: PState) -> bool {
+    // `fn` / `component` / `let` end the pairs and begin the block body.
+    let tk = st.cur().tk
+    if tk == Tk.KwFn || tk == Tk.KwComponent || tk == Tk.KwLet { return false }
+    if st.cur().kind != "IDENT" { return false }
+    // `on` is reserved for the event-handler form, never a config key.
+    if st.cur().text == "on" { return false }
+    // A following `{` is a NESTED BLOCK, not a value — checked BEFORE any
+    // value test, matching the hand.
+    !src_next_nonws_is_lbrace(st.src, st.src.length, cfg_pair_after(st))
 }
 
 /// True when a token's lexeme begins with a letter or `_` — the token-level twin of
@@ -2340,6 +2454,7 @@ fn capval_len(v: CapVal) -> int {
         .SArms(a) -> a.length
         .CCfgs(a) -> a.length
         .CSlots(a) -> a.length
+        .CPairs(a) -> a.length
         .FInits(f) -> f.length
         .PEntries(p) -> p.length
         .Fields(f) -> f.length
@@ -3198,6 +3313,7 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
             .SArm(a) -> env.append_sarm(label, a)
             .CCfg(c) -> env.append_ccfg(label, c)
             .CSlot(c) -> env.append_cslot(label, c)
+            .CPair(p) -> env.append_cpair(label, p)
             .FInit(f) -> env.append_finit(label, f)
             .PEntry(p) -> env.append_pentry(label, p)
             .Field(f) -> env.append_field(label, f)
@@ -3387,6 +3503,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkChildrenSlot" if args.length == 2 -> mk_children_slot_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
         "MkCompField" if args.length == 3 -> mk_comp_field_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), env.get(args[2]), capval_present(env.get(args[2])))
         "MkComponentDef" if args.length == 6 -> mk_component_def_g(st, capval_tok_text(env.get(args[0])), capval_tok_texts(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_tok_text(env.get(args[4])), capval_present(env.get(args[4])), capval_to_stmt_list(env.get(args[5])))
+        "MkCompConfigPair" if args.length == 2 -> mk_comp_config_pair_g(st, capval_tok_text(env.get(args[0])), capval_to_expr(st, env.get(args[1])))
+        "MkComponentBlock" if args.length == 4 -> mk_component_block_g(st, capval_tok_text(env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_comp_config_pair_list(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
@@ -4132,6 +4250,42 @@ export fn mk_component_def_g(st: PState, name: string, implements: List<string>,
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentDef(name, empty_p, capval_to_comp_config_list(cfg_cv), children, implements, all_ids)))
 }
 
+/// One `key value` / `key = expr` INSTANTIATION config pair — the
+/// MkCompConfigPair build's core (t-47hc.5.1 slice B). CompConfigPair carries
+/// the value as a boxed `Expr` rather than an ExprId, so the captured node is
+/// read back out of the store, exactly as the hand's parse_expression_boxed
+/// does. Which of the two surface forms produced it is already decided by the
+/// `@peek` gate on the branch, so there is nothing to disambiguate here.
+export fn mk_comp_config_pair_g(st: PState, key: string, value_id: ExprId) -> CapVal {
+    CapVal.CPair(CompConfigPair { key: key, value: st.store.exprs.get(value_id) })
+}
+
+/// The `component C inst { pairs… body… }` INSTANTIATION — the
+/// MkComponentBlock build's core (t-47hc.5.1 slice B). A LEAF row, matching
+/// the hand's alloc_stmt_leaf: Stmt.ComponentBlock is walker-opaque, so the
+/// body ids deliberately do not become arena edges (the same disposition
+/// mk_component_def_g gives ComponentDef).
+///
+/// RAW-BODY instances are NOT handled here. When the component was registered
+/// with `body: TokenStream`, the hand captures the instance body as VERBATIM
+/// SOURCE instead of parsing it (parse_raw_block_after_brace) — a decision
+/// that depends on feature-registry state, not tokens. The native rule is
+/// `@try`'d, and a raw-body instance is left to the hand rather than
+/// reimplemented here; see the t-47hc.5.1 design note (slice B2b).
+export fn mk_component_block_g(st: PState, name: string, instance: string, pairs: List<CompConfigPair>, body: List<StmtId>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentBlock(name, instance, pairs, body)))
+}
+
+/// A repeated `config_pair` capture is CPairs for many, CPair for one, Nil for
+/// none — the CompConfigPair twin of capval_to_comp_config_list.
+export fn capval_to_comp_config_pair_list(v: CapVal) -> List<CompConfigPair> {
+    match v {
+        .CPairs(xs) -> xs
+        .CPair(p) -> [p]
+        _ -> []
+    }
+}
+
 /// A repeated bare-IDENT capture as its lexeme list (the implements clause).
 export fn capval_tok_texts(v: CapVal) -> List<string> {
     mut out: List<string> = []
@@ -4158,6 +4312,18 @@ export fn capval_to_children_slot_list(v: CapVal) -> List<ChildrenSlot> {
 }
 
 /// Coerce one generated entry for a repeated config-entry capture.
+/// One INSTANTIATION config pair out of a capture — the scalar twin of
+/// capval_to_comp_config, used by the emitted parser's repeat accumulator.
+export fn capval_to_comp_config_pair(st: PState, v: CapVal) -> CompConfigPair {
+    match v {
+        .CPair(p) -> p
+        _ -> {
+            st.report("expected a component config pair")
+            CompConfigPair { key: "", value: Expr.Missing }
+        }
+    }
+}
+
 export fn capval_to_comp_config(st: PState, v: CapVal) -> CompConfig {
     match v {
         .CCfg(c) -> c
