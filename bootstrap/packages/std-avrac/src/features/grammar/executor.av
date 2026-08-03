@@ -34,7 +34,7 @@ use features.grammar.{code_at, is_ident_start_code}
 // `@peek` conds below run the IDENTICAL scan over the IDENTICAL bytes rather
 // than re-deriving it at token level, which is not equivalent — see the note
 // at the cores in chars.av for the four divergences that depends on.
-use features.grammar.{src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
+use features.grammar.{word_excluded_as_instance_name, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
 use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
 use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
 use diagnostics.{DiagnosticBag}
@@ -1889,6 +1889,14 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // `Comp inst {`: an instance NAME (the hand scans a raw word starting with a
         // letter or `_`, so keyword-kinded tokens count too) then the block brace.
         if !tok_starts_word(st.toks[st.pos + 1]) { return false }
+        // ...and NOT a keyword that cannot name an instance. This used to be omitted
+        // deliberately — the gate erred wide because a false positive was inert, the
+        // delegate re-checking precisely and falling through. That is only true while
+        // the delegate exists, and it made `t with { … }` (plus `x match {`, `x if {`,
+        // …) reach `@hand(decl_hand)` for no reason but to be handed straight back.
+        // Shares the hand's ONE list, so the gate cannot be narrower than the check it
+        // fronts — which is the false NEGATIVE the original comment rightly feared.
+        if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
         return st.toks[st.pos + 2].tk == Tk.LeftBrace
     }
     true

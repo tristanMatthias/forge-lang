@@ -22,7 +22,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // the @hand bridge (grammar -> parse). The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
+use features.grammar.{word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr}
 use parse.static_decl_entry.{run_static_decl}
 use parse.static_type_entry.{run_static_type}
@@ -2931,11 +2931,7 @@ impl Parser {
         }
         let word = self.slice(i, j)
         // Exclude keywords that appear after identifiers in non-component contexts
-        if word == "true" || word == "false" || word == "null" || word == "none" { return false }
-        if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
-        if word == "with" || word == "match" || word == "if" || word == "else" { return false }
-        if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return false }
-        if word == "return" || word == "type" || word == "enum" || word == "trait" || word == "impl" { return false }
+        if word_excluded_as_instance_name(word) { return false }
         // Check that the word is followed by `{` (to confirm it's instance_name + block)
         mut k = j
         while k < self.source_len {
