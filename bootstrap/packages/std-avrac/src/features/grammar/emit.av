@@ -427,7 +427,11 @@ fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
         // A `@off(flag)` on the lone-ref passthrough must still set/restore the mode
         // around the sub-parse (exec_item honors it; the passthrough fast-path would
         // otherwise bypass it). Shared with emit_dispatch's bare-ref shortcuts.
-        return emit_ref_result(seq.items[0], "    ", false)
+        //
+        // The VALUE item, not `items[0]`: a leading `@peek`/`@when` gate occupies
+        // slot 0 and carries no value, so `lone_item_index` (the same accessor the
+        // dispatch shortcuts use) is what names the ref to pass through.
+        return emit_ref_result(seq.items[lone_item_index(seq)], "    ", false)
     }
     if is_fold(seq) {
         return emit_fold(g, seq)
@@ -442,11 +446,25 @@ fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
     sp_prelude + emit_seq_stmts(g, seq, "    ") + "    ${emit_seq_result(g, seq)}\n"
 }
 
-/// True for `name = otherrule` — one One-item nonterminal, no build.
-fn is_passthrough(seq: GSeq) -> bool {
-    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
-        prim_is_ref(seq.items[0].prim) && build_is_none(seq.build)
-}
+/// True for `name = otherrule` — one One-item nonterminal, no build. THE SAME
+/// predicate the dispatch path uses (`is_bare_ref`), because they decide the same
+/// thing about the same shape and a divergence is invisible on valid input.
+///
+/// It used to be a naive `seq.items.length == 1`, which counted a zero-width GATE
+/// as an item and so failed the test for `@peek(c) ref`. The dispatch path had
+/// already migrated to the shared `seq_lone_item_index` (which skips gates), so
+/// the two disagreed on exactly one shape — a single-alternative rule with a
+/// leading `@peek`. `comp_block_item = @peek(comp_body_plain) declaration` was
+/// it: emit fell to the general sequence path, ran `declaration` for its side
+/// effect, and returned the build-less `CapVal.Nil`. `capval_to_stmt` reports on
+/// Nil, so EVERY component-instance body item raised a diagnostic, which rolled
+/// the enclosing `@try comp_inst` back to the hand parser — the native rule
+/// committed only for bodies with ZERO statements, and `body:comp_block_item*`
+/// was dead code for a month. Nothing caught it: the hand produces identical
+/// trees, positions and IR, so the tree, F-code, count and SrcPos oracles were
+/// all green on a path none of them was actually reaching (see the routing spec
+/// in comp_inst_native_routing_test).
+fn is_passthrough(seq: GSeq) -> bool { seq_is_bare_ref(seq) }
 
 /// True for the operator-fold shape `l:X ( <accumulators> )* -> Build(…)`:
 /// a leading labelled One item (the seed) followed by a starred group, with a
@@ -2103,6 +2121,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkCompConfig" -> "mk_comp_config_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
         "MkCompConfigPair" -> "mk_comp_config_pair_g(st, capval_tok_text(${args[0]}), capval_to_expr(st, ${args[1]}))"
         "MkComponentBlock" -> "mk_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), ${args[2]}_list, ${args[3]}_list)"
+        "MkRawComponentBlock" -> "mk_raw_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), capval_tok_text(${args[2]}))"
+        "MkMethodShorthand" -> "mk_method_shorthand_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkChildrenSlot" -> "mk_children_slot_g(st, capval_tok_text(${args[0]}), ${args[1]})"
         "MkCompField" -> "mk_comp_field_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
         "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(CapVal.Toks(${args[1]}_list)), CapVal.CCfgs(${args[2]}_list), CapVal.CSlots(${args[3]}_list), capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
@@ -2721,7 +2741,7 @@ fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkCompField" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
@@ -2849,11 +2869,12 @@ fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             // Zero-width PREDICATES (`@peek` / `@when`) carry no capture and cannot
             // change what a rule yields, so they are skipped when looking for the
             // single significant item. Counting them made a gated passthrough like
-            // `comp_block_item = @peek(comp_body_plain) declaration` fall through to
-            // "expr", which then turned `body:comp_block_item*` into the
+            // the then-shape of `comp_block_item` (`@peek(cond) declaration`) fall
+            // through to "expr", which then turned `body:comp_block_item*` into the
             // `labeled bare-ref over a non-statement rule is unsupported` bailout —
             // the same mistyping CASCADE the `.Var` arm above documents, reached by
-            // a different route.
+            // a different route. `is_passthrough` needed the SAME skip for the same
+            // shape and did not get it until t-47hc.5.1 B2b; see its WHY.
             mut sig: List<GItem> = []
             for gi in seq.items {
                 if !prim_is_pred_e(gi.prim) { sig.push(gi) }

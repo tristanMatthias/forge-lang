@@ -584,7 +584,21 @@ fn avra_decl_edge_grammar() -> Grammar {
   comp_inst   = @peek(comp_inst_shape) "component" n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
   config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
               | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
-  comp_block_item = @peek(comp_body_plain) declaration
+  // The four arms of the hand's parse_comp_block_body, routed (t-47hc.5.1 B2b).
+  // ORDER IS THE SPEC: raw-body before structured (the same name can only be one,
+  // and the conds are mutually exclusive on the registry, but reading raw-first
+  // matches the hand's "decide after the brace" order), named before bare (`n i {`
+  // is a prefix of neither, but `n {` would otherwise capture `n` and stop), and
+  // `declaration` LAST as the honest unguarded tail. Every arm is routed, so the
+  // tail no longer needs a gate to decline into — which is what makes it honest:
+  // a `@peek` on the last branch is silently dropped (dispatch_has_tail), so the
+  // previous `@peek(comp_body_plain) declaration` was a guard that never ran.
+  comp_block_item = @peek(comp_nested_raw_named) rn:IDENT ri:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
+                  | @peek(comp_nested_raw_bare) rn:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, rn, rb)
+                  | @peek(comp_nested_named) n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+                  | @peek(comp_nested_bare) n:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, n, p, body)
+                  | @peek(comp_method) m:IDENT "(" ")" "{" mb:declaration* "}" -> MkMethodShorthand(m, mb)
+                  | declaration
   comp_item     = @peek(kw_let) comp_field | declaration
   comp_field    = "let" f:IDENT ":" ty:type_expr ( "=" init:expression )? -> MkCompField(f, ty, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,

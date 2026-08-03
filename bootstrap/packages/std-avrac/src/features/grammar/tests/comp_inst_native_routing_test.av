@@ -1,0 +1,242 @@
+// WHY: the ROUTING guard for the component-instantiation body (t-47hc.5.1 B2b) —
+// and the regression net for a bug that every other oracle in the repo was blind to.
+//
+// THE BUG THIS EXISTS FOR. `comp_block_item = @peek(comp_body_plain) declaration`
+// lowered to a body that ran `declaration` for its SIDE EFFECT and returned the
+// build-less `CapVal.Nil`:
+//
+//     fn parse_comp_block_item(st: PState) -> CapVal {
+//         let _ = parse_declaration(st)
+//         CapVal.Nil                       // <-- the value is DROPPED
+//     }
+//
+// `capval_to_stmt` reports on Nil, so EVERY body item raised a diagnostic, which
+// rolled the enclosing `@try comp_inst` back to the hand parser. The native rule
+// committed only for bodies with ZERO statements: `body:comp_block_item*` was dead
+// code, and so was the `comp_body_plain` cond gating it.
+//
+// Nothing caught it, and nothing could have. The hand produces identical trees,
+// identical positions and identical IR for these programs — that is what parity work
+// bought — so the recovery-TREE oracle, the F-code oracle, the diagnostic-COUNT
+// oracle, the SrcPos side-table oracle and diff-test were all green on a path none
+// of them was reaching. Routing is invisible on valid input BY CONSTRUCTION; the
+// only witness is the emitted source itself, which is why the t-47hc discipline says
+// to assert the dispatch on the EMITTED SOURCE rather than infer it from behaviour.
+//
+// So the first spec below reads the generated parser and asserts the shape directly:
+// the item rule must PASS ITS VALUE THROUGH, every routed arm must dispatch before
+// the `declaration` tail, and the tail must be `declaration`. The second spec covers
+// the behaviour the routing is FOR — the four `parse_comp_block_body` arms, on all
+// four parser paths.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn decl_src() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+/// The emitted body of `fn parse_comp_block_item` — from its header to the first
+/// line-start `}`. Every structural assertion below reads THIS rather than the whole
+/// file, so a coincidental match somewhere else in a 100k-line parser cannot make a
+/// routing assertion pass vacuously.
+fn block_item_fn(src: string) -> string {
+    let head = "fn parse_comp_block_item(st: PState) -> CapVal {"
+    let at = src.index_of(head)
+    if at < 0 { return "" }
+    let rest = src.substring(at + head.length, src.length)
+    let close = rest.index_of("\n}")
+    if close < 0 { return "" }
+    rest.substring(0, close)
+}
+
+/// Does every routed arm's guard appear BEFORE the `declaration` tail in `body`?
+/// A guard emitted after the tail is dead code with correct-looking output — the
+/// #1028 failure mode — so position, not mere presence, is the assertion.
+fn arms_precede_tail(body: string) -> bool {
+    let tail = body.index_of("parse_declaration(st)")
+    if tail < 0 { return false }
+    let arms = [
+        "lookahead_ok(\"comp_nested_raw_named\", st)",
+        "lookahead_ok(\"comp_nested_raw_bare\", st)",
+        "lookahead_ok(\"comp_nested_named\", st)",
+        "lookahead_ok(\"comp_nested_bare\", st)",
+        "lookahead_ok(\"comp_method\", st)"
+    ]
+    for a in arms {
+        let at = body.index_of(a)
+        if at < 0 || at > tail { return false }
+    }
+    true
+}
+
+fn check_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_comp_inst_route_${name}.av"
+    let log = "build/_comp_inst_route_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn clean(out: string) -> bool { out.contains("__status=0\n") }
+
+/// The occurrence-ordered F-codes of `bs2 check <src>` under `env` — the same
+/// signature the recovery oracles compare, reused here so a form that is not
+/// expected to TYPECHECK can still assert the thing this file is about: that all
+/// four parser paths agreed on how to parse it.
+fn fcodes(name: string, env: string, src: string) -> string {
+    let fixture = "build/_comp_inst_route_${name}.av"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("${env} ./build/bs2 check '${fixture}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
+}
+
+/// All four paths produce the SAME diagnostics, whatever those are. For a form the
+/// TYPE checker rejects (a raw body with no `@expand`), agreement is still the whole
+/// routing property — and the absence of a parse-stage code in that agreed signature
+/// is what proves the raw contents were captured rather than parsed.
+fn agree_all_paths(name: string, src: string) -> bool {
+    let d = fcodes("${name}_dflt", "", src)
+    let e = fcodes("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+    let x = fcodes("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
+    let h = fcodes("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src)
+    if d != h || e != h || x != h {
+        println("path divergence for ${name}")
+        println("hand=${h} dflt=${d} emit=${e} exec=${x}")
+    }
+    d == h && e == h && x == h
+}
+
+/// All FOUR parser paths (CLAUDE.md's table): the hand oracle, the emit-generated
+/// static parser raw, the grammar EXECUTOR, and the production default. A routed
+/// rule has to be right on every one — an executor-only divergence is invisible to
+/// the two recovery oracles, which both disable the interpreter fallback.
+fn clean_all_paths(name: string, src: string) -> bool {
+    clean(check_out("${name}_dflt", "", src)) &&
+        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
+        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value through" {
+    then "the item rule does NOT discard the declaration it parsed" {
+        // THE REGRESSION ASSERTION. `let _ = parse_declaration(st)` followed by a
+        // bare `CapVal.Nil` is the exact dead-body shape described at the top of this
+        // file — the item parses, the value is thrown away, `capval_to_stmt` reports,
+        // and the whole instantiation rolls back to the hand. A passthrough returns
+        // the sub-parse's CapVal.
+        let body = block_item_fn(decl_src())
+        body != "" && !body.contains("let _ = parse_declaration(st)")
+    }
+
+    then "`declaration` is the TAIL, and it is reached as a value" {
+        // The tail is the unguarded catch-all — an ordinary statement in an
+        // instantiation body is a declaration, and `declaration` owns its own
+        // recovery (it reaches @hand(decl_hand)), which is what routes a stray token
+        // to the hand parser's F0040 rather than the alternation's generic F0001.
+        let body = block_item_fn(decl_src())
+        body.trim().ends_with("parse_declaration(st)")
+    }
+
+    then "every routed arm dispatches BEFORE the tail" {
+        // Re-reading the TAIL is the step this slice's first attempt skipped: adding
+        // branches moves which one is last, and a `@peek` on the last branch is
+        // silently DROPPED (dispatch_has_tail). With `run() { }` left unrouted, the
+        // tail swallowed it and parsed the method shorthand as a call expression plus
+        // a block — green build, wrong tree.
+        arms_precede_tail(block_item_fn(decl_src()))
+    }
+
+    then "the nested arms build ComponentBlocks, and the method arm builds a Function" {
+        // The kind-plumbing trap the sibling slices document: a mis-kinded repeat
+        // coerces its entries through capval_to_expr. The nested bodies are statement
+        // lists and the method body is one too.
+        let body = block_item_fn(decl_src())
+        body.contains("mk_component_block_g(st,") &&
+            body.contains("mk_raw_component_block_g(st,") &&
+            body.contains("mk_method_shorthand_g(st,") &&
+            body.contains("capval_to_stmt(st,")
+    }
+}
+
+spec "t-47hc.5.1: the four body arms parse identically on all four paths" {
+    then "a plain statement body — the shape the dead passthrough made unreachable" {
+        clean_all_paths("plain",
+            "component panel {\n" +
+            "    config { title: string = \"t\" }\n" +
+            "}\n" +
+            "component panel p {\n" +
+            "    title \"hi\"\n" +
+            "    let a = 1\n" +
+            "    let b = a + 1\n" +
+            "}\n" +
+            "fn main() { }\n")
+    }
+
+    then "arm 1 — a nested `component` definition inside the body" {
+        clean_all_paths("nested_def",
+            "component panel {\n" +
+            "    config { title: string = \"t\" }\n" +
+            "}\n" +
+            "component panel p {\n" +
+            "    component inner {\n" +
+            "        let x: int = 1\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { }\n")
+    }
+
+    then "arms 2 and 3 — a nested block, with and without its own instance name" {
+        clean_all_paths("nested_blk",
+            "component row {\n" +
+            "    config { w: int = 0 }\n" +
+            "}\n" +
+            "component panel {\n" +
+            "    config { title: string = \"t\" }\n" +
+            "}\n" +
+            "component panel p {\n" +
+            "    row r {\n" +
+            "        w 2\n" +
+            "    }\n" +
+            "    row {\n" +
+            "        w 3\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { }\n")
+    }
+
+    then "arm 4 — the method shorthand, whose body is a statement list" {
+        clean_all_paths("method",
+            "component panel {\n" +
+            "    config { title: string = \"t\" }\n" +
+            "}\n" +
+            "component panel p {\n" +
+            "    run() {\n" +
+            "        let z = 1\n" +
+            "        let y = z + 1\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { }\n")
+    }
+
+    then "a RAW-BODY nested block keeps its contents verbatim" {
+        // `body: TokenStream` routes the instance body to a raw balanced-brace
+        // capture rather than a parse — the one decision in parse_comp_block_body
+        // that tokens cannot make, so the conds ask the feature registry the hand
+        // asks. The contents here are deliberately NOT valid Avra: if the structured
+        // arm claimed this block, it would report.
+        agree_all_paths("raw_nested",
+            "component tpl {\n" +
+            "    body: TokenStream\n" +
+            "}\n" +
+            "component panel {\n" +
+            "    config { title: string = \"t\" }\n" +
+            "}\n" +
+            "component panel p {\n" +
+            "    tpl t {\n" +
+            "        <<< not avra at all >>>\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() { }\n")
+    }
+}
