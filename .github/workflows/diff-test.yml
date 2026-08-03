@@ -22,7 +22,9 @@ on:
     # no label and false-fails in byte-identity mode on the very divergence the
     # label exists to allow. Re-triggering on the label re-runs the oracle in
     # the correct (run-equivalence) mode. The job `if` keeps this cheap — only
-    # the intended-ir-change label re-runs; other label churn is ignored.
+    # the two oracle-mode labels re-run; other label churn is ignored.
+    # intended-strictness-change is the same story for the other declared
+    # outcome (NEW rejects OLD's source), so it is triggered the same way.
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Least privilege: a trust gate that builds + runs PR code — read only.
@@ -36,11 +38,12 @@ concurrency:
 jobs:
   diff-test:
     # Code events (opened/synchronize/reopened) always run. A label event runs
-    # ONLY for intended-ir-change — the one label that flips the oracle mode —
-    # so unrelated label churn doesn't re-spend a 45-minute build.
+    # ONLY for the two labels that flip the oracle mode, so unrelated label
+    # churn doesn't re-spend a 45-minute build.
     if: >-
       (github.event.action != 'labeled' && github.event.action != 'unlabeled')
       || github.event.label.name == 'intended-ir-change'
+      || github.event.label.name == 'intended-strictness-change'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -89,10 +92,23 @@ jobs:
           # green — the rc-strict job). The documented landing path for
           # intentional codegen changes.
           RUN_EQUIV: ${{ contains(github.event.pull_request.labels.*.name, 'intended-ir-change') && '1' || '0' }}
+          # An `intended-strictness-change` label declares the OTHER
+          # legitimate way to trip this gate (t-zk6j): NEW REJECTS source
+          # OLD accepts, because the PR adds a gate. The harness then
+          # prints WHICH diagnostics NEW raises that OLD does not, and
+          # re-runs the selfhost leg on NEW's OWN source — the input both
+          # compilers accept — where the IR must still be byte-identical.
+          # Without this, a strictness change had to be split across N+1
+          # PRs (fixes first, gate second) purely as ceremony.
+          STRICTNESS: ${{ contains(github.event.pull_request.labels.*.name, 'intended-strictness-change') && '1' || '0' }}
         run: |
           extra=""
           if [ "$RUN_EQUIV" = "1" ]; then
-            extra="--run-equiv"
+            extra="$extra --run-equiv"
             echo "intended-ir-change label present — running the run-equivalence oracle"
+          fi
+          if [ "$STRICTNESS" = "1" ]; then
+            extra="$extra --intended-strictness"
+            echo "intended-strictness-change label present — a NEW-only rejection of OLD's source is an expected outcome"
           fi
           bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD $extra
