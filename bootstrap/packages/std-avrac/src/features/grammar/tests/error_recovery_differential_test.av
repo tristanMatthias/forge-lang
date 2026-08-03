@@ -338,10 +338,17 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         // each of which ABORTS where a plain `declaration` would be happy. These
         // pin their malformed shapes NOW, while the hand still owns them, so the
         // guard exists before B2b routes them and can fail if B2b gets one wrong.
-        // arm 2 — `ident name {` nested block, brace never closed
-        agree_all("component C inst { nested name { }\nfn f() -> int { 1 }") &&
-        // arm 3 — `ident {` nested block (instance name == component name)
-        agree_all("component C inst { nested { }\nfn f() -> int { 1 }") &&
+        // arm 2 — `ident name {` nested block, malformed statement INSIDE the body.
+        // The braces stay balanced on purpose: an unterminated form (either
+        // `nested name { }` or `nested name {`) just runs to EOF and reports the
+        // same F0040 as the bare `component C inst {` case above, testing nothing
+        // new. Balanced, it reaches the nested body and reports F0001 `expected
+        // `=` after variable name` — arm 2's own path.
+        agree_all("component C inst { nested name { let x } }\nfn f() -> int { 1 }") &&
+        // arm 3 — the brace form (`ident {`, instance name == component name),
+        // same reasoning. arm 2's OTHER site, a missing `{` after the nested name,
+        // is already covered above by `component C inst { nested name }`.
+        agree_all("component C inst { nested { let x } }\nfn f() -> int { 1 }") &&
         // arm 4 — method shorthand whose BODY carries a malformed statement
         agree_all("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
         // arm 1 — nested `component` with no name, and with no body
@@ -776,8 +783,8 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         // the enum_decl routing regression (t-myz7.2): F-codes can agree while the
         // recovered tree diverges, because the hand aborts to Stmt.Error and
         // synchronizes where a tolerant native branch builds a partial node.
-        agree_bad("component C inst { nested name { }\nfn f() -> int { 1 }") &&
-        agree_bad("component C inst { nested { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested name { let x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested { let x } }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { component }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { component D }\nfn f() -> int { 1 }")
