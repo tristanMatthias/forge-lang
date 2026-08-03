@@ -2101,6 +2101,8 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkGivenBlock" -> "mk_given_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkThenBlock" -> "mk_then_block_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkCompConfig" -> "mk_comp_config_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
+        "MkCompConfigPair" -> "mk_comp_config_pair_g(st, capval_tok_text(${args[0]}), capval_to_expr(st, ${args[1]}))"
+        "MkComponentBlock" -> "mk_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), ${args[2]}_list, ${args[3]}_list)"
         "MkChildrenSlot" -> "mk_children_slot_g(st, capval_tok_text(${args[0]}), ${args[1]})"
         "MkCompField" -> "mk_comp_field_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
         "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(CapVal.Toks(${args[1]}_list)), CapVal.CCfgs(${args[2]}_list), CapVal.CSlots(${args[3]}_list), capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
@@ -2714,11 +2716,12 @@ fn build_kind(bn: string) -> string {
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
     if bn == "MkSelectArm" { return "sarm" }
     if bn == "MkCompConfig" { return "ccfg" }
+    if bn == "MkCompConfigPair" { return "cpair" }
     if bn == "MkChildrenSlot" { return "cslot" }
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkCompField" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     if bn == "MkTypeParam" { return "tparam" }
@@ -2843,8 +2846,20 @@ fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             k
         }
         .None -> {
-            if seq.items.length == 1 && rep_is_one(seq.items[0].rep) {
-                match seq.items[0].prim {
+            // Zero-width PREDICATES (`@peek` / `@when`) carry no capture and cannot
+            // change what a rule yields, so they are skipped when looking for the
+            // single significant item. Counting them made a gated passthrough like
+            // `comp_block_item = @peek(comp_body_plain) declaration` fall through to
+            // "expr", which then turned `body:comp_block_item*` into the
+            // `labeled bare-ref over a non-statement rule is unsupported` bailout —
+            // the same mistyping CASCADE the `.Var` arm above documents, reached by
+            // a different route.
+            mut sig: List<GItem> = []
+            for gi in seq.items {
+                if !prim_is_pred_e(gi.prim) { sig.push(gi) }
+            }
+            if sig.length == 1 && rep_is_one(sig[0].rep) {
+                match sig[0].prim {
                     .Ref(rn) -> rule_kind_v(g, rn, visited)
                     .Hand(hf) -> hand_kind(hf)
                     _ -> "expr"
@@ -2868,6 +2883,7 @@ fn kind_coerce(kind: string) -> string {
     if kind == "warm" { return "capval_to_when_arm" }
     if kind == "sarm" { return "capval_to_select_arm" }
     if kind == "ccfg" { return "capval_to_comp_config" }
+    if kind == "cpair" { return "capval_to_comp_config_pair" }
     if kind == "cslot" { return "capval_to_children_slot" }
     if kind == "ann" { return "capval_to_ann" }
     "capval_to_expr"
@@ -2887,6 +2903,7 @@ fn kind_elem_type(kind: string) -> string {
     if kind == "warm" { return "WhenArm" }
     if kind == "sarm" { return "SelectArm" }
     if kind == "ccfg" { return "CompConfig" }
+    if kind == "cpair" { return "CompConfigPair" }
     if kind == "cslot" { return "ChildrenSlot" }
     if kind == "ann" { return "Annotation" }
     "ExprId"

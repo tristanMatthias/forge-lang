@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -570,6 +570,21 @@ fn avra_decl_edge_grammar() -> Grammar {
   // otherwise flag as a silent FIRST/FIRST shadow: `declaration` also derives
   // `let` (the routed let_decl), and comp_field must own it TOTALLY so the
   // annotation-less form stays an error instead of leaking through.
+  // The COMPONENT INSTANTIATION, keyword-prefixed form (t-47hc.5.1 slice B):
+  // `component C inst { key value… body… }`. Sits AFTER component_decl in the
+  // alternation, so a definition (`component C {`) is matched first and this
+  // rule only sees the two-name shape.
+  //
+  // The config-pair loop mirrors parse_comp_config_pairs: each pair is
+  // `@peek`-gated, and the loop ends when neither cond matches — which is what
+  // the hand's `keep_going = false` does. Both conds run the SHARED raw-source
+  // cores (chars.av), so `key -5`, `key trueish`, `key /* c */ "v"` and
+  // `key r"s"` are all decided identically to the hand rather than
+  // re-derived at token level.
+  comp_inst   = @peek(comp_inst_shape) "component" n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+  config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
+              | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
+  comp_block_item = @peek(comp_body_plain) declaration
   comp_item     = @peek(kw_let) comp_field | declaration
   comp_field    = "let" f:IDENT ":" ty:type_expr ( "=" init:expression )? -> MkCompField(f, ty, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
