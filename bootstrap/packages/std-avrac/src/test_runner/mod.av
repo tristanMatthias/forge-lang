@@ -1141,3 +1141,220 @@ export fn extract_after(out: string, key: string) -> string {
     if i == start { return "" }
     out.substring(start, i)
 }
+
+// ── t-o8pm: gate scan ───────────────────────────────────────────────
+//
+// WHY: "if I turn this gate on, what does it reject?" had no one-pass
+// answer, so false positives arrived ONE RUN AT A TIME. The t-axu9
+// argument gate was validated by a COUNT over the compiler's own source
+// — 935 naive hits narrowed to 0 — and that 0 was believed. It was not
+// evidence: three false-positive classes were still live (`dyn Trait`
+// conformance, `shape` width subtyping, newtype-vs-underlying), and each
+// surfaced from a DIFFERENT oracle on a DIFFERENT run. The compiler's
+// own source never passes a struct into a shape parameter, never calls
+// through a `dyn` parameter, and never pushes a raw value into a
+// collection of its newtype — so a count over it proves only that THAT
+// program avoids the construct, which reads like coverage and is not.
+//
+// The fix is to group every rejection in the corpus by its SHAPE, so N
+// sites collapse to the handful of distinct conflicts a human must
+// actually reason about.
+
+/// One rejection: where it happened, what was said, and the shape it
+/// belongs to. `form` is the grouping key; `message` keeps the concrete
+/// text so an example can be shown verbatim.
+export type GateSite = { form: string, file: string, message: string }
+
+/// The SHAPE of a diagnostic — its message with call-site identity
+/// removed, so the same conflict reported at forty call sites groups
+/// into one row.
+///
+/// Two normalisations, both chosen because they vary per SITE while the
+/// conflict does not:
+///   - a leading ``  `fn` parameter `p`:  `` prefix (which function, which
+///     parameter)
+///   - a trailing `` (in function `f`) `` suffix (which caller)
+/// What remains is the relation under test — `A` is not assignable to
+/// `B` — different nominal types — which is exactly what a gate author
+/// needs to see once per distinct pair, not once per call.
+export fn diagnostic_shape(message: string) -> string {
+    mut s = message
+    let in_fn = s.index_of(" (in function `")
+    if in_fn >= 0 { s = s.substring(0, in_fn) }
+    // `<fn>` parameter `<name>`: <relation>   → keep the relation only.
+    let param_mark = s.index_of("` parameter `")
+    if param_mark >= 0 {
+        let colon = s.index_of("`: ")
+        if colon > param_mark { s = s.substring(colon + 3, s.length) }
+    }
+    s.trim()
+}
+
+/// Drop ANSI SGR sequences (`ESC [ … m`) so matching sees the text a
+/// human reads. Anything between ESC-[ and the terminating letter is an
+/// attribute payload, never content.
+export fn strip_ansi(s: string) -> string {
+    if s.index_of("\x1b") < 0 { return s }
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        if ch == "\x1b" {
+            // skip through the terminating alphabetic byte
+            mut j = i + 1
+            while j < s.length {
+                let c2 = s[j]
+                if (c2 >= "a" && c2 <= "z") || (c2 >= "A" && c2 <= "Z") { break }
+                j = j + 1
+            }
+            i = j + 1
+            continue
+        }
+        out = out + ch
+        i = i + 1
+    }
+    out
+}
+
+/// Every diagnostic in `log` carrying `code`, paired with the file it
+/// came from. The renderer's `╭─[path:line:col]` line follows the
+/// message, so the file is read from the NEXT location line — tracking
+/// it forward rather than guessing from the message keeps a diagnostic
+/// attributable even when several shards' logs are concatenated.
+export fn scan_gate_diagnostics(colored_log: string, code: string) -> List<GateSite> {
+    // STRIP COLOUR FIRST. The compiler renders diagnostics with ANSI
+    // attributes, and it puts them BETWEEN the code and its colon:
+    // `error[F1000]` ESC[0m ESC[1m `: message`. A literal
+    // `error[F1000]: ` needle therefore matches a hand-written sample
+    // and NOTHING the compiler actually emits — which is precisely the
+    // failure this ticket exists to prevent (a synthetic oracle that
+    // reads like coverage), so the specs below use real captured output.
+    let log = strip_ansi(colored_log)
+    let needle = "error[" + code + "]:"
+    mut sites: List<GateSite> = []
+    mut pending: List<string> = []   // messages awaiting their location line
+    for line in log.split("\n") {
+        let hit = line.index_of(needle)
+        if hit >= 0 {
+            pending.push(line.substring(hit + needle.length, line.length).trim())
+            continue
+        }
+        // `─[` is a BOX-DRAWING char (3 bytes) + `[`, so the skip must be
+        // the needle's own byte length — a hardcoded 2 lands mid-character
+        // and shreds the path.
+        let loc_needle = "─["
+        let loc = line.index_of(loc_needle)
+        if loc >= 0 && pending.length > 0 {
+            let file = gate_scan_file_of(line.substring(loc + loc_needle.length, line.length))
+            for m in pending {
+                sites.push(GateSite { form: diagnostic_shape(m), file: file, message: m })
+            }
+            pending = []
+        }
+    }
+    // A trailing message with no location line still counts as a site —
+    // dropping it would under-report, and under-reporting is the exact
+    // failure this tool exists to prevent.
+    for m in pending {
+        sites.push(GateSite { form: diagnostic_shape(m), file: "<unknown>", message: m })
+    }
+    sites
+}
+
+/// `path:line:col]…` → `path`. Stops at the first `:` that begins the
+/// line:col suffix, so a path containing no colon survives intact.
+fn gate_scan_file_of(rest: string) -> string {
+    mut i = 0
+    while i < rest.length {
+        let ch = rest[i]
+        if ch == ":" || ch == "]" { break }
+        i = i + 1
+    }
+    rest.substring(0, i)
+}
+
+/// One grouped row: a distinct conflict, how many sites share it, and
+/// one example file.
+export type GateGroup = { form: string, count: int, example: string }
+
+/// The report: every rejection grouped by form, most-frequent first,
+/// each row naming one example file and how many more share it.
+///
+///     F1000 — 4 site(s), 3 shape(s):
+///       [2] `SbUser` is not assignable to `SbHasName` — different nominal types
+///           e.g. packages/.../shape_basic_test.av (+1 more)
+///
+/// Counts lead because the decision a gate author makes is per CONFLICT:
+/// three distinct conflicts is a tractable review, forty call sites of
+/// one conflict is a single exemption.
+export fn render_gate_scan(sites: List<GateSite>, code: string) -> string {
+    if sites.length == 0 {
+        return "${code} — no sites in the scanned corpus."
+    }
+    let groups = sort_gate_groups(group_gate_sites(sites))
+    mut out = "${code} — ${string(sites.length)} site(s), ${string(groups.length)} shape(s):\n"
+    for g in groups {
+        let more = g.count - 1
+        let extra = if more > 0 { " (+${string(more)} more)" } else { "" }
+        out = out + "  [${string(g.count)}] ${g.form}\n"
+        out = out + "      e.g. ${g.example}${extra}\n"
+    }
+    out
+}
+
+/// Collapse sites onto their distinct forms, keeping the first file seen
+/// for each as the example.
+export fn group_gate_sites(sites: List<GateSite>) -> List<GateGroup> {
+    mut forms: List<string> = []
+    for s in sites {
+        if index_of_string(forms, s.form) < 0 { forms.push(s.form) }
+    }
+    mut out: List<GateGroup> = []
+    for f in forms {
+        mut n = 0
+        mut example = ""
+        for s in sites {
+            if s.form == f {
+                n = n + 1
+                if example == "" { example = s.file }
+            }
+        }
+        out.push(GateGroup { form: f, count: n, example: example })
+    }
+    out
+}
+
+/// Descending by count. Insertion into a fresh list (push-only) rather
+/// than an in-place swap: the widest conflict is the one a gate author
+/// should judge first.
+fn sort_gate_groups(gs: List<GateGroup>) -> List<GateGroup> {
+    mut out: List<GateGroup> = []
+    for g in gs {
+        mut placed: List<GateGroup> = []
+        mut inserted = false
+        for o in out {
+            if !inserted {
+                if g.count > o.count {
+                    placed.push(g)
+                    inserted = true
+                }
+            }
+            placed.push(o)
+        }
+        if !inserted { placed.push(g) }
+        out = placed
+    }
+    out
+}
+
+/// First index of `needle` in `hay`, or -1. Local because the grouping
+/// above needs identity on plain strings and nothing else in this module
+/// wants a generic list search.
+fn index_of_string(hay: List<string>, needle: string) -> int {
+    mut i = 0
+    while i < hay.length {
+        if hay[i] == needle { return i }
+        i = i + 1
+    }
+    0 - 1
+}
