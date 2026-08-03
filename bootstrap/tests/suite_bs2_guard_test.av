@@ -28,3 +28,17 @@ spec "the suite forbids mid-run bs2 rebuilds (t-gv3n)" {
         out.contains("fresh")
     }
 }
+
+// The `*_test.av` exclusion in source_newer_than is pinned in
+// packages/std-avrac/src/build/tests/source_newer_than_test.av, against a
+// SANDBOX source tree.
+//
+// It was first written here, as `touch tests/suite_bs2_guard_test.av` followed
+// by the --bs2-stale-check probe. That arm COULD NOT FAIL: source_newer_than
+// scans CLI_SRC_DIR and LIB_SRC_DIR only, and `tests/` is under neither, so
+// touching this file is invisible to it with or without the exclusion. It
+// nonetheless went red when the exclusion was reverted — because a DIFFERENT
+// file edited in the same change (a `*_test.av` under packages/std-avrac/src)
+// was newer than bs2. So the mutation check established that the spec could go
+// red, not that it went red for its own reason, which is the only thing that
+// makes a guard a guard. Raised in review of #1136.

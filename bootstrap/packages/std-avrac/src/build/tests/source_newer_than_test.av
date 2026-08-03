@@ -38,3 +38,44 @@ spec "6cks: source_newer_than compares real mtimes on this platform" {
             && !out.contains("FRESH_WRONG") && !out.contains("STALE_WRONG")
     }
 }
+
+// A `*_test.av` edit is not compiler staleness. package_full_fingerprint
+// (2wfp, build/fingerprint.av) already excludes them from the package's
+// content fingerprint — a test entry is not part of the compiled surface,
+// nothing imports one, and the [lib] build does not emit one — so
+// source_newer_than globbing them made diagnose.sh contradict the fingerprint
+// it should agree with. That bit twice: a test-only edit reported `stale`,
+// reddening suite_bs2_guard_test on a tree whose compiler sources were
+// untouched, and ensure_bs2 wanted to rebuild + relink bs2 off a test edit,
+// which is the mid-suite-rebuild hazard (t-gv3n) that check guards against.
+//
+// Sandboxed, and with a CONTROL. The first version of this guard lived in
+// suite_bs2_guard_test and touched a file under `tests/` — which
+// source_newer_than never scans — so it could not fail either way; it went
+// red under mutation only because an unrelated file happened to be newer.
+// Driving the real function over a tree we own is what makes the two arms
+// mean something: without the negative control, "nothing is ever stale" would
+// pass just as well as the correct behaviour.
+spec "a *_test.av edit is not compiler staleness (2wfp parity)" {
+    then "a newer *_test.av leaves it fresh; a newer plain .av still flips it" {
+        let script = "set -u\n" +
+            "sandbox=$(mktemp -d)\n" +
+            "mkdir -p \"$sandbox/cli\" \"$sandbox/lib\"\n" +
+            "echo x > \"$sandbox/cli/a.av\"; echo y > \"$sandbox/lib/b_test.av\"\n" +
+            "touch -t 202001010000 \"$sandbox/cli/a.av\" \"$sandbox/lib/b_test.av\"\n" +
+            "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
+            "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+            "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
+            // The excluded path: a test source newer than the target.
+            "touch \"$sandbox/lib/b_test.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo TEST_COUNTED_WRONG; else echo TEST_IGNORED_OK; fi\n" +
+            // The CONTROL: a plain source newer than the target must still
+            // register, or the exclusion has simply disabled the check.
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo SRC_COUNTED_OK; else echo SRC_IGNORED_WRONG; fi\n" +
+            "rm -rf \"$sandbox\"\n"
+        let out = avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+        out.contains("TEST_IGNORED_OK") && out.contains("SRC_COUNTED_OK")
+            && !out.contains("TEST_COUNTED_WRONG") && !out.contains("SRC_IGNORED_WRONG")
+    }
+}

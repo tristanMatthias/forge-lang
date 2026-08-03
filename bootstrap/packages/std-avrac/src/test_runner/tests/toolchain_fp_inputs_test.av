@@ -1,0 +1,86 @@
+// WHY: the fixture-stdout cache reuses a previous run's captured stdout when
+// its key matches. The key is `fixture source + toolchain fingerprint`, and
+// that fingerprint hashed bs2, runtime.o, llvm_wrapper.o and std-avrac's
+// source — but NOT `scripts/diagnose.sh`, which is the script that RUNS every
+// fixture (`fixture_run_cmd` shells `diagnose.sh --run`).
+//
+// So an edit to diagnose.sh changed how every fixture executes while leaving
+// the key untouched, and the suite replayed captures produced by the previous
+// version. Observed directly: after changing `source_newer_than` in that
+// script, a full suite returned in 70s instead of ~310s and reported green
+// without re-running a single fixture — including the two specs that exercise
+// the function that had just changed.
+//
+// That is the same fail-open so07.7.11 fixed for std-avrac's source ("macro-
+// shaping edits invalidate cached fixture stdout even when the resulting bs2
+// binary happens to hash the same"). diagnose.sh is the stronger case: not an
+// influence on the output, the producer of it.
+//
+// These specs pin the two halves that must not drift — the input LIST, and
+// the mtime comparison that short-circuits recomputation.
+
+use @std.avrac.test_runner.{toolchain_fp_input_files, sidecar_newer_than_files}
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+
+spec "the fixture-cache fingerprint covers the script that runs the fixtures" {
+    then "scripts/diagnose.sh is one of the fingerprint inputs" {
+        mut found = false
+        for f in toolchain_fp_input_files() {
+            if f == "scripts/diagnose.sh" { found = true }
+        }
+        found
+    }
+    then "the compiler and its runtime objects are still inputs" {
+        // The addition must not have displaced what was already keyed.
+        let files = toolchain_fp_input_files()
+        mut bs2 = false
+        mut rt = false
+        mut wrap = false
+        for f in files {
+            if f == "build/bs2" { bs2 = true }
+            if f == "build/runtime.o" { rt = true }
+            if f == "build/llvm_wrapper.o" { wrap = true }
+        }
+        bs2 && rt && wrap && files.length == 4
+    }
+}
+
+// The mtime half, driven against a sandbox rather than the live tree — the
+// live sidecar keys every other shard's captures, so a spec must not touch it.
+spec "a sidecar is stale as soon as ANY fingerprint input is newer" {
+    then "newer-than-every-input reuses; one newer input invalidates" {
+        let d = "/tmp/avra_tcfp_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
+        // Backdate both inputs so the sidecar is strictly newer.
+        let _ = avra_shell_exec("touch -t 202001010000 '${d}/in_a' '${d}/in_b' && touch '${d}/side'")
+        let files: List<string> = ["${d}/in_a", "${d}/in_b"]
+        let fresh = sidecar_newer_than_files("${d}/side", files)
+        // Touch the SECOND input: a first-input-only check would miss this.
+        let _ = avra_shell_exec("touch '${d}/in_b'")
+        let stale = sidecar_newer_than_files("${d}/side", files)
+        let _ = avra_shell_exec("rm -rf '${d}'")
+        fresh && !stale
+    }
+    then "a missing input rejects reuse" {
+        // `avra_file_mtime` answers 0 for a path it cannot stat, and 0 is
+        // older than any real sidecar — so a bare mtime compare reads
+        // "deleted" as "unchanged" and replays a capture taken against a
+        // file that is no longer there.
+        //
+        // The first version of this spec asserted `got` and called that
+        // "the CURRENT behaviour, recorded so a future change is deliberate".
+        // That was documenting a fail-open instead of closing it, on a helper
+        // whose entire job is to decide whether a cached fingerprint still
+        // describes reality — and an input it cannot see is the one case
+        // where it certainly does not. Raised in review of #1136.
+        let d = "/tmp/avra_tcfp_missing_${string(avra_getpid())}"
+        let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}' && touch '${d}/side'")
+        let got = sidecar_newer_than_files("${d}/side", ["${d}/absent"])
+        // Control: the same sidecar with a PRESENT, older input still reuses,
+        // so this arm cannot pass by the helper simply always refusing.
+        let _ = avra_shell_exec("touch -t 202001010000 '${d}/present'")
+        let ctl = sidecar_newer_than_files("${d}/side", ["${d}/present"])
+        let _ = avra_shell_exec("rm -rf '${d}'")
+        !got && ctl
+    }
+}
