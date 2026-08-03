@@ -3644,8 +3644,6 @@ fn cmd_eval(args: CliResult) -> int {
     0
 }
 
-/// `avra resources` — a deliberately small machine-readable boundary for
-/// orchestration outside the Avra process (notably diagnose.sh diff-test).
 /// t-o8pm: answer "if I turn this gate on, what does the corpus reject?"
 /// in ONE pass, grouped by conflict rather than by call site.
 ///
@@ -3665,8 +3663,20 @@ fn cmd_gate_scan(args: CliResult) -> int {
         eprintln("gate-scan: no shard logs found — run `bs2 test` first, or pass a log dir")
         return 1
     }
-    let listing = avra_shell_exec("cat ${dir}/*.log 2>/dev/null")
-    if listing == "" {
+    // NATIVE WALK, never a shell. `dir` is user-supplied (`--logs`), and
+    // interpolating it into `cat ${dir}/*.log` both breaks on a legitimate
+    // path containing a space (word-splitting silently yields "no readable
+    // logs" for a perfectly good directory) and hands shell metacharacters
+    // straight to a shell. count_cache_entries / collect_prune_candidates
+    // already walk natively for exactly this reason (the ohyd injection);
+    // this is the same rule, not a new one.
+    mut listing = ""
+    for name in avra_readdir(dir) {
+        if avra_str_ends_with(name, ".log") != 0 {
+            listing = listing + avra_selfhost_read_file("${dir}/${name}") + "\n"
+        }
+    }
+    if listing.trim() == "" {
         eprintln("gate-scan: no readable logs in ${dir}")
         return 1
     }
@@ -3677,12 +3687,29 @@ fn cmd_gate_scan(args: CliResult) -> int {
 /// Newest `build/test_shards/<pid>` by mtime, or "" when none exists.
 /// Per-pid dirs mean concurrent runs do not clobber each other, so
 /// "newest" is the right selector for "the run I just did".
+///
+/// Native walk rather than `ls -1dt | head -1`: same reason as the reader
+/// above — no path reaches a shell, and mtime ordering does not depend on
+/// parsing `ls` output.
 fn newest_shard_log_dir() -> string {
-    let out = avra_shell_exec("ls -1dt \"$PWD\"/build/test_shards/*/ 2>/dev/null | head -1").trim()
-    if out == "" { return "" }
-    out
+    let root = "${avra_process_env_get("PWD")}/build/test_shards"
+    if avra_is_dir(root) != 1 { return "" }
+    mut newest = ""
+    mut newest_mtime = 0
+    for name in avra_readdir(root) {
+        let candidate = "${root}/${name}"
+        if avra_is_dir(candidate) != 1 { continue }
+        let m = avra_file_mtime(candidate)
+        if newest == "" || m > newest_mtime {
+            newest = candidate
+            newest_mtime = m
+        }
+    }
+    newest
 }
 
+/// `avra resources` — a deliberately small machine-readable boundary for
+/// orchestration outside the Avra process (notably diagnose.sh diff-test).
 /// Schedulers inside the compiler use ResourceSnapshot directly; shell tools
 /// consume this stable key=value form instead of reimplementing /proc or Mach.
 fn cmd_resources() -> int {

@@ -128,3 +128,28 @@ spec "t-o8pm: the scanner reads what the compiler actually emits" {
         strip_ansi("\x1b[1;31merror\x1b[0m: x") == "error: x"
     }
 }
+
+// The CLI reader used to be `avra_shell_exec("cat ${dir}/*.log")`, which
+// broke two ways on paths it had no business breaking on: a directory
+// containing a SPACE word-split into nothing, so a perfectly good corpus
+// reported "no readable logs" — a SILENT wrong answer, the worst kind for
+// a tool whose job is to be exhaustive — and shell metacharacters in a
+// user-supplied `--logs` reached a shell. It reads natively now
+// (avra_readdir + avra_str_ends_with), matching count_cache_entries and
+// collect_prune_candidates, which walk natively for that same reason.
+//
+// The scanner half is pinned here; the CLI half is exercised end-to-end by
+// `bs2 gate_scan F1000 "/tmp/gs logs dir"` returning the same report as
+// the space-free path.
+spec "t-o8pm: concatenated shard logs scan as one corpus" {
+    then "sites from several shard logs are all reported, each keeping its own file" {
+        let joined = GS_LOG + "\n" + GS_REAL
+        let sites = scan_gate_diagnostics(joined, "F1000")
+        // 3 from the plain sample + 1 from the coloured one.
+        sites.length == 4 && sites[3].file == "/tmp/gs_a.av"
+    }
+    then "a log that contributes nothing does not disturb the others" {
+        let joined = GS_LOG + "\nsome shard that passed cleanly\n"
+        scan_gate_diagnostics(joined, "F1000").length == 3
+    }
+}
