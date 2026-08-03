@@ -1,0 +1,121 @@
+// WHY: `bs2 run hello.av` exited 127 with COMPLETELY EMPTY stdout and
+// stderr — the shell's "command not found" code, forwarded with no message
+// at all, from the one command CLAUDE.md documents as surfacing diagnostics
+// on failure.
+//
+// The cause was that an IR-only build's reason existed ONLY as a printed
+// line. When the manifest's dependency closure has an unbuilt path-dep
+// there is nothing to link, so `build_executable` stops at the IR and
+// returns `ok: true` with an empty `binary_path` — a legitimate success for
+// `bs2 build` (the plain single-unit cycle is the documented default,
+// pinned as an explicit negative control in
+// tests/build_auto_use_metadata_fixtures/sample.av). But it printed the
+// reason under `shows_status && !is_json` only, and `bs2 run` builds in
+// Quiet, so the fact vanished: `cmd_run` saw ok:true, could not tell an
+// IR-only report from a linked one, and exec'd a binary never written.
+//
+// The fix makes it DATA — `BuildReport.missing_dep` — so a caller that
+// cannot use an IR-only result says so, naming the dependency. These specs
+// pin the asymmetry, which is the whole point: the SAME outcome must stay a
+// success for `build` and become a diagnosed failure for `run`.
+//
+// Raw avra_shell_exec probes against a throwaway project (never the
+// fixture-stdout cache): a project whose one path-dep is never built.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_getpid,
+}
+
+/// A throwaway project with a `[bin]` and ONE path-dependency that is
+/// never built, so the link closure is incomplete by construction.
+fn noexe_mk_project(slug: string) -> string {
+    let base = "/tmp/avra_noexe_${slug}_${string(avra_getpid())}"
+    let dep = "${base}/packages/dep-thing"
+    let _ = avra_shell_exec("rm -rf '${base}' && mkdir -p '${base}/src' '${dep}/src'")
+    let _ = avra_selfhost_write_file("${base}/avra.toml",
+        "[package]\nname = \"noexe\"\nversion = \"0.0.1\"\n\n" +
+        "[bin]\nname = \"app\"\npath = \"src/main.av\"\n\n" +
+        "[dependencies]\n\"@dep/thing\" = { path = \"packages/dep-thing\" }\n")
+    let _ = avra_selfhost_write_file("${base}/src/main.av",
+        "fn main() {\n    println(\"ran\")\n}\n")
+    let _ = avra_selfhost_write_file("${dep}/avra.toml",
+        "[package]\nname = \"@dep/thing\"\nversion = \"0.0.1\"\n\n" +
+        "[lib]\nname = \"dep-thing\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dep}/src/lib.av",
+        "export fn dep_thing_answer() -> int { 42 }\n")
+    base
+}
+
+/// One probe's verdict: the exit status and everything the command wrote
+/// to either stream.
+type NoExeProbe = { status: int, output: string }
+
+/// Run `bs2 <subcmd> src/main.av` inside the project, capturing BOTH
+/// streams. The env strip keeps the probe hermetic under the test runner's
+/// metadata-mode environment.
+fn noexe_probe(base: string, subcmd: string) -> NoExeProbe {
+    let repo = avra_shell_exec("pwd")
+    let bs2 = "${repo}/build/bs2"
+    let log_path = "${base}/${subcmd}_probe.log"
+    let st = avra_shell_exec_status(
+        "cd '${base}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
+        "-u AVRA_LIB_PKG_ROOT '${bs2}' ${subcmd} src/main.av > '${log_path}' 2>&1")
+    NoExeProbe { status: st, output: avra_selfhost_read_file(log_path) }
+}
+
+fn noexe_cleanup(base: string) {
+    let _ = avra_shell_exec("rm -rf '${base}'")
+}
+
+spec "an IR-only build: a success for `build`, a diagnosed failure for `run`" {
+    given "a project whose one path-dependency was never built" {
+        // The negative control this fix must NOT break. `bs2 build`
+        // deliberately does not pre-build path-deps, so stopping at the IR
+        // is the documented outcome — and it still reports itself.
+        then "`bs2 build` still succeeds, and still says it stopped at the IR" {
+            let base = noexe_mk_project("build")
+            let p = noexe_probe(base, "build")
+            noexe_cleanup(base)
+            p.status == 0
+                && p.output.contains("IR only")
+                && p.output.contains("@dep/thing")
+        }
+    }
+
+    given "`bs2 run` on that same project" {
+        then "it reports the failure instead of exiting silently" {
+            let base = noexe_mk_project("run")
+            let p = noexe_probe(base, "run")
+            noexe_cleanup(base)
+            // The bug: status 127 (exec of a path that was never written)
+            // with ZERO bytes on both streams. `output.length > 0` is the
+            // assertion that actually failed before the fix — the status
+            // alone was already non-zero and proved nothing.
+            p.output.length > 0
+                && p.status != 0
+                && p.status != 127
+        }
+        then "the message names the dependency, and prescribes NOTHING" {
+            // Without `missing_dep` on the report there is nothing to name:
+            // under Quiet the reason was never printed, so `run` could only
+            // ever have said "no executable" with no detail at all.
+            //
+            // The negative half is the load-bearing one, and was raised in
+            // review of this PR: the message must NOT recommend
+            // `--emit_metadata`. That remedy does not work — the dep lookup
+            // keys on the `[package]` name while builds record under the
+            // `[lib]`/`[bin]` name, so the closure reads as incomplete even
+            // immediately after a successful pre-build (t-jc7u). Naming a
+            // command that cannot fix the problem is a worse diagnostic
+            // than naming none.
+            let base = noexe_mk_project("why")
+            let p = noexe_probe(base, "run")
+            noexe_cleanup(base)
+            p.output.contains("nothing to run")
+                && p.output.contains("@dep/thing")
+                && !p.output.contains("--emit_metadata")
+        }
+    }
+}

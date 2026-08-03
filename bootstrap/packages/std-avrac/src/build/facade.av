@@ -96,6 +96,14 @@ fn is_explain(m: BuildOutput) -> bool { match m { .Explain -> true, _ -> false }
 ///
 /// `ir_cached` is true when the IR came from the cache (no compile ran);
 /// `bin_cached` when the binary came from the link cache (no llc/cc ran).
+///
+/// `missing_dep` names the dependency whose absent build stopped the link,
+/// and is the ONLY way a caller can tell an IR-only outcome from a linked
+/// one: that outcome is deliberately `ok: true` (see `build_executable`), so
+/// `binary_path` being empty is otherwise indistinguishable from a target
+/// that never had a binary. It used to exist purely as a printed line —
+/// suppressed under Quiet, which is the mode `bs2 run` builds in — so `run`
+/// exec'd a binary that was never written and exited 127 in total silence.
 export type BuildReport = {
     ok: bool,
     error: string,
@@ -107,6 +115,7 @@ export type BuildReport = {
     ir_cached: bool,
     bin_cached: bool,
     reason: string,
+    missing_dep: string,
 }
 
 /// A successful report for a build that produced no single artifact — the
@@ -117,6 +126,7 @@ export fn build_report_empty() -> BuildReport {
     BuildReport {
         ok: true, error: "", entry: "", unit: "", fp: "",
         ir_path: "", binary_path: "", ir_cached: false, bin_cached: false, reason: "",
+        missing_dep: "",
     }
 }
 
@@ -126,6 +136,7 @@ fn build_failed(msg: string) -> BuildReport {
     BuildReport {
         ok: false, error: msg, entry: "", unit: "", fp: "",
         ir_path: "", binary_path: "", ir_cached: false, bin_cached: false, reason: "",
+        missing_dep: "",
     }
 }
 
@@ -271,6 +282,7 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
             return BuildReport {
                 ok: true, error: "", entry: entry_path, unit: unit_name, fp: fp.hex,
                 ir_path: dst, binary_path: "", ir_cached: true, bin_cached: false, reason: "",
+                missing_dep: "",
             }
         }
         .Miss(fp, _, reason) -> {
@@ -452,7 +464,7 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
             return BuildReport {
                 ok: true, error: "", entry: entry_path, unit: unit_name, fp: fp.hex,
                 ir_path: ir_out, binary_path: "", ir_cached: false, bin_cached: false,
-                reason: reason,
+                reason: reason, missing_dep: "",
             }
         }
     }
@@ -480,20 +492,27 @@ export fn build_executable(req: BuildRequest, run: fn(string, string, int) -> in
     // pins that as a negative control), so the closure can legitimately be
     // incomplete. Linking anyway fails with `undefined symbols`; instead
     // stop at the IR, exactly as this command did before it learned to
-    // link, and say why.
+    // link, and say why. That outcome stays `ok: true` — the plain
+    // single-unit cycle is the documented default, pinned as the explicit
+    // negative control in tests/build_auto_use_metadata_fixtures/sample.av.
+    //
+    // But the reason is now DATA, not just a printed line. It was printed
+    // under `shows_status && !is_json` only, so under Quiet — the mode
+    // `bs2 run` builds in — the fact vanished entirely, and `run` exec'd a
+    // binary that was never written and exited 127 with empty output.
     if deps.missing != "" {
         if shows_status(req.mode) && !is_json(req.mode) {
             println("IR only: dependency `${deps.missing}` has no recorded build — " +
                     "build it first (or pass --emit_metadata to pre-build path-deps) to link an executable")
         }
-        return built
+        return built with { missing_dep: deps.missing }
     }
     match link_unit_executable(req.project_dir, fp_val, out_bin, bs2_dir, deps.objs, opts) {
         .Ok(cached) -> {
             BuildReport {
                 ok: true, error: "", entry: built.entry, unit: built.unit, fp: built.fp,
                 ir_path: built.ir_path, binary_path: out_bin, ir_cached: built.ir_cached,
-                bin_cached: cached, reason: built.reason,
+                bin_cached: cached, reason: built.reason, missing_dep: "",
             }
         }
         .Err(e) -> build_failed("error: ${e}")
@@ -548,6 +567,21 @@ type DepObjs = { objs: List<string>, missing: string }
 /// this is the whole closure, not just direct deps. A dep with no recorded
 /// build contributes nothing (its symbols then surface as an honest link
 /// error rather than a silently wrong binary).
+///
+/// KNOWN DEFECT, tracked separately — do NOT "fix" this lookup in place.
+/// `cached_build_fp` is keyed on the dep's UNIT name (its manifest's
+/// `[lib]`/`[bin]` name, which is what `record_build_result` writes via
+/// `unit_name_for`), but `Unit.name` is the `[package]` name — a different
+/// string for essentially every real package (`@std/lsp` vs `std-lsp`,
+/// `@test/dep` vs `dep`). So this never matches a recorded build and every
+/// path-dep reads as missing.
+///
+/// Passing the right key is NOT the fix: doing so completes the closure and
+/// the link then fails with DUPLICATE SYMBOLS, because a non-fast-path entry
+/// object already contains the deps' code (whole-program), so adding their
+/// producer objects defines everything twice. The link line's composition
+/// depends on the compile mode that produced the entry object, which this
+/// function cannot see. Measured, not guessed — see the ticket.
 fn dep_producer_objects(project_dir: string) -> DepObjs {
     mut objs: List<string> = []
     mut missing = ""

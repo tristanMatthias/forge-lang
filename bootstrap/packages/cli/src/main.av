@@ -3835,6 +3835,27 @@ fn cmd_run(args: CliResult) -> int {
         let _ = avra_remove_file(tmp_bin)
         fail(report.error)
     }
+    // An IR-only build is a legitimate SUCCESS for `bs2 build` (the plain
+    // single-unit cycle is the documented default), but it is never one for
+    // `run`: there is no binary to run. Exec'ing the path anyway is the
+    // silent-127 failure mode — the shell's "command not found" code,
+    // forwarded with no message at all.
+    if report.binary_path == "" {
+        let _ = avra_remove_file(tmp_bin)
+        if report.missing_dep != "" {
+            // Deliberately prescribes NOTHING. The obvious remedies —
+            // building the dependency, or `bs2 build --emit_metadata` — do
+            // not currently work: the dep lookup keys on the `[package]`
+            // name while builds record under the `[lib]`/`[bin]` name
+            // (`@std/lsp` vs `std-lsp`), so the closure reads as incomplete
+            // no matter what the user does (t-jc7u). An error that names a
+            // command which cannot fix it is worse than one that stops at
+            // the truth.
+            fail("error: nothing to run — no executable was produced\n" +
+                 "  dependency `${report.missing_dep}` has no recorded build, so nothing could be linked")
+        }
+        fail("error: nothing to run — the build produced no executable")
+    }
     // Forward the program's argv (everything the run command captured after
     // the source path, via its variadic `forward` arg).
     let rc = avra_process_forward(tmp_bin, json_string_list(result_get_args(args, "forward")), "")
