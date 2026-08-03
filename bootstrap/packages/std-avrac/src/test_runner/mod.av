@@ -1055,4 +1055,68 @@ fn sidecar_newer_than_inputs(sidecar: string) -> bool {
     newer == ""
 }
 
+// t-65td: WHAT KIND of failure was this? Five of the six causes a red
+// shard can have are ENVIRONMENTAL, and before this they all rendered
+// the same way — so the first diagnostic step ("is this my code or the
+// box?") was a manual log dive, and got answered wrong: a memory kill
+// was once investigated as a type-gate bug that did not exist.
+//
+// ORDER IS THE WHOLE DESIGN. The environmental causes must be tested
+// BEFORE the generic compile check, because each of them also prints
+// something that matches it:
+//   - F4014 (the compiler's own memory self-stop) is literally
+//     `error[F4014]`, so a naive `error[F` test calls a box-pressure
+//     stop a code error — exactly the wrong turn this ticket exists to
+//     stop. It names the phase, which is the actionable part.
+//   - ENOSPC surfaces as write failures that read like compile errors
+//     (t-2qn0 shipped as false test FAILURES for this reason).
+// A kill leaves a TRUNCATED log, so "no content + died" must not read
+// as "passed nothing"; it reads as killed, and points at `make stray`.
+//
+// Pure (string in, string out) so the spec table can pin every branch
+// without staging real OOMs or filling a disk.
+export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string {
+    if out.contains("No space left on device") || out.contains("ENOSPC") {
+        return "DISK FULL — the box ran out of space (this is not a test failure; see `make cache-gc`)"
+    }
+    if out.contains("error[F4014]") {
+        let phase = extract_after(out, "phase: ")
+        let detail = if phase == "" { "" } else { " during ${phase}" }
+        return "MEMORY CEILING — the compiler stopped itself${detail} (F4014; an F4014 on normal input is a compiler bug, not a small box)"
+    }
+    if out.contains("Killed") || out.contains("signal 9") {
+        return "KILLED — probable kernel OOM-kill; check `make stray` for survivors (the log is truncated by the kill)"
+    }
+    if out.contains("error[F") {
+        let code = extract_after(out, "error[")
+        let named = if code == "" { "" } else { " (first: ${code})" }
+        return "COMPILE FAILED${named}"
+    }
+    if crashes > 0 {
+        return "${string(crashes)} spec(s) CRASHED on a fatal signal"
+    }
+    if fail > 0 {
+        let spec_name = extract_after(out, "FAIL \"")
+        let named = if spec_name == "" { "" } else { " (first: ${spec_name})" }
+        return "${string(fail)} TEST FAILURE(S)${named}"
+    }
+    "FAILED — cause not classified; read the log"
+}
 
+/// First token following `key`, stopped at the delimiter that ends the
+/// field it names — `]` closes an F-code, `"` closes a quoted spec name,
+/// and a newline ends anything. Returns "" when the key is absent, so
+/// every caller degrades to an unadorned message rather than a lie.
+export fn extract_after(out: string, key: string) -> string {
+    let idx = out.index_of(key)
+    if idx < 0 { return "" }
+    let start = idx + key.length
+    mut i = start
+    while i < out.length {
+        let ch = out[i]
+        if ch == "\n" || ch == "]" || ch == "\"" { break }
+        i = i + 1
+    }
+    if i == start { return "" }
+    out.substring(start, i)
+}
