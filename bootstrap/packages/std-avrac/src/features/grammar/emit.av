@@ -596,7 +596,21 @@ fn build_uses_sp_start(name: string) -> bool {
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
-        name == "Block" || name == "While" || name == "If" || name == "ForLoop" ||
+        //
+        // `Block` is NOT one of them, and threading it here was a divergence from BOTH
+        // other engines. The hand builds its only `Stmt.Block` with `alloc_stmt_leaf`
+        // (parse/mod.av) — `add_leaf`, no `record_pos` — and the interpreter passes
+        // `0 - 1`. Only emit stamped it, at the `{` byte, which is the rule's entry but
+        // NOT a statement start: the enclosing statement-list loop already stamps the
+        // `while`/`if` itself at the keyword. So the generated parser recorded a row the
+        // other two do not, and `Ctx.source_line` — which retains its previous value for
+        // an unstamped node — inherited from it, shifting `avra_null_deref_trap` lines
+        // in every emitted control-flow body. Measured against the hand:
+        //     hand = 2:5 4:9 3:5 6:5
+        //     emit = 2:5 4:9 3:18 3:5 6:5      <-- 3:18 is the `{`
+        // The While/If/ForLoop entries stay: their rule entry IS the statement start, so
+        // the stamp agrees with the list loop's rather than adding a row.
+        name == "While" || name == "If" || name == "ForLoop" ||
         name == "MkForDestructure" ||
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
@@ -2029,7 +2043,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         //    — delegate to the SHARED constructor cores (executor.apply_build's
         //    exact twins). ${args[N]}_list names a rep/list capture; a bare arg
         //    is a scalar or opt-scalar CapVal. ──
-        "Block" -> "mk_block(st, sp_start, ${args[0]}_list)"
+        // `0 - 1` (span-free) — the SAME argument the interpreter passes, and the
+        // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
+        "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
         "While" -> "mk_while(st, sp_start, ${args[0]}, ${args[1]})"
         "If" -> "mk_if(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "ForLoop" -> "mk_for_loop(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"

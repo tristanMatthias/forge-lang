@@ -2396,41 +2396,6 @@ fn parse_statement(st: PState) -> CapVal {
 }
 
 fn parse_block(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut stmts_list: List<StmtId> = []
-    let _ = st.advance()
-    let __pre_err = st.had_error
-    mut __any_err = __pre_err
-    while true {
-        if st.at_end() || st.cur().text == "}" { break }
-        let __sp = st.cur().pos
-        st.clear_error()
-        let __cv = parse_statement(st)
-        if st.had_error {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = st.store.stmts.add_leaf(Stmt.Error)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            stmts_list.push(__e)
-            st.clear_error()
-            continue
-        }
-        let __sid = capval_to_stmt(st, __cv)
-        let __lc = st.store.lines.to_linecol(__sp)
-        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-        stmts_list.push(__sid)
-    }
-    if __any_err { st.note_had_error() }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
-    }
-    mk_block(st, sp_start, stmts_list)
-}
-
-fn parse_stmt_block(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
     mut stmts_list: List<StmtId> = []
     let _ = st.advance()
     let __pre_err = st.had_error
@@ -2460,7 +2425,40 @@ fn parse_stmt_block(st: PState) -> CapVal {
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")
     }
-    mk_block(st, sp_start, stmts_list)
+    mk_block(st, 0 - 1, stmts_list)
+}
+
+fn parse_stmt_block(st: PState) -> CapVal {
+    mut stmts_list: List<StmtId> = []
+    let _ = st.advance()
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_declaration(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            stmts_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        stmts_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_block(st, 0 - 1, stmts_list)
 }
 
 fn parse_break_stmt(st: PState) -> CapVal {

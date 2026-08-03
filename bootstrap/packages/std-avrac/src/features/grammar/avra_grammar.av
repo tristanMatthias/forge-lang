@@ -727,7 +727,28 @@ export fn avra_stmt_grammar() -> Grammar {
 fn avra_stmt_common_grammar() -> Grammar {
     let gp = grammar {
   statement     = break_stmt | continue_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | @peek(stmt_block) stmt_block | expr_stmt
-  block         = "{" stmts:statement* "}" -> Block(stmts)
+  // The CONTROL-FLOW body (`while`/`for`/`if`). `declaration*`, not `statement*`,
+  // because that is what the hand does: every one of those parsers ends at
+  // `parse_statement_list_ids`, whose per-item call is `self.parse_declaration()`.
+  //
+  // `statement` carries NO binding alternatives — `let`/`mut`/`const` live only in
+  // `declaration` — so with `statement*` here every binding inside a loop or an `if`
+  // fell out of the repetition and was absorbed by the `@hand(decl_hand)` gate. That
+  // is invisible by comparison (the delegate builds the same tree the native rules
+  // would), which is why `while lo < hi { let mid = … }` — one of the most ordinary
+  // shapes in the language, and all over this compiler own source — was still
+  // hand-parsed. The frontier probe (AVRA_REFUSE_HAND_LEAF, executor.av) surfaced it.
+  //
+  // It also FIXED ~6000 wrong diagnostic line attributions. The delegate bridge
+  // re-syncs by advancing to a byte offset, so nodes built during a delegated parse
+  // took whatever line its cursor had reached — arbitrarily far past the construct
+  // (measured: a trap for `item.prim` reported a COMMENT 20 lines below it). Native
+  // parsing stamps each item from its own entry byte, which is right by construction.
+  //
+  // Still a SEPARATE rule from `stmt_block` — the two have different roles
+  // (`stmt_block` is `@peek`-gated inside `statement`; this is the control-flow body)
+  // and the note below rightly warns against deduping them. Same item rule, two rules.
+  block         = "{" stmts:declaration* "}" -> Block(stmts)
   // A bare `{ … }` statement body may contain DECLARATIONS, not just statements — an
   // inline module's component is the case that proves it (`declaration = @hand(decl_hand)
   // | statement`, so declaration is the superset). block_expr already uses declaration*

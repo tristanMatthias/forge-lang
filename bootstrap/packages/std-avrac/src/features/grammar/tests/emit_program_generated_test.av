@@ -37,7 +37,12 @@ spec "grammar emitter: renders the whole-program generated static parser" {
 
     then "the declaration builds lower to the SHARED constructor cores" {
         let src = emit_all()
-        src.contains("mk_block(st, sp_start, d_list)") &&
+        // `0 - 1`, not `sp_start`: a `Stmt.Block` is NOT stamped. The hand builds its
+        // only one with `alloc_stmt_leaf` (no record_pos) and the interpreter passes
+        // `0 - 1`; emit threading the `{` byte was a divergence from both, and the extra
+        // row it recorded is what `Ctx.source_line` then inherited. See the `Block` note
+        // in emit.av's build_uses_sp_start.
+        src.contains("mk_block(st, 0 - 1, d_list)") &&
         // `fn` carries an optional type-param list since t-47hc slice 10.6, so it lowers
         // to the GENERIC core — one rule serves both forms, with an empty capture when
         // no `<…>` is present. `extern fn` is a SEPARATE rule (different lead keyword,
