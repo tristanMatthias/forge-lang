@@ -16,8 +16,10 @@
 // stays a real hand baseline under an eventual promoted default) build the same
 // Stmt; both render through the same TOTAL render_stmt_id, so equal trees ⇒
 // equal strings (no golden strings).
+extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
-use @std.avrac.core.{render_stmt_id}
+use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
+use @std.avrac.features.grammar.{hand_leaf_refused}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
@@ -83,5 +85,114 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
         then "a dangling operator rejects on both" {
             flip_decl("= 5") == "<err>" && hand_decl("= 5") == "<err>"
         }
+    }
+}
+
+
+// ── The `@hand` leaf FRONTIER (t-myz7) ────────────────────────────────────────
+//
+// `--hand-leaves` counts the leaves that REMAIN. Nothing counted what still
+// DEPENDS on one, and the two are different questions: the first says where a
+// native rule sits, the second says what deleting the leaf would break. Only the
+// second can tell you whether a retirement slice is finished.
+//
+// It is unmeasurable by comparison. The delegate and the native rules agree on
+// every input they both accept — that is what parity work bought — so trees,
+// diagnostics, positions and IR are identical whichever one answers. The only way
+// to see a dependency is to REMOVE the delegate and watch what fails, which is the
+// deletion itself. `AVRA_REFUSE_HAND_LEAF` (executor.av) is that deletion behind a
+// flag: the named leaf reports instead of delegating, so every form still needing
+// it surfaces as a real diagnostic. Default-unset refuses nothing, so the emitted
+// parsers and the IR are untouched (diff-test byte-identical).
+//
+// The corpus below is the MEASURED frontier. Every entry is native today; each is
+// here so that a change which pushes it back onto the delegate goes red instead of
+// passing silently — the failure mode this whole probe exists to make visible.
+fn refuse_out(refusal: string, name: string, src: string) -> string {
+    let fixture = "build/_frontier_${name}.av"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("AVRA_REFUSE_HAND_LEAF=${refusal} ./build/bs2 check '${fixture}' 2>&1")
+}
+
+/// Does any refusal reach THIS file (as opposed to an imported module)? The shared
+/// core of both frontier helpers — parameterised on the refusal so the `*` branch is
+/// exercised by a real parse rather than only by the pure predicate.
+fn refused_here(refusal: string, name: string, src: string) -> bool {
+    let out = refuse_out(refusal, name, src)
+    for line in out.split("\n") {
+        if line.contains("is refused") && !line.contains("error in module") { return true }
+    }
+    false
+}
+
+/// Does `src` parse WITHOUT the `decl_hand` delegate? Refusals reported inside an
+/// IMPORTED module are another file's dependency, not this form's — counting them
+/// measures the import closure instead of the input, which is exactly the wrong
+/// answer (an early version of this probe reported `use` as delegate-dependent on
+/// that basis; the refusal was coming from a `@std` source the import pulled in).
+fn native_without_delegate(name: string, src: string) -> bool {
+    !refused_here("decl_hand", name, src)
+}
+
+spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
+    then "the probe is DORMANT unless asked" {
+        // A guard that cannot fail is worth nothing, and a probe that fires by
+        // accident is worse: it would refuse the leaf in every production build.
+        !hand_leaf_refused("decl_hand") && !hand_leaf_refused("primary_base")
+    }
+
+    then "`*` refuses EVERY leaf — exercised by a real parse, not just the predicate" {
+        // The predicate assertion above runs in a process with no refusal set, so it
+        // only ever reaches the early return — the `want == "*"` branch is never
+        // executed by it. This runs a real compile under `*` and requires the known
+        // gap to report, which is the only thing that proves the wildcard is wired to
+        // the leaf rather than merely present in the source.
+        refused_here("*", "wildcard",
+            "fn f() -> int {\n mut lo = 0\n while lo < 3 {\n  let m = 1\n  lo = m\n }\n lo\n}")
+    }
+
+    then "the declaration keywords parse with the delegate REFUSED" {
+        native_without_delegate("fn", "fn f() -> int { 1 }") &&
+        native_without_delegate("exportfn", "export fn f() -> int { 1 }") &&
+        native_without_delegate("genfn", "fn f<T>(x: T) -> T { x }") &&
+        native_without_delegate("externfn", "extern fn e(a: int) -> int") &&
+        native_without_delegate("typestruct", "type T = { x: int }") &&
+        native_without_delegate("newtype", "type U = int") &&
+        native_without_delegate("enum", "enum E { A, B }") &&
+        native_without_delegate("trait", "trait Tr { fn m(self) -> int }")
+    }
+
+    then "the probe DISCRIMINATES — the known remaining gap still reports" {
+        // THE ANTI-VACUITY HALF. Every assertion above is "no refusal", which a
+        // helper that never detects one would satisfy perfectly. This is the case
+        // that must come back false, and it is also the frontier's largest
+        // remaining item, measured rather than guessed:
+        //
+        //   `block` (the body of `while`/`for`/`if`) is `statement*`, and
+        //   `statement` carries NO binding alternatives — `let`/`mut`/`const` live
+        //   only in `declaration` — so every binding inside a loop or an `if` falls
+        //   out of the repetition and is absorbed by the `@hand(decl_hand)` gate.
+        //
+        // The hand disagrees: `parse_statement_list_ids`, which every control-flow
+        // body reaches, calls `self.parse_declaration()` per item. So `declaration*`
+        // is the faithful rule — but flipping it is NOT free, and that is why this
+        // is still a gap rather than a fix: it moves per-statement SrcPos, which
+        // reaches the IR through `avra_null_deref_trap`'s line argument. Measured on
+        // the selfhost diff: ~12,000 lines of `i64 432` -> `i64 430`. Diagnostics
+        // would point two lines off. See t-myz7 for the full evidence.
+        //
+        // When that lands, THIS ASSERTION FLIPS — invert it and move the case up
+        // into the native corpus above.
+        !native_without_delegate("while_let",
+            "fn f() -> int {\n mut lo = 0\n while lo < 3 {\n  let m = 1\n  lo = m\n }\n lo\n}")
+    }
+
+    then "and the wrappers, bindings, and block forms" {
+        native_without_delegate("doc", "/// d\nfn f() -> int { 1 }") &&
+        native_without_delegate("annot", "@inline\nfn f() -> int { 1 }") &&
+        native_without_delegate("mod", "mod m { fn g() -> int { 1 } }") &&
+        native_without_delegate("shape", "shape S = { n: string }") &&
+        native_without_delegate("const", "const C = 1\nfn main() { }") &&
+        native_without_delegate("spec", "spec \"s\" {\n then \"t\" { true }\n}")
     }
 }
