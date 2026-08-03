@@ -97,16 +97,25 @@ spec "an IR-only build: a success for `build`, a diagnosed failure for `run`" {
                 && p.status != 0
                 && p.status != 127
         }
-        then "the message names the dependency and the remedy" {
+        then "the message names the dependency, and prescribes NOTHING" {
             // Without `missing_dep` on the report there is nothing to name:
             // under Quiet the reason was never printed, so `run` could only
-            // ever have said "no executable" with no way to act on it.
+            // ever have said "no executable" with no detail at all.
+            //
+            // The negative half is the load-bearing one, and was raised in
+            // review of this PR: the message must NOT recommend
+            // `--emit_metadata`. That remedy does not work — the dep lookup
+            // keys on the `[package]` name while builds record under the
+            // `[lib]`/`[bin]` name, so the closure reads as incomplete even
+            // immediately after a successful pre-build (t-jc7u). Naming a
+            // command that cannot fix the problem is a worse diagnostic
+            // than naming none.
             let base = noexe_mk_project("why")
             let p = noexe_probe(base, "run")
             noexe_cleanup(base)
             p.output.contains("nothing to run")
                 && p.output.contains("@dep/thing")
-                && p.output.contains("--emit_metadata")
+                && !p.output.contains("--emit_metadata")
         }
     }
 }

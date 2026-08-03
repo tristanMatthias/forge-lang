@@ -3843,8 +3843,16 @@ fn cmd_run(args: CliResult) -> int {
     if report.binary_path == "" {
         let _ = avra_remove_file(tmp_bin)
         if report.missing_dep != "" {
-            fail("error: nothing to run — dependency `${report.missing_dep}` has no recorded build\n" +
-                 "  build it first, or run `bs2 build --emit_metadata` to pre-build path-deps")
+            // Deliberately prescribes NOTHING. The obvious remedies —
+            // building the dependency, or `bs2 build --emit_metadata` — do
+            // not currently work: the dep lookup keys on the `[package]`
+            // name while builds record under the `[lib]`/`[bin]` name
+            // (`@std/lsp` vs `std-lsp`), so the closure reads as incomplete
+            // no matter what the user does (t-jc7u). An error that names a
+            // command which cannot fix it is worse than one that stops at
+            // the truth.
+            fail("error: nothing to run — no executable was produced\n" +
+                 "  dependency `${report.missing_dep}` has no recorded build, so nothing could be linked")
         }
         fail("error: nothing to run — the build produced no executable")
     }
