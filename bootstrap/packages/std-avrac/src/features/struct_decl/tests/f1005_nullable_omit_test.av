@@ -4,6 +4,34 @@
 // `note`, so this file would FAIL TO COMPILE if the gate wrongly required
 // nullable fields — that is the mutation guard. (The negative case — a missing
 // NON-nullable field → F1005 — lives in tests/err_missing_struct_field_test.av.)
+//
+// ONE CLAIM PER `then` (uzs9.2). This spec used to assert
+// `r.id == 7 && r.count == 3 && r.note == null` in a single arm. It is the
+// known flaky spec under parallel shards — hit twice on byte-identical PRs
+// (#671, #673) — and has since survived 175 whole-suite repro iterations, a
+// full runtime thread-safety audit, and 19.2M dense concurrent probes under
+// AVRA_VERIFY_RC=1 without reproducing. Four investigations, no repro.
+//
+// So the realistic path is not to catch it on demand but to make the NEXT
+// occurrence informative, and the conjunction destroyed exactly the
+// information that would settle it: a failing `then` reports only its name, so
+// both historical hits said nothing beyond "the conjunction was false".
+// Split, the arm that fails IS the diagnosis:
+//
+//   `note` alone      → the omitted-nullable null-init store, or slot reuse
+//   `id` or `count`   → the whole Rec is freed or clobbered (RC placement)
+//
+// Every claim is still asserted — nothing is weakened, only attributed.
+//
+// Each arm builds its OWN Rec rather than sharing one from the enclosing
+// `given`. That is the suite's established shape, and it is forced here: a
+// `let` in a `given` body does not reach its `then` arms (t-4nly — a real bug,
+// filed, and the emitter's own docstring claims the opposite). It is also the
+// better probe for a rare concurrent fault: three independent allocations
+// sample more interleavings than one shared allocation read three times.
+//
+// The general fix — a failing `then` naming which conjunct of a `&&` chain was
+// false, for every spec in the suite — is t-kdyj.5.
 type Rec = { id: int, note: string?, count: int }
 
 /// A nullable field (`note`) omitted; every non-nullable field supplied.
@@ -12,10 +40,22 @@ fn make() -> Rec { Rec { id: 7, count: 3 } }
 spec "F1005: a nullable field may be omitted from a struct literal (6y4y)" {
     then "the omitted nullable field defaults to null" {
         let r = make()
-        r.id == 7 && r.count == 3 && r.note == null
+        r.note == null
     }
-    then "a full literal supplying every field also works" {
-        let r = Rec { id: 1, note: "hi", count: 2 }
-        r.note == "hi" && r.id == 1
+    then "the supplied `id` survives the omission" {
+        let r = make()
+        r.id == 7
+    }
+    then "the supplied `count` survives the omission" {
+        let r = make()
+        r.count == 3
+    }
+    then "a full literal round-trips the nullable field" {
+        let full = Rec { id: 1, note: "hi", count: 2 }
+        full.note == "hi"
+    }
+    then "a full literal keeps its non-nullable fields" {
+        let full = Rec { id: 1, note: "hi", count: 2 }
+        full.id == 1
     }
 }
