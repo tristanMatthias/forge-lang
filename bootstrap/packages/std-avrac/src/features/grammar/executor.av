@@ -41,6 +41,7 @@ use diagnostics.{DiagnosticBag}
 use list_ops.{lower_bound}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 
+extern fn avra_process_env_get(name: string) -> string
 extern fn avra_gensym() -> int
 
 // ── Capture values + environment ──
@@ -2719,6 +2720,20 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// DSL cursor is resynced past the tokens it consumed. This is the executor's
 /// mini swap-in: proving the generated parser can hand off to `@hand` code
 /// over a shared store (the foundation 6.5.12 generalises).
+/// Is this `@hand` leaf REFUSED for this process? `AVRA_REFUSE_HAND_LEAF` names the
+/// leaf to refuse (`decl_hand`, `primary_base`), or `*` for every one. Unset — the
+/// default, and every production build — refuses nothing, so the emitted parsers and
+/// the IR are untouched.
+///
+/// Deliberately a NAME rather than a boolean: the two remaining leaves are retired by
+/// separate slices, and a per-leaf switch lets each one's frontier be measured without
+/// the other's failures drowning it out.
+export fn hand_leaf_refused(name: string) -> bool {
+    let want = avra_process_env_get("AVRA_REFUSE_HAND_LEAF")
+    if want == "" { return false }
+    want == "*" || want == name
+}
+
 export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // ONE table lookup answers both "is this a statement leaf?" and "which
     // parser?" — the class check and the dispatch used to be separate scans over
@@ -2726,6 +2741,32 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     let leaf = hand_stmt_leaf(name)
     if leaf == null {
         st.report("no hand statement rule `${name}`")
+        return st.store.stmts.add_leaf(Stmt.Error)
+    }
+    // ── The FRONTIER probe (t-myz7): the delegate, refusable ──────────────────
+    //
+    // `--hand-leaves` counts the leaves that REMAIN; nothing measured what still
+    // DEPENDS on one. Every existing decl_flip spec asserts dispatch ORDER in the
+    // emitted source, which says where a native rule sits — not which inputs fall
+    // past it into the delegate. Those are different questions, and only the second
+    // one tells you what deleting the leaf would break.
+    //
+    // It is unmeasurable by comparison, for the same reason the component-body
+    // routing bug hid for a month: the delegate and the native rules agree on every
+    // input they both accept, so trees, diagnostics, positions and IR are identical
+    // whichever answers. The only way to see the dependency is to REMOVE the
+    // delegate and watch what fails — which is the deletion itself.
+    //
+    // So this is the deletion, behind a flag. With the flag set the leaf reports
+    // instead of delegating, and every form that still needs it surfaces as a real
+    // diagnostic naming the leaf. That makes the retirement corpus writable BEFORE
+    // the retirement: the fail-before/pass-after set is exactly the forms this
+    // rejects today, and the slice is done when the set is empty.
+    //
+    // Read only on the leaf path (once per delegated statement, not per token), and
+    // opt-in — the default path is byte-identical.
+    if hand_leaf_refused(name) {
+        st.report("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
         return st.store.stmts.add_leaf(Stmt.Error)
     }
     if st.src == "" {
@@ -3203,6 +3244,12 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     }
     if st.src == "" {
         return st.error_node("`@hand(${name})` needs the source, unavailable here")
+    }
+    // The EXPRESSION half of the frontier probe — see run_hand_stmt's WHY. `primary_base`
+    // is the other remaining production leaf, and it is retired by its own slice, so it
+    // gets the same refusable treatment.
+    if hand_leaf_refused(name) {
+        return st.error_node("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
     }
     let start_byte = st.cur().pos
     // REUSE the delegate threaded from the outer Parser (st.hand_delegate) — created
