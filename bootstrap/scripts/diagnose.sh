@@ -2256,7 +2256,7 @@ fn harness_block() -> string {
 fn stmt_imports_block() -> string {
     grammar_core_imports() +
     "use @std.avrac.parse.{parser_new}\n" +
-    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, SelectArm, CompConfig, ChildrenSlot, ValueType, Tk, NodeStore, render_stmt_id, pattern_optional_present, pattern_optional_absent}\n\n"
+    "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, MatchArm, SelectArm, CompConfig, CompConfigPair, ChildrenSlot, ValueType, Tk, NodeStore, render_stmt_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
 fn stmt_harness_block() -> string {
