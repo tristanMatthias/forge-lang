@@ -332,7 +332,21 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         // is the site this case exists to cover.
         agree_all("component C inst { run() {\nfn f() -> int { 1 }") &&
         // body statement site: a `let` the block body cannot accept
-        agree_all("component C inst { let x }\nfn f() -> int { 1 }")
+        agree_all("component C inst { let x }\nfn f() -> int { 1 }") &&
+        // ── the four DECLINED arms (slice B2b corpus, landed before the routing) ──
+        // parse_comp_block_body has four arms the native rule currently declines,
+        // each of which ABORTS where a plain `declaration` would be happy. These
+        // pin their malformed shapes NOW, while the hand still owns them, so the
+        // guard exists before B2b routes them and can fail if B2b gets one wrong.
+        // arm 2 — `ident name {` nested block, brace never closed
+        agree_all("component C inst { nested name { }\nfn f() -> int { 1 }") &&
+        // arm 3 — `ident {` nested block (instance name == component name)
+        agree_all("component C inst { nested { }\nfn f() -> int { 1 }") &&
+        // arm 4 — method shorthand whose BODY carries a malformed statement
+        agree_all("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
+        // arm 1 — nested `component` with no name, and with no body
+        agree_all("component C inst { component }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst { component D }\nfn f() -> int { 1 }")
     }
 
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
@@ -757,7 +771,16 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("component C inst {\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { nested name }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { run() {\nfn f() -> int { 1 }") &&
-        agree_bad("component C inst { let x }\nfn f() -> int { 1 }")
+        agree_bad("component C inst { let x }\nfn f() -> int { 1 }") &&
+        // The TREE half of the four declined arms — the half that actually caught
+        // the enum_decl routing regression (t-myz7.2): F-codes can agree while the
+        // recovered tree diverges, because the hand aborts to Stmt.Error and
+        // synchronizes where a tolerant native branch builds a partial node.
+        agree_bad("component C inst { nested name { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { component }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { component D }\nfn f() -> int { 1 }")
     }
 
     then "malformed decl WRAPPERS recover to the same tree" {
