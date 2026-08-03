@@ -1,0 +1,138 @@
+// WHY (t-zk6j): diff-test has BOTH compilers compile the SAME source, so
+// any IR difference is attributable to compiler source alone. That is what
+// makes the oracle trustworthy — and it means a PR that makes the compiler
+// REJECT something fails on a COMPILE error rather than an IR difference.
+//
+// The harness called that "regression" and printed a 15-line log tail. Wrong
+// word: for a deliberate gate it is the new compiler working. Wrong evidence:
+// a tail is not the rejection SET, which is the one thing the operator needs
+// in order to confirm the gate rejects what they intended and nothing else.
+//
+// Measured cost of having no name for this outcome: t-oyr9 split into two PRs
+// (#1089 imports, #1090 the fix) and t-axu9 into three (#1091, #1092, the
+// gate) — each split an extra CI cycle, rebase, seed re-fetch and cold
+// rebuild, roughly an hour, for work that was already correct.
+//
+// These specs pin the reporting half, which is pure (log text in, report
+// out) — no compiler builds needed to test it. The oracle half (re-running
+// the selfhost leg on NEW's own source) lives in diagnose.sh.
+
+use @std.avrac.test_runner.{
+    new_only_diagnostics, delta_is_strictness, render_strictness_delta,
+    scan_diagnostics, scan_gate_diagnostics,
+}
+
+// OLD compiles cleanly; NEW rejects three sites — two sharing one conflict.
+const NEW_LOG: string =
+    "  × error[F1000]: `takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)\n" +
+    "      ╭─[src/alpha.av:4:39]\n" +
+    "  × error[F1000]: `other` parameter `x`: `A` is not assignable to `B` — different nominal types (in function `helper`)\n" +
+    "      ╭─[src/beta.av:9:12]\n" +
+    "  × error[F1000]: `sink` parameter `s`: `P` is not assignable to `Q` — different nominal types (in function `main`)\n" +
+    "      ╭─[src/gamma.av:2:1]\n"
+
+spec "t-zk6j: NEW's rejections are reported as a SET, not a log tail" {
+    given "OLD compiled cleanly and NEW rejected three sites" {
+        then "every rejection is in the delta" {
+            new_only_diagnostics(NEW_LOG, "").length == 3
+        }
+        then "it is a strictness difference, so the intended-strictness path is open" {
+            delta_is_strictness(new_only_diagnostics(NEW_LOG, ""))
+        }
+        then "the report groups by conflict and leads with the widest" {
+            let out = render_strictness_delta(new_only_diagnostics(NEW_LOG, ""))
+            let wide = out.index_of("`A` is not assignable to `B`")
+            let narrow = out.index_of("`P` is not assignable to `Q`")
+            out.contains("3 diagnostic(s) that OLD does not")
+                && wide >= 0 && narrow >= 0 && wide < narrow
+                && out.contains("[2] ")
+        }
+    }
+
+    given "a diagnostic OLD ALREADY raised" {
+        // The oracle leg only fails when NEW rejects what OLD accepts, but
+        // OLD's log can still carry warnings, and a pre-existing one is not
+        // this PR's doing. Subtracting is what makes the printed set
+        // reviewable rather than "everything in the log".
+        then "it is subtracted, leaving only what NEW added" {
+            let old_log =
+                "  × error[F1000]: `takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)\n" +
+                "      ╭─[src/alpha.av:4:39]\n"
+            let delta = new_only_diagnostics(NEW_LOG, old_log)
+            delta.length == 2 && delta[0].file == "src/beta.av"
+        }
+        // MULTISET, not set. Collapsing duplicates would under-report, which
+        // is the failure this whole family of tools exists to prevent.
+        then "two identical new rejections against one old occurrence leave one" {
+            let one =
+                "  × error[F1000]: `f` parameter `p`: `A` is not assignable to `B`\n" +
+                "      ╭─[src/same.av:1:1]\n"
+            let delta = new_only_diagnostics(one + one, one)
+            delta.length == 1
+        }
+    }
+}
+
+// The label RELAXES the oracle — it lets NEW reject source OLD accepts — so
+// it must not become a way to land a broken compiler. Two shapes disqualify.
+spec "t-zk6j: a malfunction cannot enter the strictness path wearing its clothes" {
+    given "NEW's compile died without saying anything OLD did not" {
+        then "an empty delta is NOT a strictness change" {
+            !delta_is_strictness(new_only_diagnostics("compiling...\nKilled\n", ""))
+        }
+        then "the report says so instead of printing an empty table" {
+            let out = render_strictness_delta(new_only_diagnostics("Killed\n", ""))
+            out.contains("NO diagnostic that OLD does not") && out.contains("NOT a strictness")
+        }
+    }
+
+    given "NEW hit an ICE or its own memory ceiling" {
+        // Both ARE new diagnostics, so a bare "the delta is non-empty" test
+        // would wave them through. Neither is a judgement about the program,
+        // which is what a gate is.
+        then "an F9999 ICE disqualifies the delta" {
+            let ice = "  × error[F9999]: internal compiler error: unreachable\n      ╭─[src/x.av:1:1]\n"
+            !delta_is_strictness(new_only_diagnostics(NEW_LOG + ice, ""))
+        }
+        then "an F4014 memory-ceiling stop disqualifies it too" {
+            let oom = "  × error[F4014]: compiler memory ceiling exceeded — 11055 MiB resident\n      ╭─[src/x.av:1:1]\n"
+            !delta_is_strictness(new_only_diagnostics(NEW_LOG + oom, ""))
+        }
+        then "the report shouts the reason rather than leaving it to be inferred" {
+            let ice = "  × error[F9999]: internal compiler error: unreachable\n      ╭─[src/x.av:1:1]\n"
+            render_strictness_delta(new_only_diagnostics(ice, "")).contains("malfunctioning")
+        }
+    }
+}
+
+// Captured verbatim from `bs2 check`, escapes included. The t-o8pm slice
+// shipped a scanner that was green against hand-written samples and found
+// ZERO sites in real logs, because the compiler puts ANSI attributes BETWEEN
+// the code and its colon. Same scanner, so the same guard applies here.
+const REAL_LOG: string =
+    "\x1b[1;31m×\x1b[0m \x1b[1;31merror[F1000]\x1b[0m\x1b[1m: `takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)\x1b[0m\n" +
+    "      \x1b[90m╭─[\x1b[2m/tmp/gs_a.av:4:39\x1b[0m]\n" +
+    "\x1b[1;31m×\x1b[0m \x1b[1;31mwarning[F9000]\x1b[0m\x1b[1m: unused variable `tmp`\x1b[0m\n" +
+    "      \x1b[90m╭─[\x1b[2m/tmp/gs_a.av:7:5\x1b[0m]\n"
+
+spec "t-zk6j: the code-agnostic scan reads what the compiler actually emits" {
+    then "it finds diagnostics of EVERY code, with codes and severities attached" {
+        let all = scan_diagnostics(REAL_LOG)
+        all.length == 2
+            && all[0].code == "F1000" && all[0].severity == "error"
+            && all[1].code == "F9000" && all[1].severity == "warning"
+            && all[0].file == "/tmp/gs_a.av"
+    }
+    // Both scans are now one implementation, so this pins that generalising
+    // it did not widen what a GATE scan answers: a warning rejects nothing.
+    then "the single-code gate scan still sees errors only" {
+        scan_gate_diagnostics(REAL_LOG, "F9000").length == 0
+            && scan_gate_diagnostics(REAL_LOG, "F1000").length == 1
+    }
+    then "prose that merely contains `error[` is not scanned as a diagnostic" {
+        // An F-code prefix is REQUIRED. Shard logs carry test stdout, and a
+        // spec name quoting a diagnostic would otherwise inflate the delta —
+        // the same line-anchoring lesson as t-65td's kill marker.
+        scan_diagnostics("    FAIL \"reports error[oops]: bad\"\n").length == 0
+    }
+}

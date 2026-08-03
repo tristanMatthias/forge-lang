@@ -334,6 +334,7 @@ DIFF & ANALYSIS
                        Same as --diff but only shows the body of one
                        function.
   --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt] [--run-equiv]
+              [--intended-strictness]
                        Differential test (HRN): build the
                        compiler at OLD (oracle, default integration branch)
                        and NEW (default HEAD) and assert byte-identical IR
@@ -346,6 +347,16 @@ DIFF & ANALYSIS
                        NEW (skip the cold rebuild; LOCAL, non-hermetic).
                        DIFF_TEST_CORPUS=<glob> overrides the corpus. Width is
                        derived from `bs2 resources`, not an environment knob.
+                       Two DECLARED-INTENT modes, for the two ways a change can
+                       legitimately trip the gate (t-zk6j):
+                         --run-equiv            IR moved. Every corpus artifact
+                                                must still RUN identically.
+                         --intended-strictness  NEW REJECTS OLD's source (a new
+                                                gate). Prints the rejection set,
+                                                then re-runs the selfhost leg on
+                                                NEW's OWN source — the input both
+                                                compilers accept — and requires
+                                                byte-identical IR there.
   --cache-fuzz [N] [SEED]
                        The canonical "is the cache lying to me" check
                        (pdme.9). N seeded edit/damage iterations against a
@@ -4706,6 +4717,98 @@ dt_corpus_task() {
   fi
 }
 
+# ── t-zk6j: NEW REJECTS OLD's source is a DIFFERENT outcome from "IR diverged"
+#
+# The selfhost leg has both compilers compile the SAME source, so a PR that
+# makes the compiler stricter fails on a COMPILE error, not an IR difference.
+# The harness called that "regression" and printed a 15-line log tail — the
+# wrong word (for a deliberate gate it is the new compiler working) and the
+# wrong evidence (a tail is not the rejection SET).
+#
+# Report WHICH diagnostics NEW raises that OLD does not, grouped by conflict,
+# via `bs2 diag_delta` — the same scanner + grouping `bs2 gate_scan` uses, so
+# a strictness review reads like a gate scan and the ANSI/attribution handling
+# cannot drift between two copies.
+#
+# Returns 0 only when the delta is a GENUINE strictness difference: a
+# non-empty rejection set with no F9999 (ICE) or F4014 (memory ceiling) in it.
+# Fail-closed — an unavailable reporter returns 1, so the strictness landing
+# path can never be entered on evidence the harness could not read.
+dt_report_strictness() {
+  local bs2="$1" new_log="$2" old_log="$3" out rc
+  if [ -n "$old_log" ] && [ -f "$old_log" ]; then
+    out=$("$bs2" diag_delta "$new_log" "$old_log" 2>/dev/null); rc=$?
+  else
+    out=$("$bs2" diag_delta "$new_log" 2>/dev/null); rc=$?
+  fi
+  # The report's own opening words. A compiler predating this subcommand
+  # exits non-zero with usage text instead, and must not be mistaken for a
+  # verdict of "not strictness" that happens to be right by accident.
+  case "$out" in
+    "NEW raises"*) printf '%s\n' "$out" >&2; return "$rc" ;;
+  esac
+  warn "diff-test: this compiler has no diag_delta reporter — raw log tail instead"
+  tail -15 "$new_log" >&2
+  return 1
+}
+
+# The selfhost oracle for a DECLARED strictness change (--intended-strictness).
+#
+# The default leg compiles OLD's source with both compilers, which a
+# strictness change breaks BY CONSTRUCTION: NEW rejects the very sites the
+# branch fixed. Swapping the input to NEW's OWN source keeps the property that
+# makes the oracle trustworthy — BOTH compilers still compile the SAME source,
+# so an IR difference is still attributable to compiler source alone — while
+# choosing an input both of them accept. Comparability is untouched; only the
+# choice of input moves.
+#
+# OLD must accept it, and that is the point of the check rather than an
+# assumption: a strictness change only ADDS rejections, so the laxer OLD still
+# accepts the fixed source, and the bootstrap window forbids new surface syntax
+# on a feature branch. OLD failing here means the change is not a strictness
+# change at all.
+dt_selfhost_new_source() {
+  local self="$1" old_bs2="$2" new_bs2="$3" old="$4" newd="$5" wd="$6" jobs="$7"
+  local rc_old rc_new p_old p_new
+  if [ ! -f "$self" ]; then
+    err "diff-test: NEW's compiler entry is missing at $self"
+    return 1
+  fi
+  log "diff-test: strictness oracle — both compilers compile NEW's source (the input both accept)"
+  if [ "$jobs" -le 1 ]; then
+    dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/selfnew.old.ll"; rc_old=$?
+    dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/selfnew.new.ll"; rc_new=$?
+  else
+    dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/selfnew.old.ll" & p_old=$!
+    dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/selfnew.new.ll" & p_new=$!
+    wait "$p_old"; rc_old=$?
+    wait "$p_new"; rc_new=$?
+  fi
+  if [ "$rc_old" -ne 0 ]; then
+    err "diff-test: OLD cannot compile NEW's source — this is NOT a strictness change"
+    err "  a strictness change only ADDS rejections, so the laxer OLD must still accept the fixed"
+    err "  source. OLD failing here means NEW's source needs compiler surface OLD lacks — a"
+    err "  seed-cycle change (see --check-bootstrap-window), which cannot land behind this label."
+    tail -15 "$old/last.compile.log" >&2
+    return 1
+  fi
+  if [ "$rc_new" -ne 0 ]; then
+    err "diff-test: NEW cannot compile its OWN source — the branch has not fixed every site its gate rejects"
+    tail -15 "$newd/last.compile.log" >&2
+    return 1
+  fi
+  if diff -q "$wd/selfnew.old.ll" "$wd/selfnew.new.ll" >/dev/null 2>&1; then
+    ok "diff-test: selfhost IR byte-identical on NEW's source ($(wc -l <"$wd/selfnew.old.ll" | tr -d ' ') lines) — the gate adds rejections and changes nothing else"
+    return 0
+  fi
+  err "diff-test: SELFHOST IR DIVERGED on NEW's OWN source — this is more than a strictness change"
+  err "  the gate changed codegen for a program BOTH compilers accept, which --intended-strictness"
+  err "  does not cover; use intended-ir-change (run-equivalence) if the codegen move is deliberate."
+  err "  full IR: $wd/selfnew.old.ll  vs  $wd/selfnew.new.ll"
+  diff -u "$wd/selfnew.old.ll" "$wd/selfnew.new.ll" | head -80 >&2
+  return 1
+}
+
 # Run-equivalence check for one corpus divergence (--run-equiv): link BOTH
 # already-emitted artifacts and execute them; equivalent means byte-identical
 # stdout AND equal exit codes. The weaker oracle for INTENDED IR changes —
@@ -4733,14 +4836,15 @@ dt_run_equiv_check() {
 # over the selfhost source + corpus; prints a readable diff and returns
 # non-zero on any divergence.
 mode_diff_test() {
-  local base="" new="HEAD" prebuilt=0 run_equiv=0 intended=0
+  local base="" new="HEAD" prebuilt=0 run_equiv=0 intended=0 strictness=0 strictness_seen=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --base) base="${2:?--base needs a ref}"; shift 2 ;;
       --new)  new="${2:?--new needs a ref}";  shift 2 ;;
       --new-prebuilt) prebuilt=1; shift ;;
       --run-equiv) run_equiv=1; shift ;;
-      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref> / --new-prebuilt / --run-equiv)" ;;
+      --intended-strictness) strictness=1; shift ;;
+      *) die "diff-test: unknown argument '$1' (want --base <ref> / --new <ref> / --new-prebuilt / --run-equiv / --intended-strictness)" ;;
     esac
   done
   [ -n "$base" ] || base="${AVRA_DIFFTEST_BASE:-$(window_resolve_integration_ref)}"
@@ -4779,7 +4883,7 @@ mode_diff_test() {
   fi
 
   local old="$DIFFTEST_DIR/old" newd="$DIFFTEST_DIR/new"
-  local old_bs2 new_bs2 new_label="$new"
+  local old_bs2 new_bs2 new_label="$new" new_self
   dt_build_compiler "$base" "$old" || return 1
   old_bs2="$old/bs2"
   if [ "$prebuilt" = "1" ]; then
@@ -4788,12 +4892,18 @@ mode_diff_test() {
       || die "diff-test: --new-prebuilt needs a built compiler at build/bs2 — run 'make build-quick' first"
     mkdir -p "$newd"                          # holds the NEW compile logs
     new_label="build/bs2 (prebuilt, NON-HERMETIC)"
+    # --new-prebuilt's NEW *is* the working tree, so that is where NEW's
+    # source lives for the strictness oracle.
+    new_self="$BOOTSTRAP_DIR/packages/cli/src/main.av"
     warn "diff-test: --new-prebuilt reuses build/bs2 as NEW — fast but NON-HERMETIC (its seed/source aren't pinned). The default hermetic build is the authoritative check (CI always uses it)."
   else
     dt_build_compiler "$new" "$newd" || return 1
     new_bs2="$newd/bs2"
+    new_self="$newd/tree/bootstrap/packages/cli/src/main.av"
   fi
   log "diff-test: OLD/oracle=$base   NEW/candidate=$new_label"
+  [ "$strictness" = "0" ] \
+    || log "diff-test: --intended-strictness — a NEW-only rejection of OLD's source is an expected outcome, not a regression"
 
   local wd="$DIFFTEST_DIR/work"; rm -rf "$wd"; mkdir -p "$wd"
   local fails=0 checked=0 skipped=0
@@ -4827,9 +4937,29 @@ mode_diff_test() {
   fi
   checked=$((checked+1))
   if [ "$rc_new" -ne 0 ]; then
-    err "diff-test: NEW failed to compile the compiler source that OLD compiles — regression"
-    tail -15 "$newd/last.compile.log" >&2
-    fails=$((fails+1))
+    # t-zk6j: NEW REJECTS OLD's source. A distinct outcome from "IR diverged",
+    # and NOT a regression when the PR declares the strictness change — so
+    # name it for what it is and print the rejection SET either way.
+    err "diff-test: NEW REJECTS the compiler source that OLD accepts"
+    local delta_rc=0
+    dt_report_strictness "$new_bs2" "$newd/last.compile.log" "$old/last.compile.log" || delta_rc=$?
+    if [ "$strictness" = "1" ] && [ "$delta_rc" -eq 0 ]; then
+      strictness_seen=1
+      warn "diff-test: INTENDED strictness change — confirm the rejections above are the expected set"
+      if dt_selfhost_new_source "$new_self" "$old_bs2" "$new_bs2" "$old" "$newd" "$wd" "$self_jobs"; then
+        intended=$((intended+1))
+      else
+        fails=$((fails+1))
+      fi
+    elif [ "$strictness" = "1" ]; then
+      err "diff-test: --intended-strictness given, but this is not a strictness rejection (see above) — failing"
+      fails=$((fails+1))
+    else
+      err "  if this rejection is INTENTIONAL (a new gate), label the PR intended-strictness-change:"
+      err "  the oracle then compiles NEW's OWN source with both compilers — same input, both sides,"
+      err "  so IR comparability is unchanged — and requires it to be byte-identical."
+      fails=$((fails+1))
+    fi
   elif diff -q "$wd/self.old.ll" "$wd/self.new.ll" >/dev/null 2>&1; then
     ok "diff-test: selfhost IR byte-identical ($(wc -l <"$wd/self.old.ll" | tr -d ' ') lines)"
   elif [ "$run_equiv" = "1" ]; then
@@ -4880,7 +5010,14 @@ mode_diff_test() {
       skip)    skipped=$((skipped+1)); skipped_names+=("$name"); rm -rf "$cwd" ;;
       newfail) checked=$((checked+1)); fails=$((fails+1)); divergent+=("$name")
                [ -z "$first_div_cwd" ] && first_div_cwd="$cwd"
-               err "diff-test: NEW failed to compile '$name' that OLD compiled — regression" ;;
+               # Also a strictness rejection, and reported as one — but it
+               # still FAILS under --intended-strictness. The corpus comes
+               # from the WORKING TREE (NEW's side), so a file NEW rejects is
+               # one the branch's own gate rejects and the branch did not fix.
+               # Letting the label wave it through would make the label a way
+               # to land an unvalidated gate.
+               err "diff-test: NEW REJECTS corpus input '$name' that OLD accepts — fix the file or the gate"
+               dt_report_strictness "$new_bs2" "$cwd/last.compile.log" "" || true ;;
       diverge)
         checked=$((checked+1))
         if [ "$run_equiv" = "1" ] && dt_run_equiv_check "$cwd" "$name"; then
@@ -4918,10 +5055,17 @@ mode_diff_test() {
     fails=$((fails+1))
   fi
   if [ "$fails" -eq 0 ]; then
-    if [ "$run_equiv" = "1" ] && [ "$intended" -gt 0 ]; then
+    if [ "$strictness_seen" = "1" ]; then
+      ok "DIFF-TEST STRICTNESS PASS — NEW rejects OLD's source (intended); on NEW's own source, which both compilers accept, the IR is byte-identical"
+    elif [ "$run_equiv" = "1" ] && [ "$intended" -gt 0 ]; then
       ok "DIFF-TEST RUN-EQUIV PASS — IR diverged at $intended site(s) (intended) but every corpus artifact RUNS identically; the suite (CI rc-strict) completes the oracle"
     else
       ok "DIFF-TEST PASS — OLD ($base) and NEW ($new_label) emit byte-identical IR"
+      # A label that changed nothing is worth saying out loud: it usually
+      # means the strictness split already happened in an earlier PR, and
+      # carrying the label forward relaxes an oracle for no reason.
+      [ "$strictness" = "0" ] \
+        || warn "diff-test: --intended-strictness was given but NEW rejected nothing — the label is unnecessary here; drop it to keep the strict oracle"
     fi
     return 0
   fi

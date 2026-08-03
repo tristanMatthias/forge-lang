@@ -1162,8 +1162,12 @@ export fn extract_after(out: string, key: string) -> string {
 
 /// One rejection: where it happened, what was said, and the shape it
 /// belongs to. `form` is the grouping key; `message` keeps the concrete
-/// text so an example can be shown verbatim.
-export type GateSite = { form: string, file: string, message: string }
+/// text so an example can be shown verbatim. `code`/`severity` let the
+/// same site serve a code-agnostic scan (t-zk6j's OLD-vs-NEW delta) as
+/// well as the single-code gate scan this type was introduced for.
+export type GateSite = {
+    code: string, severity: string, form: string, file: string, message: string,
+}
 
 /// The SHAPE of a diagnostic — its message with call-site identity
 /// removed, so the same conflict reported at forty call sites groups
@@ -1217,11 +1221,28 @@ export fn strip_ansi(s: string) -> string {
 }
 
 /// Every diagnostic in `log` carrying `code`, paired with the file it
-/// came from. The renderer's `╭─[path:line:col]` line follows the
-/// message, so the file is read from the NEXT location line — tracking
-/// it forward rather than guessing from the message keeps a diagnostic
-/// attributable even when several shards' logs are concatenated.
+/// came from. A filter over `scan_diagnostics` — one scanner, so the
+/// ANSI/location/attribution handling below cannot drift between the
+/// single-code gate scan and the code-agnostic delta.
+///
+/// ERRORS only. The gate question is "what would this reject", and a
+/// warning rejects nothing. (F-code ranges make errors and warnings
+/// disjoint anyway, so this is a statement of intent more than a filter.)
 export fn scan_gate_diagnostics(colored_log: string, code: string) -> List<GateSite> {
+    mut out: List<GateSite> = []
+    for s in scan_diagnostics(colored_log) {
+        if s.code == code && s.severity == "error" { out.push(s) }
+    }
+    out
+}
+
+/// Every diagnostic in `log`, whatever its code or severity, paired with
+/// the file it came from. The renderer's `╭─[path:line:col]` line follows
+/// the message, so the file is read from the NEXT location line —
+/// tracking it forward rather than guessing from the message keeps a
+/// diagnostic attributable even when several shards' logs are
+/// concatenated.
+export fn scan_diagnostics(colored_log: string) -> List<GateSite> {
     // STRIP COLOUR FIRST. The compiler renders diagnostics with ANSI
     // attributes, and it puts them BETWEEN the code and its colon:
     // `error[F1000]` ESC[0m ESC[1m `: message`. A literal
@@ -1230,13 +1251,12 @@ export fn scan_gate_diagnostics(colored_log: string, code: string) -> List<GateS
     // failure this ticket exists to prevent (a synthetic oracle that
     // reads like coverage), so the specs below use real captured output.
     let log = strip_ansi(colored_log)
-    let needle = "error[" + code + "]:"
     mut sites: List<GateSite> = []
-    mut pending: List<string> = []   // messages awaiting their location line
+    mut pending: List<GateSite> = []   // diagnostics awaiting their location line
     for line in log.split("\n") {
-        let hit = line.index_of(needle)
-        if hit >= 0 {
-            pending.push(line.substring(hit + needle.length, line.length).trim())
+        let d = parse_diagnostic_line(line)
+        if d.code != "" {
+            pending.push(d)
             continue
         }
         // `─[` is a BOX-DRAWING char (3 bytes) + `[`, so the skip must be
@@ -1246,19 +1266,51 @@ export fn scan_gate_diagnostics(colored_log: string, code: string) -> List<GateS
         let loc = line.index_of(loc_needle)
         if loc >= 0 && pending.length > 0 {
             let file = gate_scan_file_of(line.substring(loc + loc_needle.length, line.length))
-            for m in pending {
-                sites.push(GateSite { form: diagnostic_shape(m), file: file, message: m })
+            for p in pending {
+                sites.push(GateSite {
+                    code: p.code, severity: p.severity, form: p.form,
+                    file: file, message: p.message,
+                })
             }
             pending = []
         }
     }
     // A trailing message with no location line still counts as a site —
     // dropping it would under-report, and under-reporting is the exact
-    // failure this tool exists to prevent.
-    for m in pending {
-        sites.push(GateSite { form: diagnostic_shape(m), file: "<unknown>", message: m })
-    }
+    // failure this tool exists to prevent. `parse_diagnostic_line` already
+    // stamped it `<unknown>`.
+    for p in pending { sites.push(p) }
     sites
+}
+
+/// One rendered diagnostic line → a site, or a `code == ""` sentinel when
+/// the line carries none. Recognises `error[F…]:` and `warning[F…]:`,
+/// which is the whole surface `CompileError::render()` emits.
+///
+/// The `F` prefix is REQUIRED (spec Axis 20: F-codes are the stable
+/// identifiers). Without it a log line quoting `error[` in prose — a spec
+/// name, a captured fixture — would be scanned as a diagnostic and
+/// inflate the delta.
+fn parse_diagnostic_line(line: string) -> GateSite {
+    let no_diag = GateSite { code: "", severity: "", form: "", file: "", message: "" }
+    mut sev = "error"
+    mut at = line.index_of("error[")
+    if at < 0 {
+        sev = "warning"
+        at = line.index_of("warning[")
+    }
+    if at < 0 { return no_diag }
+    // Past `<sev>[` — +1 for the bracket.
+    let after = line.substring(at + sev.length + 1, line.length)
+    let close = after.index_of("]:")
+    if close < 0 { return no_diag }
+    let code = after.substring(0, close)
+    if !code.starts_with("F") || code.length < 2 { return no_diag }
+    let msg = after.substring(close + 2, after.length).trim()
+    GateSite {
+        code: code, severity: sev, form: diagnostic_shape(msg),
+        file: "<unknown>", message: msg,
+    }
 }
 
 /// `path:line:col]…` → `path`. Stops at the first `:` that begins the
@@ -1357,4 +1409,114 @@ fn index_of_string(hay: List<string>, needle: string) -> int {
         i = i + 1
     }
     0 - 1
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// t-zk6j: what NEW says that OLD does not
+// ─────────────────────────────────────────────────────────────────────
+//
+// diff-test has BOTH compilers compile the SAME source, so any IR
+// difference is attributable to compiler source alone. Correct, and the
+// reason the oracle is trustworthy — but it means a PR that makes the
+// compiler REJECT something fails on a COMPILE error rather than an IR
+// difference, and the harness called that "regression".
+//
+// It is not a regression. For a deliberate strictness change it is the
+// new compiler working. What the operator needs at that moment is the
+// one thing the old message did not give: WHICH diagnostics NEW raises
+// that OLD does not, so they can confirm the set is the expected one.
+//
+// The comparison is a MULTISET difference, not a set difference. A
+// conflict reported at three call sites where OLD reported it at one is
+// two new rejections, and collapsing them would under-report — the same
+// failure mode the scanner above is careful about.
+
+/// The diagnostics `new_log` carries that `old_log` does not.
+///
+/// Identity is (severity, code, file, message): the same conflict at a
+/// different file or a different call site is a different rejection to
+/// judge. Grouping onto shapes happens at RENDER time, so the count here
+/// stays honest.
+export fn new_only_diagnostics(new_log: string, old_log: string) -> List<GateSite> {
+    mut unmatched: List<string> = []
+    for o in scan_diagnostics(old_log) { unmatched.push(diag_identity(o)) }
+    mut out: List<GateSite> = []
+    for n in scan_diagnostics(new_log) {
+        let at = index_of_string(unmatched, diag_identity(n))
+        if at >= 0 {
+            // CONSUME the match: multiset, not set. Two identical new
+            // rejections against one old occurrence leave one new.
+            unmatched = list_drop_index(unmatched, at)
+        } else {
+            out.push(n)
+        }
+    }
+    out
+}
+
+fn diag_identity(s: GateSite) -> string {
+    "${s.severity}|${s.code}|${s.file}|${s.message}"
+}
+
+/// `xs` without the element at `at`. Rebuilt push-only — indexed
+/// assignment is not an assignment target in this language.
+fn list_drop_index(xs: List<string>, at: int) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i < xs.length {
+        if i != at { out.push(xs[i]) }
+        i = i + 1
+    }
+    out
+}
+
+/// Is this delta a STRICTNESS change — the compiler deliberately
+/// rejecting more programs — or a malfunction wearing its clothes?
+///
+/// Two things disqualify it, and both matter because the strictness
+/// landing path RELAXES the gate (it lets NEW reject OLD's source), so it
+/// must not become a way to land a broken compiler:
+///
+///   - an EMPTY delta. NEW failed the compile while saying nothing OLD
+///     did not, so the failure is a crash, a signal, or a truncated log —
+///     not a rejection at all.
+///   - an F9999 (ICE) or F4014 (compiler memory ceiling). Those are the
+///     compiler malfunctioning or hitting a resource limit. Neither is a
+///     judgement about the program, which is what a gate is.
+export fn delta_is_strictness(sites: List<GateSite>) -> bool {
+    if sites.length == 0 { return false }
+    for s in sites {
+        if s.code == "F9999" || s.code == "F4014" { return false }
+    }
+    true
+}
+
+/// The delta, grouped by code and then by conflict shape — the report
+/// that answers "are these the rejections I intended?".
+///
+/// Per code it reuses `render_gate_scan`, so a strictness review reads
+/// exactly like a gate scan (t-o8pm): widest conflict first, one example
+/// file each, call-site identity normalised away.
+export fn render_strictness_delta(sites: List<GateSite>) -> string {
+    if sites.length == 0 {
+        return "NEW raises NO diagnostic that OLD does not — its compile failed for some\n" +
+               "other reason (crash, signal, or a truncated log). This is NOT a strictness\n" +
+               "change; read the compile log itself."
+    }
+    mut codes: List<string> = []
+    for s in sites {
+        if index_of_string(codes, s.code) < 0 { codes.push(s.code) }
+    }
+    mut out = "NEW raises ${string(sites.length)} diagnostic(s) that OLD does not, across ${string(codes.length)} code(s):\n"
+    for c in codes {
+        mut of_code: List<GateSite> = []
+        for s in sites { if s.code == c { of_code.push(s) } }
+        out = out + render_gate_scan(of_code, c)
+    }
+    if !delta_is_strictness(sites) {
+        out = out + "\n!! F9999 (ICE) and/or F4014 (memory ceiling) present — the compiler is\n" +
+                    "!! malfunctioning or out of budget, NOT gating. This does not qualify as an\n" +
+                    "!! intended strictness change.\n"
+    }
+    out
 }

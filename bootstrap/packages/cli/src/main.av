@@ -61,7 +61,10 @@ use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
-use @std.avrac.test_runner.{scan_gate_diagnostics, render_gate_scan}
+use @std.avrac.test_runner.{
+    scan_gate_diagnostics, render_gate_scan,
+    new_only_diagnostics, render_strictness_delta, delta_is_strictness,
+}
 use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -3684,6 +3687,33 @@ fn cmd_gate_scan(args: CliResult) -> int {
     0
 }
 
+/// t-zk6j: `diag_delta <new-log> <old-log>` — the diagnostics the NEW
+/// compiler raises that the OLD one does not.
+///
+/// diff-test's selfhost leg has both compilers compile the SAME source,
+/// so a PR that makes the compiler stricter fails on a COMPILE error
+/// rather than an IR difference. The harness used to call that a
+/// "regression" and print a 15-line log tail, which is the wrong word and
+/// the wrong evidence: for a deliberate gate it is the new compiler
+/// working, and what the operator needs is the REJECTION SET, to confirm
+/// it is the one they intended.
+///
+/// Exits 0 when the delta is a genuine strictness difference, 1 when it
+/// is empty or contains an ICE / memory-ceiling stop — so the harness can
+/// gate on it rather than re-deriving the judgement in shell.
+fn cmd_diag_delta(args: CliResult) -> int {
+    let new_path = result_get_arg(args, "new_log")
+    let old_path = result_get_arg(args, "old_log")
+    if new_path == "" { fail("error: diag_delta requires the NEW compile log") }
+    // OLD's log is optional: when OLD compiled cleanly it has no
+    // diagnostics to subtract, and requiring the file would make the
+    // common case awkward for no gain.
+    let old_src = if old_path == "" { "" } else { avra_selfhost_read_file(old_path) }
+    let sites = new_only_diagnostics(avra_selfhost_read_file(new_path), old_src)
+    println(render_strictness_delta(sites))
+    if delta_is_strictness(sites) { 0 } else { 1 }
+}
+
 /// Newest `build/test_shards/<pid>` by mtime, or "" when none exists.
 /// Per-pid dirs mean concurrent runs do not clobber each other, so
 /// "newest" is the right selector for "the run I just did".
@@ -4468,6 +4498,13 @@ cli avra {
         arg code { description "F-code to scan for, e.g. F1000", required true }
         arg logs { description "Directory of shard logs (default: newest build/test_shards/<pid>)", required false }
         run() { cmd_gate_scan(args) }
+    }
+
+    command diag_delta {
+        description "t-zk6j: the diagnostics a NEW compile log raises that an OLD one does not"
+        arg new_log { description "Compile log from the NEW/candidate compiler", required true }
+        arg old_log { description "Compile log from the OLD/oracle compiler (default: none — it compiled cleanly)", required false }
+        run() { cmd_diag_delta(args) }
     }
 
     command resources {
