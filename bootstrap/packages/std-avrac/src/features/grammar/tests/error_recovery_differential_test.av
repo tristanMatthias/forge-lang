@@ -522,9 +522,24 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
 /// comparison that omits "exec" cannot see an executor-only divergence.
 fn rtree_at(mode: string, source: string) -> string {
     mut p = parser_new(source)
-    if mode == "hand" { p.decl_flip = false }
-    else if mode == "emit" { p.no_static_fallback = true }
-    else { p.decl_static = false }
+    // EVERY routing field is set explicitly, for all three modes. `parser_new` reads
+    // `decl_flip` and `decl_static` from the environment (`… != "0"`, so ON by
+    // default), which means a helper that sets only the ONE field distinguishing its
+    // mode is silently ambient-dependent: run the suite under
+    // `AVRA_PARSER_DECL_FLIP=0` and "emit" and "exec" both collapse to the hand, and
+    // `tree_agrees_everywhere` passes comparing the hand against itself, twice. That is
+    // the vacuity class this file exists to police — asserting three implementations
+    // agree while running one is worse than not asserting it.
+    if mode == "hand" {
+        p.decl_flip = false
+    } else if mode == "emit" {
+        p.decl_flip = true
+        p.decl_static = true
+        p.no_static_fallback = true
+    } else {
+        p.decl_flip = true
+        p.decl_static = false
+    }
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
