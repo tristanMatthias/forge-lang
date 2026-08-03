@@ -249,11 +249,40 @@ source_newer_than() {
   # sources were untouched; and ensure_bs2 wanted to rebuild + relink bs2
   # off a test edit — which is the very mid-suite-rebuild hazard (t-gv3n)
   # that this staleness check is the second line of defence against.
-  newest_src=$( { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -not -name '*_test.av' -exec $STAT_MTIME {} + 2>/dev/null
-                  $STAT_MTIME "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null
-                } | sort -rn | head -1)
+  newest_src=$(newest_source_mtime)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
   [ "$newest_src" -ge "$target_mtime" ]
+}
+
+# Newest mtime across the compiler's source inputs. ONE definition, shared by
+# both predicates below — a second copy of this find is how the two would
+# silently start disagreeing about what counts as a source.
+newest_source_mtime() {
+  { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -not -name '*_test.av' -exec $STAT_MTIME {} + 2>/dev/null
+    $STAT_MTIME "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null
+  } | sort -rn | head -1
+}
+
+# STRICT sibling of source_newer_than (`-gt`, not `-ge`): true only when a
+# source is GENUINELY newer than the target, never on a same-second tie.
+#
+# The two answer different questions and both are wanted. For the BUILD
+# decision, a tie means ordering is unknowable and rebuilding is the safe
+# answer — that is source_newer_than, and ensure_bs2 keeps using it. For
+# REPORTING, a tie is not the "your bs2 predates a source edit" condition;
+# treating it as one made a full suite red with nothing in the diff to explain
+# it (t-kdyj.7), because a container restart — or simply an incremental build
+# that finishes inside the same second as its source write — produces a tie on
+# any machine quick enough.
+source_strictly_newer_than() {
+  local target="$1"
+  [ ! -x "$target" ] && return 0
+  local target_mtime
+  target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
+  local newest_src
+  newest_src=$(newest_source_mtime)
+  [ -z "$newest_src" ] && return 1   # no sources found — pathological
+  [ "$newest_src" -gt "$target_mtime" ]
 }
 
 print_help() {
@@ -319,9 +348,11 @@ RUN MODES
                        parser via emit.av, then COMPILE + RUN the generated
                        source and assert it parses byte-equivalent to the hand
                        parser over the §2 corpus (GENPASS). rc 0 = pass.
-  --bs2-stale-check    Read-only: print `fresh`/`stale` for build/bs2 vs
-                       compiler sources + seed (ensure_bs2's decision),
-                       building nothing. rc 0 = fresh.
+  --bs2-stale-check    Read-only: print `fresh`/`tie`/`stale` for build/bs2 vs
+                       compiler sources + seed, building nothing. `stale` (rc 1)
+                       means a source is GENUINELY newer; `tie` (rc 0) means one
+                       shares bs2's second, so ensure_bs2 still rebuilds but the
+                       binary does not predate an edit.
   --rc-strict-suite [f] Run the spec suite under AVRA_RC_STRICT=1 (rcsf.3):
                        poison-on-free + reuse quarantine + abort on release of
                        already-freed RC memory. Validates the compiler's own
@@ -2516,9 +2547,21 @@ emit_gen_check_family() {
 # construction).
 mode_bs2_stale_check() {
   [ -x "$BS2" ] || { echo "stale (no bs2 at $BS2)"; exit 1; }
-  if source_newer_than "$BS2" || { [ -f "$SEED_LL" ] && [ "$SEED_LL" -nt "$BS2" ]; }; then
+  # `stale` is reserved for the condition the word actually describes: a
+  # source (or the seed) is GENUINELY newer than the binary. `-nt` is already
+  # strict, so the seed arm needs no change.
+  if source_strictly_newer_than "$BS2" || { [ -f "$SEED_LL" ] && [ "$SEED_LL" -nt "$BS2" ]; }; then
     echo "stale"
     exit 1
+  fi
+  # Nothing is strictly newer, but something shares the binary's second.
+  # Ordering is unknowable, so ensure_bs2 still rebuilds (it consults
+  # source_newer_than, whose `-ge` is unchanged) — but this is NOT the
+  # "your bs2 predates a compiler-source edit" condition, and reporting it as
+  # such reds a suite for a reason no diff can explain. rc 0: not an error.
+  if source_newer_than "$BS2"; then
+    echo "tie"
+    exit 0
   fi
   echo "fresh"
 }

@@ -23,9 +23,19 @@ spec "the suite forbids mid-run bs2 rebuilds (t-gv3n)" {
     then "the orchestrator stamped AVRA_SKIP_ENSURE_BS2 into the test env" {
         avra_process_env_get("AVRA_SKIP_ENSURE_BS2") == "1"
     }
-    then "the un-stamped staleness probe reports a fresh bs2 (portable stat)" {
+    // `tie` is accepted alongside `fresh`, and the distinction is the point:
+    // `stale` must mean a source is GENUINELY newer than build/bs2, which is
+    // the mid-run-rebuild hazard this file guards. A same-second tie is not
+    // that — ordering is merely unknowable, ensure_bs2 rebuilds anyway, and
+    // nothing predates anything.
+    //
+    // Before the split this arm asserted `fresh` alone and went red on a tie,
+    // with nothing in the diff to explain it: a container restart had
+    // normalised mtimes, and an incremental build finishing inside the same
+    // second as its source write does the same on any quick machine (t-kdyj.7).
+    then "the un-stamped staleness probe does not report a genuinely-fresh bs2 as stale" {
         let out = avra_shell_exec("env -u AVRA_SKIP_ENSURE_BS2 bash scripts/diagnose.sh --bs2-stale-check 2>&1 || true")
-        out.contains("fresh")
+        out.contains("fresh") || out.contains("tie")
     }
 }
 

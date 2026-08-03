@@ -56,6 +56,67 @@ spec "6cks: source_newer_than compares real mtimes on this platform" {
 // Driving the real function over a tree we own is what makes the two arms
 // mean something: without the negative control, "nothing is ever stale" would
 // pass just as well as the correct behaviour.
+// t-kdyj.7: `stale` must mean a source is GENUINELY newer than the binary.
+// A same-second tie is a different thing — ordering is unknowable, so the
+// BUILD decision rebuilds (source_newer_than's `-ge`, unchanged, is what
+// ensure_bs2 consults), but REPORTING it as staleness reds the suite for a
+// reason no diff can explain. A container restart produced one; so does an
+// incremental build finishing inside the same second as its source write.
+//
+// Driven against the REAL predicates over a sandbox. `touch -r` copies a
+// timestamp exactly, which is the only way to construct a genuine tie —
+// asserting this against a synthetic string would prove nothing.
+spec "t-kdyj.7: a same-second tie is not genuine staleness" {
+    then "a tie is stale to the build predicate and NOT to the strict one" {
+        // EVERY input newest_source_mtime reads must be sandboxed, not just the
+        // two source dirs: it also stats $RUNTIME_C and $BOOTSTRAP_DIR/
+        // llvm_wrapper.c. Leaving those pointed at the working tree passes here
+        // only because this checkout's copies happen to be old — in a FRESH
+        // CLONE every file carries checkout-time mtime, the same second the
+        // sandbox binary is created, so the real runtime.c can be strictly
+        // newer than it and flip the tie case to a strict-staleness report.
+        // A cold-clone-only flake. Raised in review of #1139.
+        let script = "set -u\n" +
+            "sandbox=$(mktemp -d)\n" +
+            "mkdir -p \"$sandbox/cli\" \"$sandbox/lib\" \"$sandbox/boot\"\n" +
+            "echo x > \"$sandbox/cli/a.av\"\n" +
+            "echo rt > \"$sandbox/rt.c\"\n" +
+            "echo wr > \"$sandbox/boot/llvm_wrapper.c\"\n" +
+            "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
+            "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+            "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
+            "RUNTIME_C=\"$sandbox/rt.c\"; BOOTSTRAP_DIR=\"$sandbox/boot\"\n" +
+            // Tie them to the binary too — otherwise these two are "now" while
+            // the tie is being constructed and defeat the very isolation above.
+            "touch -r \"$sandbox/bs2x\" \"$sandbox/rt.c\" \"$sandbox/boot/llvm_wrapper.c\"\n" +
+            // The tie: copy the binary's timestamp onto the source exactly.
+            "touch -r \"$sandbox/bs2x\" \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo TIE_REBUILDS_OK; else echo TIE_REBUILDS_WRONG; fi\n" +
+            "if source_strictly_newer_than \"$sandbox/bs2x\"; then echo TIE_STRICT_WRONG; else echo TIE_STRICT_OK; fi\n" +
+            // Control: a source made genuinely newer must trip BOTH, or the
+            // strict predicate has simply stopped detecting anything.
+            //
+            // Derived from the binary's own mtime, NOT a bare `touch`. A plain
+            // `touch` sets "now", which on a fast box lands in the SAME SECOND
+            // the sandbox binary was created — so the control silently became
+            // a second tie and reported the strict predicate broken when it was
+            // working. Caught while writing this spec.
+            "touch -d \"@$(( $($STAT_MTIME \"$sandbox/bs2x\") + 10 ))\" \"$sandbox/cli/a.av\"\n" +
+            // BOTH predicates must fire on a genuinely-newer source. Asserting
+            // only the strict one leaves the build predicate's primary case
+            // unchecked here — the tie arm proves it says "rebuild" on a tie,
+            // not that it still says so when a source really is newer. Raised
+            // in review of #1139.
+            "if source_newer_than \"$sandbox/bs2x\"; then echo NEWER_REBUILDS_OK; else echo NEWER_REBUILDS_WRONG; fi\n" +
+            "if source_strictly_newer_than \"$sandbox/bs2x\"; then echo NEWER_STRICT_OK; else echo NEWER_STRICT_WRONG; fi\n" +
+            "rm -rf \"$sandbox\"\n"
+        let out = avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+        out.contains("TIE_REBUILDS_OK") && out.contains("TIE_STRICT_OK")
+            && out.contains("NEWER_REBUILDS_OK") && out.contains("NEWER_STRICT_OK")
+            && !out.contains("_WRONG")
+    }
+}
+
 spec "a *_test.av edit is not compiler staleness (2wfp parity)" {
     then "a newer *_test.av leaves it fresh; a newer plain .av still flips it" {
         let script = "set -u\n" +
