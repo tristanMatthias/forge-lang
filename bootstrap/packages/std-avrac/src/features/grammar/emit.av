@@ -566,6 +566,11 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
 fn build_uses_sp_start(name: string) -> bool {
+    // `-> return v` in a match arm stamps the SYNTHESIZED return row at the `return`
+    // keyword — the rule's entry byte. The hand snapshots that position before parsing
+    // the value for the same reason: stamping after the parse points the row at the
+    // delimiter or the next arm instead of the `return`.
+    name == "MkArmReturn" ||
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
         name == "mk_enum_ctor" ||
@@ -2081,6 +2086,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkFieldAccess" -> "CapVal.Node(mk_field_access(st, ${args[0]}))"
         "MkEnumCtorSuffix" -> "CapVal.Node(mk_enum_ctor_suffix(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "MkCatchSuffix" -> "CapVal.Node(mk_catch_suffix(st, ${args[0]}, ${args[1]}, CapVal.SNodes(${args[2]}_list)))"
+        "MkArmReturn" -> "mk_arm_return(st, sp_start, ${args[0]})"
         "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         // t-47hc.29 — every table capture is a LIST: the value-column headers (`Toks`),
@@ -2747,6 +2753,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkTaggedTemplate" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
+    if bn == "MkArmReturn" { return "expr" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }

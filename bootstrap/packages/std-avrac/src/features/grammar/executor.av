@@ -3765,6 +3765,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkDefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
         "MkErrdefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
         // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
+        "MkArmReturn" if args.length == 1 -> mk_arm_return(st, 0 - 1, env.get(args[0]))
         "MkArm" if args.length == 3 -> {
             // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
             // the boxed Pattern (read back from the arena — render_match_arm renders
@@ -4686,6 +4687,37 @@ export fn mk_for_destructure(st: PState, sp_start: int, binding_cv: CapVal, coll
 /// Uses a fresh `add_leaf` (no interning, no sp_start) to match the hand's
 /// `alloc_stmt_leaf`. The SHARED core so apply_build (interpreter) and the
 /// generated static parser build byte-identical trees.
+/// `-> return v` / `-> return` as a match ARM body (the `MkArmReturn` build's core).
+///
+/// `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
+/// two by wrapping it: `Expr.Block([Stmt.Return(v)])`. Its comment calls the wrap
+/// "stmt-bearing, so it bridges at its boundary" — reproduced here rather than invented,
+/// because the arm body has nowhere else to put a statement.
+///
+/// The bare form is `Stmt.ReturnEmpty`, and WHICH form applies is newline-sensitive: the
+/// hand takes the empty branch when the next token is `}`, `,` or EOF, or sits on a LATER
+/// LINE. Without that, an arm folds the NEXT arm's pattern into its return value. The
+/// grammar spells the same rule as `^( e:expression )?` — the same-line marker
+/// `return_stmt` already uses — so the two engines decide it identically.
+///
+/// The synthesized row is stamped at the `return` KEYWORD (sp_start), not at the cursor
+/// after parsing the value: a post-advance stamp points a field-access null-trap at the
+/// delimiter or the next token instead of the `return` (the hand records the same
+/// caveat, having hit it).
+export fn mk_arm_return(st: PState, sp_start: int, val_cv: CapVal) -> CapVal {
+    let ret_id = if capval_present(val_cv) {
+        st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, val_cv)))
+    } else {
+        st.store.stmts.add_leaf(Stmt.ReturnEmpty)
+    }
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(sp_start)
+        st.store.stmts.record_pos(ret_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    let body: List<StmtId> = [ret_id]
+    CapVal.Node(st.store.exprs.add_leaf(Expr.Block(body)))
+}
+
 export fn mk_return_opt(st: PState, val_cv: CapVal) -> CapVal {
     if capval_present(val_cv) {
         CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, val_cv))))
