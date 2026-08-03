@@ -74,12 +74,27 @@ spec "t-47hc.24: every non-IDENT lead reaches decl_hand exactly as before" {
     }
 }
 
-spec "t-47hc.24: the gate is wider than the hand check it fronts, never narrower" {
-    then "a KEYWORD-kinded instance name still passes (false positives are inert)" {
-        // peek_after_ident_is_ident_not_keyword rejects these words; the token gate does
-        // not, because it must never be the narrower of the two. parse_declaration_hand
-        // still falls through to parse_statement for them, so behaviour is unchanged.
-        lead("foo defer { }") && lead("foo match { }") && lead("foo in { }")
+spec "t-47hc.24: the gate matches the hand check it fronts EXACTLY (t-myz7)" {
+    then "a word that cannot name an instance is REJECTED by the gate" {
+        // This spec used to assert the opposite — that the gate stayed deliberately
+        // WIDER, because a false positive was inert: `parse_declaration_hand` re-checked
+        // precisely and fell through to `parse_statement`.
+        //
+        // That is only true while the delegate EXISTS, and it is what kept `t with {…}`,
+        // `n match {…}` and friends reaching `@hand(decl_hand)` — the DSL calling the
+        // hand purely to be told no. Retiring the leaf (t-myz7) needs the gate to decide
+        // it alone, so both sides now share ONE list
+        // (`word_excluded_as_instance_name`, chars.av) and the gate is exactly as
+        // precise as the hand rather than merely no narrower.
+        !lead("foo match { }") && !lead("foo in { }") && !lead("foo with { }") &&
+            !lead("foo if { }") && !lead("foo return { }")
+    }
+    then "a keyword-kinded word NOT on the list still passes — the LIST is the discriminator" {
+        // `defer` is keyword-kinded but absent from the hand's exclusions, so it remains
+        // a legal instance name on BOTH sides. This is the assertion that stops the fix
+        // from degenerating into a blanket "reject every keyword", which WOULD be the
+        // narrower-than-the-hand mistake the original comment feared.
+        lead("foo defer { }")
     }
     then "a non-word follower is rejected — the instance name must start a word" {
         !lead("foo 1 { }") && !lead("foo \"s\" { }") && !lead("foo.bar { }") && !lead("foo, bar { }")
