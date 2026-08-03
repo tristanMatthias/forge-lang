@@ -66,6 +66,23 @@ spec "t-65td: the cause class is named, not left to a log dive" {
             let got = classify_shard_failure(log, 0, 0)
             got.contains("KILLED") && got.contains("make stray")
         }
+        then "macOS's `Killed: 9` counts too" {
+            let got = classify_shard_failure("bash: line 1: 4213 Killed: 9   bs2 _test_shard\n", 0, 0)
+            got.contains("KILLED")
+        }
+        // The kill check is LINE-ANCHORED, and this is why. The shard log
+        // carries the test's own stdout, and this tree has specs that kill
+        // processes on purpose (stray_reap_test). Under a substring rule
+        // their assertion failures report as phantom OOM-kills — the very
+        // misattribution this classifier exists to prevent, reintroduced
+        // by its own kill check.
+        then "a FAILING test that merely mentions killing stays a TEST FAILURE" {
+            let log = "spec \"reap\"\n    FAIL \"the orphan is Killed and the live build spared\"\n"
+            let got = classify_shard_failure(log, 1, 0)
+            got.contains("TEST FAILURE")
+                && got.contains("the orphan is Killed")
+                && !got.contains("KILLED —")
+        }
     }
 
     given "a red shard whose log explains nothing" {
