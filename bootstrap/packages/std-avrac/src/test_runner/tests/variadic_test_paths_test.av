@@ -21,11 +21,30 @@
 // the bug — making the arg singular again — drops the second file's entries
 // and reds every arm below.
 
-use @std.avrac.core.{avra_shell_exec}
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_read_file, avra_getpid,
+}
 
 /// `--list` output for the given positional args, run from the repo root.
 fn list_for(paths: string) -> string {
     avra_shell_exec("./build/bs2 test --list ${paths} 2>&1")
+}
+
+/// A real `bs2 test` invocation's EXIT STATUS plus both streams.
+///
+/// The status is the point, and it needs its own runner: piping into
+/// `tail`/`grep` to read the output yields the PIPE's status, not bs2's —
+/// which reports 0 for a run that exited 1. Redirect to a file, capture the
+/// status directly, then read the file.
+type PathProbe = { status: int, output: string }
+
+fn path_probe(paths: string) -> PathProbe {
+    let log = "/tmp/avra_vtp_${string(avra_getpid())}.log"
+    let st = avra_shell_exec_status("./build/bs2 test ${paths} > '${log}' 2>&1")
+    let out = avra_selfhost_read_file(log)
+    let _ = avra_shell_exec("rm -f '${log}'")
+    PathProbe { status: st, output: out }
 }
 
 spec "t-kdyj.6: every positional test path is honoured, not just the first" {
@@ -65,10 +84,34 @@ spec "t-kdyj.6: every positional test path is honoured, not just the first" {
         dir_only.trim().split("\n").length == both.trim().split("\n").length
     }
 
-    // A path that matches nothing must SAY so, and must name the path — with
-    // N paths the operator needs to know which one was empty.
-    then "an unmatched path is reported by name" {
-        let out = avra_shell_exec("./build/bs2 test --list no_such_spec_file_xyz.av 2>&1")
-        out.contains("no_such_spec_file_xyz.av")
+    // A path that matches nothing must SAY so, name the path, and FAIL.
+    //
+    // The first version of this arm asserted only that the path was named,
+    // and passed while the command exited 0 — so it did not hold the contract
+    // this ticket exists for ("either run every path, or fail naming the one
+    // that matched nothing"). Raised in review of #1138.
+    then "an unmatched path fails, naming it" {
+        let p = path_probe("no_such_spec_file_xyz.av")
+        p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
+    }
+
+    // The blocking case from review, and the sharper one: with a VALID path
+    // alongside, the run succeeded on a subset and exited 0 — a successful
+    // partial measurement that silently dropped a requested path. That is the
+    // same defect as the discarded-argument bug this PR fixes, one level up:
+    // the operator asked for two things, got one, and was told everything
+    // passed.
+    then "a valid path does not excuse an unmatched sibling" {
+        let p = path_probe("tests/suite_bs2_guard_test.av no_such_spec_file_xyz.av")
+        p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
+    }
+
+    // Control: the failure above must come from the BOGUS path, not from
+    // passing two paths at all. Without this, "any multi-path run fails"
+    // would satisfy the arm above.
+    then "two valid paths still succeed" {
+        let p = path_probe("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        p.status == 0
     }
 }

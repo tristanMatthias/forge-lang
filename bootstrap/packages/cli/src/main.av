@@ -3283,18 +3283,32 @@ fn run_test_command(args: TestArgs) {
     // compose. An empty list is a no-op fast path.
     let accepted = filter_by_paths(after_filter, args.path_filters)
 
+    // A path that selects NOTHING is an error, and it stays an error when
+    // sibling paths matched. Without this, `bs2 test valid.av typo.av` runs
+    // valid.av and exits 0 — a successful partial measurement that silently
+    // drops a path the operator asked for, which is the same defect as the
+    // discarded-argument bug this command just fixed, one level up. Raised in
+    // review of #1138; the all-unmatched case exited 0 too.
+    //
+    // Checked against `discovered` (BEFORE --filter) so an unmatched PATH is
+    // attributable to the path itself. A valid path plus a name filter that
+    // excludes everything is a different situation and falls through to the
+    // filter message below.
+    let unmatched = list_filter(args.path_filters,
+        (pf: string) -> filter_by_path(discovered, pf).length == 0)
+    if unmatched.length > 0 {
+        // Name every unmatched path — with N paths the operator needs to know
+        // WHICH one was empty, not merely that one was.
+        eprintln("error: no test files matched `${unmatched.join("`, `")}`")
+        avra_process_exit(1)
+        return
+    }
     if discovered.length == 0 {
         println("No test files found.")
         return
     }
     if accepted.length == 0 {
-        if args.path_filters.length > 0 {
-            // Name every path, not just the first: with N paths the operator
-            // needs to know WHICH matched nothing.
-            println("No spec test files matched path(s) `${args.path_filters.join("`, `")}`.")
-        } else {
-            println("No spec test files matched filter.")
-        }
+        println("No spec test files matched filter.")
         return
     }
 
