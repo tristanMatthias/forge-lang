@@ -740,6 +740,10 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     // The forms the native rule deliberately DECLINES (nested blocks, method
     // shorthand, nested `component`), which @try must hand back to the hand
     // verbatim rather than parsing as loose expression statements.
+    then "PROBE: a native instantiation BODY survives (statements not dropped)" {
+        agree_tree("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
+    }
+
     then "the declined body forms still match the hand exactly" {
         agree_tree("component C inst { nested name { } }\nfn f() -> int { 1 }") &&
         agree_tree("component C inst { nested { } }\nfn f() -> int { 1 }") &&
