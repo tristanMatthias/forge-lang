@@ -240,7 +240,16 @@ source_newer_than() {
   local target_mtime
   target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
   local newest_src
-  newest_src=$( { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -exec $STAT_MTIME {} + 2>/dev/null
+  # `*_test.av` is EXCLUDED, mirroring package_full_fingerprint (2wfp,
+  # build/fingerprint.av): a test entry is not part of the compiled surface
+  # — nothing imports one and the [lib] build does not emit one — so it
+  # cannot make `bs2` stale. Including them made diagnose.sh CONTRADICT the
+  # build's own content fingerprint, with two consequences: a test-only edit
+  # reported `stale`, reddening suite_bs2_guard_test on a tree whose compiler
+  # sources were untouched; and ensure_bs2 wanted to rebuild + relink bs2
+  # off a test edit — which is the very mid-suite-rebuild hazard (t-gv3n)
+  # that this staleness check is the second line of defence against.
+  newest_src=$( { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -not -name '*_test.av' -exec $STAT_MTIME {} + 2>/dev/null
                   $STAT_MTIME "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null
                 } | sort -rn | head -1)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
