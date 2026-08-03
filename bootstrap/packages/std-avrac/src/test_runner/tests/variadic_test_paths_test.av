@@ -1,0 +1,74 @@
+// t-kdyj.6: `bs2 test a.av b.av` ran ONLY `a.av` — exit 0, no warning, no
+// mention of `b.av`. The `test` command declared `arg file` (singular), so
+// every argument after the first was parsed and dropped on the floor.
+//
+// The epic's own directive names the plural form verbatim — "there must be
+// `bs2 test`, and `bs2 test <paths>`" — and the plural form silently did
+// something other than what it said. It is the failure mode this epic keeps
+// finding: a GREEN result that did not measure what the operator asked for.
+// A CI script or an agent narrowing a run to a set of files got a pass for
+// the first file and silence about the rest.
+//
+// Caught while building a repro harness for uzs9.2 (`bs2 test $FILES` over
+// the 8-file batch a flaky spec shares a shard with). Had it run, it would
+// have reported a clean result for a one-file experiment, indistinguishable
+// from a real one.
+//
+// These specs drive the REAL CLI. `--list` is the probe: it exercises the
+// whole positional-path plumbing (arg parse → discover_with_path_shortcut →
+// filter_by_paths) while skipping compile+run, so the guard costs
+// milliseconds instead of two shard builds. The mutation that reintroduces
+// the bug — making the arg singular again — drops the second file's entries
+// and reds every arm below.
+
+use @std.avrac.core.{avra_shell_exec}
+
+/// `--list` output for the given positional args, run from the repo root.
+fn list_for(paths: string) -> string {
+    avra_shell_exec("./build/bs2 test --list ${paths} 2>&1")
+}
+
+spec "t-kdyj.6: every positional test path is honoured, not just the first" {
+    then "two files list entries from BOTH" {
+        let out = list_for("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        out.contains("suite_bs2_guard_test.av") && out.contains("source_newer_than_test.av")
+    }
+
+    // The control. Without it, a `filter_by_paths` that ignored its filters
+    // entirely and returned everything would satisfy the arm above — the
+    // union must still be a RESTRICTION, not a pass-through.
+    then "one file lists only that file's entries" {
+        let out = list_for("tests/suite_bs2_guard_test.av")
+        out.contains("suite_bs2_guard_test.av") && !out.contains("source_newer_than_test.av")
+    }
+
+    // Order is the operator's, so a reversed pair must select the same set.
+    then "the pair is order-independent" {
+        let fwd = list_for("tests/suite_bs2_guard_test.av " +
+                           "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        let rev = list_for("packages/std-avrac/src/build/tests/source_newer_than_test.av " +
+                           "tests/suite_bs2_guard_test.av")
+        let fwd_n = fwd.trim().split("\n").length
+        let rev_n = rev.trim().split("\n").length
+        fwd_n == rev_n && rev.contains("suite_bs2_guard_test.av")
+            && rev.contains("source_newer_than_test.av")
+    }
+
+    // Overlapping paths are legitimate (`bs2 test dir/ dir/one_test.av`) and
+    // must not compile or run a file twice. Counting `--list` lines is the
+    // direct check: a duplicate would show up as extra entries.
+    then "a directory and a file inside it do not double-count" {
+        let dir_only = list_for("packages/std-avrac/src/build/tests")
+        let both = list_for("packages/std-avrac/src/build/tests " +
+                            "packages/std-avrac/src/build/tests/source_newer_than_test.av")
+        dir_only.trim().split("\n").length == both.trim().split("\n").length
+    }
+
+    // A path that matches nothing must SAY so, and must name the path — with
+    // N paths the operator needs to know which one was empty.
+    then "an unmatched path is reported by name" {
+        let out = avra_shell_exec("./build/bs2 test --list no_such_spec_file_xyz.av 2>&1")
+        out.contains("no_such_spec_file_xyz.av")
+    }
+}
