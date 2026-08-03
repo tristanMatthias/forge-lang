@@ -439,6 +439,17 @@ When any command fails with ENOSPC / "no space left on device" / similar disk-fu
 - [ ] Type checker (`src/typeck/mod.av`)
 - [ ] Feature registry (`src/features/mod.av` `init_features`)
 - [ ] AST renderer (`render_expr`/`render_stmt` in `ast.av`)
+- [ ] **Adding a typeck/resolver GATE (a predicate that rejects programs)? Validate
+      it against the TEST CORPUS, not just the compiler's own source** — `bs2 test`,
+      then `bs2 gate_scan <F-CODE>` to see every rejection grouped by conflict
+      (t-o8pm). A count over `src/` is not coverage: t-axu9's gate measured 935
+      naive hits narrowed to **0** by exemptions, that 0 was read as "safe to
+      gate", and three false-positive classes were still live — `dyn Trait`
+      (conformance, not identity), `shape` (width subtyping), and newtype-vs-its-
+      own-underlying — each surfacing from a DIFFERENT oracle one run at a time.
+      The compiler's own source never passes a struct into a shape parameter,
+      never calls through a `dyn` parameter, and never pushes a raw value into a
+      collection of its newtype. It is a large program, not a representative one.
 
 ### Phase 4: Testing
 1. Basic happy-path test in `src/features/<name>/tests/<name>_example_test.av` (spec/given/then format)
