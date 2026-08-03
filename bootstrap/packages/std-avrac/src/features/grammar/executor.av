@@ -1503,16 +1503,24 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // base is a PascalCase Ident / qualified path with a PascalCase last segment AND a `(`
     // follows the field name; that form needs an argument list, so it stays hand-owned.
     // Everything else with an IDENT field name is a plain FieldAccess.
-    // `,` that is followed by ANOTHER argument, not by the closing `)` — the
-    // trailing-comma guard. `f(a, b,)` is legal (parse_arg_list_ids_inner advances past
-    // the comma and stops when `)` follows), so the argument loop must NOT enter on a
-    // trailing separator: without this it consumed the `,` and then demanded an
-    // expression at `)`, turning a valid call into `(call f (a, b, (error)))`.
-    if cond == "comma_not_rparen" {
-        if st.cur().tk != Tk.Comma { return false }
-        if st.pos + 1 >= st.toks.length { return false }
-        return st.toks[st.pos + 1].tk != Tk.RightParen
-    }
+    // `,` that is followed by ANOTHER element, not by the CLOSER — the trailing-comma
+    // guard. `f(a, b,)` is legal (parse_arg_list_ids_inner advances past the comma and
+    // stops when `)` follows), so the element loop must NOT enter on a trailing
+    // separator: without this it consumed the `,` and then demanded an expression at the
+    // closer, turning a valid call into `(call f (a, b, (error)))`.
+    //
+    // There is no compiler-inserted backtracking in the executor (deliberately — see the
+    // t-47hc.10 note in CLAUDE.md), so a repetition that enters on the trailing comma
+    // cannot un-consume it. The guard IS the mechanism, which is why every bracketed
+    // comma-separated list needs one; `( "," )?` after the repetition never gets reached.
+    //
+    // One core, three closers. The `)` form was written first and the `]`/`}` siblings
+    // were missing for months — a `[1, 2,]` or `{ a: 1, }` fell through to
+    // `@hand(decl_hand)` and was silently absorbed, which is exactly the class the leaf
+    // frontier probe (t-myz7) exists to surface.
+    if cond == "comma_not_rparen" { return comma_not_closer(st, Tk.RightParen) }
+    if cond == "comma_not_rbracket" { return comma_not_closer(st, Tk.RightBracket) }
+    if cond == "comma_not_rbrace" { return comma_not_closer(st, Tk.RightBrace) }
     // `.0` tuple index — a second-token guard, same reason every `.`-led branch needs one.
     if cond == "dot_number" {
         if st.cur().tk != Tk.Dot { return false }
@@ -2728,6 +2736,16 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// Deliberately a NAME rather than a boolean: the two remaining leaves are retired by
 /// separate slices, and a per-leaf switch lets each one's frontier be measured without
 /// the other's failures drowning it out.
+/// The trailing-comma guard's shared core: is the cursor on a `,` that is followed by
+/// ANOTHER element rather than by `closer`? Used by `comma_not_rparen` /
+/// `comma_not_rbracket` / `comma_not_rbrace` so the three differ only in their closer
+/// and cannot drift apart.
+fn comma_not_closer(st: PState, closer: Tk) -> bool {
+    if st.cur().tk != Tk.Comma { return false }
+    if st.pos + 1 >= st.toks.length { return false }
+    st.toks[st.pos + 1].tk != closer
+}
+
 export fn hand_leaf_refused(name: string) -> bool {
     let want = avra_process_env_get("AVRA_REFUSE_HAND_LEAF")
     if want == "" { return false }
