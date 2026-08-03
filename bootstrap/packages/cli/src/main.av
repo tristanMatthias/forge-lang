@@ -61,6 +61,7 @@ use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
 use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
+use @std.avrac.test_runner.{scan_gate_diagnostics, render_gate_scan}
 use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
 use @std.avrac.coverage.{render_coverage}
 use @std.avrac.build.{llvm_prefix_dir}
@@ -3645,6 +3646,43 @@ fn cmd_eval(args: CliResult) -> int {
 
 /// `avra resources` — a deliberately small machine-readable boundary for
 /// orchestration outside the Avra process (notably diagnose.sh diff-test).
+/// t-o8pm: answer "if I turn this gate on, what does the corpus reject?"
+/// in ONE pass, grouped by conflict rather than by call site.
+///
+/// Reads the shard logs a `bs2 test` run already produced — the dir-level
+/// shard compile is the affordable granularity (per-file `bs2 check` over
+/// 1000+ files re-parses @std each time and was heading for hours at
+/// ~4.7GB/process), and the runner already keeps every shard's log.
+///
+/// Defaults to the newest `build/test_shards/<pid>` because that is the
+/// run the operator just did; an explicit dir overrides for a saved run.
+fn cmd_gate_scan(args: CliResult) -> int {
+    let code = result_get_arg(args, "code")
+    if code == "" { fail("error: gate-scan requires an F-code, e.g. F1000") }
+    let logs = result_get_arg(args, "logs")
+    let dir = if logs != "" { logs } else { newest_shard_log_dir() }
+    if dir == "" {
+        eprintln("gate-scan: no shard logs found — run `bs2 test` first, or pass a log dir")
+        return 1
+    }
+    let listing = avra_shell_exec("cat ${dir}/*.log 2>/dev/null")
+    if listing == "" {
+        eprintln("gate-scan: no readable logs in ${dir}")
+        return 1
+    }
+    println(render_gate_scan(scan_gate_diagnostics(listing, code), code))
+    0
+}
+
+/// Newest `build/test_shards/<pid>` by mtime, or "" when none exists.
+/// Per-pid dirs mean concurrent runs do not clobber each other, so
+/// "newest" is the right selector for "the run I just did".
+fn newest_shard_log_dir() -> string {
+    let out = avra_shell_exec("ls -1dt \"$PWD\"/build/test_shards/*/ 2>/dev/null | head -1").trim()
+    if out == "" { return "" }
+    out
+}
+
 /// Schedulers inside the compiler use ResourceSnapshot directly; shell tools
 /// consume this stable key=value form instead of reimplementing /proc or Mach.
 fn cmd_resources() -> int {
@@ -4396,6 +4434,13 @@ cli avra {
         description "Evaluate a Avra expression"
         arg file { description "Source file", required true }
         run() { cmd_eval(args) }
+    }
+
+    command gate_scan {
+        description "t-o8pm: group every diagnostic of an F-code across shard logs by conflict shape"
+        arg code { description "F-code to scan for, e.g. F1000", required true }
+        arg logs { description "Directory of shard logs (default: newest build/test_shards/<pid>)", required false }
+        run() { cmd_gate_scan(args) }
     }
 
     command resources {

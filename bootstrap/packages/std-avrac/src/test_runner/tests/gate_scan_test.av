@@ -1,0 +1,130 @@
+// WHY (t-o8pm): "if I turn this gate on, what does it reject?" had no
+// one-pass answer, so false positives arrived ONE RUN AT A TIME.
+//
+// The t-axu9 argument gate was validated by a COUNT over the compiler's
+// own source — 935 naive hits narrowed by exemptions to 0 — and that 0
+// was read as "safe to gate". It was not evidence. Three false-positive
+// classes were still live (`dyn Trait` conformance, `shape` width
+// subtyping, newtype-vs-underlying), and each surfaced from a DIFFERENT
+// oracle on a DIFFERENT run. A count over the compiler's own source
+// cannot find them: that program never passes a struct into a shape
+// parameter, never calls through a `dyn` parameter, and never pushes a
+// raw value into a collection of its newtype. It proves only that ONE
+// program avoids the construct — which reads like coverage and is not.
+//
+// So the unit under test is the GROUPING: N rejections must collapse to
+// the handful of distinct conflicts a human actually has to judge, each
+// with a real example to open.
+//
+// Pure (text in, text out), so the whole report is pinned from literal
+// diagnostic samples — no corpus compile needed to test the reporter.
+
+use @std.avrac.test_runner.{
+    scan_gate_diagnostics, diagnostic_shape, group_gate_sites, render_gate_scan, strip_ansi,
+}
+
+// A two-diagnostic log in the compiler's real rendered form: message
+// line, then the `╭─[path:line:col]` location line.
+const GS_LOG: string =
+    "  × error[F1000]: `takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)\n" +
+    "      ╭─[tests/alpha_test.av:4:39]\n" +
+    "  × error[F1000]: `other` parameter `x`: `A` is not assignable to `B` — different nominal types (in function `helper`)\n" +
+    "      ╭─[tests/beta_test.av:9:12]\n" +
+    "  × error[F1000]: `sink` parameter `s`: `SbUser` is not assignable to `SbHasName` — different nominal types (in function `main`)\n" +
+    "      ╭─[tests/shape_test.av:2:1]\n" +
+    "  × error[F0020]: undefined variable `nope`\n" +
+    "      ╭─[tests/other_test.av:1:1]\n"
+
+spec "t-o8pm: a gate's rejections group by conflict, not by call site" {
+    given "a log carrying several diagnostics" {
+        then "only the requested code is scanned" {
+            let sites = scan_gate_diagnostics(GS_LOG, "F1000")
+            sites.length == 3
+        }
+        then "each site is attributed to the file its location line names" {
+            let sites = scan_gate_diagnostics(GS_LOG, "F1000")
+            sites[0].file == "tests/alpha_test.av"
+                && sites[1].file == "tests/beta_test.av"
+                && sites[2].file == "tests/shape_test.av"
+        }
+        then "a different code selects a different, disjoint set" {
+            let sites = scan_gate_diagnostics(GS_LOG, "F0020")
+            sites.length == 1 && sites[0].file == "tests/other_test.av"
+        }
+    }
+
+    given "the same conflict reported at two different call sites" {
+        // THE POINT OF THE TICKET. `A -> B` is reported once from
+        // `takes_b` in `main` and once from `other` in `helper`. Those
+        // differ in every incidental way and are ONE decision.
+        then "call-site identity is normalised away, so they share a shape" {
+            let a = diagnostic_shape("`takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)")
+            let b = diagnostic_shape("`other` parameter `x`: `A` is not assignable to `B` — different nominal types (in function `helper`)")
+            a == b && a == "`A` is not assignable to `B` — different nominal types"
+        }
+        then "a DIFFERENT type pair stays a separate shape" {
+            let a = diagnostic_shape("`f` parameter `p`: `A` is not assignable to `B` — different nominal types")
+            let c = diagnostic_shape("`f` parameter `p`: `SbUser` is not assignable to `SbHasName` — different nominal types")
+            a != c
+        }
+        then "3 sites collapse to 2 shapes, and the wider one is counted" {
+            let groups = group_gate_sites(scan_gate_diagnostics(GS_LOG, "F1000"))
+            groups.length == 2
+        }
+    }
+
+    given "the rendered report" {
+        then "it leads with the site and shape totals" {
+            let out = render_gate_scan(scan_gate_diagnostics(GS_LOG, "F1000"), "F1000")
+            out.contains("F1000 — 3 site(s), 2 shape(s)")
+        }
+        then "the most frequent conflict is listed first, with an example and a +N more" {
+            let out = render_gate_scan(scan_gate_diagnostics(GS_LOG, "F1000"), "F1000")
+            let wide = out.index_of("`A` is not assignable to `B`")
+            let narrow = out.index_of("`SbUser` is not assignable to `SbHasName`")
+            wide >= 0 && narrow >= 0 && wide < narrow
+                && out.contains("[2] ")
+                && out.contains("e.g. tests/alpha_test.av (+1 more)")
+        }
+        then "a clean corpus says so plainly instead of printing an empty table" {
+            let out = render_gate_scan(scan_gate_diagnostics(GS_LOG, "F9998"), "F9998")
+            out.contains("no sites in the scanned corpus")
+        }
+    }
+
+    given "a diagnostic whose location line never arrives (truncated log)" {
+        // Under-reporting is the exact failure this tool exists to
+        // prevent, so an unattributable site is still a site.
+        then "it is still counted, marked unknown rather than dropped" {
+            let sites = scan_gate_diagnostics("  × error[F1000]: `a` parameter `b`: `X` is not assignable to `Y`\n", "F1000")
+            sites.length == 1 && sites[0].file == "<unknown>"
+        }
+    }
+}
+
+// The compiler COLOURS its diagnostics, and it puts the attributes
+// BETWEEN the code and its colon: `error[F1000]` ESC[0m ESC[1m `: msg`.
+// This sample is captured verbatim from `bs2 check`, escapes included,
+// because the plain-text samples above pass against a scanner that finds
+// nothing the compiler actually emits — the exact "synthetic oracle that
+// reads like coverage" failure this ticket is about. Caught in review of
+// this very slice: the specs were green while the tool reported 0 sites
+// on real logs.
+const GS_REAL: string =
+    "\x1b[1;31m×\x1b[0m \x1b[1;31merror[F1000]\x1b[0m\x1b[1m: `takes_b` parameter `b`: `A` is not assignable to `B` — different nominal types (in function `main`)\x1b[0m\n" +
+    "      \x1b[90m╭─[\x1b[2m/tmp/gs_a.av:4:39\x1b[0m]\n"
+
+spec "t-o8pm: the scanner reads what the compiler actually emits" {
+    then "ANSI attributes between the code and its colon do not hide a site" {
+        let sites = scan_gate_diagnostics(GS_REAL, "F1000")
+        sites.length == 1
+            && sites[0].file == "/tmp/gs_a.av"
+            && sites[0].form == "`A` is not assignable to `B` — different nominal types"
+    }
+    then "strip_ansi leaves plain text untouched" {
+        strip_ansi("no escapes here") == "no escapes here"
+    }
+    then "strip_ansi removes the attributes and keeps the content" {
+        strip_ansi("\x1b[1;31merror\x1b[0m: x") == "error: x"
+    }
+}
