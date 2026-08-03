@@ -556,6 +556,53 @@ fn agree_tree(source: string) -> bool {
 // to apply to the WHOLE corpus rather than a hand-picked handful.)
 
 /// Diagnostic count for `source` under one parser mode — same mode selection as `rtree`.
+// ── the SrcPos side-table oracle (t-47hc.5.1) ────────────────────────────────
+//
+// THE GATE NOTHING ELSE PROVIDES. Every other oracle in this file is blind to
+// per-statement POSITIONS: `errcodes` compares F-codes, `rtree` compares tree
+// SHAPE, `rdiags` compares a COUNT — and diff-test compares IR, which SrcPos
+// does not reach because it only affects diagnostics. So a native rule that
+// dropped or misplaced `record_pos` would leave the entire gate set green.
+//
+// That is not hypothetical: the hand's `push_body_elem` (component_decl/parser.av)
+// stamps every component-body row via `store.stmts.record_pos`, and GAP 1 of the
+// zero-@hand plan is precisely that grammar actions do not do this for free. Any
+// slice that makes a statement-containing form native has to spend
+// `mk_stamp_stmt_at` correctly, and until now nothing could tell whether it had.
+//
+// Dumps `line:col` for every STAMPED statement row, in id order. Both parsers
+// build the same tree (agree_tree pins that separately), so id order is
+// comparable.
+//
+// Only stamped rows (`line > 0`) are compared, and that filter is load-bearing
+// rather than cosmetic. A `@try` branch that rolls back leaves its allocated
+// rows behind as ORPHANS — unreferenced by the tree, never stamped. The hand
+// never speculates, so it never has any, and a raw all-rows dump reports the
+// difference as a position divergence when nothing about positions differs.
+// Measured on `component C inst { let x }`:
+//     hand   = 0:0 1:1 2:17
+//     static = 0:0 0:0 1:1 2:17    <-- one orphan from the rolled-back @try
+// The trees and the IR are identical there (an unreferenced row codegens
+// nothing); only the arena differs. `record_pos` itself ignores `line <= 0`, so
+// an unstamped row carries no position to compare in the first place.
+//
+// A genuinely DROPPED position still fails: the row vanishes from the stamped
+// sequence, so the two lists diverge in length and content.
+fn poslist(static_raw: bool, source: string) -> string {
+    mut p = parser_new(source)
+    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let r = p.parse_file_program()
+    if r.ids == null { return "<null>" }
+    mut out = ""
+    mut i = 0
+    while i < r.store.stmts.count() {
+        let sp = r.store.stmts.pos_of(StmtId(i))
+        if sp.line > 0 { out = out + string(sp.line) + ":" + string(sp.col) + " " }
+        i = i + 1
+    }
+    out
+}
+
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
     if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
@@ -1275,5 +1322,44 @@ spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
         // both front ends must REJECT it; a branch matching the DSL's coarse `KW` kind
         // would have accepted it and diverged here.
         agree_error("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.if))\n}")
+    }
+}
+
+
+fn agree_pos(source: string) -> bool {
+    let h = poslist(false, source)
+    let n = poslist(true, source)
+    if h != n {
+        println("SrcPos side-table divergence")
+        println(source)
+        println("hand  =" + h)
+        println("static=" + n)
+    }
+    h == n
+}
+
+// Landed BEFORE slice B2b routes the four declined component-body arms, for the
+// same reason the invalid corpus was: the guard has to exist before the change
+// it guards. These pass today — that is the baseline. If B2b makes an arm native
+// without reproducing `push_body_elem`'s stamping, this is the ONLY spec in the
+// repo that can go red.
+spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
+    then "a native instantiation body stamps its statements like the hand" {
+        agree_pos("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
+    }
+    then "config pairs do not disturb the body's positions" {
+        agree_pos("component C inst { a 1\n  b \"s\"\n  let z = 1\n}\nfn f() -> int { 1 }")
+    }
+    // The four arms B2b will make native — currently hand-owned via
+    // @peek(comp_body_plain). Their stamping must not move when they flip.
+    then "the DECLINED arms are stamped like the hand" {
+        agree_pos("component C inst { nested name { let z = 1 } }\nfn f() -> int { 1 }") &&
+        agree_pos("component C inst { nested { let z = 1 } }\nfn f() -> int { 1 }") &&
+        agree_pos("component C inst { run() { let z = 1 } }\nfn f() -> int { 1 }") &&
+        agree_pos("component C inst { component D e { } }\nfn f() -> int { 1 }")
+    }
+    then "positions survive a MALFORMED body too (recovery still stamps)" {
+        agree_pos("component C inst { let x }\nfn f() -> int { 1 }") &&
+        agree_pos("component C inst { nested name }\nfn f() -> int { 1 }")
     }
 }
