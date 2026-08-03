@@ -92,21 +92,15 @@ jobs:
           # keeps it incapable of writing; the mode never calls publish.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AVRA_SEED_REPO: ${{ github.repository }}
-          # NO in-shard width override (t-kdyj.4) — removed in LOCKSTEP with
-          # seed-train.yml and rc-strict.yml, which is the one rule the old
-          # comment got right: this gate and the train must exercise the same
-          # interleaving, so the value moves in all of them or none.
+          # Match the train's exact suite parallelism (seed-train.yml) so the
+          # same sharding that surfaces order-dependent flakes is exercised
+          # here, pre-merge, rather than post-merge on the train (hama;
+          # cvnu / 4szi.1 / #538-#539). Moves in BOTH gates or neither.
           #
-          # It moved because its stated rationale did not survive checking.
-          # The pin began as an OOM throttle with an explicit expiry —
-          # a866ced8: "run the suite at reduced width UNTIL THE CROSS-PROCESS
-          # THROTTLE LANDS" — and 49571a5b took it 2 -> 1 for memory too. The
-          # flake-parity framing was added later (6f226e13) without the value
-          # changing. The throttle it was waiting on has landed (t-kdyj.1
-          # slice 4), and the per-fixture @std rebuild it throttled was a cache
-          # bug since fixed (#1117). Both cited flake tickets fail to
-          # corroborate: uzs9.4 is closed, uzs9.2 does not exist.
-          #
+          # RESTORED by #1131 — #1127 removed it claiming uzs9.2 "does not
+          # exist". It does (`forge-crafting-intepreters-uzs9.2`, OPEN) and it
+          # states the f1005 parallel-shard flake gates raising this knob.
+          AVRA_TEST_JOBS: "1"
           # The resource controller owns shard width. It keys its learned
           # model by workload, execution mode, toolchain, and plan shape; CI
           # deliberately supplies no memory-concurrency override.

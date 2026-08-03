@@ -51,35 +51,30 @@ jobs:
       - name: Build bs2
         run: bash bootstrap/scripts/diagnose.sh --build-bs2
 
-      # NO width override of any kind (t-kdyj.4). The controller identifies
-      # RC strict as a distinct allocation profile, starts from its
-      # conservative memory seed, and adapts to detected capacity and
-      # pressure; `bs2 test` chooses in-shard worker width itself.
-      #
-      # AVRA_TEST_JOBS used to be pinned here. Its comment claimed to be a
-      # FLAKE-PARITY knob, "NOT a memory or speed lever" — but the history
-      # says otherwise, and the history is what this removal rests on:
-      #
-      #   a866ced8 (06-12) introduced it as an OOM throttle, explicitly
-      #     temporary: "run the suite at reduced width UNTIL THE CROSS-PROCESS
-      #     THROTTLE LANDS".
-      #   fb1bc09a (07-18) added it here, also for memory (rc-strict's
-      #     quarantine holds freed memory).
-      #   49571a5b (07-18) took it 2 -> 1, again for memory: two overlapping
-      #     ~3.5GB `@std` fixture rebuilds exceeded the runner.
-      #   6f226e13 (07-20) REWROTE the comment into the flake-parity claim,
-      #     while raising a different knob. The value never moved; only its
-      #     justification did.
-      #
-      # Both conditions the original rationale named are now met. The
-      # cross-process throttle landed (t-kdyj.1 slice 4: avra_compile_slot_gate,
-      # flock-based, box-wide), alongside admission control and per-unit F4014
-      # budgets. And the ~3.5GB-per-fixture rebuild it was throttling was a
-      # CACHE BUG, not inherent cost — a bare `bs2 build --lib` derived no
-      # AVRA_LIB_PKG_ROOT, so those fixtures could never hit the prebuild's
-      # warm slot (#1117; guard: build/tests/libbuild_bare_root_test.av).
-      #
-      # The cited flake tickets do not corroborate the retrofitted claim:
-      # uzs9.4 is CLOSED and uzs9.2 does not exist in the tracker.
       - name: Spec suite under AVRA_RC_STRICT=1
+        env:
+          # AVRA_TEST_JOBS=1 serialises RUN-time unit workers. It is pinned to
+          # match seed-train.yml so PR CI exercises the SAME in-shard
+          # interleaving as the post-merge train (hama; cvnu / 4szi.1 /
+          # #538-#539). If it ever moves, it moves in BOTH gates together.
+          #
+          # RESTORED by #1131 after #1127 removed it on a FALSE premise. #1127
+          # claimed "uzs9.2 does not exist in the tracker" — it does
+          # (`forge-crafting-intepreters-uzs9.2`, OPEN): f1005_nullable_omit_test
+          # flakes under parallel shards, 175 non-triggering repro iterations, a
+          # completed runtime thread-safety audit, and a standing hypothesis of a
+          # codegen RC retain/release placement bug. That ticket says in terms
+          # that the flake "gates raising AVRA_TEST_JOBS". The lookup failed only
+          # because the id was searched bare instead of as
+          # `forge-crafting-intepreters-uzs9.2`.
+          #
+          # The empirical case was also too weak to carry the change: uzs9.2
+          # records the flake hitting TWICE IN WEEKS of CI, and #1127 rested on
+          # three consecutive green cycles. Three runs cannot clear a flake at
+          # that base rate.
+          #
+          # To remove this properly: fix uzs9.2 (or establish the class is dead
+          # with a run count matched to its measured rate), then drop the pin
+          # from all three workflows and mode_rc_strict_suite together.
+          AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite
