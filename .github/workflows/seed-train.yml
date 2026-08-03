@@ -80,19 +80,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AVRA_SEED_REPO: ${{ github.repository }}
-          # NO in-shard width override (t-kdyj.4). This comment used to call
-          # the pin "belt and suspenders with the cross-process fixture-compile
-          # throttle (--slot-exec)" — which conceded the point: the throttle
-          # this pin was explicitly waiting for (a866ced8, "UNTIL THE
-          # CROSS-PROCESS THROTTLE LANDS") had already landed, so the belt was
-          # doing the work and the suspenders were habit.
+          # SERIAL unit workers, in lockstep with seed-train-verify.yml and
+          # rc-strict.yml — the post-merge train's interleaving is the one the
+          # PR gates must match (hama; cvnu / 4szi.1 / #538-#539).
           #
-          # The specific hazard it named — "two overlapping heavy-fixture @std
-          # rebuilds (~3.5GB each)" — was a CACHE BUG, not inherent cost: a
-          # bare `bs2 build --lib` derived no AVRA_LIB_PKG_ROOT, so those
-          # fixtures could never hit the prebuild's warm slot and each
-          # recompiled @std cold. Fixed at the one build entrypoint (#1117).
-          # Removed in lockstep with seed-train-verify.yml and rc-strict.yml.
+          # RESTORED by #1131 — #1127 removed it on a false "uzs9.2 does not
+          # exist" premise; that ticket is OPEN and names this knob as gated.
+          AVRA_TEST_JOBS: "1"
           # The resource controller owns shard width. It carries the same
           # profile and persisted model semantics as seed-train-verify, so
           # this workflow deliberately supplies no memory-concurrency override.

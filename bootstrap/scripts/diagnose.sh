@@ -2532,15 +2532,16 @@ mode_rc_strict_suite() {
   # runner (`undefined variable run_test_suite`).
   # The resource controller recognises RC strict as an allocation profile,
   # uses its stricter seed, and admits shards from live capacity and pressure.
-  # NO in-shard width override (t-kdyj.4). `bs2 test` picks its own worker
-  # width; the last env knob this mode carried is gone, so the RC-strict suite
-  # is now a plain `bs2 test` with one behavioural flag. That completes
-  # t-kdyj.2's thesis — one command, memory-safe by construction — for the one
-  # site it could not reach at the time.
+  # ${AVRA_TEST_JOBS:-2} is this suite's own INTERNAL default for in-shard
+  # test workers — an undocumented hook, not an operator knob. CI
+  # (rc-strict.yml) pins it to match seed-train.yml so PR CI exercises the same
+  # in-shard interleaving the post-merge train does (hama). RESTORED by #1131;
+  # see the workflow comments for why #1127's removal was withdrawn.
+  local test_jobs="${AVRA_TEST_JOBS:-2}"
   if [ -n "${1:-}" ]; then
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test -f "$1" )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
   else
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 "$BS2" test )
+    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test )
   fi
 }
 
