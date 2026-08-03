@@ -325,8 +325,12 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("component C inst {\nfn f() -> int { 1 }") &&
         // nested-block site: a nested name with no `{` (parse_comp_block_body)
         agree_all("component C inst { nested name }\nfn f() -> int { 1 }") &&
-        // method-shorthand site: the method body never closes
-        agree_all("component C inst { run() { }\nfn f() -> int { 1 }") &&
+        // method-shorthand site: the method body never closes. The `{` must stay
+        // UNCLOSED — `run() { }` closes it, and then the only thing left wrong is
+        // the outer block, which reports F0040 exactly like the bare case above.
+        // Unterminated, this reports F0001 `expected `}` after method body`, which
+        // is the site this case exists to cover.
+        agree_all("component C inst { run() {\nfn f() -> int { 1 }") &&
         // body statement site: a `let` the block body cannot accept
         agree_all("component C inst { let x }\nfn f() -> int { 1 }")
     }
@@ -716,7 +720,7 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("component C inst { key = 1\nfn f() -> int { 1 }") &&
         agree_bad("component C inst {\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { nested name }\nfn f() -> int { 1 }") &&
-        agree_bad("component C inst { run() { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { run() {\nfn f() -> int { 1 }") &&
         agree_bad("component C inst { let x }\nfn f() -> int { 1 }")
     }
 
