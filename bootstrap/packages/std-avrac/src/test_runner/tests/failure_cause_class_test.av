@@ -1,0 +1,94 @@
+// WHY (t-65td): a red shard had one message for six different causes, so
+// the first diagnostic question — "is this my code, or is it the box?" —
+// was answered by diving into logs, and got answered WRONG. The recorded
+// incident: a memory kill was investigated as a type-gate bug that did
+// not exist, because the operator-visible output for both was identical.
+//
+// `classify_shard_failure` names the cause class. These specs pin the
+// classification, and especially its ORDER, because the environmental
+// causes each emit text that ALSO matches a later, more generic rule:
+//
+//   - F4014 (the compiler's own memory self-stop) prints `error[F4014]`.
+//     Checked after the generic `error[F` rule it reads as COMPILE
+//     FAILED — i.e. box pressure reported as a code error, which is the
+//     exact wrong turn this ticket exists to prevent.
+//   - ENOSPC surfaces as write failures that look like compile errors
+//     (t-2qn0 shipped as false test FAILURES for precisely this).
+//   - A kill truncates the log, so "no findings" must read as KILLED,
+//     never as a clean run.
+//
+// The function is pure, so every branch is pinned from a literal log
+// sample — no real OOM, no filled disk, no staged kill.
+
+use @std.avrac.test_runner.{classify_shard_failure}
+
+spec "t-65td: the cause class is named, not left to a log dive" {
+    given "a shard that ran and reported spec failures" {
+        then "it reports TEST FAILURE(S) and names the first one" {
+            let log = "spec \"widening\"\n    FAIL \"accepts a narrow int\"\n[shard-summary] pass=3 fail=1 total=4\n"
+            let got = classify_shard_failure(log, 1, 0)
+            got.contains("TEST FAILURE") && got.contains("accepts a narrow int")
+        }
+        then "a crashed spec is distinguished from an assertion failure" {
+            let log = "spec \"parallel\"\n✗ SPEC CRASHED\n[shard-summary] pass=2 fail=0 total=3 crashes=1\n"
+            let got = classify_shard_failure(log, 0, 1)
+            got.contains("CRASHED") && !got.contains("TEST FAILURE")
+        }
+    }
+
+    given "a shard whose compile failed" {
+        then "it reports COMPILE FAILED and surfaces the first F-code" {
+            let log = "error[F1000]: type mismatch\n  expects int, got string\n"
+            let got = classify_shard_failure(log, 0, 0)
+            got.contains("COMPILE FAILED") && got.contains("F1000")
+        }
+    }
+
+    given "the environmental causes, which all also look like something else" {
+        then "an F4014 memory stop is NOT reported as a compile error, and names the phase" {
+            // The ordering trap: this log contains `error[F` too.
+            let log = "error[F4014]: compiler memory ceiling exceeded — 11055 MiB resident\n  phase: parse packages/std-avrac/src/parse/mod.av\n"
+            let got = classify_shard_failure(log, 0, 0)
+            got.contains("MEMORY CEILING")
+                && got.contains("parse packages/std-avrac/src/parse/mod.av")
+                && !got.contains("COMPILE FAILED")
+        }
+        then "ENOSPC is reported as DISK FULL, not as test failures (the t-2qn0 shape)" {
+            // Also carries a spec FAIL and an error[F — both outranked.
+            let log = "error[F0001]: write failed: No space left on device\n    FAIL \"writes the artifact\"\n"
+            let got = classify_shard_failure(log, 1, 0)
+            got.contains("DISK FULL")
+                && !got.contains("TEST FAILURE")
+                && !got.contains("COMPILE FAILED")
+        }
+        then "a kill is reported as a kill and points at the survivor probe" {
+            let log = "compiling shard...\nKilled\n"
+            let got = classify_shard_failure(log, 0, 0)
+            got.contains("KILLED") && got.contains("make stray")
+        }
+        then "macOS's `Killed: 9` counts too" {
+            let got = classify_shard_failure("bash: line 1: 4213 Killed: 9   bs2 _test_shard\n", 0, 0)
+            got.contains("KILLED")
+        }
+        // The kill check is LINE-ANCHORED, and this is why. The shard log
+        // carries the test's own stdout, and this tree has specs that kill
+        // processes on purpose (stray_reap_test). Under a substring rule
+        // their assertion failures report as phantom OOM-kills — the very
+        // misattribution this classifier exists to prevent, reintroduced
+        // by its own kill check.
+        then "a FAILING test that merely mentions killing stays a TEST FAILURE" {
+            let log = "spec \"reap\"\n    FAIL \"the orphan is Killed and the live build spared\"\n"
+            let got = classify_shard_failure(log, 1, 0)
+            got.contains("TEST FAILURE")
+                && got.contains("the orphan is Killed")
+                && !got.contains("KILLED —")
+        }
+    }
+
+    given "a red shard whose log explains nothing" {
+        then "it says so plainly rather than inventing a cause" {
+            let got = classify_shard_failure("some unremarkable output\n", 0, 0)
+            got.contains("not classified")
+        }
+    }
+}

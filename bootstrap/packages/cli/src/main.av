@@ -59,7 +59,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path}
 use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
 use @std.avrac.coverage.{render_coverage}
@@ -3119,7 +3119,7 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
         if !s.log_alive() {
             eprintln("[shard ${s.slug}] no log produced (compile likely failed before stdout)")
             totals = totals with { shard_failures: totals.shard_failures + 1 }
-            red.push("${s.slug} — no log produced (compile/link failed or killed)")
+            red.push("${s.slug} — NO LOG PRODUCED — died before writing a byte (compile/link failure, or killed)")
             continue
         }
         let out = s.read_log()
@@ -3127,10 +3127,12 @@ fn aggregate_shard_logs(shards: List<Shard>, t_start: int) -> int {
         let parsed = s.summary(out)
         let prior_shard_failures = totals.shard_failures
         totals = totals.merge(out, parsed)
-        if totals.shard_failures > prior_shard_failures {
-            red.push("${s.slug} — shard failed to compile/run (log: ${s.log_path})")
-        } else if parsed.fail > 0 || parsed.crashes > 0 {
-            red.push("${s.slug} — ${string(parsed.fail)} failed, ${string(parsed.crashes)} crashed (log: ${s.log_path})")
+        // t-65td: name the CAUSE CLASS, not just "failed". The log is
+        // the evidence, but the reader should not have to open it to
+        // learn whether the box or the code is at fault.
+        if totals.shard_failures > prior_shard_failures || parsed.fail > 0 || parsed.crashes > 0 {
+            let cause = classify_shard_failure(out, parsed.fail, parsed.crashes)
+            red.push("${s.slug} — ${cause} (log: ${s.log_path})")
         }
     }
     if red.length > 0 {
