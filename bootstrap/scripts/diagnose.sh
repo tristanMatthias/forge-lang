@@ -5075,8 +5075,11 @@ mode_diff_test() {
   fi
   if [ "$run_equiv" = "1" ]; then
     err "(run-equiv mode: a corpus artifact RUNS differently — the IR change is not behavior-preserving)"
+  elif [ "$strictness_seen" = "1" ]; then
+    err "(intended-strictness mode: the rejection set was accepted, but the oracle on NEW's own source failed — see above)"
   else
-    err "(if the IR change is intentional, confirm run-results match and label the PR intended-ir-change to run the run-equivalence oracle)"
+    err "(if the IR change is intentional, confirm run-results match and label the PR intended-ir-change to run the run-equivalence oracle;"
+    err " if NEW REJECTING source OLD accepts is intentional, label it intended-strictness-change instead)"
   fi
   return 1
 }

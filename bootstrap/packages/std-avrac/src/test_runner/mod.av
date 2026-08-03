@@ -1473,22 +1473,25 @@ fn list_drop_index(xs: List<string>, at: int) -> List<string> {
 /// Is this delta a STRICTNESS change — the compiler deliberately
 /// rejecting more programs — or a malfunction wearing its clothes?
 ///
-/// Two things disqualify it, and both matter because the strictness
-/// landing path RELAXES the gate (it lets NEW reject OLD's source), so it
-/// must not become a way to land a broken compiler:
+/// Three things disqualify it, and all three matter because the
+/// strictness landing path RELAXES the gate (it lets NEW reject OLD's
+/// source), so it must not become a way to land a broken compiler:
 ///
-///   - an EMPTY delta. NEW failed the compile while saying nothing OLD
-///     did not, so the failure is a crash, a signal, or a truncated log —
-///     not a rejection at all.
+///   - NO new ERROR. A delta of warnings only is not a rejection: a
+///     warning rejects nothing, so nothing explains the failed compile.
+///     (An empty delta is the same statement — NEW failed while saying
+///     nothing OLD did not, so the failure is a crash, a signal, or a
+///     truncated log.)
 ///   - an F9999 (ICE) or F4014 (compiler memory ceiling). Those are the
 ///     compiler malfunctioning or hitting a resource limit. Neither is a
 ///     judgement about the program, which is what a gate is.
 export fn delta_is_strictness(sites: List<GateSite>) -> bool {
-    if sites.length == 0 { return false }
+    mut has_error = false
     for s in sites {
         if s.code == "F9999" || s.code == "F4014" { return false }
+        if s.severity == "error" { has_error = true }
     }
-    true
+    has_error
 }
 
 /// The delta, grouped by code and then by conflict shape — the report
@@ -1497,26 +1500,51 @@ export fn delta_is_strictness(sites: List<GateSite>) -> bool {
 /// Per code it reuses `render_gate_scan`, so a strictness review reads
 /// exactly like a gate scan (t-o8pm): widest conflict first, one example
 /// file each, call-site identity normalised away.
+/// ERRORS FIRST, and warnings kept but demoted. The decision this report
+/// serves is "are these the rejections I intended", and only errors
+/// reject. A real run put three `unused import` warnings above the one
+/// rejection that mattered — correct output, useless ordering.
 export fn render_strictness_delta(sites: List<GateSite>) -> string {
-    if sites.length == 0 {
-        return "NEW raises NO diagnostic that OLD does not — its compile failed for some\n" +
-               "other reason (crash, signal, or a truncated log). This is NOT a strictness\n" +
-               "change; read the compile log itself."
-    }
-    mut codes: List<string> = []
+    mut errors: List<GateSite> = []
+    mut warnings: List<GateSite> = []
     for s in sites {
-        if index_of_string(codes, s.code) < 0 { codes.push(s.code) }
+        if s.severity == "error" { errors.push(s) } else { warnings.push(s) }
     }
-    mut out = "NEW raises ${string(sites.length)} diagnostic(s) that OLD does not, across ${string(codes.length)} code(s):\n"
-    for c in codes {
-        mut of_code: List<GateSite> = []
-        for s in sites { if s.code == c { of_code.push(s) } }
-        out = out + render_gate_scan(of_code, c)
+    if errors.length == 0 {
+        mut why = "NEW raises NO error that OLD does not — its compile failed for some other\n" +
+                  "reason (crash, signal, or a truncated log). This is NOT a strictness change;\n" +
+                  "read the compile log itself."
+        if warnings.length > 0 {
+            why = why + "\n(${string(warnings.length)} new warning(s) present, but a warning rejects nothing.)"
+        }
+        return why
+    }
+    mut out = "NEW raises ${string(errors.length)} error(s) that OLD does not:\n"
+    out = out + render_by_code(errors)
+    if warnings.length > 0 {
+        out = out + "…and ${string(warnings.length)} new warning(s), which reject nothing:\n"
+        out = out + render_by_code(warnings)
     }
     if !delta_is_strictness(sites) {
         out = out + "\n!! F9999 (ICE) and/or F4014 (memory ceiling) present — the compiler is\n" +
                     "!! malfunctioning or out of budget, NOT gating. This does not qualify as an\n" +
                     "!! intended strictness change.\n"
+    }
+    out
+}
+
+/// Group by F-code, then hand each code's sites to the gate-scan
+/// renderer so a strictness review reads exactly like a gate scan.
+fn render_by_code(sites: List<GateSite>) -> string {
+    mut codes: List<string> = []
+    for s in sites {
+        if index_of_string(codes, s.code) < 0 { codes.push(s.code) }
+    }
+    mut out = ""
+    for c in codes {
+        mut of_code: List<GateSite> = []
+        for s in sites { if s.code == c { of_code.push(s) } }
+        out = out + render_gate_scan(of_code, c)
     }
     out
 }

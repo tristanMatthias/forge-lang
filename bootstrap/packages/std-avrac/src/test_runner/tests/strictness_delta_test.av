@@ -43,9 +43,32 @@ spec "t-zk6j: NEW's rejections are reported as a SET, not a log tail" {
             let out = render_strictness_delta(new_only_diagnostics(NEW_LOG, ""))
             let wide = out.index_of("`A` is not assignable to `B`")
             let narrow = out.index_of("`P` is not assignable to `Q`")
-            out.contains("3 diagnostic(s) that OLD does not")
+            out.contains("3 error(s) that OLD does not")
                 && wide >= 0 && narrow >= 0 && wide < narrow
                 && out.contains("[2] ")
+        }
+    }
+
+    // Found by running the harness against a REAL strictness probe rather
+    // than by reading the code: the one rejection that mattered was printed
+    // BELOW three `unused import` warnings the abort happened to introduce.
+    // Correct output, useless ordering — and worse, a delta of warnings
+    // ALONE would have qualified as a strictness change, which it is not.
+    given "an abort that also shook loose some warnings" {
+        then "errors are reported first, warnings kept but demoted" {
+            let warn_log = "  × warning[F9002]: unused import `expand_cli`\n      ╭─[src/alpha.av:1:1]\n"
+            let out = render_strictness_delta(new_only_diagnostics(warn_log + NEW_LOG, ""))
+            let first_err = out.index_of("`A` is not assignable to `B`")
+            let the_warn = out.index_of("unused import")
+            first_err >= 0 && the_warn >= 0 && first_err < the_warn
+                && out.contains("which reject nothing")
+        }
+        then "a delta of warnings ONLY is not a strictness change — a warning rejects nothing" {
+            let warn_log = "  × warning[F9002]: unused import `expand_cli`\n      ╭─[src/alpha.av:1:1]\n"
+            let delta = new_only_diagnostics(warn_log, "")
+            delta.length == 1
+                && !delta_is_strictness(delta)
+                && render_strictness_delta(delta).contains("a warning rejects nothing")
         }
     }
 
@@ -82,7 +105,7 @@ spec "t-zk6j: a malfunction cannot enter the strictness path wearing its clothes
         }
         then "the report says so instead of printing an empty table" {
             let out = render_strictness_delta(new_only_diagnostics("Killed\n", ""))
-            out.contains("NO diagnostic that OLD does not") && out.contains("NOT a strictness")
+            out.contains("NO error that OLD does not") && out.contains("NOT a strictness")
         }
     }
 

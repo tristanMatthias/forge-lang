@@ -296,6 +296,37 @@ too — no flag needed.
   byte-identically under OLD and NEW; corpus skips are forbidden; the suite
   under NEW — the rc-strict job — completes the evidence). The oracle then
   advances at merge as usual.
+- **A STRICTNESS change is the OTHER legitimate way to trip the gate, and it
+  has its own label (t-zk6j).** A PR that makes the compiler REJECT something
+  fails on a COMPILE error, not an IR difference — the selfhost leg runs NEW
+  against OLD's source, which still contains the sites the branch fixed. That
+  used to force an N+1 PR split (fixes first, gate second: t-oyr9 → #1089 +
+  #1090, t-axu9 → #1091 + #1092 + the gate), roughly an hour of pure ceremony
+  per extra slice. It does not any more:
+  - The outcome is NAMED — `NEW REJECTS the compiler source that OLD accepts`,
+    never "regression" (for a deliberate gate it is the new compiler working).
+  - The REJECTION SET is printed, not a log tail: `bs2 diag_delta <new-log>
+    [old-log]` reports the diagnostics NEW raises that OLD does not, grouped
+    by conflict — same scanner and grouping as `bs2 gate_scan`, errors first,
+    warnings kept but demoted (they reject nothing).
+  - The landing path is `--intended-strictness` / label
+    `intended-strictness-change`: the selfhost leg re-runs on **NEW's OWN
+    source**. Comparability is untouched — BOTH compilers still compile the
+    SAME source, so an IR difference is still attributable to compiler source
+    alone — only the choice of input moves, to the one both compilers accept.
+    OLD accepts it because a strictness change only ADDS rejections and the
+    bootstrap window forbids new surface syntax on a feature branch; OLD
+    failing there is reported as its own outcome (that is a seed-cycle change,
+    not a strictness one).
+  - The label RELAXES an oracle, so it is fenced: a delta with no new ERROR
+    does not qualify (nothing explains the failed compile), nor does one
+    containing F9999 (ICE) or F4014 (memory ceiling) — a crash and a resource
+    limit are the compiler malfunctioning, not gating; a corpus file NEW
+    rejects still FAILS (the corpus is the branch's own tree, so the label
+    must not become a way to land an unvalidated gate); and an IR divergence
+    on NEW's own source fails too, since that is more than a strictness change.
+  - Pair it with `bs2 gate_scan <F-CODE>` over a `bs2 test` run before you
+    trust the rejection set — the selfhost leg is one program (t-o8pm).
 - **Wired in:** CI (`.github/workflows/diff-test.yml`, full corpus, every
   PR into the integration branch) and the pre-push hook (selfhost + corpus
   check, only when compiler sources changed; `AVRA_SKIP_DIFFTEST=1` to
