@@ -22,10 +22,17 @@ fn emit_flip() -> string {
 spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a block" {
     then "the block body loops until `}`/EOF (the hand parse_statement_list_ids stop condition)" {
         let src = emit_flip()
-        // The generated parse_block collects `stmts:statement*` — NOT the interpreter's
+        // The generated parse_block collects the body — NOT the interpreter's
         // FIRST-guard loop, but a loop-until-`}` that mirrors the hand recovery loop.
+        //
+        // The per-item call is `parse_declaration`, not `parse_statement`, and that is
+        // the FAITHFUL reading of the rule this guard names: `parse_statement_list_ids`
+        // calls `self.parse_declaration()` per item. `block` used to be `statement*`,
+        // which excluded every binding (`let`/`mut`/`const` live only in `declaration`)
+        // and sent them to the `@hand(decl_hand)` gate — see the WHY on `block` in
+        // avra_grammar.av.
         src.contains("if st.at_end() || st.cur().text == \"}\" { break }") &&
-        src.contains("let __cv = parse_statement(st)")
+        src.contains("let __cv = parse_declaration(st)")
     }
 
     then "per-child SrcPos is recorded from the entry byte (the add_stmt_at twin)" {
