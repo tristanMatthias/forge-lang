@@ -27,22 +27,18 @@ spec "the suite forbids mid-run bs2 rebuilds (t-gv3n)" {
         let out = avra_shell_exec("env -u AVRA_SKIP_ENSURE_BS2 bash scripts/diagnose.sh --bs2-stale-check 2>&1 || true")
         out.contains("fresh")
     }
-    // A `*_test.av` edit must NOT read as compiler staleness. The build's own
-    // content fingerprint already says so — package_full_fingerprint (2wfp,
-    // build/fingerprint.av) excludes `*_test.av` because a test entry is not
-    // part of the compiled surface: nothing imports one, and the [lib] build
-    // does not emit one. source_newer_than globbed them anyway, so the two
-    // disagreed, and the disagreement bit in both directions: a test-only
-    // edit reddened the spec ABOVE on a tree whose compiler sources were
-    // untouched, and it made ensure_bs2 want to rebuild + relink bs2 off that
-    // edit — the exact mid-suite-rebuild hazard this file exists to prevent.
-    //
-    // Touching this file's own mtime is the probe: content is unchanged, so
-    // nothing content-keyed moves, and mtime freshness is precisely what is
-    // under test.
-    then "touching a *_test.av does not make the compiler read as stale" {
-        let _ = avra_shell_exec("touch tests/suite_bs2_guard_test.av")
-        let out = avra_shell_exec("env -u AVRA_SKIP_ENSURE_BS2 bash scripts/diagnose.sh --bs2-stale-check 2>&1 || true")
-        out.contains("fresh")
-    }
 }
+
+// The `*_test.av` exclusion in source_newer_than is pinned in
+// packages/std-avrac/src/build/tests/source_newer_than_test.av, against a
+// SANDBOX source tree.
+//
+// It was first written here, as `touch tests/suite_bs2_guard_test.av` followed
+// by the --bs2-stale-check probe. That arm COULD NOT FAIL: source_newer_than
+// scans CLI_SRC_DIR and LIB_SRC_DIR only, and `tests/` is under neither, so
+// touching this file is invisible to it with or without the exclusion. It
+// nonetheless went red when the exclusion was reverted — because a DIFFERENT
+// file edited in the same change (a `*_test.av` under packages/std-avrac/src)
+// was newer than bs2. So the mutation check established that the spec could go
+// red, not that it went red for its own reason, which is the only thing that
+// makes a guard a guard. Raised in review of #1136.
