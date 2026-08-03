@@ -61,17 +61,26 @@ spec "a sidecar is stale as soon as ANY fingerprint input is newer" {
         let _ = avra_shell_exec("rm -rf '${d}'")
         fresh && !stale
     }
-    then "a missing input never reads as fresh" {
-        // avra_file_mtime returns 0 for a path it cannot stat. A vanished
-        // input must not silently license reuse of a capture made against it.
+    then "a missing input rejects reuse" {
+        // `avra_file_mtime` answers 0 for a path it cannot stat, and 0 is
+        // older than any real sidecar — so a bare mtime compare reads
+        // "deleted" as "unchanged" and replays a capture taken against a
+        // file that is no longer there.
+        //
+        // The first version of this spec asserted `got` and called that
+        // "the CURRENT behaviour, recorded so a future change is deliberate".
+        // That was documenting a fail-open instead of closing it, on a helper
+        // whose entire job is to decide whether a cached fingerprint still
+        // describes reality — and an input it cannot see is the one case
+        // where it certainly does not. Raised in review of #1136.
         let d = "/tmp/avra_tcfp_missing_${string(avra_getpid())}"
         let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}' && touch '${d}/side'")
         let got = sidecar_newer_than_files("${d}/side", ["${d}/absent"])
+        // Control: the same sidecar with a PRESENT, older input still reuses,
+        // so this arm cannot pass by the helper simply always refusing.
+        let _ = avra_shell_exec("touch -t 202001010000 '${d}/present'")
+        let ctl = sidecar_newer_than_files("${d}/side", ["${d}/present"])
         let _ = avra_shell_exec("rm -rf '${d}'")
-        // Documents the CURRENT behaviour explicitly rather than leaving it
-        // to be discovered: a 0 mtime is older than the sidecar, so this
-        // reads as fresh. Recorded so a future change to the missing-file
-        // policy is a deliberate edit here, not a silent flip.
-        got
+        !got && ctl
     }
 }

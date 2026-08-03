@@ -1059,10 +1059,21 @@ export fn toolchain_fp_input_files() -> List<string> {
 /// True when `sidecar` is strictly newer than every fingerprint input, so
 /// its cached value can be reused. `files` is injected so a spec can drive
 /// the real comparison against a sandbox instead of the live tree.
+///
+/// A MISSING input rejects reuse. `avra_file_mtime` answers 0 for a path it
+/// cannot stat, and 0 is older than any real sidecar — so a bare comparison
+/// reads "deleted" as "unchanged" and licenses replaying a capture taken
+/// against a file that is no longer there. The whole point of this check is
+/// to decide whether a cached fingerprint still describes reality; an input
+/// it cannot see is the one case where it certainly does not. Raised in
+/// review of #1136, where the spec below documented the old behaviour as
+/// current rather than fixing it.
 export fn sidecar_newer_than_files(sidecar: string, files: List<string>) -> bool {
     let s_mtime = avra_file_mtime(sidecar)
     for f in files {
-        if s_mtime <= avra_file_mtime(f) { return false }
+        let f_mtime = avra_file_mtime(f)
+        if f_mtime <= 0 { return false }
+        if s_mtime <= f_mtime { return false }
     }
     true
 }

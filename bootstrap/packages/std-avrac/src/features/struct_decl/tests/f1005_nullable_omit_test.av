@@ -26,9 +26,14 @@
 // Each arm builds its OWN Rec rather than sharing one from the enclosing
 // `given`. That is the suite's established shape, and it is forced here: a
 // `let` in a `given` body does not reach its `then` arms (t-4nly — a real bug,
-// filed, and the emitter's own docstring claims the opposite). It is also the
-// better probe for a rare concurrent fault: three independent allocations
-// sample more interleavings than one shared allocation read three times.
+// filed, and the emitter's own docstring claims the opposite).
+//
+// It buys independent-initialisation and slot-reuse coverage — three separate
+// allocations of the same shape, each read fresh — NOT extra concurrent
+// interleavings. An earlier version of this comment claimed the latter, which
+// is wrong: the runner parallelises across test FILES as `@deferred_init`
+// units (d4jv), so arms within one file run sequentially on one worker.
+// Corrected in review of #1136.
 //
 // The general fix — a failing `then` naming which conjunct of a `&&` chain was
 // false, for every spec in the suite — is t-kdyj.5.
@@ -54,8 +59,17 @@ spec "F1005: a nullable field may be omitted from a struct literal (6y4y)" {
         let full = Rec { id: 1, note: "hi", count: 2 }
         full.note == "hi"
     }
-    then "a full literal keeps its non-nullable fields" {
+    then "a full literal keeps its `id`" {
         let full = Rec { id: 1, note: "hi", count: 2 }
         full.id == 1
+    }
+    // Raised in review of #1136, and it closes a gap that predates the split:
+    // `count` was only ever asserted via make(), which OMITS `note`. A defect
+    // in `count`'s slot that appears only when the nullable field IS supplied
+    // — i.e. when the omitted-field init path is not taken — had no coverage
+    // at all. Exactly the axis this file exists to guard.
+    then "a full literal keeps its `count`" {
+        let full = Rec { id: 1, note: "hi", count: 2 }
+        full.count == 2
     }
 }
