@@ -51,17 +51,35 @@ jobs:
       - name: Build bs2
         run: bash bootstrap/scripts/diagnose.sh --build-bs2
 
+      # NO width override of any kind (t-kdyj.4). The controller identifies
+      # RC strict as a distinct allocation profile, starts from its
+      # conservative memory seed, and adapts to detected capacity and
+      # pressure; `bs2 test` chooses in-shard worker width itself.
+      #
+      # AVRA_TEST_JOBS used to be pinned here. Its comment claimed to be a
+      # FLAKE-PARITY knob, "NOT a memory or speed lever" — but the history
+      # says otherwise, and the history is what this removal rests on:
+      #
+      #   a866ced8 (06-12) introduced it as an OOM throttle, explicitly
+      #     temporary: "run the suite at reduced width UNTIL THE CROSS-PROCESS
+      #     THROTTLE LANDS".
+      #   fb1bc09a (07-18) added it here, also for memory (rc-strict's
+      #     quarantine holds freed memory).
+      #   49571a5b (07-18) took it 2 -> 1, again for memory: two overlapping
+      #     ~3.5GB `@std` fixture rebuilds exceeded the runner.
+      #   6f226e13 (07-20) REWROTE the comment into the flake-parity claim,
+      #     while raising a different knob. The value never moved; only its
+      #     justification did.
+      #
+      # Both conditions the original rationale named are now met. The
+      # cross-process throttle landed (t-kdyj.1 slice 4: avra_compile_slot_gate,
+      # flock-based, box-wide), alongside admission control and per-unit F4014
+      # budgets. And the ~3.5GB-per-fixture rebuild it was throttling was a
+      # CACHE BUG, not inherent cost — a bare `bs2 build --lib` derived no
+      # AVRA_LIB_PKG_ROOT, so those fixtures could never hit the prebuild's
+      # warm slot (#1117; guard: build/tests/libbuild_bare_root_test.av).
+      #
+      # The cited flake tickets do not corroborate the retrofitted claim:
+      # uzs9.4 is CLOSED and uzs9.2 does not exist in the tracker.
       - name: Spec suite under AVRA_RC_STRICT=1
-        env:
-          # The controller identifies RC strict as a distinct allocation
-          # profile, starts with its conservative memory seed, and adapts to
-          # the detected capacity and pressure. CI supplies no width override.
-          # - AVRA_TEST_JOBS=1 serializes RUN-time unit workers. This is the
-          #   FLAKE-PARITY knob (in-shard test interleaving), NOT a memory or
-          #   speed lever — it is pinned to match seed-train.yml so PR CI
-          #   exercises the same interleaving the post-merge train does.
-          #   Raising it surfaces the still-open parallel-interleaving flakes
-          #   (uzs9.2 / uzs9.4) and must move in BOTH gates together; it is a
-          #   correctness investigation, not a speed knob (see hama).
-          AVRA_TEST_JOBS: "1"
         run: bash bootstrap/scripts/diagnose.sh --rc-strict-suite

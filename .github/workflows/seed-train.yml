@@ -80,14 +80,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AVRA_SEED_REPO: ${{ github.repository }}
-          # Belt and suspenders with the cross-process fixture-compile
-          # throttle (--slot-exec): 4-vCPU runners still benefit from
-          # reduced unit-thread width for the non-compile workload.
-          # SERIAL unit workers — two overlapping heavy-fixture @std rebuilds
-          # (~3.5GB each) exceed the hosted runner's memory; the kernel
-          # silently SIGKILLs the biggest child. Keep in lockstep with
-          # seed-train-verify.yml.
-          AVRA_TEST_JOBS: "1"
+          # NO in-shard width override (t-kdyj.4). This comment used to call
+          # the pin "belt and suspenders with the cross-process fixture-compile
+          # throttle (--slot-exec)" — which conceded the point: the throttle
+          # this pin was explicitly waiting for (a866ced8, "UNTIL THE
+          # CROSS-PROCESS THROTTLE LANDS") had already landed, so the belt was
+          # doing the work and the suspenders were habit.
+          #
+          # The specific hazard it named — "two overlapping heavy-fixture @std
+          # rebuilds (~3.5GB each)" — was a CACHE BUG, not inherent cost: a
+          # bare `bs2 build --lib` derived no AVRA_LIB_PKG_ROOT, so those
+          # fixtures could never hit the prebuild's warm slot and each
+          # recompiled @std cold. Fixed at the one build entrypoint (#1117).
+          # Removed in lockstep with seed-train-verify.yml and rc-strict.yml.
           # The resource controller owns shard width. It carries the same
           # profile and persisted model semantics as seed-train-verify, so
           # this workflow deliberately supplies no memory-concurrency override.
