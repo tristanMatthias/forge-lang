@@ -3705,9 +3705,18 @@ fn cmd_diag_delta(args: CliResult) -> int {
     let new_path = result_get_arg(args, "new_log")
     let old_path = result_get_arg(args, "old_log")
     if new_path == "" { fail("error: diag_delta requires the NEW compile log") }
-    // OLD's log is optional: when OLD compiled cleanly it has no
-    // diagnostics to subtract, and requiring the file would make the
-    // common case awkward for no gain.
+    // A MISSING path must be an error, never an empty read. `read_file`
+    // returns "" for a path it cannot open, so without these checks a typo'd
+    // `--new_log` produces "NEW raises NO error that OLD does not" — a
+    // confident verdict derived from a file that was never read — and a
+    // typo'd `--old_log` silently subtracts nothing, inflating the delta so
+    // it can qualify as a strictness change on evidence nobody looked at.
+    // Same message shape as `arg_file_path`.
+    if !file_exists(new_path) { fail("error: file not found: ${new_path}") }
+    // OLD's log stays OPTIONAL: when OLD compiled cleanly it has no
+    // diagnostics to subtract, and requiring the file would make the common
+    // case awkward for no gain. Omitted is fine; named-but-absent is not.
+    if old_path != "" && !file_exists(old_path) { fail("error: file not found: ${old_path}") }
     let old_src = if old_path == "" { "" } else { avra_selfhost_read_file(old_path) }
     let sites = new_only_diagnostics(avra_selfhost_read_file(new_path), old_src)
     println(render_strictness_delta(sites))

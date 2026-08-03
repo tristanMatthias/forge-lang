@@ -158,4 +158,56 @@ spec "t-zk6j: the code-agnostic scan reads what the compiler actually emits" {
         // the same line-anchoring lesson as t-65td's kill marker.
         scan_diagnostics("    FAIL \"reports error[oops]: bad\"\n").length == 0
     }
+    // Raised in review of this slice. The spec above proves prose alone is
+    // ignored; it does NOT prove prose cannot SHADOW a real diagnostic on the
+    // same line. Under a first-marker-wins rule the prose `error[` claimed the
+    // line, failed the F-code check, and the genuine warning after it was
+    // dropped — silent under-reporting, which is worse than the over-reporting
+    // the spec above guards.
+    then "prose `error[` does not hide a REAL warning later on the same line" {
+        let line = "  FAIL \"quotes error[oops]: bad\" — warning[F9002]: unused import `x`\n"
+        let got = scan_diagnostics(line)
+        got.length == 1 && got[0].code == "F9002" && got[0].severity == "warning"
+    }
+    then "a real error still wins over a later warning on one line" {
+        let line = "  × error[F1000]: type mismatch — see warning[F9002]: unused import `x`\n"
+        let got = scan_diagnostics(line)
+        got.length == 1 && got[0].code == "F1000" && got[0].severity == "error"
+    }
+}
+
+// The reporting functions are pure, but the COMMAND that feeds them reads
+// files, and `read_file` returns "" for a path it cannot open. Without an
+// existence check a typo'd log path produces a confident verdict from a file
+// that was never read — the harness prints "NEW raises NO error that OLD does
+// not" and reports it as "not a strictness change". Raised in review.
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_getpid() -> int
+
+/// A real log carrying one rejection, at a pid-unique path so parallel
+/// shards cannot collide.
+fn write_sample_log(tag: string) -> string {
+    let path = "/tmp/zk6j_${tag}_${string(avra_getpid())}.log"
+    avra_shell_exec("printf '  %s error[F1000]: `A` is not assignable to `B`\\n' 'x' > '${path}'")
+    path
+}
+
+spec "t-zk6j: a missing log is an ERROR, not an empty read" {
+    then "a nonexistent NEW log fails instead of reporting an empty delta" {
+        let out = avra_shell_exec("./build/bs2 diag_delta /nonexistent/new.log 2>&1 || true")
+        out.contains("file not found") && !out.contains("NEW raises")
+    }
+    then "a named-but-absent OLD log fails rather than silently subtracting nothing" {
+        // The fail-OPEN direction: an unread OLD log subtracts no diagnostics,
+        // inflating the delta so it can qualify as a strictness change on
+        // evidence nobody looked at.
+        let real = write_sample_log("new")
+        let out = avra_shell_exec("./build/bs2 diag_delta '${real}' /nonexistent/old.log 2>&1 || true")
+        out.contains("file not found") && !out.contains("NEW raises")
+    }
+    then "omitting the OLD log stays legal — it is optional, absence is not" {
+        let real = write_sample_log("only")
+        let out = avra_shell_exec("./build/bs2 diag_delta '${real}' 2>&1 || true")
+        out.contains("NEW raises 1 error(s)") && !out.contains("file not found")
+    }
 }

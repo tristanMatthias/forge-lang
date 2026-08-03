@@ -1292,13 +1292,22 @@ export fn scan_diagnostics(colored_log: string) -> List<GateSite> {
 /// name, a captured fixture — would be scanned as a diagnostic and
 /// inflate the delta.
 fn parse_diagnostic_line(line: string) -> GateSite {
+    // Try each severity INDEPENDENTLY. Committing to `error` merely because
+    // the line contains `error[` somewhere lets prose shadow a real
+    // diagnostic: a shard log carries test stdout, so a line can hold a
+    // quoted `error[oops]:` AND a genuine `warning[F9002]:`. Under a
+    // first-marker-wins rule the prose claims the line, fails the F-code
+    // check, and the warning is dropped — under-reporting, which is the
+    // failure this whole family of tools exists to prevent.
+    let as_error = parse_diagnostic_at(line, "error")
+    if as_error.code != "" { return as_error }
+    parse_diagnostic_at(line, "warning")
+}
+
+/// One severity's marker on one line → a site, or a `code == ""` sentinel.
+fn parse_diagnostic_at(line: string, sev: string) -> GateSite {
     let no_diag = GateSite { code: "", severity: "", form: "", file: "", message: "" }
-    mut sev = "error"
-    mut at = line.index_of("error[")
-    if at < 0 {
-        sev = "warning"
-        at = line.index_of("warning[")
-    }
+    let at = line.index_of("${sev}[")
     if at < 0 { return no_diag }
     // Past `<sev>[` — +1 for the bracket.
     let after = line.substring(at + sev.length + 1, line.length)
