@@ -27,7 +27,7 @@ use core.{tk_is_field_name}
 use core.{build_if_let_expr}
 use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
-use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, body_declares_token_stream, vtype_struct}
+use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with the hand
 // parser's Parser.peek_after_ident_is_* wrappers. The component config-pair
@@ -1796,13 +1796,42 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if inst.kind != "IDENT" || inst.text == "implements" { return false }
         return st.toks[st.pos + 3].tk == Tk.LeftBrace
     }
-    if cond == "comp_body_plain" {
-        if st.cur().tk == Tk.KwComponent { return false }
-        if st.cur().kind != "IDENT" { return true }
-        let at = cfg_pair_after(st)
-        if src_next_nonws_is_value_word(st.src, st.src.length, at) { return false }
-        if src_next_nonws_is_lbrace(st.src, st.src.length, at) { return false }
-        return !src_at_empty_call_block(st.src, st.src.length, at)
+    // ── The four `parse_comp_block_body` arms, as dispatch conds (t-47hc.5.1 B2b) ──
+    //
+    // Each is gated on the SAME shared raw-source core the hand's own arm reads
+    // (chars.av), so the two front ends cannot disagree about what counts as a
+    // following word / brace / empty call block. The hand decides RAW vs STRUCTURED
+    // *after* consuming `name inst {`, by asking the feature registry; a grammar
+    // cannot branch on a parse RESULT, so the split moves up here into the cond —
+    // equivalent, because the component name is the current token either way.
+    //
+    // Arm 2: `ident name {` — a nested block with its own instance name.
+    if cond == "comp_nested_named" {
+        if st.cur().kind != "IDENT" || comp_name_is_raw_body(st) { return false }
+        return src_next_nonws_is_value_word(st.src, st.src.length, cfg_pair_after(st))
+    }
+    // Arm 3: `ident {` — the brace form, whose instance name IS the component
+    // name (parse_comp_block_body passes comp_name twice, not a fresh name).
+    if cond == "comp_nested_bare" {
+        if st.cur().kind != "IDENT" || comp_name_is_raw_body(st) { return false }
+        return src_next_nonws_is_lbrace(st.src, st.src.length, cfg_pair_after(st))
+    }
+    // The RAW-BODY twins of arms 2/3: a component registered with `body: TokenStream`
+    // has its instance body captured VERBATIM rather than parsed, so the same two
+    // surface shapes route to a `@rawbrace` rule instead.
+    if cond == "comp_nested_raw_named" {
+        if st.cur().kind != "IDENT" || !comp_name_is_raw_body(st) { return false }
+        return src_next_nonws_is_value_word(st.src, st.src.length, cfg_pair_after(st))
+    }
+    if cond == "comp_nested_raw_bare" {
+        if st.cur().kind != "IDENT" || !comp_name_is_raw_body(st) { return false }
+        return src_next_nonws_is_lbrace(st.src, st.src.length, cfg_pair_after(st))
+    }
+    // Arm 4: `name() { … }` — the method shorthand (spec §4.1), distinguished from
+    // a `name()` CALL statement by the trailing block.
+    if cond == "comp_method" {
+        if st.cur().kind != "IDENT" { return false }
+        return src_at_empty_call_block(st.src, st.src.length, cfg_pair_after(st))
     }
     if cond == "double_colon" {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
@@ -1862,6 +1891,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
 /// offset, so the two are the same number over the same bytes.
 fn cfg_pair_after(st: PState) -> int {
     st.cur().pos + st.cur().text.length
+}
+
+/// Is the CURRENT token the name of a component registered with `body: TokenStream`?
+/// The one question in `parse_comp_block_body` that tokens cannot answer: the hand
+/// asks the feature REGISTRY (`component_is_raw_body`), which an earlier
+/// `component … { body: TokenStream }` declaration in this same parse populated —
+/// on the native path too, since mk_component_def_g registers through the very same
+/// delegate this reads. No delegate (the pure-grammar harnesses) means no registry
+/// and so no raw-body component can have been declared: false is not a guess there,
+/// it is the only reachable answer.
+fn comp_name_is_raw_body(st: PState) -> bool {
+    if st.hand_delegate == null { return false }
+    component_is_raw_body(st.hand_delegate!.features, st.cur().text)
 }
 
 /// The shared prefix of both config-pair conds — every reason
@@ -3505,6 +3547,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkComponentDef" if args.length == 6 -> mk_component_def_g(st, capval_tok_text(env.get(args[0])), capval_tok_texts(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_tok_text(env.get(args[4])), capval_present(env.get(args[4])), capval_to_stmt_list(env.get(args[5])))
         "MkCompConfigPair" if args.length == 2 -> mk_comp_config_pair_g(st, capval_tok_text(env.get(args[0])), capval_to_expr(st, env.get(args[1])))
         "MkComponentBlock" if args.length == 4 -> mk_component_block_g(st, capval_tok_text(env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_comp_config_pair_list(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
+        "MkRawComponentBlock" if args.length == 3 -> mk_raw_component_block_g(st, capval_tok_text(env.get(args[0])), capval_tok_text(env.get(args[1])), capval_tok_text(env.get(args[2])))
+        "MkMethodShorthand" if args.length == 2 -> mk_method_shorthand_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
         // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
         "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
@@ -4266,14 +4310,35 @@ export fn mk_comp_config_pair_g(st: PState, key: string, value_id: ExprId) -> Ca
 /// body ids deliberately do not become arena edges (the same disposition
 /// mk_component_def_g gives ComponentDef).
 ///
-/// RAW-BODY instances are NOT handled here. When the component was registered
-/// with `body: TokenStream`, the hand captures the instance body as VERBATIM
-/// SOURCE instead of parsing it (parse_raw_block_after_brace) — a decision
-/// that depends on feature-registry state, not tokens. The native rule is
-/// `@try`'d, and a raw-body instance is left to the hand rather than
-/// reimplemented here; see the t-47hc.5.1 design note (slice B2b).
+/// RAW-BODY instances have their own core below — the decision between them is
+/// registry state rather than tokens, so it is made in the `comp_nested_raw_*`
+/// conds (which read the same registry the hand's arm does) rather than here.
 export fn mk_component_block_g(st: PState, name: string, instance: string, pairs: List<CompConfigPair>, body: List<StmtId>) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentBlock(name, instance, pairs, body)))
+}
+
+/// A NESTED instance of a `body: TokenStream` component — the grammar twin of the
+/// hand's `parse_raw_block_after_brace`. The verbatim slice arrives already scanned
+/// by `@rawbrace` (which IS the hand's `capture_balanced_brace_body`), so the only
+/// work left is the hand's exact two-row shape: a `TokenBody` leaf wrapped in a
+/// config-pair-less `ComponentBlock`.
+export fn mk_raw_component_block_g(st: PState, name: string, instance: string, raw: string) -> CapVal {
+    let empty_cfg: List<CompConfigPair> = []
+    let body_ids: List<StmtId> = [st.store.stmts.add_leaf(Stmt.TokenBody(raw))]
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentBlock(name, instance, empty_cfg, body_ids)))
+}
+
+/// `name() { … }` inside a component-instance body — the METHOD SHORTHAND (spec
+/// §4.1), parsed as a NULLARY `Function` that the `@expand` macro later rewrites
+/// into a real signature (expand_command turns `run() { … }` into
+/// `fn run(self, args: CliResult) -> int { … }`). The `Int` return and the
+/// `fn_decl_edges` allocation are the hand's, verbatim: an `add_leaf` here would
+/// drop the return-type edge and silently change what the walker traverses.
+export fn mk_method_shorthand_g(st: PState, name: string, body: List<StmtId>) -> CapVal {
+    let empty_tp: List<TypeParamEntry> = []
+    let empty_p: List<ParamEntry> = []
+    let ret = ValueType.Int
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, empty_tp, empty_p, ret, body), fn_decl_edges(st, ret), byte_span_none()))
 }
 
 /// A repeated `config_pair` capture is CPairs for many, CPair for one, Nil for

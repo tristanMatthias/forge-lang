@@ -1338,11 +1338,13 @@ fn agree_pos(source: string) -> bool {
     h == n
 }
 
-// Landed BEFORE slice B2b routes the four declined component-body arms, for the
-// same reason the invalid corpus was: the guard has to exist before the change
-// it guards. These pass today — that is the baseline. If B2b makes an arm native
-// without reproducing `push_body_elem`'s stamping, this is the ONLY spec in the
-// repo that can go red.
+// Landed BEFORE slice B2b routed the four component-body arms, for the same reason
+// the invalid corpus was: the guard has to exist before the change it guards. It
+// EARNED that on the flip — B2b went red here (and on the tree oracle) the moment
+// the arms became reachable, and green again only once each reproduced
+// `push_body_elem`'s stamping. It remains the only spec in the repo that can catch a
+// dropped or misplaced `record_pos`, because positions reach neither the IR (so
+// diff-test is blind) nor the tree shape.
 spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
     then "a native instantiation body stamps its statements like the hand" {
         agree_pos("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
@@ -1350,9 +1352,10 @@ spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
     then "config pairs do not disturb the body's positions" {
         agree_pos("component C inst { a 1\n  b \"s\"\n  let z = 1\n}\nfn f() -> int { 1 }")
     }
-    // The four arms B2b will make native — currently hand-owned via
-    // @peek(comp_body_plain). Their stamping must not move when they flip.
-    then "the DECLINED arms are stamped like the hand" {
+    // The four arms B2b made native (nested `component`, `ident name {`, `ident {`,
+    // `ident() {`). Their stamping did not move when they flipped — which is the
+    // assertion, and it failed until each routed arm stamped like the hand.
+    then "the once-declined arms are stamped like the hand" {
         agree_pos("component C inst { nested name { let z = 1 } }\nfn f() -> int { 1 }") &&
         agree_pos("component C inst { nested { let z = 1 } }\nfn f() -> int { 1 }") &&
         agree_pos("component C inst { run() { let z = 1 } }\nfn f() -> int { 1 }") &&
