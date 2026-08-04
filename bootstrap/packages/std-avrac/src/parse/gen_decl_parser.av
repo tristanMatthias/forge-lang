@@ -2293,13 +2293,29 @@ fn parse_impl_decl(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected {")
     }
-    while st.cur().text == "fn" {
-        imethods_list.push(capval_to_stmt(st, parse_impl_method(st)))
+    while st.cur().tk == Tk.DocComment || st.cur().text == "fn" {
+        imethods_list.push(capval_to_stmt(st, parse_impl_member(st)))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")
     }
     mk_impl(st, capval_tok_text(itn), ifortn, capval_present(ifortn), imethods_list)
+}
+
+fn parse_impl_member(st: PState) -> CapVal {
+    if st.cur().tk == Tk.DocComment {
+        mut d_list: List<Token> = []
+        d_list.push(st.advance())
+        while st.cur().tk == Tk.DocComment {
+            d_list.push(st.advance())
+        }
+        let im = parse_impl_method(st)
+        return mk_doc_annotated(st, d_list, im)
+    }
+    if st.cur().text == "fn" {
+        return parse_impl_method(st)
+    }
+    CapVal.Node(st.error_node("expected an expression"))
 }
 
 fn parse_impl_method(st: PState) -> CapVal {

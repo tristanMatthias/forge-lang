@@ -108,10 +108,16 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
 // The corpus below is the MEASURED frontier. Every entry is native today; each is
 // here so that a change which pushes it back onto the delegate goes red instead of
 // passing silently — the failure mode this whole probe exists to make visible.
-/// The one form still known to need `decl_hand`: a doc comment on an `impl` method.
+/// The one form still known to need `decl_hand`: a `mut` field in a struct body.
 /// A fn rather than a `const` — a module-level string const is typed `int` (t-8xte).
-fn DOC_IMPL_METHOD() -> string {
-    "type T = { x: int }\nimpl T {\n /// doc\n fn m(self) -> int { 1 }\n}"
+///
+/// This replaced DOC_IMPL_METHOD (a doc comment on an `impl` method), which held the
+/// role until `impl_member` started ATTACHING the doc via MkDocAnnotated (t-myz7).
+/// That case is native now and has moved down into the corpus — the handover this
+/// anchor exists to force. Measured old-vs-new at the flip: the impl-doc form went
+/// 3 refusals -> 0, `codegen/mod.av` 3 -> 0, `parse/mod.av` 87 -> 83.
+fn MUT_STRUCT_FIELD() -> string {
+    "type S = {\n mut a: int,\n b: int\n}"
 }
 
 fn refuse_out(refusal: string, name: string, src: string) -> string {
@@ -153,7 +159,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // executed by it. This runs a real compile under `*` and requires the known
         // gap to report, which is the only thing that proves the wildcard is wired to
         // the leaf rather than merely present in the source.
-        refused_here("*", "wildcard", DOC_IMPL_METHOD())
+        refused_here("*", "wildcard", MUT_STRUCT_FIELD())
     }
 
     then "the declaration keywords parse with the delegate REFUSED" {
@@ -172,19 +178,19 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // that never detects one would satisfy perfectly. This is the case that must
         // come back false.
         //
-        // A DOC COMMENT on an `impl` method. `impl` itself is native, two methods are
-        // native, a method body using `?` is native — but `/// doc` before a method is
-        // not, and that one shape accounts for the bulk of what is left: under refusal
-        // `typeck/mod.av` reports 131 dependencies, `parse/mod.av` 93, `resolve/mod.av`
-        // 43, `codegen/mod.av` 3.
+        // A `mut` FIELD in a struct body. A plain `type S = { a: int }` is native, so
+        // the discriminator is the `mut` modifier on the field, not the declaration.
+        // Measured after the impl-doc flip closed the previous anchor: `parse/mod.av`
+        // still reports 83 sites, `typeck/mod.av` / `resolve/mod.av` / `codegen/mod.av`
+        // are all at 0.
         //
-        // It replaced `while lo < 3 { let m = 1 … }`, which held this role until the
-        // `block` rule started reading its body as `declaration*` (bindings live only in
-        // `declaration`, so `statement*` excluded them). That case is native now and has
-        // moved up into the corpus above — which is exactly the handover this assertion
+        // It replaced a doc comment on an `impl` method, which held this role until
+        // `impl_member` began ATTACHING the doc (t-myz7) — and that replaced
+        // `while lo < 3 { let m = 1 … }` before it. Each is native now and has moved
+        // down into the corpus below — which is exactly the handover this assertion
         // is meant to force: when the gap it names closes, it goes red and the next
         // measured frontier item takes its place.
-        !native_without_delegate("doc_impl_method", DOC_IMPL_METHOD())
+        !native_without_delegate("mut_struct_field", MUT_STRUCT_FIELD())
     }
 
     then "and the wrappers, bindings, and block forms" {
@@ -196,6 +202,8 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("for_let",
             "fn f() -> int {\n mut lo = 0\n for i in 0..3 {\n  let m = 1\n  lo = m\n }\n lo\n}") &&
         native_without_delegate("doc", "/// d\nfn f() -> int { 1 }") &&
+        native_without_delegate("doc_impl_method",
+            "type T = { x: int }\nimpl T {\n /// doc\n fn m(self) -> int { 1 }\n}") &&
         native_without_delegate("annot", "@inline\nfn f() -> int { 1 }") &&
         native_without_delegate("mod", "mod m { fn g() -> int { 1 } }") &&
         native_without_delegate("shape", "shape S = { n: string }") &&
