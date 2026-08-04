@@ -122,6 +122,35 @@ export fn test_render_then(name: string, result: bool, file: string, ln: int) {
     }
 }
 
+/// `then` render for a `&&` chain: same as `test_render_then`, plus the source
+/// of the conjunct that was false.
+///
+/// `failed` is 1-based, 0 meaning every conjunct held. `parts` is the conjunct
+/// sources newline-joined in source order, resolved at compile time.
+///
+/// Why this exists: a three-claim assertion used to report one bit, so a CI
+/// failure said the conjunction was false and nothing about WHICH claim.
+/// For the f1005 flake that distinction is the whole diagnosis — `r.note ==
+/// null` alone implicates the nullable slot, while `r.id == 7` failing means
+/// the record itself is clobbered (t-kdyj.5).
+export fn test_render_then_at(name: string, failed: int, parts: string, file: string, ln: int) {
+    if failed == 0 {
+        avra_test_pass_inc()
+        println("    ${ansi_green("PASS")} ${name}")
+        return
+    }
+    avra_test_fail_inc()
+    avra_test_record_failure(avra_test_get_current_spec(), avra_test_get_current_given(), name, file, ln)
+    println("    ${ansi_red("FAIL")} ${name} ${ansi_dim("(${file}:${string(ln)})")}")
+    let lines = parts.split("\n")
+    // Defensive on the index: a mismatch between the emitted count and the
+    // emitted text would otherwise index out of bounds at REPORT time, i.e.
+    // only ever on an already-failing run — the worst place to add a crash.
+    if failed >= 1 && failed <= lines.length {
+        println("      ${ansi_dim("false:")} ${lines[failed - 1]}")
+    }
+}
+
 // ── Summary render: called once at end-of-binary by the synthetic
 // `fn main() -> int { test_render_summary() }` ─────────────────────
 

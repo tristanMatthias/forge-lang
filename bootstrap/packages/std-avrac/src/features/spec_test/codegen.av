@@ -1,8 +1,14 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
 use codegen.{err_stmt, ok_stmt, StmtResult}
-use codegen.{emit_block_loop}
+use codegen.{emit_block_loop, emit_block_loop_ctx}
 use codegen.{ok_sr, err_sr}
+// stmt_unwrap: peel `Annotated` before dispatching on the body's tail, so a
+// `///`-documented assertion still splits. render_expr: the conjunct text.
+use core.{stmt_unwrap, render_expr}
+// The LLVM builders must be imported by NAME from core — they are not ambient
+// in a feature module (same list-them-explicitly shape as trait_decl/codegen.av).
+use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_build_br}
 /// Codegen entry for the test feature. Dispatches Spec / Given /
 /// Then blocks to the corresponding emitter; everything else is
 /// an internal mismatch.
@@ -55,6 +61,15 @@ fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<St
 /// parses as `?? (0 == 8080)` and yields the int 8080, whose LSB
 /// is 0 → FAIL).
 fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, file: string, line: int) -> Result<StmtResult, string> {
+    // A `&&` chain carries N independent claims but reports ONE bit, so a
+    // failure names the arm and nothing about what was observed. Split it so
+    // the FIRST false conjunct is named. Anything else — a single assertion,
+    // an `||`, a call — takes the original path below untouched, which keeps
+    // the emitted IR byte-identical for every non-`&&` arm (t-kdyj.5).
+    let conj = then_conjunct_ids(ctx, cond)
+    if conj.length > 1 {
+        return emit_then_conjuncts(ctx, env, name, cond, conj, file, line)
+    }
     let r = ctx.emit(env, cond)?
     ctx.call("test_render_then", [
         ctx.global_str(name, "spec_str"),
@@ -63,6 +78,150 @@ fn emit_then_block(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr, fi
         ctx.i64(line),
     ])
     ok_sr(ctx, env)
+}
+
+/// The conjuncts of a `then` body's trailing assertion, left to right.
+///
+/// Returns a single-element list (meaning "do not split") unless the body's
+/// LAST statement is a bare expression that is a top-level `&&` chain. The
+/// tail is unwrapped via `stmt_unwrap` so a `///`-documented or annotated
+/// assertion still splits — matching a raw `Stmt` would silently miss it,
+/// the walker hazard noted in CLAUDE.md.
+fn then_conjunct_ids(ctx: Ctx, cond: Expr) -> List<ExprId> {
+    let no_split: List<ExprId> = []
+    match cond {
+        .Block(ids) -> {
+            if ids.length == 0 { return no_split }
+            match stmt_unwrap(ctx.nodes, ctx.nodes.stmts.get(ids[ids.length - 1])) {
+                .Expr(eid) -> flatten_and(ctx, eid)
+                _ -> no_split
+            }
+        }
+        _ -> no_split
+    }
+}
+
+/// Flatten a left-associated `&&` spine into its operands.
+///
+/// `a && b && c` parses as `Logical(Logical(a, And, b), And, c)`, so the
+/// recursion goes left and appends the right operand. A non-`&&` expression
+/// is its own single conjunct.
+fn flatten_and(ctx: Ctx, eid: ExprId) -> List<ExprId> {
+    match ctx.nodes.exprs.get(eid) {
+        .Logical(l, op, r) -> {
+            match op {
+                .And -> {
+                    mut acc = flatten_and(ctx, l)
+                    acc.push(r)
+                    acc
+                }
+                _ -> [eid]
+            }
+        }
+        _ -> [eid]
+    }
+}
+
+/// Emit a `then` whose assertion is a `&&` chain, recording WHICH conjunct
+/// was false.
+///
+/// Short-circuit is preserved by CONSTRUCTION rather than by care: `if_true`
+/// leaves the builder positioned in the true-block, so conjunct i+1 is only
+/// ever emitted inside conjunct i's true-block. A conjunct after the first
+/// false one is unreachable, exactly as under `&&` — which matters, because
+/// `x != null && x!.f == 1` crashes if the second one runs.
+///
+/// The index slot is an i64 alloca explicitly stored to 0 — do NOT assume the
+/// alloca self-initialises. Relying on that made every all-true assertion fail
+/// (see the store site below).
+fn emit_then_conjuncts(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr,
+                       conj: List<ExprId>, file: string, line: int) -> Result<StmtResult, string> {
+    // The body's leading statements must still execute — a `then` routinely
+    // binds (`let out = run(); out.contains(..) && ..`) and the conjuncts read
+    // those bindings, so the prefix is emitted through the normal block path
+    // and its env threaded into the conjuncts.
+    let ids = then_block_ids(cond)
+    mut prefix: List<StmtId> = []
+    mut p = 0
+    while p < ids.length - 1 {
+        prefix.push(ids[p])
+        p = p + 1
+    }
+    let br = emit_block_loop_ctx(ctx, env, prefix, ctx.i64(0), .Unknown)?
+    let cx = br.ctx
+    // emit_block_loop_ctx returns an EMPTY env for an empty stmt list
+    // (blocks.av) — and an empty prefix is the COMMON case here, since most
+    // `then` bodies are a bare assertion. Taking br.env unconditionally would
+    // emit every conjunct with no enclosing bindings in scope, losing the
+    // `given` block's `let`s. Same fallback fn_decl/codegen.av makes.
+    let benv = if prefix.length == 0 { env } else { br.env }
+
+    let idx_slot = cx.alloca_i64("then_conj_idx")
+    // Store the 0 EXPLICITLY. An earlier version relied on the alloca being
+    // zero-initialised at creation and every all-true assertion FAILED,
+    // reporting its first conjunct — the slot held garbage, which reads as a
+    // non-zero failure index. Caught by an all-true arm in the probe; without
+    // that arm the feature would have looked correct on failing tests and
+    // broken every passing `&&` assertion in the suite.
+    cx.store(cx.i64(0), idx_slot)
+    let done_bb = avra_llvm_append_basic_block(cx.lc, cx.current_fn, "then_conj_done")
+
+    // Emit each conjunct nested inside the previous one's true-block, keeping
+    // every false-edge block to fill in afterwards.
+    mut else_bbs: List<ptr> = []
+    mut i = 0
+    while i < conj.length {
+        let v = cx.emit(benv, cx.nodes.exprs.get(conj[i]))?
+        else_bbs.push(cx.if_true(v.value, "then_conj_${string(i)}"))
+        i = i + 1
+    }
+    // Innermost true-block: every conjunct held, slot stays 0.
+    avra_llvm_build_br(cx.builder, done_bb)
+
+    // Each false edge records its 1-based position and joins.
+    mut k = 0
+    while k < else_bbs.length {
+        avra_llvm_position_at_end(cx.builder, else_bbs[k])
+        cx.store(cx.i64(k + 1), idx_slot)
+        avra_llvm_build_br(cx.builder, done_bb)
+        k = k + 1
+    }
+
+    avra_llvm_position_at_end(cx.builder, done_bb)
+    // The conjunct sources, newline-joined, resolved once at compile time.
+    //
+    // `render_expr` gives S-EXPRESSION form — `(== r.note null)`, not
+    // `r.note == null`. `fmt_expr` (the formatter behind `bs2 fmt`) renders
+    // real infix and is what this wants, but it does not resolve from a
+    // feature module: `build/metadata_extract.av` imports bare `fmt.{…}`
+    // fine at one level deep, while `features/spec_test/` is two deep and the
+    // same import raises F3100 (ModuleNotFound) with an EMPTY module name.
+    // Prefix form still names the conjunct unambiguously, which is the point;
+    // switching to infix is a follow-up once that import path is understood.
+    mut parts = ""
+    mut j = 0
+    while j < conj.length {
+        if j > 0 { parts = parts + "\n" }
+        parts = parts + render_expr(cx.nodes, cx.nodes.exprs.get(conj[j]))
+        j = j + 1
+    }
+    cx.call("test_render_then_at", [
+        cx.global_str(name, "spec_str"),
+        cx.load_i64(idx_slot, "then_conj_failed"),
+        cx.global_str(parts, "spec_conj"),
+        cx.global_str(file, "spec_file"),
+        cx.i64(line),
+    ])
+    ok_sr(cx, env)
+}
+
+/// The statement ids of a `then` body block (empty for any other shape).
+fn then_block_ids(cond: Expr) -> List<StmtId> {
+    let no_split: List<StmtId> = []
+    match cond {
+        .Block(ids) -> ids
+        _ -> no_split
+    }
 }
 
 /// Walk a spec/given body emitting each child statement. Threads

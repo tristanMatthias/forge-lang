@@ -1,0 +1,94 @@
+// WHY: a failing `then` used to report its name and nothing about WHAT was
+// observed. A three-claim `&&` assertion carried three independent facts and
+// emitted one bit, so a CI failure said "the conjunction was false" — which is
+// the whole difficulty in the f1005 flake (uzs9.2): `r.note == null` failing
+// alone implicates the nullable slot, while `r.id == 7` failing means the
+// record itself is clobbered. Same distinction, opposite investigations.
+//
+// Driven through the real CLI on real fixture files, because the thing under
+// test is EMITTED CODE — asserting against a rendered string would only prove
+// this file agrees with itself.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+
+/// Run a throwaway spec file through `bs2 test` and hand back its output.
+fn run_spec(body: string) -> string {
+    let f = "/tmp/avra_cj_${string(avra_getpid())}.av"
+    let _ = avra_shell_exec("cat > '${f}' <<'AVRAEOF'\n${body}\nAVRAEOF")
+    let out = avra_shell_exec("./build/bs2 test '${f}' 2>&1")
+    let _ = avra_shell_exec("rm -f '${f}'")
+    out
+}
+
+spec "a failing `&&` arm names the conjunct that was false" {
+    // The middle conjunct is the one that fails, so "reports the first" and
+    // "reports the last" both come out wrong — an arm that named either would
+    // be indistinguishable from a correct one if the false claim sat at an end.
+    then "the false conjunct is named, not merely that the arm failed" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        1 == 1 && 2 == 3 && 4 == 4\n" +
+            "    }\n" +
+            "}")
+        out.contains("false:") && out.contains("2") && out.contains("3")
+    }
+
+    // Short-circuit is the load-bearing part: `x != null && x!.f == 1` CRASHES
+    // if the second conjunct runs after the first is false. Proven by side
+    // effect rather than by reading the emitted branches — a conjunct that
+    // prints must not print once an earlier one is false.
+    then "a conjunct after the first false one never runs" {
+        let out = run_spec("fn shout() -> bool {\n" +
+            "    println(\"SECOND_RAN\")\n" +
+            "    true\n" +
+            "}\n" +
+            "spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        1 == 2 && shout()\n" +
+            "    }\n" +
+            "}")
+        !out.contains("SECOND_RAN")
+    }
+
+    // CONTROL 1 — an all-true chain must PASS.
+    //
+    // This arm is why the feature works. The first implementation relied on
+    // the index alloca being zero-initialised at creation; it was not, so the
+    // slot held garbage, every all-true `&&` assertion reported its first
+    // conjunct as false, and the whole suite would have gone red. Every
+    // FAILING case looked perfect throughout. Without an all-true arm the bug
+    // ships.
+    then "an all-true chain still passes" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        1 == 1 && 2 == 2\n" +
+            "    }\n" +
+            "}")
+        out.contains("1/1 tests passed") && !out.contains("false:")
+    }
+
+    // CONTROL 2 — a single (non-`&&`) assertion takes the untouched path and
+    // gains no extra line. Without this, an implementation that appended
+    // "false: <whole cond>" to every failure would satisfy the naming arm.
+    then "a non-conjunction failure reports exactly as before" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        9 == 8\n" +
+            "    }\n" +
+            "}")
+        out.contains("FAIL") && !out.contains("false:")
+    }
+
+    // Bindings in the `then` body must still be in scope for the conjuncts —
+    // the prefix statements are emitted separately from the assertion, so a
+    // regression here would break every `let`-then-assert arm at once.
+    then "a `let` in the then body is visible to the conjuncts" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        let a = 5\n" +
+            "        a == 5 && a == 6\n" +
+            "    }\n" +
+            "}")
+        out.contains("false:") && out.contains("6")
+    }
+}
