@@ -65,7 +65,20 @@ export fn avra_match_arm_grammar() -> Grammar {
     let gp = grammar {
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
+  // `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
+  // two by wrapping: `Expr.Block([Stmt.Return(v)])`. With the body as `expression` alone,
+  // every `-> return v` in the compiler fell through to `@hand(decl_hand)` — 17 of the 22
+  // residual files and ~82 refusal sites (t-myz7).
+  //
+  // `^( … )?` is the same-line marker `return_stmt` already uses: a bare `-> return`
+  // followed by `}`, `,` or a LATER LINE is ReturnEmpty. Without it the arm folds the
+  // NEXT arm's pattern into its return value.
+  //
+  // `break`/`continue` are deliberately absent — the hand REJECTS them in arm position
+  // (measured), so adding them would widen the language rather than close a gap.
+  arm_body      = "return" ^( e:expression )? -> MkArmReturn(e)
+                | expression
     }
     grammar_checked(gp)
 }
