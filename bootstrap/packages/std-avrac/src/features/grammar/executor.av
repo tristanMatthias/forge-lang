@@ -5738,9 +5738,18 @@ export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -
 /// so a grammar literal's own `"+"` quotes — and the newlines of a multi-line block —
 /// survive verbatim into the runtime string. Escaping here would corrupt every
 /// grammar literal that quotes a terminal, which is all of them.
+/// Both leaves INTERN, matching the hand's `alloc_leaf` (= `store.intern_expr_leaf`)
+/// — the §14.4 convention `literal_node` states: a grammar-built leaf must produce the
+/// SAME arena id the hand parser does, or repeat content diverges. `Expr.Ident(
+/// "parse_grammar")` is emitted once per `grammar { … }` block in the file, so with a
+/// plain `add_leaf` every block would mint its own callee row where the hand shares one.
+///
+/// diff-test cannot see this: distinct-but-equal leaf rows lower to identical IR, so the
+/// divergence lives purely in arena ids — which is exactly what the L6 content-id and
+/// early-cutoff machinery keys on. IR equality is not evidence of id parity.
 export fn mk_grammar_block(st: PState, sp_start: int, bcap: CapVal) -> ExprId {
-    let str_id = st.store.exprs.add_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
-    let callee = st.store.exprs.add_leaf(Expr.Ident("parse_grammar"))
+    let str_id = st.store.intern_expr_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
+    let callee = st.store.intern_expr_leaf(Expr.Ident("parse_grammar"))
     st.store.add_expr(Expr.Call(callee, [str_id]), byte_span(sp_start, st.cur().pos), [])
 }
 
