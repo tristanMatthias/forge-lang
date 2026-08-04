@@ -916,6 +916,15 @@ export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> 
     // re-captures. See output_has_kill_marker for why the match is
     // line-anchored rather than a substring.
     if output_has_kill_marker(out) { return false }
+    // t-mji3: a full disk is the box failing, not the fixture speaking. The
+    // shard classifier already ranked this ABOVE every other cause; this gate
+    // did not test it at all, so the same run that correctly reported `DISK
+    // FULL` also froze the truncated output as the fixture's answer. Because
+    // this predicate gates the READ as well as the write, adding it here also
+    // retires captures already poisoned by an earlier full disk — they demote
+    // to an honest MISS and re-run, which is the part `cache clear-failed`
+    // could not do.
+    if output_has_disk_full_marker(out) { return false }
     if out.contains("compile produced no IR") { return false }
     if out.contains("Out of memory") { return false }
     if out.contains("Bus error") { return false }
@@ -936,6 +945,15 @@ export fn fixture_output_is_publishable(out: string, fixture_stateful: bool) -> 
     if out.contains("ld returned ") { return false }
     if out.contains("collect2: error:") { return false }
     if out.contains("shard compile failed") { return false }
+    // t-mji3: the entries above are gcc/lld reporting a link it COMPLETED and
+    // rejected. These two are the link dying instead: `link failed for <out>`
+    // is diagnose.sh's own `die` from the fixture runner's link step, and cc
+    // reports a linker that was signalled (OOM-killed, or aborted on a short
+    // write) as `ld terminated with signal N`. Both were present in captures
+    // poisoned by a full disk and passed the gate, because a violent linker
+    // death prints neither `collect2: error:` nor `ld returned`.
+    if out.contains("link failed for ") { return false }
+    if out.contains("ld terminated with signal ") { return false }
     // jdgo: continuous dispatch (cbg3 follow-up) increased concurrent
     // diagnose.sh invocations. The shell script's `cc -o ${out}.tmp`
     // followed by `mv ${out}.tmp $out` is not race-safe under high
@@ -1110,7 +1128,7 @@ fn sidecar_newer_than_inputs(sidecar: string) -> bool {
 // Pure (string in, string out) so the spec table can pin every branch
 // without staging real OOMs or filling a disk.
 export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string {
-    if out.contains("No space left on device") || out.contains("ENOSPC") {
+    if output_has_disk_full_marker(out) {
         return "DISK FULL — the box ran out of space (this is not a test failure; see `make cache-gc`)"
     }
     if out.contains("error[F4014]") {
@@ -1159,6 +1177,32 @@ export fn output_has_kill_marker(out: string) -> bool {
     if out.contains("Killed: 9") || out.contains("Killed: 15") { return true }
     out.contains("\nKilled\n") || out.starts_with("Killed\n")
         || out.ends_with("\nKilled") || out == "Killed"
+}
+
+/// Did this output's producer fail because the BOX ran out of disk?
+///
+/// The sibling of `output_has_kill_marker`, and it exists for the same
+/// stated reason: the fixture-publish gate and the shard cause classifier
+/// both have to answer "was this the box, not the code?", and they have to
+/// give the SAME answer. They did not. The classifier tested ENOSPC inline
+/// — as its TOP-ranked cause, outranking everything — while the publish
+/// gate did not test it at all. So one disk-full run could correctly print
+/// `DISK FULL` in the shard summary and, in that same run, MEMOISE the
+/// truncated output as though it were the fixture's real stdout.
+///
+/// That capture then replays as a deterministic no-diff FAIL, in tests the
+/// diff never touched, long after the disk is free — and it is not evicted
+/// by `bs2 cache clear-failed`, which only targets captures whose text
+/// contains `: FAIL`. A disk-full capture usually has no assertion output
+/// at all, so the documented recovery step silently misses it. Diagnosing
+/// that from the symptom means already suspecting the cache (t-mji3).
+///
+/// Unlike the kill marker these need no line anchoring: `No space left on
+/// device` is a strerror string, not a shell record, and it is never
+/// legitimate fixture stdout — the one occurrence in the tree is a shard
+/// log staged as INPUT to the classifier, not a capture.
+export fn output_has_disk_full_marker(out: string) -> bool {
+    out.contains("No space left on device") || out.contains("ENOSPC")
 }
 
 /// First token following `key`, stopped at the delimiter that ends the
