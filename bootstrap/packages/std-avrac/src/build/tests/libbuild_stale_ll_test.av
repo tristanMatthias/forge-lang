@@ -46,6 +46,20 @@ fn libstale_mk_pkg(slug: string, src: string) -> string {
     dir
 }
 
+/// Report a probe when its spec is about to fail. This fixture shells out to a REAL
+/// `bs2 build --lib` child, so a failure here can be the build itself dying for a
+/// reason that has nothing to do with the invariant under test — and the assertion is
+/// a bare boolean, which tells you only "false". CI does not upload the per-shard log,
+/// so without this the failure is unattributable from the job output alone: it showed
+/// up as `1 TEST FAILURE(S)` in both rc-strict and seed-train-verify, reproduced in
+/// neither an isolated nor a batched local run, and named nothing.
+fn libstale_explain(which: string, p: LibStaleProbe) -> bool {
+    println("libstale FAIL [${which}] rc=${string(p.rc)} ll_exists=${string(p.ll_exists)} ll_len=${string(p.ll.length)}")
+    println("libstale FAIL [${which}] build log:")
+    println(p.log)
+    false
+}
+
 /// Everything a spec needs to judge one `bs2 build --lib` run.
 type LibStaleProbe = {
     rc: int,
@@ -84,27 +98,30 @@ spec "lib build: a crashed child compile can never report Built" {
         let _ = avra_selfhost_write_file("${dir}/src/lib.av.ll", LIBSTALE_MARKER)
         let p = libstale_build(dir)
         let _ = avra_shell_exec("rm -rf '${dir}'")
-        p.rc != 0
+        let ok = p.rc != 0
             && !p.log.contains("Built")
             // The stale artifact must not survive to masquerade as this
             // build's output for any later consumer.
             && !p.ll_exists
+        if ok { true } else { libstale_explain("broken_stale", p) }
     }
     then "broken package without a stale .ll also FAILS (exit-status gate, not artifact-absence luck)" {
         let dir = libstale_mk_pkg("broken_clean", LIBSTALE_BROKEN_SRC)
         let p = libstale_build(dir)
         let _ = avra_shell_exec("rm -rf '${dir}'")
-        p.rc != 0 && !p.log.contains("Built") && !p.ll_exists
+        let ok = p.rc != 0 && !p.log.contains("Built") && !p.ll_exists
+        if ok { true } else { libstale_explain("broken_clean", p) }
     }
     then "valid package with a planted stale .ll still Builds — and the artifact is FRESH, not the stale one" {
         let dir = libstale_mk_pkg("ok_stale", LIBSTALE_OK_SRC)
         let _ = avra_selfhost_write_file("${dir}/src/lib.av.ll", LIBSTALE_MARKER)
         let p = libstale_build(dir)
         let _ = avra_shell_exec("rm -rf '${dir}'")
-        p.rc == 0
+        let ok = p.rc == 0
             && p.log.contains("Built")
             && p.ll_exists
             && !p.ll.contains("LIBSTALE-MARKER")
             && p.ll.length > 0
+        if ok { true } else { libstale_explain("ok_stale", p) }
     }
 }
