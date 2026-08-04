@@ -49,7 +49,11 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        1 == 1 && (2 == 2 && 3 == 4)\n" +
             "    }\n" +
             "}")
-        out.contains("3 == 4") && !out.contains("group")
+        // Rejects the whole inner conjunction too, not just "group": reporting
+        // `2 == 2 && 3 == 4` verbatim would contain "3 == 4" and pass a
+        // presence-only check (raised in review of #1146).
+        out.contains("false:") && out.contains("3 == 4")
+            && !out.contains("2 == 2 && 3 == 4") && !out.contains("group")
     }
 
     // Short-circuit is the load-bearing part: `x != null && x!.f == 1` CRASHES
@@ -67,6 +71,22 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "    }\n" +
             "}")
         !out.contains("SECOND_RAN")
+    }
+
+    then "a multiline conjunct does not shift which one is named" {
+        // `fmt_expr` emits real newlines for a match/when/block operand, and the
+        // reporter splits on "\n" and indexes `failed - 1` — so before
+        // `flatten_lines`, this printed `.A -> true` (a fragment of conjunct 2)
+        // when the false conjunct was `3 == 4`. Not a shifted line: a different
+        // expression entirely, presented as the failing claim.
+        let out = run_spec("enum E { A, B }\n" +
+            "spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        let y = E.A\n" +
+            "        1 == 1 && (match y { .A -> true, .B -> false }) && 3 == 4\n" +
+            "    }\n" +
+            "}")
+        out.contains("3 == 4") && !out.contains(".A -> true")
     }
 
     // CONTROL 1 — an all-true chain must PASS.

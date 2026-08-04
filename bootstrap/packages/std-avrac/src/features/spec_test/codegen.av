@@ -216,11 +216,22 @@ fn emit_then_conjuncts(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr
     // t-kdyj.8 bug (a parse error inside a package build is REPLACED by an
     // empty ModuleNotFound), so it was really an unrelated typo in this file,
     // misattributed to the import. The import resolves fine.
+    // ONE LINE PER CONJUNCT — the newline is the record separator, so a
+    // conjunct that renders multiline must be flattened or it desynchronises
+    // the reporter (raised in review of #1146).
+    //
+    // `test_render_then_at` splits `parts` on "\n" and indexes `failed - 1`.
+    // `fmt_expr` emits real newlines for a `match`/`when`/block operand, so
+    // `1 == 1 && (match y { … }) && 3 == 4` reported `.A -> true` — a fragment
+    // of the SECOND conjunct's body — when the false one was `3 == 4`. Not a
+    // shifted line: a wholly different expression, presented as the failing
+    // claim. Verified before fixing, and guarded by the multiline arm in
+    // conjunct_naming_test.
     mut parts = ""
     mut j = 0
     while j < conj.length {
         if j > 0 { parts = parts + "\n" }
-        parts = parts + fmt_expr(cx.nodes, cx.nodes.exprs.get(conj[j]))
+        parts = parts + flatten_lines(fmt_expr(cx.nodes, cx.nodes.exprs.get(conj[j])))
         j = j + 1
     }
     cx.call("test_render_then_at", [
@@ -290,4 +301,30 @@ fn is_spec_arm(stmt: Stmt) -> bool {
         .SpecBlock(_, _) or .GivenBlock(_, _) or .ThenBlock(_, _) -> true
         _ -> false
     }
+}
+
+/// Collapse a rendered expression onto ONE line.
+///
+/// The conjunct list is newline-separated and the reporter indexes into it by
+/// position, so an embedded newline would silently make one conjunct look like
+/// two. Tabs are folded too (a rendered block indents with them); runs of
+/// whitespace collapse so the result reads as source rather than as a
+/// squeezed-together fragment.
+fn flatten_lines(s: string) -> string {
+    mut out = ""
+    mut prev_space = false
+    mut i = 0
+    while i < s.length {
+        let c = s[i]
+        let is_ws = c == "\n" || c == "\t" || c == " " || c == "\r"
+        if is_ws {
+            if !prev_space && out.length > 0 { out = out + " " }
+            prev_space = true
+        } else {
+            out = out + c
+            prev_space = false
+        }
+        i = i + 1
+    }
+    out
 }
