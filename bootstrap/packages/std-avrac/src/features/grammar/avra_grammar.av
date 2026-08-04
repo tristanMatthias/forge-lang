@@ -483,7 +483,15 @@ fn avra_decl_edge_grammar() -> Grammar {
   annot_decl     = an:annot ( an:annot )* ad:annotable_decl -> MkAnnotatedArgs(an, ad)
   annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
   annot          = "@" n:IDENT ( "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" )? -> MkAnn(n, a)
-  wrapped_inner  = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  // `component_decl` is in this set (t-myz7): an ANNOTATED or DOC-COMMENTED
+  // component had no native path, so `@expand(expand_cli) component cli {}` fell to
+  // `@hand(decl_hand)` — 157 sites in packages/cli/src/main.av, the last form still
+  // holding the delegate. It is not `@expand`-specific: a plain `@inline` on a
+  // component refused identically, while the bare `component cli {}` was already
+  // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
+  // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
+  // `doc_decl`, so this covers the doc-comment form too.
+  wrapped_inner  = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try component_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers

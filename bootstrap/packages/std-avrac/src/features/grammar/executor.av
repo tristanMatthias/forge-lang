@@ -1470,7 +1470,15 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "stmt_block" {
         if st.cur().text != "{" { return false }
         if st.pos + 2 >= st.toks.length { return true }
-        return !(st.toks[st.pos + 1].kind == "STRING" && st.toks[st.pos + 2].text == ":")
+        // TEMPLATE as well as STRING — an INTERPOLATED key (`{"k${s}": "v"}`) opens a
+        // map exactly as a plain one does. `brace_map` five lines below has always
+        // tested `STRING || TEMPLATE`; this sibling tested only STRING, so in
+        // STATEMENT position a template-keyed map was claimed as a block, failed, and
+        // fell to `@hand(decl_hand)`. Either half alone was already native — a plain
+        // key in bare position, or a template key in `let` position — which is why it
+        // survived: only the combination reached the gap (t-myz7).
+        let k = st.toks[st.pos + 1]
+        return !((k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":")
     }
     // Expression-position brace: the token twin of Parser.is_map_literal. `{ }` is an
     // EMPTY MAP here (unlike statement position, where it stays a block), otherwise a

@@ -1557,3 +1557,50 @@ spec "t-myz7: statement-position `if let` agrees with the hand on the TREE" {
     }
 }
 
+// WHY: t-myz7 — an ANNOTATED or DOC-COMMENTED component declaration. `component_decl`
+// was missing from `wrapped_inner`, the shared inner set of both `annot_decl` and
+// `doc_decl`, so `@expand(expand_cli) component cli {}` had no native path and fell
+// to `@hand(decl_hand)`. That was 157 sites in packages/cli/src/main.av — the LAST
+// form still holding the delegate.
+//
+// Not `@expand`-specific: a plain `@inline` on a component refused identically, the
+// bare `component cli {}` was already native, and `@expand` on a `fn` was fine. Only
+// the annotation-plus-component combination reached the gap.
+spec "t-myz7: an annotated / doc-commented component agrees with the hand" {
+    // `tree_agrees_everywhere`, NOT `agree_all`, for the valid forms: `agree_all`
+    // compares errcode signatures, which on VALID input is empty-vs-empty and would
+    // pass even if the three paths built DIFFERENT trees. Raised in review, and
+    // correct — the whole point of this spec is the tree the new `wrapped_inner`
+    // branch produces.
+    then "the valid annotated and doc-commented forms build the same TREE everywhere" {
+        tree_agrees_everywhere("@expand(expand_cli)\ncomponent cli {}") &&
+        tree_agrees_everywhere("@inline\ncomponent cli {}") &&
+        tree_agrees_everywhere("/// docs\ncomponent cli {}") &&
+        agree_all("@expand(expand_cli)\ncomponent cli {}") &&
+        agree_all("@inline\ncomponent cli {}") &&
+        agree_all("/// docs\ncomponent cli {}")
+    }
+
+    then "an annotation with no declaration after it still reports, identically" {
+        agree_bad("@expand(expand_cli)\n") &&
+            agree_bad("@inline\n") &&
+            agree_all("@inline\n") &&
+            tree_agrees_everywhere("@inline\n")
+    }
+
+    then "a malformed annotated component recovers the same way" {
+        agree_bad("@inline\ncomponent {}") &&
+            agree_bad("@inline\ncomponent cli {") &&
+            agree_all("@inline\ncomponent {}") &&
+            tree_agrees_everywhere("@inline\ncomponent {}")
+    }
+
+    // `doc_decl` shares the changed `wrapped_inner`, so its malformed forms need the
+    // same coverage as the annotation ones — also raised in review.
+    then "a malformed DOC-commented component recovers the same way" {
+        agree_bad("/// docs\ncomponent {}") &&
+            agree_bad("/// docs\ncomponent cli {") &&
+            tree_agrees_everywhere("/// docs\ncomponent {}")
+    }
+}
+
