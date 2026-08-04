@@ -625,6 +625,9 @@ fn build_uses_sp_start(name: string) -> bool {
         name == "MkSplice" ||
         name == "MkSpliceStruct" ||
         name == "MkQualExpr" ||
+        // The outer table literal spans from the `table` keyword — the hand's
+        // `alloc_at(Expr.ListLit(row_ids), sp_start)`.
+        name == "MkTableLit" ||
         // The expression match TABLE anchors at the `match` keyword, like MkMatchExpr.
         name == "MkMatchTableExpr" ||
         // t-47hc slice 8 — both IDENT-led primaries span from the NAME token, so they
@@ -2059,6 +2062,12 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkForDestructure" -> "mk_for_destructure(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkTemplate" -> "CapVal.Node(mk_template(st, ${args[0]}))"
         "MkQualExpr" -> "CapVal.Node(mk_qualified(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), ${args[2]}, CapVal.FInits(${args[3]}_list)))"
+        // ── the `table { … }` literal (t-myz7) ──
+        // The header build yields CapVal.Nil (it PUSHES the row/column context the row
+        // build reads); only the row and the outer literal mint nodes.
+        "MkTableHeader" -> "mk_table_header(st, ${args[0]}, CapVal.Toks(${args[1]}_list))"
+        "MkTableRow" -> "CapVal.Node(mk_table_row(st, CapVal.Nodes(${args[0]}_list)))"
+        "MkTableLit" -> "CapVal.Node(mk_table_lit(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
         // t-47hc slice 8 — the field-init list arrives as a repetition capture, so it is
         // boxed as CapVal.FInits over the accumulated `_list`, exactly as MkQualExpr's
         // struct-literal half does.
@@ -2753,7 +2762,7 @@ fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
 fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" { return "expr" }
+    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" || bn == "MkTableHeader" || bn == "MkTableRow" || bn == "MkTableLit" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
     if bn == "MkArmReturn" { return "expr" }
     if bn == "MkArm" { return "arm" }
