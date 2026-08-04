@@ -2500,6 +2500,9 @@ fn parse_statement(st: PState) -> CapVal {
     if st.cur().text == "continue" {
         return parse_continue_stmt(st)
     }
+    if lookahead_ok("if_let", st) && (tok_starts_expr_leaf(st.cur())) {
+        return parse_iflet_stmt(st)
+    }
     if st.cur().text == "if" {
         return parse_if_stmt(st)
     }
@@ -2713,6 +2716,11 @@ fn parse_return_stmt(st: PState) -> CapVal {
         e = parse_expression(st)
     }
     mk_return_opt(st, e)
+}
+
+fn parse_iflet_stmt(st: PState) -> CapVal {
+    let ile = parse_expression(st)
+    if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) } else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ile)))) }
 }
 
 fn parse_expr_stmt(st: PState) -> CapVal {
