@@ -31,6 +31,31 @@ fn errcodes(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
+/// Does an F-code signature contain a PARSE-phase failure? Raised in review on the
+/// `primary_base` corpus: `tree_agrees_everywhere` renders the tree AFTER
+/// `parse_file_program()` has recovered, so all three paths can report and still agree,
+/// and a fixture that never parsed would sail through. That is the same defect class as
+/// the malformed anchor in `decl_flip_dispatch_test` (#1155).
+///
+/// The reviewer asked for ZERO diagnostics. Measured, that is not the right bar and it
+/// would have failed on its own first run:
+///
+///   grammar { … } + full imports    F9005 F9001 F9001 F9001 F9005 F9005 F9003 …
+///   grammar { … } w/o parse_grammar F3000   (the literal desugars to a call)
+///   table { }                       (clean)
+///
+/// The warnings are incidental lint on the fixture, and F3000 is RESOLVE. Both run
+/// after parsing and neither can say which parser answered — the same reasoning the
+/// `decl_flip_dispatch_test` parse gate landed on. So the bar is: every path agrees,
+/// AND the shared signature carries no parse-phase code (`F0001`–`F0999`, less the two
+/// in that range that are not parse failures).
+fn sig_has_parse_code(sig: string) -> bool {
+    for c in sig.split(" ") {
+        if c != "" && c.contains("F0") && c != "F0801" && c != "F0900" { return true }
+    }
+    false
+}
+
 fn static_raw(source: string) -> string { errcodes("AVRA_NO_STATIC_FALLBACK=1", source) }
 fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", source) }
 // t-zrn3 — the THIRD path, and the one users actually run. `static_raw` and the TREE
@@ -1601,6 +1626,84 @@ spec "t-myz7: an annotated / doc-commented component agrees with the hand" {
         agree_bad("/// docs\ncomponent {}") &&
             agree_bad("/// docs\ncomponent cli {") &&
             tree_agrees_everywhere("/// docs\ncomponent {}")
+    }
+}
+
+
+// ── `primary_base`'s residue — the corpus, landed BEFORE the routing (t-myz7) ──
+//
+// Corpus-first, per the routing discipline: these pass TODAY, because the hand owns
+// them. That is the correct baseline. The demonstration that counts comes at the
+// deletion — each must go RED if `@hand(primary_base)` is removed without the native
+// path reproducing what the delegate was providing.
+//
+// WHY THESE FORMS. `primary_base` measured ZERO across all 1005 corpus files when
+// refused BY NAME, which reads like a dead leaf and is not one. A `primary_base`
+// refusal rolls the enclosing declaration `@try` back into `decl_hand`, which then
+// serves the item silently — so a per-leaf zero only ever proves "nothing needs THIS
+// leaf that the other cannot also serve". Refusing BOTH (`*`) and attributing each
+// refusal to the file under test tells the truth: 96 refusals across 10 of the 249
+// non-test compiler sources, 18 of them in `avra_grammar.av` alone. Minimised, the
+// residue is two things, and both are pinned below:
+//
+//   grammar { r = "a" }   reaches primary_base   <- the FEATURE-FORM seam
+//   table { }             reaches primary_base   <- same seam
+//   let v = )             reaches primary_base   <- the F0040 error path
+//   fn f() -> int { 1 }   reaches nothing        <- control
+//
+// This is a REDISCOVERY, not news: t-47hc.5 recorded on 2026-08-01 that "the
+// `table { … }`/`grammar { … }` feature forms still need the seam". It is pinned here
+// because nothing in the suite asserted it, and because the by-name measurement that
+// hid it is the one a future slice would naturally reach for again.
+//
+// Every fixture below was checked to PARSE before being used (`parse_errs=0` for the
+// valid ones, exactly one `F0040` for the malformed one) — the discipline this file
+// exists to enforce, after an anchor sat here malformed and green for months.
+spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 path" {
+    then "a `grammar { … }` literal builds the same TREE on all three paths" {
+        tree_agrees_everywhere("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+            // …and every path agrees on the DIAGNOSTIC signature, with no parse-phase
+            // code in it. Without this the tree assertion alone would accept a fixture
+            // that never parsed — see `sig_has_parse_code`.
+            agree_all("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+            !sig_has_parse_code(hand_oracle("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}"))
+    }
+
+    then "a `table { … }` literal builds the same TREE on all three paths" {
+        tree_agrees_everywhere("fn t() -> int {\n let x = table { }\n 0\n}") &&
+            agree_all("fn t() -> int {\n let x = table { }\n 0\n}") &&
+            // This one is genuinely diagnostic-FREE, so pin that exactly rather than
+            // settling for the weaker no-parse-code bar the `grammar` case needs.
+            hand_oracle("fn t() -> int {\n let x = table { }\n 0\n}") == ""
+    }
+
+    // The delegate's OTHER job, and the one the `@hand(postfix_suffix)` retirement
+    // proves is easy to miss: owning a DIAGNOSTIC. `parse_leaf_common(false)` handles
+    // only the splice and the prefix operators — which the grammar's own `unary` /
+    // `@when(at_quote_top)` branches already own — so everything else is
+    // `parse_primary`, whose residue is `error[F0040]: expected expression` for a token
+    // that starts no expression. Deleting the leaf without an `@fallback` carrying that
+    // message would leave nobody reporting it, exactly as deleting `postfix_suffix`
+    // once left the trailing-dot `expected field name` unowned.
+    then "a token that starts NO expression reports EXACTLY F0040, and recovers identically" {
+        agree_bad("fn f() -> int {\n let v = )\n 0\n}") &&
+            agree_all("fn f() -> int {\n let v = )\n 0\n}") &&
+            tree_agrees_everywhere("fn f() -> int {\n let v = )\n 0\n}") &&
+            // The exact signature, not merely "some equal nonzero set". Raised in
+            // review and correct: `agree_bad` requires only a nonzero EQUAL count and
+            // `agree_all` only an equal LIST, so all three paths emitting some other
+            // code — or emitting F0040 twice — would pass. This spec's whole subject is
+            // the F0040 path, so it asserts F0040, once, on the oracle.
+            hand_oracle("fn f() -> int {\n let v = )\n 0\n}") == "F0040 "
+    }
+
+    // The control. Without it the three assertions above could all be satisfied by a
+    // harness that agrees with itself everywhere, which is this file's standing
+    // vacuity failure mode.
+    then "a plain function — the control — agrees, and is diagnostic-free" {
+        tree_agrees_everywhere("fn f() -> int { 1 }") &&
+            agree_all("fn f() -> int { 1 }") &&
+            hand_oracle("fn f() -> int { 1 }") == ""
     }
 }
 
