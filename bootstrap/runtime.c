@@ -5760,6 +5760,23 @@ int64_t avra_mem_should_trip(int64_t rss_kb, int64_t limit_kb, int64_t soft,
 // failure mode is a cosmetically wrong phase, never a crash.
 static char avra_mem_phase_buf[1024] = "startup (before parse)";
 
+// Resident size sampled when the CURRENT phase was stamped, so the report can
+// separate growth WITHIN this phase from what was already resident when it
+// began.
+//
+// WHY: the phase label alone systematically mis-attributes an ACCUMULATION
+// blowup. The stamp names whichever file the compiler was reading when the
+// running total crossed the ceiling — so a shard that grew steadily across 200
+// files blames the 201st. Measured instance (uzs9, 2026-08-01): 28 of 31 trips
+// on a 16GB box named the same large generated parser, which reads exactly like
+// a single-input parse blowup; bisected single-process probes then peaked in the
+// same band on BOTH the base and branch compilers, i.e. the named file was never
+// the cause. A reader cannot tell the two apart from a label, but can from a
+// delta: a phase that grew +40 MiB of an 13 GB total plainly did not cause it.
+// Sampled once per stamp (once per source file), so the extra /proc read is
+// noise beside parsing the file it precedes.
+static _Atomic int64_t avra_mem_phase_start_kb = 0;
+
 void avra_mem_phase_set(const char* label) {
     if (!label) return;
     size_t n = strlen(label);
@@ -5767,6 +5784,8 @@ void avra_mem_phase_set(const char* label) {
     memcpy(avra_mem_phase_buf, label, n);
     avra_mem_phase_buf[n] = '\0';
     atomic_store_explicit(&avra_mem_phase, avra_mem_phase_buf, memory_order_relaxed);
+    atomic_store_explicit(&avra_mem_phase_start_kb, avra_mem_rss_kb(),
+                          memory_order_relaxed);
 }
 
 int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
@@ -5783,6 +5802,30 @@ static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
         "\nerror[F4014]: compiler memory ceiling exceeded — %lld MiB resident (ceiling %lld MiB)\n",
         (long long)(rss_kb / 1024), (long long)(limit_kb / 1024));
     if (phase && *phase) fprintf(stderr, "  phase: %s\n", phase);
+    // Growth within the phase vs what preceded it — see avra_mem_phase_start_kb.
+    // Guarded on a sane sample: 0 means no phase was ever stamped, and a
+    // baseline above the current RSS means memory was RELEASED since the stamp
+    // (so "growth" is meaningless); print nothing rather than a negative.
+    int64_t phase_start_kb = atomic_load_explicit(&avra_mem_phase_start_kb,
+                                                  memory_order_relaxed);
+    if (phase_start_kb > 0 && rss_kb >= phase_start_kb) {
+        int64_t grew_kb = rss_kb - phase_start_kb;
+        fprintf(stderr,
+            "  in-phase growth: +%lld MiB (%lld MiB already resident when this phase began)\n",
+            (long long)(grew_kb / 1024), (long long)(phase_start_kb / 1024));
+        // State the reading rather than leaving it as arithmetic for someone
+        // debugging under pressure. This is a comparison of two measured
+        // numbers, not a heuristic guess at a cause: when the phase accounts
+        // for under half the total, the label above is where the ceiling was
+        // CROSSED, which is not the same claim as where the memory went.
+        if (grew_kb * 2 < rss_kb) {
+            fprintf(stderr,
+                "  note: most of this footprint predates the phase above — memory ACCUMULATED\n"
+                "        across earlier work. The phase names where the total crossed the\n"
+                "        ceiling, not what consumed it; suspect the workload's total size\n"
+                "        (batch/shard width, or a leak across inputs) before that one input.\n");
+        }
+    }
     if (soft) {
         // A soft grant only trips under real box pressure — say so, because
         // "which condition fired" is the first question a reader asks of a
@@ -5795,8 +5838,8 @@ static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
     fprintf(stderr,
         "  help: this is the compiler stopping itself before the OS OOM-killer does.\n"
         "        Raise or disable the ceiling with AVRA_MEM_LIMIT_MB=<mb> (0 = no ceiling).\n"
-        "        If the input is not enormous, this is a compiler bug — the phase above\n"
-        "        is where the memory went; capture it with a spec test.\n");
+        "        If the input is not enormous, this is a compiler bug — start from the\n"
+        "        growth line above, not the phase name; capture it with a spec test.\n");
     fflush(stderr);
     _exit(1);
 }
