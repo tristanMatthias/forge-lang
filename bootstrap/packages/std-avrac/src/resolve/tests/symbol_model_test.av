@@ -7,6 +7,7 @@
 // injectivity, and the interner's insert-once behavior.
 
 use @std.avrac.resolve.{SymbolKind, Symbol, SymbolTable, symbol_id, symbol_kind_tag, symbol_table_new}
+use @std.avrac.resolve.{ModuleItemEntry, item_lookup}
 use @std.avrac.core.{content_id_for}
 
 spec "symbol identity: content-addressed by (qualified path + kind) (ps3t.8.4)" {
@@ -71,5 +72,55 @@ spec "symbol interner: insert-once table over content-addressed ids (ps3t.8.4)" 
     then "lookup of a never-interned id is null" {
         let t = symbol_table_new()
         t.lookup(symbol_id("ghost::sym", SymbolKind.FnSym)) == null
+    }
+}
+
+// t-iu1n. `collect_impl_items` registers every `impl` method as a MethodSym whose
+// canonical is the BARE name (methods are mangled via `method_mangled_name` at their
+// real call sites, so the entry is for visibility tracking, not name binding). A module
+// declaring BOTH `impl T { fn f }` and a module-level `fn f` therefore holds two entries
+// with the same short_name and different canonicals — one bare, one qualified.
+//
+// `item_lookup` used to match on short_name ALONE and return whichever was pushed FIRST,
+// which made name binding depend on declaration ORDER ACROSS FILES. In the compiler's own
+// `parse` module, adding one unrelated function reordered the two, every bare
+// `parse_expression(st)` call bound to the METHOD's bare canonical, and codegen failed
+// with `undefined function parse_expression` a thousand lines from the edit.
+//
+// These specs drive `item_lookup` DIRECTLY, which is the only layer where the invariant is
+// observable: a compiled fixture never reaches this scan at all — the global-index hashmap
+// (built once at the top of `resolve_names`) answers every bare ident in a small program,
+// so four separate end-to-end fixtures passed identically with and without the fix. The
+// lookup is a FALLBACK, so it must be tested as one.
+
+/// The bare-canonical entry an `impl` method registers.
+fn iu_method_entry() -> ModuleItemEntry {
+    ModuleItemEntry { short_name: "parse_expression", canonical: "parse_expression",
+                      exported: false, kind: SymbolKind.MethodSym }
+}
+
+/// The module-qualified entry a sibling `export fn` registers.
+fn iu_fn_entry() -> ModuleItemEntry {
+    ModuleItemEntry { short_name: "parse_expression", canonical: "@std::avrac::parse::parse_expression",
+                      exported: true, kind: SymbolKind.FnSym }
+}
+
+spec "item_lookup: an impl METHOD never captures a bare reference to a sibling fn (t-iu1n)" {
+    then "the METHOD pushed FIRST still loses — this is the exact failing order" {
+        let method_first: List<ModuleItemEntry> = [iu_method_entry(), iu_fn_entry()]
+        item_lookup(method_first, "parse_expression") == "@std::avrac::parse::parse_expression"
+    }
+    then "the reverse order gives the SAME answer — binding is declaration-order INDEPENDENT" {
+        let method_first: List<ModuleItemEntry> = [iu_method_entry(), iu_fn_entry()]
+        let fn_first: List<ModuleItemEntry> = [iu_fn_entry(), iu_method_entry()]
+        item_lookup(fn_first, "parse_expression") == item_lookup(method_first, "parse_expression")
+    }
+    then "a method ALONE binds nothing — a bare ident cannot name a method, it needs a receiver" {
+        let method_only: List<ModuleItemEntry> = [iu_method_entry()]
+        item_lookup(method_only, "parse_expression") == ""
+    }
+    then "a non-method entry is unaffected — the filter narrows nothing else" {
+        let fn_only: List<ModuleItemEntry> = [iu_fn_entry()]
+        item_lookup(fn_only, "parse_expression") == "@std::avrac::parse::parse_expression"
     }
 }

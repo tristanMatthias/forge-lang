@@ -68,7 +68,7 @@ use list_ops.{list_any, list_map, list_push_copy}
 /// qualified canonical path, export visibility flag, and the symbol
 /// kind (the categorical half of the item's content-addressed identity
 /// — see symbols.av).
-type ModuleItemEntry = {
+export type ModuleItemEntry = {
     short_name: string,
     canonical: string,
     exported: bool,
@@ -144,7 +144,7 @@ fn alias_lookup(aliases: List<AliasBinding>, name: string) -> string {
 /// `const_index_has`. Nothing can depend on the old behaviour either — a bare canonical
 /// for a method is not the mangled symbol codegen emits, so resolving to it never
 /// produced a working reference, only a confusing failure.
-fn item_lookup(items: List<ModuleItemEntry>, name: string) -> string {
+export fn item_lookup(items: List<ModuleItemEntry>, name: string) -> string {
     mut i = 0
     while i < items.length {
         let it = items[i]
