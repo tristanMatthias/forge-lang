@@ -41,13 +41,23 @@ fn emit_spec_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<Stm
 }
 
 /// Emit a `given` block: call `test_render_given_start` and walk
-/// the body. Threads the env so `let` bindings flow into later
-/// `then` arms within the same given (the canonical use case:
-/// `given "..." { let x = ...; then "..." { x == 1 } }`).
+/// the body. Bindings flow to later `then` arms WITHIN the same given (the
+/// canonical use case: `given "..." { let x = ...; then "..." { x == 1 } }`)
+/// because `emit_spec_stmts` threads `cur_env` across the body's statements.
+///
+/// The block's own env is DISCARDED on the way out — same as
+/// `emit_spec_block`. Each `given` is independent, so one block's setup must
+/// not satisfy a sibling's assertions.
+///
+/// This mattered only once bindings actually threaded (t-4nly): returning the
+/// body env used to be harmless because `emit_spec_single` dropped every
+/// binding anyway, so nothing could leak. Fixing that turned the pre-existing
+/// `ok_sr(ctx, new_env)` into a real cross-block leak — caught by the sibling
+/// control in given_let_scope_test, which is why that control is there.
 fn emit_given_block(ctx: Ctx, env: List<VarBinding>, name: string, body: List<StmtId>) -> Result<StmtResult, string> {
     ctx.call("test_render_given_start", [ctx.global_str(name, "spec_str")])
-    let new_env = emit_spec_stmts(ctx, env, body)?
-    ok_sr(ctx, new_env)
+    let _ = emit_spec_stmts(ctx, env, body)?
+    ok_sr(ctx, env)
 }
 
 /// Emit a `then` arm: evaluate the condition expression, hand
@@ -287,9 +297,28 @@ fn emit_spec_single(ctx: Ctx, env: List<VarBinding>, id: StmtId) -> Result<List<
     // Reuse the original arena id — it already carries the source
     // position, so a diagnostic from a plain `let`/call inside a
     // `given` block reports the real location, not line 0.
+    //
+    // `_ctx` variant, and RETURN ITS ENV (t-4nly). The plain `emit_block_loop`
+    // discards the extended env, so a `let` in a `given` body was emitted and
+    // then dropped on the floor: the binding existed in the IR but no later
+    // `then` arm could name it, failing at COMPILE time with
+    // `undefined variable`. That is the canonical `given` shape —
+    //
+    //     given "..." { let out = run(); then "..." { out.contains(..) } }
+    //
+    // — so the block's whole purpose (bind once, assert many) did not work.
+    // Threading the env is what `emit_spec_stmts` already assumes: it keeps
+    // `cur_env` across statements, and this was the one path that returned the
+    // env unchanged.
     let wrapped: List<StmtId> = [id]
-    emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
-    ok_stmt(env)
+    let br = emit_block_loop_ctx(ctx, env, wrapped, ctx.i64(0), .Unknown)?
+    // `wrapped` is always exactly one id, so the empty-list branch of
+    // emit_block_loop_ctx (which returns an EMPTY env, not the incoming one)
+    // is unreachable here. Guarded anyway — that branch cost a real bug in
+    // #1144, and an assertion about a neighbour's internals should not be load
+    // -bearing at a distance.
+    if wrapped.length == 0 { return ok_stmt(env) }
+    ok_stmt(br.env)
 }
 
 /// True iff `stmt` is one of the three spec-test arm variants that

@@ -1,0 +1,111 @@
+// WHY: a `let` in a `given` body was invisible to that given's `then` arms.
+//
+// `emit_spec_single` emitted a non-arm statement through `emit_block_loop` and
+// returned the INCOMING env, discarding the extended one. So the binding was
+// emitted into the IR and then dropped: no later `then` could name it, and the
+// unit failed at COMPILE time with `undefined variable`.
+//
+// That is the canonical `given` shape — bind once, assert many:
+//
+//     given "a compiled fixture" {
+//         let out = run_it()
+//         then "it succeeds" { out.contains("ok") }
+//         then "it names the file" { out.contains("main.av") }
+//     }
+//
+// so the block's entire purpose did not work, and every test in the repo that
+// wanted it had to re-bind per arm (paying the cost N times) or hoist to a
+// helper fn. Hit first-hand writing the t-kdyj.8 guard, which had to be
+// restructured around it. t-4nly.
+//
+// Driven through the real CLI: the failure was a compile error, so an
+// in-process assertion could not observe it at all.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+
+fn run_spec(body: string) -> string {
+    let f = "/tmp/avra_gl_${string(avra_getpid())}.av"
+    let _ = avra_shell_exec("cat > '${f}' <<'AVRAEOF'\n${body}\nAVRAEOF")
+    let out = avra_shell_exec("./build/bs2 test '${f}' 2>&1")
+    let _ = avra_shell_exec("rm -f '${f}'")
+    out
+}
+
+spec "t-4nly: a `given` body's bindings reach its `then` arms" {
+    then "a single `let` is visible to a `then` arm" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    given \"g\" {\n" +
+            "        let a = 5\n" +
+            "        then \"t\" { a == 5 }\n" +
+            "    }\n" +
+            "}")
+        // Not merely "no undefined variable": the arm must actually PASS, so a
+        // binding that resolved to garbage would still fail this.
+        out.contains("1/1 tests passed") && !out.contains("undefined variable")
+    }
+
+    then "the binding is visible to SEVERAL arms — the point of `given`" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    given \"g\" {\n" +
+            "        let a = 7\n" +
+            "        then \"t1\" { a == 7 }\n" +
+            "        then \"t2\" { a + 1 == 8 }\n" +
+            "        then \"t3\" { a * 2 == 14 }\n" +
+            "    }\n" +
+            "}")
+        out.contains("3/3 tests passed")
+    }
+
+    then "several bindings in one body all reach the arms" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    given \"g\" {\n" +
+            "        let a = 2\n" +
+            "        let b = 3\n" +
+            "        then \"t\" { a + b == 5 }\n" +
+            "    }\n" +
+            "}")
+        out.contains("1/1 tests passed")
+    }
+
+    then "a binding reaches a `&&` chain's conjuncts" {
+        // The conjunct splitter emits arms through its own path (t-kdyj.5), so
+        // the env has to survive BOTH hops to land here.
+        let out = run_spec("spec \"s\" {\n" +
+            "    given \"g\" {\n" +
+            "        let a = 4\n" +
+            "        then \"t\" { a == 4 && a * 2 == 8 }\n" +
+            "    }\n" +
+            "}")
+        out.contains("1/1 tests passed")
+    }
+
+    // CONTROL — a `given` binding must NOT leak to a sibling `given`.
+    //
+    // Without this, "thread the env everywhere" would satisfy every arm above
+    // while silently widening scope: each `given` is independent, and a leak
+    // would let one block's setup satisfy another's assertions.
+    then "a binding does NOT leak into a sibling `given`" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    given \"g1\" {\n" +
+            "        let a = 5\n" +
+            "        then \"t1\" { a == 5 }\n" +
+            "    }\n" +
+            "    given \"g2\" {\n" +
+            "        then \"t2\" { a == 5 }\n" +
+            "    }\n" +
+            "}")
+        out.contains("undefined variable")
+    }
+
+    // CONTROL — a spec-level binding still reaches its `given`s, which is the
+    // pre-existing behaviour this must not disturb.
+    then "a spec-level `let` still reaches a nested given's arm" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    let outer = 9\n" +
+            "    given \"g\" {\n" +
+            "        then \"t\" { outer == 9 }\n" +
+            "    }\n" +
+            "}")
+        out.contains("1/1 tests passed")
+    }
+}
