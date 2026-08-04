@@ -3491,19 +3491,66 @@ cache_owner_dirs() {
 # Usage: --cache-gc [DAYS]   (default 30)
 mode_cache_gc() {
   local days="${1:-30}"
-  # t-5kek: bound each cache root by size so a seed-cycling session's dead
+  # ROOT is overridable (second positional) for the spec suite, mirroring
+  # mode_clean_cache — the global budget is only observable across SEVERAL
+  # roots, so its guard needs a sandbox tree it can stand up itself.
+  local gc_root="${2:-$BOOTSTRAP_DIR}"
+  [ -d "$gc_root" ] || die "cache-gc: no such root: $gc_root"
+  # t-5kek: bound the compile cache by size so a seed-cycling session's dead
   # generations (fresh-mtime but never hit again → invisible to the age
   # prune) can't grow build/cache past the disk allowance. The age prune
   # runs first; the size cap then evicts oldest-first until under budget.
-  # Override with AVRA_CACHE_MAX_MB=0 to disable, or any N to retune
-  # (default 12288 MB = 12 GB per cache root).
+  # Override with AVRA_CACHE_MAX_MB=0 to disable, or any N to retune.
+  #
+  # t-tit7: the budget is GLOBAL — the total across every root from
+  # cache_owner_dirs — not per-root. It used to be per-root, which cannot
+  # bound the thing it exists to protect: the disk allowance is one shared
+  # resource, so N roots each honestly "under the 12G cap" summed to 13G on
+  # a container with 11G free and cache-gc freed NOTHING, reporting success
+  # from all nine roots. The permitted ceiling was the PRODUCT (9 x 12G =
+  # 108G), and it grew every time a package was added. Measured, not
+  # theorised: `make cache-gc` byte-accounted at 0 bytes freed while the
+  # disk was nearly full, twice in one session — the tell being that the
+  # default never fired and the cap had to be hand-tuned to do anything.
+  #
+  # Roots shed PROPORTIONALLY to their size (each keeps the same fraction),
+  # so the biggest root is not singled out and small roots aren't wiped to
+  # rescue it. Ordering matters: the age prune runs over every root FIRST,
+  # then totals are re-measured, because allotting against pre-age-prune
+  # sizes would budget for bytes that are about to disappear anyway.
   local cap_mb="${AVRA_CACHE_MAX_MB:-12288}"
   ensure_bs2
-  local root
-  while IFS= read -r root; do
+  local root roots=()
+  while IFS= read -r root; do roots+=("$root"); done < <(cache_owner_dirs "$gc_root")
+
+  # Pass 1 — age prune every root (size cap off; the global pass owns size).
+  for root in "${roots[@]}"; do
     log "[cache-gc] $root"
-    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb="$cap_mb" )
-  done < <(cache_owner_dirs "$BOOTSTRAP_DIR")
+    ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb=0 )
+  done
+
+  # Pass 2 — the global size budget, over what the age prune left behind.
+  if [ "$cap_mb" -gt 0 ] 2>/dev/null; then
+    local total_mb=0 sz
+    for root in "${roots[@]}"; do
+      sz=$(du -sm "$root/build/cache" 2>/dev/null | cut -f1)
+      total_mb=$(( total_mb + ${sz:-0} ))
+    done
+    if [ "$total_mb" -le "$cap_mb" ]; then
+      log "[cache-gc] total cache ${total_mb}MB across ${#roots[@]} root(s) — under the ${cap_mb}MB budget, nothing to evict"
+    else
+      log "[cache-gc] total cache ${total_mb}MB across ${#roots[@]} root(s) exceeds the ${cap_mb}MB budget — evicting oldest-first, proportionally"
+      local share
+      for root in "${roots[@]}"; do
+        sz=$(du -sm "$root/build/cache" 2>/dev/null | cut -f1)
+        [ -n "$sz" ] && [ "$sz" -gt 0 ] || continue
+        # This root's slice of the global budget. Integer division floors,
+        # so the realised total lands at or just under budget, never over.
+        share=$(( cap_mb * sz / total_mb ))
+        ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb="$share" )
+      done
+    fi
+  fi
   # Also reclaim the /tmp test scratch that escapes the per-root prune above.
   # Guard at 10m so an in-flight `bs2 test` (which touches its scratch every few
   # seconds) is spared while session-accumulated junk goes.

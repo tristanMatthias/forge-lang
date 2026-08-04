@@ -78,8 +78,14 @@ spec "t-kbqq: the two consumers share ONE root list" {
         // that drifted, so the behavioural spec above would have passed on the
         // broken tree if it only exercised clean-cache. Re-forking the enumeration
         // is what must stay impossible.
+        //
+        // t-tit7 renamed cache-gc's root from the hard-wired $BOOTSTRAP_DIR to an
+        // overridable $gc_root (its global-budget guard needs a sandbox tree, the
+        // same reason clean-cache already took one). Both still iterate the SHARED
+        // helper, which is the whole claim here — so this pins the call, not the
+        // variable's old name.
         let src = avra_shell_exec("cat scripts/diagnose.sh")
-        let gc = src.contains("done < <(cache_owner_dirs \"$BOOTSTRAP_DIR\")")
+        let gc = src.contains("done < <(cache_owner_dirs \"$gc_root\")")
         let cc = src.contains("done < <(cache_owner_dirs \"$root\")")
         gc && cc
     }

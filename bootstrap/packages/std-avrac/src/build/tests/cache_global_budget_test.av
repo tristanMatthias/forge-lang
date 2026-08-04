@@ -1,0 +1,96 @@
+// WHY: t-tit7 — the cache size budget is GLOBAL, not per-root.
+//
+// It used to be per-root, which cannot bound the thing it exists to protect.
+// The disk allowance is ONE shared resource, so N roots can each be honestly
+// "under the 12G cap" while their total is far over it. Measured on the
+// container: nine roots summing to 13G, 11G of free disk, and `make cache-gc`
+// freed exactly 0 bytes while reporting success from every root. The ceiling
+// the old semantics permitted was the PRODUCT — 9 x 12G = 108G — and it rose
+// by another 12G every time a package was added.
+//
+// The operator cost is the part that matters: cache-gc is CLAUDE.md's advertised
+// lighter-weight alternative to `make clean` under disk pressure, so it no-ops
+// precisely when it is reached for. The tell was needing to hand-tune
+// AVRA_CACHE_MAX_MB to make the default do anything — a default that never fires
+// is not a default.
+//
+// These specs pin BOTH directions. The over-budget one is the regression guard:
+// three roots, each individually under the cap, jointly over it — the exact shape
+// per-root semantics cannot see (verified before landing: under a per-root cap the
+// same fixture reports "nothing to evict" three times and sheds zero bytes). The
+// under-budget one exists because a budget that evicted unconditionally would also
+// pass the first spec while being just as wrong.
+//
+// Sandbox is a repo-local build/ subtree (NOT /tmp — t-2qn0), removed at the end.
+// Sizes carry margin so directory-block accounting can't flip the verdict.
+//
+// @@fixture-stateful@@ — shells the SHARED build/bs2 via diagnose.sh; a transient
+// hiccup must re-probe, not freeze as a permanent FAIL.
+
+use @std.avrac.core.{avra_shell_exec, avra_getpid}
+
+/// Stand up `roots` cache roots under `sb`, each with 4 x 1MB slots aged
+/// 1-4 hours so the size prune has an unambiguous oldest-first order.
+fn seed_roots(sb: string) -> int {
+    for r in ["", "packages/a", "packages/b"] {
+        let d = if r == "" { sb } else { "${sb}/${r}" }
+        avra_shell_exec("mkdir -p '${d}/build/cache'")
+        for i in 1..5 {
+            avra_shell_exec("mkdir -p '${d}/build/cache/s${string(i)}'")
+            avra_shell_exec("head -c 1048576 /dev/zero > '${d}/build/cache/s${string(i)}/unit.ll'")
+            avra_shell_exec("touch -d '${string(i)} hours ago' '${d}/build/cache/s${string(i)}'")
+        }
+    }
+    0
+}
+
+fn total_mb(sb: string) -> int {
+    let out = avra_shell_exec("du -sm '${sb}' 2>/dev/null | cut -f1").trim()
+    if out == "" { 0 } else { int(out) }
+}
+
+spec "t-tit7: the size budget is GLOBAL — roots individually under the cap still evict when jointly over" {
+    then "three 5MB roots against an 8MB budget shed down to at/under it" {
+        let base = avra_shell_exec("pwd").trim()
+        let sb = "${base}/build/spec_tit7_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${sb}'")
+        let _ = seed_roots(sb)
+
+        let before = total_mb(sb)
+        // Each root is ~5MB — comfortably under an 8MB cap on its own, which is
+        // why per-root semantics saw nothing to do. The TOTAL is ~15MB.
+        let out = avra_shell_exec(
+            "cd '${base}' && AVRA_CACHE_MAX_MB=8 bash scripts/diagnose.sh --cache-gc 30 '${sb}' 2>&1")
+        let after = total_mb(sb)
+
+        let ok = out.contains("exceeds the 8MB budget")
+            && out.contains("across 3 root(s)")
+            && before > 8
+            && after <= 8
+            && after < before
+        avra_shell_exec("rm -rf '${sb}'")
+        ok
+    }
+}
+
+spec "t-tit7: an under-budget total evicts nothing, and says so globally" {
+    then "the same three roots against a 64MB budget keep every slot" {
+        let base = avra_shell_exec("pwd").trim()
+        let sb = "${base}/build/spec_tit7u_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${sb}'")
+        let _ = seed_roots(sb)
+
+        let before = total_mb(sb)
+        let out = avra_shell_exec(
+            "cd '${base}' && AVRA_CACHE_MAX_MB=64 bash scripts/diagnose.sh --cache-gc 30 '${sb}' 2>&1")
+        let after = total_mb(sb)
+
+        // The message must be the GLOBAL one — a per-root "nothing to evict"
+        // printed once per root is what the old code said while being wrong.
+        let ok = out.contains("under the 64MB budget, nothing to evict")
+            && !out.contains("size cap evicted")
+            && after == before
+        avra_shell_exec("rm -rf '${sb}'")
+        ok
+    }
+}
