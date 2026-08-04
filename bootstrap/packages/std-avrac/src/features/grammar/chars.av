@@ -152,3 +152,28 @@ export fn src_at_empty_call_block(src: string, len: int, from: int) -> bool {
     if i >= len { return false }
     code_at_len(src, len, i) == 123
 }
+
+/// Is `word` a keyword that CANNOT be a component instance name?
+///
+/// `Comp inst { … }` is the one identifier-led declaration, so both the hand's
+/// `peek_after_ident_is_ident_not_keyword` and the grammar's `decl_lead` gate have to
+/// answer "could this second word be an instance name?". Written twice, they drifted:
+/// the hand excluded 22 keywords and `decl_lead` excluded none, on the reasoning that a
+/// false positive is inert because the delegate re-checks precisely and falls through.
+///
+/// That reasoning holds only while the delegate EXISTS. It is also why `t with { d: 1 }`
+/// in statement position still needed `@hand(decl_hand)`: the wide gate claimed it and
+/// the delegate handed it straight back — the DSL calling the hand purely to be told no.
+/// Retiring the leaf (t-myz7) means the gate must be exactly as precise as the hand, so
+/// the list lives HERE and both call it rather than re-deriving it.
+///
+/// The hand reads a raw WORD out of the source and the gate reads a token's lexeme;
+/// both are the same characters, so one string predicate serves both.
+export fn word_excluded_as_instance_name(word: string) -> bool {
+    if word == "true" || word == "false" || word == "null" || word == "none" { return true }
+    if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return true }
+    if word == "with" || word == "match" || word == "if" || word == "else" { return true }
+    if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return true }
+    if word == "return" || word == "type" || word == "enum" || word == "trait" || word == "impl" { return true }
+    false
+}
