@@ -108,18 +108,30 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
 // The corpus below is the MEASURED frontier. Every entry is native today; each is
 // here so that a change which pushes it back onto the delegate goes red instead of
 // passing silently — the failure mode this whole probe exists to make visible.
-/// The one form still known to need `decl_hand`: a BARE-IDENT component
-/// INSTANTIATION (`acct_sr a { balance = 40 }`), which t-47hc.5.1 scopes as slice C
-/// alongside the legacy paren form. Both are deliberately still hand-owned.
-/// A fn rather than a `const` — a module-level string const is typed `int` (t-8xte).
+/// A BARE-IDENT component INSTANTIATION (`acct_sr a { balance = 40 }`) — NATIVE, and
+/// sitting in the corpus below. A fn rather than a `const` — a module-level string
+/// const is typed `int` (t-8xte).
 ///
-/// IT CAME FROM THE TEST CORPUS, NOT COMPILER SOURCE — which is the whole point of
-/// the t-axu9 rule that the compiler is a large program, not a representative one.
-/// After the trailing-comma-params fix, a file-by-file sweep of ALL 249 non-test
-/// compiler sources reports ZERO `decl_hand` refusals. Scanning the TEST corpus then
-/// found this form still live in
-/// features/component_decl/tests/method_self_receiver_test.av. Had the deletion been
-/// judged on compiler source alone it would have looked safe and been wrong.
+/// THIS FIXTURE USED TO BE THE ANTI-VACUITY ANCHOR, AND IT WAS MALFORMED. Its field
+/// read `balance: int = 100`, with no `let` — and `comp_field` REQUIRES the `let`, so
+/// the DECLARATION half was `error[F0040]: expected expression` under a plain compile
+/// and under `AVRA_PARSER_DECL_FLIP=0` alike. Invalid syntax, rejected identically by
+/// both parsers. The anchor was therefore green off ERROR RECOVERY, while its comment
+/// claimed it named a valid form that slice C had deliberately left hand-owned.
+/// Bisected, with the `let` restored:
+///
+///   component acct_sr { balance: int = 100 }        REFUSES   <- the malformed half
+///   component acct_sr { let balance: int = 100 }    native
+///   acct_sr a { balance = 40 }      (fn body)       native
+///   acct_sr a(balance = 40) {}      (legacy paren)  native
+///   acct_sr a { balance = 40 }      (top level)     native
+///
+/// So slice C's form had ALREADY gone native and nothing here was measuring it. The
+/// lesson is the one this file exists to enforce, turned on itself: a guard that
+/// cannot distinguish the failure it is named for is worth nothing, and a fixture
+/// whose refusal comes from a typo looks exactly like one whose refusal comes from a
+/// gap. Check a frontier fixture COMPILES (modulo the form under test) before reading
+/// anything into which path answered it.
 ///
 /// Its predecessors, each closed in turn and now sitting in the corpus below:
 /// `while lo < 3 { let m = 1 … }` -> a doc comment on an `impl` method (#1147) ->
@@ -128,7 +140,31 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
 /// `( "," )?` the repetition ate; call args were guarded with
 /// `@peek(comma_not_rparen)`; #1140 did `]`; params never got it).
 fn BARE_IDENT_COMP_INST() -> string {
-    "component acct_sr {\n balance: int = 100\n}\nfn use_it() -> int {\n acct_sr a { balance = 40 }\n 0\n}"
+    "component acct_sr {\n let balance: int = 100\n}\nfn use_it() -> int {\n acct_sr a { balance = 40 }\n 0\n}"
+}
+
+/// The anti-vacuity anchor, and — unlike every fixture in the lineage above — one that
+/// does NOT graduate. A malformed declaration still reaches `@hand(decl_hand)`.
+///
+/// This is the `@try` CONTRACT, not a gap: a `@try` branch snapshots and commits only
+/// if it reported nothing, "and otherwise rolls back into the `@hand` gate below — so
+/// the native rule owns VALID input and recovery stays the hand parser's,
+/// byte-for-byte" (CLAUDE.md). Which means `decl_hand`'s remaining production role is
+/// ERROR RECOVERY, for every declaration keyword at once:
+///
+///   fn foo() -> int { 1 }   valid      native
+///   fn foo(                 malformed  REFUSES
+///   type Foo = {            malformed  REFUSES
+///   enum E {                malformed  REFUSES
+///   impl Foo {              malformed  REFUSES
+///   let = 5                 malformed  REFUSES
+///
+/// That makes it a STABLE anchor: it cannot be closed by routing one more form, so it
+/// will not need replacing next slice the way its four predecessors did. It closes
+/// when the native rules own recovery — the `@recover(sync_to:)` work this ticket's
+/// design field anticipates — which is the actual gate on deleting the leaf.
+fn MALFORMED_DECL() -> string {
+    "fn foo(\n"
 }
 
 fn refuse_out(refusal: string, name: string, src: string) -> string {
@@ -170,7 +206,11 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // executed by it. This runs a real compile under `*` and requires the known
         // gap to report, which is the only thing that proves the wildcard is wired to
         // the leaf rather than merely present in the source.
-        refused_here("*", "wildcard", BARE_IDENT_COMP_INST())
+        //
+        // Uses the same recovery anchor as the discriminating assertion below, so this
+        // control cannot go vacuous when a form graduates — the failure that retired
+        // the previous fixture (see BARE_IDENT_COMP_INST).
+        refused_here("*", "wildcard", MALFORMED_DECL())
     }
 
     then "the declaration keywords parse with the delegate REFUSED" {
@@ -184,23 +224,23 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("trait", "trait Tr { fn m(self) -> int }")
     }
 
-    then "the probe DISCRIMINATES — the known remaining gap still reports" {
+    then "the probe DISCRIMINATES — a malformed declaration still needs the delegate" {
         // THE ANTI-VACUITY HALF. Every assertion above is "no refusal", which a helper
-        // that never detects one would satisfy perfectly. This is the case that must
+        // that never detects one would satisfy perfectly. These are the cases that must
         // come back false.
         //
-        // A BARE-IDENT component INSTANTIATION. The keyword-prefixed form went native
-        // in t-47hc.5.1 B2; this one and the legacy paren form are slice C, still
-        // hand-owned by design — so this anchor names WORK THAT EXISTS, not an
-        // accident.
-        //
-        // It replaced a doc comment on an `impl` method, which held this role until
-        // `impl_member` began ATTACHING the doc (t-myz7) — and that replaced
-        // `while lo < 3 { let m = 1 … }` before it. Each is native now and has moved
-        // down into the corpus below — which is exactly the handover this assertion
-        // is meant to force: when the gap it names closes, it goes red and the next
-        // measured frontier item takes its place.
-        !native_without_delegate("bare_ident_comp_inst", BARE_IDENT_COMP_INST())
+        // ERROR RECOVERY is what `decl_hand` still owns — see MALFORMED_DECL. Asserted
+        // across SEVERAL keywords rather than one, because the point is that this is a
+        // property of the `@try` gate itself and not of any single rule: if it were one
+        // rule's gap, closing that rule would silently make this assertion vacuous
+        // again, which is the exact trap the previous anchor fell into.
+        !native_without_delegate("malformed_fn", MALFORMED_DECL()) &&
+        !native_without_delegate("malformed_type", "type Foo = {\n") &&
+        !native_without_delegate("malformed_enum", "enum E {\n") &&
+        !native_without_delegate("malformed_impl", "impl Foo {\n") &&
+        // ...and the VALID counterpart of the same keyword does NOT report, which is
+        // what pins the discriminator to malformed-ness rather than to the keyword.
+        native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
     }
 
     then "and the wrappers, bindings, and block forms" {
@@ -231,6 +271,40 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("mod", "mod m { fn g() -> int { 1 } }") &&
         native_without_delegate("shape", "shape S = { n: string }") &&
         native_without_delegate("const", "const C = 1\nfn main() { }") &&
-        native_without_delegate("spec", "spec \"s\" {\n then \"t\" { true }\n}")
+        native_without_delegate("spec", "spec \"s\" {\n then \"t\" { true }\n}") &&
+        // The component INSTANTIATION forms, graduated from the anti-vacuity anchor
+        // (t-47hc.5.1 slice C: `bare_comp_inst` / `bare_comp_inst_raw`). All three
+        // positions, because the discriminator for this family has historically been
+        // POSITION rather than shape — a bare-tail `with` and a statement-position
+        // map literal were both frontier items that their `let`-init siblings were
+        // not.
+        native_without_delegate("bare_ident_comp_inst", BARE_IDENT_COMP_INST()) &&
+        native_without_delegate("comp_inst_paren",
+            "component acct {\n let balance: int = 100\n}\nfn u() -> int {\n acct a(balance = 40) {}\n 0\n}") &&
+        native_without_delegate("comp_inst_toplevel",
+            "component acct {\n let balance: int = 100\n}\nacct a { balance = 40 }") &&
+        // SURFACE COVERAGE, added with the anchor correction. These are not previously
+        // refusing forms being graduated — every one measured native the first time it
+        // was probed. They are here because the recovery anchor above is only "the ONLY
+        // thing left" if valid input is genuinely clean across the whole declaration
+        // surface, and a corpus assembled purely from forms that once refused proves
+        // nothing about the forms that never did.
+        //
+        // The sweep behind that claim is all 1019 `packages/**/*.av`, not the 249
+        // non-test compiler sources earlier sweeps used. But a sweep only ever sees
+        // forms PRESENT in the corpus (t-axu9, one level up: the test corpus is not
+        // representative either), so these were picked to hit surface the compiler's
+        // own sources and its tests happen not to exercise much.
+        native_without_delegate("assoc_type", "trait Tr {\n type Item\n fn m(self) -> int\n}") &&
+        native_without_delegate("generic_impl",
+            "type B<T> = { v: T }\nimpl<T> B<T> {\n fn get(self) -> T { self.v }\n}") &&
+        native_without_delegate("impl_for",
+            "trait Tr { fn m(self) -> int }\ntype T = { x: int }\nimpl Tr for T {\n fn m(self) -> int { 1 }\n}") &&
+        native_without_delegate("union_type", "type E = int | string") &&
+        native_without_delegate("comp_method",
+            "component c {\n let a: int = 1\n fn m(self) -> int { 1 }\n}") &&
+        native_without_delegate("export_mut", "export mut G = 1") &&
+        native_without_delegate("module_doc", "//! module doc\nfn f() -> int { 1 }") &&
+        native_without_delegate("spec_given", "spec \"s\" {\n given \"g\" {\n  then \"t\" { true }\n }\n}")
     }
 }
