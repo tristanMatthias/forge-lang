@@ -12,8 +12,15 @@
 //      would re-run deterministically-failing fixtures every cycle — the cost
 //      the zp5b revert was about); `bs2 cache clear-failed` evicts those on
 //      demand instead.
+//   4. t-mji3: a FULL DISK — and the link deaths it causes — is never frozen,
+//      and the publish gate and the shard cause classifier give the SAME
+//      verdict on it. They did not: the classifier ranked ENOSPC top while the
+//      gate ignored it, so a run could name the cause correctly and poison the
+//      cache anyway. Note (3) is why that poison outlived the disk: the
+//      documented escape hatch only evicts `: FAIL`, which those captures lack.
 
 use @std.avrac.test_runner.{fixture_output_is_publishable, fixture_is_stateful, FIXTURE_STATEFUL_MARKER, capture_has_probe_failure}
+use @std.avrac.test_runner.{output_has_disk_full_marker, classify_shard_failure}
 use @std.avrac.core.{avra_selfhost_file_exists}
 
 extern fn avra_shell_exec(cmd: string) -> string
@@ -61,6 +68,76 @@ spec "fixture cache: transient build-state failures are rejected" {
     }
     then "a segfault is rejected" {
         !fixture_output_is_publishable("Segmentation fault\n", false)
+    }
+}
+
+// t-mji3: a FULL DISK is the box failing, not the fixture speaking. The shard
+// cause classifier already ranked ENOSPC above every other cause, while this
+// gate did not test it at all — so one disk-full run could print `DISK FULL`
+// in the summary and, in that same run, freeze the truncated output as the
+// fixture's answer. It then replayed as a no-diff FAIL in untouched tests long
+// after the disk was free, and `bs2 cache clear-failed` did not evict it (that
+// evictor targets `: FAIL`, which a disk-full capture usually lacks entirely).
+spec "fixture cache: a full disk is never frozen into a capture (t-mji3)" {
+    then "the strerror string `No space left on device` is rejected" {
+        !fixture_output_is_publishable("cc: error: unable to write output: No space left on device\n", false)
+    }
+    then "a bare ENOSPC is rejected" {
+        !fixture_output_is_publishable("write failed: ENOSPC\n", false)
+    }
+    then "the fixture runner's own `link failed for` die message is rejected" {
+        // diagnose.sh --run (the fixture runner) dies with exactly this when its
+        // link step fails; the message reaches the capture via stderr.
+        !fixture_output_is_publishable("[err]  link failed for /tmp/avra_probe.bin\n", false)
+    }
+    then "a signalled linker (`ld terminated with signal`) is rejected" {
+        // The VIOLENT linker death: cc reports a signalled ld this way, and it
+        // prints neither `collect2: error:` nor `ld returned`, so the pre-existing
+        // clean-failure entries do not cover it.
+        !fixture_output_is_publishable("cc: error: ld terminated with signal 6 [Aborted]\n", false)
+    }
+    then "a stateful fixture's disk-full capture is rejected too" {
+        !fixture_output_is_publishable("PROBE meta_present: ok\nNo space left on device\n", true)
+    }
+    then "prose about disk space still caches" {
+        // The anchor is the strerror string, NOT the words "space"/"disk" — a
+        // fixture legitimately reporting free space must still cache, or it
+        // re-runs every cycle (the false-positive perf trap the fxfz specs pin).
+        fixture_output_is_publishable("PROBE disk_usage_reported: ok\nfree space: 42GB left on volume\n", false)
+    }
+}
+
+// The REASON the predicate is shared rather than duplicated: both gates answer
+// "was this the box, not the code?", and a disk-full run hits BOTH in the same
+// run — the classifier naming the shard's cause, the publish gate deciding
+// whether to memoise. They disagreed before this (classifier: inline test;
+// gate: no test), which is how a correctly-named DISK FULL run still poisoned
+// the cache. Pinning them together is what keeps a later edit from re-splitting
+// them — the same argument output_has_kill_marker's doc comment already makes.
+spec "fixture cache: the disk-full verdict agrees across both gates (t-mji3)" {
+    then "the shared predicate detects the strerror string" {
+        output_has_disk_full_marker("cc: error: No space left on device\n")
+    }
+    then "the shared predicate detects a bare ENOSPC" {
+        output_has_disk_full_marker("ENOSPC")
+    }
+    then "the shared predicate ignores unrelated prose" {
+        !output_has_disk_full_marker("PROBE x: ok\nfree space: 42GB\n")
+    }
+    then "one disk-full output is BOTH classified DISK FULL and refused by the cache" {
+        // The end-to-end contract, on one string: the classifier must name the
+        // box, and the gate must refuse to freeze it. Either one alone is the
+        // bug — naming it correctly while caching it is exactly what happened.
+        let out = "compiling shard 3\ncc: error: unable to write: No space left on device\n"
+        classify_shard_failure(out, 0, 0).contains("DISK FULL")
+            && !fixture_output_is_publishable(out, false)
+    }
+    then "a MEMORY-ceiling output is still classified as the ceiling, not disk" {
+        // The classifier's order is load-bearing and this change touched its
+        // first branch — pin that routing it through the shared predicate did
+        // not widen it into the F4014 case below it.
+        classify_shard_failure("error[F4014]: compiler memory ceiling exceeded\n  phase: parse x.av\n", 0, 0)
+            .contains("MEMORY CEILING")
     }
 }
 
