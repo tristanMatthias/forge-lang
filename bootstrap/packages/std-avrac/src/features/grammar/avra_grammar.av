@@ -173,7 +173,7 @@ fn avra_expr_core() -> Grammar {
   // `bitxor` IS the hand's `parse_binary_pratt(12)`: emit lowers the ladder with
   // `lbp = 10 + 2*index` and `bitor = 10`, so entering at bitxor stops before `|` and
   // the column separator is never eaten as a bitwise-or operand.
-  table_lit  = "table" table_head rows:table_row* "}"
+  table_lit  = "table" table_head ( rows:table_row )* "}"
                @expect("}", "expected `}` to close table") -> MkTableLit(rows)
   table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
                @expect(">", "expected `>` after table row type")
