@@ -842,7 +842,19 @@ export fn emit_call_named(ctx: Ctx, env: List<VarBinding>, name: string, args: L
         if g.found && vtype_is_fn(g.ty) {
             return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args, g.ty)
         }
-        return err_emit("undefined function `${name}`")
+        // Name the ENCLOSING function too, matching codegen/mod.av's sibling report
+        // ("undefined ${label} `${name}` in function `${ctx.current_fn_name}`"). The
+        // callee alone is not enough on a whole-module build: it is one symbol that can
+        // appear at dozens of call sites, and when the real cause is something OTHER than
+        // the call itself, the callee's name points away from the problem entirely.
+        //
+        // Concretely (t-iu1n): a metadata lib build failed with `undefined function
+        // parse_expression`, which reads as "that call is broken". It is not — the symbol
+        // is simply never declared for that build, and the FIRST call needing it reports.
+        // Naming the enclosing fn showed the failure was in `parse_let_decl`, a thousand
+        // lines from the edit that caused it, which is what turned a blind search into a
+        // targeted question.
+        return err_emit("undefined function `${name}` in function `${ctx.current_fn_name}`")
     }
 
     let arg_count = args.length
