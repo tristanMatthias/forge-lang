@@ -1907,7 +1907,7 @@ fn parse_type_decl(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBrace || tok_starts_type(st.cur()) {
         if st.cur().tk == Tk.LeftBrace {
             let _ = st.advance()
-            while st.cur().tk == Tk.Identifier {
+            while st.cur().text == "mut" || st.cur().tk == Tk.Identifier {
                 fields_list.push(capval_to_field(st, parse_field(st)))
                 if st.cur().tk == Tk.Comma { let _ = st.advance() }
             }
@@ -1947,7 +1947,7 @@ fn parse_shape_decl(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected {")
     }
-    while st.cur().tk == Tk.Identifier {
+    while st.cur().text == "mut" || st.cur().tk == Tk.Identifier {
         shfields_list.push(capval_to_field(st, parse_field(st)))
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
     }
@@ -1958,7 +1958,13 @@ fn parse_shape_decl(st: PState) -> CapVal {
 }
 
 fn parse_field(st: PState) -> CapVal {
-    let fname = CapVal.Tok(st.advance())
+    if st.cur().text == "mut" {
+        let _ = st.advance()
+    }
+    let fname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
         st.report("expected :")
     }
@@ -2021,7 +2027,7 @@ fn parse_variant(st: PState) -> CapVal {
     let vname = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
-        while st.cur().tk == Tk.Identifier {
+        while st.cur().text == "mut" || st.cur().tk == Tk.Identifier {
             vfields_list.push(capval_to_field(st, parse_field(st)))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
         }

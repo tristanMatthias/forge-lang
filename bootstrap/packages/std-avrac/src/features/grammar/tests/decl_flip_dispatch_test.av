@@ -108,16 +108,27 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
 // The corpus below is the MEASURED frontier. Every entry is native today; each is
 // here so that a change which pushes it back onto the delegate goes red instead of
 // passing silently — the failure mode this whole probe exists to make visible.
-/// The one form still known to need `decl_hand`: a `mut` field in a struct body.
+/// The one form still known to need `decl_hand`: a TRAILING COMMA in a function
+/// PARAMETER list. Multi-line params are native; the comma before `)` is the
+/// discriminator, single- or multi-line alike.
 /// A fn rather than a `const` — a module-level string const is typed `int` (t-8xte).
 ///
-/// This replaced DOC_IMPL_METHOD (a doc comment on an `impl` method), which held the
-/// role until `impl_member` started ATTACHING the doc via MkDocAnnotated (t-myz7).
-/// That case is native now and has moved down into the corpus — the handover this
-/// anchor exists to force. Measured old-vs-new at the flip: the impl-doc form went
-/// 3 refusals -> 0, `codegen/mod.av` 3 -> 0, `parse/mod.av` 87 -> 83.
-fn MUT_STRUCT_FIELD() -> string {
-    "type S = {\n mut a: int,\n b: int\n}"
+/// It is the SAME already-solved bug as PR #1140, in a third delimiter: the list rule
+/// carried `( "," )?` that the repetition ate, call args were guarded with
+/// `@peek(comma_not_rparen)`, #1140 fixed `]` — and the parameter list was never done.
+///
+/// This replaced a `mut` struct field, which held the role until `field` began
+/// consuming the modifier unlabelled (t-myz7); that in turn replaced a doc comment on
+/// an `impl` method, and that replaced `while lo < 3 { let m = 1 … }`. Each is native
+/// now and has moved down into the corpus — the handover this anchor exists to force.
+///
+/// Measured old-vs-new via build/difftest/old/bs2 at the `mut`-field flip:
+/// `parse/mod.av` 87 -> 0 (39 of its 41 sites were `mut` fields of `export type
+/// Parser`), `codegen/mod.av` 3 -> 0, `typeck`/`resolve` already 0. A file-by-file
+/// sweep of all 249 non-test compiler sources then put the WHOLE remaining frontier at
+/// 37 sites in 5 files — every one of them this trailing-comma form.
+fn TRAILING_COMMA_PARAMS() -> string {
+    "fn f(\n a: int,\n b: int,\n) -> int { a }"
 }
 
 fn refuse_out(refusal: string, name: string, src: string) -> string {
@@ -159,7 +170,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // executed by it. This runs a real compile under `*` and requires the known
         // gap to report, which is the only thing that proves the wildcard is wired to
         // the leaf rather than merely present in the source.
-        refused_here("*", "wildcard", MUT_STRUCT_FIELD())
+        refused_here("*", "wildcard", TRAILING_COMMA_PARAMS())
     }
 
     then "the declaration keywords parse with the delegate REFUSED" {
@@ -178,11 +189,9 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // that never detects one would satisfy perfectly. This is the case that must
         // come back false.
         //
-        // A `mut` FIELD in a struct body. A plain `type S = { a: int }` is native, so
-        // the discriminator is the `mut` modifier on the field, not the declaration.
-        // Measured after the impl-doc flip closed the previous anchor: `parse/mod.av`
-        // still reports 83 sites, `typeck/mod.av` / `resolve/mod.av` / `codegen/mod.av`
-        // are all at 0.
+        // A TRAILING COMMA in a function PARAMETER list. `fn f(a: int, b: int)` is
+        // native and so is a multi-line list without the comma, so the discriminator
+        // is the comma before `)` — not the line breaks and not the declaration.
         //
         // It replaced a doc comment on an `impl` method, which held this role until
         // `impl_member` began ATTACHING the doc (t-myz7) — and that replaced
@@ -190,7 +199,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // down into the corpus below — which is exactly the handover this assertion
         // is meant to force: when the gap it names closes, it goes red and the next
         // measured frontier item takes its place.
-        !native_without_delegate("mut_struct_field", MUT_STRUCT_FIELD())
+        !native_without_delegate("trailing_comma_params", TRAILING_COMMA_PARAMS())
     }
 
     then "and the wrappers, bindings, and block forms" {
@@ -202,6 +211,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("for_let",
             "fn f() -> int {\n mut lo = 0\n for i in 0..3 {\n  let m = 1\n  lo = m\n }\n lo\n}") &&
         native_without_delegate("doc", "/// d\nfn f() -> int { 1 }") &&
+        native_without_delegate("mut_struct_field", "type S = {\n mut a: int,\n b: int\n}") &&
         native_without_delegate("doc_impl_method",
             "type T = { x: int }\nimpl T {\n /// doc\n fn m(self) -> int { 1 }\n}") &&
         native_without_delegate("annot", "@inline\nfn f() -> int { 1 }") &&

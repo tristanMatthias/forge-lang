@@ -10,6 +10,15 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `type` declaration (struct form) and its field rule.
 ///
+/// `field`'s leading `mut` is CONSUMED UNLABELLED, exactly as `impl`'s type params
+/// are (see trait_impl_generics_parity_test): `FieldEntry` is `{ name, resolved }`
+/// and carries no mutability, and the hand DISCARDS the keyword — measured, both
+/// forms render `(type S (a:int, b:int))`. So the rule takes the same shape the hand
+/// has rather than capturing into a builder with nowhere to put it. Per-field
+/// mutability is enforced elsewhere (the deep-immutability check in resolve/mod.av),
+/// not by the field node. This was the last `decl_hand` dependency in parse/mod.av:
+/// 39 of its 41 refusal sites were `mut` fields of `export type Parser` (t-myz7).
+///
 /// The RHS is ONE optional group holding a two-branch alternation, NOT two adjacent
 /// optional groups (t-myz7.1). Adjacent optionals are not exclusive: after the brace
 /// form completes, the alias group is still tried, and `type_expr`'s FIRST includes
@@ -22,7 +31,7 @@ export fn avra_struct_decl_grammar() -> Grammar {
     let gp = grammar {
   type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" | talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
   shape_decl  = "shape" shname:IDENT "=" "{" ( shfields:field ","? )* "}" -> MkShapeDecl(shname, shfields)
-  field       = fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
+  field       = ( "mut" )? fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
     }
     grammar_checked(gp)
 }

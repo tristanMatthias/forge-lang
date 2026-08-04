@@ -119,3 +119,52 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, speculative
         tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 }
+
+// WHY: t-myz7 — a `mut` field in a struct body. `FieldEntry` is `{ name, resolved }`
+// and carries no mutability, and the hand DISCARDS the keyword, so the rule consumes
+// it UNLABELLED and builds the same node — the same shape `impl`'s type params take.
+// Improving on the hand here (capturing mutability) would need an AST field that does
+// not exist; per-field mutability is enforced by resolve/mod.av's deep-immutability
+// check, not by the field node.
+//
+// This was the LAST `decl_hand` dependency in parse/mod.av — 39 of its 41 refusal
+// sites were `mut` fields of `export type Parser`, and the file went 87 -> 0.
+spec "t-myz7: a `mut` struct field parses, and drops the modifier as the hand does" {
+    then "a mut field agrees with the hand" {
+        agrees("type S = {\n mut a: int,\n b: int\n}\n")
+    }
+
+    then "the modifier is DISCARDED, not recorded — mut and plain render identically" {
+        hand_program("type S = {\n mut a: int\n}\n") == hand_program("type S = {\n a: int\n}\n") &&
+            dsl_program("type S = {\n mut a: int\n}\n") == dsl_program("type S = {\n a: int\n}\n")
+    }
+
+    then "every field may be mut, and a plain struct is unaffected" {
+        agrees("type S = {\n mut a: int,\n mut b: string\n}\n") &&
+            agrees("type S = {\n a: int,\n b: string\n}\n")
+    }
+
+    // `variant` REFERENCES this same `field` rule, so widening it reaches enum variant
+    // fields too. That is parity, not a widening: the hand already accepted
+    // `enum E { A(mut x: int) }` (verified against the pre-change compiler), and
+    // discards the modifier there as well. Asserted because nothing else covers the
+    // enum path through `field`, and a widening here is exactly the class that no
+    // gate catches — both engines agree on valid input, and no fixture writes it.
+    then "`enum` variant fields reach `field` too, and agree with the hand" {
+        let ev = dsl_program("enum E {\n A(mut x: int),\n B\n}\n")
+        ev == hand_program("enum E {\n A(mut x: int),\n B\n}\n") &&
+            !ev.contains("parse error") && ev.contains("enum") &&
+            ev == hand_program("enum E {\n A(x: int),\n B\n}\n")
+    }
+
+    // NOT `agrees` — that helper additionally requires the render to contain "type",
+    // its own anti-vacuity guard for THIS file's type-declaration cases, and a shape
+    // renders `(shape H …)`. Assert the shape equality directly, with the same
+    // did-it-actually-parse half applied to the right keyword.
+    then "`shape` shares the field rule, so it accepts mut on the same terms" {
+        let sh = dsl_program("shape H = {\n mut n: string\n}\n")
+        sh == hand_program("shape H = {\n mut n: string\n}\n") &&
+            !sh.contains("parse error") && sh.contains("shape")
+    }
+}
+
