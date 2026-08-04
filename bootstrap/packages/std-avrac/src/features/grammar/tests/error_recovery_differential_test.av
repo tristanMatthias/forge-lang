@@ -31,6 +31,39 @@ fn errcodes(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
+/// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
+///
+/// Everywhere else in this file the F-code signature discriminates, so `errcodes` is
+/// enough. For the table literal it is NOT, and that is worth stating because the
+/// difference is invisible until measured: `parse_table_literal`'s three semantic
+/// aborts — duplicate column, row-too-short, row-too-long — ALL report under F0001 and
+/// ALL cascade into the same F0013 `unexpected \`}\``. Their signatures are therefore
+/// byte-identical (`F0001 F0013`), so an `agree_all` over codes stays green even if a
+/// native rule fires the WRONG ONE of the three, or reports a generic alternation
+/// failure carrying neither message. That is precisely the vacuity raised in review on
+/// the F0040 case (#1157): an equal-and-nonzero signature is not evidence of the right
+/// diagnostic.
+///
+/// ANSI is stripped before matching (`.\[…m`) because the renderer colourises every
+/// diagnostic; the trailing `parse error at L:C:` summary is deliberately NOT used as
+/// the source — the hand path prints it and the two native paths do not, which is a
+/// difference in the final summary line, not in the diagnostics themselves.
+fn errmsgs(env: string, source: string) -> string {
+    let path = "/tmp/avra_errmsg.av"
+    write_fixture(path, source)
+    avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | sed 's/.\\[[0-9;]*m//g' | grep -oE 'error\\[F[0-9]+\\]: .*' | tr '\\n' '|'")
+}
+
+/// Do all THREE paths report the same diagnostic MESSAGES, and at least one of them?
+/// The message-level sibling of `agree_all`. The nonempty check is the anti-vacuity
+/// half — without it a fixture that stopped reporting entirely would "agree".
+fn msgs_agree_bad(source: string) -> bool {
+    let hand = errmsgs("AVRA_PARSER_DECL_FLIP=0", source)
+    hand != "" &&
+        errmsgs("AVRA_NO_STATIC_FALLBACK=1", source) == hand &&
+        errmsgs("", source) == hand
+}
+
 /// Does an F-code signature contain a PARSE-phase failure? Raised in review on the
 /// `primary_base` corpus: `tree_agrees_everywhere` renders the tree AFTER
 /// `parse_file_program()` has recovered, so all three paths can report and still agree,
@@ -1704,6 +1737,94 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
         tree_agrees_everywhere("fn f() -> int { 1 }") &&
             agree_all("fn f() -> int { 1 }") &&
             hand_oracle("fn f() -> int { 1 }") == ""
+    }
+}
+
+// ── the `table { … }` literal — the corpus, landed BEFORE the routing (t-myz7) ──
+//
+// The LAST valid input in the compiler that reaches a production `@hand` leaf. With
+// `grammar { … }` native (#1159), refusing BOTH leaves attributes 17 refusals to exactly
+// one file — `test_runner/mod.av` — and all of them are its two `table<…> { … }`
+// literals. Nothing else in 249 non-test sources needs either leaf.
+//
+// Corpus-first, per the routing discipline: these pass TODAY because the hand owns them.
+// The demonstration that counts comes at the flip — each must go RED if `table_lit` is
+// routed without reproducing what `parse_table_literal` provides.
+//
+// ONE CASE PER ABORT PATH of parse_table_literal (parse/mod.av:1284), because the three
+// SEMANTIC aborts are the part a native rule is most likely to get subtly wrong — they
+// are checks over collected lists, not parse structure:
+//
+//   header runs to EOF                  the `{`-unterminated path
+//   row narrower than the header        "table row has N cell(s) but the header declares M"
+//   row wider than the header           the same message, other direction
+//   duplicate column name               "duplicate table column `a`"
+//   typed `table<Row> { … }`            the `<` WORD `>` `{` entry, valid
+//   nested table in a cell              exercises cell_mode SAVE/RESTORE
+//
+// WHY `msgs_agree_bad` AND NOT `agree_bad` HERE. Measured before writing the spec: all
+// three malformed shapes produce the IDENTICAL F-code signature `F0001 F0013` — the
+// semantic message rides on F0001 and the recovery cascade adds F0013 every time. So a
+// code-level oracle cannot distinguish "reported the duplicate-column error" from
+// "reported the wrong one of the three" from "reported a generic alternation failure".
+// Only the message discriminates, which is why this block asserts on messages and the
+// helper exists at all.
+spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" {
+    then "a header that runs to EOF reports identically on all three paths" {
+        msgs_agree_bad("fn t() -> int {\n let x = table { a\n 0\n}") &&
+            agree_all("fn t() -> int {\n let x = table { a\n 0\n}")
+    }
+
+    then "a row NARROWER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a | b\n  1\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            // The exact message, not merely "some equal set" — this is the assertion the
+            // F-code signature cannot make.
+            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
+    }
+
+    then "a row WIDER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
+    }
+
+    then "a duplicate column name is rejected, naming the column" {
+        let src = "fn t() -> int {\n let x = table { a | a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("duplicate table column `a`")
+    }
+
+    // The two VALID shapes. They belong in this corpus because the flip's risk is not
+    // only "fails to report" — it is equally "reports where the hand accepts", and a
+    // rule gated on the wrong entry test would reject exactly these.
+    then "a TYPED `table<Row> { … }` parses clean on all three paths" {
+        let src = "fn t() -> int {\n let x = table<Row> { a\n  1\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            hand_oracle(src) == ""
+    }
+
+    // cell_mode is SAVED and RESTORED around the row loop precisely so a table inside a
+    // cell leaves the outer table's mode intact. Nothing asserted it before.
+    //
+    // BOTH tables carry a row type deliberately. The first draft used bare `table { … }`
+    // and failed the diagnostic-free bar — measured, the cause is TYPECK, not parsing:
+    // an untyped table with columns is `F1042 table literal has no row type`, once per
+    // table. The fixture parsed perfectly. Ascribing the row types keeps the assertion
+    // at the strict `== ""` bar instead of weakening it to `!sig_has_parse_code`, so a
+    // future parse-phase regression here cannot hide behind a tolerated diagnostic.
+    then "a table NESTED in a cell leaves the outer table's cell_mode intact" {
+        let src = "fn t() -> int {\n let x = table<Row> { a | b\n  1 | table<Inner> { c\n   2\n  }\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            hand_oracle(src) == ""
     }
 }
 
