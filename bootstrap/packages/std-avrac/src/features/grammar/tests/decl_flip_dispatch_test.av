@@ -108,27 +108,27 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
 // The corpus below is the MEASURED frontier. Every entry is native today; each is
 // here so that a change which pushes it back onto the delegate goes red instead of
 // passing silently — the failure mode this whole probe exists to make visible.
-/// The one form still known to need `decl_hand`: a TRAILING COMMA in a function
-/// PARAMETER list. Multi-line params are native; the comma before `)` is the
-/// discriminator, single- or multi-line alike.
+/// The one form still known to need `decl_hand`: a BARE-IDENT component
+/// INSTANTIATION (`acct_sr a { balance = 40 }`), which t-47hc.5.1 scopes as slice C
+/// alongside the legacy paren form. Both are deliberately still hand-owned.
 /// A fn rather than a `const` — a module-level string const is typed `int` (t-8xte).
 ///
-/// It is the SAME already-solved bug as PR #1140, in a third delimiter: the list rule
-/// carried `( "," )?` that the repetition ate, call args were guarded with
-/// `@peek(comma_not_rparen)`, #1140 fixed `]` — and the parameter list was never done.
+/// IT CAME FROM THE TEST CORPUS, NOT COMPILER SOURCE — which is the whole point of
+/// the t-axu9 rule that the compiler is a large program, not a representative one.
+/// After the trailing-comma-params fix, a file-by-file sweep of ALL 249 non-test
+/// compiler sources reports ZERO `decl_hand` refusals. Scanning the TEST corpus then
+/// found this form still live in
+/// features/component_decl/tests/method_self_receiver_test.av. Had the deletion been
+/// judged on compiler source alone it would have looked safe and been wrong.
 ///
-/// This replaced a `mut` struct field, which held the role until `field` began
-/// consuming the modifier unlabelled (t-myz7); that in turn replaced a doc comment on
-/// an `impl` method, and that replaced `while lo < 3 { let m = 1 … }`. Each is native
-/// now and has moved down into the corpus — the handover this anchor exists to force.
-///
-/// Measured old-vs-new via build/difftest/old/bs2 at the `mut`-field flip:
-/// `parse/mod.av` 87 -> 0 (39 of its 41 sites were `mut` fields of `export type
-/// Parser`), `codegen/mod.av` 3 -> 0, `typeck`/`resolve` already 0. A file-by-file
-/// sweep of all 249 non-test compiler sources then put the WHOLE remaining frontier at
-/// 37 sites in 5 files — every one of them this trailing-comma form.
-fn TRAILING_COMMA_PARAMS() -> string {
-    "fn f(\n a: int,\n b: int,\n) -> int { a }"
+/// Its predecessors, each closed in turn and now sitting in the corpus below:
+/// `while lo < 3 { let m = 1 … }` -> a doc comment on an `impl` method (#1147) ->
+/// a `mut` struct field -> a trailing comma in a parameter list. That last one was the
+/// same already-solved bug as #1140 in its third delimiter (the list rule carried a
+/// `( "," )?` the repetition ate; call args were guarded with
+/// `@peek(comma_not_rparen)`; #1140 did `]`; params never got it).
+fn BARE_IDENT_COMP_INST() -> string {
+    "component acct_sr {\n balance: int = 100\n}\nfn use_it() -> int {\n acct_sr a { balance = 40 }\n 0\n}"
 }
 
 fn refuse_out(refusal: string, name: string, src: string) -> string {
@@ -170,7 +170,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // executed by it. This runs a real compile under `*` and requires the known
         // gap to report, which is the only thing that proves the wildcard is wired to
         // the leaf rather than merely present in the source.
-        refused_here("*", "wildcard", TRAILING_COMMA_PARAMS())
+        refused_here("*", "wildcard", BARE_IDENT_COMP_INST())
     }
 
     then "the declaration keywords parse with the delegate REFUSED" {
@@ -189,9 +189,10 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // that never detects one would satisfy perfectly. This is the case that must
         // come back false.
         //
-        // A TRAILING COMMA in a function PARAMETER list. `fn f(a: int, b: int)` is
-        // native and so is a multi-line list without the comma, so the discriminator
-        // is the comma before `)` — not the line breaks and not the declaration.
+        // A BARE-IDENT component INSTANTIATION. The keyword-prefixed form went native
+        // in t-47hc.5.1 B2; this one and the legacy paren form are slice C, still
+        // hand-owned by design — so this anchor names WORK THAT EXISTS, not an
+        // accident.
         //
         // It replaced a doc comment on an `impl` method, which held this role until
         // `impl_member` began ATTACHING the doc (t-myz7) — and that replaced
@@ -199,7 +200,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // down into the corpus below — which is exactly the handover this assertion
         // is meant to force: when the gap it names closes, it goes red and the next
         // measured frontier item takes its place.
-        !native_without_delegate("trailing_comma_params", TRAILING_COMMA_PARAMS())
+        !native_without_delegate("bare_ident_comp_inst", BARE_IDENT_COMP_INST())
     }
 
     then "and the wrappers, bindings, and block forms" {
@@ -212,6 +213,18 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
             "fn f() -> int {\n mut lo = 0\n for i in 0..3 {\n  let m = 1\n  lo = m\n }\n lo\n}") &&
         native_without_delegate("doc", "/// d\nfn f() -> int { 1 }") &&
         native_without_delegate("mut_struct_field", "type S = {\n mut a: int,\n b: int\n}") &&
+        // t-myz7: a TRAILING COMMA in a parameter list — the third and last delimiter
+        // of the #1140 bug (call args were guarded, #1140 did `]`, params never got it).
+        // These 37 sites across 5 files were the whole remaining compiler-source
+        // frontier; a file-by-file sweep of all 249 non-test sources now reports ZERO.
+        // Asserted HERE rather than through a `dsl_program` parity helper because that
+        // helper runs `avra_program_grammar()` — a reduced view that lags production and
+        // rejects a trailing comma even in a CALL, which has carried the guard for ages.
+        native_without_delegate("tc_params_fn", "fn f(a: int, b: int,) -> int {\n a\n}") &&
+        native_without_delegate("tc_params_multiline", "fn f(\n a: int,\n b: int,\n) -> int {\n a\n}") &&
+        native_without_delegate("tc_params_extern", "extern fn e(a: int, b: int,) -> int") &&
+        native_without_delegate("tc_params_impl", "type T = { x: int }\nimpl T {\n fn m(self, a: int,) -> int {\n a\n }\n}") &&
+        native_without_delegate("tc_params_trait", "trait Tr {\n fn m(self, a: int,) -> int\n}") &&
         native_without_delegate("doc_impl_method",
             "type T = { x: int }\nimpl T {\n /// doc\n fn m(self) -> int { 1 }\n}") &&
         native_without_delegate("annot", "@inline\nfn f() -> int { 1 }") &&
