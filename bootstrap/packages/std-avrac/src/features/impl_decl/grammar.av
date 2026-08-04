@@ -7,12 +7,26 @@
 // `impl_method` is separate from the trait's `method_member` because an impl
 // method's body is REQUIRED where a trait method's is optional — the two cannot
 // share one rule without making the body optional everywhere.
+//
+// `impl_member` ATTACHES a leading doc comment rather than SKIPPING it, and that
+// difference is load-bearing (t-myz7). The hand builds
+// `Stmt.Annotated([@doc(…)], inner)`, so the doc survives into the AST and
+// `docs --gen` reads it. Copying the enum fragment's `( DOC )*` SKIP here would
+// compile, pass every parity spec, and silently DISCARD every method's
+// documentation — green, and lossy. The shape mirrors the top-level `doc_decl`
+// (avra_grammar.av): `d:DOC ( d:DOC )*` binds one `.One` plus one `.Star` on the
+// same label, never two `.One`s, which is what keeps emit and the executor in
+// lockstep (t-gnk7 — two `.One`s REPLACE on one engine and ACCUMULATE on the
+// other). The bare `impl_method` alternative is the unguarded TAIL: anything not
+// led by DOC falls to it.
 use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `impl` declaration and its method rule.
 export fn avra_impl_decl_grammar() -> Grammar {
     let gp = grammar {
-  impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_method )* "}" -> MkImpl(itn, ifortn, imethods)
+  impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_member )* "}" -> MkImpl(itn, ifortn, imethods)
+  impl_member = d:DOC ( d:DOC )* im:impl_method -> MkDocAnnotated(d, im)
+              | impl_method
   impl_method   = "fn" imname:IDENT "(" ( imparams:param ( "," imparams:param )* )? ")" ( "->" imret:type_expr )? "{" imbody:body_item* "}" -> MkMethod(imname, imparams, imret, imbody)
     }
     grammar_checked(gp)

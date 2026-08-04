@@ -138,3 +138,49 @@ spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path
         tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 }
+
+// WHY: t-myz7 — a doc comment on an `impl` MEMBER attaches, it does not skip.
+//
+// `impl_member = d:DOC ( d:DOC )* im:impl_method -> MkDocAnnotated(d, im) | impl_method`.
+// The hand builds `Stmt.Annotated([@doc(…)], inner)`, so the doc reaches the AST and
+// `docs --gen` can read it. The enum fragment's `( DOC )*` SKIP would have compiled,
+// passed every parity spec, and silently DISCARDED the documentation — which is why
+// tree-equality alone is not enough here: if BOTH engines dropped the doc they would
+// still agree. `renders_doc` is the anti-vacuity half, asserting the annotation is
+// actually THERE. Blocked until t-iu1n (an F9999 in the metadata lib build) was fixed.
+
+fn renders_doc(src: string) -> bool {
+    hand_program(src).contains("@doc(") && dsl_program(src).contains("@doc(")
+}
+
+spec "t-myz7: a doc comment on an impl member is ATTACHED, not skipped" {
+    then "a documented method agrees with the hand AND keeps its doc" {
+        let one = "impl T {\n    /// d\n    fn m(self) -> int { 1 }\n}\n"
+        agrees(one) && renders_doc(one)
+    }
+
+    then "consecutive doc lines all attach — the `.Star` half of the binding" {
+        let many = "impl T {\n    /// one\n    /// two\n    fn m(self) -> int { 1 }\n}\n"
+        agrees(many) && renders_doc(many) &&
+            hand_program(many).contains("one") && dsl_program(many).contains("two")
+    }
+
+    then "a documented method sits alongside an undocumented one" {
+        agrees("impl T {\n    /// d\n    fn a(self) -> int { 1 }\n    fn b(self) -> int { 2 }\n}\n")
+    }
+
+    then "the UNDOCUMENTED method is unaffected — the bare tail still owns it" {
+        let undoc = "impl T {\n    fn m(self) -> int { 1 }\n}\n"
+        agrees(undoc) && !hand_program(undoc).contains("@doc(")
+    }
+
+    // A dangling doc before `}` must be REJECTED by both. The widened member loop
+    // now enters on DOC, so the native rule could have been error-TOLERANT here where
+    // the hand aborts — the exact failure class @try exists to catch. `agrees` cannot
+    // express this (it requires a clean parse on both sides), so assert the rejection
+    // directly rather than letting a green `agrees` hide it.
+    then "a trailing doc with no method is REJECTED by both engines" {
+        let dang = "impl T {\n    fn m(self) -> int { 1 }\n    /// dangling\n}\n"
+        hand_program(dang).contains("parse error") && dsl_program(dang).contains("parse error")
+    }
+}
