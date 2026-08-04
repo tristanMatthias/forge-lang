@@ -71,6 +71,46 @@ spec "t-drl0: the compiler bounds its own memory instead of being OOM-killed" {
     }
 }
 
+// uzs9 (2026-08-01): the phase label alone cannot distinguish "this input is
+// enormous" from "the total accumulated and this input happened to be next" —
+// and it reads as the former either way. 28 of 31 trips on a 16GB box named the
+// same generated parser, which looked exactly like a single-input blowup; probes
+// then peaked in the same band on base AND branch compilers, so the named file
+// was never the cause. The report now carries the delta that tells them apart.
+//
+// Both specs assert against a REAL trip rather than the arithmetic, because the
+// thing that can regress is the sampling (a baseline stamped at the wrong moment
+// reads as zero growth), not the subtraction.
+spec "the F4014 report separates in-phase growth from what preceded it" {
+    then "the report states the growth and the baseline it grew from" {
+        let out = check_with_mem_limit("150", BIG_FILE)
+        out.contains("in-phase growth: +") && out.contains("already resident when this phase began")
+    }
+    then "a phase that DID consume the memory is not second-guessed" {
+        // Ceiling 150 against a ~52 MiB baseline: parsing this file really is
+        // responsible for the bulk, so the accumulation note must stay silent.
+        // Without this direction the note could fire unconditionally and still
+        // look right in the failing case it was written for.
+        let out = check_with_mem_limit("150", BIG_FILE)
+        out.contains("in-phase growth: +") && !out.contains("memory ACCUMULATED")
+    }
+    then "a phase that did NOT consume the memory says so" {
+        // Ceiling just above the ~52 MiB start-up baseline, so the trip lands
+        // early in the parse: the phase adds single-digit MiB of a total that is
+        // mostly start-up. That is the accumulation shape in miniature — the
+        // same reading as a shard that grew across 200 files and blamed the
+        // 201st.
+        let out = check_with_mem_limit("60", BIG_FILE)
+        out.contains("memory ACCUMULATED") && out.contains("not what consumed it")
+    }
+    then "the help no longer asserts the phase is where the memory went" {
+        // The old help said exactly that, which is the misattribution this work
+        // exists to correct; it now points at the growth line instead.
+        let out = check_with_mem_limit("1", BIG_FILE)
+        !out.contains("is where the memory went")
+    }
+}
+
 /// The ceiling this process would enforce, in KiB (0 = disabled).
 extern fn avra_mem_limit_kb() -> int
 
