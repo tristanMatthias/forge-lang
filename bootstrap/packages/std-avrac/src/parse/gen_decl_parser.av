@@ -427,6 +427,44 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
+    if lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_bare_comp_inst_raw(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_bare_comp_inst(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
     if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
     }
@@ -1603,6 +1641,66 @@ fn parse_comp_inst(st: PState) -> CapVal {
         st.report("expected }")
     }
     mk_component_block_g(st, capval_tok_text(n), capval_tok_text(i), p_list, body_list)
+}
+
+fn parse_bare_comp_inst(st: PState) -> CapVal {
+    mut p_list: List<CompConfigPair> = []
+    mut body_list: List<StmtId> = []
+    let n = CapVal.Tok(st.advance())
+    let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
+        p_list.push(capval_to_comp_config_pair(st, parse_config_pair(st)))
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        st.clear_error()
+        let __cv = parse_comp_block_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_component_block_g(st, capval_tok_text(n), capval_tok_text(i), p_list, body_list)
+}
+
+fn parse_bare_comp_inst_raw(st: PState) -> CapVal {
+    let rn = CapVal.Tok(st.advance())
+    let ri = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected {")
+    }
+    let rb = CapVal.Tok(rawbrace_scan(st, "component"))
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected }")
+    }
+    mk_raw_component_block_g(st, capval_tok_text(rn), capval_tok_text(ri), capval_tok_text(rb))
 }
 
 fn parse_config_pair(st: PState) -> CapVal {
