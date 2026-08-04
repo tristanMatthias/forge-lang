@@ -19,6 +19,10 @@
 // The pdme.3 `src` sentinel moved into the shared helper, so it is re-pinned here
 // too: a package literally named `src` makes the parent-of-build a SOURCE dir, and
 // ad-hoc root walks have eaten those before.
+//
+// @@fixture-stateful@@ — the cache-gc half shells the SHARED build/bs2 (`cache
+// prune` per root), so a transient hiccup must re-probe rather than freeze as a
+// permanent FAIL. The clean-cache specs are pure shell; the directive is per file.
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_mkdir_p, avra_getpid, avra_selfhost_file_exists}
 
 fn sandbox() -> string { "/tmp/avra_kbqq_${string(avra_getpid())}" }
@@ -73,24 +77,35 @@ spec "t-kbqq: a build/<scratch>/build/cache is a cache root like any other" {
 }
 
 spec "t-kbqq: the two consumers share ONE root list" {
-    then "both --cache-gc and --clean-cache iterate cache_owner_dirs" {
-        // The structural half. The bug was never a wrong list — it was TWO lists
-        // that drifted, so the behavioural spec above would have passed on the
-        // broken tree if it only exercised clean-cache. Re-forking the enumeration
-        // is what must stay impossible.
-        //
-        // t-tit7 renamed cache-gc's root from the hard-wired $BOOTSTRAP_DIR to an
-        // overridable $gc_root (its global-budget guard needs a sandbox tree, the
-        // same reason clean-cache already took one). Both still iterate the SHARED
-        // helper, which is the whole claim here — so this pins the call, not the
-        // variable's old name.
-        let src = avra_shell_exec("cat scripts/diagnose.sh")
-        let gc = src.contains("done < <(cache_owner_dirs \"$gc_root\")")
-        let cc = src.contains("done < <(cache_owner_dirs \"$root\")")
-        gc && cc
-    }
-    then "the helper walks all three levels, scratch trees included" {
-        let src = avra_shell_exec("cat scripts/diagnose.sh")
-        src.contains("for d in \"$root\" \"$root\"/packages/*/ \"$root\"/build/*/; do")
+    // The bug was never a wrong list — it was TWO lists that drifted, so the
+    // clean-cache spec above would have passed on the broken tree. This half
+    // pins the OTHER consumer.
+    //
+    // It used to assert on diagnose.sh's source text
+    // (`done < <(cache_owner_dirs "$BOOTSTRAP_DIR")`). That is the brittleness
+    // CLAUDE.md forbids, and it proved it: t-tit7 gave cache-gc an overridable
+    // root, renaming the variable, and the spec went red on a rename that
+    // changed no behaviour whatsoever. Raised in review of #1161 and replaced
+    // with the behavioural form, which is both stronger and rename-proof —
+    // cache-gc is now runnable against a sandbox root, so its enumeration can
+    // simply be OBSERVED instead of read off the script.
+    then "cache-gc enumerates the same three levels clean-cache does" {
+        let root = sandbox() + "_gc"
+        avra_shell_exec("rm -rf '${root}'")
+        let _ = avra_mkdir_p("${root}/build/cache/topslot")
+        let _ = avra_mkdir_p("${root}/packages/aaa/build/cache/slot")
+        let _ = avra_mkdir_p("${root}/build/emit_gen/build/cache/scratchslot")
+        let _ = avra_selfhost_write_file("${root}/build/cache/topslot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/packages/aaa/build/cache/slot/unit.ll", "x")
+        let _ = avra_selfhost_write_file("${root}/build/emit_gen/build/cache/scratchslot/unit.ll", "x")
+
+        let out = avra_shell_exec("bash scripts/diagnose.sh --cache-gc 30 '${root}' 2>&1")
+        // Three roots counted globally, and the deep scratch tree named among
+        // the per-root lines — the level the old glob could not see, which is
+        // the whole of t-kbqq.
+        let ok = out.contains("across 3 root(s)")
+            && out.contains("${root}/build/emit_gen")
+        avra_shell_exec("rm -rf '${root}'")
+        ok
     }
 }

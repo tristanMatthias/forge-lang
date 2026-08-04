@@ -3519,6 +3519,14 @@ mode_cache_gc() {
   # then totals are re-measured, because allotting against pre-age-prune
   # sizes would budget for bytes that are about to disappear anyway.
   local cap_mb="${AVRA_CACHE_MAX_MB:-12288}"
+  # Validate BEFORE use. `[ "$cap_mb" -gt 0 ]` on a non-numeric value fails the
+  # test (not just the comparison), so a typo like AVRA_CACHE_MAX_MB=12G would
+  # silently skip the entire size pass and disable the very enforcement this
+  # ticket exists to add — the same class of silent no-op, reintroduced through
+  # the knob instead of the semantics. 0 stays legal: it means "no size cap".
+  case "$cap_mb" in
+    ''|*[!0-9]*) die "cache-gc: AVRA_CACHE_MAX_MB must be a non-negative integer (got '${cap_mb}')" ;;
+  esac
   ensure_bs2
   local root roots=()
   while IFS= read -r root; do roots+=("$root"); done < <(cache_owner_dirs "$gc_root")
@@ -3530,7 +3538,7 @@ mode_cache_gc() {
   done
 
   # Pass 2 — the global size budget, over what the age prune left behind.
-  if [ "$cap_mb" -gt 0 ] 2>/dev/null; then
+  if [ "$cap_mb" -gt 0 ]; then
     local total_mb=0 sz
     for root in "${roots[@]}"; do
       sz=$(du -sm "$root/build/cache" 2>/dev/null | cut -f1)
@@ -3547,8 +3555,30 @@ mode_cache_gc() {
         # This root's slice of the global budget. Integer division floors,
         # so the realised total lands at or just under budget, never over.
         share=$(( cap_mb * sz / total_mb ))
+        # ...except a share that floors to ZERO must not be passed through:
+        # --max_size_mb=0 is the DISABLED sentinel (pass 1 above relies on that
+        # meaning), so a root allotted nothing would keep EVERYTHING — the exact
+        # silent no-op this ticket removes, resurfacing on the small roots. It
+        # bites at the caps an operator actually reaches for: at
+        # AVRA_CACHE_MAX_MB=3000 on this tree the two smallest roots floor to 0.
+        # 1MB is the smallest allocation the sentinel can express.
+        [ "$share" -gt 0 ] || share=1
         ( cd "$root" && "$BS2" cache prune --max_age_days="$days" --max_size_mb="$share" )
       done
+      # Re-measure and report the ACHIEVED total rather than assuming the
+      # allotment landed. The 1MB floor means a budget below one MB per root
+      # cannot be met exactly (it settles at #roots MB) — say so plainly instead
+      # of printing a success line that the bytes on disk do not support.
+      local after_mb=0
+      for root in "${roots[@]}"; do
+        sz=$(du -sm "$root/build/cache" 2>/dev/null | cut -f1)
+        after_mb=$(( after_mb + ${sz:-0} ))
+      done
+      if [ "$after_mb" -le "$cap_mb" ]; then
+        log "[cache-gc] total cache now ${after_mb}MB — within the ${cap_mb}MB budget"
+      else
+        log "[cache-gc] total cache now ${after_mb}MB — still over the ${cap_mb}MB budget (floor: 1MB x ${#roots[@]} root(s))"
+      fi
     fi
   fi
   # Also reclaim the /tmp test scratch that escapes the per-root prune above.

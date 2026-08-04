@@ -27,7 +27,20 @@
 // @@fixture-stateful@@ — shells the SHARED build/bs2 via diagnose.sh; a transient
 // hiccup must re-probe, not freeze as a permanent FAIL.
 
-use @std.avrac.core.{avra_shell_exec, avra_getpid}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+
+/// Run cache-gc against `sb` under `cap`, asserting it EXITED 0 before its
+/// output is trusted. `avra_shell_exec` captures text but discards status, so a
+/// command that printed the expected line and then failed would pass a
+/// text-only assertion — the log-plus-status pattern is the house rule for
+/// specs that care about both.
+fn run_gc(base: string, sb: string, cap: string) -> string {
+    let log = "${sb}.gc.log"
+    let rc = avra_shell_exec_status(
+        "cd '${base}' && AVRA_CACHE_MAX_MB=${cap} bash scripts/diagnose.sh --cache-gc 30 '${sb}' > '${log}' 2>&1")
+    if rc != 0 { return "GC-EXIT-${string(rc)}" }
+    avra_selfhost_read_file(log)
+}
 
 /// Stand up `roots` cache roots under `sb`, each with 4 x 1MB slots aged
 /// 1-4 hours so the size prune has an unambiguous oldest-first order.
@@ -59,8 +72,7 @@ spec "t-tit7: the size budget is GLOBAL — roots individually under the cap sti
         let before = total_mb(sb)
         // Each root is ~5MB — comfortably under an 8MB cap on its own, which is
         // why per-root semantics saw nothing to do. The TOTAL is ~15MB.
-        let out = avra_shell_exec(
-            "cd '${base}' && AVRA_CACHE_MAX_MB=8 bash scripts/diagnose.sh --cache-gc 30 '${sb}' 2>&1")
+        let out = run_gc(base, sb, "8")
         let after = total_mb(sb)
 
         let ok = out.contains("exceeds the 8MB budget")
@@ -68,7 +80,7 @@ spec "t-tit7: the size budget is GLOBAL — roots individually under the cap sti
             && before > 8
             && after <= 8
             && after < before
-        avra_shell_exec("rm -rf '${sb}'")
+        avra_shell_exec("rm -rf '${sb}' '${sb}.gc.log'")
         ok
     }
 }
@@ -81,8 +93,7 @@ spec "t-tit7: an under-budget total evicts nothing, and says so globally" {
         let _ = seed_roots(sb)
 
         let before = total_mb(sb)
-        let out = avra_shell_exec(
-            "cd '${base}' && AVRA_CACHE_MAX_MB=64 bash scripts/diagnose.sh --cache-gc 30 '${sb}' 2>&1")
+        let out = run_gc(base, sb, "64")
         let after = total_mb(sb)
 
         // The message must be the GLOBAL one — a per-root "nothing to evict"
@@ -90,7 +101,63 @@ spec "t-tit7: an under-budget total evicts nothing, and says so globally" {
         let ok = out.contains("under the 64MB budget, nothing to evict")
             && !out.contains("size cap evicted")
             && after == before
+        avra_shell_exec("rm -rf '${sb}' '${sb}.gc.log'")
+        ok
+    }
+}
+
+spec "t-tit7: a budget smaller than the root count still evicts, and reports the shortfall" {
+    // Raised in review of #1161. The proportional share is integer division, so
+    // a small budget floors some roots to 0 — and `--max_size_mb=0` is the
+    // DISABLED sentinel, not "keep nothing". Passed through, those roots would
+    // keep their ENTIRE cache: the silent no-op this ticket exists to remove,
+    // reappearing at exactly the caps an operator reaches for under pressure
+    // (AVRA_CACHE_MAX_MB=3000 floors this tree's two smallest roots to 0).
+    then "three 5MB roots against a 1MB budget shed to the 1MB-per-root floor" {
+        let base = avra_shell_exec("pwd").trim()
+        let sb = "${base}/build/spec_tit7f_${string(avra_getpid())}"
         avra_shell_exec("rm -rf '${sb}'")
+        let _ = seed_roots(sb)
+
+        let before = total_mb(sb)
+        let out = run_gc(base, sb, "1")
+        let after = total_mb(sb)
+
+        // Every root evicts (the floor, not the sentinel), and because 3 roots
+        // cannot fit a 1MB budget the run says so rather than claiming success.
+        let ok = out.contains("exceeds the 1MB budget")
+            && out.contains("still over the 1MB budget")
+            && before > 12
+            && after < before
+            && after <= 6
+        avra_shell_exec("rm -rf '${sb}' '${sb}.gc.log'")
+        ok
+    }
+}
+
+spec "t-tit7: a malformed AVRA_CACHE_MAX_MB fails loudly instead of disabling the cap" {
+    // `[ "$cap_mb" -gt 0 ]` on a non-numeric value fails the TEST, so before the
+    // validation a typo silently skipped the whole size pass — enforcement off,
+    // exit 0, no diagnostic. A knob that disables the guard when misspelled is
+    // the same defect class as the per-root budget itself.
+    then "AVRA_CACHE_MAX_MB=12G exits non-zero and names the variable" {
+        let base = avra_shell_exec("pwd").trim()
+        let sb = "${base}/build/spec_tit7b_${string(avra_getpid())}"
+        avra_shell_exec("rm -rf '${sb}'")
+        let _ = seed_roots(sb)
+
+        let log = "${sb}.bad.log"
+        let rc = avra_shell_exec_status(
+            "cd '${base}' && AVRA_CACHE_MAX_MB=12G bash scripts/diagnose.sh --cache-gc 30 '${sb}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        let after = total_mb(sb)
+
+        // Non-zero exit, a message naming the knob, and — the point — nothing
+        // silently pruned under a cap that was never understood.
+        let ok = rc != 0
+            && out.contains("AVRA_CACHE_MAX_MB")
+            && after > 12
+        avra_shell_exec("rm -rf '${sb}' '${log}'")
         ok
     }
 }
