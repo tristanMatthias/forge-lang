@@ -3906,9 +3906,16 @@ fn cmd_run(args: CliResult) -> int {
             // is real and gets named. Guarded in build_no_executable_test —
             // if the remedy ever stops working, that guard fails rather than
             // this text quietly going stale.
+            //
+            // Name the COMMAND, not just the flag: `--emit_metadata` is a
+            // `bs2 build` flag, and `command run` declares no flags at all, so
+            // a bare "pass --emit_metadata" printed by `bs2 run` reads as an
+            // option of the command the reader just ran — and typing it there
+            // fails. That is the same defect one level down: a remedy the
+            // reader cannot act on where they were standing when they read it.
             fail("error: nothing to run — no executable was produced\n" +
                  "  dependency `${report.missing_dep}` has no recorded build, so nothing could be linked\n" +
-                 "  build that dependency first, or pass --emit_metadata to pre-build path-deps")
+                 "  build that dependency first, or run `bs2 build --emit_metadata` to pre-build path-deps")
         }
         fail("error: nothing to run — the build produced no executable")
     }

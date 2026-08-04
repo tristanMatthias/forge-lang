@@ -566,6 +566,12 @@ export fn link_unit_executable(project_dir: string, fp: Fingerprint, out_bin: st
         dep_archive = "${out_bin}.deps.${string(avra_getpid())}.a"
         if avra_selfhost_file_exists(dep_archive) == 1 { let _ = avra_remove_file(dep_archive) }
         if archive_objects(dep_objs, dep_archive) != 0 {
+            // `ar` can fail having already created the file (a partial archive,
+            // a short write). This early return skips the cleanup below, so
+            // without this the scratch archive survives — and it is PID-scoped,
+            // so repeated failures accumulate one file each rather than
+            // overwriting a single stale one.
+            let _ = avra_remove_file(dep_archive)
             return Result.Err("ar failed bundling the dependency closure for ${out_bin}")
         }
         link_objs.push(dep_archive)

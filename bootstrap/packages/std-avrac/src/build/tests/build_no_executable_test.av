@@ -116,12 +116,20 @@ spec "an IR-only build: a success for `build`, a diagnosed failure for `run`" {
             // diagnostic names it again — and this arm is what keeps the
             // two in step, so it can never drift back to advertising a
             // remedy that does not work.
+            //
+            // Assert the whole COMMAND, not the bare flag. `--emit_metadata`
+            // belongs to `bs2 build`; `command run` declares no flags, so a
+            // message printed by `bs2 run` that names only the flag reads as
+            // an option of `run` and fails when typed there. Asserting the
+            // token alone passed happily against exactly that wording, which
+            // is how it shipped — the guard has to pin the part a reader
+            // acts on.
             let base = noexe_mk_project("why")
             let p = noexe_probe(base, "run")
             noexe_cleanup(base)
             p.output.contains("nothing to run")
                 && p.output.contains("@dep/thing")
-                && p.output.contains("--emit_metadata")
+                && p.output.contains("bs2 build --emit_metadata")
         }
     }
 }

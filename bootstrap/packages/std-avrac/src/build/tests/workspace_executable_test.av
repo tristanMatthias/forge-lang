@@ -98,8 +98,15 @@ spec "a workspace build links an executable that actually runs" {
         let bin = wsx_binary(base)
         let existed = avra_selfhost_file_exists(bin) == 1
         // Captured BEFORE cleanup; the arms below assert on these values.
-        let output = if existed { avra_shell_exec("'${bin}'") } else { "" }
-        let ran = if existed { avra_shell_exec_status("'${bin}' > /dev/null 2>&1") } else { 1 }
+        //
+        // ONE execution, yielding both facts: the binary runs with its output
+        // redirected to a log, and the log is read back afterwards. Running it
+        // twice — once for stdout, once for the status — measures two separate
+        // executions and lets them disagree; `cat` re-reads the first run
+        // rather than producing a second.
+        let log = "${base}/run.log"
+        let ran = if existed { avra_shell_exec_status("'${bin}' > '${log}' 2>&1") } else { 1 }
+        let output = if existed { avra_shell_exec("cat '${log}' 2>/dev/null || true") } else { "" }
         wsx_cleanup(base)
 
         then "the build succeeds" {
@@ -140,7 +147,13 @@ spec "a workspace build links an executable that actually runs" {
         let app_status = wsx_build_in(base, "test-app", "", "app")
         let bin = wsx_binary(base)
         let existed = avra_selfhost_file_exists(bin) == 1
-        let output = if existed { avra_shell_exec("'${bin}'") } else { "" }
+        // Same single-execution shape as the arm above, and for the same
+        // reason it must also capture the STATUS: asserting only on stdout
+        // lets a binary that prints `dep says 17` and then exits nonzero pass
+        // as a working link.
+        let log = "${base}/run.log"
+        let ran = if existed { avra_shell_exec_status("'${bin}' > '${log}' 2>&1") } else { 1 }
+        let output = if existed { avra_shell_exec("cat '${log}' 2>/dev/null || true") } else { "" }
         wsx_cleanup(base)
 
         then "the dependency builds" {
@@ -152,7 +165,7 @@ spec "a workspace build links an executable that actually runs" {
         }
 
         then "and the linked binary still runs" {
-            output.contains("dep says 17")
+            ran == 0 && output.contains("dep says 17")
         }
     }
 }
