@@ -27,7 +27,7 @@ use core.{tk_is_field_name}
 use core.{build_if_let_expr}
 use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
-use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct}
+use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with the hand
 // parser's Parser.peek_after_ident_is_* wrappers. The component config-pair
@@ -1805,6 +1805,23 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if inst.kind != "IDENT" || inst.text == "implements" { return false }
         return st.toks[st.pos + 3].tk == Tk.LeftBrace
     }
+    // ── Slice C: the BARE-IDENT instantiation, `name inst { … }` ──
+    //
+    // Same shape as `comp_inst_shape` minus the `component` keyword, plus the
+    // registry check that makes it decidable at all. The raw/structured split moves
+    // into the cond for the same reason the nested arms' does: the hand asks the
+    // registry AFTER consuming `name inst {`, and a grammar cannot branch on a parse
+    // result — but the component name is the current token either way, so the two are
+    // equivalent.
+    if cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" {
+        if st.cur().kind != "IDENT" { return false }
+        if !comp_name_is_registered(st) { return false }
+        let want_raw = cond == "bare_comp_inst_raw"
+        if comp_name_is_raw_body(st) != want_raw { return false }
+        if st.pos + 2 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        return st.toks[st.pos + 2].tk == Tk.LeftBrace
+    }
     // ── The four `parse_comp_block_body` arms, as dispatch conds (t-47hc.5.1 B2b) ──
     //
     // Each is gated on the SAME shared raw-source core the hand's own arm reads
@@ -1921,6 +1938,19 @@ fn cfg_pair_after(st: PState) -> int {
 fn comp_name_is_raw_body(st: PState) -> bool {
     if st.hand_delegate == null { return false }
     component_is_raw_body(st.hand_delegate!.features, st.cur().text)
+}
+
+/// Is the current identifier a REGISTERED component name? (t-47hc.5.1 slice C)
+///
+/// The hand reaches the bare-IDENT instantiation by looking the current lexeme up
+/// in the registry's `stmt_parsers` map — `register_component_def` puts every
+/// component name there via `register_component_name`. So this asks the SAME map
+/// rather than re-deriving a token-level notion of "component-like name", which is
+/// not decidable: `acct_sr a { … }` and `foo bar { … }` are the same token shape
+/// and differ only by whether a `component` declaration registered the name.
+fn comp_name_is_registered(st: PState) -> bool {
+    if st.hand_delegate == null { return false }
+    lookup_stmt_parser(st.hand_delegate!.features, st.cur().text) != null
 }
 
 /// The shared prefix of both config-pair conds — every reason

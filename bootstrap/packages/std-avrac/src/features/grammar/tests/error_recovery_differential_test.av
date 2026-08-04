@@ -1476,3 +1476,51 @@ spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
         agree_pos("component C inst { nested name }\nfn f() -> int { 1 }")
     }
 }
+
+// WHY: t-47hc.5.1 slice C — the BARE-IDENT component instantiation
+// (`acct_sr a { … }`, no `component` keyword). Landed BEFORE the routing, per the
+// standing discipline: these must go RED if the form is routed without reproducing
+// the hand's abort behaviour, and they are the only witness that can — routing is
+// invisible on VALID input by construction, because the native rule and the hand
+// agree there.
+//
+// One case per abort path in `parse_component_block_bare`:
+//   - instance name missing        -> the hand FALLS BACK to parse_statement
+//   - `{` missing after instance   -> "expected `{` after instance name"
+//   - body brace never closed      -> "expected `}` at end of component block"
+//   - malformed config pair        -> parse_comp_config_pairs reports
+//   - malformed body statement     -> parse_comp_block_body reports
+//
+// Each needs a real `component` DEFINITION first: the bare form is dispatched from
+// the feature REGISTRY (register_component_name), so an unregistered ident is an
+// ordinary expression and would measure nothing.
+fn CDEF() -> string {
+    "component acct_sr {\n balance: int = 100\n}\n"
+}
+
+spec "t-47hc.5.1 slice C: bare-IDENT component instantiation recovers as the hand does" {
+    then "the malformed instantiation shapes agree on F-code, count and tree" {
+        agree_bad(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
+    }
+
+    then "and on ALL THREE parser paths, including the executor" {
+        agree_all(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}") &&
+        agree_all(CDEF() + "fn u() -> int {\n acct_sr a { balance = 1\n 0\n}")
+    }
+
+    // NOT included, and deliberately so: `acct_sr a { balance = }` (a config pair with
+    // no value) diverges between the static path and the hand TODAY — measured before
+    // any slice C routing, on a form the hand still owns. It is a PRE-EXISTING gap in
+    // component-body recovery that this corpus exposed, not something routing caused,
+    // and it wants its own ticket rather than a red baseline here. The unterminated
+    // sibling (`{ balance = 1`) DOES agree on all three paths and is asserted above,
+    // so the malformed-body class is still guarded.
+
+    // The instance-name-missing case is NOT an error: the hand falls back to
+    // parse_statement, so `acct_sr` alone is an ordinary identifier expression.
+    // Pinned as a TREE agreement rather than agree_bad, since nothing reports.
+    then "a registered name with no instance falls back to an expression, as the hand does" {
+        agree_tree(CDEF() + "fn u() -> int {\n acct_sr\n 0\n}")
+    }
+}
+

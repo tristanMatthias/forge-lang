@@ -418,7 +418,7 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = @try use_decl | @try mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -582,6 +582,13 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `key r"s"` are all decided identically to the hand rather than
   // re-derived at token level.
   comp_inst   = @peek(comp_inst_shape) "component" n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+  // Slice C — the same instantiation WITHOUT the `component` keyword. Decidable only
+  // via the registry (see the `bare_comp_inst` cond), because `acct_sr a { … }` and
+  // `foo bar { … }` are the same token shape. The raw twin mirrors the nested
+  // raw arms above: a `body: TokenStream` component captures its instance body
+  // verbatim rather than parsing it.
+  bare_comp_inst     = @peek(bare_comp_inst) n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+  bare_comp_inst_raw = @peek(bare_comp_inst_raw) rn:IDENT ri:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
   config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
               | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
   // The four arms of the hand's parse_comp_block_body, routed (t-47hc.5.1 B2b).
