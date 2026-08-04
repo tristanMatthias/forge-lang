@@ -101,18 +101,32 @@ fn then_conjunct_ids(ctx: Ctx, cond: Expr) -> List<ExprId> {
     }
 }
 
-/// Flatten a left-associated `&&` spine into its operands.
+/// Flatten an `&&` tree into its operands, in evaluation order.
 ///
-/// `a && b && c` parses as `Logical(Logical(a, And, b), And, c)`, so the
-/// recursion goes left and appends the right operand. A non-`&&` expression
-/// is its own single conjunct.
+/// `a && b && c` parses left-associated as `Logical(Logical(a, And, b), And, c)`,
+/// but `a && (b && c)` nests to the RIGHT. Recursing only leftward and pushing
+/// the right operand whole reported the grouped expression for the second form
+/// — `false: (group (&& (== 2 2) (== 3 4)))` instead of `false: (== 3 4)`,
+/// which is the entire point of the feature. Both sides recurse (raised in
+/// review of #1144).
+///
+/// Parentheses are peeled first: `(b && c)` is `Grouping(Logical(..))`, so
+/// without unwrapping, a parenthesised chain stays one opaque conjunct.
+/// Evaluation order is unchanged — left operands still precede right ones, so
+/// short-circuit is preserved.
 fn flatten_and(ctx: Ctx, eid: ExprId) -> List<ExprId> {
     match ctx.nodes.exprs.get(eid) {
+        .Grouping(inner) -> flatten_and(ctx, inner)
         .Logical(l, op, r) -> {
             match op {
                 .And -> {
                     mut acc = flatten_and(ctx, l)
-                    acc.push(r)
+                    mut rs = flatten_and(ctx, r)
+                    mut i = 0
+                    while i < rs.length {
+                        acc.push(rs[i])
+                        i = i + 1
+                    }
                     acc
                 }
                 _ -> [eid]

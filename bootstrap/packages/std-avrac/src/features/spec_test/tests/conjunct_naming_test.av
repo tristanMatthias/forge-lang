@@ -24,13 +24,32 @@ spec "a failing `&&` arm names the conjunct that was false" {
     // The middle conjunct is the one that fails, so "reports the first" and
     // "reports the last" both come out wrong — an arm that named either would
     // be indistinguishable from a correct one if the false claim sat at an end.
-    then "the false conjunct is named, not merely that the arm failed" {
+    // Asserting only that "2" and "3" appear would pass if the reporter simply
+    // echoed the WHOLE conjunction — that output contains those characters too.
+    // So the arm requires the selected conjunct present AND the other two
+    // ABSENT: it tests selection, not incidental substrings. Raised in review
+    // of #1144, and the same weak-assertion shape this session has hit before.
+    then "the false conjunct is named, and the true ones are not" {
         let out = run_spec("spec \"s\" {\n" +
             "    then \"t\" {\n" +
             "        1 == 1 && 2 == 3 && 4 == 4\n" +
             "    }\n" +
             "}")
-        out.contains("false:") && out.contains("2") && out.contains("3")
+        out.contains("false:") && out.contains("(== 2 3)")
+            && !out.contains("(== 1 1)") && !out.contains("(== 4 4)")
+    }
+
+    // Right-nested chains must flatten too. `a && (b && c)` nests to the RIGHT,
+    // and recursing only leftward reported the grouped expression whole —
+    // `(group (&& (== 2 2) (== 3 4)))` — which defeats the feature precisely
+    // when the assertion is parenthesised. Raised in review of #1144.
+    then "a right-nested chain names the inner false conjunct" {
+        let out = run_spec("spec \"s\" {\n" +
+            "    then \"t\" {\n" +
+            "        1 == 1 && (2 == 2 && 3 == 4)\n" +
+            "    }\n" +
+            "}")
+        out.contains("(== 3 4)") && !out.contains("group")
     }
 
     // Short-circuit is the load-bearing part: `x != null && x!.f == 1` CRASHES
@@ -89,6 +108,6 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        a == 5 && a == 6\n" +
             "    }\n" +
             "}")
-        out.contains("false:") && out.contains("6")
+        out.contains("(== a 6)") && !out.contains("(== a 5)")
     }
 }
