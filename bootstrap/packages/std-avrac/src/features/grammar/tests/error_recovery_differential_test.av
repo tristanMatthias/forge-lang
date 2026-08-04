@@ -1528,3 +1528,32 @@ spec "t-47hc.5.1 slice C: bare-IDENT component instantiation recovers as the han
     }
 }
 
+// WHY: t-myz7 — statement-position `if let` routes through `expr_stmt` now, and the
+// hand desugars it with `build_if_let_stmt` (a Stmt.Block) where the expression path
+// uses `build_if_let_expr` (a Stmt.Expr). Raised in review as possibly changing the
+// AST or rejecting statement-only else arms.
+//
+// The two desugars ARE structurally different, so this is not idle: both build
+// `let tmp = subject` plus an if, but one yields a StmtId and the other an ExprId.
+// Measured, they lower identically — hand and production emit byte-identical IR for
+// both shapes below, including the `return`-in-else case. `expression` reaches
+// `if_expr`, whose then/else are `block_expr`, so statement-only arms parse fine.
+//
+// Pinned here because the existing t-47hc.26 if-let cases are all EXPRESSION position
+// (`let r = if let v = x { 1 }`), so nothing covered the statement form's tree.
+spec "t-myz7: statement-position `if let` agrees with the hand on the TREE" {
+    then "the plain statement form agrees" {
+        agree_all("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v }\n t\n}")
+    }
+
+    then "a statement-only `else` arm agrees — `return` inside the else" {
+        agree_all("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v } else { return 0 - 1 }\n t\n}") &&
+            agree_all("fn g(x: int?) -> int {\n if let v = x { return v } else { return 0 }\n}")
+    }
+
+    then "the malformed statement forms recover identically" {
+        agree_bad("fn f(x: int?) -> int {\n if let = x { 1 }\n 0\n}") &&
+            agree_bad("fn f(x: int?) -> int {\n if let v x { 1 }\n 0\n}")
+    }
+}
+
