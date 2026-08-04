@@ -131,10 +131,27 @@ fn avra_expr_core() -> Grammar {
              | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
              | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+  // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
+  // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
+  // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
+  //
+  // Byte-for-byte the hand's `parse_grammar_block` (features/grammar/parser.av), which is
+  // only ever `{` + `capture_balanced_brace_body` + `}` + build-the-desugared-call —
+  // and `@rawbrace` IS that capture, sharing `rawbrace_scan` with the hand rather than
+  // re-deriving the depth count.
+  //
+  // The `@peek(ident_lbrace_feature)` gate is the REGISTRY check, not a keyword test: the
+  // hand reaches this through `lookup_expr_parser(self.features, name)`, so a program that
+  // has not registered the feature must still read `grammar` as an ordinary identifier.
+  // The gate asks the same registry, through `PState.hand_delegate`'s `.features`. Pairing
+  // it with the leading `"grammar"` literal is what keeps the sibling feature form
+  // (`table { … }`, which the same cond also admits) out of this branch.
+  grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
   struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+

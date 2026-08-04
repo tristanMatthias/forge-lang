@@ -1678,6 +1678,33 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 1].text != "{" { return false }
         return !ident_lbrace_is_feature_form(st)
     }
+    // The exact COMPLEMENT of ident_lbrace_plain's exclusion, plus the TYPED table
+    // literal — i.e. the two `parse_ident_expr` forms no native branch claims:
+    // `table { … }` / `table<Row> { … }`, and a REGISTERED `kw { … }` feature
+    // construct (grammar / sql / regex, via lookup_expr_parser).
+    //
+    // t-myz7. Measured, not assumed: refusing BOTH production leaves across all 249
+    // non-test compiler sources attributes 117 refusals to exactly 10 files, and every
+    // one of those files contains one of these two literals. They are the whole
+    // valid-input residue of `@hand(primary_base)` AND of `@hand(decl_hand)` — the two
+    // leaves are reached at the SAME sites, which is why refusing either one alone
+    // measures zero (the other silently covers).
+    //
+    // The typed-table test is the token-level mirror `ident_plain` already carries
+    // (`<` WORD `>` `{`), NOT the hand's raw-byte `peek_is_table_row_type` scan — one
+    // spelling of the discrimination, reused, so the two cannot drift.
+    if cond == "ident_lbrace_feature" {
+        if st.cur().kind != "IDENT" { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        let nx = st.toks[st.pos + 1]
+        if nx.text == "{" { return ident_lbrace_is_feature_form(st) }
+        // `table<Row> {` — the typed form, whose `<` would otherwise be read as a
+        // comparison against a variable named `table`.
+        return st.cur().text == "table" && nx.text == "<" && st.pos + 4 < st.toks.length
+            && tok_starts_word(st.toks[st.pos + 2])
+            && st.toks[st.pos + 3].text == ">"
+            && st.toks[st.pos + 4].text == "{"
+    }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
         return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
@@ -3591,6 +3618,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         // t-47hc slice 8 — the two IDENT-led primaries the `ident_primary` flip needs.
         // Dormant until a grammar references them.
+        "MkGrammarBlock" if args.length == 1 -> CapVal.Node(mk_grammar_block(st, 0 - 1, env.get(args[0])))
         "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
@@ -5696,6 +5724,24 @@ export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
 /// parser builds it.
 export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
     st.store.add_expr(Expr.StructLit(capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// The `grammar { … }` feature block (t-myz7) — the desugared call the hand's
+/// `parse_grammar_block` (features/grammar/parser.av) builds:
+///     grammar { expr = term }   ==>   parse_grammar("expr = term")
+/// `bcap` is the `@rawbrace` capture: the verbatim source between the braces, from
+/// the SHARED `rawbrace_scan`, so the body text cannot drift from the hand's
+/// `capture_balanced_brace_body`.
+///
+/// The bookend quotes are added WITHOUT escaping the interior, deliberately and
+/// exactly as the hand does: codegen's `strip_quotes` peels one char from each end,
+/// so a grammar literal's own `"+"` quotes — and the newlines of a multi-line block —
+/// survive verbatim into the runtime string. Escaping here would corrupt every
+/// grammar literal that quotes a terminal, which is all of them.
+export fn mk_grammar_block(st: PState, sp_start: int, bcap: CapVal) -> ExprId {
+    let str_id = st.store.exprs.add_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
+    let callee = st.store.exprs.add_leaf(Expr.Ident("parse_grammar"))
+    st.store.add_expr(Expr.Call(callee, [str_id]), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// A TAGGED TEMPLATE — ``tag`…` `` — the hand `parse_ident_expr`'s template branch

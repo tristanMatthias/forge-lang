@@ -425,10 +425,10 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     // harness lives. Asserting it turned up something the corpus alone could not.
     //
     // The feature-form literals — `grammar { … }` / `table { … }`, the seam t-47hc.5
-    // flagged on 2026-08-01 — are served by the hand through EITHER leaf:
+    // flagged on 2026-08-01 — WERE served by the hand through EITHER leaf:
     //
     //   fixture              refuse=decl_hand  refuse=primary_base  refuse=*
-    //   grammar { r = "a" }  0                 0                    4
+    //   grammar { r = "a" }  0                 0                    4   <- NOW 0, native
     //   table { }            0                 0                    4
     //   fn f() -> int { 1 }  0                 0                    0   <- control
     //
@@ -441,16 +441,26 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     // The distinction is load-bearing for the retirement, in BOTH directions:
     //   * deleting ONE leaf   — by-name zero is the right evidence, and it is green
     //   * deleting BOTH       — needs the feature-form seam built first
+    //
+    // HALF THE SEAM IS NOW CLOSED (t-myz7). `grammar { … }` is native — the
+    // `grammar_expr` rule, `@rawbrace`'s canonical consumer — so it no longer needs
+    // EITHER leaf and its `refuse=*` row is 0. This spec red-lit the moment that
+    // landed, which is the evidence it was never vacuous: it pinned a dependency, the
+    // dependency was removed, and the assertion inverted rather than quietly staying
+    // green. `table { … }` still needs the seam (its parser is line-sensitive, not a
+    // raw-brace capture), so it keeps the `refuse=*` assertion and is now the ONLY
+    // valid input in the whole compiler that reaches a production leaf.
     then "the feature-form literals need a leaf, but not a PARTICULAR leaf" {
         // Neither leaf alone is required...
         native_without_delegate("feat_grammar_dh",
             "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
         native_without_delegate("feat_table_dh",
             "fn t() -> int {\n let x = table { }\n 0\n}") &&
-        // ...yet both together ARE — the anti-vacuity half of this assertion, and the
-        // fact the by-name sweep hides.
-        refused_here("*", "feat_grammar_all",
+        // `grammar { … }` needs NEITHER now — native, so even `*` leaves it untouched.
+        !refused_here("*", "feat_grammar_all",
             "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+        // ...but the table literal still needs one of them — the anti-vacuity half of
+        // this assertion, and the fact the by-name sweep hides.
         refused_here("*", "feat_table_all",
             "fn t() -> int {\n let x = table { }\n 0\n}") &&
         // ...and a plain fn needs neither, which pins the discriminator to the feature
