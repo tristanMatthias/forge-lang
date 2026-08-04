@@ -229,12 +229,35 @@ fn fail_with_codegen_ice(error_msg: string, ctx: RenderContext) {
     fail(error_msg)
 }
 
-/// Wrap a module-resolution failure as an F3100 (ModuleNotFound)
-/// diagnostic and abort. Every module-resolve-using command routes
-/// through this helper so the user sees the structured F-code
+/// Report a module-resolution failure and abort. Every module-resolve-using
+/// command routes through this helper so the user sees a structured F-code
 /// diagnostic instead of a bare error string.
+///
+/// NEST, NEVER REPLACE (t-kdyj.8). A module file that fails to PARSE carries a
+/// real F0001 with a line and column. Substituting F3100 `ModuleNotFound` — as
+/// this unconditionally did — reported a file that exists and was found as
+/// missing, and offered "create the module file or remove the `mod`
+/// declaration" for a syntax error. When the underlying message was empty (a
+/// reserved-word error), the whole report was:
+///
+///     error[F3100]: error in `src/features/spec_test/codegen.av`:
+///
+/// A location, a code, and a fix, all describing a different failure, with
+/// nothing said about the real one. That cost an hour and five wrong
+/// hypotheses in one session, and manufactured a phantom constraint that got
+/// written into a shipped PR as a known limitation.
+///
+/// So: when the failure carries diagnostics, render THOSE. F3100 is kept for
+/// the case it actually names — a module that could not be found.
 fn fail_on_module_resolve_error(mod_resolved: ModListResult, ctx: RenderContext) {
     if mod_resolved.had_error {
+        // `bag_has_errors`, not "bag is non-empty": a bag carrying only
+        // warnings explains nothing about why resolution failed, so the F3100
+        // fallback below is still the honest report for it.
+        if bag_has_errors(mod_resolved.bag) {
+            render_bag_ctx(ctx, mod_resolved.bag)
+            fail(mod_resolved.error_message)
+        }
         let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
         render_bag_ctx(ctx, mod_bag)
         fail(mod_resolved.error_message)
