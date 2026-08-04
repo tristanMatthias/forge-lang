@@ -417,4 +417,44 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("module_doc", "//! module doc\nfn f() -> int { 1 }") &&
         native_without_delegate("spec_given", "spec \"s\" {\n given \"g\" {\n  then \"t\" { true }\n }\n}")
     }
+
+    // ── The two leaves are a MUTUAL FALLBACK, and that changes what a zero means ──
+    //
+    // Raised in review on the `primary_base` corpus (#1157): parity assertions cannot
+    // show WHICH leaf answered, so the attribution belongs here, where the refusal
+    // harness lives. Asserting it turned up something the corpus alone could not.
+    //
+    // The feature-form literals — `grammar { … }` / `table { … }`, the seam t-47hc.5
+    // flagged on 2026-08-01 — are served by the hand through EITHER leaf:
+    //
+    //   fixture              refuse=decl_hand  refuse=primary_base  refuse=*
+    //   grammar { r = "a" }  0                 0                    4
+    //   table { }            0                 0                    4
+    //   fn f() -> int { 1 }  0                 0                    0   <- control
+    //
+    // Refusing one leaf proves nothing here: the other covers. Only removing both
+    // exposes the dependency. That is why a BY-NAME sweep reports `primary_base` at
+    // zero across all 1005 corpus files while `*` reports 96 refusals in 10 of the 249
+    // compiler sources — the numbers answer different questions, and reading the
+    // by-name zero as "unreached" is wrong.
+    //
+    // The distinction is load-bearing for the retirement, in BOTH directions:
+    //   * deleting ONE leaf   — by-name zero is the right evidence, and it is green
+    //   * deleting BOTH       — needs the feature-form seam built first
+    then "the feature-form literals need a leaf, but not a PARTICULAR leaf" {
+        // Neither leaf alone is required...
+        native_without_delegate("feat_grammar_dh",
+            "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+        native_without_delegate("feat_table_dh",
+            "fn t() -> int {\n let x = table { }\n 0\n}") &&
+        // ...yet both together ARE — the anti-vacuity half of this assertion, and the
+        // fact the by-name sweep hides.
+        refused_here("*", "feat_grammar_all",
+            "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+        refused_here("*", "feat_table_all",
+            "fn t() -> int {\n let x = table { }\n 0\n}") &&
+        // ...and a plain fn needs neither, which pins the discriminator to the feature
+        // form rather than to "any program reaches a leaf under `*`".
+        !refused_here("*", "feat_control_all", "fn f() -> int { 1 }")
+    }
 }
