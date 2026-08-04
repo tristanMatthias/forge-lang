@@ -180,8 +180,12 @@ fn MALFORMED_DECL() -> string {
     "fn foo(\n"
 }
 
+fn fixture_path(name: string) -> string {
+    "build/_frontier_${name}.av"
+}
+
 fn refuse_out(refusal: string, name: string, src: string) -> string {
-    let fixture = "build/_frontier_${name}.av"
+    let fixture = fixture_path(name)
     let _ = avra_selfhost_write_file(fixture, src)
     avra_shell_exec("AVRA_REFUSE_HAND_LEAF=${refusal} ./build/bs2 check '${fixture}' 2>&1")
 }
@@ -191,10 +195,40 @@ fn refuse_out(refusal: string, name: string, src: string) -> string {
 /// — counting them measures the import closure instead of the input, which is exactly
 /// the wrong answer (an early version of this probe reported `use` as
 /// delegate-dependent on that basis; the refusal was coming from a `@std` source the
-/// import pulled in).
-fn refusal_in(out: string) -> bool {
-    for line in out.split("\n") {
-        if line.contains("is refused") && !line.contains("error in module") { return true }
+/// import pulled in). This ticket records hitting that trap twice.
+///
+/// ATTRIBUTION, not a marker string. The previous filter was
+/// `!line.contains("error in module")`, and it does NOTHING here: that text is not
+/// emitted at all for this diagnostic shape. Measured —
+/// `use @std.avrac.core.{Expr}` plus a trivial `fn` reports 11 refusals under `*`
+/// (7 `decl_hand` + 4 `primary_base`), every one of them located in
+/// `features/modules/grammar.av`, and the string "error in module" appears zero
+/// times in that output. The corpus was safe only because no fixture has a `use` —
+/// an accident, not a guard, and the kind that fails the moment someone adds one.
+///
+/// So attribute instead: a refusal counts only when the LOCATION line that follows it
+/// names the fixture under test. The message line carries no path (the renderer puts
+/// it on the next `╭─[…]` line), which is why a per-line predicate could never have
+/// worked.
+fn refusal_in_file(out: string, fixture: string) -> bool {
+    let lines = out.split("\n")
+    mut i = 0
+    while i < lines.length {
+        if lines[i].contains("is refused") {
+            // Scan forward for this diagnostic's location line. A small window: the
+            // renderer emits it immediately after the message, and stopping at the
+            // first one found keeps a LATER diagnostic's path from being credited here.
+            mut j = i + 1
+            while j < lines.length && j < i + 5 {
+                if lines[j].contains(".av:") {
+                    if lines[j].contains(fixture) { return true }
+                    j = lines.length
+                } else {
+                    j = j + 1
+                }
+            }
+        }
+        i = i + 1
     }
     false
 }
@@ -202,7 +236,7 @@ fn refusal_in(out: string) -> bool {
 /// The shared core of both frontier helpers — parameterised on the refusal so the `*`
 /// branch is exercised by a real parse rather than only by the pure predicate.
 fn refused_here(refusal: string, name: string, src: string) -> bool {
-    refusal_in(refuse_out(refusal, name, src))
+    refusal_in_file(refuse_out(refusal, name, src), fixture_path(name))
 }
 
 /// Did `src` fail to PARSE? Raised in review, and it is the ROOT CAUSE of the defect
@@ -241,7 +275,7 @@ fn parse_failed(out: string) -> bool {
 /// load-bearing — see `parse_failed`. One shell exec answers both.
 fn native_without_delegate(name: string, src: string) -> bool {
     let out = refuse_out("decl_hand", name, src)
-    !parse_failed(out) && !refusal_in(out)
+    !parse_failed(out) && !refusal_in_file(out, fixture_path(name))
 }
 
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
@@ -261,7 +295,29 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // Uses the same recovery anchor as the discriminating assertion below, so this
         // control cannot go vacuous when a form graduates — the failure that retired
         // the previous fixture (see BARE_IDENT_COMP_INST).
-        refused_here("*", "wildcard", MALFORMED_DECL())
+        refused_here("*", "wildcard", MALFORMED_DECL()) &&
+        // ...and the SAME wildcard reports NOTHING for a valid file that merely IMPORTS.
+        //
+        // HONEST LABEL: this case does NOT fail against the previous filter *here*, and
+        // it is kept anyway. Under `bs2 test` the `@std` import is served from the
+        // metadata fast-path rather than re-parsed, so no imported source runs under the
+        // refusal and there is nothing to contaminate — both filters see an empty
+        // result. It is a same-environment invariant, not a fail-before demonstration,
+        // and calling it one would be the vacuity this file exists to police.
+        //
+        // It is still worth pinning, because the contamination is REAL in the other
+        // environment. Running the identical command from a shell, where `@std` IS
+        // parsed from source, that fixture reports 11 refusals under `*` (7 `decl_hand`
+        // + 4 `primary_base`), every one located in `features/modules/grammar.av` and
+        // none in the fixture — and the string "error in module" appears ZERO times, so
+        // the previous `!line.contains("error in module")` filter counted all 11. That
+        // is the trap t-myz7 records having been believed TWICE, and the corpus avoided
+        // it only because no fixture had a `use`: an accident, not a guard.
+        //
+        // Hence the predicate is now attribution-based (`refusal_in_file`) — correct by
+        // construction in both environments rather than by which one it runs in.
+        !refused_here("*", "import_closure",
+            "use @std.avrac.core.{Expr}\nfn f() -> int { 1 }")
     }
 
     then "the declaration keywords parse with the delegate REFUSED" {
