@@ -35,8 +35,8 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        1 == 1 && 2 == 3 && 4 == 4\n" +
             "    }\n" +
             "}")
-        out.contains("false:") && out.contains("(== 2 3)")
-            && !out.contains("(== 1 1)") && !out.contains("(== 4 4)")
+        out.contains("false:") && out.contains("2 == 3")
+            && !out.contains("1 == 1") && !out.contains("4 == 4")
     }
 
     // Right-nested chains must flatten too. `a && (b && c)` nests to the RIGHT,
@@ -49,7 +49,7 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        1 == 1 && (2 == 2 && 3 == 4)\n" +
             "    }\n" +
             "}")
-        out.contains("(== 3 4)") && !out.contains("group")
+        out.contains("3 == 4") && !out.contains("group")
     }
 
     // Short-circuit is the load-bearing part: `x != null && x!.f == 1` CRASHES
@@ -108,6 +108,6 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        a == 5 && a == 6\n" +
             "    }\n" +
             "}")
-        out.contains("(== a 6)") && !out.contains("(== a 5)")
+        out.contains("a == 6") && !out.contains("a == 5")
     }
 }
