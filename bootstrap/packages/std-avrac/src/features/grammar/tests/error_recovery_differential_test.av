@@ -1495,12 +1495,16 @@ spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
 // the feature REGISTRY (register_component_name), so an unregistered ident is an
 // ordinary expression and would measure nothing.
 fn CDEF() -> string {
-    "component acct_sr {\n balance: int = 100\n}\n"
+    "component acct_sr {\n let balance: int = 100\n}\n"
 }
 
 spec "t-47hc.5.1 slice C: bare-IDENT component instantiation recovers as the hand does" {
-    then "the malformed instantiation shapes agree on F-code, count and tree" {
-        agree_bad(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
+    // `acct_sr a` with no `{` is NOT malformed — it parses as two ordinary identifier
+    // expression statements on both paths, with no diagnostic. It looked like an abort
+    // path from reading parse_component_block_bare; measuring it showed otherwise, so
+    // it is a TREE agreement rather than an agree_bad case.
+    then "a registered name + instance with no brace is two expressions, not an error" {
+        agree_all(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
     }
 
     then "and on ALL THREE parser paths, including the executor" {
