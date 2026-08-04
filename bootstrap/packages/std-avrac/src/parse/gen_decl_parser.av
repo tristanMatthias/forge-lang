@@ -2064,9 +2064,12 @@ fn parse_fn_decl(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier {
         params_list.push(capval_to_pentry(st, parse_param(st)))
-        while st.cur().tk == Tk.Comma {
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             params_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
         }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
@@ -2125,9 +2128,12 @@ fn parse_extern_decl(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier {
         eparams_list.push(capval_to_pentry(st, parse_param(st)))
-        while st.cur().tk == Tk.Comma {
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             eparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
         }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
@@ -2204,9 +2210,12 @@ fn parse_method_member(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier {
         tmparams_list.push(capval_to_pentry(st, parse_param(st)))
-        while st.cur().tk == Tk.Comma {
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             tmparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
         }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
@@ -2338,9 +2347,12 @@ fn parse_impl_method(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier {
         imparams_list.push(capval_to_pentry(st, parse_param(st)))
-        while st.cur().tk == Tk.Comma {
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             imparams_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
         }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
