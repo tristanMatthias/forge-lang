@@ -50,7 +50,7 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     // differentially: `(x) -> { "a": 1 }` yields the same F0040 under both parsers).
     // Filtered by exact rule + branch pair, so any OTHER `{` overlap still trips.
     a.rule == "lambda_body" && a.i == 0 && a.j == 1 ||
-    a.rule == "statement" && a.i == 9 && a.j == 10 ||
+    a.rule == "statement" && a.i == 10 && a.j == 11 ||
     // t-47hc.25: the SAME class again, from the match_expr flip. `expression` now has a
     // CONCRETE `match` in its FIRST where `@hand(match_expr)` was opaque, which EXPOSES
     // (does not create) the pre-existing ordered choice: at a leading `match` in
@@ -66,7 +66,7 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     //   2/6  — the §2 emit-gen-check view (break continue MATCH defer errdefer return
     //          EXPR_STMT)
     // Pinned by exact rule + branch pair, so any OTHER `match` overlap still trips.
-    a.rule == "statement" && a.i == 5 && a.j == 10 ||
+    a.rule == "statement" && a.i == 6 && a.j == 11 ||
     a.rule == "statement" && a.i == 2 && a.j == 6 ||
     // t-47hc.24: the same class a third time, from the if_expr flip. `expression` now has
     // a CONCRETE `if` in its FIRST where `@hand(if_expr)` was opaque, EXPOSING three
@@ -94,8 +94,21 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     // or `{` overlap still trips the guard.
     a.rule == "else_tail" && a.i == 0 && a.j == 2 ||
     a.rule == "else_tail" && a.i == 1 && a.j == 2 ||
-    a.rule == "statement" && a.i == 2 && a.j == 10
+    a.rule == "statement" && a.i == 3 && a.j == 11
 }
+
+// INDEX SHIFT (t-myz7): `statement` gained a leading `@peek(if_let) iflet_stmt`
+// branch at index 2, so every entry above with an index >= 2 moved by +1
+// (9/10 -> 10/11, 5/10 -> 6/11, 2/10 -> 3/11). The 2/6 entry is NOT shifted: it
+// belongs to `avra_stmt_grammar()`, a different view whose `statement` rule this
+// change does not touch. The shadows themselves
+// are unchanged and still the ones documented above — this allowlist is pinned by
+// exact branch PAIR by design, so inserting a branch necessarily renumbers it.
+//
+// The new branch needs no entry of its own: it is `@peek`-led, and t-47hc.16 (below)
+// pins that a @peek-gated branch does not count as a shadower. Plain `if` still
+// reaches `if_stmt` — the guard is `if` followed by `let` — so the intended
+// "IF STATEMENT wins over expr_stmt" behaviour documented above is untouched.
 
 // True iff `g` has no FIRST/FIRST ambiguity beyond the intended-shadow allowlist; on
 // failure the report is printed so the shadowed rule/branches/tokens are visible.
