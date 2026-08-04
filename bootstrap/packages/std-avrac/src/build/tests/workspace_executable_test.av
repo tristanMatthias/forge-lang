@@ -1,0 +1,158 @@
+// WHY: `bs2 build` could never link an executable in a multi-package
+// workspace, and NOTHING caught it — five specs asserted `rc == 0` on that
+// path and all five passed throughout, because stopping at the IR is a
+// SUCCESS (exit 0, `ok: true`). The only symptom was an absent binary that
+// no test looked for.
+//
+// Two independent defects had to be fixed together (t-jc7u):
+//
+//   1. The dep lookup keyed on `Unit.name` — the manifest's `[package]`
+//      name (`@test/dep`) — while `record_build_result` writes the sidecar
+//      under the UNIT name (`dep`). It therefore matched no recorded build
+//      ever, so the closure always read as incomplete and `build_executable`
+//      always took its IR-only branch.
+//
+//   2. Fixing the key ALONE makes things worse, measurably: the closure
+//      then completes and the link fails with DUPLICATE SYMBOLS, because an
+//      entry compiled whole-program already contains its deps' code. The
+//      opposite patch (never pass dep objects) fails with UNDEFINED SYMBOLS
+//      for an entry that genuinely imports a path-dep. The link line cannot
+//      be decided from the compile mode — it depends on which symbols the
+//      entry object actually references versus defines. Archive semantics
+//      answer that from the linker itself: a member joins only when it
+//      resolves something still undefined.
+//
+// So these specs assert the thing whose absence let this survive: that the
+// build produces a binary AND THAT THE BINARY RUNS. `rc == 0` is exactly
+// the assertion that was already there and already passing.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_file_exists,
+    avra_getpid,
+}
+
+/// A real two-package workspace: `@test/app` (a `[bin]`) importing
+/// `@test/dep` (a `[lib]`) by path. Both live under `packages/`, which is
+/// the layout the resolver requires, and the lib's filename matches its
+/// package name — the same shape as build_auto_use_metadata_fixtures.
+fn wsx_mk_workspace(slug: string) -> string {
+    let base = "/tmp/avra_wsx_${slug}_${string(avra_getpid())}"
+    let app = "${base}/packages/test-app"
+    let dep = "${base}/packages/test-dep"
+    let _ = avra_shell_exec("rm -rf '${base}' && mkdir -p '${app}/src' '${dep}/src' '${base}/packages/std-cli/src'")
+    // The resolver expects a `@std/cli` package to exist alongside the
+    // workspace's own; without it every `use @test.dep` fails to resolve
+    // before the build can even reach the link stage this spec is about.
+    // Same placeholder as build_auto_use_metadata_fixtures uses.
+    let _ = avra_selfhost_write_file("${base}/packages/std-cli/src/cli.av",
+        "export fn _placeholder() -> int { 0 }\n")
+    let _ = avra_selfhost_write_file("${dep}/avra.toml",
+        "[package]\nname = \"@test/dep\"\nversion = \"0.1.0\"\n\n" +
+        "[lib]\nname = \"dep\"\npath = \"src/dep.av\"\n")
+    let _ = avra_selfhost_write_file("${dep}/src/dep.av",
+        "export fn dep_value() -> int { 17 }\n")
+    let _ = avra_selfhost_write_file("${app}/avra.toml",
+        "[package]\nname = \"@test/app\"\nversion = \"0.1.0\"\n\n" +
+        "[bin]\nname = \"app\"\npath = \"src/main.av\"\n\n" +
+        "[dependencies]\n\"@test/dep\" = { path = \"../test-dep\" }\n")
+    // Concatenation, not interpolation: a `${...}` here would be expanded
+    // by THIS file's own string literal rather than written to the fixture.
+    let _ = avra_selfhost_write_file("${app}/src/main.av",
+        "use @test.dep.{dep_value}\n\n" +
+        "fn main() {\n    println(\"dep says \" + string(dep_value()))\n}\n")
+    base
+}
+
+/// Run `bs2 build <flags>` in one of the workspace's packages, capturing
+/// both streams into `<base>/<tag>.log`. The env strip keeps the probe
+/// hermetic under the test runner's own metadata-mode environment.
+fn wsx_build_in(base: string, pkg: string, flags: string, tag: string) -> int {
+    let repo = avra_shell_exec("pwd")
+    avra_shell_exec_status(
+        "cd '${base}/packages/${pkg}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS " +
+        "-u AVRA_COMPILER -u AVRA_LIB_PKG_ROOT '${repo}/build/bs2' build ${flags} " +
+        "> '${base}/${tag}.log' 2>&1")
+}
+
+/// `bs2 build --emit_metadata` in the app package, which pre-builds the
+/// path-dep closure itself.
+fn wsx_build(base: string) -> int {
+    wsx_build_in(base, "test-app", "--emit_metadata", "build")
+}
+
+/// The linked binary's path. `bs2 build` names its output for the SOURCE
+/// basename (the documented Go/Cargo default), so `src/main.av` → `main`.
+fn wsx_binary(base: string) -> string {
+    "${base}/packages/test-app/main"
+}
+
+fn wsx_cleanup(base: string) {
+    let _ = avra_shell_exec("rm -rf '${base}'")
+}
+
+spec "a workspace build links an executable that actually runs" {
+    given "an app importing a path-dep, built with --emit_metadata" {
+        let base = wsx_mk_workspace("run")
+        let status = wsx_build(base)
+        let bin = wsx_binary(base)
+        let existed = avra_selfhost_file_exists(bin) == 1
+        // Captured BEFORE cleanup; the arms below assert on these values.
+        let output = if existed { avra_shell_exec("'${bin}'") } else { "" }
+        let ran = if existed { avra_shell_exec_status("'${bin}' > /dev/null 2>&1") } else { 1 }
+        wsx_cleanup(base)
+
+        then "the build succeeds" {
+            status == 0
+        }
+
+        // THE assertion whose absence let this bug live. An IR-only build
+        // also exits 0 — only the binary's existence separates them.
+        then "an executable is actually produced" {
+            existed
+        }
+
+        then "the executable runs and exits cleanly" {
+            ran == 0
+        }
+
+        // Proves the DEPENDENCY's code is genuinely linked in, not merely
+        // that something linked: the value printed comes from `@test/dep`.
+        then "it prints the value from the dependency" {
+            output.contains("dep says 17")
+        }
+    }
+
+    // The OTHER direction, and the one that killed an earlier attempt at
+    // this fix. Here the dep has a recorded build (so the closure resolves)
+    // but the app is compiled WHOLE-PROGRAM — no --emit_metadata — so its
+    // own object already contains the dep's code. Putting the dep's
+    // producer object on the link line eagerly then defines everything
+    // twice; measured against this exact fixture, that is
+    // `ld.lld: error: duplicate symbol: main` and a failed build.
+    //
+    // Archive semantics are what make one link line serve both shapes, so
+    // this arm is the guard on that choice: revert `archive_objects` to a
+    // plain object list and this fails while the arms above still pass.
+    given "the dep already built, and the app built WHOLE-PROGRAM" {
+        let base = wsx_mk_workspace("whole")
+        let dep_status = wsx_build_in(base, "test-dep", "--lib", "dep")
+        let app_status = wsx_build_in(base, "test-app", "", "app")
+        let bin = wsx_binary(base)
+        let existed = avra_selfhost_file_exists(bin) == 1
+        let output = if existed { avra_shell_exec("'${bin}'") } else { "" }
+        wsx_cleanup(base)
+
+        then "the dependency builds" {
+            dep_status == 0
+        }
+
+        then "the app links instead of colliding with its own dependency" {
+            app_status == 0 && existed
+        }
+
+        then "and the linked binary still runs" {
+            output.contains("dep says 17")
+        }
+    }
+}

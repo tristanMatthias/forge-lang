@@ -288,6 +288,37 @@ export fn link_objects(objs: List<string>, runtime_o: string, llvm_wrapper_o: st
     avra_process_forward("cc", args, "")
 }
 
+/// Bundle `objs` into an `ar` archive at `out_a`, returning cc-style rc
+/// (0 == ok). Returns 0 for an empty `objs` without creating anything.
+///
+/// WHY an archive rather than listing the objects directly: an archive
+/// MEMBER is pulled onto the link line ONLY when it resolves a symbol
+/// that is still undefined, whereas a plain `.o` is always included. For
+/// the dependency closure that difference is the whole ballgame (t-jc7u):
+/// an entry compiled whole-program already CONTAINS its deps' code, so
+/// including their producer objects defines every symbol twice
+/// (`duplicate symbol $40std::crypto::hex_digit`), while a fast-path entry
+/// only REFERENCES them and needs them present (`undefined symbol
+/// $40test::dep::dep_value`). Archive semantics satisfy both from one
+/// link line, deriving the closure from what the entry actually
+/// references instead of from the manifest graph — which cannot know.
+///
+/// `ar` (not lld's `--start-lib`) because the semantics have to hold on
+/// ld64 too, which has no such flag; one portable path beats a
+/// platform split whose macOS half would be the incorrect (eager) one.
+/// `D` forces deterministic mode (zeroed mtime/uid/gid) so a rebuild from
+/// identical inputs produces an identical archive.
+export fn archive_objects(objs: List<string>, out_a: string) -> int {
+    if objs.length == 0 { return 0 }
+    mut items: List<string> = [json_str("rcsD"), json_str(out_a)]
+    mut i = 0
+    while i < objs.length {
+        items.push(json_str(objs[i]))
+        i = i + 1
+    }
+    avra_process_forward("ar", json_array(items), "")
+}
+
 /// Coverage variant — same surface as `link_objects` but threads the
 /// clang_rt profile-runtime argv items through (resolve them with
 /// `coverage_runtime_args`; the caller decides how to surface a
