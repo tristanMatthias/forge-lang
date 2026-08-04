@@ -2088,7 +2088,15 @@ impl Parser {
         }
         // Error propagation: `expr?` — if null, return .Err("parse error")
         // from the enclosing function.
-        if self.check(Tk.Question) {
+        //
+        // t-47hc.33.2 — this re-dispatch RE-TESTS the entry guard's `?` conjuncts
+        // (`allow_dot_postfix && current_line == prev_line`) rather than firing on the
+        // token alone. Reached only after the `!` run above has consumed, it used to
+        // fold a `?` sitting on the NEXT line into a Try, which the entry guard would
+        // have rejected — so `x!` NEWLINE `?` parsed as `(? (force_unwrap x))` on the
+        // native path while the hand oracle reported F0040 `expected expression`.
+        // The guard belongs on every dispatch of a form, not just the first.
+        if self.check(Tk.Question) && self.allow_dot_postfix && self.current_line == self.prev_line {
             self.advance()
             result = Expr.Try(rid)
             rid = self.alloc_at(result, sp_start)

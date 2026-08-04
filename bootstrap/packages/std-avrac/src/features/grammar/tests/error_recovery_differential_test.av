@@ -1504,32 +1504,41 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         tree_agrees_everywhere("fn f(x: int??) -> int {\n let a = x!!\n return 0\n}") &&
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
     }
-    // `x!` + a NEXT-LINE `?` is DELIBERATELY absent, and it is the one case the retired
-    // claim got wrong. It genuinely DIVERGES, measured on this exact corpus:
-    //
-    //     hand = (let a (call __avra_force_unwrap (x)))  (error)  (return 0)
-    //     emit = (let a (? (call __avra_force_unwrap (x))))       (return 0)
-    //     exec = (? …) — same as emit
-    //
-    // The hand REJECTS the cross-line `?`; the production parser FOLDS it into a Try.
-    // Mechanism, traced rather than inferred: the hand's `postfix_step` (parse/mod.av)
-    // consumes a run of `!` in a `while` loop and then falls through to
-    // `if self.check(Tk.Question)` with NO re-test of the entry guard's
-    // `allow_dot_postfix && current_line == prev_line`. The pure-hand driver never
-    // reaches that fallthrough — it consumes the `!` in its own step, so the NEXT step's
-    // entry guard rejects the `?` — while the production path arrives mid-chain and does
-    // reach it (traced firing at cur=3 prev=2, folding anyway).
-    //
-    // Its siblings do NOT diverge, which is why this is one bug and not a class: `[`
-    // and `(` reach the same unguarded fallthrough but land in a fresh step on every
-    // path, and `.` is legal cross-line by design (above).
-    //
-    // Filed as its own gap rather than asserted here, so this spec does not fail for
-    // something it is not about — the same treatment `a?.` gets above. Adding
-    // `tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}")`
-    // is the failing-first witness when someone fixes it. NOTE the fix is a STRICTNESS
-    // change to the hand oracle (it makes the parser reject what it accepts today), so
-    // it lands on the `intended-strictness-change` path, not as a silent correction.
+    then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {
+        // t-47hc.33.2 — this case used to DIVERGE and was carried as a comment rather
+        // than an assertion. Measured then:
+        //
+        //     hand  error[F0040]: expected expression
+        //     emit  <clean>   — folded to (let a (? (call __avra_force_unwrap (x))))
+        //     exec  <clean>   — same as emit
+        //     prod  <clean>
+        //
+        // Mechanism: `postfix_step` (parse/mod.av) consumes a run of `!` in a `while`
+        // loop and then re-dispatched on `if self.check(Tk.Question)` with NO re-test of
+        // the entry guard's `allow_dot_postfix && current_line == prev_line`, so a `?` on
+        // the FOLLOWING line folded into a Try that the entry guard would have rejected.
+        // The fallthrough now re-tests those conjuncts: a guard belongs on every dispatch
+        // of a form, not only the first. All four paths report F0040 together.
+        //
+        // This is a STRICTNESS change — the parser now rejects what it accepted — so it
+        // ships under `intended-strictness-change`, not as a silent correction.
+        //
+        // Its siblings never diverged, which is why this was one bug and not a class:
+        // `[` and `(` reach the same fallthrough but land in a fresh step on every path,
+        // and `.` is legal cross-line by design (above).
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            agree_all("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            // The exact diagnostic, not merely agreement — an equal-and-nonzero
+            // signature is not evidence of the RIGHT rejection.
+            hand_oracle("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}").contains("F0040")
+    }
+    then "the SAME-LINE `!` compounds still fold — the guard did not over-reject" {
+        // The control for the strictness change above: `x!?` on ONE line must stay
+        // clean on every path. A re-guard that also killed this would be a regression,
+        // and nothing else in this spec would have caught it.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") &&
+            hand_oracle("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") == ""
+    }
 }
 
 fn agree_pos(source: string) -> bool {
