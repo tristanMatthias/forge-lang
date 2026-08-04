@@ -6,6 +6,7 @@ use codegen.{ok_sr, err_sr}
 // stmt_unwrap: peel `Annotated` before dispatching on the body's tail, so a
 // `///`-documented assertion still splits. render_expr: the conjunct text.
 use core.{stmt_unwrap, render_expr}
+use fmt.{fmt_expr}
 // The LLVM builders must be imported by NAME from core — they are not ambient
 // in a feature module (same list-them-explicitly shape as trait_decl/codegen.av).
 use core.{avra_llvm_append_basic_block, avra_llvm_position_at_end, avra_llvm_build_br}
@@ -204,19 +205,33 @@ fn emit_then_conjuncts(ctx: Ctx, env: List<VarBinding>, name: string, cond: Expr
     avra_llvm_position_at_end(cx.builder, done_bb)
     // The conjunct sources, newline-joined, resolved once at compile time.
     //
-    // `render_expr` gives S-EXPRESSION form — `(== r.note null)`, not
-    // `r.note == null`. `fmt_expr` (the formatter behind `bs2 fmt`) renders
-    // real infix and is what this wants, but it does not resolve from a
-    // feature module: `build/metadata_extract.av` imports bare `fmt.{…}`
-    // fine at one level deep, while `features/spec_test/` is two deep and the
-    // same import raises F3100 (ModuleNotFound) with an EMPTY module name.
-    // Prefix form still names the conjunct unambiguously, which is the point;
-    // switching to infix is a follow-up once that import path is understood.
+    // `fmt_expr` (the renderer behind `bs2 fmt`) gives SOURCE form —
+    // `r.note == null`, matching what the author wrote. `render_expr` gives
+    // S-expression form (`(== r.note null)`), which names the conjunct but
+    // makes the reader translate back.
+    //
+    // This was briefly believed impossible from a feature module — "the
+    // `fmt.{…}` import raises F3100 with an empty module name two levels
+    // deep". That was FALSE, and instructively so: the F3100 came from the
+    // t-kdyj.8 bug (a parse error inside a package build is REPLACED by an
+    // empty ModuleNotFound), so it was really an unrelated typo in this file,
+    // misattributed to the import. The import resolves fine.
+    // ONE LINE PER CONJUNCT — the newline is the record separator, so a
+    // conjunct that renders multiline must be flattened or it desynchronises
+    // the reporter (raised in review of #1146).
+    //
+    // `test_render_then_at` splits `parts` on "\n" and indexes `failed - 1`.
+    // `fmt_expr` emits real newlines for a `match`/`when`/block operand, so
+    // `1 == 1 && (match y { … }) && 3 == 4` reported `.A -> true` — a fragment
+    // of the SECOND conjunct's body — when the false one was `3 == 4`. Not a
+    // shifted line: a wholly different expression, presented as the failing
+    // claim. Verified before fixing, and guarded by the multiline arm in
+    // conjunct_naming_test.
     mut parts = ""
     mut j = 0
     while j < conj.length {
         if j > 0 { parts = parts + "\n" }
-        parts = parts + render_expr(cx.nodes, cx.nodes.exprs.get(conj[j]))
+        parts = parts + flatten_lines(fmt_expr(cx.nodes, cx.nodes.exprs.get(conj[j])))
         j = j + 1
     }
     cx.call("test_render_then_at", [
@@ -286,4 +301,30 @@ fn is_spec_arm(stmt: Stmt) -> bool {
         .SpecBlock(_, _) or .GivenBlock(_, _) or .ThenBlock(_, _) -> true
         _ -> false
     }
+}
+
+/// Collapse a rendered expression onto ONE line.
+///
+/// The conjunct list is newline-separated and the reporter indexes into it by
+/// position, so an embedded newline would silently make one conjunct look like
+/// two. Tabs are folded too (a rendered block indents with them); runs of
+/// whitespace collapse so the result reads as source rather than as a
+/// squeezed-together fragment.
+fn flatten_lines(s: string) -> string {
+    mut out = ""
+    mut prev_space = false
+    mut i = 0
+    while i < s.length {
+        let c = s[i]
+        let is_ws = c == "\n" || c == "\t" || c == " " || c == "\r"
+        if is_ws {
+            if !prev_space && out.length > 0 { out = out + " " }
+            prev_space = true
+        } else {
+            out = out + c
+            prev_space = false
+        }
+        i = i + 1
+    }
+    out
 }

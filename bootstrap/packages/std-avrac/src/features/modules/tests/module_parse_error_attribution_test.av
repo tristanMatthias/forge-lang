@@ -1,0 +1,122 @@
+// WHY: a parse error inside a MODULE file used to be replaced, not reported.
+//
+// The resolver flattened the failure to a string, dropping the parser's bag,
+// and the CLI wrapped that string in F3100 `ModuleNotFound` + "create the
+// module file or remove the `mod` declaration". So a file that exists, was
+// found, and merely failed to parse was reported as MISSING — and when the
+// underlying message was empty (a reserved-word error), the entire report was:
+//
+//     error[F3100]: error in `src/features/spec_test/codegen.av`:
+//
+// A wrong code, a wrong fix, and nothing after the colon. That cost an hour and
+// five wrong hypotheses in one session, and manufactured a phantom constraint
+// ("fmt can't be imported from a feature module") that was written into a
+// shipped PR as a known limitation before being disproved.
+//
+// A third layer sat underneath: the parser built its diagnostics with
+// `span_new`, which leaves `Span.file` empty, so even once the real F0001 was
+// propagated the renderer attributed it to the ENTRY file — `src/avrac.av:296`
+// for a 20-line entry, no snippet. Right line, wrong filename, which is worse
+// than no location at all.
+//
+// These specs drive the real CLI over a real two-file module tree, because
+// that is the only place all three layers compose. t-kdyj.8.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+
+// A package-shaped fixture: an entry that declares `mod broken`, plus the
+// module file itself. Returns the compiler's combined output + exit status.
+fn compile_module_tree(module_body: string) -> string {
+    let dir = "/tmp/avra_t_kdyj8_mod"
+    avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+    avra_shell_exec("cat > '${dir}/main.av' <<'EOF'\nmod broken\n\nfn main() -> int {\n    0\n}\nEOF")
+    let escaped = module_body.replace("'", "'\\''")
+    avra_shell_exec("cat > '${dir}/broken.av' <<'EOF'\n${escaped}\nEOF")
+    capture_with_status("${dir}/main.av", "${dir}/out.log")
+}
+
+/// Run the compiler with its output redirected to a log, then read the log and
+/// append the real exit status.
+///
+/// Not `cmd; echo $?` in one `avra_shell_exec`: that makes the status control
+/// depend on a compound shell command and lets shell diagnostics mix into the
+/// captured output. `avra_shell_exec_status` returns the status directly, so
+/// the two are captured separately and the status arm cannot be satisfied by
+/// text the compiler happened to print (raised in review of #1146).
+fn capture_with_status(entry: string, log: string) -> string {
+    let rc = avra_shell_exec_status("./build/bs2 compile '${entry}' > '${log}' 2>&1")
+    let out = avra_selfhost_read_file(log)
+    "${out}\n__AVRA_STATUS:${string(rc)}"
+}
+
+// The reserved-word body: `none` is a reserved word, so `let none` is a syntax
+// error whose legacy `error_message` string is EMPTY — the exact shape that
+// made the old report degenerate to a bare code and a colon.
+fn reserved_word_body() -> string {
+    "fn probe() -> int {\n" +
+    "    let none: int = 1\n" +
+    "    none\n" +
+    "}"
+}
+
+// A `mod` declaration whose file is absent. Separate fixture: the F3100 case.
+fn compile_missing_module() -> string {
+    let dir = "/tmp/avra_t_kdyj8_missing"
+    avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
+    avra_shell_exec("cat > '${dir}/main.av' <<'EOF'\nmod absent\n\nfn main() -> int {\n    0\n}\nEOF")
+    capture_with_status("${dir}/main.av", "${dir}/out.log")
+}
+
+// NOTE: each `then` binds its own `out` rather than sharing one from a `given`.
+// A `let` in a GIVEN body is not visible to its THEN arms (t-4nly, filed) —
+// hit while writing this guard. Not worked around silently: t-4nly is its own
+// fix; binding per-arm tests t-kdyj.8 no less completely.
+spec "t-kdyj.8: a module file's parse error is REPORTED, not replaced" {
+    then "the real syntax error is reported, not a substituted F3100" {
+        let out = compile_module_tree(reserved_word_body())
+        out.contains("F0001") && !out.contains("F3100")
+    }
+
+    then "the diagnostic is attributed to the MODULE file, not the entry" {
+        // The `span_new` -> `span_at` layer. Without it the location reads
+        // `main.av:2:9` — a line that does not exist in a 5-line entry.
+        let out = compile_module_tree(reserved_word_body())
+        out.contains("broken.av:2:9") && !out.contains("main.av:2")
+    }
+
+    then "the failure is not silent" {
+        let out = compile_module_tree(reserved_word_body())
+        out.contains("__AVRA_STATUS:1")
+    }
+
+    then "the bogus `mod`-declaration help is gone" {
+        // F3100's help text. Advising "create the module file" for a file that
+        // exists and parsed most of the way is what sent an hour of
+        // investigation at the import path instead of the typo.
+        let out = compile_module_tree(reserved_word_body())
+        !out.contains("create the module file")
+    }
+
+    then "F3100 is still what a MISSING module reports" {
+        // The control. Without it, deleting the F3100 path entirely would
+        // satisfy every arm above — the fix must narrow the code to its real
+        // case, not remove it.
+        let out = compile_missing_module()
+        out.contains("F3100") && out.contains("__AVRA_STATUS:1")
+    }
+}
+
+spec "t-kdyj.8: a clean module tree still compiles" {
+    then "a well-formed `mod` file is unaffected" {
+        // Guards the propagation edit itself: threading a bag through every
+        // ModListResult / ModStmtResult construction must not disturb the
+        // success path.
+        let out = compile_module_tree(
+            "export fn probe() -> int {\n" +
+            "    7\n" +
+            "}")
+        out.contains("__AVRA_STATUS:0") && !out.contains("error[")
+    }
+}

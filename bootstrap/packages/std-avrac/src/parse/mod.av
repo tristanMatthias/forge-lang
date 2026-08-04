@@ -29,7 +29,7 @@ use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
 use parse.{classify_keyword}
-use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new}
+use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new, span_at}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
@@ -3739,7 +3739,20 @@ impl Parser {
     fn report(self, code: DiagCode, message: string) {
         // Always add to the bag — even if we already had an error.
         // This lets us show ALL parse errors, not just the first.
-        let sp = span_new(self.current_start, self.current, self.current_line, self.current_column)
+        //
+        // `span_at`, not `span_new`: the parser KNOWS its file, and dropping it
+        // made every parse diagnostic file-less (t-kdyj.8). `render_diagnostic`
+        // already prefers `diag.span.file` over the caller-supplied path, so a
+        // file-less span silently rendered a MODULE file's error against the
+        // ENTRY file — reporting `src/avrac.av:296:9` for a 20-line entry,
+        // with no snippet, because line 296 does not exist there. The line was
+        // right and the filename was wrong, which is worse than no location.
+        //
+        // `self.file` is "" for the entry parse by design (see
+        // `parse_program_source_at`), and `span_at` with "" is exactly
+        // `span_new` — so the entry path is unchanged, and only merged-module
+        // parses gain the attribution they were missing.
+        let sp = span_at(self.current_start, self.current, self.current_line, self.current_column, self.file)
         let diag = diag_error(code, message, sp)
         self.bag = bag_report(self.bag, diag)
         // Set had_error + message for backward compat (first error wins)
