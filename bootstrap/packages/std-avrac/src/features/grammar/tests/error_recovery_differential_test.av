@@ -928,9 +928,16 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_tree("component C inst { key trueish }\nfn f() -> int { 1 }")
     }
 
-    // The forms the native rule deliberately DECLINES (nested blocks, method
-    // shorthand, nested `component`), which @try must hand back to the hand
-    // verbatim rather than parsing as loose expression statements.
+    // These four were ONCE declined by the native rule and handed back to the hand.
+    // They are ROUTED now — `comp_block_item` carries all four arms (raw-named,
+    // raw-bare, nested-named, nested-bare, method shorthand) with `declaration` as the
+    // honest unguarded tail. Measured: the four forms compile with BOTH production
+    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*' AVRA_NO_STATIC_FALLBACK=1`), 0 refusals.
+    //
+    // The assertions stay exactly as they are. They were written as a
+    // declined-vs-hand parity check and they now serve as the routed-vs-hand parity
+    // check — the same claim either way, and the one that would go red if a future
+    // change to those arms drifted from `parse_comp_block_body`.
     then "PROBE: a native instantiation BODY survives (statements not dropped)" {
         agree_tree("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
     }
