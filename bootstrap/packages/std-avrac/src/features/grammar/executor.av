@@ -1476,6 +1476,13 @@ fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
 /// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
 export fn lookahead_ok(cond: string, st: PState) -> bool {
+    // `always` — the zero-width UNCONDITIONAL match (t-47hc.5). Its only use is the
+    // `@fallback` tail of an alternation whose alternatives are all native: the tail
+    // must run on a token that starts NOTHING, and no other primitive matches "any
+    // token". Spelled as a @peek cond rather than a new GPrim because @peek is already
+    // zero-width, already nullable, and already lowered by emit through THIS function —
+    // so the two engines agree by construction instead of by a second implementation.
+    if cond == "always" { return true }
     // Statement-position brace disambiguation, the token-level twin of
     // Parser.is_stmt_map_literal: only a string-keyed `{ "key": ... }` is a map
     // expression here. Empty braces and every other leading token are blocks.
@@ -3635,6 +3642,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // ── the `table { … }` literal (t-myz7) ──
         // `MkTableHeader` yields CapVal.Nil, not a node: its whole job is to PUSH the
         // header context the row build reads, so it must not mint an arena row.
+        // The primary alternation's silent tail (t-47hc.5) — see mk_primary_fail.
+        "MkPrimaryFail" if args.length == 0 -> CapVal.Node(mk_primary_fail(st))
         "MkTableHeader" if args.length == 2 -> mk_table_header(st, env.get(args[0]), env.get(args[1]))
         "MkTableRow" if args.length == 1 -> CapVal.Node(mk_table_row(st, env.get(args[0])))
         "MkTableLit" if args.length == 1 -> CapVal.Node(mk_table_lit(st, 0 - 1, env.get(args[0])))
@@ -5714,6 +5723,24 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 /// [sp_start, next-token) exactly like the hand parse_list_expr alloc_at(Expr.ListLit,
 /// sp_start) (mod.av:2286/2298) — sp_start is the `[` byte (emit) or 0-1 span-free
 /// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
+/// The primary alternation's `@fallback` tail (t-47hc.5) — retires
+/// `@hand(primary_base)` from the production path.
+///
+/// Fails the DSL run WITHOUT recording a diagnostic. That is the whole point: on
+/// `dsl.had_error` the caller (`parse_expression`, parse/mod.av) falls through to
+/// `parse_expression_hand()`, which re-parses and emits the AUTHORITATIVE coded
+/// diagnostic. A tail that reported here would either double-report or, worse, win
+/// with the alternation's generic `F0001 expected an expression` where the hand
+/// gives `F0040 expected expression` — measured, that single divergence was the only
+/// thing standing between this leaf and deletion, and it broke 6 recovery assertions.
+///
+/// `note_had_error` (not `report`) is exactly the existing mechanism for "the delegate
+/// owns the reporting, mirror only the STATE" — the same reason it exists for @hand.
+export fn mk_primary_fail(st: PState) -> ExprId {
+    st.note_had_error()
+    st.error_node_silent()
+}
+
 export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
     st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
 }
