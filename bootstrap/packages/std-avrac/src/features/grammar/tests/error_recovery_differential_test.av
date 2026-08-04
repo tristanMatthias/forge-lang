@@ -31,6 +31,29 @@ fn errcodes(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
+/// The EXPLICIT env prefix for a parser mode — every routing variable set, none inherited.
+///
+/// `parser_new` reads `decl_flip` and `decl_static` as `… != "0"` (ON by default) and
+/// `no_static_fallback` as `== "1"` (OFF by default), so a prefix that sets only the ONE
+/// variable distinguishing its mode is silently ambient-dependent: run the suite under
+/// `AVRA_PARSER_DECL_FLIP=0` and the "emit" and production calls BOTH collapse to the
+/// hand, and a three-path assertion passes having measured one implementation twice.
+///
+/// `rtree_at` already sets every field explicitly for exactly this reason, and says so —
+/// "the vacuity class this file exists to police". This is its shell-invocation twin, and
+/// the reasoning applies identically to the F-code oracles (`agree_all`) and the
+/// message-level one (`msgs_agree_bad`); both route through here so the mapping lives in
+/// ONE place. Under a run with none of the three set, every prefix below re-states the
+/// existing default, so this is behaviour-preserving — it removes the ambient dependence,
+/// not the meaning.
+fn mode_env(mode: string) -> string {
+    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1" }
+    // production — the static parser, then the INTERPRETER re-parse on `had_error`
+    // (t-zrn3): the path users actually run, and the one the other two are blind to.
+    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0"
+}
+
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
 ///
 /// Everywhere else in this file the F-code signature discriminates, so `errcodes` is
@@ -58,10 +81,25 @@ fn errmsgs(env: string, source: string) -> string {
 /// The message-level sibling of `agree_all`. The nonempty check is the anti-vacuity
 /// half — without it a fixture that stopped reporting entirely would "agree".
 fn msgs_agree_bad(source: string) -> bool {
-    let hand = errmsgs("AVRA_PARSER_DECL_FLIP=0", source)
-    hand != "" &&
-        errmsgs("AVRA_NO_STATIC_FALLBACK=1", source) == hand &&
-        errmsgs("", source) == hand
+    let hand = errmsgs(mode_env("hand"), source)
+    let emit = errmsgs(mode_env("emit"), source)
+    let prod = errmsgs(mode_env("prod"), source)
+    if hand == "" || emit != hand || prod != hand {
+        // WHICH path diverged, and whether the capture came back EMPTY. `errmsgs` returns
+        // filtered pipeline output and so cannot carry `bs2 check`'s exit status, which
+        // leaves "the compiler died / the filter matched nothing" and "the messages really
+        // differ" looking alike from the return value alone. They need different fixes, so
+        // the printout separates them — the same idiom `tree_agrees_everywhere` and
+        // `agree_tree` already use. No assertion can PASS on a lost status: an empty
+        // capture fails the nonempty bar below, and `"".contains(…)` is false at the
+        // three call sites that pin an exact message.
+        println("three-path MESSAGE mismatch")
+        println(source)
+        println("hand=" + hand)
+        println("emit=" + emit)
+        println("prod=" + prod)
+    }
+    hand != "" && emit == hand && prod == hand
 }
 
 /// Does an F-code signature contain a PARSE-phase failure? Raised in review on the
@@ -89,8 +127,8 @@ fn sig_has_parse_code(sig: string) -> bool {
     false
 }
 
-fn static_raw(source: string) -> string { errcodes("AVRA_NO_STATIC_FALLBACK=1", source) }
-fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", source) }
+fn static_raw(source: string) -> string { errcodes(mode_env("emit"), source) }
+fn hand_oracle(source: string) -> string { errcodes(mode_env("hand"), source) }
 // t-zrn3 — the THIRD path, and the one users actually run. `static_raw` and the TREE
 // oracle below both disable the interpreter re-parse fallback, so between them they
 // measure the EMIT-generated parser and nothing else. The DEFAULT path is static →
@@ -99,7 +137,7 @@ fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", s
 // both oracles. It was real: exec_node FIRST-guarded a single-branch rule where emit
 // runs it unconditionally, so every stray top-level token reported the alternation's
 // generic F0001 instead of the hand parser's F0040, while both oracles stayed green.
-fn default_path(source: string) -> string { errcodes("", source) }
+fn default_path(source: string) -> string { errcodes(mode_env("prod"), source) }
 fn agree(source: string) -> bool {
     let sr = static_raw(source)
     let hand = hand_oracle(source)
@@ -1771,8 +1809,21 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
 // helper exists at all.
 spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" {
     then "a header that runs to EOF reports identically on all three paths" {
-        msgs_agree_bad("fn t() -> int {\n let x = table { a\n 0\n}") &&
-            agree_all("fn t() -> int {\n let x = table { a\n 0\n}")
+        // EOF while the HEADER IS STILL OPEN. The earlier form of this fixture ended
+        // `…table { a\n 0\n}` — that lone `}` CLOSES THE TABLE and leaves the `fn` body
+        // unclosed, so it measured fn-body EOF recovery and never reached
+        // `parse_table_literal`'s unterminated exit at all. Measured, the difference is
+        // the whole point of the case:
+        //
+        //   …table { a\n 0\n}   error[F0001]: expected `}` after function body
+        //   …table { a          error[F0001]: expected `}` to close table   ← this path
+        //                       error[F0001]: expected `}` after function body
+        //
+        // Both agree on all three paths, which is exactly why the wrong one stayed green.
+        let src = "fn t() -> int {\n let x = table { a"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src)
     }
 
     then "a row NARROWER than the header names both widths" {
@@ -1782,7 +1833,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
             tree_agrees_everywhere(src) &&
             // The exact message, not merely "some equal set" — this is the assertion the
             // F-code signature cannot make.
-            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
+            errmsgs(mode_env("hand"), src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
     }
 
     then "a row WIDER than the header names both widths" {
@@ -1790,7 +1841,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         msgs_agree_bad(src) &&
             agree_all(src) &&
             tree_agrees_everywhere(src) &&
-            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
+            errmsgs(mode_env("hand"), src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
     }
 
     then "a duplicate column name is rejected, naming the column" {
@@ -1798,7 +1849,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         msgs_agree_bad(src) &&
             agree_all(src) &&
             tree_agrees_everywhere(src) &&
-            errmsgs("AVRA_PARSER_DECL_FLIP=0", src).contains("duplicate table column `a`")
+            errmsgs(mode_env("hand"), src).contains("duplicate table column `a`")
     }
 
     // The two VALID shapes. They belong in this corpus because the flip's risk is not
