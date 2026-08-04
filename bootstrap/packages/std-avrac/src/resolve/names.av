@@ -120,11 +120,35 @@ fn alias_lookup(aliases: List<AliasBinding>, name: string) -> string {
 
 /// Linear search for `name` in a module's item list. Returns the
 /// canonical path or "" when not declared.
+///
+/// METHODS ARE SKIPPED, and that is load-bearing (t-iu1n). `collect_impl_items`
+/// registers every `impl` method as a `MethodSym` whose canonical is the BARE name
+/// (methods are mangled via `method_mangled_name` at their real call sites, so the
+/// entry exists for visibility tracking, not for name binding). A module that
+/// declares BOTH `impl T { fn f }` and a module-level `fn f` therefore held two
+/// entries with the same `short_name` and different canonicals — one bare, one
+/// qualified — and this scan, matching on `short_name` alone, returned whichever
+/// happened to be pushed FIRST.
+///
+/// That made name binding depend on declaration ORDER across files. The compiler's
+/// own `parse` module has exactly this collision — `impl Parser { fn parse_expression }`
+/// (parse/mod.av) and `export fn parse_expression` (gen_expr_parser.av) — and adding
+/// an unrelated function elsewhere in the module was enough to reorder the two. Every
+/// bare `parse_expression(st)` call then bound to the METHOD's bare canonical, was
+/// never module-qualified, and codegen failed with `undefined function
+/// parse_expression` in a function a thousand lines from the edit.
+///
+/// Skipping methods is correct at all three call sites, none of which can legitimately
+/// name one: a `use` cannot import a method, a bare identifier cannot bind to one (a
+/// method needs a receiver), and `resolve_const_ref` additionally filters on
+/// `const_index_has`. Nothing can depend on the old behaviour either — a bare canonical
+/// for a method is not the mangled symbol codegen emits, so resolving to it never
+/// produced a working reference, only a confusing failure.
 fn item_lookup(items: List<ModuleItemEntry>, name: string) -> string {
     mut i = 0
     while i < items.length {
         let it = items[i]
-        if it.short_name == name { return it.canonical }
+        if it.short_name == name && it.kind != SymbolKind.MethodSym { return it.canonical }
         i = i + 1
     }
     ""
