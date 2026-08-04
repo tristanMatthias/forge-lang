@@ -20,7 +20,7 @@
 // content, binary by link inputs — so an unchanged rebuild re-runs nothing.
 
 use build.link.{LinkOptions, default_link_options, link_objects, link_opts_canonical,
-                atomic_cp_cmd, atomic_install_cmd}
+                archive_objects, atomic_cp_cmd, atomic_install_cmd}
 use build.cache.{cache_for, cache_entry_realobj_path, linked_bin_key, linked_bin_lookup,
                  linked_bin_publish, entry_source_meta_path, ensure_source_meta_dir, entry_ll_path}
 use build.driver.{BuildInputs, BuildOutcome, decide_build, record_build_result, cached_build_fp}
@@ -547,11 +547,40 @@ export fn link_unit_executable(project_dir: string, fp: Fingerprint, out_bin: st
     if avra_selfhost_file_exists(runtime_o) != 1 || avra_selfhost_file_exists(wrapper_o) != 1 {
         return Result.Err("runtime objects (runtime.o / llvm_wrapper.o) not found next to the compiler in ${bs2_dir}")
     }
+    // Key on the REAL objects, never the archive: `ar` output is one more
+    // artifact to keep byte-stable, and the objects are what actually
+    // determine the binary. Keeping the key on them also means the archive
+    // is only ever built on a cache MISS, below.
     let key = linked_bin_key(objs, runtime_o, wrapper_o, link_opts_canonical(opts))
     if linked_bin_lookup(c, key, out_bin) {
         return Result.Ok(true)
     }
-    if link_objects(objs, runtime_o, wrapper_o, out_bin, opts) != 0 {
+    // The entry object is linked EAGERLY (it is the program); the dependency
+    // closure goes in as an archive, so members join only when the entry
+    // leaves their symbols undefined. See `archive_objects` — this is what
+    // makes one link line correct for both a whole-program entry (which
+    // already defines them) and a fast-path entry (which references them).
+    mut link_objs: List<string> = [own]
+    mut dep_archive = ""
+    if dep_objs.length > 0 {
+        dep_archive = "${out_bin}.deps.${string(avra_getpid())}.a"
+        if avra_selfhost_file_exists(dep_archive) == 1 { let _ = avra_remove_file(dep_archive) }
+        if archive_objects(dep_objs, dep_archive) != 0 {
+            // `ar` can fail having already created the file (a partial archive,
+            // a short write). This early return skips the cleanup below, so
+            // without this the scratch archive survives — and it is PID-scoped,
+            // so repeated failures accumulate one file each rather than
+            // overwriting a single stale one.
+            let _ = avra_remove_file(dep_archive)
+            return Result.Err("ar failed bundling the dependency closure for ${out_bin}")
+        }
+        link_objs.push(dep_archive)
+    }
+    let rc = link_objects(link_objs, runtime_o, wrapper_o, out_bin, opts)
+    // The archive is pure scratch — its members are already content-addressed
+    // in the object store, so it is rebuilt on demand rather than kept.
+    if dep_archive != "" { let _ = avra_remove_file(dep_archive) }
+    if rc != 0 {
         return Result.Err("linker (cc) failed producing ${out_bin}")
     }
     linked_bin_publish(c, key, out_bin)
@@ -568,20 +597,20 @@ type DepObjs = { objs: List<string>, missing: string }
 /// build contributes nothing (its symbols then surface as an honest link
 /// error rather than a silently wrong binary).
 ///
-/// KNOWN DEFECT, tracked separately — do NOT "fix" this lookup in place.
-/// `cached_build_fp` is keyed on the dep's UNIT name (its manifest's
-/// `[lib]`/`[bin]` name, which is what `record_build_result` writes via
-/// `unit_name_for`), but `Unit.name` is the `[package]` name — a different
-/// string for essentially every real package (`@std/lsp` vs `std-lsp`,
-/// `@test/dep` vs `dep`). So this never matches a recorded build and every
-/// path-dep reads as missing.
+/// The lookup key is the dep's UNIT name — its manifest's `[lib]`/`[bin]`
+/// name, which is what `record_build_result` writes — derived through
+/// `unit_name_for`, the SAME function that records it. `Unit.name` is the
+/// `[package]` name and is a different string for essentially every real
+/// package (`@std/lsp` vs `std-lsp`, `@test/dep` vs `dep`), so keying on it
+/// matched no recorded build and every path-dep read as missing (t-jc7u).
+/// Never hand-roll a second derivation here: the two must move together.
 ///
-/// Passing the right key is NOT the fix: doing so completes the closure and
-/// the link then fails with DUPLICATE SYMBOLS, because a non-fast-path entry
-/// object already contains the deps' code (whole-program), so adding their
-/// producer objects defines everything twice. The link line's composition
-/// depends on the compile mode that produced the entry object, which this
-/// function cannot see. Measured, not guessed — see the ticket.
+/// Completing the closure is only HALF the fix. These objects must reach
+/// the link line with ARCHIVE semantics (`archive_objects`), because an
+/// entry compiled whole-program already contains its deps' code and would
+/// otherwise define every symbol twice. See that function for the full
+/// argument — the composition cannot be decided from the compile mode,
+/// which is what two earlier attempts got wrong in opposite directions.
 fn dep_producer_objects(project_dir: string) -> DepObjs {
     mut objs: List<string> = []
     mut missing = ""
@@ -591,7 +620,7 @@ fn dep_producer_objects(project_dir: string) -> DepObjs {
     for u in g.units {
         let root = strip_trailing_slash(u.project_root)
         if root == self_root { continue }
-        let fp = cached_build_fp(root, u.name)
+        let fp = cached_build_fp(root, unit_name_for(load_manifest("${root}/"), true))
         if fp == "" {
             if missing == "" { missing = u.name }
             continue

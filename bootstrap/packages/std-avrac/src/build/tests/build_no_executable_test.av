@@ -97,25 +97,39 @@ spec "an IR-only build: a success for `build`, a diagnosed failure for `run`" {
                 && p.status != 0
                 && p.status != 127
         }
-        then "the message names the dependency, and prescribes NOTHING" {
+        then "the message names the dependency AND the remedy that works" {
             // Without `missing_dep` on the report there is nothing to name:
             // under Quiet the reason was never printed, so `run` could only
             // ever have said "no executable" with no detail at all.
             //
-            // The negative half is the load-bearing one, and was raised in
-            // review of this PR: the message must NOT recommend
-            // `--emit_metadata`. That remedy does not work — the dep lookup
-            // keys on the `[package]` name while builds record under the
-            // `[lib]`/`[bin]` name, so the closure reads as incomplete even
-            // immediately after a successful pre-build (t-jc7u). Naming a
-            // command that cannot fix the problem is a worse diagnostic
-            // than naming none.
+            // This arm previously asserted the message prescribed NOTHING,
+            // because `--emit_metadata` provably did not fix the problem:
+            // the dep lookup keyed on the `[package]` name while builds
+            // record under the `[lib]`/`[bin]` name, so the closure read as
+            // incomplete even immediately after a successful pre-build, and
+            // naming a command that cannot help is worse than naming none.
+            //
+            // t-jc7u fixed exactly that (the key now derives through
+            // `unit_name_for`, and the closure links with archive
+            // semantics), so the remedy is now real: `--emit_metadata`
+            // pre-builds the path-dep and the build links and runs. The
+            // diagnostic names it again — and this arm is what keeps the
+            // two in step, so it can never drift back to advertising a
+            // remedy that does not work.
+            //
+            // Assert the whole COMMAND, not the bare flag. `--emit_metadata`
+            // belongs to `bs2 build`; `command run` declares no flags, so a
+            // message printed by `bs2 run` that names only the flag reads as
+            // an option of `run` and fails when typed there. Asserting the
+            // token alone passed happily against exactly that wording, which
+            // is how it shipped — the guard has to pin the part a reader
+            // acts on.
             let base = noexe_mk_project("why")
             let p = noexe_probe(base, "run")
             noexe_cleanup(base)
             p.output.contains("nothing to run")
                 && p.output.contains("@dep/thing")
-                && !p.output.contains("--emit_metadata")
+                && p.output.contains("bs2 build --emit_metadata")
         }
     }
 }
