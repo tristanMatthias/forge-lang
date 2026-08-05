@@ -22,7 +22,8 @@
 // specs assert a function is NOT in the set.
 
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.codegen.{analyze_return_ownership}
+use @std.avrac.core.{stmt_unwrap}
+use @std.avrac.codegen.{analyze_return_ownership, analyze_releasable, analyze_return_ownership_set}
 
 /// Sentinel injected when a fixture fails to parse. See `not_fresh`.
 const PARSE_FAILED: string = "<parse-failed>"
@@ -59,6 +60,37 @@ fn not_fresh(src: string, name: string) -> bool {
 /// sentinel-only set fails it — so it needs no extra guard.
 fn is_fresh(src: string, name: string) -> bool {
     has(fresh_set(src), name)
+}
+
+/// The RELEASABLE set of the fn named `fname` in `src` — the bindings
+/// whose scope exit emits a recursive `__release`. This is the other
+/// half of the analysis: `fresh_set` says which FUNCTIONS hand back a
+/// fresh value, this says which LOCALS this frame still owns at exit.
+fn releasables_of(src: string, fname: string) -> List<string> {
+    let p = parse_program_source(src)
+    let ids = p.ids
+    if ids == null { return [PARSE_FAILED] }
+    let fresh = analyze_return_ownership_set(p.store, ids!)
+    for sid in ids! {
+        match stmt_unwrap(p.store, p.store.stmts.get(sid)) {
+            .Function(n, _, _, _, body) -> {
+                if n == fname { return analyze_releasable(p.store, body, fresh) }
+            }
+            _ -> {}
+        }
+    }
+    [PARSE_FAILED]
+}
+
+/// Assert `name` is NOT releasable in `fname`, non-vacuously (see `not_fresh`).
+fn not_releasable(src: string, fname: string, name: string) -> bool {
+    let s = releasables_of(src, fname)
+    !has(s, PARSE_FAILED) && !has(s, name)
+}
+
+/// Assert `name` IS releasable — the positive control for the arm above.
+fn is_releasable(src: string, fname: string, name: string) -> bool {
+    has(releasables_of(src, fname), name)
 }
 
 const PRELUDE: string = "type T = { v: int }\ntype Inner = { n: int }\ntype Holder = { inner: Inner }\n"
@@ -183,10 +215,61 @@ spec "t-k6lm return-ownership: shadowing is conservatively denied" {
         then "a fn shadowed by a DESTRUCTURING bind loses candidacy" {
             not_fresh(PRELUDE + "fn mk() -> T { T { v: 1 } }\nfn other() -> int { let (mk, z) = (1, 2)\n z }\n", "mk")
         }
+        then "a fn shadowed inside an IMPL METHOD loses candidacy (CodeRabbit #1174)" {
+            // `collect_bound_names` descends into .Function/.Block/.Module/.If/
+            // .While/.For but stopped at the wildcard for .Impl — so a local
+            // inside a method was invisible to shadow detection.
+            not_fresh(PRELUDE + "fn mk() -> T { T { v: 1 } }\ntype S = { q: int }\nimpl S { fn go(self) -> int { let mk = 3\n mk } }\n", "mk")
+        }
+        then "a fn shadowed inside a SPEC/GIVEN block loses candidacy (CodeRabbit #1174)" {
+            not_fresh(PRELUDE + "fn mk() -> T { T { v: 1 } }\nspec \"s\" { given \"g\" { let mk = 3\n } }\n", "mk")
+        }
         then "an unshadowed sibling in the same program keeps its candidacy" {
             // Positive control for the arm above: proves the shadowing
             // rule is targeted, not a blanket denial of everything.
             is_fresh(PRELUDE + "fn mk() -> T { T { v: 1 } }\nfn other() -> int { let z = 3\n z }\n", "mk")
+        }
+    }
+}
+
+spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the frame" {
+    given "a local whose field is handed to a callee whose result is returned" {
+        then "the local loses candidacy — the callee may RETAIN what it was passed" {
+            // The `db_for` shape (query_passes_test): `pass_db_new(…, parsed.store, …)`
+            // stores `parsed.store` inside the returned `Db`, so releasing
+            // `parsed` at scope exit frees a store the caller still reads
+            // through. The composite arms miss this because the escape route
+            // is a CALL, not a literal.
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(h: Holder) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return keep(p.inner) }\n", "db", "p")
+        }
+        then "a field behind `??` escapes too" {
+            // `parsed.ids ?? []` hands back `parsed.ids` on the non-null path.
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(x: Inner?) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return keep(p.inner ?? Inner { n: 0 }) }\n", "db", "p")
+        }
+        then "a returned METHOD CALL on a local escapes its receiver" {
+            // `p.m()` may hand back a field of `p`, exactly as `p.f` does, so
+            // the CALLEE half of a call is an escape route too.
+            not_releasable(PRELUDE + "fn db() -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return p.get() }\ntype H2 = { x: int }\n", "db", "p")
+        }
+        then "a call nested in a returned COMPOSITE still escapes (CodeRabbit #1174)" {
+            // `return Holder { inner: keep(p.inner) }` — the composite is still
+            // escape position, so the call inside it escapes its args too. The
+            // call-descending mode must survive one level of composite nesting;
+            // delegating composites to the plain walker drops it.
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Inner { i }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return Holder { inner: keep(p.inner) } }\n", "db", "p")
+        }
+        then "a DISCARDED tail call does NOT cost the local its candidacy" {
+            // The boundary of the rule above, and the reason it is limited to
+            // explicit returns: `collect_tail_exprs` yields the last STATEMENT,
+            // whose value is usually discarded. `println(string(p.inner.n))`
+            // ending a void fn retains nothing, so treating it as an escape
+            // leaks `p` — difftest_corpus/collections.av caught exactly that.
+            is_releasable(PRELUDE + "fn db() { let p = Holder { inner: Inner { n: 1 } }\n println(string(p.inner.n)) }\n", "db", "p")
+        }
+        then "a local passed NOWHERE keeps its candidacy" {
+            // Positive control: proves the rule is targeted, not a blanket
+            // denial of every local in a fn that happens to contain a call.
+            is_releasable(PRELUDE + "fn side() -> int { 7 }\nfn db() -> int { let p = Holder { inner: Inner { n: 1 } }\n side() }\n", "db", "p")
         }
     }
 }
