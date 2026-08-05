@@ -497,15 +497,23 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     // dispatch loop, so it emitted the caller's bookkeeping (`s_diags` / `s_err` /
     // `s_cut`, plus a `break`) with nothing declaring it — the generated parser did
     // not compile. Silent until now only because no rule had the shape.
-    then "malformed `mod` owns its recovery — the first form off the leaf" {
+    then "malformed `mod` and `use` own their recovery — the first forms off the leaf" {
         // All three of the hand's abort paths for `mod` are native now.
         !refused_here("decl_hand", "mod_bare", "mod\nfn f() -> int { 1 }") &&
         !refused_here("decl_hand", "mod_num", "mod 5\nfn f() -> int { 1 }") &&
         !refused_here("decl_hand", "mod_brace", "mod {\nfn f() -> int { 1 }") &&
-        // ANTI-VACUITY: three negatives would also pass if `refused_here` simply
+        // `use` follows, via `@try … @cut` on use_decl plus `@fallback` on the bare
+        // branch so a token that starts NEITHER form still reports "expected module
+        // path after `use`" instead of falling through un-owned.
+        !refused_here("decl_hand", "use_bare", "use\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "use_dot", "use .{x}\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "use_no_brace", "use foo\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse — `use` is next in line and has not been converted, so this fires
-        // today and will need re-pointing (not deleting) when it is.
-        refused_here("decl_hand", "use_still_needs_leaf", "use @std.{}\nfn f() -> int { 1 }")
+        // refuse. `enum` has not been converted, so this fires today — RE-POINT it at
+        // the next unconverted keyword when `enum` lands, never delete it.
+        refused_here("decl_hand", "enum_still_needs_leaf", "enum\nfn f() -> int { 1 }")
     }
 }
