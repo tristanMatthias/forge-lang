@@ -43,7 +43,77 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// work without a second pass.
 export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -> List<string> {
     let empty: List<string> = []
-    single_pass_escape_ids(store, body, empty, fresh)
+    let swept = single_pass_escape_ids(store, body, empty, fresh)
+    remove_returned_field_roots(store, body, swept)
+}
+
+/// Apply the "not returned" half of the rule above to FIELD READS.
+///
+/// `remove_escaped_expr` deliberately spares the base of `p.x` — an
+/// ordinary field read does not escape the struct. That is right for a
+/// value consumed inside the frame and WRONG for one that leaves it:
+///
+///     fn frag() -> Grammar {
+///         let g = grammar { … }   // a call, so `g` is releasable
+///         g.grammar               // a field of `g` is RETURNED
+///     }
+///
+/// `__release` is recursive, so releasing `g` at scope exit frees
+/// `g.grammar` — the very value handed back. The caller then reads a
+/// freed box (observed as an enum tag of `0xe` reaching
+/// `fragment_rule_conflicts`, t-k6lm).
+///
+/// So a field read in RETURN position escapes its base, and the base
+/// walks down the whole chain: `g.a.b` keeps `g` alive too. This runs
+/// as a post-filter rather than a flag threaded through
+/// `single_pass_stmt`'s 40 arms — both passes only ever REMOVE, so the
+/// order between them cannot matter.
+fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>) -> List<string> {
+    mut cur = set
+    for e in collect_return_exprs(store, body) {
+        cur = remove_field_root(store, store.exprs.get(e), cur)
+    }
+    for e in collect_tail_exprs(store, body) {
+        cur = remove_field_root(store, store.exprs.get(e), cur)
+    }
+    cur
+}
+
+/// Drop the root of a field-access chain from the releasable set. A
+/// bare `.Ident` is already removed by the main sweep, so re-removing
+/// it is a no-op; anything else the sweep has handled on its own.
+fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+    match expr {
+        .FieldAccess(obj, _) -> remove_field_root(store, store.exprs.get(obj), set)
+        .Ident(name) -> releasable_remove(set, name)
+        _ -> set
+    }
+}
+
+/// The implicit-return expressions of a body — the mirror of
+/// `tail_is_fresh`, collecting where that one tests. Same shape, so the
+/// two stay comparable: a tail `if`/`match` arrives as a STATEMENT, and
+/// every branch of it is a return path.
+fn collect_tail_exprs(store: NodeStore, ids: List<StmtId>) -> List<ExprId> {
+    let no_ids: List<ExprId> = []
+    if ids.length == 0 { return no_ids }
+    match stmt_unwrap(store, store.stmts.get(ids.get(ids.length - 1))) {
+        .Expr(e) -> [e]
+        .Block(inner) -> collect_tail_exprs(store, inner)
+        .If(_, tb, eb) -> {
+            mut out = collect_tail_exprs(store, [tb])
+            if eb != null {
+                for e in collect_tail_exprs(store, [eb!]) { out = out.push(e) }
+            }
+            out
+        }
+        .Match(_, arms) -> {
+            mut out: List<ExprId> = []
+            for arm in arms { out = out.push(arm.body_id) }
+            out
+        }
+        _ -> no_ids
+    }
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
