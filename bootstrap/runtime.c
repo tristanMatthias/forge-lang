@@ -645,15 +645,45 @@ void avra_rc_free(void* ptr) {
     rc_reclaim(ptr);
 }
 
-// Introspection for spec tests / leak checks. Returns the number
-// of currently live RC-managed allocations across the whole heap.
-// NOT for production code paths — held under rc_set_mutex.
+// Introspection for spec tests / leak checks. Returns the number of currently
+// live RC-managed allocations across the whole heap. NOT for production code
+// paths — held under rc_set_mutex.
+//
+// HARD-GATED ON AVRA_RC_STRICT (t-0ks0). This counts `rc_set`, which
+// `rc_set_add` populates from exactly one place: avra_rc_alloc's FALLBACK path
+// (strict mode / oversized block / region exhausted). Ordinary small objects
+// come from the bump region and are NEVER added — so outside strict mode this
+// counter cannot see them leak, and a delta assertion written against it passes
+// whether or not the code under test leaks.
+//
+// That is not hypothetical: t-c6y7 closed three sub-cases as leak-free on
+// "delta == 0 over 200 builds" for four different emitters. Positive control —
+// 150 deliberately stranded objects held alive across the read — reads delta=0
+// by default and delta=150 under AVRA_RC_STRICT=1. Four uniform zeros was a
+// blind instrument, not four confirmations.
+//
+// Returning a sentinel would NOT fix this: any constant still yields a delta of
+// zero between two reads, i.e. the same vacuous pass. The only safe failure
+// mode is refusing to answer, so misuse surfaces as a loud error naming the fix
+// instead of a green test. There are no non-strict callers to break.
 int64_t avra_rc_live_count(void) {
+    if (!avra_rc_strict) {
+        avra_runtime_errorf(
+            "avra_rc_live_count() requires AVRA_RC_STRICT=1 — outside strict mode it only "
+            "counts malloc-fallback allocations, so bump-region objects are invisible and a "
+            "leak assertion would pass vacuously. Re-run with AVRA_RC_STRICT=1, and pair the "
+            "measurement with a positive control (strand N objects, assert the count moves by N).");
+        exit(1);
+    }
     pthread_mutex_lock(&rc_set_mutex);
     int64_t n = (int64_t)rc_set_count;
     pthread_mutex_unlock(&rc_set_mutex);
     return n;
 }
+// (`avra_rc_strict_enabled()` already exists below, next to the strict
+// self-test — a spec that needs a working counter gates on that and skips its
+// measurement where the instrument has no signal, rather than tripping the
+// error above.)
 
 // Deterministic self-test for AVRA_RC_STRICT (spec: tests/rc_strict_test.av).
 // Allocates an RC block, releases it to zero (reclaimed), then feeds the now
