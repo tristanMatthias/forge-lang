@@ -47,11 +47,18 @@ fn errcodes(env: string, source: string) -> string {
 /// existing default, so this is behaviour-preserving — it removes the ambient dependence,
 /// not the meaning.
 fn mode_env(mode: string) -> string {
-    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0" }
-    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1" }
+    // EXPRESSION routing is pinned too, not just declaration routing. `expr_static` is
+    // `!= "0"` (ON by default) and `expr_flip` is `== "1"`, both read independently of
+    // the decl flags — so a prefix that sets only `AVRA_PARSER_DECL_FLIP=0` leaves the
+    // hand oracle running the GENERATED expression parser. Before `table_lit` went
+    // native that was harmless (no native table rule existed, so the expression path
+    // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
+    // rule landed it would mean the table assertions compare native against native.
+    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
     // production — the static parser, then the INTERPRETER re-parse on `had_error`
     // (t-zrn3): the path users actually run, and the one the other two are blind to.
-    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0"
+    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
 }
 
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
@@ -1887,6 +1894,23 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
     // table. The fixture parsed perfectly. Ascribing the row types keeps the assertion
     // at the strict `== ""` bar instead of weakening it to `!sig_has_parse_code`, so a
     // future parse-phase regression here cannot hide behind a tolerated diagnostic.
+    then "a row's LAST cell does not swallow the next row's leading sign" {
+        // `@on(cell_mode)` is a PER-ITEM marker, so the repeated cell needs its own —
+        // the hand sets `self.cell_mode = true` around the WHOLE row loop. With it on
+        // only the first cell, cells 2..N parse with cell_mode OFF, and
+        // `parse_binary_pratt_g_id` refuses a cross-line `+`/`-` ONLY while cell_mode is
+        // set, so `2` at the end of a row could take the next row's `-3` as a binary
+        // operand and silently merge two rows into one.
+        //
+        // HONEST NOTE: this case passes both before and after that fix — I could not
+        // construct an input where the missing marker actually diverged. It is pinned
+        // because the hand's contract is unambiguous (cell_mode covers every cell) and a
+        // future pratt/line-guard change could make the gap observable; it is NOT a
+        // fail-before/pass-after witness, and should not be read as one.
+        let src = "type R2 = { a: int, b: int }\nfn t() -> int {\n let x = table<R2> { a | b\n  1 | 2\n  -3 | 4\n }\n 0\n}"
+        agree_all(src) && hand_oracle(src) == ""
+    }
+
     then "a table NESTED in a cell leaves the outer table's cell_mode intact" {
         let src = "fn t() -> int {\n let x = table<Row> { a | b\n  1 | table<Inner> { c\n   2\n  }\n }\n 0\n}"
         tree_agrees_everywhere(src) &&

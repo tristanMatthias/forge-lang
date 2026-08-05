@@ -177,7 +177,12 @@ fn avra_expr_core() -> Grammar {
   table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
                @expect(">", "expected `>` after table row type")
                @expect("{", "expected `{` to open table") -> MkTableHeader(rt, h)
-  table_row  = @on(cell_mode) v:bitxor ( ^"|" ^v:bitxor )* -> MkTableRow(v)
+  // `@on(cell_mode)` is a PER-ITEM marker, so it must be repeated on the loop's cell:
+  // the hand sets `self.cell_mode = true` around the WHOLE row loop, and without this
+  // cells 2..N parse with cell_mode OFF. `parse_binary_pratt_g_id` only refuses a
+  // cross-line `+`/`-` while cell_mode is set, so the last cell of a multi-column row
+  // could otherwise take the NEXT row's leading sign as a binary operand.
+  table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
   struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+

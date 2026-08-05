@@ -725,7 +725,10 @@ fn parse_table_row(st: PState) -> CapVal {
     st.set_modes(__modes_0)
     while (st.cur().tk == Tk.Pipe) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
         let _ = st.advance()
+        let __modes_1 = st.modes
+        st.set_modes(modes_with_flag_on(st.modes, "cell_mode"))
         v_list.push(capval_to_expr(st, parse_bitxor(st)))
+        st.set_modes(__modes_1)
     }
     CapVal.Node(mk_table_row(st, CapVal.Nodes(v_list)))
 }
