@@ -197,7 +197,6 @@ fn parse_unary(st: PState) -> CapVal {
     out
 }
 fn parse_unary_chain(st: PState) -> CapVal {
-    mut tried_spec = false
     if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" {
         let op = CapVal.Tok(st.advance())
         let operand = parse_unary(st)
@@ -574,14 +573,6 @@ fn parse_unary_chain(st: PState) -> CapVal {
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
     if lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
         let sp_start = st.cur().pos
         mut p_list: List<ExprId> = []
         mut s_list: List<ExprId> = []
@@ -596,14 +587,7 @@ fn parse_unary_chain(st: PState) -> CapVal {
         while st.cur().text == "with" {
             s_list.push(capval_to_expr(st, parse_with_suffix(st)))
         }
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
     if lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) {
         let sp_start = st.cur().pos
@@ -656,7 +640,6 @@ fn parse_unary_chain(st: PState) -> CapVal {
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
-    if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node_coded("F0040", "expected expression"))
 }
 

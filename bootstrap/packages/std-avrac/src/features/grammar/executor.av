@@ -20,6 +20,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
+use features.grammar.{rule_result_kind, gprim_ref_name}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
 // The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
@@ -2584,6 +2585,22 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     // label with the bound (self-limiting), and the count it stands for — "how many
     // columns did the header declare" — is fixed by the time the bounded loop starts.
     let cap = item_bound_cap(item, env)
+    // t-47hc.5: a STATEMENT-LIST repetition recovers instead of bailing out — the
+    // interpreter twin of emit's `emit_stmt_list_loop`. The plain loop below exits the
+    // moment the next token stops starting the item, which after a malformed statement
+    // it never does, so the rest of the block leaked out of its own body (`(expr r)` as
+    // a SIBLING of the fn). Selected by the SAME predicate emit uses — `rule_result_kind
+    // == "stmt"` on a labelled repetition — now shared from ast.av rather than
+    // re-derived, so the two engines cannot drift on which loop a rule gets.
+    //
+    // Byte-identical for VALID input by construction: a well-formed statement list
+    // re-enters on every child and stops at `}`, which is exactly where the FIRST-guard
+    // loop stops too. The behaviour differs only where the old loop gave up.
+    let rname = gprim_ref_name(item.prim)
+    if item.label != "" && rname != "" && rule_result_kind(g, rname) == "stmt" {
+        exec_stmt_list_repeat(g, item, st, env, annots, rname, cap, already)
+        return
+    }
     mut taken = already
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop.
@@ -2600,6 +2617,43 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 /// This item's repetition cap, or `-1` when unbounded — which keeps the hot comparison
 /// a single int test. ONE reader for the bound so `exec_repeat` and the `.Plus` forced
 /// iteration can never disagree about what the cap is.
+/// The interpreter twin of emit's `emit_stmt_list_loop` (t-47hc.5). Mirrors it step for
+/// step so the two engines recover identically inside a block:
+///
+///   - loop until `}` or EOF (NOT until the FIRST-guard fails — that is the bug)
+///   - `had_error` is ONE PState flag reused across children, so capture any pre-loop
+///     error, clear before each child, and restore the accumulated value at exit
+///   - on a failed child: `synchronize_stmt()` (already byte-identical to the hand's
+///     boundary set), force one token of progress if the cursor did not move, bind a
+///     `Stmt.Error` in the child's place, and CONTINUE rather than ending the block
+fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>, rname: string, cap: int, already: int) {
+    let pre_err = st.had_error
+    mut any_err = pre_err
+    mut taken = already
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        if cap >= 0 && taken >= cap { break }
+        let before = st.pos
+        st.clear_error()
+        let v = exec_primary(g, item.prim, st, env, true, annots)
+        if st.had_error {
+            any_err = true
+            st.synchronize_stmt()
+            if st.pos == before && !st.at_end() { let _ = st.advance() }
+            bind(env, item.label, CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)), true)
+            taken = taken + 1
+            st.clear_error()
+            continue
+        }
+        bind(env, item.label, v, true)
+        taken = taken + 1
+        // No-progress guard, same as the plain loop: a child that consumed nothing and
+        // reported nothing would spin here forever.
+        if st.pos == before { break }
+    }
+    if any_err { st.note_had_error() }
+}
+
 fn item_bound_cap(item: GItem, env: CapEnv) -> int {
     if item.bound == "" { return -1 }
     capval_len(env.get(item.bound))
