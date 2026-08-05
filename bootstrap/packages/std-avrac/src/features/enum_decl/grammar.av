@@ -12,8 +12,7 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 export fn avra_enum_decl_grammar() -> Grammar {
     let gp = grammar {
   enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )* ( vars:variant ","? ( DOC )* )* "}" -> MkEnumDecl(ename, tparams, vars)
-  variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )?
-                @expect("IDENT", "expected variant name") -> MkEVariant(vname, vfields)
+  variant     = vname:IDENT ( "(" ( vfields:field ","? )* ")" )? -> MkEVariant(vname, vfields)
     }
     grammar_checked(gp)
 }

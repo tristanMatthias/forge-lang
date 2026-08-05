@@ -16,8 +16,7 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// One generic type parameter: `T` or `T: Bound`.
 export fn avra_generics_grammar() -> Grammar {
     let gp = grammar {
-  tparam      = tpn:IDENT ( ":" tpb:IDENT )?
-                @expect("IDENT", "expected type parameter name") -> MkTypeParam(tpn, tpb)
+  tparam      = tpn:IDENT ( ":" tpb:IDENT )? -> MkTypeParam(tpn, tpb)
     }
     grammar_checked(gp)
 }

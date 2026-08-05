@@ -1557,6 +1557,7 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                 gated_first_check(g, inner, ind + "    ") +
                 emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                gated_abort_unwind(g, inner, ind + "    ") +
                 "${ind}}\n"
         }
         _ -> {
@@ -1707,6 +1708,19 @@ fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
 /// `5` as a variant name and compiled CLEAN. Emitting the check here restores the
 /// invariant without giving up what the gate bought (entry on a token the FIRST
 /// rejects, e.g. EOF), and reports with the CALLED rule's own message.
+/// The caller-side half of abort propagation: after a gated element's sub-parse,
+/// unwind if it aborted. Without this the abort stops at the callee and the
+/// enclosing rule carries on consuming — `enum E { A( }` ate the `}` that the hand
+/// leaves behind, losing the hand's second diagnostic. Emitted only where a gate is
+/// present, so every existing grammar is untouched.
+fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
+    let gr = gated_ref_of(inner)
+    if !gr.found { return "" }
+    "${ind}if st.abort_prop {\n" +
+    "${ind}    return CapVal.Node(st.error_node_silent())\n" +
+    "${ind}}\n"
+}
+
 fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
@@ -1716,6 +1730,7 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     if fg == "" || fg == "false" { return "" }
     "${ind}if !(${fg}) {\n" +
     "${ind}    st.report(\"${msg}\")\n" +
+    "${ind}    st.set_abort_prop(true)\n" +
     "${ind}    return CapVal.Node(st.error_node_silent())\n" +
     "${ind}}\n"
 }
@@ -1987,6 +2002,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                     "${ind}    let __rep_before = st.pos\n" +
                     gated_first_check(g, inner, ind + "    ") +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                    gated_abort_unwind(g, inner, ind + "    ") +
                     "${ind}    if st.pos == __rep_before { break }\n" +
                     bnd.step +
                     "${ind}}\n"

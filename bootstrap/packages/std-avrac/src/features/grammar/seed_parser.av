@@ -183,6 +183,16 @@ export fn parse_grammar(src: string) -> GrammarParse {
         let ce = validate_cuts(g)
         if ce != "" { p.error = ce }
     }
+    // t-myz7: a `@gate` with no `@when`/`@peek` ahead of it in the SAME branch is
+    // worse than dead — `seq_first_guard` returns the preds alone for a gated item,
+    // so with no preds the guard is the EMPTY STRING and emit renders `if  {`, or the
+    // group's guard collapses entirely. Reject it here, next to the `@cut` check,
+    // for the same reason: a marker that silently produces a broken guard is the
+    // failure mode these validators exist to prevent.
+    if p.error == "" {
+        let ge = validate_gates(g)
+        if ge != "" { p.error = ge }
+    }
     // t-47hc.28: a repetition bound `x{#cap}` must name a capture the SAME branch has
     // already collected. Unbound or later-bound, the cap would read an empty list and
     // silently clamp the loop to zero iterations — a whole repetition vanishing with no
@@ -1061,6 +1071,41 @@ fn group_label_shapes(node: GNode, multi: bool) -> LabelShapes {
 /// nested in a speculative branch is still inside that branch's rollback scope, so a
 /// cut there is honored (both emitters inline the group into the branch body, and the
 /// executor shares one CapEnv across the whole rule). Returns "" when clean.
+/// Every `@gate` must have a branch-local `@when`/`@peek` BEFORE it — that predicate
+/// is what replaces the FIRST it removes. See the call site for why an unguarded gate
+/// is a broken guard rather than a no-op.
+fn validate_gates(g: Grammar) -> string {
+    for rule in g.rules {
+        let e = check_gate_node(g, rule.body, rule.name)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn check_gate_node(g: Grammar, node: GNode, rule: string) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                mut seen_pred = false
+                for it in b.items {
+                    if prim_is_pred(it.prim) { seen_pred = true }
+                    if it.gate && !seen_pred {
+                        return "`@gate` needs a `@when`/`@peek` before it in the same branch (rule `${rule}`) — the gate REPLACES the item's FIRST with that predicate, so without one the branch guard is empty"
+                    }
+                    match it.prim {
+                        .Group(inner) -> {
+                            let e = check_gate_node(g, inner, rule)
+                            if e != "" { return e }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+            ""
+        }
+    }
+}
+
 fn validate_cuts(g: Grammar) -> string {
     for rule in g.rules {
         let e = check_cut_node(g, rule.body, rule.name, false)

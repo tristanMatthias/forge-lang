@@ -278,6 +278,18 @@ fn native_without_delegate(name: string, src: string) -> bool {
     !parse_failed(out) && !refusal_in_file(out, fixture_path(name))
 }
 
+/// The RECOVERY twin of `native_without_delegate`: did `src` fail to parse, and fail
+/// WITHOUT the delegate? Both halves are load-bearing for the same reason the valid-
+/// input probe needs both — "the leaf was not refused" ALSO holds when nothing
+/// reported at all, so a negative alone would stay green if a converted keyword
+/// started silently ACCEPTING its malformed forms. That is not hypothetical: a gated
+/// `enum E { 5 }` did exactly that during this slice (bound `5` as a variant name,
+/// exit 0), which is what this asserts against.
+fn recovery_without_delegate(name: string, src: string) -> bool {
+    let out = refuse_out("decl_hand", name, src)
+    parse_failed(out) && !refusal_in_file(out, fixture_path(name))
+}
+
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     then "the probe is DORMANT unless asked" {
         // A guard that cannot fail is worth nothing, and a probe that fires by
@@ -498,18 +510,19 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     // `s_cut`, plus a `break`) with nothing declaring it — the generated parser did
     // not compile. Silent until now only because no rule had the shape.
     then "malformed `mod` and `use` own their recovery — the first forms off the leaf" {
-        // All three of the hand's abort paths for `mod` are native now.
-        !refused_here("decl_hand", "mod_bare", "mod\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "mod_num", "mod 5\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "mod_brace", "mod {\nfn f() -> int { 1 }") &&
+        // All three of the hand's abort paths for `mod` are native now. Each asserts
+        // BOTH halves — reports, and reports without the delegate.
+        recovery_without_delegate("mod_bare", "mod\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("mod_num", "mod 5\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("mod_brace", "mod {\nfn f() -> int { 1 }") &&
         // `use` follows, via `@try … @cut` on use_decl plus `@fallback` on the bare
         // branch so a token that starts NEITHER form still reports "expected module
         // path after `use`" instead of falling through un-owned.
-        !refused_here("decl_hand", "use_bare", "use\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "use_dot", "use .{x}\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "use_no_brace", "use foo\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
-        !refused_here("decl_hand", "use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_bare", "use\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_dot", "use .{x}\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
         // refuse. `enum` has not been converted, so this fires today — RE-POINT it at

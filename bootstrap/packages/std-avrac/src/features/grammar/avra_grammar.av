@@ -383,8 +383,7 @@ fn avra_expr_core() -> Grammar {
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
-  param        = pname:IDENT ( ":" pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
+  param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
   // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
   // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
   // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
@@ -469,9 +468,12 @@ fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
   // t-myz7: a CONVERTED keyword is referenced BARE — its `@try` lives inside the
   // fragment, sharing a branch with the `@cut` that lets it own its own recovery.
-  // `letdes_decl` MUST precede `let_decl`: both lead with `let`, and once `let_decl`
-  // cuts, the destructuring form would be unreachable. The more specific `let (` form
-  // goes first and still `@try`s, so it declines the plain binding harmlessly.
+  // `let_decl` PRECEDES `letdes_decl`, and that works only because `let_decl` carries
+  // NO `@cut`: its `n:IDENT` fails on `(`, the `@try` rewinds, and the destructuring
+  // form gets its turn. Giving `let_decl` a `@cut` (as its conversion will) makes
+  // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
+  // specific `let (` form first. Recorded because the breakage would be silent:
+  // destructuring would simply stop parsing, with no diagnostic naming the cause.
   declaration = use_decl | mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
