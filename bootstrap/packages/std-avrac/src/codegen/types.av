@@ -51,6 +51,10 @@ use list_ops.{list_any}
 /// @field features — feature dispatch registry.
 /// @field trait_decls / newtypes / union_aliases — extra type tables.
 /// @field copy_types — set of types that satisfy Copy (no RC needed).
+/// @field rc_fresh_fns — hash SET (cstr map) of fns returning a fresh
+///        allocation the caller owns; null means empty. A set, not a
+///        list, because it is queried once per call-site initializer
+///        across the whole program.
 /// @field debug_null_checks — emit avra_null_arg traps when true.
 /// @field coverage / source_file / source_line — LLVM source-based
 ///        coverage instrumentation state.
@@ -111,6 +115,12 @@ export type Ctx = {
     newtypes: CgNewtypeReg,
     union_aliases: CgUnionAliasReg,
     copy_types: List<string>,
+    // t-k6lm: functions whose every return path yields a freshly allocated
+    // value the CALLER owns. Program-wide, derived once by
+    // `analyze_return_ownership` (same lifecycle as `copy_types`), and
+    // preserved across `with_fn` because it is a property of the program,
+    // not of the function being emitted.
+    rc_fresh_fns: ptr,
     debug_null_checks: int,
     // LLVM source-based coverage (--coverage flag). When true, codegen
     // emits llvm.instrprof.increment calls at each coverage region.

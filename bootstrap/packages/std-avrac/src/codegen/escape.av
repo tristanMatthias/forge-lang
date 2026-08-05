@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
+use core.{Expr, ExprId, type_qualified_name, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -41,17 +41,17 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(store: NodeStore, body: List<StmtId>) -> List<string> {
+export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -> List<string> {
     let empty: List<string> = []
-    single_pass_escape_ids(store, body, empty)
+    single_pass_escape_ids(store, body, empty, fresh)
 }
 
 /// Lambda variant of `analyze_releasable`. Lambda bodies that aren't
 /// blocks have no bindings to release; otherwise descend into the
 /// inner `List<StmtId>`.
-export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> {
+export fn analyze_releasable_expr(store: NodeStore, body: Expr, fresh: ptr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(store, stmts)
+        .Block(stmts) -> analyze_releasable(store, stmts, fresh)
         _ -> {
             let empty: List<string> = []
             empty
@@ -61,56 +61,56 @@ export fn analyze_releasable_expr(store: NodeStore, body: Expr) -> List<string> 
 
 /// Single-pass escape analysis worker. Walks `ids` left-to-right,
 /// folding `single_pass_stmt` over the running List<string>.
-fn single_pass_escape_ids(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
+fn single_pass_escape_ids(store: NodeStore, ids: List<StmtId>, set: List<string>, fresh: ptr) -> List<string> {
     mut cur = set
-    for id in ids { cur = single_pass_stmt(store, store.stmts.get(id), cur) }
+    for id in ids { cur = single_pass_stmt(store, store.stmts.get(id), cur, fresh) }
     cur
 }
 
 /// Process a `let`/`mut`/`const` binding: add the name when its
 /// initializer is allocating, then sweep the initializer for any
 /// uses of names already in the set (which would mark them escaped).
-fn analyze_binding(store: NodeStore, name: string, init: Expr, set: List<string>) -> List<string> {
-    let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-    remove_escaped_expr(store, init, s1)
+fn analyze_binding(store: NodeStore, name: string, init: Expr, set: List<string>, fresh: ptr) -> List<string> {
+    let s1 = if is_owning_init(store, init, fresh) { releasable_add(set, name) } else { set }
+    remove_escaped_expr(store, init, s1, fresh)
 }
 
 /// Per-statement worker. Bindings call `analyze_binding`; control-
 /// flow statements recurse into their bodies; everything else is
 /// only checked for escaping uses inside its expressions. Decl-only
 /// statements (TypeDecl, TraitDecl, …) are pass-through.
-fn single_pass_stmt(store: NodeStore, stmt: Stmt, set: List<string>) -> List<string> {
+fn single_pass_stmt(store: NodeStore, stmt: Stmt, set: List<string>, fresh: ptr) -> List<string> {
     let inner = stmt_unwrap(store, stmt)
     match inner {
-        .Let(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
-        .Mut(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
-        .Const(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set)
+        .Let(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set, fresh)
+        .Mut(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set, fresh)
+        .Const(name, _, init) -> analyze_binding(store, name, store.exprs.get(init), set, fresh)
         // Recurse into blocks
-        .Block(body) -> single_pass_escape_ids(store, body, set)
+        .Block(body) -> single_pass_escape_ids(store, body, set, fresh)
         .If(cond, then_b, else_b) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(cond), set)
-            let s2 = single_pass_stmt(store, store.stmts.get(then_b), s1)
-            if else_b != null { single_pass_stmt(store, store.stmts.get(else_b!), s2) } else { s2 }
+            let s1 = remove_escaped_expr(store, store.exprs.get(cond), set, fresh)
+            let s2 = single_pass_stmt(store, store.stmts.get(then_b), s1, fresh)
+            if else_b != null { single_pass_stmt(store, store.stmts.get(else_b!), s2, fresh) } else { s2 }
         }
         // Everything else: just check for escapes (same as remove_escaped_stmt)
-        .Return(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set)
-        .Expr(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set)
-        .While(cond, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(cond), set))
+        .Return(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set, fresh)
+        .Expr(expr) -> remove_escaped_expr(store, store.exprs.get(expr), set, fresh)
+        .While(cond, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(cond), set, fresh), fresh)
         .For(_, start, end, body) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(start), set)
-            let s2 = remove_escaped_expr(store, store.exprs.get(end), s1)
-            single_pass_stmt(store, store.stmts.get(body), s2)
+            let s1 = remove_escaped_expr(store, store.exprs.get(start), set, fresh)
+            let s2 = remove_escaped_expr(store, store.exprs.get(end), s1, fresh)
+            single_pass_stmt(store, store.stmts.get(body), s2, fresh)
         }
-        .ForIn(_, coll, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(coll), set))
+        .ForIn(_, coll, body) -> single_pass_stmt(store, store.stmts.get(body), remove_escaped_expr(store, store.exprs.get(coll), set, fresh), fresh)
         // Same bug as the MatchExpr arm in remove_escaped_expr: walk
         // the arm guards + bodies so an h returned from a match arm
         // body gets removed from rc_releasable (otherwise scope-exit
         // releases h before the caller of the fn sees the value).
-        .Match(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, store.exprs.get(subj), set))
-        .Defer(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Errdefer(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Annotated(_, inner_id) -> single_pass_stmt(store, store.stmts.get(inner_id), set)
-        .LetDestructure(_, init) -> remove_escaped_expr(store, store.exprs.get(init), set)
+        .Match(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, store.exprs.get(subj), set, fresh), fresh)
+        .Defer(body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+        .Errdefer(body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+        .Annotated(_, inner_id) -> single_pass_stmt(store, store.stmts.get(inner_id), set, fresh)
+        .LetDestructure(_, init) -> remove_escaped_expr(store, store.exprs.get(init), set, fresh)
         .Function(_, _, _, _, _) -> set
         .ReturnEmpty -> set
         .TypeDecl(_, _, _) -> set
@@ -144,7 +144,7 @@ fn single_pass_stmt(store: NodeStore, stmt: Stmt, set: List<string>) -> List<str
 /// True when `expr` produces a freshly allocated heap object the
 /// binding owns. Currently: struct literal, enum constructor, tuple,
 /// with-expr. Add new allocating forms here when introduced.
-fn is_allocating_expr(expr: Expr) -> bool {
+export fn is_allocating_expr(expr: Expr) -> bool {
     match expr {
         .StructLit(_, _) -> true
         .EnumCtor(_, _, _) -> true
@@ -154,35 +154,76 @@ fn is_allocating_expr(expr: Expr) -> bool {
     }
 }
 
+/// The WIDE initializer predicate (t-k6lm slice 2): does `init` hand the
+/// binding a value the binding OWNS and must release at scope exit?
+///
+/// This is `is_allocating_expr` PLUS calls whose callee is known to return
+/// a freshly allocated value (`analyze_return_ownership`). It is
+/// deliberately a SEPARATE function rather than a flag on
+/// `is_allocating_expr`, because the two predicates answer different
+/// questions and their other callers must not drift onto the wrong one:
+///
+///   is_allocating_expr — "is this value allocated HERE, in this body?"
+///       Used by `count_allocating_in_stmt_*` → `is_arena_eligible`, which
+///       decides whether a LOOP BODY gets a per-scope arena whose reset
+///       REPLACES per-allocation RC drops. A call-returned value is
+///       allocated in the CALLEE, never in this body's arena, so widening
+///       that predicate would arena-ize a value the arena does not own AND
+///       skip the drops that would have reclaimed it. Keep it narrow.
+///
+///   is_owning_init — "must THIS BINDING release the value at scope exit?"
+///       Used by `analyze_binding` for the releasable set. A call to a
+///       known-fresh callee qualifies: the callee allocated it and handed
+///       ownership over.
+export fn is_owning_init(store: NodeStore, init: Expr, fresh: ptr) -> bool {
+    if is_allocating_expr(init) { return true }
+    match init {
+        .Call(callee, _) -> {
+            match store.exprs.get(callee) {
+                .Ident(n) -> fresh_set_has(fresh, n)
+                // The resolver qualifies same-module calls, so this form is
+                // the COMMON one inside any module. Membership is an EXACT
+                // match against a canonical key this analysis seeded itself,
+                // so a foreign module's path can never match — a cross-module
+                // `@pkg::other::mk` whose last segment happens to collide
+                // stays denied, as the ticket requires.
+                .QualifiedIdent(p) -> fresh_set_has(fresh, p)
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
 /// Walk an expression and remove names from the releasable set when
 /// they're used in a way that escapes the local. The only safe
 /// pattern is `.FieldAccess(Ident(name), _)` (reading a field). Any
 /// other use of `Ident(name)` removes it.
-fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>, fresh: ptr) -> List<string> {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
         .FieldAccess(obj, _) -> {
             let obj_expr = store.exprs.get(obj)
             match obj_expr {
                 .Ident(_) -> set  // p.x is safe — don't remove p
-                _ -> remove_escaped_expr(store, obj_expr, set)  // nested: (expr).field
+                _ -> remove_escaped_expr(store, obj_expr, set, fresh)  // nested: (expr).field
             }
         }
         // These are escaping uses:
         .Ident(name) -> releasable_remove(set, name)
         // Recurse into sub-expressions
         .Call(callee, args) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set)
-            remove_escaped_arg_ids(store, args, s1)
+            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set, fresh)
+            remove_escaped_arg_ids(store, args, s1, fresh)
         }
         .GenericCall(callee, _, args) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set)
-            remove_escaped_arg_ids(store, args, s1)
+            let s1 = remove_escaped_expr(store, store.exprs.get(callee), set, fresh)
+            remove_escaped_arg_ids(store, args, s1, fresh)
         }
-        .Binary(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
-        .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Logical(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
-        .Grouping(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
+        .Binary(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set, fresh), fresh)
+        .Unary(_, inner) -> remove_escaped_expr(store, store.exprs.get(inner), set, fresh)
+        .Logical(left, _, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set, fresh), fresh)
+        .Grouping(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set, fresh)
         // `xs[i]` is a READ of the container `xs` — the element is
         // container-owned and, when stored into a holder, is RETAINED there
         // (expr_is_shared_alias's `.Index` arm). So a bare-ident container base
@@ -191,17 +232,17 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         // The index sub-expr is still swept — a name used only to index does
         // not escape, but `xs[consume()]` must sweep `consume`'s idents. t-c6y7.
         .Index(obj, idx) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(idx), set)
+            let s1 = remove_escaped_expr(store, store.exprs.get(idx), set, fresh)
             let obj_expr = store.exprs.get(obj)
             match obj_expr {
                 .Ident(_) -> s1
-                _ -> remove_escaped_expr(store, obj_expr, s1)
+                _ -> remove_escaped_expr(store, obj_expr, s1, fresh)
             }
         }
-        .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set)
-        .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set))
-        .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set)
-        .ListLit(elems) -> remove_escaped_arg_ids(store, elems, set)
+        .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set, fresh)
+        .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set, fresh), fresh)
+        .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set, fresh)
+        .ListLit(elems) -> remove_escaped_arg_ids(store, elems, set, fresh)
         // `with` reads obj field-by-field and emits rc_retain on ptr
         // fields the new struct keeps (see with_expr/codegen.av).
         // So `let u = h with { ... }` is a READ of `h` — the new
@@ -211,45 +252,45 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
         // its own __release_<Struct> fires at scope exit.
         .With(obj, inits) -> {
             let obj_node = store.exprs.get(obj)
-            let s1 = match obj_node { .Ident(_) -> set, _ -> remove_escaped_expr(store, obj_node, set) }
-            remove_escaped_field_inits(store, inits, s1)
+            let s1 = match obj_node { .Ident(_) -> set, _ -> remove_escaped_expr(store, obj_node, set, fresh) }
+            remove_escaped_field_inits(store, inits, s1, fresh)
         }
-        .Lambda(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Block(body) -> single_pass_escape_ids(store, body, set)
-        .IfExpr(cond, t, e) -> remove_escaped_expr(store, store.exprs.get(e), remove_escaped_expr(store, store.exprs.get(t), remove_escaped_expr(store, store.exprs.get(cond), set)))
+        .Lambda(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+        .Block(body) -> single_pass_escape_ids(store, body, set, fresh)
+        .IfExpr(cond, t, e) -> remove_escaped_expr(store, store.exprs.get(e), remove_escaped_expr(store, store.exprs.get(t), remove_escaped_expr(store, store.exprs.get(cond), set, fresh), fresh), fresh)
         // Match arms must be walked: a variable used in an arm body
         // (especially as the arm's return value, which escapes) needs
         // to be removed from the releasable set. Without this the
         // scope-exit release path frees a struct the match expression
         // returned — UAF on the returned value.
-        .MatchExpr(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, store.exprs.get(subj), set))
-        .Tuple(elems) -> remove_escaped_arg_ids(store, elems, set)
-        .TupleIndex(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
-        .MapLit(entries) -> remove_escaped_arg_ids(store, entries, set)
-        .Slice(obj, start, end) -> remove_escaped_expr(store, store.exprs.get(end), remove_escaped_expr(store, store.exprs.get(start), remove_escaped_expr(store, store.exprs.get(obj), set)))
-        .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set)
-        .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, store.exprs.get(body), remove_escaped_expr(store, store.exprs.get(inner), set))
-        .NullCoalesce(left, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set))
-        .OptionalChain(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set)
-        .OptionalMethodCall(obj, _, args) -> remove_escaped_arg_ids(store, args, remove_escaped_expr(store, store.exprs.get(obj), set))
-        .IsCheck(subj, _) -> remove_escaped_expr(store, store.exprs.get(subj), set)
-        .InCheck(needle, items) -> remove_escaped_arg_ids(store, items, remove_escaped_expr(store, store.exprs.get(needle), set))
-        .EnumCtor(_, _, args) -> remove_escaped_arg_ids(store, args, set)
-        .Spawn(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
+        .MatchExpr(subj, arms) -> remove_escaped_match_arms(store, arms, remove_escaped_expr(store, store.exprs.get(subj), set, fresh), fresh)
+        .Tuple(elems) -> remove_escaped_arg_ids(store, elems, set, fresh)
+        .TupleIndex(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set, fresh)
+        .MapLit(entries) -> remove_escaped_arg_ids(store, entries, set, fresh)
+        .Slice(obj, start, end) -> remove_escaped_expr(store, store.exprs.get(end), remove_escaped_expr(store, store.exprs.get(start), remove_escaped_expr(store, store.exprs.get(obj), set, fresh), fresh), fresh)
+        .Try(inner) -> remove_escaped_expr(store, store.exprs.get(inner), set, fresh)
+        .Catch(inner, _, body, _, _) -> remove_escaped_expr(store, store.exprs.get(body), remove_escaped_expr(store, store.exprs.get(inner), set, fresh), fresh)
+        .NullCoalesce(left, right) -> remove_escaped_expr(store, store.exprs.get(right), remove_escaped_expr(store, store.exprs.get(left), set, fresh), fresh)
+        .OptionalChain(obj, _) -> remove_escaped_expr(store, store.exprs.get(obj), set, fresh)
+        .OptionalMethodCall(obj, _, args) -> remove_escaped_arg_ids(store, args, remove_escaped_expr(store, store.exprs.get(obj), set, fresh), fresh)
+        .IsCheck(subj, _) -> remove_escaped_expr(store, store.exprs.get(subj), set, fresh)
+        .InCheck(needle, items) -> remove_escaped_arg_ids(store, items, remove_escaped_expr(store, store.exprs.get(needle), set, fresh), fresh)
+        .EnumCtor(_, _, args) -> remove_escaped_arg_ids(store, args, set, fresh)
+        .Spawn(body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
         .ChannelNew(_, capacity) -> {
-            if capacity == null { set } else { remove_escaped_expr(store, store.exprs.get(capacity!), set) }
+            if capacity == null { set } else { remove_escaped_expr(store, store.exprs.get(capacity!), set, fresh) }
         }
-        .Isolated(body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Quote(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set)
-        .Splice(target) -> remove_escaped_expr(store, store.exprs.get(target), set)
+        .Isolated(body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+        .Quote(_, body) -> remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+        .Splice(target) -> remove_escaped_expr(store, store.exprs.get(target), set, fresh)
         // Same as MatchExpr: when arms' bodies/conditions can escape
         // variables (return value of the arm, or pass to a fn). The
         // old "no escapes at this level" comment was wrong.
-        .When(arms) -> remove_escaped_when_arms(store, arms, set)
+        .When(arms) -> remove_escaped_when_arms(store, arms, set, fresh)
         .ListComp(body, _, coll, filter) -> {
-            let s1 = remove_escaped_expr(store, store.exprs.get(body), set)
-            let s2 = remove_escaped_expr(store, store.exprs.get(coll), s1)
-            if filter != null { remove_escaped_expr(store, store.exprs.get(filter!), s2) } else { s2 }
+            let s1 = remove_escaped_expr(store, store.exprs.get(body), set, fresh)
+            let s2 = remove_escaped_expr(store, store.exprs.get(coll), s1, fresh)
+            if filter != null { remove_escaped_expr(store, store.exprs.get(filter!), s2, fresh) } else { s2 }
         }
         // Leaf expressions — no idents to escape
         .Number(_) -> set
@@ -266,30 +307,30 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<
 }
 
 /// Walk each match arm's guard + body checking for escapes.
-fn remove_escaped_match_arms(store: NodeStore, arms: List<MatchArm>, set: List<string>) -> List<string> {
+fn remove_escaped_match_arms(store: NodeStore, arms: List<MatchArm>, set: List<string>, fresh: ptr) -> List<string> {
     mut acc = set
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         if arm.guard_id != null {
-            acc = remove_escaped_expr(store, store.exprs.get(arm.guard_id!), acc)
+            acc = remove_escaped_expr(store, store.exprs.get(arm.guard_id!), acc, fresh)
         }
-        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc)
+        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc, fresh)
         i = i + 1
     }
     acc
 }
 
 /// Walk each when-arm's cond + body checking for escapes.
-fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<string>) -> List<string> {
+fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<string>, fresh: ptr) -> List<string> {
     mut acc = set
     mut i = 0
     while i < arms.length {
         let arm = arms[i]
         if arm.cond_id != null {
-            acc = remove_escaped_expr(store, store.exprs.get(arm.cond_id!), acc)
+            acc = remove_escaped_expr(store, store.exprs.get(arm.cond_id!), acc, fresh)
         }
-        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc)
+        acc = remove_escaped_expr(store, store.exprs.get(arm.body_id), acc, fresh)
         i = i + 1
     }
     acc
@@ -297,11 +338,11 @@ fn remove_escaped_when_arms(store: NodeStore, arms: List<WhenArm>, set: List<str
 
 /// Apply `remove_escaped_expr` to every element of a flipped `List<ExprId>`
 /// (call/collection args).
-fn remove_escaped_arg_ids(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
+fn remove_escaped_arg_ids(store: NodeStore, args: List<ExprId>, set: List<string>, fresh: ptr) -> List<string> {
     mut acc = set
     mut i = 0
     while i < args.length {
-        acc = remove_escaped_expr(store, store.exprs.get(args[i]), acc)
+        acc = remove_escaped_expr(store, store.exprs.get(args[i]), acc, fresh)
         i = i + 1
     }
     acc
@@ -309,11 +350,11 @@ fn remove_escaped_arg_ids(store: NodeStore, args: List<ExprId>, set: List<string
 
 /// Apply `remove_escaped_expr` to every value in a struct-literal
 /// `List<FieldInit>`. Used on `Foo { x: a, y: b }` and `with` exprs.
-fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
+fn remove_escaped_field_inits(store: NodeStore, inits: List<FieldInit>, set: List<string>, fresh: ptr) -> List<string> {
     mut acc = set
     mut i = 0
     while i < inits.length {
-        acc = remove_escaped_expr(store, store.exprs.get(inits[i].value_id), acc)
+        acc = remove_escaped_expr(store, store.exprs.get(inits[i].value_id), acc, fresh)
         i = i + 1
     }
     acc
@@ -459,7 +500,13 @@ export fn is_arena_eligible(store: NodeStore, body: Stmt) -> bool {
             if owned_count == 0 { return false }
             // All allocations must be releasable (non-escaping)
             let empty: List<string> = []
-            single_pass_escape_ids(store, stmts, empty).length > 0
+            // t-k6lm: the arena path passes an EMPTY fresh set on purpose.
+            // With no known-fresh callees, `is_owning_init` degrades exactly
+            // to `is_allocating_expr` — the narrow "allocated HERE" question
+            // this predicate must ask. A call-returned value belongs to the
+            // callee's allocator, never to this loop's arena.
+            let no_fresh: ptr = null
+            single_pass_escape_ids(store, stmts, empty, no_fresh).length > 0
         }
         .Let(_, _, init) -> is_allocating_expr(store.exprs.get(init))
         .Mut(_, _, init) -> is_allocating_expr(store.exprs.get(init))
@@ -678,12 +725,65 @@ fn copy_set_subset(a: List<string>, b: List<string>) -> bool {
 // cross-module calls — the resolver rewrites those to `.QualifiedIdent`,
 // so they never match the `.Ident` callee form this analysis keys on.
 
+// ── The fresh-fn set is HASH-BACKED, not a list ──────────────────────
+//
+// This set is READ once per call-site initializer and once per function
+// per fixpoint pass, and WRITTEN once per declared function plus once
+// per binder anywhere in the program. On a linear `List<string>` every
+// one of those is O(n), so wiring the analysis into the compile path
+// made `@std::avrac` — thousands of functions, tens of thousands of
+// binders — run past a 600s timeout without finishing. Not slow: it
+// never produced a `.ll` at all.
+//
+// The resolver hit precisely this and fixed it precisely this way. Its
+// global index "was a cons-list searched O(n) per identifier … nearly
+// quadratic", and is now a cstr_map built once and read O(1)
+// (resolve/names.av). Same primitive, same reason.
+extern fn avra_map_new_cstr() -> ptr
+extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
+extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+extern fn avra_map_remove_cstr(map: ptr, key: string)
+extern fn avra_map_keys_cstr(map: ptr) -> List<string>
+
+/// A fresh-fn set.
+export fn fresh_set_new() -> ptr { avra_map_new_cstr() }
+
+/// NULL is the EMPTY set, deliberately. `Ctx.rc_fresh_fns` is a plain
+/// field, so any Ctx built without running the analysis carries null —
+/// and the arena path passes null on purpose (see `is_arena_eligible`).
+/// Answering "not a member" is both correct and the safe direction:
+/// a miss leaks, a false hit double-frees.
+export fn fresh_set_has(set: ptr, name: string) -> bool {
+    if set == null { return false }
+    avra_map_has_cstr(set, name) != 0
+}
+
+fn fresh_set_add(set: ptr, name: string) { avra_map_set_cstr(set, name, 1) }
+
+fn fresh_set_remove(set: ptr, name: string) { avra_map_remove_cstr(set, name) }
+
+/// The set's members as a plain list — for the specs, which assert on
+/// membership, and for `analyze_return_ownership`'s list-shaped API.
+export fn fresh_set_names(set: ptr) -> List<string> {
+    let empty: List<string> = []
+    if set == null { return empty }
+    avra_map_keys_cstr(set)
+}
+
 /// Names of functions whose every return path yields a freshly
 /// allocated value the CALLER may own. Seeded optimistically from the
 /// declared functions, then shrunk to a fixpoint.
 export fn analyze_return_ownership(store: NodeStore, body: List<StmtId>) -> List<string> {
-    let empty: List<string> = []
-    let seeded = seed_fn_candidates(store, body, empty)
+    fresh_set_names(analyze_return_ownership_set(store, body))
+}
+
+/// The same analysis, handing back the SET itself. This is what codegen
+/// stores in `Ctx.rc_fresh_fns`: membership is asked once per call-site
+/// initializer across the whole program, which on a list was the other
+/// half of the quadratic cost.
+export fn analyze_return_ownership_set(store: NodeStore, body: List<StmtId>) -> ptr {
+    let cands = fresh_set_new()
+    seed_fn_candidates(store, body, cands, "")
     // A local binding or parameter can SHADOW a function name (legal
     // since zo1a, and the binding wins lexically), so `make()` at a use
     // site may be calling a closure rather than the function this
@@ -691,142 +791,189 @@ export fn analyze_return_ownership(store: NodeStore, body: List<StmtId>) -> List
     // `.Ident` alone, so any name that is ever bound as a local or a
     // parameter anywhere loses its candidacy. Crude, and deliberately
     // so: the cost is a leak left unfixed, never an over-release.
-    let bound = collect_bound_names(store, body, empty)
-    let base = drop_bound_names(seeded, bound)
-    fixpoint_return_fresh(store, body, base)
+    let bound = fresh_set_new()
+    collect_bound_names(store, body, bound)
+    drop_bound_names(cands, bound)
+    fixpoint_return_fresh(store, body, cands)
+    cands
 }
 
-/// Seed every declared function name as a candidate.
-fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
-    mut out = set
+/// Seed every declared function as a candidate, under BOTH the bare
+/// name and the resolver's canonical path.
+///
+/// Both forms are needed because a call site can arrive either way. The
+/// resolver's `rewrite_ident` (resolve/names.av, "sibling in current
+/// module") rewrites a call to a same-module function into
+/// `Expr.QualifiedIdent("<mod>::<fn>")` whenever the caller sits inside a
+/// module — which every test file and every real multi-module program
+/// does. Seeding only the bare name made the whole analysis inert on
+/// exactly those programs: the set was populated, but no call site ever
+/// matched it.
+///
+/// The canonical form is built with `type_qualified_name` — the SAME
+/// function the resolver uses to build `ModuleItemEntry.canonical` — so
+/// the two cannot drift into a silent miss.
+fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: ptr, mod_path: string) {
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
-            .Function(name, _, _, _, _) -> { out = releasable_add(out, name) }
-            .Block(inner) -> { out = seed_fn_candidates(store, inner, out) }
+            .Function(name, _, _, _, _) -> { add_fn_keys(set, mod_path, name) }
+            .Block(inner) -> { seed_fn_candidates(store, inner, set, mod_path) }
+            // A `mod` body holds declarations too, and nesting extends the
+            // path exactly as the resolver extends it.
+            .Module(mname, inner) -> {
+                seed_fn_candidates(store, inner, set, type_qualified_name(mod_path, mname))
+            }
             _ -> {}
         }
     }
-    out
+}
+
+/// Add both lookup keys for one function. They are added and removed as
+/// a PAIR — dropping only one would leave a call site that uses the other
+/// form still believing the callee is fresh, which is the over-release
+/// direction.
+fn add_fn_keys(set: ptr, mod_path: string, name: string) {
+    fresh_set_add(set, name)
+    let q = type_qualified_name(mod_path, name)
+    if q != name { fresh_set_add(set, q) }
+}
+
+/// Remove both lookup keys for one function.
+fn drop_fn_keys(set: ptr, mod_path: string, name: string) {
+    fresh_set_remove(set, name)
+    let q = type_qualified_name(mod_path, name)
+    if q != name { fresh_set_remove(set, q) }
 }
 
 /// Every name bound as a local or a parameter anywhere in the program.
-fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
-    mut out = set
+fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: ptr) {
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
             .Let(n, _, init) -> {
-                out = releasable_add(out, n)
-                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+                fresh_set_add(set, n)
+                collect_bound_in_expr(store, store.exprs.get(init), set)
             }
             .Mut(n, _, init) -> {
-                out = releasable_add(out, n)
-                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+                fresh_set_add(set, n)
+                collect_bound_in_expr(store, store.exprs.get(init), set)
             }
             .Const(n, _, init) -> {
-                out = releasable_add(out, n)
-                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+                fresh_set_add(set, n)
+                collect_bound_in_expr(store, store.exprs.get(init), set)
             }
             // `let (a, b) = ...` binds EVERY name in the pattern.
             .LetDestructure(names, init) -> {
-                for pe in names { out = releasable_add(out, pe.name) }
-                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+                for pe in names { fresh_set_add(set, pe.name) }
+                collect_bound_in_expr(store, store.exprs.get(init), set)
             }
             // Match arms are expressions and can bind/shadow inside.
             .Match(_, arms) -> {
                 for arm in arms {
-                    out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out)
+                    collect_bound_in_expr(store, store.exprs.get(arm.body_id), set)
                 }
             }
-            .Expr(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
-            .Return(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
+            .Expr(e) -> { collect_bound_in_expr(store, store.exprs.get(e), set) }
+            .Return(e) -> { collect_bound_in_expr(store, store.exprs.get(e), set) }
             .Function(_, _, params, _, fbody) -> {
-                for p in params { out = releasable_add(out, p.name) }
-                out = collect_bound_names(store, fbody, out)
+                for p in params { fresh_set_add(set, p.name) }
+                collect_bound_names(store, fbody, set)
             }
-            .Block(inner) -> { out = collect_bound_names(store, inner, out) }
+            .Block(inner) -> { collect_bound_names(store, inner, set) }
+            .Module(_, inner) -> { collect_bound_names(store, inner, set) }
             .If(_, tb, eb) -> {
-                out = collect_bound_names(store, [tb], out)
+                collect_bound_names(store, [tb], set)
                 // else_branch is StmtId? — an `if` with no `else` has none.
-                if eb != null { out = collect_bound_names(store, [eb!], out) }
+                if eb != null { collect_bound_names(store, [eb!], set) }
             }
-            .While(_, wb) -> { out = collect_bound_names(store, [wb], out) }
+            .While(_, wb) -> { collect_bound_names(store, [wb], set) }
             .For(v, _, _, fb) -> {
-                out = releasable_add(out, v)
-                out = collect_bound_names(store, [fb], out)
+                fresh_set_add(set, v)
+                collect_bound_names(store, [fb], set)
             }
             .ForIn(v, _, fib) -> {
-                out = releasable_add(out, v)
-                out = collect_bound_names(store, [fib], out)
+                fresh_set_add(set, v)
+                collect_bound_names(store, [fib], set)
             }
             _ -> {}
         }
     }
-    out
 }
 
 /// Names bound inside an EXPRESSION — lambda parameters, and locals
 /// declared in value-position blocks / if-expressions / match arms. A
 /// shadowing binder anywhere must drop the function name, because at a
 /// call site `mk()` may resolve to the local rather than the function.
-fn collect_bound_in_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
-    mut out = set
+fn collect_bound_in_expr(store: NodeStore, expr: Expr, set: ptr) {
     match expr {
         .Lambda(params, body) -> {
-            for p in params { out = releasable_add(out, p.name) }
-            out = collect_bound_in_expr(store, store.exprs.get(body), out)
+            for p in params { fresh_set_add(set, p.name) }
+            collect_bound_in_expr(store, store.exprs.get(body), set)
         }
-        .Block(stmts) -> { out = collect_bound_names(store, stmts, out) }
+        .Block(stmts) -> { collect_bound_names(store, stmts, set) }
         .IfExpr(_, a, b) -> {
-            out = collect_bound_in_expr(store, store.exprs.get(a), out)
-            out = collect_bound_in_expr(store, store.exprs.get(b), out)
+            collect_bound_in_expr(store, store.exprs.get(a), set)
+            collect_bound_in_expr(store, store.exprs.get(b), set)
         }
         .MatchExpr(_, arms) -> {
-            for arm in arms { out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out) }
+            for arm in arms { collect_bound_in_expr(store, store.exprs.get(arm.body_id), set) }
         }
         _ -> {}
     }
-    out
 }
 
 /// Remove every shadowed name from the candidate set.
-fn drop_bound_names(cands: List<string>, bound: List<string>) -> List<string> {
-    mut out: List<string> = []
-    for n in cands {
-        if !copy_set_has(bound, n) { out = list_push_copy(out, n) }
+fn drop_bound_names(cands: ptr, bound: ptr) {
+    // Snapshot the keys first — removing while iterating the live map
+    // would be reading a container as it is mutated.
+    for n in fresh_set_names(cands) {
+        if fresh_set_has(bound, n) { fresh_set_remove(cands, n) }
     }
-    out
 }
 
 /// Iterate `refine_return_fresh` until the candidate set is stable.
 /// Every pass only shrinks it, so this terminates.
-fn fixpoint_return_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> List<string> {
-    let refined = refine_return_fresh(store, body, cands)
-    if copy_set_eq(refined, cands) { refined }
-    else { fixpoint_return_fresh(store, body, refined) }
+fn fixpoint_return_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) {
+    // Settles on whether a pass DROPPED anything rather than by
+    // comparing the before/after sets: `copy_set_eq` was O(n^2) per
+    // pass on top of an already-quadratic pass. The termination
+    // argument is unchanged and now direct — a pass either removes at
+    // least one key, or reports no change and ends.
+    mut changed = true
+    while changed { changed = refine_return_fresh(store, body, cands, "") }
 }
 
 /// One shrink pass: drop any candidate with a return path that does
 /// not yield a fresh allocation.
-fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: List<string>) -> List<string> {
-    mut out = cands
+fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: ptr, mod_path: string) -> bool {
+    mut changed = false
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
             .Function(name, _, _, _, fbody) -> {
-                if copy_set_has(out, name) && !fn_returns_fresh(store, fbody, out) {
-                    out = releasable_remove(out, name)
+                // Guarded on the BARE key, which two modules declaring the
+                // same short name share. One module's non-fresh `f` therefore
+                // drops the bare key both were using — a LEAK left unfixed for
+                // the other, never an over-release. Canonical keys stay
+                // independent, and the resolver qualifies same-module calls,
+                // so the shared bare key is only consulted by top-level callers.
+                if fresh_set_has(cands, name) && !fn_returns_fresh(store, fbody, cands) {
+                    drop_fn_keys(cands, mod_path, name)
+                    changed = true
                 }
             }
-            .Block(inner) -> { out = refine_return_fresh(store, inner, out) }
+            .Block(inner) -> { if refine_return_fresh(store, inner, cands, mod_path) { changed = true } }
+            .Module(mname, inner) -> {
+                if refine_return_fresh(store, inner, cands, type_qualified_name(mod_path, mname)) { changed = true }
+            }
             _ -> {}
         }
     }
-    out
+    changed
 }
 
 /// True when EVERY return path of this body yields a fresh allocation:
 /// each explicit `return` anywhere inside it, plus the body's tail
 /// expression (Avra returns the last expression implicitly).
-fn fn_returns_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> bool {
+fn fn_returns_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) -> bool {
     for e in collect_return_exprs(store, body) {
         if !expr_is_fresh(store, store.exprs.get(e), cands) { return false }
     }
@@ -899,7 +1046,7 @@ fn collect_return_exprs_in_expr(store: NodeStore, expr: Expr) -> List<ExprId> {
 /// hands that expression back. A body ending in anything else (a
 /// `return` already collected above, a decl, a loop) has no tail value,
 /// which is vacuously fine.
-fn tail_is_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> bool {
+fn tail_is_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) -> bool {
     if body.length == 0 { return true }
     match stmt_unwrap(store, store.stmts.get(body.get(body.length - 1))) {
         .Expr(e) -> expr_is_fresh(store, store.exprs.get(e), cands)
@@ -939,7 +1086,7 @@ fn tail_is_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> b
 /// `dyn` dispatch and `.QualifiedIdent` cross-module calls all land
 /// there. Adding a `true` arm here without proving the callee allocates
 /// is how this becomes a double-free.
-fn expr_is_fresh(store: NodeStore, expr: Expr, cands: List<string>) -> bool {
+fn expr_is_fresh(store: NodeStore, expr: Expr, cands: ptr) -> bool {
     match expr {
         .StructLit(_, _) -> true
         .EnumCtor(_, _, _) -> true
@@ -948,7 +1095,14 @@ fn expr_is_fresh(store: NodeStore, expr: Expr, cands: List<string>) -> bool {
         // Only a DIRECT call to a known-fresh function in this module.
         .Call(callee, _) -> {
             match store.exprs.get(callee) {
-                .Ident(n) -> copy_set_has(cands, n)
+                .Ident(n) -> fresh_set_has(cands, n)
+                // The resolver qualifies same-module calls, so this form is
+                // the COMMON one inside any module. Membership is an EXACT
+                // match against a canonical key this analysis seeded itself,
+                // so a foreign module's path can never match — a cross-module
+                // `@pkg::other::mk` whose last segment happens to collide
+                // stays denied, as the ticket requires.
+                .QualifiedIdent(p) -> fresh_set_has(cands, p)
                 _ -> false
             }
         }

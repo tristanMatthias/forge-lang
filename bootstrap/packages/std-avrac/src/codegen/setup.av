@@ -7,7 +7,7 @@ use core.{avra_llvm_const_int}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
-use codegen.{analyze_releasable, analyze_copy_types}
+use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
@@ -413,6 +413,9 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     }
 
     let copy_types = analyze_copy_types(structs, enums)
+    // t-k6lm: derived here because this is the one place with BOTH the
+    // whole NodeStore and the program's top-level statements in scope.
+    let rc_fresh_fns = analyze_return_ownership_set(store, stmts)
     let empty_releasable: List<string> = []
     let empty_fn_param_names: List<string> = []
     let empty_loops: List<LoopStackFrame> = []
@@ -447,6 +450,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
         newtypes: cg_newtypes,
         union_aliases: cg_union_aliases,
         copy_types,
+        rc_fresh_fns,
         debug_null_checks,
         coverage,
         source_file,
@@ -518,7 +522,7 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
     ctx.position(entry)
-    ctx.rc_releasable = analyze_releasable(store, stmts)
+    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns)
     let initial: List<VarBinding> = []
     match emit_top_level(ctx, initial, stmts) {
         .Ok(_) -> {}
@@ -748,7 +752,7 @@ export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store
     let user_main = dc.user_main
     // NO emit_function_bodies — user fns are per-fn units (declare-only here).
     ctx.position(entry)
-    ctx.rc_releasable = analyze_releasable(store, stmts)
+    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns)
     let initial: List<VarBinding> = []
     match emit_top_level(ctx, initial, stmts) {
         .Ok(_) -> {}
