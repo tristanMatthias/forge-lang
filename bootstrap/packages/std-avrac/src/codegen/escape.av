@@ -131,8 +131,29 @@ fn remove_field_root_calls(store: NodeStore, expr: Expr, set: List<string>) -> L
         .OptionalMethodCall(obj, _, args) -> remove_field_roots_args_calls(store, args, remove_field_root_calls(store, store.exprs.get(obj), set))
         // `x.f ?? default` hands back `x.f` on the non-null path.
         .NullCoalesce(l, r) -> remove_field_root_calls(store, store.exprs.get(r), remove_field_root_calls(store, store.exprs.get(l), set))
+        // A returned COMPOSITE is STILL escape position, so a call inside it
+        // escapes its arguments too — `return Holder { inner: keep(p.inner) }`
+        // is the same over-release as the bare `return keep(p.inner)`.
+        // Delegating these to the plain walker drops the call-descending mode
+        // at the first level of nesting (caught in review on #1174).
+        .StructLit(_, inits) -> remove_field_roots_inits_calls(store, inits, set)
+        .With(_, inits) -> remove_field_roots_inits_calls(store, inits, set)
+        .EnumCtor(_, _, args) -> remove_field_roots_args_calls(store, args, set)
+        .Tuple(elems) -> remove_field_roots_args_calls(store, elems, set)
         _ -> remove_field_root(store, expr, set)
     }
+}
+
+/// `remove_field_roots_inits` for a RETURNED composite — every initializer is
+/// in escape position, so nested calls inside one escape too.
+fn remove_field_roots_inits_calls(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < inits.length {
+        acc = remove_field_root_calls(store, store.exprs.get(inits[i].value_id), acc)
+        i = i + 1
+    }
+    acc
 }
 
 /// Descend into a CALL's callee only when it is a field-access chain
@@ -1067,6 +1088,15 @@ fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: ptr) {
             }
             .Block(inner) -> { collect_bound_names(store, inner, set) }
             .Module(_, inner) -> { collect_bound_names(store, inner, set) }
+            // Statement CONTAINERS whose bodies hold ordinary locals. Methods
+            // are reached by declare_functions / emit_function_bodies, and
+            // spec/given bodies bind locals like any block — stopping at the
+            // wildcard made every one of those invisible to shadow detection,
+            // so a local shadowing a fn name left that fn wrongly fresh
+            // (caught in review on #1174).
+            .Impl(_, methods) -> { collect_bound_names(store, methods, set) }
+            .SpecBlock(_, sbody) -> { collect_bound_names(store, sbody, set) }
+            .GivenBlock(_, gbody) -> { collect_bound_names(store, gbody, set) }
             .If(_, tb, eb) -> {
                 collect_bound_names(store, [tb], set)
                 // else_branch is StmtId? — an `if` with no `else` has none.
