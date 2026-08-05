@@ -2225,7 +2225,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` after function body")
     }
     mk_fn_decl_g(st, capval_tok_text(name), tparams_list, params_list, ret, capval_present(ret), body_list)
 }
