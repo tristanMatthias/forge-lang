@@ -17,8 +17,8 @@
 // on its FALLBACK path, so it is blind to the bump-region allocations these
 // shapes actually use. Positive control: 150 deliberately stranded InnerBoxes
 // read delta=0 by default and delta=150 under AVRA_RC_STRICT=1. The leak
-// question is therefore still open and tracked separately — do not read these
-// specs as settling it.
+// question is therefore still open and is tracked as t-0ks0 — do not read
+// these specs as settling it.
 
 
 
