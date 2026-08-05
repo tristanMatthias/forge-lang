@@ -96,6 +96,36 @@ fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<st
         .With(_, inits) -> remove_field_roots_inits(store, inits, set)
         .EnumCtor(_, _, args) -> remove_field_roots_args(store, args, set)
         .Tuple(elems) -> remove_field_roots_args(store, elems, set)
+        // A CALL ARGUMENT escapes too, and this is the route the composite
+        // arms above do NOT cover: the callee may RETAIN what it is handed,
+        // and when its result is what we return, the retained part outlives
+        // this frame. `pass_db_new(parsed.ids ?? [], parsed.store, …)` stores
+        // `parsed.store` inside the returned `Db`, so releasing `parsed` at
+        // scope exit frees a store the caller still reads through.
+        // We cannot see into the callee, so passing a field of a local out is
+        // treated as an escape unconditionally — the conservative direction
+        // (keep the tick) is a leak at worst, the other is a use-after-free.
+        // (t-k6lm: the `parsed` release in `query_passes_test::db_for`.)
+        // The CALLEE matters too when it is a field access: a returned
+        // `p.method(…)` may hand back a field of `p`, exactly as `p.f` does.
+        // Only field-access callees descend — a bare `.Ident` callee is a FN
+        // NAME, and removing that would drop an unrelated same-named local.
+        .Call(callee, args) -> remove_field_roots_args(store, args, remove_callee_root(store, callee, set))
+        .GenericCall(_, _, args) -> remove_field_roots_args(store, args, set)
+        .OptionalMethodCall(obj, _, args) -> remove_field_roots_args(store, args, remove_field_root(store, store.exprs.get(obj), set))
+        // `x.f ?? default` hands back `x.f` on the non-null path.
+        .NullCoalesce(l, r) -> remove_field_root(store, store.exprs.get(r), remove_field_root(store, store.exprs.get(l), set))
+        _ -> set
+    }
+}
+
+/// Descend into a CALL's callee only when it is a field-access chain
+/// (a method call on a local). A bare `.Ident` callee names a FUNCTION,
+/// so removing it would drop an unrelated local that happens to share
+/// the name — a leak for no reason.
+fn remove_callee_root(store: NodeStore, callee: ExprId, set: List<string>) -> List<string> {
+    match store.exprs.get(callee) {
+        .FieldAccess(obj, _) -> remove_field_root(store, store.exprs.get(obj), set)
         _ -> set
     }
 }
