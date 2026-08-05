@@ -1694,11 +1694,22 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
         "${ind}while true {\n" +
         "${ind}    if st.at_end() || st.cur().text == \"}\" { break }\n" +
         "${ind}    let __sp = st.cur().pos\n" +
+        "${ind}    let __before_i = st.pos\n" +
         "${ind}    st.clear_error()\n" +
         "${ind}    let __cv = parse_${name}(st)\n" +
         "${ind}    if st.had_error {\n" +
         "${ind}        __any_err = true\n" +
         "${ind}        st.synchronize_stmt()\n" +
+        // t-47hc.5: step out of a group the CHILD opened and never closed. Without this
+        // `synchronize_stmt` parks on a brace that closes the child's group rather than
+        // this block's, and the scan then skips a following VALID statement instead of
+        // resuming on it — the interpreter's twin keeps it, so the two engines built
+        // different trees for the same recovery.
+        "${ind}        mut __ob = st.brace_delta(__before_i, st.pos)\n" +
+        "${ind}        while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {\n" +
+        "${ind}            let _ = st.advance()\n" +
+        "${ind}            __ob = __ob - 1\n" +
+        "${ind}        }\n" +
         "${ind}        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }\n" +
         "${ind}        let __elc = st.store.lines.to_linecol(__sp)\n" +
         "${ind}        let __e = st.store.stmts.add_leaf(Stmt.Error)\n" +

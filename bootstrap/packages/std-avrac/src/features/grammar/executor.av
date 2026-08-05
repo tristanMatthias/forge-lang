@@ -921,6 +921,23 @@ impl PState {
     /// while/for/match/return/extern/trait/defer/spec/given/then/select + RightBrace;
     /// errdefer and break/continue are deliberately NOT boundaries). Dormant: wired
     /// in when the generated block statement-list-with-recovery loop lands (t-47hc.13).
+    /// Net braces OPENED and not closed across the token span `[lo, hi)` — how deep a
+    /// failed child left the scanner. Recovery uses it to step out of a group the child
+    /// entered but never closed, instead of mistaking that group's `}` for the block's
+    /// own. A METHOD so the generated parser can call it too: both statement-list loops
+    /// need the identical answer, and a second copy would drift.
+    fn brace_delta(self, lo: int, hi: int) -> int {
+        mut d = 0
+        mut i = lo
+        while i < hi && i < self.toks.length {
+            let k = self.toks[i].tk
+            if k == Tk.LeftBrace { d = d + 1 }
+            if k == Tk.RightBrace { d = d - 1 }
+            i = i + 1
+        }
+        d
+    }
+
     fn synchronize_stmt(self) {
         while !self.at_end() {
             let k = self.cur().tk
@@ -2626,6 +2643,22 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 ///   - on a failed child: `synchronize_stmt()` (already byte-identical to the hand's
 ///     boundary set), force one token of progress if the cursor did not move, bind a
 ///     `Stmt.Error` in the child's place, and CONTINUE rather than ending the block
+/// Did the child come back as an ERROR STATEMENT? The silent-failure shape: a rule that
+/// aborted without reporting still yields a node, and the statement-list loop must treat
+/// it as a failed child rather than a parsed one.
+
+fn capval_is_error_stmt(st: PState, v: CapVal) -> bool {
+    match v {
+        .SNode(id) -> {
+            match st.store.stmts.get(id) {
+                .Error -> true
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
 fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: List<GAnnot>, rname: string, cap: int, already: int) {
     let pre_err = st.had_error
     mut any_err = pre_err
@@ -2636,9 +2669,32 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
         let before = st.pos
         st.clear_error()
         let v = exec_primary(g, item.prim, st, env, true, annots)
-        if st.had_error {
+        // A failed child shows up THREE ways and recovery must catch all of them: it may
+        // report (`st.had_error`), ABORT (`env.abort`, from `@require` and rule-level
+        // aborts, which never touches the error flag), or return a SILENT error node
+        // (`error_node_silent`, the rolled-back-speculation shape) having consumed up to
+        // the inner `}`. Keying on had_error alone let the third kind through: the loop
+        // bound it, saw the inner `}`, and broke — ending the block early so everything
+        // after the bad statement landed OUTSIDE the function. That is the `(expr r)`
+        // escape, and it is why the two engines disagreed once `decl_hand` stopped
+        // catching these first.
+        let child_failed = st.had_error || env.abort || capval_is_error_stmt(st, v)
+        if child_failed {
+            env.set_abort(false)
             any_err = true
             st.synchronize_stmt()
+            // The child may have consumed an OPENING brace without its closer (`if let =
+            // x { 1` swallows the `{`), in which case `synchronize_stmt` — which halts on
+            // any `}` — parks on a brace that closes the CHILD's group, not this block's.
+            // The loop then saw `}`, ended the body, and every statement after the bad
+            // one landed OUTSIDE the function. Count the net braces the child left open
+            // and step past exactly that many, so the scan resumes inside this block.
+            mut open_braces = st.brace_delta(before, st.pos)
+            while open_braces > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                open_braces = open_braces - 1
+                st.synchronize_stmt()
+            }
             if st.pos == before && !st.at_end() { let _ = st.advance() }
             bind(env, item.label, CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)), true)
             taken = taken + 1
