@@ -2163,7 +2163,19 @@ impl Parser {
                 result = Expr.OptionalChain(rid, field)
                 rid = self.alloc_at(result, sp_start)
             }
-        } else if self.check(Tk.LeftBracket) {
+        } else if self.check(Tk.LeftBracket) && self.current_line == self.prev_line {
+            // t-47hc.33.2 — same re-guard as the `?` arm above, and the same reason: the
+            // ENTRY guard requires `current_line == prev_line` for `[`, but this
+            // re-dispatch (reached after the leading `!` run has consumed) tested the
+            // token alone, so `x!` NEWLINE `[0]` folded into an INDEX of the previous
+            // line where a bare `[0]` starts a fresh list-literal statement.
+            //
+            // This one hid longer than the `?` case because the spec that covers it
+            // compared the recovery TREE through helpers that pinned only the
+            // declaration flags — `expr_static` is ON by default and the gate is
+            // `expr_flip || expr_static`, so the "hand" side was running the GENERATED
+            // parser too and agreed with itself. It surfaced the moment `mode_flags`
+            // started pinning the expression routing as well.
             self.advance()
             let idx = self.parse_expression()?
             // Slice: list[start..end]
@@ -2195,7 +2207,11 @@ impl Parser {
         } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
             return .Ok(PostfixStep { rid: rid, progressed: false })
         } else {
-        if self.check(Tk.LeftParen) {
+        // t-47hc.33.2 — the THIRD arm of the same re-guard (see `?` and `[` above). The
+        // entry guard requires `current_line == prev_line` for `(`; this re-dispatch
+        // tested the token alone, so `x!` NEWLINE `(1)` folded into a CALL of the
+        // previous line where a bare `(1)` is a fresh grouping statement.
+        if self.check(Tk.LeftParen) && self.current_line == self.prev_line {
             self.advance()
             // Enable `it` sugar for method calls (obj.method(it * 2))
             // but not for regular function calls (to prevent
@@ -2215,6 +2231,13 @@ impl Parser {
             result = Expr.Call(rid, parsed.ids)
             rid = self.alloc_at(result, sp_start)
         } else {
+            // This arm is the `.` case, and it ADVANCES unconditionally — it was only
+            // ever reached with a `.` current, because the `(` arm above used to take
+            // every `(`. Now that `(` is line-guarded (t-47hc.33.2), a CROSS-LINE `(`
+            // reaches here and would be consumed as if it were a dot, turning
+            // `x!` NEWLINE `(1)` into a tuple index. Anything that is not a `.` is not
+            // this step's business: report no progress and let the caller end the chain.
+            if !self.check(Tk.Dot) { return .Ok(PostfixStep { rid: rid, progressed: false }) }
             self.advance()
             // Tuple index: `t.0`, `t.1` — number after dot
             if self.check(Tk.Number) {

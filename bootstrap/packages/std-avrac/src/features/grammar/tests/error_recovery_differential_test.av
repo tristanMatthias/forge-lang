@@ -633,20 +633,61 @@ fn rtree_at(mode: string, source: string) -> string {
     // `tree_agrees_everywhere` passes comparing the hand against itself, twice. That is
     // the vacuity class this file exists to police — asserting three implementations
     // agree while running one is worse than not asserting it.
-    if mode == "hand" {
-        p.decl_flip = false
-    } else if mode == "emit" {
-        p.decl_flip = true
-        p.decl_static = true
-        p.no_static_fallback = true
-    } else {
-        p.decl_flip = true
-        p.decl_static = false
-    }
+    let f = mode_flags(mode)
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
 }
+
+/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
+/// helper cannot inherit one from `parser_new`'s defaults.
+///
+/// The expression pair is the half that was missing, and it is not optional: the gate
+/// in `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
+/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
+/// leaves the "hand" oracle running the GENERATED expression parser, and the table
+/// assertions compare native against native instead of against `parse_table_literal`.
+/// Harmless before `table_lit` went native (no native table rule existed, so the
+/// expression path fell through to `@hand(primary_base)` -> the hand's own parser);
+/// a live vacuity once the rule landed.
+///
+///   hand — both off, so the gate is false and `parse_expression_hand` runs
+///   emit — expr_static on: the generated static parser
+///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
+/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
+/// helper cannot inherit one from `parser_new`'s defaults. Returned as VALUES rather
+/// than applied here because a plain fn's `p` is immutable; the decision is what needs
+/// centralizing, and each caller assigns onto its own `mut p`.
+///
+/// The expression pair is the half that was missing, and it is not optional: the gate in
+/// `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
+/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
+/// leaves the "hand" oracle running the GENERATED expression parser, and the table
+/// assertions compare native against native instead of against `parse_table_literal`.
+/// Harmless before `table_lit` went native (no native table rule existed, so the
+/// expression path fell through to `@hand(primary_base)` -> the hand's own parser); a
+/// live vacuity once the rule landed.
+///
+///   hand — both off, so the gate is false and `parse_expression_hand` runs
+///   emit — expr_static on: the generated static parser
+///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
+type RouteFlags = { decl_flip: bool, decl_static: bool, no_static_fallback: bool, expr_flip: bool, expr_static: bool }
+
+fn mode_flags(mode: string) -> RouteFlags {
+    if mode == "hand" {
+        return RouteFlags { decl_flip: false, decl_static: true, no_static_fallback: false, expr_flip: false, expr_static: false }
+    }
+    if mode == "emit" {
+        return RouteFlags { decl_flip: true, decl_static: true, no_static_fallback: true, expr_flip: false, expr_static: true }
+    }
+    RouteFlags { decl_flip: true, decl_static: false, no_static_fallback: false, expr_flip: true, expr_static: false }
+}
+
 
 fn rtree(static_raw: bool, source: string) -> string {
     // static-raw: the static generated parser with the interpreter re-parse
@@ -720,7 +761,12 @@ fn agree_tree(source: string) -> bool {
 // sequence, so the two lists diverge in length and content.
 fn poslist(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
-    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     mut out = ""
@@ -735,7 +781,12 @@ fn poslist(static_raw: bool, source: string) -> string {
 
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
-    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     r.bag.diagnostics.length
 }
