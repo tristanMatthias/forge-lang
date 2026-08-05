@@ -47,7 +47,7 @@ spec "t-47hc.33: `@fallback` is the unconditional tail" {
         // wording no matter how its @expect was written.
         let r = run_grammar_expr(parse_grammar(FB_G).grammar, "[ 1")
         mut found = false
-        for d in r.diags { if d.contains("expected `]` after index") { found = true } }
+        for d in r.diags { if d.msg.contains("expected `]` after index") { found = true } }
         r.had_error && found
     }
     then "the EMITTED tail carries no FIRST guard" {

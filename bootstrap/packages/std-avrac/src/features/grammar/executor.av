@@ -495,7 +495,7 @@ impl CapEnv {
 /// The result of running a grammar over source: the store the nodes
 /// live in, the root node, and any diagnostics (error-tolerant — a
 /// malformed input yields a partial tree + diagnostics, never a bail).
-export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags: List<string> }
+export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags: List<GDiag> }
 
 // `src` is the ORIGINAL source text (when known) — carried so a `@hand`
 // statement rule can delegate a whole declaration to the real hand parser
@@ -521,7 +521,16 @@ export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<string>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string }
+/// One grammar-engine diagnostic: the message AND the F-code that describes it.
+///
+/// `code` is "" when the reporting site has not been attributed yet — the boundary's
+/// existing `diag_code` default then applies, exactly as before. Carrying the code on
+/// the DIAGNOSTIC rather than in a single `PState` slot is what lets a parse surface
+/// more than one coded diagnostic; see `report_coded`'s WHY for why the leaf removal
+/// needs that.
+export type GDiag = { code: string, msg: string }
+
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
@@ -574,7 +583,28 @@ impl PState {
     }
 
     fn report(self, msg: string) {
-        self.diags.push(msg)
+        self.diags.push(GDiag { code: "", msg })
+        self.had_error = true
+    }
+
+    /// `report` with the F-CODE carried ON the diagnostic (t-47hc.5).
+    ///
+    /// The pre-existing channel was one code WIDE: `PState.diag_code` is a single
+    /// string with first-writer-wins, and the DSL boundary surfaces `st.diags[0]`, so
+    /// a parse that reported N diagnostics could carry exactly ONE code out and lost
+    /// the rest. That is invisible today — the `@hand(decl_hand)` tail owns reporting
+    /// for anything that fails — but the recovery oracle compares the ORDERED F-code
+    /// signature with duplicates preserved, so it is a hard blocker for retiring the
+    /// leaf: the native path cannot reproduce multi-error recovery through a
+    /// one-diagnostic seam.
+    ///
+    /// This widens the CHANNEL only. `diag_code` is still written and the boundary
+    /// still reads `diags[0]`, so behaviour is unchanged (diff-test byte-identical) —
+    /// the per-diagnostic code is now AVAILABLE for the leaf-removal slice to spend,
+    /// which is the same widen-then-spend discipline slice B1 used for the raw-source
+    /// lookahead cores.
+    fn report_coded(self, code: string, msg: string) {
+        self.diags.push(GDiag { code, msg })
         self.had_error = true
     }
 
@@ -890,8 +920,11 @@ impl PState {
     /// same one. A plain `error_node` leaves the code empty and the boundary keeps its
     /// existing default, so every untouched call site behaves exactly as before.
     fn error_node_coded(self, code: string, msg: string) -> ExprId {
+        // `diag_code` is still written (first-writer-wins) because the DSL boundary
+        // reads it — this stays behaviour-neutral. The code now ALSO rides on its own
+        // diagnostic, so a later reporter's code is no longer dropped on the floor.
         if self.diag_code == "" { self.diag_code = code }
-        self.report(msg)
+        self.report_coded(code, msg)
         self.store.exprs.add_leaf(Expr.Error)
     }
 
@@ -1141,7 +1174,7 @@ fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 
 /// The statement-family analogue of `RunResult` — a `StmtId` root instead
 /// of `ExprId` (ps3t.6.5.2).
-export type StmtRunResult = { store: NodeStore, root: StmtId, had_error: bool, diags: List<string> }
+export type StmtRunResult = { store: NodeStore, root: StmtId, had_error: bool, diags: List<GDiag> }
 
 /// Run `grammar` over `src` starting at the first rule and coerce the
 /// root to a STATEMENT node — the statement-family entry, mirroring
@@ -1177,7 +1210,7 @@ fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
 }
 
 /// The pattern-family analogue of `RunResult` — a `PatId` root (ps3t.6.5.5).
-export type PatRunResult = { store: NodeStore, root: PatId, had_error: bool, diags: List<string> }
+export type PatRunResult = { store: NodeStore, root: PatId, had_error: bool, diags: List<GDiag> }
 
 /// Run `grammar` over `src` starting at the first rule and coerce the root
 /// to a PATTERN node — the pattern-family entry, mirroring run_grammar_stmt.
@@ -1203,7 +1236,7 @@ export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeS
 
 /// The type-family analogue of `RunResult` — a `TypeId` root (ps3t.6.5.6).
 /// The `TypeId` indexes the store's type arena; render via `render_type_id`.
-export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, diags: List<string> }
+export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, diags: List<GDiag> }
 
 /// Run `grammar` over `src` starting at the first rule, coerce the root to a
 /// surface `TypeExpr`, then lower it to a `ValueType` via the SHARED
@@ -3176,7 +3209,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3201,7 +3234,7 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3233,7 +3266,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3258,7 +3291,7 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3300,7 +3333,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3338,7 +3371,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3368,7 +3401,7 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
@@ -3423,7 +3456,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     st.undo_all_tok_edits()
     mut diag = ""
     if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0]
+        diag = st.diags[0].msg
     }
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
 }
