@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, ExprId, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
+use core.{Expr, ExprId, type_qualified_name, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -181,6 +181,13 @@ export fn is_owning_init(store: NodeStore, init: Expr, fresh: List<string>) -> b
         .Call(callee, _) -> {
             match store.exprs.get(callee) {
                 .Ident(n) -> copy_set_has(fresh, n)
+                // The resolver qualifies same-module calls, so this form is
+                // the COMMON one inside any module. Membership is an EXACT
+                // match against a canonical key this analysis seeded itself,
+                // so a foreign module's path can never match — a cross-module
+                // `@pkg::other::mk` whose last segment happens to collide
+                // stays denied, as the ticket requires.
+                .QualifiedIdent(p) -> copy_set_has(fresh, p)
                 _ -> false
             }
         }
@@ -723,7 +730,7 @@ fn copy_set_subset(a: List<string>, b: List<string>) -> bool {
 /// declared functions, then shrunk to a fixpoint.
 export fn analyze_return_ownership(store: NodeStore, body: List<StmtId>) -> List<string> {
     let empty: List<string> = []
-    let seeded = seed_fn_candidates(store, body, empty)
+    let seeded = seed_fn_candidates(store, body, empty, "")
     // A local binding or parameter can SHADOW a function name (legal
     // since zo1a, and the binding wins lexically), so `make()` at a use
     // site may be calling a closure rather than the function this
@@ -736,22 +743,53 @@ export fn analyze_return_ownership(store: NodeStore, body: List<StmtId>) -> List
     fixpoint_return_fresh(store, body, base)
 }
 
-/// Seed every declared function name as a candidate.
-fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
+/// Seed every declared function as a candidate, under BOTH the bare
+/// name and the resolver's canonical path.
+///
+/// Both forms are needed because a call site can arrive either way. The
+/// resolver's `rewrite_ident` (resolve/names.av, "sibling in current
+/// module") rewrites a call to a same-module function into
+/// `Expr.QualifiedIdent("<mod>::<fn>")` whenever the caller sits inside a
+/// module — which every test file and every real multi-module program
+/// does. Seeding only the bare name made the whole analysis inert on
+/// exactly those programs: the set was populated, but no call site ever
+/// matched it.
+///
+/// The canonical form is built with `type_qualified_name` — the SAME
+/// function the resolver uses to build `ModuleItemEntry.canonical` — so
+/// the two cannot drift into a silent miss.
+fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: List<string>, mod_path: string) -> List<string> {
     mut out = set
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
-            .Function(name, _, _, _, _) -> { out = releasable_add(out, name) }
-            .Block(inner) -> { out = seed_fn_candidates(store, inner, out) }
-            // A `mod` body holds declarations too — and the test runner
-            // wraps every bundled file in one, so missing this made the
-            // whole analysis a no-op on exactly the programs it is meant
-            // to fix (measured: the leak did not close until this landed).
-            .Module(_, inner) -> { out = seed_fn_candidates(store, inner, out) }
+            .Function(name, _, _, _, _) -> { out = add_fn_keys(out, mod_path, name) }
+            .Block(inner) -> { out = seed_fn_candidates(store, inner, out, mod_path) }
+            // A `mod` body holds declarations too, and nesting extends the
+            // path exactly as the resolver extends it.
+            .Module(mname, inner) -> {
+                out = seed_fn_candidates(store, inner, out, type_qualified_name(mod_path, mname))
+            }
             _ -> {}
         }
     }
     out
+}
+
+/// Add both lookup keys for one function. They are added and removed as
+/// a PAIR — dropping only one would leave a call site that uses the other
+/// form still believing the callee is fresh, which is the over-release
+/// direction.
+fn add_fn_keys(set: List<string>, mod_path: string, name: string) -> List<string> {
+    let s1 = releasable_add(set, name)
+    let q = type_qualified_name(mod_path, name)
+    if q == name { s1 } else { releasable_add(s1, q) }
+}
+
+/// Remove both lookup keys for one function.
+fn drop_fn_keys(set: List<string>, mod_path: string, name: string) -> List<string> {
+    let s1 = releasable_remove(set, name)
+    let q = type_qualified_name(mod_path, name)
+    if q == name { s1 } else { releasable_remove(s1, q) }
 }
 
 /// Every name bound as a local or a parameter anywhere in the program.
@@ -846,24 +884,26 @@ fn drop_bound_names(cands: List<string>, bound: List<string>) -> List<string> {
 /// Iterate `refine_return_fresh` until the candidate set is stable.
 /// Every pass only shrinks it, so this terminates.
 fn fixpoint_return_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> List<string> {
-    let refined = refine_return_fresh(store, body, cands)
+    let refined = refine_return_fresh(store, body, cands, "")
     if copy_set_eq(refined, cands) { refined }
     else { fixpoint_return_fresh(store, body, refined) }
 }
 
 /// One shrink pass: drop any candidate with a return path that does
 /// not yield a fresh allocation.
-fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: List<string>) -> List<string> {
+fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: List<string>, mod_path: string) -> List<string> {
     mut out = cands
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
             .Function(name, _, _, _, fbody) -> {
                 if copy_set_has(out, name) && !fn_returns_fresh(store, fbody, out) {
-                    out = releasable_remove(out, name)
+                    out = drop_fn_keys(out, mod_path, name)
                 }
             }
-            .Block(inner) -> { out = refine_return_fresh(store, inner, out) }
-            .Module(_, inner) -> { out = refine_return_fresh(store, inner, out) }
+            .Block(inner) -> { out = refine_return_fresh(store, inner, out, mod_path) }
+            .Module(mname, inner) -> {
+                out = refine_return_fresh(store, inner, out, type_qualified_name(mod_path, mname))
+            }
             _ -> {}
         }
     }
@@ -996,6 +1036,13 @@ fn expr_is_fresh(store: NodeStore, expr: Expr, cands: List<string>) -> bool {
         .Call(callee, _) -> {
             match store.exprs.get(callee) {
                 .Ident(n) -> copy_set_has(cands, n)
+                // The resolver qualifies same-module calls, so this form is
+                // the COMMON one inside any module. Membership is an EXACT
+                // match against a canonical key this analysis seeded itself,
+                // so a foreign module's path can never match — a cross-module
+                // `@pkg::other::mk` whose last segment happens to collide
+                // stays denied, as the ticket requires.
+                .QualifiedIdent(p) -> copy_set_has(cands, p)
                 _ -> false
             }
         }
