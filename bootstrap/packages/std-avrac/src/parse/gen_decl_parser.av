@@ -1276,11 +1276,17 @@ fn parse_parallel_decl(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1334,11 +1340,17 @@ fn parse_select_arm(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1374,11 +1386,17 @@ fn parse_spec_decl(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_spec_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1424,11 +1442,17 @@ fn parse_given_blk(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_spec_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1464,11 +1488,17 @@ fn parse_then_blk(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1559,11 +1589,17 @@ fn parse_component_decl(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1638,11 +1674,17 @@ fn parse_comp_inst(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_block_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1682,11 +1724,17 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_block_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1788,11 +1836,17 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         while true {
             if st.at_end() || st.cur().text == "}" { break }
             let __sp = st.cur().pos
+            let __before_i = st.pos
             st.clear_error()
             let __cv = parse_comp_block_item(st)
             if st.had_error {
                 __any_err = true
                 st.synchronize_stmt()
+                mut __ob = st.brace_delta(__before_i, st.pos)
+                while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                    let _ = st.advance()
+                    __ob = __ob - 1
+                }
                 if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
                 let __elc = st.store.lines.to_linecol(__sp)
                 let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1827,11 +1881,17 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         while true {
             if st.at_end() || st.cur().text == "}" { break }
             let __sp = st.cur().pos
+            let __before_i = st.pos
             st.clear_error()
             let __cv = parse_comp_block_item(st)
             if st.had_error {
                 __any_err = true
                 st.synchronize_stmt()
+                mut __ob = st.brace_delta(__before_i, st.pos)
+                while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                    let _ = st.advance()
+                    __ob = __ob - 1
+                }
                 if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
                 let __elc = st.store.lines.to_linecol(__sp)
                 let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -1868,11 +1928,17 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         while true {
             if st.at_end() || st.cur().text == "}" { break }
             let __sp = st.cur().pos
+            let __before_i = st.pos
             st.clear_error()
             let __cv = parse_declaration(st)
             if st.had_error {
                 __any_err = true
                 st.synchronize_stmt()
+                mut __ob = st.brace_delta(__before_i, st.pos)
+                while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                    let _ = st.advance()
+                    __ob = __ob - 1
+                }
                 if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
                 let __elc = st.store.lines.to_linecol(__sp)
                 let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -2205,11 +2271,17 @@ fn parse_fn_decl(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_body_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -2350,11 +2422,17 @@ fn parse_method_member(st: PState) -> CapVal {
         while true {
             if st.at_end() || st.cur().text == "}" { break }
             let __sp = st.cur().pos
+            let __before_i = st.pos
             st.clear_error()
             let __cv = parse_body_item(st)
             if st.had_error {
                 __any_err = true
                 st.synchronize_stmt()
+                mut __ob = st.brace_delta(__before_i, st.pos)
+                while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                    let _ = st.advance()
+                    __ob = __ob - 1
+                }
                 if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
                 let __elc = st.store.lines.to_linecol(__sp)
                 let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -2488,11 +2566,17 @@ fn parse_impl_method(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_body_item(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -2558,11 +2642,17 @@ fn parse_block(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
@@ -2591,11 +2681,17 @@ fn parse_stmt_block(st: PState) -> CapVal {
     while true {
         if st.at_end() || st.cur().text == "}" { break }
         let __sp = st.cur().pos
+        let __before_i = st.pos
         st.clear_error()
         let __cv = parse_declaration(st)
         if st.had_error {
             __any_err = true
             st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
             if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
             let __elc = st.store.lines.to_linecol(__sp)
             let __e = st.store.stmts.add_leaf(Stmt.Error)
